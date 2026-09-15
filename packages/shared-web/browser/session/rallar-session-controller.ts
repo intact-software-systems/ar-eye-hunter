@@ -4,6 +4,7 @@ import type {
     RallarConnectionRuntimePort
 } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarConnectionOperations,
@@ -21,6 +22,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 export interface CreateRallarSessionControllerOptions {
+    readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly transportRuntime: BrowserTransportRuntimePort;
     readonly authRuntime: RallarAuthRuntimePort;
@@ -52,12 +54,14 @@ export function createRallarSessionController(
     options: CreateRallarSessionControllerOptions
 ): RallarSessionController {
     const connectionLifecycle = new BrowserSessionConnectionLifecycle({
+        sessionDeliveries: options.sessionDeliveries,
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,
         lifecycle: options.lifecycle,
         clearCurrentRoom: options.stateRuntime.clearCurrentRoom
     });
     const authLifecycle = new BrowserSessionAuthLifecycle({
+        sessionDeliveries: options.sessionDeliveries,
         nowMs: Date.now,
         newRequestId: crypto.randomUUID.bind(crypto),
         connectionRuntime: options.connectionRuntime,

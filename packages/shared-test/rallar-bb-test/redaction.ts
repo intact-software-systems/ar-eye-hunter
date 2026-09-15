@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRedactionOptions } from './types.ts';
+import type { RallarBlackBoxTestRedactionOptions } from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_REDACTED_VALUE = '<redacted>';
 

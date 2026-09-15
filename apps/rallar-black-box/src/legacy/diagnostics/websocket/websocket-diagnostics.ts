@@ -2,7 +2,7 @@ import {
     selectRallarBlackBoxCommandHistory,
     selectRallarBlackBoxEvents
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import type { WebSocketDiagnostic } from './websocket-contracts.ts';
 

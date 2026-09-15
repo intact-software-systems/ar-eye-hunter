@@ -2,7 +2,7 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { FlowBuilderDefinition } from '../../../flow-builder.ts';
 import type { SchemaAuthoringValidation } from '../../../schema-authoring.ts';

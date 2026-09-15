@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { rallarBlackBoxProviderModeFromConfig } from '../../../runtime-store.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 

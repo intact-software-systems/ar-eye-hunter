@@ -522,6 +522,7 @@ function createRtcRoomMulticast(
         multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connections),
         qosProvider: undefined,
         outboundDiagnostics: undefined,
+        outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
         circuitBreaker: shared.toCircuitBreaker(),
         rateLimiter: shared.toRateLimiter(),

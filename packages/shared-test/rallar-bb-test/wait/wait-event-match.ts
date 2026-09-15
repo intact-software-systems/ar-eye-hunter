@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../rallar-black-box-test-contracts.ts';
 
 export type PayloadPathLookup = Readonly<{
     exists: boolean;

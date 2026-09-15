@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-    RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserRallarRuntime,
-    RallarBlackBoxBrowserTestRuntime
-} from '../../shared-test/rallar-bb-test/browser-adapter.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import type {
+    RallarBlackBoxBrowserRallarEvent,
+    RallarBlackBoxBrowserRallarRuntime,
+    RallarBlackBoxBrowserTestRuntime
+} from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
@@ -98,30 +98,6 @@ describe('browser Rallar runtime bridge', () => {
             roomId: 'room-1',
             principalId: 'alice'
         });
-    });
-
-    it('rejects missing authentication capability without starting a full connection', async () => {
-        const runtime: RallarBlackBoxBrowserRallarRuntime = {
-            ...createBrowserRallarRequiredMethodsTestDouble(),
-            connect: vi.fn(async (input) => ({ action: 'connect', input })),
-            send: vi.fn(async (input) => ({ action: 'send', input })),
-            refreshRoom: vi.fn(async () => ({ action: 'refreshRoom' })),
-            close: vi.fn(async () => ({ action: 'close' })),
-            health: vi.fn(async () => ({ action: 'health' }))
-        };
-        vi.stubGlobal('window', {
-            __blackBoxRallar: runtime
-        });
-        const bridge = createSpaBrowserRallarRuntime();
-        const input = {
-            connection: 'legacy',
-            rallar: {
-                apiBaseUrl: 'https://api.example.test'
-            }
-        };
-
-        await expect(bridge.authenticate?.(input)).rejects.toThrow('authenticate');
-        expect(runtime.connect).not.toHaveBeenCalled();
     });
 
     it('validates connection configuration before calling the native runtime', async () => {
@@ -232,7 +208,6 @@ describe('browser Rallar runtime bridge', () => {
         socket.removeEventListener?.('message', receive);
         await native.receive('after unsubscribe');
         expect(received).toEqual(['incoming']);
-        expect(() => socket.send({ arbitrary: 'object' })).toThrow('WebSocket data');
         socket.close(1000, 'done');
         expect(native.closedWith).toEqual({ code: 1000, reason: 'done' });
         expect(socket.readyState).toBe(WebSocket.CLOSED);

@@ -84,7 +84,6 @@ export type DistributedRunPerformanceAnalysis = Readonly<{
         failedFrames: number;
         droppedFrames: number;
         inFlightLimitDropCount: number;
-        backpressureCount: number;
         sendSuccessRatio?: number;
         requestedRateHz?: number;
         achievedScheduleHz?: number;
@@ -970,7 +969,7 @@ function renderPerformanceMarkdown(
             formatMs(performance.commandTiming.averageMs)
         }, outliers=${performance.commandTiming.outlierCount}`,
         performance.streamTiming
-            ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, in-flight drops=${performance.streamTiming.inFlightLimitDropCount}, backpressure=${performance.streamTiming.backpressureCount}, max drift=${
+            ? `Stream timing: streams=${performance.streamTiming.streamCount}, frames=${performance.streamTiming.completedFrames}/${performance.streamTiming.plannedFrames}, attempted=${performance.streamTiming.attemptedFrames}, failed=${performance.streamTiming.failedFrames}, dropped=${performance.streamTiming.droppedFrames}, in-flight drops=${performance.streamTiming.inFlightLimitDropCount}, max drift=${
                 formatMs(performance.streamTiming.maxStartDriftMs)
             }, late frames=${performance.streamTiming.lateFrameCount}, p50=${
                 formatMs(performance.streamTiming.duration.p50Ms)
@@ -1975,7 +1974,6 @@ function streamSampleFingerprint(sample: StreamTimingSample): string {
         failedFrames: numberValue(summary.failedFrames),
         droppedFrames: numberValue(summary.droppedFrames),
         inFlightLimitDropCount: streamSampleInFlightLimitDropCount(sample),
-        backpressureCount: numberValue(summary.backpressureCount),
         requestedRateHz: numberValue(summary.requestedRateHz),
         achievedScheduleHz: numberValue(summary.achievedScheduleHz),
         achievedCompletionHz: numberValue(summary.achievedCompletionHz),
@@ -2205,7 +2203,6 @@ function streamTimingFromSamples(
         (sum, sample) => sum + streamSampleInFlightLimitDropCount(sample),
         0
     );
-    const backpressureCount = sumStreamNumber(completeSamples, 'backpressureCount');
     const maxStartDriftMs = maxDefined(
         completeSamples.map((sample) => numberValue(readPath(sample.summary, ['pacing', 'maxStartDriftMs'])))
     );
@@ -2223,7 +2220,6 @@ function streamTimingFromSamples(
         failedFrames,
         droppedFrames,
         inFlightLimitDropCount,
-        backpressureCount,
         sendSuccessRatio: attemptedFrames > 0
             ? roundMetric(completedFrames / attemptedFrames)
             : undefined,

@@ -1,40 +1,29 @@
 import type { ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { ControlFleetRunReport } from '@shared-test/rallar-bb-test/fleet-report.ts';
+import { assert } from '@std/assert';
+
 import { createRallarBlackBoxControlService, RallarBlackBoxControlService } from '../src/control-service.ts';
-
-function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
-}
-
-function assertEquals<T>(actual: T, expected: T): void {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(
-            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
-        );
-    }
-}
+import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
 
 Deno.test('control retention planning is passive and applies exact current prune order', () => {
     let clockReads = 0;
-    const service = createRallarBlackBoxControlService({
+    const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => {
             clockReads += 1;
             return 50_000;
         }
-    });
+    }));
     service.restoreSnapshot(retentionSnapshot());
     clockReads = 0;
 
     const plan = service.createRetentionPlan(1);
 
-    assertEquals(clockReads, 0);
-    assertEquals(plan.deletedRunIds, ['run-old']);
-    assertEquals(plan.distributedRunIds, ['dist-old']);
-    assertEquals(plan.fleetReportIds, ['dist-old']);
-    assertEquals(plan.candidates, [{
+    assertJsonEquals(clockReads, 0);
+    assertJsonEquals(plan.deletedRunIds, ['run-old']);
+    assertJsonEquals(plan.distributedRunIds, ['dist-old']);
+    assertJsonEquals(plan.fleetReportIds, ['dist-old']);
+    assertJsonEquals(plan.candidates, [{
         runId: 'run-old',
         createdAtEpochMs: 1_000,
         updatedAtEpochMs: 1_000,
@@ -43,38 +32,38 @@ Deno.test('control retention planning is passive and applies exact current prune
         distributedRuns: [{ distributedRunId: 'dist-old', state: 'waiting-for-ack' }],
         fleetReportIds: ['dist-old']
     }]);
-    assertEquals(service.createRetentionPlan(1).canonicalConsequence, plan.canonicalConsequence);
-    assertEquals(clockReads, 0);
+    assertJsonEquals(service.createRetentionPlan(1).canonicalConsequence, plan.canonicalConsequence);
+    assertJsonEquals(clockReads, 0);
 
-    assertEquals(service.applyRetentionPlan(plan), ['run-old']);
-    assertEquals(service.snapshotRun('run-old'), undefined);
+    assertJsonEquals(service.applyRetentionPlan(plan), ['run-old']);
+    assertJsonEquals(service.snapshotRun('run-old'), undefined);
     assert(service.snapshotRun('run-new'));
 });
 
 Deno.test('control retention planning detects same-time issued-token drift without exposing tokens', () => {
-    const service = createRallarBlackBoxControlService({ now: () => 1_000 });
+    const service = createRallarBlackBoxControlService(toControlServiceInput({ now: () => 1_000 }));
     service.restoreSnapshot(retentionSnapshot());
     const before = service.createRetentionPlan(1);
     const updatedBefore = service.snapshotRun('run-old')?.updatedAtEpochMs;
 
-    const issued = service.issueRunToken({ runId: 'run-old', agentId: 'agent-old' });
+    const issued = service.issueRunToken({ runId: 'run-old', agentId: 'agent-old', ttlMs: 60_000 });
     const after = service.createRetentionPlan(1);
 
-    assertEquals(service.snapshotRun('run-old')?.updatedAtEpochMs, updatedBefore);
-    assertEquals(after.candidates[0]?.issuedRunTokenCount, 1);
+    assertJsonEquals(service.snapshotRun('run-old')?.updatedAtEpochMs, updatedBefore);
+    assertJsonEquals(after.candidates[0]?.issuedRunTokenCount, 1);
     assert(after.canonicalConsequence !== before.canonicalConsequence);
     assert(!after.canonicalConsequence.includes(issued.token));
 });
 
-Deno.test('legacy prune preserves response order independently from bounded preview planning', () => {
-    const service = createRallarBlackBoxControlService();
+Deno.test('immediate prune preserves response order independently from bounded preview planning', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
     service.restoreSnapshot(retentionSnapshot());
 
-    assertEquals(service.pruneRuns(1), ['run-old']);
-    assertEquals(service.createRetentionPlan(1).deletedRunIds, []);
+    assertJsonEquals(service.applyRunRetention(1), ['run-old']);
+    assertJsonEquals(service.createRetentionPlan(1).deletedRunIds, []);
 });
 
-Deno.test('legacy prune preserves its disabled and already-bounded fast paths', () => {
+Deno.test('immediate prune preserves its disabled and already-bounded fast paths', () => {
     class PlanningProbe extends RallarBlackBoxControlService {
         planCalls = 0;
 
@@ -83,32 +72,48 @@ Deno.test('legacy prune preserves its disabled and already-bounded fast paths', 
             return super.createRetentionPlan(maxRuns);
         }
     }
-    const service = new PlanningProbe();
+    const service = new PlanningProbe(toControlServiceInput());
     service.restoreSnapshot(retentionSnapshot());
 
-    assertEquals(service.pruneRuns(undefined), []);
-    assertEquals(service.pruneRuns(0), []);
-    assertEquals(service.pruneRuns(2), []);
-    assertEquals(service.planCalls, 0);
-    assertEquals(service.pruneRuns(1), ['run-old']);
-    assertEquals(service.planCalls, 0);
+    assertJsonEquals(service.applyRunRetention(undefined), []);
+    assertJsonEquals(service.applyRunRetention(0), []);
+    assertJsonEquals(service.applyRunRetention(2), []);
+    assertJsonEquals(service.planCalls, 0);
+    assertJsonEquals(service.applyRunRetention(1), ['run-old']);
+    assertJsonEquals(service.planCalls, 0);
 });
 
-Deno.test('legacy prune remains available beyond bounded preview candidate limits', () => {
-    const service = createRallarBlackBoxControlService();
+Deno.test('immediate prune remains available beyond bounded preview candidate limits', () => {
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
     const runs = Array.from(
         { length: 1_002 },
-        (_, index) => controlRun(`legacy-run-${index}`, index, false)
+        (_, index) => controlRun(`immediate-run-${index}`, index, false)
     );
     service.restoreSnapshot({ runs, distributedRuns: [], fleetReports: [] });
 
-    const deleted = service.pruneRuns(1);
+    const deleted = service.applyRunRetention(1);
 
-    assertEquals(deleted.length, 1_001);
-    assertEquals(deleted[0], 'legacy-run-0');
-    assertEquals(deleted.at(-1), 'legacy-run-1000');
-    assert(service.snapshotRun('legacy-run-1001'));
+    assertJsonEquals(deleted.length, 1_001);
+    assertJsonEquals(deleted[0], 'immediate-run-0');
+    assertJsonEquals(deleted.at(-1), 'immediate-run-1000');
+    assert(service.snapshotRun('immediate-run-1001'));
 });
+
+const EMPTY_ROLLUP_SUMMARY: ControlDistributedRunSnapshot['rollup']['summary'] = {
+    participants: 0,
+    requiredParticipants: 0,
+    readyParticipants: 0,
+    passedParticipants: 0,
+    failedParticipants: 0,
+    recipes: 0,
+    requiredRecipes: 0,
+    passedRecipes: 0,
+    failedRecipes: 0,
+    groupAssertions: 0,
+    passedGroupAssertions: 0,
+    failedGroupAssertions: 0,
+    blockingFailures: 0
+};
 
 function retentionSnapshot(): ControlServerSnapshot {
     return {
@@ -173,26 +178,7 @@ function distributedRun(): ControlDistributedRunSnapshot {
         updatedAtEpochMs: 1_000,
         targetAgentIds: [],
         commandLinks: [],
-        rollup: {
-            state: 'waiting-for-ack',
-            ok: false,
-            summary: {
-                participants: 0,
-                requiredParticipants: 0,
-                readyParticipants: 0,
-                passedParticipants: 0,
-                failedParticipants: 0,
-                recipes: 0,
-                requiredRecipes: 0,
-                passedRecipes: 0,
-                failedRecipes: 0,
-                groupAssertions: 0,
-                passedGroupAssertions: 0,
-                failedGroupAssertions: 0,
-                blockingFailures: 0
-            },
-            failures: []
-        }
+        rollup: { state: 'waiting-for-ack', ok: false, summary: EMPTY_ROLLUP_SUMMARY, failures: [] }
     };
 }
 

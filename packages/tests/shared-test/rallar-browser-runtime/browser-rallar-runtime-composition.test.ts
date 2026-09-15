@@ -8,7 +8,7 @@ import {
     vi
 } from 'vitest';
 
-import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts';
+import { refreshBlackBoxBrowserRoomState } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/refresh-black-box-browser-room-state.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type {

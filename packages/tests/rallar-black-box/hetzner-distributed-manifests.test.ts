@@ -1,20 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    buildHetznerDistributedManifestCatalog,
+    createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
-} from '../../../apps/rallar-black-box/src/hetzner-distributed-manifests.ts';
+} from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { distributedArtifactSnapshotsFromFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, validateJsonSchema } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
@@ -98,7 +99,7 @@ function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): reado
 
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const greenPaths = catalog.filter((entry) => entry.mainline).map((entry) => entry.filePath);
         const extendedPaths = catalog.filter((entry) => !entry.mainline && !entry.diagnostic).map((entry) => entry.filePath);
         const diagnosticPaths = catalog.filter((entry) => entry.diagnostic).map((entry) => entry.filePath);
@@ -149,7 +150,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('writes checked-in JSON that matches the generated catalog exactly', async () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const expectedJson = `${JSON.stringify(entry.manifest, null, 2)}\n`;
             const actualJson = await readFile(path.join(repoRoot, entry.filePath), 'utf8');
             expect(actualJson).toBe(expectedJson);
@@ -157,7 +158,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('validates every checked-in manifest against schema and contract', async () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const manifest = JSON.parse(
                 await readFile(path.join(repoRoot, entry.filePath), 'utf8')
             ) as RallarBlackBoxDistributedRunManifest;
@@ -231,7 +232,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps mainline green manifests secret-free and marks the expected-failure diagnostic only', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const greenEntries = catalog.filter((entry) => entry.mainline);
         const expectedFailure = catalog.find((entry) => entry.filePath.endsWith('/expected-failure-1-agent.json'));
 
@@ -248,7 +249,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('matches expected participant counts in filenames', () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const match = entry.filePath.match(/-(\d+)-agent/);
             expect(match?.[1], entry.filePath).toBe(String(entry.agentCount));
             expect(entry.manifest.targetPolicy.expectedParticipantCount).toBe(entry.agentCount);
@@ -258,7 +259,7 @@ describe('Hetzner distributed manifest catalog', () => {
     it('configures matching selectors for every messages.rtc connection', () => {
         // The alm-conformance family intentionally connects messages.rtc with its own per-scenario
         // typeId and the room.alm-conformance topic, not the shared multicast-position selector.
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             if (entry.manifest.metadata?.family === 'alm-conformance') {
                 continue;
             }
@@ -302,7 +303,7 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', { peers: 1, timeoutMs: 45_000 }]
         ]);
 
-        for (const entry of buildHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
+        for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
             const commands = manifestCommands(entry.manifest);
             const sendsRtc = commands.some((command) => command.kind === 'rtc.send' || command.kind === 'rtc.stream');
             if (!sendsRtc) {
@@ -323,7 +324,7 @@ describe('Hetzner distributed manifest catalog', () => {
     it('synchronizes every multi-agent Hetzner recipe before execution', () => {
         const checkedPaths: string[] = [];
 
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             if (entry.agentCount < 2 || BARRIER_EXEMPT_MANIFEST_PATHS.has(entry.filePath)) {
                 continue;
             }
@@ -339,7 +340,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(
             [...BARRIER_EXEMPT_MANIFEST_PATHS].filter(
                 (exemptPath) =>
-                    !buildHetznerDistributedManifestCatalog().some(
+                    !createHetznerDistributedManifestCatalog().some(
                         (entry) => entry.filePath === exemptPath
                     )
             )
@@ -349,7 +350,7 @@ describe('Hetzner distributed manifest catalog', () => {
     it('keeps readiness-enabled recipes resolvable to exact rooms', () => {
         const checkedPaths: string[] = [];
 
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe;
                 if (!recipe || !manifestCommands(entry.manifest).some((command) => command.readiness)) {
@@ -456,7 +457,7 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
 
         for (
-            const entry of buildHetznerDistributedManifestCatalog()
+            const entry of createHetznerDistributedManifestCatalog()
                 .filter((candidate) =>
                     !candidate.diagnostic &&
                     !candidate.filePath.includes('rtc-messages-') &&
@@ -512,7 +513,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps strict 20 Hz realtime stress coverage as a diagnostic manifest', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/diagnostic/rtc-realtime-2-agent-20hz-stress.json'));
         expect(entry).toBeDefined();
         expect(entry?.diagnostic).toBe(true);
@@ -543,7 +544,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps the lower-risk realtime stability manifest in mainline before heavier extended baselines', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const stabilityPath = 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json';
         const baselinePath = 'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json';
         const stability = catalog.find((entry) => entry.filePath === stabilityPath);
@@ -566,7 +567,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps provider parity manifests from replacing headless auth with restore-only demo auth', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const parity = catalog.find((entry) => entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json');
         const configure = parity?.manifest.recipes[0]?.recipe?.commands[0];
 
@@ -592,7 +593,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps provider parity peers alive through the readiness window before teardown', () => {
-        const parity = buildHetznerDistributedManifestCatalog().find((entry) =>
+        const parity = createHetznerDistributedManifestCatalog().find((entry) =>
             entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
         );
         const commands = parity?.manifest.recipes[0]?.recipe?.commands as readonly ManifestCommand[] | undefined;
@@ -631,7 +632,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/05-rtc-realtime-2-agent-5s.json'));
         expect(entry).toBeDefined();
         const manifest = entry?.manifest as RallarBlackBoxDistributedRunManifest;
@@ -749,7 +750,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds 50-agent messages.rtc multicast manifests with tree, mesh, and long-run metadata', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
         const principalTree = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-tree');
         const principalMesh = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-mesh');
@@ -832,7 +833,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('labels the short 50-agent principal tree manifest as the GitHub Free smoke candidate', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/07-rtc-messages-principal-50-agent-30s-20hz-tree.json'));
 
         expect(entry).toBeDefined();
@@ -843,7 +844,7 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('adds 15- and 30-agent mainline alternatives for the three 50-agent multicast recipes', () => {
         const byId = new Map(
-            buildHetznerDistributedManifestCatalog().map((entry) => [entry.manifest.distributedRunId, entry])
+            createHetznerDistributedManifestCatalog().map((entry) => [entry.manifest.distributedRunId, entry])
         );
 
         for (const agentCount of [15, 30]) {
@@ -922,7 +923,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const matrix = catalog.filter((entry) => entry.filePath.includes('/diagnostic/matrix/rtc-messages-'));
         const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
 
@@ -994,7 +995,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
 
         expect(entry).toBeDefined();
@@ -1027,7 +1028,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
 
         for (const agentCount of [15, 30, 50]) {
             const entry = catalog.find((candidate) => candidate.filePath.endsWith(`-alm-conformance-${agentCount}-agent-30s.json`));

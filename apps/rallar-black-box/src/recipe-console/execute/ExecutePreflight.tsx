@@ -6,9 +6,14 @@ import styles from './ExecutePreflight.module.css';
 import { ExecutePreflightIssueList } from './ExecutePreflightIssueList.tsx';
 import { ExecutePreflightTree } from './ExecutePreflightTree.tsx';
 
-export type ExecutePreflightProps = Readonly<{
-    entry?: DistributedRecipeCatalogEntryProjection;
-}>;
+export interface ExecutePreflightProps {
+    readonly entry?: DistributedRecipeCatalogEntryProjection;
+}
+
+interface ExecutePreflightDetailsProps {
+    readonly entry: DistributedRecipeCatalogEntryProjection;
+    readonly contextKey: string;
+}
 
 export function ExecutePreflight({ entry }: ExecutePreflightProps) {
     if (!entry) {
@@ -54,74 +59,92 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                 <Fact label="Effective commands" value={String(preflight.effectiveCommandCount)} />
                 <Fact label="Maximum depth" value={String(preflight.maxDepth)} />
             </dl>
-            <details className={styles.details}>
-                <summary>
-                    {preflightDetailsLabel({
-                        errorCount: schema.errors.length + preflight.errors.length,
-                        warningCount: schema.warnings.length + preflight.warnings.length
-                    })}
-                </summary>
-                <div className={styles.detailsBody}>
-                    <div className={styles.serviceFacts}>
-                        <FactList label="Provider modes" values={preflight.providerModes} />
-                        <FactList label="Runtime surfaces" values={preflight.runtimeSurfaces} />
-                        <FactList
-                            emptyLabel="No live service dependency"
-                            label="Live service requirements"
-                            values={preflight.liveServiceRequirements}
-                        />
-                    </div>
-                    {preflight.serviceBadges.length > 0
-                        ? (
-                            <div aria-label="Service requirements" className={styles.badges}>
-                                {preflight.serviceBadges.map((badge, index) => (
-                                    <span
-                                        className={styles.badge}
-                                        data-tone={badge.tone}
-                                        key={`${badge.label}-${index}`}
-                                    >
-                                        {badge.label}
-                                    </span>
-                                ))}
-                            </div>
-                        )
-                        : null}
-                    <ExecutePreflightIssueList
-                        contextKey={contextKey}
-                        id="schema-errors"
-                        label="Schema errors"
-                        tone="error"
-                        values={schema.errors}
-                    />
-                    <ExecutePreflightIssueList
-                        contextKey={contextKey}
-                        id="schema-warnings"
-                        label="Schema warnings"
-                        tone="warning"
-                        values={schema.warnings}
-                    />
-                    <ExecutePreflightIssueList
-                        contextKey={contextKey}
-                        id="errors"
-                        label="Preflight errors"
-                        tone="error"
-                        values={preflight.errors}
-                    />
-                    <ExecutePreflightIssueList
-                        contextKey={contextKey}
-                        id="warnings"
-                        label="Preflight warnings"
-                        tone="warning"
-                        values={preflight.warnings}
-                    />
-                    <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
-                </div>
-            </details>
+            <ExecutePreflightDetails entry={entry} contextKey={contextKey} />
         </section>
     );
 }
 
-function preflightDetailsLabel(
+function ExecutePreflightDetails({ entry, contextKey }: ExecutePreflightDetailsProps) {
+    const { preflight, schema } = entry;
+    return (
+        <details className={styles.details}>
+            <summary>
+                {toPreflightDetailsLabel({
+                    errorCount: schema.errors.length + preflight.errors.length,
+                    warningCount: preflight.warnings.length
+                })}
+            </summary>
+            <div className={styles.detailsBody}>
+                <ExecutePreflightServices entry={entry} />
+                <ExecutePreflightIssues entry={entry} contextKey={contextKey} />
+                <ExecutePreflightTree contextKey={contextKey} rows={preflight.tree} />
+            </div>
+        </details>
+    );
+}
+
+function ExecutePreflightServices({ entry }: Pick<ExecutePreflightDetailsProps, 'entry'>) {
+    const { preflight } = entry;
+    return (
+        <>
+            <div className={styles.serviceFacts}>
+                <FactList label="Provider modes" values={preflight.providerModes} />
+                <FactList label="Runtime surfaces" values={preflight.runtimeSurfaces} />
+                <FactList
+                    emptyLabel="No live service dependency"
+                    label="Live service requirements"
+                    values={preflight.liveServiceRequirements}
+                />
+            </div>
+            {preflight.serviceBadges.length > 0
+                ? (
+                    <div aria-label="Service requirements" className={styles.badges}>
+                        {preflight.serviceBadges.map((badge, index) => (
+                            <span
+                                className={styles.badge}
+                                data-tone={badge.tone}
+                                key={`${badge.label}-${index}`}
+                            >
+                                {badge.label}
+                            </span>
+                        ))}
+                    </div>
+                )
+                : null}
+        </>
+    );
+}
+
+function ExecutePreflightIssues({ entry, contextKey }: ExecutePreflightDetailsProps) {
+    const { preflight, schema } = entry;
+    return (
+        <>
+            <ExecutePreflightIssueList
+                contextKey={contextKey}
+                id="schema-errors"
+                label="Schema errors"
+                tone="error"
+                values={schema.errors}
+            />
+            <ExecutePreflightIssueList
+                contextKey={contextKey}
+                id="errors"
+                label="Preflight errors"
+                tone="error"
+                values={preflight.errors}
+            />
+            <ExecutePreflightIssueList
+                contextKey={contextKey}
+                id="warnings"
+                label="Preflight warnings"
+                tone="warning"
+                values={preflight.warnings}
+            />
+        </>
+    );
+}
+
+function toPreflightDetailsLabel(
     input: Readonly<{
         errorCount: number;
         warningCount: number;

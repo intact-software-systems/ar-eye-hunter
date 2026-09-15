@@ -126,7 +126,7 @@ describe('Recipe Console tuning decision limitations', () => {
         const result = deriveDistributedRunTuningDecisions({
             analysis: tuningAnalysis({
                 performance: tuningPerformance({
-                    stream: { streamCount: 2, backpressureCount: 4 }
+                    stream: { streamCount: 2, droppedFrames: 4 }
                 }),
                 targetResolution: targetResolution()
             }),
@@ -187,7 +187,6 @@ describe('Recipe Console tuning decision limitations', () => {
                 performance: tuningPerformance({
                     stream: {
                         droppedFrames: 4,
-                        backpressureCount: 3,
                         duration: {
                             count: 200,
                             minMs: 20,

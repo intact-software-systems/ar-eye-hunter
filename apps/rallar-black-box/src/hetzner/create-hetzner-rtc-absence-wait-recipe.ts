@@ -1,5 +1,6 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { toHetznerRoomProofCommands } from './hetzner-room-proof-commands.ts';
 
 const CONTROL_TOPIC = 'black-box.absence.control';
 const LEAK_PROBE_TOPIC = 'black-box.absence.leak-probe';
@@ -18,9 +19,8 @@ export function createHetznerRtcAbsenceWaitRecipe(
         workspaceId: group.workspaceId,
         groupId: group.groupId
     };
-    const statePrefix = `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
-
     return {
+        schemaVersion: 1,
         recipeId: 'rtc-absence-wait-recipe',
         name: 'RTC absence wait recipe',
         continueOnFailure: false,
@@ -29,121 +29,16 @@ export function createHetznerRtcAbsenceWaitRecipe(
             group: roomRef
         },
         commands: [
-            {
-                kind: 'http.request',
-                commandId: 'rtc-absence-ensure-group',
-                timeoutMs: 5_000,
-                metadata: {
-                    purpose: 'Ensure the backend group exists before RTC room join.',
-                    idempotent: true,
-                    group: roomRef
-                },
-                request: {
-                    method: 'POST',
-                    path: `${statePrefix}/groups/requests/${ENSURE_GROUP_REQUEST_ID}`,
-                    body: {
-                        groupId: group.groupId,
-                        displayName: group.groupId,
-                        kind: 'room',
-                        joinMode: 'open'
-                    }
-                },
-                response: {
-                    body: 'json',
-                    acceptedStatusCodes: [200, 201, 409]
-                }
-            },
-            {
-                kind: 'http.request',
-                commandId: 'rtc-absence-ensure-member',
-                timeoutMs: 5_000,
-                metadata: {
-                    purpose: 'Ensure the logged-in browser client is an active group member ' +
-                        'before RTC room join.',
-                    idempotent: true,
-                    group: roomRef
-                },
-                request: {
-                    method: 'PUT',
-                    path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}` +
-                        `/requests/${ENSURE_MEMBER_REQUEST_ID}`,
-                    body: {
-                        status: 'active'
-                    }
-                },
-                response: {
-                    body: 'json',
-                    acceptedStatusCodes: [200, 201]
-                }
-            },
-            {
-                kind: 'rtc.connect',
-                commandId: 'rtc-absence-connect',
+            ...toHetznerRoomProofCommands({
+                group: roomRef,
+                prefix: 'rtc-absence',
                 connection: 'absenceRtc',
-                actor: '{auth.clientId}',
-                roomId: group.groupId,
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                transport: 'realtime',
-                timeoutMs: 15_000,
-                readiness: {
-                    minReadyPeers: 1,
-                    timeoutMs: 10_000,
-                    intervalMs: 100
-                }
-            },
-            {
-                kind: 'rtc.send',
-                commandId: 'rtc-absence-send-control',
-                connection: 'absenceRtc',
-                applicationId: group.applicationId,
-                workspaceId: group.workspaceId,
-                roomRef,
-                transport: 'realtime',
-                send: {
-                    roomId: group.groupId,
-                    roomRef,
-                    data: {
-                        topic: CONTROL_TOPIC,
-                        marker: 'same-room-positive-control',
-                        actor: '{auth.clientId}'
-                    }
-                },
-                timeoutMs: 3_000
-            },
-            {
-                kind: 'wait',
-                commandId: 'rtc-absence-positive-control',
-                timeoutMs: 10_000,
-                metadata: {
-                    purpose: 'Same-room positive control: the control frame must arrive ' +
-                        'before any absence claim.'
-                },
-                match: {
-                    kind: 'message',
-                    connection: 'absenceRtc',
-                    topic: 'rallar.browser.realtime.message',
-                    payloadPath: 'data.topic',
-                    equals: CONTROL_TOPIC
-                }
-            },
-            {
-                kind: 'wait',
-                commandId: 'rtc-absence-no-leak-probe',
-                absent: true,
-                timeoutMs: 4_000,
-                metadata: {
-                    purpose: 'No agent may ever observe a leak-probe frame on this connection.'
-                },
-                match: {
-                    kind: 'message',
-                    connection: 'absenceRtc',
-                    topic: 'rallar.browser.realtime.message',
-                    payloadPath: 'data.topic',
-                    equals: LEAK_PROBE_TOPIC
-                }
-            },
+                controlTopic: CONTROL_TOPIC,
+                leakProbeTopic: LEAK_PROBE_TOPIC,
+                groupRequestId: ENSURE_GROUP_REQUEST_ID,
+                memberRequestId: ENSURE_MEMBER_REQUEST_ID,
+                absencePurpose: 'No agent may ever observe a leak-probe frame on this connection.'
+            }),
             {
                 kind: 'wait',
                 commandId: 'rtc-absence-no-send-failures',

@@ -1,4 +1,3 @@
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarGameAuthorityCommandResult, RallarGameAuthoritySendResult } from '@shared/rallar-game/mod.ts';
 
 export function notReadyAuthoritySendResult(
@@ -9,13 +8,6 @@ export function notReadyAuthoritySendResult(
         transport,
         reason: 'Cannot send without a room and local session.'
     };
-}
-
-export function isSuccessfulAuthorityMessageStatus(
-    status: ALOutboundEnqueueStatus
-): boolean {
-    return status === 'enqueued' || status === 'accepted' ||
-        status === 'skipped' || status === 'duplicate';
 }
 
 export function decodeAuthorityCommandResult(

@@ -1,4 +1,7 @@
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { assert } from '@std/assert';
+
 import {
     controlResultArtifactJsonl,
     controlResultEventArtifactJsonl,
@@ -8,21 +11,7 @@ import {
     createControlDistributedRunArtifactBundle,
     createControlRunArtifactBundle
 } from '../src/control-artifacts.ts';
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../src/control-service.ts';
-
-function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
-}
-
-function assertEquals<T>(actual: T, expected: T): void {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(
-            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
-        );
-    }
-}
+import { assertJsonEquals } from './support/control-service-test-fixtures.ts';
 
 const run: ControlRunSnapshot = {
     runId: 'artifact-run',
@@ -184,11 +173,11 @@ Deno.test('control artifacts export redacted shared-test compatible files', () =
     const failures = JSON.parse(bundle.files['failures.json']);
     const metadata = JSON.parse(bundle.files['metadata.json']);
 
-    assertEquals(bundle.runId, 'artifact-run');
-    assertEquals(report.summary.total, 3);
-    assertEquals(report.summary.failure, 1);
-    assertEquals(failures.failures.length, 1);
-    assertEquals(metadata.generatedAtEpochMs, 3_000);
+    assertJsonEquals(bundle.runId, 'artifact-run');
+    assertJsonEquals(report.summary.total, 3);
+    assertJsonEquals(report.summary.failure, 1);
+    assertJsonEquals(failures.failures.length, 1);
+    assertJsonEquals(metadata.generatedAtEpochMs, 3_000);
     assert(bundle.files['events.jsonl'].includes('"kind":"step-result"'));
     assert(bundle.files['events.jsonl'].includes('"kind":"crdt-diagnostic"'));
     assert(bundle.files['events.jsonl'].includes('"transport":"CRDT"'));
@@ -203,7 +192,7 @@ Deno.test('control artifacts export event, result, and failure bundles', () => {
     assert(controlRunEventsJsonl(run).includes('crdt-diagnostic'));
     assert(controlRunResultsJsonl(run).includes('HTTP_FAILED'));
     assert(controlRunResultsJsonl(run).includes('"transport":"CRDT"'));
-    assertEquals(controlRunFailureBundle(run).failures.length, 1);
+    assertJsonEquals(controlRunFailureBundle(run).failures.length, 1);
 });
 
 Deno.test('control artifact JSONL helpers preserve queued command metadata', () => {
@@ -213,9 +202,9 @@ Deno.test('control artifact JSONL helpers preserve queued command metadata', () 
         transport?: string;
         connection?: string;
     };
-    assertEquals(resultRow.action, 'crdt.wait');
-    assertEquals(resultRow.transport, 'CRDT');
-    assertEquals(resultRow.connection, 'checklist');
+    assertJsonEquals(resultRow.action, 'crdt.wait');
+    assertJsonEquals(resultRow.transport, 'CRDT');
+    assertJsonEquals(resultRow.connection, 'checklist');
 
     const eventJsonl = controlResultEventArtifactJsonl(run.results[2], run.commands[1]);
     const eventRow = JSON.parse(eventJsonl) as {
@@ -224,10 +213,10 @@ Deno.test('control artifact JSONL helpers preserve queued command metadata', () 
         transport?: string;
         connection?: string;
     };
-    assertEquals(eventRow.kind, 'step-result');
-    assertEquals(eventRow.action, 'crdt.wait');
-    assertEquals(eventRow.transport, 'CRDT');
-    assertEquals(eventRow.connection, 'checklist');
+    assertJsonEquals(eventRow.kind, 'step-result');
+    assertJsonEquals(eventRow.action, 'crdt.wait');
+    assertJsonEquals(eventRow.transport, 'CRDT');
+    assertJsonEquals(eventRow.connection, 'checklist');
 });
 
 Deno.test('control distributed artifacts export filtered v2 analysis files', () => {
@@ -322,16 +311,16 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
     const failures = JSON.parse(bundle.files['failures.json'] ?? '{}');
     const metadata = JSON.parse(bundle.files['metadata.json'] ?? '{}');
 
-    assertEquals(bundle.artifactSchemaVersion, 2);
-    assertEquals(report.execution, 'distributed-run');
-    assertEquals(report.summary.total, 1);
-    assertEquals(report.summary.commandCount, 1);
-    assertEquals(failures.failures.length, 2);
-    assertEquals(metadata.generatedAtEpochMs, 4_000);
-    assertEquals('results.jsonl' in bundle.files, false);
-    assertEquals('events.jsonl' in bundle.files, false);
-    assertEquals(metadata.artifactRefs.resultsJsonl, '/runs/artifact-run/results.jsonl');
-    assertEquals(metadata.artifactRefs.eventsJsonl, '/runs/artifact-run/events.jsonl');
+    assertJsonEquals(bundle.artifactSchemaVersion, 2);
+    assertJsonEquals(report.execution, 'distributed-run');
+    assertJsonEquals(report.summary.total, 1);
+    assertJsonEquals(report.summary.commandCount, 1);
+    assertJsonEquals(failures.failures.length, 2);
+    assertJsonEquals(metadata.generatedAtEpochMs, 4_000);
+    assertJsonEquals('results.jsonl' in bundle.files, false);
+    assertJsonEquals('events.jsonl' in bundle.files, false);
+    assertJsonEquals(metadata.artifactRefs.resultsJsonl, '/runs/artifact-run/results.jsonl');
+    assertJsonEquals(metadata.artifactRefs.eventsJsonl, '/runs/artifact-run/events.jsonl');
     assert(!JSON.stringify(bundle).includes('secret-token'));
     assert(JSON.stringify(bundle).includes('<redacted>'));
 });

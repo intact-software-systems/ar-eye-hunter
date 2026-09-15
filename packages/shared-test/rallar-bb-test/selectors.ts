@@ -5,7 +5,7 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export function selectRallarBlackBoxCurrentConfig(
     state: RallarBlackBoxTestState

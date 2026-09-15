@@ -69,8 +69,8 @@ it.each(['memory', 'indexeddb'] as const)(
         const runtime = createDefaultOutboundTestRuntime({
             stores: createStores(kind),
             diagnostics: (event) => diagnostics.push(event),
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
         const message = createOutboundMessage('msg-commit-phases');
@@ -123,8 +123,8 @@ it('charges the drain its own commit rather than leaving it on the next send', a
         stores,
         queueEngine: engine,
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     const pending = await runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-origin', { ttlMs: 30_000 }));
@@ -151,8 +151,8 @@ it('names the origin a queued send waited behind', async () => {
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores('memory'),
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     const [first, second] = await Promise.all([

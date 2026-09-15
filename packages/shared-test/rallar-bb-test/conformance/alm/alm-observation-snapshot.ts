@@ -1,5 +1,5 @@
 import { Either } from '../../../../shared/resilience/Either.ts';
-import type { RallarBlackBoxTestRecord } from '../../types.ts';
+import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';

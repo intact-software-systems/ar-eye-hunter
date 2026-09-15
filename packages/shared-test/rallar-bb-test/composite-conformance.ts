@@ -15,7 +15,7 @@ import type {
     RallarBlackBoxTestResultStatus,
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxCompositeConformanceCaseId =
     | 'looped-rtc-send'

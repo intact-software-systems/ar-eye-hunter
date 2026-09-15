@@ -1,8 +1,8 @@
 import {
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '@shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 export type DistributedRecipePromptTemplateId =
     | 'live-group-ack'

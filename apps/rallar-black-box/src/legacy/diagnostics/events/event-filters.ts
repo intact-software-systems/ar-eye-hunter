@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestEventKind } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestEventKind } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
 import { eventPayloadDetails } from './event-presentation.ts';

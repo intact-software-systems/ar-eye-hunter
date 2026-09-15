@@ -1,6 +1,6 @@
 import type {
-    RallarMessagePayload,
-    RallarMessageSendResult
+    RallarMessageHandle,
+    RallarMessagePayload
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarTargetedSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -70,8 +70,8 @@ export type RallarDirectorRelaySendStatus =
 
 export interface RallarDirectorRelaySendResult {
     readonly status: RallarDirectorRelaySendStatus;
-    readonly rtc?: RallarTargetedSendResult | RallarMessageSendResult;
-    readonly ws?: RallarMessageSendResult;
+    readonly rtc?: RallarTargetedSendResult | RallarMessageHandle;
+    readonly ws?: RallarMessageHandle;
     readonly reason?: string;
 }
 

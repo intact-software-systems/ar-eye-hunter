@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from './assert/assert-value-operators.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
@@ -7,78 +8,25 @@ import {
 } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA } from './distributed/rallar-black-box-group-assertions-schema.ts';
 import {
-    formatJsonSchemaValidationErrors,
-    isJsonRecordValue,
-    validateJsonSchema,
-    type JsonSchema,
-    type JsonSchemaValidationIssue,
-    type JsonSchemaValidationResult
-} from './schema/json-schema-validation.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    type RallarBlackBoxTestCommand
-} from './types.ts';
-
-export {
-    formatJsonSchemaValidationErrors,
-    type JsonSchema,
-    type JsonSchemaValidationIssue,
-    type JsonSchemaValidationResult,
-    validateJsonSchema
-};
+    type RallarBlackBoxTestCommandKind
+} from './rallar-black-box-test-contracts.ts';
+import type { JsonSchema } from './schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema/rallar-black-box-command-capabilities.ts';
+import {
+    RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS,
+    RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
+    RALLAR_BLACK_BOX_COMMAND_FIELDS,
+    RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS,
+    type RallarBlackBoxCommandFieldName,
+    type RallarBlackBoxCommandFieldSet
+} from './schema/rallar-black-box-command-fields.ts';
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
 export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
 export const RALLAR_BLACK_BOX_SUPPORTED_RECIPE_SCHEMA_VERSIONS = [
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
 ] as const;
-
-export type RallarBlackBoxRecipeCompatibilityResult =
-    | Readonly<{
-        ok: true;
-        schemaVersion: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
-        explicitSchemaVersion?: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
-        legacy: boolean;
-        warnings: readonly JsonSchemaValidationIssue[];
-        errors: readonly [];
-    }>
-    | Readonly<{
-        ok: false;
-        schemaVersion?: typeof RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION;
-        explicitSchemaVersion?: unknown;
-        legacy: boolean;
-        warnings: readonly JsonSchemaValidationIssue[];
-        errors: readonly JsonSchemaValidationIssue[];
-    }>;
-
-export type RallarBlackBoxCommandProviderMode =
-    | 'simulated'
-    | 'browser-rallar'
-    | 'rallar-browser'
-    | 'rallar-remote-browser'
-    | 'rallar-memory'
-    | 'rallar-server'
-    | 'mixed';
-
-export type RallarBlackBoxCommandRuntimeSurface =
-    | 'spa-local'
-    | 'control-agent'
-    | 'control-server'
-    | 'black-box-runner-adapter';
-
-export type RallarBlackBoxCommandCapability = Readonly<{
-    kind: typeof RALLAR_BLACK_BOX_TEST_COMMAND_KINDS[number];
-    title: string;
-    description: string;
-    requiredFields: readonly string[];
-    optionalFields: readonly string[];
-    supportedProviderModes: readonly RallarBlackBoxCommandProviderMode[];
-    runtimeSurfaces: readonly RallarBlackBoxCommandRuntimeSurface[];
-    liveServiceRequirements: readonly string[];
-    artifactExpectations: readonly string[];
-    example: RallarBlackBoxTestCommand;
-}>;
 
 const JSON_SCHEMA_DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 const SCHEMA_BASE_ID = 'https://rallar.dev/schemas/black-box';
@@ -91,9 +39,19 @@ const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
-const recursiveCommandSchema = {} as JsonSchema & { oneOf?: readonly JsonSchema[]; };
+const recursiveCommandSchema: JsonSchema = { $ref: '#/$defs/command' };
 
-function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): Record<string, JsonSchema> {
+type CommandPropertySchemas<Kind extends RallarBlackBoxTestCommandKind> = Readonly<
+    Record<RallarBlackBoxCommandFieldName<(typeof RALLAR_BLACK_BOX_COMMAND_FIELDS)[Kind]>, JsonSchema>
+>;
+
+type ObjectPropertySchemas<FieldSet extends RallarBlackBoxCommandFieldSet> = Readonly<
+    Record<RallarBlackBoxCommandFieldName<FieldSet>, JsonSchema>
+>;
+
+function commandBaseProperties(
+    kind: RallarBlackBoxTestCommandKind
+): Readonly<Record<'kind' | (typeof RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS)[number], JsonSchema>> {
     return {
         kind: { const: kind },
         commandId: stringSchema,
@@ -104,14 +62,13 @@ function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): R
     };
 }
 
-function strictCommandSchema(
-    kind: RallarBlackBoxCommandCapability['kind'],
-    required: readonly string[],
-    properties: Readonly<Record<string, JsonSchema>> = {}
+function strictCommandSchema<Kind extends RallarBlackBoxTestCommandKind>(
+    kind: Kind,
+    properties: CommandPropertySchemas<Kind>
 ): JsonSchema {
     return {
         type: 'object',
-        required: ['kind', ...required],
+        required: ['kind', ...RALLAR_BLACK_BOX_COMMAND_FIELDS[kind].required],
         properties: {
             ...commandBaseProperties(kind),
             ...properties
@@ -120,32 +77,19 @@ function strictCommandSchema(
     };
 }
 
-const shallowRecipeSchema: JsonSchema = {
-    type: 'object',
-    required: ['recipeId', 'commands'],
-    properties: {
-        schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
-        recipeId: stringSchema,
-        name: stringSchema,
-        description: stringSchema,
-        continueOnFailure: booleanSchema,
-        metadata: recordSchema,
-        commands: {
-            type: 'array',
-            items: {
-                type: 'object',
-                required: ['kind'],
-                properties: {
-                    kind: { type: 'string', enum: RALLAR_BLACK_BOX_TEST_COMMAND_KINDS },
-                    commandId: stringSchema,
-                    label: stringSchema
-                },
-                additionalProperties: true
-            }
-        }
-    },
-    additionalProperties: false
-};
+function strictObjectSchema<FieldSet extends RallarBlackBoxCommandFieldSet>(
+    fields: FieldSet,
+    properties: ObjectPropertySchemas<FieldSet>
+): JsonSchema {
+    return {
+        type: 'object',
+        ...(fields.required.length > 0 ? { required: fields.required } : {}),
+        properties,
+        additionalProperties: false
+    };
+}
+
+const inlineRecipeSchema: JsonSchema = { $ref: '#/$defs/recipe' };
 
 const configSchema: JsonSchema = {
     type: 'object',
@@ -176,34 +120,25 @@ const configSchema: JsonSchema = {
     additionalProperties: false
 };
 
-const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
+const rtcTransportSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcSendTransport };
 const rtcConnectTransportSchema: JsonSchema = {
     type: 'string',
-    enum: ['realtime', 'messages.rtc', 'messages.ws']
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcConnectTransport
 };
-const rtcConnectReadinessSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minReadyPeers: { type: 'integer', minimum: 1 },
-        timeoutMs: { type: 'integer', minimum: 1 },
-        intervalMs: { type: 'integer', minimum: 1 }
-    },
-    additionalProperties: false
-};
-const rtcStreamThresholdsSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
-        maxDroppedFrames: { type: 'number', minimum: 0 },
-        maxBackpressureCount: { type: 'number', minimum: 0 },
-        maxP95SendDurationMs: { type: 'number', minimum: 0 },
-        maxP99SendDurationMs: { type: 'number', minimum: 0 },
-        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
-        maxStartDriftMs: { type: 'number', minimum: 0 },
-        maxJitterMs: { type: 'number', minimum: 0 }
-    },
-    additionalProperties: false
-};
+const rtcConnectReadinessSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcConnectReadiness, {
+    minReadyPeers: { type: 'integer', minimum: 1 },
+    timeoutMs: { type: 'integer', minimum: 1 },
+    intervalMs: { type: 'integer', minimum: 1 }
+});
+const rtcStreamThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcStreamThresholds, {
+    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+    maxDroppedFrames: { type: 'number', minimum: 0 },
+    maxP95SendDurationMs: { type: 'number', minimum: 0 },
+    maxP99SendDurationMs: { type: 'number', minimum: 0 },
+    maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+    maxStartDriftMs: { type: 'number', minimum: 0 },
+    maxJitterMs: { type: 'number', minimum: 0 }
+});
 const crdtTransportSchema: JsonSchema = {
     type: 'string',
     enum: ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback']
@@ -379,7 +314,7 @@ const crdtWaitConditionSchema: JsonSchema = {
     additionalProperties: false
 };
 
-const commandRoomProperties: Readonly<Record<string, JsonSchema>> = {
+const commandRoomProperties = {
     roomId: stringSchema,
     applicationId: stringSchema,
     workspaceId: stringSchema,
@@ -387,7 +322,7 @@ const commandRoomProperties: Readonly<Record<string, JsonSchema>> = {
     roomRef: recordSchema
 };
 
-const directorRelayConfigProperties: Readonly<Record<string, JsonSchema>> = {
+const directorRelayConfigProperties = {
     handle: stringSchema,
     laneId: stringSchema,
     topicId: stringSchema,
@@ -414,142 +349,100 @@ const crdtWaitSyncSchema: JsonSchema = {
     ]
 };
 
-const httpRequestSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        url: stringSchema,
-        path: stringSchema,
-        method: stringSchema,
-        headers: stringRecordSchema,
-        body: anySchema,
-        credentials: { type: 'string', enum: ['omit', 'same-origin', 'include'] },
-        mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] }
-    },
-    additionalProperties: false
-};
+const httpRequestSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.httpRequest, {
+    url: stringSchema,
+    path: stringSchema,
+    method: stringSchema,
+    headers: stringRecordSchema,
+    body: anySchema,
+    credentials: { type: 'string', enum: ['omit', 'same-origin', 'include'] },
+    mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] }
+});
 
-const httpResponseSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        body: { type: 'string', enum: ['none', 'text', 'json'] },
-        maxBodyChars: integerSchema,
-        acceptedStatusCodes: {
-            type: 'array',
-            minItems: 1,
-            items: { type: 'integer', minimum: 100, maximum: 599 }
-        }
-    },
-    additionalProperties: false
-};
+const httpResponseSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.httpResponse, {
+    body: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.httpResponseBody },
+    maxBodyChars: integerSchema,
+    acceptedStatusCodes: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'integer', minimum: 100, maximum: 599 }
+    }
+});
 
-const waitMatchSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        kind: { type: 'string', enum: ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state'] },
-        topic: stringSchema,
-        commandId: stringSchema,
-        connection: stringSchema,
-        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
-        severity: { type: 'string', enum: ['debug', 'info', 'warning', 'error'] },
-        payloadPath: stringSchema,
-        equals: anySchema,
-        contains: stringSchema,
-        exists: booleanSchema,
-        sinceEpochMs: { type: 'integer', minimum: 0 }
-    },
-    additionalProperties: false
-};
+const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, {
+    kind: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchKind },
+    topic: stringSchema,
+    commandId: stringSchema,
+    connection: stringSchema,
+    transport: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchTransport },
+    severity: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchSeverity },
+    payloadPath: stringSchema,
+    equals: anySchema,
+    contains: stringSchema,
+    exists: booleanSchema,
+    sinceEpochMs: { type: 'integer', minimum: 0 }
+});
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: [
-        'equals',
-        'notEquals',
-        'contains',
-        'exists',
-        'gte',
-        'lte',
-        'gt',
-        'lt',
-        'between',
-        'length',
-        'matches',
-        'matchesShape',
-        'matchesShapeComplete'
-    ]
+    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
 };
 
-const parallelGroupSchema: JsonSchema = {
-    type: 'object',
-    required: ['commands'],
-    properties: {
-        groupId: stringSchema,
-        label: stringSchema,
-        commands: {
-            type: 'array',
-            minItems: 1,
-            items: recursiveCommandSchema
-        },
-        metadata: recordSchema
+const parallelGroupSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.parallelGroup, {
+    groupId: stringSchema,
+    label: stringSchema,
+    commands: {
+        type: 'array',
+        minItems: 1,
+        items: recursiveCommandSchema
     },
-    additionalProperties: false
-};
+    metadata: recordSchema
+});
 
-const loopThresholdsSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minAchievedRateHz: { type: 'number', minimum: 0 },
-        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
-        maxStartDriftMs: { type: 'number', minimum: 0 },
-        maxJitterMs: { type: 'number', minimum: 0 },
-        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
-        failOnBackpressure: booleanSchema
-    },
-    additionalProperties: false
-};
+const loopThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.loopThresholds, {
+    minAchievedRateHz: { type: 'number', minimum: 0 },
+    maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+    maxStartDriftMs: { type: 'number', minimum: 0 },
+    maxJitterMs: { type: 'number', minimum: 0 },
+    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 }
+});
 
-const messagesCarrierSchema: JsonSchema = { type: 'string', enum: ['ws', 'rtc', 'rtc-with-ws-fallback'] };
-const messagesReliabilitySchema: JsonSchema = { type: 'string', enum: ['best-effort', 'at-least-once'] };
-const messagesScopeSchema: JsonSchema = { type: 'string', enum: ['room', 'world', 'all'] };
-const messagesAckSchema: JsonSchema = {
+const messagesCarrierSchema: JsonSchema = {
     type: 'string',
-    enum: ['none', 'receiver', 'all-logical-recipients', 'group-leader']
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrier
 };
-const faultMatchSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        controlType: { type: 'string', enum: ['ack', 'nack', 'repair'] },
-        typeId: stringSchema,
-        msgId: stringSchema
-    },
-    additionalProperties: false
+const messagesReliabilitySchema: JsonSchema = {
+    type: 'string',
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReliability
 };
+const messagesScopeSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesScope };
+const messagesAckSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesAck };
+const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
+    controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
+    typeId: stringSchema,
+    msgId: stringSchema
+});
 const faultActionSchema: JsonSchema = {
     oneOf: [
         { type: 'string', enum: ['drop'] },
-        {
-            type: 'object',
-            required: ['delayMs'],
-            properties: { delayMs: numberSchema },
-            additionalProperties: false
-        }
+        strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSchema })
     ]
 };
 
-const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
-    configure: strictCommandSchema('configure', ['config'], {
+const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema>> = {
+    configure: strictCommandSchema('configure', {
         config: configSchema
     }),
-    'recipe.load': strictCommandSchema('recipe.load', ['recipe'], {
-        recipe: shallowRecipeSchema
+    'recipe.load': strictCommandSchema('recipe.load', {
+        recipe: inlineRecipeSchema
     }),
-    'recipe.run': strictCommandSchema('recipe.run', [], {
-        recipe: shallowRecipeSchema
+    'recipe.run': strictCommandSchema('recipe.run', {
+        recipe: inlineRecipeSchema
     }),
-    'recipe.cancel': strictCommandSchema('recipe.cancel', [], {
+    'recipe.cancel': strictCommandSchema('recipe.cancel', {
         reason: stringSchema
     }),
-    loop: strictCommandSchema('loop', ['commands'], {
+    loop: strictCommandSchema('loop', {
         commands: {
             type: 'array',
             minItems: 1,
@@ -568,7 +461,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         intervalMs: { type: 'integer', minimum: 0 },
         delayMs: { type: 'integer', minimum: 0 },
         continueOnFailure: booleanSchema,
-        until: { const: 'first-success' },
+        until: { const: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.loopUntil[0] },
         backoffMultiplier: { type: 'number', minimum: 1 },
         maxCommands: {
             type: 'integer',
@@ -577,7 +470,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         },
         thresholds: loopThresholdsSchema
     }),
-    parallel: strictCommandSchema('parallel', ['groups'], {
+    parallel: strictCommandSchema('parallel', {
         groups: {
             type: 'array',
             minItems: 1,
@@ -591,16 +484,16 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         failFast: booleanSchema,
         continueOnFailure: booleanSchema
     }),
-    wait: strictCommandSchema('wait', ['match'], {
+    wait: strictCommandSchema('wait', {
         match: waitMatchSchema,
         absent: { const: true }
     }),
-    assert: strictCommandSchema('assert', ['source', 'operator'], {
+    assert: strictCommandSchema('assert', {
         source: stringSchema,
         operator: assertOperatorSchema,
         expected: anySchema
     }),
-    'rtc.connect': strictCommandSchema('rtc.connect', [], {
+    'rtc.connect': strictCommandSchema('rtc.connect', {
         connection: stringSchema,
         actor: stringSchema,
         roomId: stringSchema,
@@ -613,7 +506,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         rallar: recordSchema,
         readiness: rtcConnectReadinessSchema
     }),
-    'rtc.send': strictCommandSchema('rtc.send', [], {
+    'rtc.send': strictCommandSchema('rtc.send', {
         connection: stringSchema,
         send: anySchema,
         applicationId: stringSchema,
@@ -624,7 +517,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         transport: rtcTransportSchema
     }),
     'rtc.stream': {
-        ...strictCommandSchema('rtc.stream', ['send'], {
+        ...strictCommandSchema('rtc.stream', {
             connection: stringSchema,
             actor: stringSchema,
             roomId: stringSchema,
@@ -661,7 +554,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             }
         ]
     },
-    'messages.send': strictCommandSchema('messages.send', ['carrier', 'typeId', 'payload'], {
+    'messages.send': strictCommandSchema('messages.send', {
         connection: stringSchema,
         carrier: messagesCarrierSchema,
         typeId: stringSchema,
@@ -676,16 +569,16 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         seq: numberSchema,
         handleId: stringSchema
     }),
-    'messages.observe': strictCommandSchema('messages.observe', ['handleId', 'state'], {
+    'messages.observe': strictCommandSchema('messages.observe', {
         connection: stringSchema,
         handleId: stringSchema,
         state: { type: 'array', items: stringSchema }
     }),
-    'messages.cancel': strictCommandSchema('messages.cancel', ['handleId'], {
+    'messages.cancel': strictCommandSchema('messages.cancel', {
         connection: stringSchema,
         handleId: stringSchema
     }),
-    'messages.received': strictCommandSchema('messages.received', ['typeId', 'count', 'windowMs'], {
+    'messages.received': strictCommandSchema('messages.received', {
         connection: stringSchema,
         typeId: stringSchema,
         msgId: stringSchema,
@@ -693,28 +586,24 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         absent: booleanSchema,
         windowMs: { type: 'integer', minimum: 0 }
     }),
-    'messages.receipts': strictCommandSchema('messages.receipts', ['handleId'], {
+    'messages.receipts': strictCommandSchema('messages.receipts', {
         connection: stringSchema,
         handleId: stringSchema
     }),
-    'fault.inject': strictCommandSchema(
-        'fault.inject',
-        ['faultId', 'carrier', 'match', 'action', 'remaining'],
-        {
-            faultId: stringSchema,
-            carrier: { type: 'string', enum: ['ws', 'rtc'] },
-            match: faultMatchSchema,
-            action: faultActionSchema,
-            remaining: numberSchema
-        }
-    ),
-    'storage.counters': strictCommandSchema('storage.counters', [], {
+    'fault.inject': strictCommandSchema('fault.inject', {
+        faultId: stringSchema,
+        carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultCarrier },
+        match: faultMatchSchema,
+        action: faultActionSchema,
+        remaining: numberSchema
+    }),
+    'storage.counters': strictCommandSchema('storage.counters', {
         reset: booleanSchema
     }),
-    'agent.reload': strictCommandSchema('agent.reload', ['readyTimeoutMs'], {
+    'agent.reload': strictCommandSchema('agent.reload', {
         readyTimeoutMs: { type: 'integer', minimum: 0 }
     }),
-    'ws.open': strictCommandSchema('ws.open', [], {
+    'ws.open': strictCommandSchema('ws.open', {
         connection: stringSchema,
         url: stringSchema,
         protocols: {
@@ -725,20 +614,20 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         },
         headers: stringRecordSchema
     }),
-    'ws.send': strictCommandSchema('ws.send', [], {
+    'ws.send': strictCommandSchema('ws.send', {
         connection: stringSchema,
         data: anySchema
     }),
-    'ws.close': strictCommandSchema('ws.close', [], {
+    'ws.close': strictCommandSchema('ws.close', {
         connection: stringSchema,
         code: integerSchema,
         reason: stringSchema
     }),
-    'http.request': strictCommandSchema('http.request', ['request'], {
+    'http.request': strictCommandSchema('http.request', {
         request: httpRequestSchema,
         response: httpResponseSchema
     }),
-    'crdt.open': strictCommandSchema('crdt.open', ['name'], {
+    'crdt.open': strictCommandSchema('crdt.open', {
         handle: stringSchema,
         name: stringSchema,
         applicationId: stringSchema,
@@ -758,22 +647,22 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         encryption: recordSchema,
         durableCatchUp: crdtDurableCatchUpSchema
     }),
-    'crdt.apply': strictCommandSchema('crdt.apply', ['handle', 'batch'], {
+    'crdt.apply': strictCommandSchema('crdt.apply', {
         handle: stringSchema,
         batch: crdtOperationBatchSchema
     }),
-    'crdt.read': strictCommandSchema('crdt.read', ['handle'], {
+    'crdt.read': strictCommandSchema('crdt.read', {
         handle: stringSchema
     }),
-    'crdt.sync': strictCommandSchema('crdt.sync', ['handle'], {
+    'crdt.sync': strictCommandSchema('crdt.sync', {
         handle: stringSchema,
         reason: stringSchema,
         transport: crdtTransportSchema
     }),
-    'crdt.health': strictCommandSchema('crdt.health', ['handle'], {
+    'crdt.health': strictCommandSchema('crdt.health', {
         handle: stringSchema
     }),
-    'crdt.wait': strictCommandSchema('crdt.wait', ['handle', 'conditions'], {
+    'crdt.wait': strictCommandSchema('crdt.wait', {
         handle: stringSchema,
         intervalMs: { type: 'integer', minimum: 0 },
         stableForMs: { type: 'integer', minimum: 0 },
@@ -784,1471 +673,105 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             items: crdtWaitConditionSchema
         }
     }),
-    'crdt.undo': strictCommandSchema('crdt.undo', ['handle', 'targetOperationGroupId', 'operations'], {
+    'crdt.undo': strictCommandSchema('crdt.undo', {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
         operationGroupId: stringSchema
     }),
-    'crdt.redo': strictCommandSchema('crdt.redo', ['handle', 'targetOperationGroupId', 'operations'], {
+    'crdt.redo': strictCommandSchema('crdt.redo', {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
         operationGroupId: stringSchema
     }),
-    'crdt.close': strictCommandSchema('crdt.close', ['handle'], {
+    'crdt.close': strictCommandSchema('crdt.close', {
         handle: stringSchema
     }),
-    'crdt.destroy': strictCommandSchema('crdt.destroy', ['handle'], {
+    'crdt.destroy': strictCommandSchema('crdt.destroy', {
         handle: stringSchema
     }),
-    'director.appoint': strictCommandSchema('director.appoint', [], {
+    'director.appoint': strictCommandSchema('director.appoint', {
         ...commandRoomProperties,
         heartbeatTtlMs: { type: 'integer', minimum: 1 }
     }),
-    'director.resign': strictCommandSchema('director.resign', [], {
+    'director.resign': strictCommandSchema('director.resign', {
         ...commandRoomProperties
     }),
-    'director.status': strictCommandSchema('director.status', [], {
+    'director.status': strictCommandSchema('director.status', {
         ...commandRoomProperties,
         refresh: booleanSchema,
         now: numberSchema
     }),
-    'director.relay.start': strictCommandSchema('director.relay.start', ['handle', 'intentTypeId', 'outputTypeId'], {
+    'director.relay.start': strictCommandSchema('director.relay.start', {
         ...commandRoomProperties,
         ...directorRelayConfigProperties
     }),
-    'director.intent': strictCommandSchema('director.intent', ['handle', 'intent'], {
+    'director.intent': strictCommandSchema('director.intent', {
         handle: stringSchema,
         intent: anySchema
     }),
-    'director.sync.request': strictCommandSchema('director.sync.request', ['handle'], {
+    'director.sync.request': strictCommandSchema('director.sync.request', {
         handle: stringSchema,
         payload: anySchema
     }),
-    'director.relay.stop': strictCommandSchema('director.relay.stop', ['handle'], {
+    'director.relay.stop': strictCommandSchema('director.relay.stop', {
         handle: stringSchema
     }),
-    'formation.command': strictCommandSchema('formation.command', ['command'], {
+    'formation.command': strictCommandSchema('formation.command', {
         ...commandRoomProperties,
         command: {
             type: 'string',
-            enum: [
-                'plan',
-                'connect',
-                'activate',
-                'reconfigure',
-                'pause',
-                'resume',
-                'reset',
-                'start'
-            ]
+            enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.formationCommand
         },
         layout: recordSchema,
         landing: { type: 'string', enum: ['apply', 'hold'] },
         reason: stringSchema
     }),
-    'formation.readiness': strictCommandSchema('formation.readiness', [], {
+    'formation.readiness': strictCommandSchema('formation.readiness', {
         ...commandRoomProperties
     }),
-    health: strictCommandSchema('health', [], {
+    health: strictCommandSchema('health', {
         includeRtcDiagnostics: booleanSchema
     }),
-    stats: strictCommandSchema('stats', []),
-    close: strictCommandSchema('close', []),
-    reset: strictCommandSchema('reset', [])
+    stats: strictCommandSchema('stats', {}),
+    close: strictCommandSchema('close', {}),
+    reset: strictCommandSchema('reset', {})
 };
-
-export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxCommandCapability[] = [
-    {
-        kind: 'configure',
-        title: 'Configure Runtime',
-        description: 'Sets run, agent, provider, default room, transport, browser, control, and redaction context.',
-        requiredFields: ['config'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['runtime configuration snapshot', 'redacted config in reports'],
-        example: {
-            kind: 'configure',
-            commandId: 'configure-local-agent',
-            config: {
-                runId: 'schema-example-run',
-                agentId: 'agent-1',
-                environment: 'local',
-                apiBaseUrl: 'http://localhost:8080',
-                actor: 'alice',
-                roomId: 'bb-group',
-                transport: 'realtime'
-            }
-        }
-    },
-    {
-        kind: 'recipe.load',
-        title: 'Load Recipe',
-        description: 'Stages a recipe in a browser agent without starting unrelated shell execution.',
-        requiredFields: ['recipe'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['loaded recipe metadata', 'readiness/ACK result when used for staging'],
-        example: {
-            kind: 'recipe.load',
-            commandId: 'load-health-recipe',
-            recipe: {
-                recipeId: 'health-only',
-                commands: [{ kind: 'health', commandId: 'loaded-health' }]
-            }
-        }
-    },
-    {
-        kind: 'recipe.run',
-        title: 'Run Recipe',
-        description: 'Runs an inline or previously loaded browser-agent recipe and records command results.',
-        requiredFields: [],
-        optionalFields: ['recipe', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['per-command results', 'events', 'stats', 'final report'],
-        example: {
-            kind: 'recipe.run',
-            commandId: 'run-health-recipe',
-            recipe: {
-                recipeId: 'health-run',
-                commands: [{ kind: 'health', commandId: 'run-health' }]
-            }
-        }
-    },
-    {
-        kind: 'recipe.cancel',
-        title: 'Cancel Recipe',
-        description: 'Requests cancellation of the active browser-agent recipe.',
-        requiredFields: [],
-        optionalFields: ['reason', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['cancel result', 'partial command history'],
-        example: {
-            kind: 'recipe.cancel',
-            commandId: 'cancel-active-recipe',
-            reason: 'operator requested cancellation'
-        }
-    },
-    {
-        kind: 'loop',
-        title: 'Loop Commands',
-        description:
-            'Composite browser-agent command that repeats child commands with bounded count or duration and optional cadence.',
-        requiredFields: ['commands'],
-        optionalFields: [
-            'count',
-            'durationMs',
-            'intervalMs',
-            'delayMs',
-            'continueOnFailure',
-            'until',
-            'backoffMultiplier',
-            'maxCommands',
-            'thresholds',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['same live requirements as its child commands'],
-        artifactExpectations: ['parent loop rollup', 'per-child command results', 'iteration metadata'],
-        example: {
-            kind: 'loop',
-            commandId: 'loop-rtc-position',
-            count: 3,
-            intervalMs: 50,
-            thresholds: {
-                minAchievedRateHz: 10,
-                minSendSuccessRatio: 0.95
-            },
-            commands: [
-                {
-                    kind: 'rtc.send',
-                    commandId: 'loop-position-send',
-                    connection: 'aliceRtc',
-                    transport: 'realtime',
-                    send: {
-                        roomId: 'bb-group',
-                        data: {
-                            topic: 'schema.example.loop.position',
-                            seq: '{loop.index}'
-                        }
-                    }
-                }
-            ]
-        }
-    },
-    {
-        kind: 'parallel',
-        title: 'Parallel Command Groups',
-        description:
-            'Composite browser-agent command that runs bounded groups concurrently while each group runs its child commands sequentially.',
-        requiredFields: ['groups'],
-        optionalFields: [
-            'maxConcurrency',
-            'failFast',
-            'continueOnFailure',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['same live requirements as its child commands'],
-        artifactExpectations: ['parent parallel rollup', 'per-group summaries', 'per-child command results'],
-        example: {
-            kind: 'parallel',
-            commandId: 'parallel-room-traffic',
-            maxConcurrency: 2,
-            failFast: true,
-            groups: [
-                {
-                    groupId: 'alice-sends',
-                    commands: [
-                        {
-                            kind: 'ws.send',
-                            commandId: 'alice-ws-send',
-                            connection: 'apiWs',
-                            data: {
-                                typeId: 'schema.example.parallel.alice',
-                                payload: {
-                                    text: 'alice'
-                                }
-                            }
-                        }
-                    ]
-                },
-                {
-                    groupId: 'bob-sends',
-                    commands: [
-                        {
-                            kind: 'health',
-                            commandId: 'bob-health'
-                        }
-                    ]
-                }
-            ]
-        }
-    },
-    {
-        kind: 'wait',
-        title: 'Wait For Runtime Evidence',
-        description:
-            'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
-        requiredFields: ['match'],
-        optionalFields: [
-            'absent',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [
-            'the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'
-        ],
-        artifactExpectations: ['matched event in the command result', 'timeout failure when evidence does not appear'],
-        example: {
-            kind: 'wait',
-            commandId: 'wait-for-room-position',
-            timeoutMs: 5_000,
-            match: {
-                kind: 'message',
-                topic: 'rallar.browser.realtime.message',
-                transport: 'realtime',
-                payloadPath: 'data.topic',
-                equals: 'room.position'
-            }
-        }
-    },
-    {
-        kind: 'assert',
-        title: 'Assert Runtime Evidence',
-        description:
-            'Checks a read-only browser-agent evidence source with equality, containment, numeric-bound, length, regex, and JSON-shape operators.',
-        requiredFields: ['source', 'operator'],
-        optionalFields: ['expected', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['the asserted source must be present in the browser-agent runtime state'],
-        artifactExpectations: [
-            'assert result with redacted actual and expected values',
-            'failed command result when the assertion is false'
-        ],
-        example: {
-            kind: 'assert',
-            commandId: 'assert-received-count',
-            source: 'state.messages.length',
-            operator: 'gte',
-            expected: 1
-        }
-    },
-    {
-        kind: 'rtc.connect',
-        title: 'RTC Connect',
-        description: 'Connects an RTC/realtime provider and can wait for exact-room ready peers.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'actor',
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'rallar',
-            'readiness',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['Rallar API and signaling when provider mode is browser-rallar or rallar-browser'],
-        artifactExpectations: ['connect diagnostics', 'readiness diagnostics', 'RTC stats'],
-        example: {
-            kind: 'rtc.connect',
-            commandId: 'connect-alice-rtc',
-            connection: 'aliceRtc',
-            actor: 'alice',
-            roomId: 'bb-group',
-            roomRef: { applicationId: 'rallar-server', groupId: 'bb-group' },
-            transport: 'realtime',
-            readiness: {
-                minReadyPeers: 1,
-                timeoutMs: 10_000,
-                intervalMs: 100
-            },
-            timeoutMs: 15_000
-        }
-    },
-    {
-        kind: 'rtc.send',
-        title: 'RTC Send',
-        description: 'Sends JSON through a connected RTC/realtime provider.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'send',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: [
-            'active RTC connection',
-            'Rallar signaling when using browser-rallar or rallar-browser'
-        ],
-        artifactExpectations: [
-            'send result',
-            'message events',
-            'NACK/failure diagnostics when delivery cannot complete'
-        ],
-        example: {
-            kind: 'rtc.send',
-            commandId: 'send-rtc-json',
-            connection: 'aliceRtc',
-            transport: 'realtime',
-            send: {
-                roomId: 'bb-group',
-                data: {
-                    topic: 'schema.example.rtc',
-                    text: 'hello over RTC'
-                }
-            },
-            timeoutMs: 5_000
-        }
-    },
-    {
-        kind: 'rtc.stream',
-        title: 'RTC Stream',
-        description:
-            'Schedules a bounded RTC/realtime frame stream inside one browser-agent command and records aggregate pacing, delivery, and latency metrics.',
-        requiredFields: ['send'],
-        optionalFields: [
-            'connection',
-            'actor',
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'count',
-            'durationMs',
-            'intervalMs',
-            'rateHz',
-            'maxInFlight',
-            'drainTimeoutMs',
-            'continueOnSendFailure',
-            'progressEveryMs',
-            'sampleEvery',
-            'thresholds',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: [
-            'active RTC connection',
-            'Rallar signaling when using browser-rallar or rallar-browser'
-        ],
-        artifactExpectations: [
-            'stream started/progress/completed diagnostics',
-            'aggregate frame delivery metrics',
-            'p50/p95/p99/max send duration'
-        ],
-        example: {
-            kind: 'rtc.stream',
-            commandId: 'stream-rtc-position',
-            connection: 'aliceRtc',
-            transport: 'realtime',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            count: 3,
-            intervalMs: 50,
-            maxInFlight: 64,
-            drainTimeoutMs: 5_000,
-            send: {
-                roomId: 'bb-group',
-                data: {
-                    topic: 'schema.example.rtc.stream.position',
-                    seq: '{stream.index}',
-                    frame: '{stream.iteration}',
-                    tMs: '{stream.elapsedMs}'
-                }
-            },
-            thresholds: {
-                minSendSuccessRatio: 0.99,
-                maxDroppedFrames: 0
-            },
-            timeoutMs: 10_000
-        }
-    },
-    {
-        kind: 'messages.send',
-        title: 'Send ALM Message',
-        description:
-            'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status.',
-        requiredFields: ['carrier', 'typeId', 'payload'],
-        optionalFields: [
-            'connection',
-            'topicId',
-            'roomRef',
-            'scope',
-            'reliability',
-            'ack',
-            'ttlMs',
-            'orderingKey',
-            'seq',
-            'handleId',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['send result with handleId, carrier, and admission status'],
-        example: {
-            kind: 'messages.send',
-            commandId: 'send-alm-message',
-            carrier: 'ws',
-            typeId: 'alm.conformance',
-            payload: { n: 1 },
-            handleId: 'alm-send-1'
-        }
-    },
-    {
-        kind: 'messages.observe',
-        title: 'Observe ALM Send',
-        description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
-            'The states are rejected, accepted, queued, transport-accepted, acknowledged, expired, ' +
-            'superseded, failed, and cancelled; this release derives them from the local admission ' +
-            'ledger, so a send settles on accepted or rejected and never advances on a peer receipt.',
-        requiredFields: ['handleId', 'state'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['observed delivery state', 'submitted flag and attempt count'],
-        example: {
-            kind: 'messages.observe',
-            commandId: 'observe-alm-send',
-            handleId: 'alm-send-1',
-            state: ['accepted']
-        }
-    },
-    {
-        kind: 'messages.cancel',
-        title: 'Cancel ALM Send',
-        description: 'Moves the local delivery ledger entry of a messages.send handle to cancelled ' +
-            'regardless of its current state; it does not recall a message the transport already accepted.',
-        requiredFields: ['handleId'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['cancel result for the handle'],
-        example: {
-            kind: 'messages.cancel',
-            commandId: 'cancel-alm-send',
-            handleId: 'alm-send-1'
-        }
-    },
-    {
-        kind: 'messages.received',
-        title: 'Assert ALM Messages Received',
-        description: 'Counts messages of a typeId (optionally one msgId) on the whole inbound event log and ' +
-            'compares against an expected count. A presence claim settles as soon as the count is ' +
-            'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
-            '(at least one) arrived.',
-        requiredFields: ['typeId', 'count', 'windowMs'],
-        optionalFields: [
-            'connection',
-            'msgId',
-            'absent',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['received-count result', 'window evaluation diagnostics'],
-        example: {
-            kind: 'messages.received',
-            commandId: 'assert-alm-received',
-            typeId: 'alm.conformance',
-            count: 1,
-            windowMs: 5_000
-        }
-    },
-    {
-        kind: 'messages.receipts',
-        title: 'Read ALM Receipts',
-        description: 'Reads the delivery ledger observation recorded for a messages.send handle. This release ' +
-            'derives that observation from local admission, so confirmedPeerIds and unconfirmedPeerIds ' +
-            'stay empty until real acknowledgements land.',
-        requiredFields: ['handleId'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['api-v1'],
-        artifactExpectations: ['ledger observation for the handle'],
-        example: {
-            kind: 'messages.receipts',
-            commandId: 'read-alm-receipts',
-            handleId: 'alm-send-1'
-        }
-    },
-    {
-        kind: 'fault.inject',
-        title: 'Inject Transport Fault',
-        description:
-            'Schedules a scripted drop or delay for matching ws/rtc traffic, bounded by a remaining-match count.',
-        requiredFields: ['faultId', 'carrier', 'match', 'action', 'remaining'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['fault registration result'],
-        example: {
-            kind: 'fault.inject',
-            commandId: 'inject-nack-drop',
-            faultId: 'drop-one-nack',
-            carrier: 'ws',
-            match: { controlType: 'nack' },
-            action: 'drop',
-            remaining: 1
-        }
-    },
-    {
-        kind: 'storage.counters',
-        title: 'Read Storage Counters',
-        description: 'Reads (and optionally resets) the AL-owned IndexedDB operation counters by owner ' +
-            '(al-admission, al-work) and by operation kind. The scripted storage observer is only ' +
-            'attached when the active connection names an application.',
-        requiredFields: [],
-        optionalFields: ['reset', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['total/byOwner/byKind storage counters'],
-        example: {
-            kind: 'storage.counters',
-            commandId: 'read-storage-counters'
-        }
-    },
-    {
-        kind: 'agent.reload',
-        title: 'Reload Agent',
-        description: 'Asks the control agent to reload its page and resume the run when it is ready again. ' +
-            'On the spa-local surface nothing reloads and the command only records the request.',
-        requiredFields: ['readyTimeoutMs'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['reload readiness result'],
-        example: {
-            kind: 'agent.reload',
-            commandId: 'reload-agent',
-            readyTimeoutMs: 10_000
-        }
-    },
-    {
-        kind: 'ws.open',
-        title: 'WebSocket Open',
-        description: 'Opens a browser-agent WebSocket connection.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'url',
-            'protocols',
-            'headers',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['WebSocket endpoint and ticket/token when the target server requires auth'],
-        artifactExpectations: ['open result', 'socket state events', 'close/error diagnostics'],
-        example: {
-            kind: 'ws.open',
-            commandId: 'open-api-websocket',
-            connection: 'apiWs',
-            url: 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
-            timeoutMs: 10_000
-        }
-    },
-    {
-        kind: 'ws.send',
-        title: 'WebSocket Send',
-        description: 'Sends JSON or text through an open WebSocket connection.',
-        requiredFields: [],
-        optionalFields: ['connection', 'data', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['open WebSocket connection'],
-        artifactExpectations: ['send result', 'message events when the server echoes or routes the payload'],
-        example: {
-            kind: 'ws.send',
-            commandId: 'send-ws-json',
-            connection: 'apiWs',
-            data: {
-                typeId: 'schema.example.ws',
-                topicId: 'schema.example.ws',
-                payload: {
-                    text: 'hello over WebSocket'
-                }
-            },
-            timeoutMs: 5_000
-        }
-    },
-    {
-        kind: 'ws.close',
-        title: 'WebSocket Close',
-        description: 'Closes a named WebSocket connection.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'code',
-            'reason',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['open or known WebSocket connection'],
-        artifactExpectations: ['close result', 'socket close event'],
-        example: {
-            kind: 'ws.close',
-            commandId: 'close-api-websocket',
-            connection: 'apiWs',
-            code: 1000,
-            reason: 'schema example complete'
-        }
-    },
-    {
-        kind: 'http.request',
-        title: 'HTTP Request',
-        description:
-            'Runs a fetch-compatible HTTP request and stores response metadata/body according to response options.',
-        requiredFields: ['request'],
-        optionalFields: ['response', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['HTTP endpoint', 'access token for protected Rallar Server APIs'],
-        artifactExpectations: ['request timing', 'HTTP status', 'redacted response body'],
-        example: {
-            kind: 'http.request',
-            commandId: 'get-rallar-health',
-            request: {
-                method: 'GET',
-                path: '/health'
-            },
-            response: {
-                body: 'json'
-            },
-            timeoutMs: 5_000
-        }
-    },
-    {
-        kind: 'crdt.open',
-        title: 'CRDT Open',
-        description: 'Opens a Rallar CRDT document through the browser Rallar facade and stores it under a handle.',
-        requiredFields: ['name'],
-        optionalFields: [
-            'handle',
-            'applicationId',
-            'workspaceId',
-            'documentId',
-            'documentType',
-            'scope',
-            'roomRef',
-            'principalId',
-            'customScope',
-            'transport',
-            'persist',
-            'tabSync',
-            'initialValue',
-            'policies',
-            'validation',
-            'encryption',
-            'durableCatchUp',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: [
-            'Rallar browser runtime with CRDT facade; live service only when transport is not local-only'
-        ],
-        artifactExpectations: ['document ref', 'handle', 'transport strategy', 'initial health'],
-        example: {
-            kind: 'crdt.open',
-            commandId: 'open-crdt-checklist',
-            handle: 'checklist',
-            name: 'checklist',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            documentType: 'checklist',
-            documentId: 'room-1',
-            scope: {
-                kind: 'room'
-            },
-            roomRef: {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'room-1'
-            },
-            transport: 'ws',
-            persist: true,
-            tabSync: true,
-            durableCatchUp: 'http',
-            initialValue: {
-                items: []
-            },
-            timeoutMs: 10_000
-        }
-    },
-    {
-        kind: 'crdt.apply',
-        title: 'CRDT Apply',
-        description: 'Applies an existing Rallar CRDT operation batch to an opened document handle.',
-        requiredFields: ['handle', 'batch'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle'],
-        artifactExpectations: ['update id', 'materialized value', 'pending counts', 'health'],
-        example: {
-            kind: 'crdt.apply',
-            commandId: 'apply-crdt-title',
-            handle: 'checklist',
-            batch: {
-                kind: 'batch',
-                operationGroupId: 'group-title-1',
-                operations: [
-                    {
-                        kind: 'register.set',
-                        path: ['title'],
-                        value: 'Ready',
-                        policy: 'lww'
-                    }
-                ]
-            }
-        }
-    },
-    {
-        kind: 'crdt.read',
-        title: 'CRDT Read',
-        description: 'Reads the materialized value and ref from an opened CRDT document handle.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle'],
-        artifactExpectations: ['materialized CRDT value', 'document ref', 'health'],
-        example: {
-            kind: 'crdt.read',
-            commandId: 'read-crdt-checklist',
-            handle: 'checklist'
-        }
-    },
-    {
-        kind: 'crdt.sync',
-        title: 'CRDT Sync',
-        description: 'Runs CRDT document sync with an optional transport override.',
-        requiredFields: ['handle'],
-        optionalFields: ['reason', 'transport', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle; live transport or HTTP catch-up when configured'],
-        artifactExpectations: ['sync status', 'transport strategy', 'sent/received counts', 'pending counts'],
-        example: {
-            kind: 'crdt.sync',
-            commandId: 'sync-crdt-checklist',
-            handle: 'checklist',
-            reason: 'black-box-convergence-check',
-            transport: 'ws',
-            timeoutMs: 10_000
-        }
-    },
-    {
-        kind: 'crdt.health',
-        title: 'CRDT Status',
-        description: 'Returns health for an opened CRDT document handle.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle'],
-        artifactExpectations: ['pending/failed/dependency counts', 'transport strategy', 'integrity status'],
-        example: {
-            kind: 'crdt.health',
-            commandId: 'health-crdt-checklist',
-            handle: 'checklist'
-        }
-    },
-    {
-        kind: 'crdt.wait',
-        title: 'CRDT Wait',
-        description: 'Polls an opened CRDT document until materialized value or health conditions match.',
-        requiredFields: ['handle', 'conditions'],
-        optionalFields: [
-            'intervalMs',
-            'stableForMs',
-            'sync',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: [
-            'opened CRDT document handle; live transport or HTTP catch-up when sync is requested'
-        ],
-        artifactExpectations: [
-            'matched materialized value or health',
-            'attempt count',
-            'wait duration',
-            'last sync result'
-        ],
-        example: {
-            kind: 'crdt.wait',
-            commandId: 'wait-crdt-checklist-converged',
-            handle: 'checklist',
-            timeoutMs: 10_000,
-            intervalMs: 250,
-            stableForMs: 500,
-            sync: {
-                reason: 'black-box-crdt-wait',
-                transport: 'ws'
-            },
-            conditions: [
-                {
-                    source: 'value',
-                    path: 'title',
-                    operator: 'equals',
-                    expected: 'Ready'
-                },
-                {
-                    source: 'health',
-                    path: 'pendingUpdateCount',
-                    operator: 'equals',
-                    expected: 0
-                },
-                {
-                    source: 'health',
-                    path: 'dependencyBlockedUpdateCount',
-                    operator: 'equals',
-                    expected: 0
-                }
-            ]
-        }
-    },
-    {
-        kind: 'crdt.undo',
-        title: 'CRDT Undo',
-        description: 'Applies actor-owned CRDT undo operations for a target operation group.',
-        requiredFields: ['handle', 'targetOperationGroupId', 'operations'],
-        optionalFields: ['operationGroupId', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle and caller-supplied inverse operations'],
-        artifactExpectations: ['undo update id', 'materialized value', 'health'],
-        example: {
-            kind: 'crdt.undo',
-            commandId: 'undo-crdt-title',
-            handle: 'checklist',
-            targetOperationGroupId: 'group-title-1',
-            operationGroupId: 'undo-title-1',
-            operations: [
-                {
-                    kind: 'register.set',
-                    path: ['title'],
-                    value: 'Untitled',
-                    policy: 'lww'
-                }
-            ]
-        }
-    },
-    {
-        kind: 'crdt.redo',
-        title: 'CRDT Redo',
-        description: 'Reapplies actor-owned CRDT redo operations for a target operation group.',
-        requiredFields: ['handle', 'targetOperationGroupId', 'operations'],
-        optionalFields: ['operationGroupId', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle and caller-supplied redo operations'],
-        artifactExpectations: ['redo update id', 'materialized value', 'health'],
-        example: {
-            kind: 'crdt.redo',
-            commandId: 'redo-crdt-title',
-            handle: 'checklist',
-            targetOperationGroupId: 'group-title-1',
-            operationGroupId: 'redo-title-1',
-            operations: [
-                {
-                    kind: 'register.set',
-                    path: ['title'],
-                    value: 'Ready',
-                    policy: 'lww'
-                }
-            ]
-        }
-    },
-    {
-        kind: 'crdt.close',
-        title: 'CRDT Close',
-        description: 'Closes an opened CRDT document handle without destroying local durable artifacts.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle'],
-        artifactExpectations: ['close result and final health snapshot when available'],
-        example: {
-            kind: 'crdt.close',
-            commandId: 'close-crdt-checklist',
-            handle: 'checklist'
-        }
-    },
-    {
-        kind: 'crdt.destroy',
-        title: 'CRDT Destroy',
-        description: 'Destroys an opened CRDT document handle and its local browser artifacts.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle'],
-        artifactExpectations: ['destroy result and removed handle'],
-        example: {
-            kind: 'crdt.destroy',
-            commandId: 'destroy-crdt-checklist',
-            handle: 'checklist'
-        }
-    },
-    {
-        kind: 'director.appoint',
-        title: 'Appoint SPA Director',
-        description: 'Appoints the current browser session as the Rallar group director through the browser facade.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'heartbeatTtlMs',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['connected browser Rallar session with group update authorization'],
-        artifactExpectations: ['director appointment status', 'updated director metadata'],
-        example: {
-            kind: 'director.appoint',
-            commandId: 'appoint-director',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            heartbeatTtlMs: 1_200
-        }
-    },
-    {
-        kind: 'director.resign',
-        title: 'Resign SPA Director',
-        description: 'Clears the current browser session director appointment when it is the appointed director.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['connected browser Rallar session'],
-        artifactExpectations: ['director resignation status', 'updated director metadata'],
-        example: {
-            kind: 'director.resign',
-            commandId: 'resign-director',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default'
-        }
-    },
-    {
-        kind: 'director.status',
-        title: 'Read SPA Director Status',
-        description:
-            'Reads local director appointment, freshness, and role state, optionally refreshing room metadata first.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'refresh',
-            'now',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['connected browser Rallar session; Rallar API when refresh is true'],
-        artifactExpectations: ['director role, freshness, appointment epoch, and session id'],
-        example: {
-            kind: 'director.status',
-            commandId: 'director-status',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            refresh: true
-        }
-    },
-    {
-        kind: 'director.relay.start',
-        title: 'Start SPA Director Relay',
-        description:
-            'Starts a deterministic test relay backed by rallar.director.createRelay and stores it under a handle.',
-        requiredFields: ['handle', 'intentTypeId', 'outputTypeId'],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'laneId',
-            'topicId',
-            'heartbeatTypeId',
-            'snapshotTypeId',
-            'syncRequestTypeId',
-            'heartbeatIntervalMs',
-            'snapshotIntervalMs',
-            'snapshot',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['connected browser Rallar session with RTC/WS message subscriptions'],
-        artifactExpectations: ['relay start diagnostics', 'director intent/output/snapshot events'],
-        example: {
-            kind: 'director.relay.start',
-            commandId: 'start-director-relay',
-            handle: 'game-director',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            topicId: 'app.black-box.director',
-            intentTypeId: 'app.black-box.director.intent',
-            outputTypeId: 'app.black-box.director.output',
-            heartbeatIntervalMs: 300,
-            snapshotIntervalMs: 500
-        }
-    },
-    {
-        kind: 'director.intent',
-        title: 'Send SPA Director Intent',
-        description: 'Sends an intent through a started director relay toward the appointed director.',
-        requiredFields: ['handle', 'intent'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['started director relay and fresh director appointment'],
-        artifactExpectations: ['intent send result and downstream director output events'],
-        example: {
-            kind: 'director.intent',
-            commandId: 'send-director-intent',
-            handle: 'game-director',
-            intent: {
-                intentId: 'intent-1',
-                action: 'move',
-                x: 1,
-                y: 0
-            }
-        }
-    },
-    {
-        kind: 'director.sync.request',
-        title: 'Request SPA Director Sync',
-        description: 'Requests a director snapshot through a started director relay.',
-        requiredFields: ['handle'],
-        optionalFields: ['payload', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['started director relay and fresh director appointment'],
-        artifactExpectations: ['sync request send result and snapshot events'],
-        example: {
-            kind: 'director.sync.request',
-            commandId: 'request-director-sync',
-            handle: 'game-director',
-            payload: {
-                reason: 'late-join'
-            }
-        }
-    },
-    {
-        kind: 'director.relay.stop',
-        title: 'Stop SPA Director Relay',
-        description: 'Stops a previously started director relay and clears its heartbeat/snapshot timers.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
-        runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['started director relay handle'],
-        artifactExpectations: ['relay stop diagnostics and final relay counters'],
-        example: {
-            kind: 'director.relay.stop',
-            commandId: 'stop-director-relay',
-            handle: 'game-director'
-        }
-    },
-    {
-        kind: 'formation.command',
-        title: 'Command Room Formation',
-        description:
-            'Issues one of the eight room formation lifecycle commands through the browser facade and reports the receipt beside the room formation summary.',
-        requiredFields: ['command'],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'layout',
-            'landing',
-            'reason',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['connected browser Rallar session holding the named room'],
-        artifactExpectations: ['group snapshot receipt', 'room formation summary'],
-        example: {
-            kind: 'formation.command',
-            commandId: 'formation-plan',
-            command: 'plan',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default'
-        }
-    },
-    {
-        kind: 'formation.readiness',
-        title: 'Await Room Readiness',
-        description:
-            'Awaits the browser\'s own room readiness without refreshing the room or opening lanes, and reports the room formation summary captured when it resolved.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
-        supportedProviderModes: ['browser-rallar'],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['connected browser Rallar session holding the named room'],
-        artifactExpectations: ['room formation summary at the tick readiness resolved'],
-        example: {
-            kind: 'formation.readiness',
-            commandId: 'formation-readiness',
-            roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default'
-        }
-    },
-    {
-        kind: 'health',
-        title: 'Health',
-        description: 'Returns browser-agent runtime health without network side effects.',
-        requiredFields: [],
-        optionalFields: ['includeRtcDiagnostics', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['runtime status snapshot'],
-        example: {
-            kind: 'health',
-            commandId: 'health-check',
-            label: 'Health check'
-        }
-    },
-    {
-        kind: 'stats',
-        title: 'Stats',
-        description: 'Captures a browser-agent stats snapshot.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['command counts', 'event counts', 'latest status'],
-        example: {
-            kind: 'stats',
-            commandId: 'stats-snapshot'
-        }
-    },
-    {
-        kind: 'close',
-        title: 'Close',
-        description: 'Closes active browser-agent transports without clearing the whole runtime state.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['transport close events', 'final stats'],
-        example: {
-            kind: 'close',
-            commandId: 'close-transports'
-        }
-    },
-    {
-        kind: 'reset',
-        title: 'Reset',
-        description: 'Resets browser-agent runtime command state and closes active transports.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: [
-            'simulated',
-            'browser-rallar',
-            'rallar-browser',
-            'rallar-remote-browser',
-            'rallar-memory',
-            'mixed'
-        ],
-        runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: [],
-        artifactExpectations: ['reset result', 'new idle runtime state'],
-        example: {
-            kind: 'reset',
-            commandId: 'reset-agent'
-        }
+const commandSchema: JsonSchema = {
+    oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind])
+};
+const recipeSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe, {
+    schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
+    recipeId: stringSchema,
+    name: stringSchema,
+    description: stringSchema,
+    continueOnFailure: booleanSchema,
+    metadata: recordSchema,
+    commands: {
+        type: 'array',
+        items: recursiveCommandSchema
     }
-];
+});
+const commandDefinitions: Readonly<Record<string, JsonSchema>> = { command: commandSchema, recipe: recipeSchema };
 
 export const RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA: JsonSchema = {
     $schema: JSON_SCHEMA_DRAFT,
     $id: `${SCHEMA_BASE_ID}/rallar-bb-test-command.schema.json`,
+    $defs: commandDefinitions,
     title: 'Rallar black-box browser-agent command',
     description: 'Command JSON accepted by the SPA runtime and browser control agents.',
-    oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind]),
+    ...commandSchema,
     examples: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => capability.example)
 };
-
-recursiveCommandSchema.oneOf = RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.oneOf;
 
 export const RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA: JsonSchema = {
     $schema: JSON_SCHEMA_DRAFT,
     $id: `${SCHEMA_BASE_ID}/rallar-bb-test-recipe.schema.json`,
+    $defs: commandDefinitions,
     title: 'Rallar black-box browser-agent recipe',
     description: 'A browser-agent recipe made from rallar-bb-test commands.',
-    type: 'object',
-    required: ['recipeId', 'commands'],
-    properties: {
-        schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
-        recipeId: stringSchema,
-        name: stringSchema,
-        description: stringSchema,
-        continueOnFailure: booleanSchema,
-        metadata: recordSchema,
-        commands: {
-            type: 'array',
-            items: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA
-        }
-    },
-    additionalProperties: false
+    ...recipeSchema
 };
 
 export const RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA: JsonSchema = {
@@ -2405,41 +928,3 @@ export const RALLAR_BLACK_BOX_SCHEMA_CATALOG = {
     controlCommandEnvelope: RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     distributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
 } as const;
-
-export function validateRallarBlackBoxRecipeCompatibility(
-    value: unknown
-): RallarBlackBoxRecipeCompatibilityResult {
-    const root = isJsonRecordValue(value) ? value : {};
-    const explicitSchemaVersion = root.schemaVersion;
-    const schemaValidation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value);
-    const warnings: JsonSchemaValidationIssue[] = explicitSchemaVersion === undefined
-        ? [{
-            path: '$.schemaVersion',
-            message: 'No explicit schemaVersion was found; treating recipe as compatible v1.'
-        }]
-        : [];
-
-    if (!schemaValidation.ok) {
-        return {
-            ok: false,
-            schemaVersion: explicitSchemaVersion === RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
-                ? RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
-                : undefined,
-            explicitSchemaVersion,
-            legacy: explicitSchemaVersion === undefined,
-            warnings,
-            errors: schemaValidation.errors
-        };
-    }
-
-    return {
-        ok: true,
-        schemaVersion: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
-        explicitSchemaVersion: explicitSchemaVersion === RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
-            ? RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
-            : undefined,
-        legacy: explicitSchemaVersion === undefined,
-        warnings,
-        errors: []
-    };
-}

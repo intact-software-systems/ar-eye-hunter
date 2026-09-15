@@ -10,7 +10,7 @@ import { RunnerRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/ru
 import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
 import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx';
 import { resolveRallarBlackBoxBootstrapConfig, type RallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const sigmaLifecycle = vi.hoisted(() => ({
     constructed: 0,

@@ -1,4 +1,8 @@
-import { validateJsonSchema, type JsonSchema, type JsonSchemaValidationResult } from '../rallar-bb-test/schema.ts';
+import {
+    validateJsonSchema,
+    type JsonSchema,
+    type JsonSchemaValidationResult
+} from '../rallar-bb-test/schema/json-schema-validation.ts';
 
 export const BLACK_BOX_RUNNER_SCENARIO_SCHEMA_VERSION = 1;
 

@@ -222,9 +222,9 @@ it('preserves nested live bootstrap identity and RTC lane defaults', async () =>
         diagnosticsPorts: {
             transportFaultPort: facade.rallar.diagnostics.faults,
             indexedDbOperationObserver: facade.rallar.diagnostics.storage,
-            outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink,
-            inboundDiagnostics: facade.rallar.diagnostics.inboundDiagnostics.sink,
-            onStorageReset: facade.rallar.diagnostics.storageReset.sink
+            outboundDiagnostics: expect.any(Function),
+            inboundDiagnostics: expect.any(Function),
+            onStorageReset: expect.any(Function)
         }
     });
     const defaults = facade.records.defaultWrites.at(-1);

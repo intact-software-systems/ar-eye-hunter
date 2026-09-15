@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtDocumentRef, RallarCrdtOperationBatch } from '@shared/crdt/crdt-types.ts';

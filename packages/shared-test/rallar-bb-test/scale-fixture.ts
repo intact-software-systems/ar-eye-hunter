@@ -1,13 +1,67 @@
 import type { DistributedRunArtifactFiles } from './distributed-artifact-analysis.ts';
+import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
 
 export const RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT = 12_000;
 export const RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT = 3_000;
-// The canonical 15k fixture measures 4,753,103 bytes. At this ceiling the
+// The canonical 15k fixture measures 4,753,139 bytes. At this ceiling the
 // result-heavy stream measures 14,679,261 bytes, retaining headroom
 // below the browser's 16 MiB per-file intake limit.
 export const RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT = 40_000;
 export const RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES = 16 * 1_024 * 1_024;
 export const RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES = 48 * 1_024 * 1_024;
+
+export interface RecipeConsoleScaleFixtureOptions {
+    /** Split 80/20 between events and results. Cannot be combined with explicit counts. */
+    readonly artifactRowCount?: number;
+    readonly eventCount?: number;
+    readonly resultCount?: number;
+}
+
+export interface RecipeConsoleScaleFixture {
+    readonly files: DistributedRunArtifactFiles;
+    readonly generatedAtEpochMs: number;
+    readonly artifactSchemaVersion: number;
+    readonly counts: RecipeConsoleScaleFixtureCounts;
+    readonly bytes: RecipeConsoleScaleFixtureBytes;
+    readonly needles: RecipeConsoleScaleFixtureNeedles;
+}
+
+export interface RecipeConsoleScaleFixtureCounts {
+    readonly events: number;
+    readonly results: number;
+    readonly sourceRows: number;
+}
+
+export interface RecipeConsoleScaleFixtureBytes {
+    readonly byFile: Readonly<Record<string, number>>;
+    readonly total: number;
+}
+
+export interface RecipeConsoleScaleFixtureNeedles {
+    readonly events: Readonly<Record<ScalePosition, string>>;
+    readonly results: Readonly<Record<ScalePosition, string>>;
+    readonly actionableFailure: string;
+    readonly actionableDiagnostic: string;
+}
+
+type ScalePosition = 'first' | 'middle' | 'last';
+type ScaleArtifactRow = Readonly<Record<string, unknown>>;
+
+interface ScaleCounts {
+    readonly events: number;
+    readonly results: number;
+}
+
+interface ScaleSourceStream {
+    readonly positions: Readonly<Record<ScalePosition, number>>;
+    readonly needles: Readonly<Record<ScalePosition, string>>;
+}
+
+interface ScaleFixturePlan {
+    readonly counts: ScaleCounts;
+    readonly events: ScaleSourceStream;
+    readonly results: ScaleSourceStream;
+}
 
 const ARTIFACT_SCHEMA_VERSION = 2;
 const DISTRIBUTED_RUN_ID = 'recipe-console-scale-distributed-run';
@@ -16,37 +70,9 @@ const RECIPE_ID = 'recipe-console-scale-recipe';
 const AGENT_ID = 'scale-agent-001';
 const GENERATED_AT_EPOCH_MS = 1_735_732_800_000;
 const STARTED_AT_EPOCH_MS = GENERATED_AT_EPOCH_MS - 60_000;
-
-export type RecipeConsoleScaleFixtureOptions = Readonly<{
-    /** Split 80/20 between events and results. Cannot be combined with explicit counts. */
-    artifactRowCount?: number;
-    eventCount?: number;
-    resultCount?: number;
-}>;
-
-export type RecipeConsoleScaleFixture = Readonly<{
-    files: DistributedRunArtifactFiles;
-    generatedAtEpochMs: number;
-    artifactSchemaVersion: number;
-    counts: Readonly<{
-        events: number;
-        results: number;
-        sourceRows: number;
-    }>;
-    bytes: Readonly<{
-        byFile: Readonly<Record<string, number>>;
-        total: number;
-    }>;
-    needles: Readonly<{
-        events: Readonly<{ first: string; middle: string; last: string; }>;
-        results: Readonly<{ first: string; middle: string; last: string; }>;
-        actionableFailure: string;
-        actionableDiagnostic: string;
-    }>;
-}>;
-
-type ScaleCounts = Readonly<{ events: number; results: number; }>;
-type Position = 'first' | 'middle' | 'last';
+const ACTIONABLE_FAILURE = 'recipe-console-scale-actionable-failure';
+const ACTIONABLE_DIAGNOSTIC = 'recipe-console-scale-actionable-diagnostic';
+const SCALE_POSITIONS: readonly ScalePosition[] = ['first', 'middle', 'last'];
 
 /**
  * Creates deterministic distributed-run evidence for scale and profiling tests.
@@ -55,78 +81,15 @@ type Position = 'first' | 'middle' | 'last';
 export function createRecipeConsoleScaleFixture(
     options: RecipeConsoleScaleFixtureOptions = {}
 ): RecipeConsoleScaleFixture {
-    const counts = resolveCounts(options);
-    const eventPositions = positions(counts.events);
-    const resultPositions = positions(counts.results);
-    const eventNeedles = positionNeedles('event', eventPositions);
-    const resultNeedles = positionNeedles('result', resultPositions);
-    const actionableFailure = 'recipe-console-scale-actionable-failure';
-    const actionableDiagnostic = 'recipe-console-scale-actionable-diagnostic';
-    const manifest = distributedManifest();
-    const summary = artifactSummary(counts);
-
-    const results = Array.from({ length: counts.results }, (_, index) =>
-        JSON.stringify(
-            resultRow(index, resultPositions, resultNeedles, actionableFailure)
-        )).join('\n');
-    const events = Array.from({ length: counts.events }, (_, index) =>
-        JSON.stringify(
-            eventRow(index, counts.results, eventPositions, eventNeedles, actionableDiagnostic)
-        )).join('\n');
-
-    const files: DistributedRunArtifactFiles = {
-        'distributed-run.json': JSON.stringify(distributedRun(manifest)),
-        'manifest.json': JSON.stringify(manifest),
-        'control-run.json': JSON.stringify(controlRun(counts)),
-        'report.json': JSON.stringify({
-            schemaVersion: ARTIFACT_SCHEMA_VERSION,
-            artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
-            execution: 'distributed-run',
-            distributedRunId: DISTRIBUTED_RUN_ID,
-            controlRunId: CONTROL_RUN_ID,
-            state: 'failed',
-            ok: false,
-            summary,
-            resultsList: [],
-            outputs: {}
-        }),
-        'results.jsonl': results,
-        'events.jsonl': events,
-        'failures.json': JSON.stringify({
-            summary,
-            failures: [{
-                source: 'results.jsonl',
-                agentId: AGENT_ID,
-                commandId: commandId(0),
-                error: {
-                    code: 'SCALE_UPSTREAM_UNAVAILABLE',
-                    message: 'Scale fixture upstream returned 503.'
-                }
-            }],
-            outputs: {}
-        }),
-        'metadata.json': JSON.stringify({
-            schemaVersion: ARTIFACT_SCHEMA_VERSION,
-            artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
-            generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            config: 'rallar-black-box-control-server',
-            execution: 'distributed-run',
-            distributedRunId: DISTRIBUTED_RUN_ID,
-            controlRunId: CONTROL_RUN_ID,
-            summary
-        })
+    const counts = resolveScaleCounts(options);
+    const plan: ScaleFixturePlan = {
+        counts,
+        events: toScaleSourceStream('event', counts.events),
+        results: toScaleSourceStream('result', counts.results)
     };
-
-    const bytesByFile = Object.fromEntries(
-        Object.entries(files).flatMap(([fileName, text]) =>
-            text === undefined ? [] : [[fileName, new TextEncoder().encode(text).byteLength]]
-        )
-    );
-    const totalBytes = Object.values(bytesByFile).reduce(
-        (total, bytes) => total + bytes,
-        0
-    );
-    assertBrowserIntakeLimits(bytesByFile, totalBytes);
+    const files = toScaleArtifactFiles(plan);
+    const bytes = computeScaleArtifactBytes(files);
+    assertBrowserIntakeLimits(bytes);
 
     return {
         files,
@@ -137,43 +100,24 @@ export function createRecipeConsoleScaleFixture(
             results: counts.results,
             sourceRows: counts.events + counts.results
         },
-        bytes: {
-            byFile: bytesByFile,
-            total: totalBytes
-        },
+        bytes,
         needles: {
-            events: eventNeedles,
-            results: resultNeedles,
-            actionableFailure,
-            actionableDiagnostic
+            events: plan.events.needles,
+            results: plan.results.needles,
+            actionableFailure: ACTIONABLE_FAILURE,
+            actionableDiagnostic: ACTIONABLE_DIAGNOSTIC
         }
     };
 }
 
-function resolveCounts(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
+function resolveScaleCounts(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
     if (options.artifactRowCount !== undefined) {
-        if (options.eventCount !== undefined || options.resultCount !== undefined) {
-            throw new Error('artifactRowCount cannot be combined with eventCount or resultCount.');
-        }
-        const sourceRows = validCount(options.artifactRowCount, 'artifactRowCount', 6);
-        if (sourceRows > RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT) {
-            throw new Error(
-                `artifactRowCount must not exceed ${RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT} source rows.`
-            );
-        }
-        const results = Math.max(3, Math.round(sourceRows / 5));
-        return { events: sourceRows - results, results };
+        return resolveScaleCountsFromTotal(options);
     }
-    const events = validCount(
-        options.eventCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT,
-        'eventCount',
-        3
-    );
-    const results = validCount(
-        options.resultCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT,
-        'resultCount',
-        3
-    );
+    const events = options.eventCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT;
+    const results = options.resultCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT;
+    assertValidCount(events, 'eventCount', 3);
+    assertValidCount(results, 'resultCount', 3);
     if (events > RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT - results) {
         throw new Error(
             `eventCount and resultCount must not exceed ${RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT} source rows in total.`
@@ -182,61 +126,91 @@ function resolveCounts(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
     return { events, results };
 }
 
-function assertBrowserIntakeLimits(
-    bytesByFile: Readonly<Record<string, number>>,
-    totalBytes: number
-): void {
-    const oversizedFile = Object.entries(bytesByFile).find(
-        ([, bytes]) => bytes > RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES
+function resolveScaleCountsFromTotal(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
+    const sourceRows = options.artifactRowCount ?? 0;
+    if (options.eventCount !== undefined || options.resultCount !== undefined) {
+        throw new Error('artifactRowCount cannot be combined with eventCount or resultCount.');
+    }
+    assertValidCount(sourceRows, 'artifactRowCount', 6);
+    if (sourceRows > RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT) {
+        throw new Error(
+            `artifactRowCount must not exceed ${RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT} source rows.`
+        );
+    }
+    const results = Math.max(3, Math.round(sourceRows / 5));
+    return { events: sourceRows - results, results };
+}
+
+function toScaleArtifactFiles(plan: ScaleFixturePlan): DistributedRunArtifactFiles {
+    const manifest = toScaleManifest();
+    const summary = toScaleArtifactSummary(plan.counts);
+    return {
+        'distributed-run.json': JSON.stringify(toScaleDistributedRun(manifest)),
+        'manifest.json': JSON.stringify(manifest),
+        'control-run.json': JSON.stringify(toScaleControlRun(plan.counts)),
+        'report.json': JSON.stringify(toScaleReport(summary)),
+        'results.jsonl': toJsonLines(plan.counts.results, (index) => toScaleResultRow(index, plan.results)),
+        'events.jsonl': toJsonLines(plan.counts.events, (index) => toScaleEventRow(index, plan)),
+        'failures.json': JSON.stringify(toScaleFailures(summary)),
+        'metadata.json': JSON.stringify(toScaleMetadata(summary))
+    };
+}
+
+function toJsonLines(count: number, toRow: (index: number) => ScaleArtifactRow): string {
+    return Array.from({ length: count }, (_, index) => JSON.stringify(toRow(index))).join('\n');
+}
+
+function computeScaleArtifactBytes(files: DistributedRunArtifactFiles): RecipeConsoleScaleFixtureBytes {
+    const encoder = new TextEncoder();
+    const byFile = Object.fromEntries(
+        Object.entries(files).flatMap(([fileName, text]) =>
+            text === undefined ? [] : [[fileName, encoder.encode(text).byteLength]]
+        )
+    );
+    const total = Object.values(byFile).reduce((sum, bytes) => sum + bytes, 0);
+    return { byFile, total };
+}
+
+function assertBrowserIntakeLimits(bytes: RecipeConsoleScaleFixtureBytes): void {
+    const oversizedFile = Object.entries(bytes.byFile).find(
+        ([, fileBytes]) => fileBytes > RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES
     );
     if (oversizedFile) {
         throw new Error(
             `${oversizedFile[0]} exceeds the ${RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES}-byte browser file limit.`
         );
     }
-    if (totalBytes > RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES) {
+    if (bytes.total > RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES) {
         throw new Error(
             `Scale fixture exceeds the ${RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES}-byte browser intake limit.`
         );
     }
 }
 
-function validCount(value: number, label: string, minimum: number): number {
+function assertValidCount(value: number, label: string, minimum: number): void {
     if (!Number.isSafeInteger(value) || value < minimum) {
         throw new Error(`${label} must be a safe integer greater than or equal to ${minimum}.`);
     }
-    return value;
 }
 
-function positions(count: number): Readonly<Record<Position, number>> {
-    return { first: 0, middle: Math.floor(count / 2), last: count - 1 };
-}
-
-function positionNeedles(
-    kind: 'event' | 'result',
-    sourcePositions: Readonly<Record<Position, number>>
-): Readonly<Record<Position, string>> {
+function toScaleSourceStream(kind: 'event' | 'result', count: number): ScaleSourceStream {
+    const positions = { first: 0, middle: Math.floor(count / 2), last: count - 1 };
     return {
-        first: `recipe-console-scale-${kind}-first-${padded(sourcePositions.first)}`,
-        middle: `recipe-console-scale-${kind}-middle-${padded(sourcePositions.middle)}`,
-        last: `recipe-console-scale-${kind}-last-${padded(sourcePositions.last)}`
+        positions,
+        needles: {
+            first: `recipe-console-scale-${kind}-first-${toPaddedIndex(positions.first)}`,
+            middle: `recipe-console-scale-${kind}-middle-${toPaddedIndex(positions.middle)}`,
+            last: `recipe-console-scale-${kind}-last-${toPaddedIndex(positions.last)}`
+        }
     };
 }
 
-function needleAt(
-    index: number,
-    sourcePositions: Readonly<Record<Position, number>>,
-    needles: Readonly<Record<Position, string>>
-): string | undefined {
-    for (const position of ['first', 'middle', 'last'] as const) {
-        if (sourcePositions[position] === index) {
-            return needles[position];
-        }
-    }
-    return undefined;
+function resolveNeedle(index: number, stream: ScaleSourceStream): string | undefined {
+    const position = SCALE_POSITIONS.find((candidate) => stream.positions[candidate] === index);
+    return position === undefined ? undefined : stream.needles[position];
 }
 
-function distributedManifest(): Record<string, unknown> {
+function toScaleManifest(): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,
         distributedRunId: DISTRIBUTED_RUN_ID,
@@ -250,6 +224,7 @@ function distributedManifest(): Record<string, unknown> {
         recipes: [{
             recipeId: RECIPE_ID,
             recipe: {
+                schemaVersion: 1,
                 recipeId: RECIPE_ID,
                 commands: []
             }
@@ -264,7 +239,7 @@ function distributedManifest(): Record<string, unknown> {
     };
 }
 
-function distributedRun(manifest: Record<string, unknown>): Record<string, unknown> {
+function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest): ScaleArtifactRow {
     return {
         distributedRunId: DISTRIBUTED_RUN_ID,
         controlRunId: CONTROL_RUN_ID,
@@ -282,7 +257,7 @@ function distributedRun(manifest: Record<string, unknown>): Record<string, unkno
             failures: [{
                 agentId: AGENT_ID,
                 recipeId: RECIPE_ID,
-                commandId: commandId(0),
+                commandId: toScaleCommandId(0),
                 code: 'SCALE_UPSTREAM_UNAVAILABLE',
                 message: 'Scale fixture upstream returned 503.'
             }],
@@ -296,7 +271,7 @@ function distributedRun(manifest: Record<string, unknown>): Record<string, unkno
     };
 }
 
-function controlRun(counts: ScaleCounts): Record<string, unknown> {
+function toScaleControlRun(counts: ScaleCounts): ScaleArtifactRow {
     return {
         runId: CONTROL_RUN_ID,
         createdAtEpochMs: STARTED_AT_EPOCH_MS - 1_000,
@@ -321,7 +296,7 @@ function controlRun(counts: ScaleCounts): Record<string, unknown> {
     };
 }
 
-function artifactSummary(counts: ScaleCounts): Record<string, number> {
+function toScaleArtifactSummary(counts: ScaleCounts): Readonly<Record<string, number>> {
     return {
         total: counts.results,
         success: counts.results - 1,
@@ -333,17 +308,56 @@ function artifactSummary(counts: ScaleCounts): Record<string, number> {
     };
 }
 
-function resultRow(
-    index: number,
-    sourcePositions: Readonly<Record<Position, number>>,
-    needles: Readonly<Record<Position, string>>,
-    actionableFailure: string
-): Record<string, unknown> {
+function toScaleReport(summary: Readonly<Record<string, number>>): ScaleArtifactRow {
+    return {
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
+        execution: 'distributed-run',
+        distributedRunId: DISTRIBUTED_RUN_ID,
+        controlRunId: CONTROL_RUN_ID,
+        state: 'failed',
+        ok: false,
+        summary,
+        resultsList: [],
+        outputs: {}
+    };
+}
+
+function toScaleFailures(summary: Readonly<Record<string, number>>): ScaleArtifactRow {
+    return {
+        summary,
+        failures: [{
+            source: 'results.jsonl',
+            agentId: AGENT_ID,
+            commandId: toScaleCommandId(0),
+            error: {
+                code: 'SCALE_UPSTREAM_UNAVAILABLE',
+                message: 'Scale fixture upstream returned 503.'
+            }
+        }],
+        outputs: {}
+    };
+}
+
+function toScaleMetadata(summary: Readonly<Record<string, number>>): ScaleArtifactRow {
+    return {
+        schemaVersion: ARTIFACT_SCHEMA_VERSION,
+        artifactSchemaVersion: ARTIFACT_SCHEMA_VERSION,
+        generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
+        config: 'rallar-black-box-control-server',
+        execution: 'distributed-run',
+        distributedRunId: DISTRIBUTED_RUN_ID,
+        controlRunId: CONTROL_RUN_ID,
+        summary
+    };
+}
+
+function toScaleResultRow(index: number, results: ScaleSourceStream): ScaleArtifactRow {
     const failed = index === 0;
     const startedAtEpochMs = STARTED_AT_EPOCH_MS + index * 4;
     return {
-        resultKey: `${AGENT_ID}:${commandId(index)}`,
-        commandId: commandId(index),
+        resultKey: `${AGENT_ID}:${toScaleCommandId(index)}`,
+        commandId: toScaleCommandId(index),
         recipeId: RECIPE_ID,
         agentId: AGENT_ID,
         action: 'http.request',
@@ -357,34 +371,28 @@ function resultRow(
             status: failed ? 'failed' : 'passed',
             value: {
                 statusCode: failed ? 503 : 200,
-                needle: needleAt(index, sourcePositions, needles)
+                needle: resolveNeedle(index, results)
             }
         },
         actual: failed
             ? {
                 code: 'SCALE_UPSTREAM_UNAVAILABLE',
-                message: `Expected HTTP 200 but received 503. ${actionableFailure}`,
+                message: `Expected HTTP 200 but received 503. ${ACTIONABLE_FAILURE}`,
                 details: { retryable: true, minimalFixArea: 'scale fixture upstream' }
             }
             : undefined
     };
 }
 
-function eventRow(
-    index: number,
-    resultCount: number,
-    sourcePositions: Readonly<Record<Position, number>>,
-    needles: Readonly<Record<Position, string>>,
-    actionableDiagnostic: string
-): Record<string, unknown> {
-    const diagnostic = index === sourcePositions.middle;
-    const needle = needleAt(index, sourcePositions, needles);
+function toScaleEventRow(index: number, plan: ScaleFixturePlan): ScaleArtifactRow {
+    const diagnostic = index === plan.events.positions.middle;
+    const needle = resolveNeedle(index, plan.events);
     return {
         kind: diagnostic ? 'diagnostic' : 'event',
-        eventId: `scale-event-${padded(index)}`,
+        eventId: `scale-event-${toPaddedIndex(index)}`,
         runId: CONTROL_RUN_ID,
         agentId: AGENT_ID,
-        commandId: commandId(index % resultCount),
+        commandId: toScaleCommandId(index % plan.counts.results),
         atEpochMs: STARTED_AT_EPOCH_MS + index * 5,
         topic: diagnostic ? 'rallar.bb.scale.upstream_unavailable' : 'rallar.bb.scale.progress',
         transport: 'http',
@@ -393,21 +401,21 @@ function eventRow(
                 severity: 'error',
                 diagnosticSchemaVersion: 1,
                 diagnosticTypeId: 'rallar.bb.scale.upstream_unavailable',
-                message: `Synthetic diagnostic for scale analysis. ${actionableDiagnostic}`,
+                message: `Synthetic diagnostic for scale analysis. ${ACTIONABLE_DIAGNOSTIC}`,
                 needle
             }
             : {
                 severity: 'info',
-                message: `Synthetic scale event ${padded(index)}.`,
+                message: `Synthetic scale event ${toPaddedIndex(index)}.`,
                 needle
             }
     };
 }
 
-function commandId(index: number): string {
-    return `scale-command-${padded(index)}`;
+function toScaleCommandId(index: number): string {
+    return `scale-command-${toPaddedIndex(index)}`;
 }
 
-function padded(index: number): string {
+function toPaddedIndex(index: number): string {
     return String(index).padStart(6, '0');
 }

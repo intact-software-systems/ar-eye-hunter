@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "recipeId": "rallar-server-group-ws-setup",
   "name": "Rallar Server group and WebSocket setup",
   "description": "Uses the logged-in browser session to create or reuse bb-group, join it, attach the current session, and open the authenticated API WebSocket.",

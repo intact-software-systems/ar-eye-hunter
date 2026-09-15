@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    recipeFixtureText
+    toRecipeFixtureText
 } from '../../../recipe-fixtures.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
@@ -25,7 +25,7 @@ export function WorkbenchPanel({
     const [fixtureId, setFixtureId] = useState(
         loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId
     );
-    const [recipeText, setRecipeText] = useState(() => recipeFixtureText(fixtureId));
+    const [recipeText, setRecipeText] = useState(() => toRecipeFixtureText(fixtureId));
     const [commandText, setCommandText] = useState(() =>
         JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2)
     );
@@ -53,7 +53,7 @@ export function WorkbenchPanel({
 
     const selectFixture = (nextFixtureId: string): void => {
         setFixtureId(nextFixtureId);
-        setRecipeText(recipeFixtureText(nextFixtureId));
+        setRecipeText(toRecipeFixtureText(nextFixtureId));
         setLocalError(undefined);
     };
 

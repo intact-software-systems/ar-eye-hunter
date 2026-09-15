@@ -13,7 +13,7 @@ import {
     toFullStackControlWebSocketUrl
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const FULL_STACK_CONTROL_BASE_URL = readFullStackControlBaseUrl();
 export const FULL_STACK_CONTROL_WS_URL = toFullStackControlWebSocketUrl(

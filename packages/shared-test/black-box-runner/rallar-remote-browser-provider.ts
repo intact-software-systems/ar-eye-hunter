@@ -8,7 +8,7 @@ import { storeRemoteBrowserEvents } from './remote-browser/store-remote-browser-
 // deno-lint-ignore-file no-explicit-any
 import type {
     RallarBlackBoxTestCommand
-} from '../rallar-bb-test/types.ts';
+} from '../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     prepareRemoteBrowserCommand,
     prepareRemoteBrowserConnection,

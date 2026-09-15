@@ -5,7 +5,7 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export function tuningManifest(input: Readonly<{
     commands?: readonly RallarBlackBoxTestCommand[];
@@ -122,7 +122,6 @@ export function tuningPerformance(input: Readonly<{
         failedFrames: 0,
         droppedFrames: 0,
         inFlightLimitDropCount: 0,
-        backpressureCount: 0,
         sendSuccessRatio: 1,
         requestedRateHz: 20,
         achievedScheduleHz: 20,

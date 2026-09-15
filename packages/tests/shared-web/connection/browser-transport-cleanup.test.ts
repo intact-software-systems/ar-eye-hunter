@@ -1,11 +1,14 @@
 import { BrowserFacadeRuntimeState } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { createRallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
 import { createRallarSessionController } from '@shared-web/browser/session/rallar-session-controller.ts';
 import { BrowserSessionConnectionLifecycle, type RallarSessionConnectionInput } from '@shared-web/browser/session/session-connection-lifecycle.ts';
-import { describe, expect, it, vi } from 'vitest';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
 
 type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
@@ -38,6 +41,7 @@ describe('Browser transport cleanup', () => {
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -55,13 +59,14 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
             clearCurrentRoom: () => effects.push('room-cleared')
         });
 
-        await connection.connect(toConnectionInput(middleware.session.sessionId));
+        await connection.connect(toConnectionInput(middleware.session));
 
         await expect(connection.disconnect()).rejects.toThrow('detach failed');
         expect(effects).toEqual([
@@ -84,6 +89,7 @@ describe('Browser transport cleanup', () => {
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -102,6 +108,7 @@ describe('Browser transport cleanup', () => {
             }
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -109,7 +116,7 @@ describe('Browser transport cleanup', () => {
         });
 
         await expect(
-            connection.connect(toConnectionInput(middleware.session.sessionId))
+            connection.connect(toConnectionInput(middleware.session))
         ).rejects.toThrow('attach failed');
 
         expect(effects).toEqual([
@@ -133,6 +140,7 @@ describe('Browser transport cleanup', () => {
         mocks.readSession.mockReturnValue(middleware.session);
         mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -147,6 +155,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('state-disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle,
@@ -154,7 +163,7 @@ describe('Browser transport cleanup', () => {
         });
 
         await expect(
-            connection.connect(toConnectionInput(middleware.session.sessionId))
+            connection.connect(toConnectionInput(middleware.session))
         ).rejects.toThrow('connected failed');
 
         expect(effects).toEqual([
@@ -192,8 +201,10 @@ describe('Browser transport cleanup', () => {
         });
         mocks.readSession.mockReturnValue(first.session);
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const connection = new BrowserSessionConnectionLifecycle({
+            sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
             lifecycle: createRallarLifecycleCoordinator(),
@@ -201,7 +212,7 @@ describe('Browser transport cleanup', () => {
         });
 
         const firstConnection = connection.connect(
-            toConnectionInput(first.session.sessionId)
+            toConnectionInput(first.session)
         );
         await vi.waitFor(() => {
             expect(initializationSessions).toEqual(['session-old']);
@@ -210,7 +221,7 @@ describe('Browser transport cleanup', () => {
         mocks.readSession.mockReturnValue(second.session);
 
         const secondConnection = connection.connect(
-            toConnectionInput(second.session.sessionId)
+            toConnectionInput(second.session)
         );
         await vi.waitFor(() => {
             expect(initializationSessions).toEqual(['session-old', 'session-new']);
@@ -244,8 +255,9 @@ describe('Browser transport cleanup', () => {
             })
         );
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
 
-        const pending = transportRuntime.init({ diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
+        const pending = transportRuntime.init({ diagnosticsPorts: toRallarDiagnosticsPorts(undefined), deliverySettlements: { ws: () => {}, rtc: () => {} } });
         transportRuntime.shutdown();
         resolveMiddleware?.(middleware.middleware);
 
@@ -299,8 +311,9 @@ describe('Browser transport cleanup', () => {
         });
 
         mocks.readSession.mockReturnValue(middleware.session);
-        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware as RallarBrowserMiddleware);
+        mocks.initialiseMiddleware.mockResolvedValue(middleware.middleware);
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -316,6 +329,7 @@ describe('Browser transport cleanup', () => {
         });
 
         const sessionController = createRallarSessionController({
+            ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -360,6 +374,7 @@ describe('Browser transport cleanup', () => {
             })
         );
         const transportRuntime = new BrowserTransportRuntime();
+        onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const lifecycle = createRallarLifecycleCoordinator();
         lifecycle.register({
@@ -368,6 +383,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => cleanupEffects.push('disconnected')
         });
         const sessionController = createRallarSessionController({
+            ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
             authRuntime: runtime,
@@ -409,9 +425,9 @@ describe('Browser transport cleanup', () => {
     });
 });
 
-function toConnectionInput(sessionId: string): RallarSessionConnectionInput {
+function toConnectionInput(session: AuthSession): RallarSessionConnectionInput {
     return {
-        sessionId,
+        session,
         scope: undefined,
         operationOptions: {},
         diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
@@ -419,4 +435,13 @@ function toConnectionInput(sessionId: string): RallarSessionConnectionInput {
         isSessionCurrent: () => true,
         onAuthInvalid: async () => undefined
     };
+}
+
+function createDeliveryObservation(transport: BrowserTransportRuntime) {
+    const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
+    const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport);
+    onTestFinished(() => {
+        deliveries.releaseAll();
+    });
+    return { deliveries, sessionDeliveries };
 }

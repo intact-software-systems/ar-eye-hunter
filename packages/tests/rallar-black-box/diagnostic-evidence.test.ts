@@ -25,7 +25,7 @@ import {
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/action-feedback.ts';
 import { optionalNumber } from '../../../apps/rallar-black-box/src/legacy/shared/finite-number.ts';
 import { deriveRallarBrowserStatus } from '../../../apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function event(
     overrides: Partial<RallarBlackBoxTestEvent> = {}

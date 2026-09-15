@@ -68,7 +68,7 @@ run identities retained.
 
 ### RTC stream evidence
 
-**Given** configured RTC-capable agents and an RTC stream recipe, **when** an operator stages and runs the recipe, **then** Monitor and Tune show planned/completed/failed/dropped frames, achieved cadence, drift, late frames, send-duration percentiles, and backpressure/in-flight-drop evidence linked to affected agents.
+**Given** configured RTC-capable agents and an RTC stream recipe, **when** an operator stages and runs the recipe, **then** Monitor and Tune show planned/completed/failed/dropped frames, achieved cadence, drift, late frames, send-duration percentiles, and in-flight-drop evidence linked to affected agents.
 
 ### Target-resolution failure before staging
 
@@ -200,7 +200,7 @@ The quoted test names below are the canonical acceptance evidence. A row is not 
 | 4  | Failures are listed before raw event streams.                                                                                         | 5                    | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence`                                                                                                                                                                  |
 | 5  | Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available.                        | 5-6                  | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `opens all available correlated evidence from a failure row`                                                                                                                                                                             |
 | 6  | Artifact import works without a control server connection.                                                                            | 6                    | `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`                                                                                                                                                              |
-| 7  | Timing analysis surfaces command percentiles and RTC stream-specific health.                                                          | 7                    | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `shows command percentiles cadence drift drops and backpressure for an RTC stream`                                                                                                                                                          |
+| 7  | Timing analysis surfaces command percentiles and RTC stream-specific health.                                                          | 7                    | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `shows command percentiles cadence drift and drops for an RTC stream`                                                                                                                                                                       |
 | 8  | Compare mode shows changed recipes, participants, failures, timings, and received-message deltas.                                     | 7-8                  | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `compares two runs across recipe participant failure timing and receive deltas`                                                                                                                                                             |
 | 9  | URL state restores selected view, run, filters, comparison, and timing metric.                                                        | 2, 8                 | `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL`                                                                                                                                               |
 | 10 | Large event/result lists are bounded or virtualized.                                                                                  | 9                    | `tests/playwright/rallar-black-box/recipe-console-scale.spec.ts` — `keeps synthetic large event and result lists bounded responsive and searchable`                                                                                                                                                           |
@@ -290,10 +290,9 @@ contract changed; one deterministic request-ID helper export is additive.
 
 - Ready-State #7 is satisfied by the passing exact acceptance
   `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` —
-  `shows command percentiles cadence drift drops and backpressure for an RTC
-  stream`. It is driven by a retained real artifact and exposes command
+  `shows command percentiles cadence drift and drops for an RTC stream`. It is driven by a retained real artifact and exposes command
   min/P50/P95/P99/max, mean/spread/outliers, RTC frame disposition, cadence,
-  drift, late frames, backpressure/in-flight drops, and specific slow-agent
+  drift, late frames, in-flight drops, and specific slow-agent
   provenance without invented values.
 - The bounded comparison evidence for Ready-State #8 is satisfied by
   `compares two runs across recipe participant failure timing and receive

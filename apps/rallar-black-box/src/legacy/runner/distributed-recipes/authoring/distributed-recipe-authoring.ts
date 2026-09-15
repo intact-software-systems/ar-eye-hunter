@@ -1,5 +1,5 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { DistributedRecipePromptValidationFeedback } from '../../../../distributed-recipe-authoring-prompts.ts';
 import { distributedRecipePreflight, type DistributedRecipePreflightSummary } from '../../../../distributed-recipes.ts';
 import type { SchemaAuthoringTarget, SchemaAuthoringValidation } from '../../../../schema-authoring.ts';

@@ -28,15 +28,17 @@ export {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_SCHEMA_CATALOG,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '@shared-test/rallar-bb-test/schema.ts';
+export {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+export { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 export type {
     BlackBoxRunnerArtifactBundleContract as RallarBlackBoxSharedTestArtifactContract,

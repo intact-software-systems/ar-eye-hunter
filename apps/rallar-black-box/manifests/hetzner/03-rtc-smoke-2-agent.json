@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-smoke-recipe",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-smoke-recipe",
         "name": "RTC smoke recipe",
         "continueOnFailure": false,

@@ -1,6 +1,6 @@
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession, WebSocketTicketResponse } from '@shared/api/api-config.ts';
 import { clearSession } from '@shared/api/auth.ts';
 import { useEffect, useMemo, useState } from 'react';

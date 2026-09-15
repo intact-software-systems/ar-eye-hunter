@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export type RallarServerRestMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 

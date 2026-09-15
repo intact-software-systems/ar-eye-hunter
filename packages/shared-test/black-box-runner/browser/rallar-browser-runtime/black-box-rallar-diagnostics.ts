@@ -1,4 +1,6 @@
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -78,7 +80,7 @@ export class BlackBoxRallarRuntimeDiagnostics {
     };
 
     emitConsoleWarning = (config: BlackBoxRallarConnectionConfig, args: readonly unknown[]): void => {
-        const warning = classifyConsoleWarning(args);
+        const warning = toConsoleWarning(args);
         if (!warning) {
             return;
         }
@@ -104,7 +106,31 @@ export class BlackBoxRallarRuntimeDiagnostics {
     }
 }
 
-function consoleWarningPart(value: unknown): string {
+export function createBlackBoxRallarDiagnosticsPorts(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics,
+    effects: BlackBoxBrowserDiagnosticsDependency
+): RallarDiagnosticsPorts {
+    return {
+        transportFaultPort: effects.faults,
+        indexedDbOperationObserver: effects.storage,
+        outboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { ...event }
+            }),
+        inboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { ...event }
+            }),
+        onStorageReset: (event) =>
+            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage_reset', data: { ...event } })
+    };
+}
+
+function toConsoleWarningPart(value: unknown): string {
     if (typeof value === 'string') {
         return value;
     }
@@ -116,8 +142,8 @@ function consoleWarningPart(value: unknown): string {
     }
 }
 
-function classifyConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
-    const message = args.map(consoleWarningPart).join(' ');
+function toConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
+    const message = args.map(toConsoleWarningPart).join(' ');
     if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
         return { topic: 'rallar.browser.ws.unhandled_message', transport: 'ws', message };
     }

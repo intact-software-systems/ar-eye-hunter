@@ -1,7 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
-import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
+import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
 import {
     containsValue,
     sameJsonValue,

@@ -5,7 +5,7 @@ import type {
     RallarBlackBoxDistributedRunManifest
 } from '../distributed-run.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
-import type { RallarBlackBoxTestRedactionOptions } from '../types.ts';
+import type { RallarBlackBoxTestRedactionOptions } from '../rallar-black-box-test-contracts.ts';
 import { evaluateGroupAssertionAggregate, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
 import {
     collectGroupAssertionEvidence,

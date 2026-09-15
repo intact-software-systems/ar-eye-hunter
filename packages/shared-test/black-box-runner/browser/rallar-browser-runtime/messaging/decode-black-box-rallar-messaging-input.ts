@@ -1,3 +1,5 @@
+import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type {
     ScriptedTransportFault,
     TransportFaultCarrier,
@@ -11,216 +13,228 @@ import type {
     BlackBoxRallarStorageCountersInput
 } from '../black-box-rallar-operation-contracts.ts';
 import {
-    decodeBlackBoxCommandAck,
     decodeBlackBoxCommandNumber,
-    decodeBlackBoxCommandRoomRef,
+    decodeBlackBoxCommandRouting,
     decodeBlackBoxCommandString,
     isBlackBoxCommandRecord,
-    type BlackBoxRallarCommandRecord
+    isRallarMessagePayload,
+    type BlackBoxRallarCommandRecord,
+    type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
 
-const MESSAGE_CARRIERS: readonly string[] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
-const MESSAGE_SCOPES: readonly string[] = ['room', 'world', 'all'];
-const MESSAGE_RELIABILITIES: readonly string[] = ['best-effort', 'at-least-once'];
-const FAULT_CARRIERS: readonly string[] = ['ws', 'rtc'];
-const FAULT_CONTROL_TYPES: readonly string[] = ['ack', 'nack', 'repair'];
+type MessageSendIdentity = Pick<
+    BlackBoxRallarMessageSendInput,
+    'timeoutMs' | 'connection' | 'carrier' | 'typeId' | 'handleId'
+>;
+
+type MessageSendOptions = Pick<BlackBoxRallarMessageSendInput, 'roomRef' | 'scope' | 'reliability' | 'ack'>;
+
+const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
+const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'all'];
+const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput['reliability']>[] = [
+    'best-effort',
+    'at-least-once'
+];
+const FAULT_CARRIERS: readonly TransportFaultCarrier[] = ['ws', 'rtc'];
+const FAULT_CONTROL_TYPES: readonly NonNullable<TransportFaultMatch['controlType']>[] = ['ack', 'nack', 'repair'];
 
 /** The RTC data channel treats a delay decision as pass, so arming one there would be inert. */
 const FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE = 'fault.inject.action must be "drop" on the rtc carrier.';
 
-const DELIVERY_STATES: readonly string[] = [
-    'rejected',
-    'accepted',
-    'queued',
-    'transport-accepted',
-    'acknowledged',
-    'expired',
-    'superseded',
-    'failed',
-    'cancelled'
-];
-
-export function decodeBlackBoxRallarMessageSendInput(value: unknown): BlackBoxRallarMessageSendInput {
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'messages.send input');
-    if (!('payload' in record)) {
-        throw new TypeError('messages.send.payload is required.');
+export function decodeBlackBoxRallarMessageSendInput(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('messages.send input must be an object.');
     }
-    return {
-        connection: decodeRequiredBlackBoxCommandString(record.connection, 'messages.send.connection'),
-        carrier: decodeMessageCarrier(record.carrier),
-        typeId: decodeRequiredBlackBoxCommandString(record.typeId, 'messages.send.typeId'),
-        topicId: decodeBlackBoxCommandString(record.topicId),
-        payload: record.payload,
-        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
-        scope: decodeMessageScope(record.scope),
-        reliability: decodeMessageReliability(record.reliability),
-        ack: decodeBlackBoxCommandAck(record.ack),
-        ttlMs: decodeBlackBoxCommandNumber(record.ttlMs),
-        orderingKey: decodeBlackBoxCommandString(record.orderingKey),
-        seq: decodeBlackBoxCommandNumber(record.seq),
-        handleId: decodeRequiredBlackBoxCommandString(record.handleId, 'messages.send.handleId')
-    };
-}
-
-export function decodeBlackBoxRallarDeliveryHandleInput(value: unknown): BlackBoxRallarDeliveryHandleInput {
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'delivery handle input');
-    return {
-        connection: decodeRequiredBlackBoxCommandString(record.connection, 'delivery handle connection'),
-        handleId: decodeRequiredBlackBoxCommandString(record.handleId, 'delivery handle handleId')
-    };
-}
-
-export function decodeBlackBoxRallarDeliveryObserveInput(value: unknown): BlackBoxRallarDeliveryObserveInput {
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'messages.observe input');
-    return {
-        ...decodeBlackBoxRallarDeliveryHandleInput(record),
-        state: decodeDeliveryStates(record.state),
-        timeoutMs: decodeRequiredBlackBoxCommandNumber(record.timeoutMs, 'messages.observe.timeoutMs')
-    };
-}
-
-export function decodeBlackBoxRallarFaultInput(value: unknown): ScriptedTransportFault {
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'fault.inject input');
-    const carrier = decodeFaultCarrier(record.carrier);
-    const action = decodeFaultAction(record.action);
-    if (carrier === 'rtc' && action !== 'drop') {
-        throw new TypeError(FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE);
+    const payload = value.payload;
+    if (!('payload' in value) || !isRallarMessagePayload(payload)) {
+        return toInputIssue('messages.send.payload is required.');
     }
-    return {
-        faultId: decodeRequiredBlackBoxCommandString(record.faultId, 'fault.inject.faultId'),
-        carrier,
-        match: decodeFaultMatch(record.match),
-        action,
-        remaining: decodeRequiredBlackBoxCommandNumber(record.remaining, 'fault.inject.remaining')
-    };
+    return decodeMessageSendIdentity(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (identity) =>
+            decodeMessageSendOptions(value).mapRight((options) => ({
+                ...identity,
+                ...options,
+                payload,
+                topicId: decodeBlackBoxCommandString(value.topicId),
+                ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
+                orderingKey: decodeBlackBoxCommandString(value.orderingKey),
+                seq: decodeBlackBoxCommandNumber(value.seq)
+            }))
+    );
 }
 
-export function decodeBlackBoxRallarStorageCountersInput(value: unknown): BlackBoxRallarStorageCountersInput {
+export function decodeBlackBoxRallarDeliveryHandleInput(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarDeliveryHandleInput> {
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('delivery handle input must be an object.');
+    }
+    const connection = decodeBlackBoxCommandString(value.connection);
+    if (connection === undefined) {
+        return toInputIssue('delivery handle connection is required.');
+    }
+    const handleId = decodeBlackBoxCommandString(value.handleId);
+    return handleId === undefined
+        ? toInputIssue('delivery handle handleId is required.')
+        : Either.ofRight({ connection, handleId });
+}
+
+export function decodeBlackBoxRallarDeliveryObserveInput(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarDeliveryObserveInput> {
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('messages.observe input must be an object.');
+    }
+    return decodeBlackBoxRallarDeliveryHandleInput(value).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (handle) => {
+            const state = value.state;
+            if (!isDeliveryStateList(state)) {
+                return toInputIssue(
+                    `messages.observe.state must list at least one of ${AL_DELIVERY_STATES.join(', ')}.`
+                );
+            }
+            const timeoutMs = decodeBlackBoxCommandNumber(value.timeoutMs);
+            return timeoutMs === undefined
+                ? toInputIssue('messages.observe.timeoutMs is required.')
+                : Either.ofRight({ ...handle, state, timeoutMs });
+        }
+    );
+}
+
+export function decodeBlackBoxRallarFaultInput(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, ScriptedTransportFault> {
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('fault.inject input must be an object.');
+    }
+    const carrier = value.carrier;
+    if (!isFaultCarrier(carrier)) {
+        return toInputIssue('fault.inject.carrier must be ws or rtc.');
+    }
+    return decodeFaultAction(value.action).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (action) => {
+            if (carrier === 'rtc' && action !== 'drop') {
+                return toInputIssue(FAULT_RTC_DELAY_UNSUPPORTED_MESSAGE);
+            }
+            const faultId = decodeBlackBoxCommandString(value.faultId);
+            if (faultId === undefined) {
+                return toInputIssue('fault.inject.faultId is required.');
+            }
+            return decodeFaultMatch(value.match).flatMap(
+                (issue) => Either.ofLeft(issue),
+                (match) => {
+                    const remaining = decodeBlackBoxCommandNumber(value.remaining);
+                    return remaining === undefined
+                        ? toInputIssue('fault.inject.remaining is required.')
+                        : Either.ofRight({ faultId, carrier, match, action, remaining });
+                }
+            );
+        }
+    );
+}
+
+export function decodeBlackBoxRallarStorageCountersInput(
+    value: unknown
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarStorageCountersInput> {
     if (value === undefined || value === null) {
-        return { reset: false };
+        return Either.ofRight({ reset: false });
     }
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'storage.counters input');
-    if (record.reset !== undefined && typeof record.reset !== 'boolean') {
-        throw new TypeError('storage.counters.reset must be a boolean.');
+    if (!isBlackBoxCommandRecord(value)) {
+        return toInputIssue('storage.counters input must be an object.');
     }
-    return { reset: record.reset === true };
+    const reset = value.reset;
+    return reset === undefined || typeof reset === 'boolean'
+        ? Either.ofRight({ reset: reset === true })
+        : toInputIssue('storage.counters.reset must be a boolean.');
 }
 
-function decodeMessageCarrier(value: unknown): BlackBoxRallarMessageSendInput['carrier'] {
-    if (isMessageCarrier(value)) {
-        return value;
+function decodeMessageSendIdentity(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendIdentity> {
+    const timeoutMs = decodeBlackBoxCommandNumber(record.timeoutMs);
+    if (timeoutMs === undefined) {
+        return toInputIssue('messages.send.timeoutMs is required.');
     }
-    throw new TypeError('messages.send.carrier must be ws, rtc, or rtc-with-ws-fallback.');
+    const connection = decodeBlackBoxCommandString(record.connection);
+    if (connection === undefined) {
+        return toInputIssue('messages.send.connection is required.');
+    }
+    const carrier = MESSAGE_CARRIERS.find((candidate) => candidate === record.carrier);
+    if (carrier === undefined) {
+        return toInputIssue('messages.send.carrier must be ws, rtc, or rtc-with-ws-fallback.');
+    }
+    const typeId = decodeBlackBoxCommandString(record.typeId);
+    if (typeId === undefined) {
+        return toInputIssue('messages.send.typeId is required.');
+    }
+    const handleId = decodeBlackBoxCommandString(record.handleId);
+    return handleId === undefined
+        ? toInputIssue('messages.send.handleId is required.')
+        : Either.ofRight({ timeoutMs, connection, carrier, typeId, handleId });
 }
 
-function decodeMessageScope(value: unknown): BlackBoxRallarMessageSendInput['scope'] {
-    if (value === undefined || value === null) {
-        return undefined;
-    }
-    if (isMessageScope(value)) {
-        return value;
-    }
-    throw new TypeError('messages.send.scope must be room, world, or all.');
+/** A null scope or reliability reads as absent, the way the recipe schema writes an unset option. */
+function decodeMessageSendOptions(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, MessageSendOptions> {
+    const scope = record.scope ?? undefined;
+    const reliability = record.reliability ?? undefined;
+    const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
+    const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
+    return decodeBlackBoxCommandRouting(record).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (routing) => {
+            if (scope !== undefined && knownScope === undefined) {
+                return toInputIssue('messages.send.scope must be room, world, or all.');
+            }
+            if (reliability !== undefined && knownReliability === undefined) {
+                return toInputIssue('messages.send.reliability must be best-effort or at-least-once.');
+            }
+            return Either.ofRight({ ...routing, scope: knownScope, reliability: knownReliability });
+        }
+    );
 }
 
-function decodeMessageReliability(value: unknown): BlackBoxRallarMessageSendInput['reliability'] {
-    if (value === undefined || value === null) {
-        return undefined;
-    }
-    if (isMessageReliability(value)) {
-        return value;
-    }
-    throw new TypeError('messages.send.reliability must be best-effort or at-least-once.');
-}
-
-function decodeDeliveryStates(value: unknown): readonly string[] {
-    if (
-        !Array.isArray(value) || value.length === 0 ||
-        !value.every((entry): entry is string => typeof entry === 'string' && DELIVERY_STATES.includes(entry))
-    ) {
-        throw new TypeError(
-            `messages.observe.state must list at least one of ${DELIVERY_STATES.join(', ')}.`
-        );
-    }
-    return value;
-}
-
-function decodeFaultCarrier(value: unknown): TransportFaultCarrier {
-    if (isFaultCarrier(value)) {
-        return value;
-    }
-    throw new TypeError('fault.inject.carrier must be ws or rtc.');
-}
-
-function decodeFaultControlType(value: unknown): TransportFaultMatch['controlType'] {
-    if (value === undefined || value === null) {
-        return undefined;
-    }
-    if (isFaultControlType(value)) {
-        return value;
-    }
-    throw new TypeError('fault.inject.match.controlType must be ack, nack, or repair.');
-}
-
-function decodeFaultMatch(value: unknown): TransportFaultMatch {
-    const record = decodeRequiredBlackBoxCommandRecord(value, 'fault.inject.match');
-    return {
-        controlType: decodeFaultControlType(record.controlType),
-        typeId: decodeBlackBoxCommandString(record.typeId),
-        msgId: decodeBlackBoxCommandString(record.msgId)
-    };
-}
-
-function decodeFaultAction(value: unknown): ScriptedTransportFault['action'] {
+function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {
     if (value === 'drop') {
-        return 'drop';
+        return Either.ofRight('drop');
     }
     const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
-    if (delayMs === undefined) {
-        throw new TypeError('fault.inject.action must be "drop" or an object naming delayMs.');
-    }
-    return { delayMs };
+    return delayMs === undefined
+        ? toInputIssue('fault.inject.action must be "drop" or an object naming delayMs.')
+        : Either.ofRight({ delayMs });
 }
 
-function decodeRequiredBlackBoxCommandRecord(value: unknown, field: string): BlackBoxRallarCommandRecord {
+function decodeFaultMatch(value: unknown): Either<BlackBoxRallarInputIssue, TransportFaultMatch> {
     if (!isBlackBoxCommandRecord(value)) {
-        throw new TypeError(`${field} must be an object.`);
+        return toInputIssue('fault.inject.match must be an object.');
     }
-    return value;
-}
-
-function decodeRequiredBlackBoxCommandString(value: unknown, field: string): string {
-    const decoded = decodeBlackBoxCommandString(value);
-    if (decoded === undefined) {
-        throw new TypeError(`${field} is required.`);
+    const controlType = value.controlType ?? undefined;
+    const knownControlType = FAULT_CONTROL_TYPES.find((candidate) => candidate === controlType);
+    if (controlType !== undefined && knownControlType === undefined) {
+        return toInputIssue('fault.inject.match.controlType must be ack, nack, or repair.');
     }
-    return decoded;
+    return Either.ofRight({
+        controlType: knownControlType,
+        typeId: decodeBlackBoxCommandString(value.typeId),
+        msgId: decodeBlackBoxCommandString(value.msgId)
+    });
 }
 
-function decodeRequiredBlackBoxCommandNumber(value: unknown, field: string): number {
-    const decoded = decodeBlackBoxCommandNumber(value);
-    if (decoded === undefined) {
-        throw new TypeError(`${field} is required.`);
-    }
-    return decoded;
-}
-
-function isMessageCarrier(value: unknown): value is BlackBoxRallarMessageSendInput['carrier'] {
-    return typeof value === 'string' && MESSAGE_CARRIERS.includes(value);
-}
-
-function isMessageScope(value: unknown): value is 'room' | 'world' | 'all' {
-    return typeof value === 'string' && MESSAGE_SCOPES.includes(value);
-}
-
-function isMessageReliability(value: unknown): value is 'best-effort' | 'at-least-once' {
-    return typeof value === 'string' && MESSAGE_RELIABILITIES.includes(value);
+function isDeliveryStateList(value: unknown): value is readonly ALDeliveryState[] {
+    return Array.isArray(value) && value.length > 0 &&
+        value.every((entry) => AL_DELIVERY_STATES.some((state) => state === entry));
 }
 
 function isFaultCarrier(value: unknown): value is TransportFaultCarrier {
-    return typeof value === 'string' && FAULT_CARRIERS.includes(value);
+    return typeof value === 'string' && FAULT_CARRIERS.some((carrier) => carrier === value);
 }
 
-function isFaultControlType(value: unknown): value is 'ack' | 'nack' | 'repair' {
-    return typeof value === 'string' && FAULT_CONTROL_TYPES.includes(value);
+function toInputIssue<T>(message: string): Either<BlackBoxRallarInputIssue, T> {
+    return Either.ofLeft({ message });
 }

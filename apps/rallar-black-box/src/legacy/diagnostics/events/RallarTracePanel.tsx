@@ -1,5 +1,5 @@
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { Metric } from '../../shared/Metric.tsx';

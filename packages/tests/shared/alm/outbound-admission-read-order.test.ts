@@ -71,7 +71,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
         });
         await captured.promise;
         const won = await winner.commit({
@@ -80,7 +80,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const winningSnapshot = await store.readSentMessage(message.id.msgId);
         resume.resolve();
@@ -93,10 +93,10 @@ describe('outbound admission observation order', () => {
         const sent: string[] = [];
         const runtime = createDefaultOutboundTestRuntime({
             stores: { admissionStore: store, workQueue: backend.workQueue },
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'changed' }] }),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'changed' }] }),
             sendPreparedMessage: async () => {
                 sent.push('sent');
-                return { status: 'sent' };
+                return { status: 'sent', submissionAttempted: true };
             }
         });
         await runtime.ready();
@@ -137,7 +137,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -152,7 +152,10 @@ describe('outbound admission observation order', () => {
             }
             return value;
         });
-        const pending = store.readRepairMessage(message.id.msgId, (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }));
+        const pending = store.readRepairMessage(
+            message.id.msgId,
+            (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+        );
         await captured.promise;
         expect(
             await store.commitBundle({
@@ -202,7 +205,7 @@ describe('outbound admission observation order', () => {
             phase: 'immediate',
             origin: 'send',
             options: {},
-            planner: (msg) => ({ msg, persist: true, preparedMessages: [] })
+            planner: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const captured = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
@@ -223,7 +226,10 @@ describe('outbound admission observation order', () => {
             }
             return entry;
         });
-        const pending = store.readRepairMessage(message.id.msgId, (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }));
+        const pending = store.readRepairMessage(
+            message.id.msgId,
+            (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] })
+        );
         await captured.promise;
         expect(
             await store.commitBundle({

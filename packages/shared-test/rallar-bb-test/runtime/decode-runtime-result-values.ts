@@ -1,0 +1,44 @@
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestTransport
+} from '../rallar-black-box-test-contracts.ts';
+
+const RUNTIME_TRANSPORTS: readonly RallarBlackBoxTestTransport[] = [
+    'realtime',
+    'messages.rtc',
+    'messages.ws',
+    'ws',
+    'http'
+];
+
+export function decodeRecord(value: unknown): RallarBlackBoxTestRecord {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? value as RallarBlackBoxTestRecord
+        : {};
+}
+
+export function decodePositiveInteger(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+export function decodeNonNegativeInteger(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+export function decodeFiniteNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+export function decodeBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
+export function decodeText(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+export function decodeTransport(value: unknown): RallarBlackBoxTestTransport | undefined {
+    return typeof value === 'string' && RUNTIME_TRANSPORTS.some((transport) => transport === value)
+        ? value as RallarBlackBoxTestTransport
+        : undefined;
+}

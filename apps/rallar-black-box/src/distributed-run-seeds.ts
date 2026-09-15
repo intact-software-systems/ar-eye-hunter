@@ -1,9 +1,13 @@
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { normalizeRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunArtifactBundle,
@@ -20,13 +24,13 @@ export type DistributedRunSeedId =
     | 'high-latency-rtc'
     | 'artifact-missing';
 
-export type DistributedRunSeedMetadata = Readonly<{
-    id: DistributedRunSeedId;
-    label: string;
-    description: string;
-    artifactIntentionallyMissing?: boolean;
-    evidenceDegraded?: boolean;
-}>;
+export interface DistributedRunSeedMetadata {
+    readonly id: DistributedRunSeedId;
+    readonly label: string;
+    readonly description: string;
+    readonly artifactIntentionallyMissing?: boolean;
+    readonly evidenceDegraded?: boolean;
+}
 
 export type SyntheticDistributedRunSeed =
     & DistributedRunSeedMetadata
@@ -38,16 +42,16 @@ export type SyntheticDistributedRunSeed =
         artifactBundle?: ControlDistributedRunArtifactBundle;
     }>;
 
-type SeedAgentInput = Readonly<{
-    agentId: string;
-    principalId: string;
-    role: string;
-    stageDurationMs: number;
-    startDurationMs: number;
-    startOk: boolean;
-    eventCount: number;
-    failureMessage?: string;
-}>;
+interface SeedAgentInput {
+    readonly agentId: string;
+    readonly principalId: string;
+    readonly role: string;
+    readonly stageDurationMs: number;
+    readonly startDurationMs: number;
+    readonly startOk: boolean;
+    readonly eventCount: number;
+    readonly failureMessage?: string;
+}
 
 type SeedBuildInput =
     & DistributedRunSeedMetadata
@@ -140,209 +144,177 @@ export function createSyntheticDistributedRunSeed(
 
     switch (id) {
         case 'passed-clean':
-            return buildSeed({
+            return toSyntheticDistributedRunSeed({
                 ...metadata,
                 state: 'passed',
                 ok: true,
                 agents: [
-                    seedAgent('seed-agent-a', 'alice', 'sender', 80, 170, true, 2),
-                    seedAgent('seed-agent-b', 'bob', 'receiver', 90, 190, true, 2)
+                    {
+                        agentId: 'seed-agent-a',
+                        principalId: 'alice',
+                        role: 'sender',
+                        stageDurationMs: 80,
+                        startDurationMs: 170,
+                        startOk: true,
+                        eventCount: 2
+                    },
+                    {
+                        agentId: 'seed-agent-b',
+                        principalId: 'bob',
+                        role: 'receiver',
+                        stageDurationMs: 90,
+                        startDurationMs: 190,
+                        startOk: true,
+                        eventCount: 2
+                    }
                 ]
             });
         case 'passed-warnings':
-            return buildSeed({
+            return toSyntheticDistributedRunSeed({
                 ...metadata,
                 state: 'passed',
                 ok: true,
                 warningDiagnostic: true,
                 agents: [
-                    seedAgent('seed-agent-a', 'alice', 'sender', 80, 170, true, 2),
-                    seedAgent('seed-agent-b', 'bob', 'receiver', 90, 190, true, 2)
+                    {
+                        agentId: 'seed-agent-a',
+                        principalId: 'alice',
+                        role: 'sender',
+                        stageDurationMs: 80,
+                        startDurationMs: 170,
+                        startOk: true,
+                        eventCount: 2
+                    },
+                    {
+                        agentId: 'seed-agent-b',
+                        principalId: 'bob',
+                        role: 'receiver',
+                        stageDurationMs: 90,
+                        startDurationMs: 190,
+                        startOk: true,
+                        eventCount: 2
+                    }
                 ]
             });
         case 'failed-command':
-            return buildSeed({
+            return toSyntheticDistributedRunSeed({
                 ...metadata,
                 state: 'failed',
                 ok: false,
                 agents: [
-                    seedAgent('seed-agent-a', 'alice', 'sender', 80, 170, true, 2),
-                    seedAgent(
-                        'seed-agent-b',
-                        'bob',
-                        'receiver',
-                        90,
-                        520,
-                        false,
-                        0,
-                        'Receiver did not observe the RTC payload.'
-                    )
+                    {
+                        agentId: 'seed-agent-a',
+                        principalId: 'alice',
+                        role: 'sender',
+                        stageDurationMs: 80,
+                        startDurationMs: 170,
+                        startOk: true,
+                        eventCount: 2
+                    },
+                    {
+                        agentId: 'seed-agent-b',
+                        principalId: 'bob',
+                        role: 'receiver',
+                        stageDurationMs: 90,
+                        startDurationMs: 520,
+                        startOk: false,
+                        eventCount: 0,
+                        failureMessage: 'Receiver did not observe the RTC payload.'
+                    }
                 ]
             });
         case 'high-latency-rtc':
-            return buildSeed({
+            return toSyntheticDistributedRunSeed({
                 ...metadata,
                 state: 'passed',
                 ok: true,
                 agents: [
-                    seedAgent('seed-agent-a', 'alice', 'sender', 95, 130, true, 3),
-                    seedAgent('seed-agent-b', 'bob', 'receiver', 980, 1_040, true, 3),
-                    seedAgent('seed-agent-c', 'cara', 'observer', 1_120, 1_260, true, 3)
+                    {
+                        agentId: 'seed-agent-a',
+                        principalId: 'alice',
+                        role: 'sender',
+                        stageDurationMs: 95,
+                        startDurationMs: 130,
+                        startOk: true,
+                        eventCount: 3
+                    },
+                    {
+                        agentId: 'seed-agent-b',
+                        principalId: 'bob',
+                        role: 'receiver',
+                        stageDurationMs: 980,
+                        startDurationMs: 1_040,
+                        startOk: true,
+                        eventCount: 3
+                    },
+                    {
+                        agentId: 'seed-agent-c',
+                        principalId: 'cara',
+                        role: 'observer',
+                        stageDurationMs: 1_120,
+                        startDurationMs: 1_260,
+                        startOk: true,
+                        eventCount: 3
+                    }
                 ]
             });
         case 'artifact-missing':
-            return buildSeed({
+            return toSyntheticDistributedRunSeed({
                 ...metadata,
                 state: 'passed',
                 ok: true,
                 omitArtifact: true,
                 agents: [
-                    seedAgent('seed-agent-a', 'alice', 'sender', 80, 170, true, 2),
-                    seedAgent('seed-agent-b', 'bob', 'receiver', 90, 190, true, 2)
+                    {
+                        agentId: 'seed-agent-a',
+                        principalId: 'alice',
+                        role: 'sender',
+                        stageDurationMs: 80,
+                        startDurationMs: 170,
+                        startOk: true,
+                        eventCount: 2
+                    },
+                    {
+                        agentId: 'seed-agent-b',
+                        principalId: 'bob',
+                        role: 'receiver',
+                        stageDurationMs: 90,
+                        startDurationMs: 190,
+                        startOk: true,
+                        eventCount: 2
+                    }
                 ]
             });
     }
 }
 
-function seedAgent(
-    agentId: string,
-    principalId: string,
-    role: string,
-    stageDurationMs: number,
-    startDurationMs: number,
-    startOk: boolean,
-    eventCount: number,
-    failureMessage?: string
-): SeedAgentInput {
-    return {
-        agentId,
-        principalId,
-        role,
-        stageDurationMs,
-        startDurationMs,
-        startOk,
-        eventCount,
-        failureMessage
-    };
-}
-
-function buildSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {
+function toSyntheticDistributedRunSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {
     const distributedRunId = `seed-${input.id}`;
     const controlRunId = `seed-control-${input.id}`;
-    const createdAtEpochMs = SEED_BASE_EPOCH_MS + 1_000;
-    const stagedAtEpochMs = createdAtEpochMs + 100;
-    const startedAtEpochMs = createdAtEpochMs + 500;
-    const lastStartResultEpochMs = Math.max(
-        ...input.agents.map((agent) => startedAtEpochMs + agentOffset(agent) + 20 + agent.startDurationMs)
-    );
-    const completedAtEpochMs = lastStartResultEpochMs + 50;
-    const generatedAtEpochMs = completedAtEpochMs + 300;
-    const manifest = seedManifest({
+    const schedule = toSeedSchedule(input);
+    const { createdAtEpochMs, stagedAtEpochMs, startedAtEpochMs, completedAtEpochMs, generatedAtEpochMs } = schedule;
+    const evidence = { input, schedule, controlRunId, distributedRunId };
+    const controlRun = toSeedControlRun(evidence);
+    const manifest = toSeedManifest({
         distributedRunId,
         controlRunId,
         seedId: input.id,
         agents: input.agents
     });
     const commandLinks = input.agents.flatMap((agent) => [
-        commandLink('stage', agent, stagedAtEpochMs + agentOffset(agent), manifest.recipes[0]?.recipeId),
-        commandLink('start', agent, startedAtEpochMs + agentOffset(agent), manifest.recipes[0]?.recipeId)
-    ]);
-    const commands = input.agents.flatMap((agent) => [
-        queuedCommand({
-            runId: controlRunId,
-            agent,
+        toSeedCommandLink({
             phase: 'stage',
-            queuedAtEpochMs: stagedAtEpochMs + agentOffset(agent),
-            durationMs: agent.stageDurationMs,
-            command: { kind: 'recipe.load', recipe: SEED_RECIPE }
+            agent: agent,
+            queuedAtEpochMs: stagedAtEpochMs + toSeedAgentOffset(agent),
+            recipeId: manifest.recipes[0]?.recipeId
         }),
-        queuedCommand({
-            runId: controlRunId,
-            agent,
+        toSeedCommandLink({
             phase: 'start',
-            queuedAtEpochMs: startedAtEpochMs + agentOffset(agent),
-            durationMs: agent.startDurationMs,
-            command: { kind: 'recipe.run', recipe: SEED_RECIPE }
+            agent: agent,
+            queuedAtEpochMs: startedAtEpochMs + toSeedAgentOffset(agent),
+            recipeId: manifest.recipes[0]?.recipeId
         })
     ]);
-    const results = input.agents.flatMap((agent) => [
-        resultEnvelope({
-            runId: controlRunId,
-            agent,
-            commandId: commandId('stage', agent),
-            kind: 'recipe.load',
-            startedAtEpochMs: stagedAtEpochMs + agentOffset(agent) + 20,
-            durationMs: agent.stageDurationMs,
-            ok: true
-        }),
-        resultEnvelope({
-            runId: controlRunId,
-            agent,
-            commandId: commandId('start', agent),
-            kind: 'recipe.run',
-            startedAtEpochMs: startedAtEpochMs + agentOffset(agent) + 20,
-            durationMs: agent.startDurationMs,
-            ok: agent.startOk,
-            errorMessage: agent.failureMessage
-        })
-    ]);
-    const events = [
-        ...input.agents.flatMap((agent) =>
-            Array.from({ length: agent.eventCount }, (_, index) =>
-                eventEnvelope({
-                    runId: controlRunId,
-                    distributedRunId,
-                    agent,
-                    commandId: commandId('start', agent),
-                    index,
-                    atEpochMs: startedAtEpochMs + agentOffset(agent) + 80 + index * 35
-                }))
-        ),
-        ...(input.warningDiagnostic
-            ? [diagnosticEnvelope({
-                runId: controlRunId,
-                distributedRunId,
-                agent: input.agents[1] ?? input.agents[0],
-                commandId: commandId('start', input.agents[1] ?? input.agents[0]),
-                atEpochMs: startedAtEpochMs + 240
-            })]
-            : []),
-        ...input.agents
-            .filter((agent) => !agent.startOk)
-            .map((agent) =>
-                diagnosticEnvelope({
-                    runId: controlRunId,
-                    distributedRunId,
-                    agent,
-                    commandId: commandId('start', agent),
-                    atEpochMs: startedAtEpochMs + agent.startDurationMs,
-                    severity: 'error',
-                    message: agent.failureMessage ?? 'Synthetic command failed.'
-                })
-            )
-    ];
-    const controlRun: ControlRunSnapshot = {
-        runId: controlRunId,
-        createdAtEpochMs,
-        updatedAtEpochMs: generatedAtEpochMs,
-        agents: input.agents.map((agent) =>
-            agentSnapshot({
-                runId: controlRunId,
-                agent,
-                updatedAtEpochMs: generatedAtEpochMs,
-                completedCommandIds: [
-                    commandId('stage', agent),
-                    commandId('start', agent)
-                ]
-            })
-        ),
-        commands,
-        results,
-        events,
-        stats: [],
-        reports: [],
-        heartbeats: []
-    };
     const distributedRun: ControlDistributedRunSnapshot = {
         distributedRunId,
         controlRunId,
@@ -355,16 +327,15 @@ function buildSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {
         completedAtEpochMs,
         targetAgentIds: input.agents.map((agent) => agent.agentId),
         commandLinks,
-        rollup: rollup(input)
+        rollup: toSeedRollup(input)
     };
     const artifactBundle = input.omitArtifact
         ? undefined
-        : distributedArtifactBundle({
+        : toSeedArtifactBundle({
             distributedRun,
             controlRun,
             generatedAtEpochMs
         });
-
     return {
         ...input,
         source: 'synthetic',
@@ -375,7 +346,7 @@ function buildSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {
     };
 }
 
-function seedManifest(
+function toSeedManifest(
     input: Readonly<{
         distributedRunId: string;
         controlRunId: string;
@@ -421,23 +392,26 @@ function seedManifest(
     };
 }
 
-function commandLink(
-    phase: ControlDistributedRunCommandLink['phase'],
-    agent: SeedAgentInput,
-    queuedAtEpochMs: number,
-    recipeId?: string
+function toSeedCommandLink(
+    input: {
+        readonly phase: ControlDistributedRunCommandLink['phase'];
+        readonly agent: SeedAgentInput;
+        readonly queuedAtEpochMs: number;
+        readonly recipeId?: string;
+    }
 ): ControlDistributedRunCommandLink {
+    const { phase, agent, queuedAtEpochMs, recipeId } = input;
     return {
         phase,
         agentId: agent.agentId,
-        commandId: commandId(phase, agent),
+        commandId: toSeedCommandId(phase, agent),
         recipeId,
         role: agent.role,
         queuedAtEpochMs
     };
 }
 
-function queuedCommand(
+function toSeedQueuedCommand(
     input: Readonly<{
         runId: string;
         agent: SeedAgentInput;
@@ -453,7 +427,7 @@ function queuedCommand(
             protocolVersion: 1,
             runId: input.runId,
             agentId: input.agent.agentId,
-            commandId: commandId(input.phase, input.agent),
+            commandId: toSeedCommandId(input.phase, input.agent),
             command: input.command
         },
         queuedAtEpochMs: input.queuedAtEpochMs,
@@ -463,7 +437,7 @@ function queuedCommand(
     };
 }
 
-function resultEnvelope(
+function toSeedResultEnvelope(
     input: Readonly<{
         runId: string;
         agent: SeedAgentInput;
@@ -502,7 +476,7 @@ function resultEnvelope(
     };
 }
 
-function eventEnvelope(
+function toSeedEventEnvelope(
     input: Readonly<{
         runId: string;
         distributedRunId: string;
@@ -530,7 +504,7 @@ function eventEnvelope(
     };
 }
 
-function diagnosticEnvelope(
+function toSeedDiagnosticEnvelope(
     input: Readonly<{
         runId: string;
         distributedRunId: string;
@@ -550,21 +524,22 @@ function diagnosticEnvelope(
         commandId: input.commandId,
         eventId: `${input.commandId}-${severity}-diagnostic`,
         atEpochMs: input.atEpochMs,
-        payload: {
-            distributedRunId: input.distributedRunId,
+        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
             topic: 'rallar.browser.realtime.synthetic_seed',
-            diagnosticTypeId: 'synthetic-seed',
             severity,
             transport: 'messages.rtc',
             message: input.message ?? 'Synthetic RTC evidence includes a warning diagnostic.',
             commandId: input.commandId,
-            agentId: input.agent.agentId,
-            roomId: 'seed-room'
-        }
+            roomId: 'seed-room',
+            payload: {
+                distributedRunId: input.distributedRunId,
+                agentId: input.agent.agentId
+            }
+        })
     };
 }
 
-function agentSnapshot(
+function toSeedAgentSnapshot(
     input: Readonly<{
         runId: string;
         agent: SeedAgentInput;
@@ -615,7 +590,7 @@ function agentSnapshot(
     };
 }
 
-function rollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup {
+function toSeedRollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup {
     const failedAgents = input.agents.filter((agent) => !agent.startOk);
     return {
         state: input.state,
@@ -648,7 +623,7 @@ function rollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup {
     };
 }
 
-function distributedArtifactBundle(
+function toSeedArtifactBundle(
     input: Readonly<{
         distributedRun: ControlDistributedRunSnapshot;
         controlRun: ControlRunSnapshot;
@@ -683,13 +658,160 @@ function distributedArtifactBundle(
     };
 }
 
-function commandId(
+function toSeedCommandId(
     phase: 'stage' | 'start' | 'barrier' | 'cancel',
     agent: SeedAgentInput
 ): string {
     return `seed-${phase}-${agent.role}`;
 }
 
-function agentOffset(agent: SeedAgentInput): number {
+function toSeedAgentOffset(agent: SeedAgentInput): number {
     return agent.agentId.charCodeAt(agent.agentId.length - 1) * 5;
+}
+
+interface SeedSchedule {
+    readonly createdAtEpochMs: number;
+    readonly stagedAtEpochMs: number;
+    readonly startedAtEpochMs: number;
+    readonly completedAtEpochMs: number;
+    readonly generatedAtEpochMs: number;
+}
+
+function toSeedSchedule(input: SeedBuildInput): SeedSchedule {
+    const createdAtEpochMs = SEED_BASE_EPOCH_MS + 1_000;
+    const stagedAtEpochMs = createdAtEpochMs + 100;
+    const startedAtEpochMs = createdAtEpochMs + 500;
+    const lastStartResultEpochMs = Math.max(
+        ...input.agents.map((agent) => startedAtEpochMs + toSeedAgentOffset(agent) + 20 + agent.startDurationMs)
+    );
+    const completedAtEpochMs = lastStartResultEpochMs + 50;
+    const generatedAtEpochMs = completedAtEpochMs + 300;
+    return { createdAtEpochMs, stagedAtEpochMs, startedAtEpochMs, completedAtEpochMs, generatedAtEpochMs };
+}
+
+interface SeedEvidenceInput {
+    readonly input: SeedBuildInput;
+    readonly schedule: SeedSchedule;
+    readonly controlRunId: string;
+    readonly distributedRunId: string;
+}
+
+function toSeedCommands(evidence: SeedEvidenceInput): ControlRunSnapshot['commands'] {
+    const { input, schedule, controlRunId, distributedRunId } = evidence;
+    const { stagedAtEpochMs, startedAtEpochMs, generatedAtEpochMs, createdAtEpochMs } = schedule;
+    const commands = input.agents.flatMap((agent) => [
+        toSeedQueuedCommand({
+            runId: controlRunId,
+            agent,
+            phase: 'stage',
+            queuedAtEpochMs: stagedAtEpochMs + toSeedAgentOffset(agent),
+            durationMs: agent.stageDurationMs,
+            command: { kind: 'recipe.load', recipe: SEED_RECIPE }
+        }),
+        toSeedQueuedCommand({
+            runId: controlRunId,
+            agent,
+            phase: 'start',
+            queuedAtEpochMs: startedAtEpochMs + toSeedAgentOffset(agent),
+            durationMs: agent.startDurationMs,
+            command: { kind: 'recipe.run', recipe: SEED_RECIPE }
+        })
+    ]);
+    return commands;
+}
+
+function toSeedResults(evidence: SeedEvidenceInput): ControlRunSnapshot['results'] {
+    const { input, schedule, controlRunId, distributedRunId } = evidence;
+    const { stagedAtEpochMs, startedAtEpochMs, generatedAtEpochMs, createdAtEpochMs } = schedule;
+    const results = input.agents.flatMap((agent) => [
+        toSeedResultEnvelope({
+            runId: controlRunId,
+            agent,
+            commandId: toSeedCommandId('stage', agent),
+            kind: 'recipe.load',
+            startedAtEpochMs: stagedAtEpochMs + toSeedAgentOffset(agent) + 20,
+            durationMs: agent.stageDurationMs,
+            ok: true
+        }),
+        toSeedResultEnvelope({
+            runId: controlRunId,
+            agent,
+            commandId: toSeedCommandId('start', agent),
+            kind: 'recipe.run',
+            startedAtEpochMs: startedAtEpochMs + toSeedAgentOffset(agent) + 20,
+            durationMs: agent.startDurationMs,
+            ok: agent.startOk,
+            errorMessage: agent.failureMessage
+        })
+    ]);
+    return results;
+}
+
+function toSeedEvents(evidence: SeedEvidenceInput): ControlRunSnapshot['events'] {
+    const { input, schedule, controlRunId, distributedRunId } = evidence;
+    const { stagedAtEpochMs, startedAtEpochMs, generatedAtEpochMs, createdAtEpochMs } = schedule;
+    const events = [
+        ...input.agents.flatMap((agent) =>
+            Array.from({ length: agent.eventCount }, (_, index) =>
+                toSeedEventEnvelope({
+                    runId: controlRunId,
+                    distributedRunId,
+                    agent,
+                    commandId: toSeedCommandId('start', agent),
+                    index,
+                    atEpochMs: startedAtEpochMs + toSeedAgentOffset(agent) + 80 + index * 35
+                }))
+        ),
+        ...(input.warningDiagnostic
+            ? [toSeedDiagnosticEnvelope({
+                runId: controlRunId,
+                distributedRunId,
+                agent: input.agents[1] ?? input.agents[0],
+                commandId: toSeedCommandId('start', input.agents[1] ?? input.agents[0]),
+                atEpochMs: startedAtEpochMs + 240
+            })]
+            : []),
+        ...input.agents
+            .filter((agent) => !agent.startOk)
+            .map((agent) =>
+                toSeedDiagnosticEnvelope({
+                    runId: controlRunId,
+                    distributedRunId,
+                    agent,
+                    commandId: toSeedCommandId('start', agent),
+                    atEpochMs: startedAtEpochMs + agent.startDurationMs,
+                    severity: 'error',
+                    message: agent.failureMessage ?? 'Synthetic command failed.'
+                })
+            )
+    ];
+    return events;
+}
+
+function toSeedControlRun(evidence: SeedEvidenceInput): ControlRunSnapshot {
+    const { input, schedule, controlRunId, distributedRunId } = evidence;
+    const { stagedAtEpochMs, startedAtEpochMs, generatedAtEpochMs, createdAtEpochMs } = schedule;
+    const controlRun: ControlRunSnapshot = {
+        runId: controlRunId,
+        createdAtEpochMs,
+        updatedAtEpochMs: generatedAtEpochMs,
+        agents: input.agents.map((agent) =>
+            toSeedAgentSnapshot({
+                runId: controlRunId,
+                agent,
+                updatedAtEpochMs: generatedAtEpochMs,
+                completedCommandIds: [
+                    toSeedCommandId('stage', agent),
+                    toSeedCommandId('start', agent)
+                ]
+            })
+        ),
+        commands: toSeedCommands(evidence),
+        results: toSeedResults(evidence),
+        events: toSeedEvents(evidence),
+        stats: [],
+        reports: [],
+        heartbeats: []
+    };
+    return controlRun;
 }

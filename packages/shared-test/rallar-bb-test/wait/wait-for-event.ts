@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestWaitCommand,
     RallarBlackBoxTestWaitResultValue
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
 
 import { findWaitEvent } from './wait-event-match.ts';
 

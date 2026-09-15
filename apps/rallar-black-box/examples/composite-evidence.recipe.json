@@ -1,11 +1,17 @@
 {
+  "schemaVersion": 1,
   "recipeId": "composite-evidence-recipe",
   "name": "Composite evidence recipe",
   "description": "Validates loop, parallel, wait, and assert command authoring without requiring live Rallar services.",
   "continueOnFailure": false,
   "metadata": {
     "profile": "composite",
-    "primitives": ["loop", "parallel", "wait", "assert"],
+    "primitives": [
+      "loop",
+      "parallel",
+      "wait",
+      "assert"
+    ],
     "notes": [
       "This recipe is deterministic and can run in the local workbench with the simulated provider.",
       "Use it to verify schema authoring, nested command preview, wait matching, and assertion feedback before switching to live RTC or WS recipes."

@@ -1,6 +1,8 @@
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
+import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { RallarBlackBoxBrowserRallarRuntime } from '../browser-adapter.ts';
+import type { BrowserCommandAbortScope } from '../browser/browser-command-cancellation.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../browser/browser-command-contracts.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -13,18 +15,13 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestStorageCountersResultValue
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
 import { waitDeadlineEpochMs } from '../wait/wait-for-event.ts';
-import type { RallarBlackBoxTestAlmCommandKind } from './control-protocol-alm-commands.ts';
+import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
 export type RallarBlackBoxAlmCommandWithId =
     & Extract<RallarBlackBoxTestCommand, Readonly<{ kind: RallarBlackBoxTestAlmCommandKind; }>>
     & Readonly<{ commandId: string; }>;
-
-export interface RallarBlackBoxAlmAbortScope {
-    readonly signal?: AbortSignal;
-    cleanup(): void;
-}
 
 /** Everything the ALM handlers borrow from the browser adapter, bound by the adapter itself. */
 export interface RallarBlackBoxAlmBrowserPort {
@@ -32,7 +29,7 @@ export interface RallarBlackBoxAlmBrowserPort {
     readonly commandAbortScope: (
         command: RallarBlackBoxAlmCommandWithId,
         context: RallarBlackBoxTestCommandContext
-    ) => RallarBlackBoxAlmAbortScope;
+    ) => BrowserCommandAbortScope;
     readonly withAbort: <T>(operation: Promise<T>, signal: AbortSignal | undefined) => Promise<T>;
     readonly resolveCommandFields: (
         command: RallarBlackBoxAlmCommandWithId,
@@ -113,7 +110,6 @@ const ALM_DELIVERY_TOPICS: Readonly<Record<AlmDeliveryKind, string>> = {
 const ALM_ERROR_CODES = {
     invalidCommandInput: 'RALLAR_BLACK_BOX_ALM_INVALID_COMMAND_INPUT',
     invalidRuntimeResult: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
-    unknownDeliveryHandle: 'RALLAR_BLACK_BOX_ALM_UNKNOWN_DELIVERY_HANDLE',
     deliveryStateTimeout: 'RALLAR_BLACK_BOX_ALM_DELIVERY_STATE_TIMEOUT',
     scriptedPortsUnavailable: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
@@ -142,7 +138,7 @@ const ALM_INBOUND_MESSAGE_TOPICS: readonly string[] = [
 const ALM_RECEIVED_POLL_INTERVAL_MS = 10;
 const ALM_DIAGNOSTIC_SOURCE = 'browser-adapter';
 
-export async function executeAlmBrowserCommand(
+export async function dispatchAlmBrowserCommand(
     port: RallarBlackBoxAlmBrowserPort,
     command: RallarBlackBoxAlmCommandWithId,
     context: RallarBlackBoxTestCommandContext
@@ -172,6 +168,7 @@ function sendAlmMessage(
     const send = {
         ...input.port.resolveCommandFields(input.command, input.context),
         connection,
+        timeoutMs: readAlmWaitTimeoutMs(input.command, input.port.now),
         handleId: input.command.handleId ?? input.command.commandId
     };
     return runAlmRuntimeCommand({
@@ -194,7 +191,7 @@ function readAlmDelivery(
         connection,
         handleId: input.command.handleId,
         ...(kind === 'messages.observe'
-            ? { timeoutMs: toAlmObserveTimeoutMs(input.command, input.port.now) }
+            ? { timeoutMs: readAlmWaitTimeoutMs(input.command, input.port.now) }
             : {})
     };
     return runAlmRuntimeCommand({
@@ -430,11 +427,12 @@ function toAlmReceivedOutcome(input: AlmReceivedOutcomeInput): RallarBlackBoxTes
         };
 }
 
-function toAlmObserveTimeoutMs(
+function readAlmWaitTimeoutMs(
     command: RallarBlackBoxAlmCommandWithId,
     now: () => number
 ): number {
-    return Math.max(0, waitDeadlineEpochMs(command, now) - now());
+    const nowEpochMs = now();
+    return Math.max(0, waitDeadlineEpochMs(command, () => nowEpochMs) - nowEpochMs);
 }
 
 function recordAlmDiagnostic<T>(input: RecordAlmDiagnosticInput<T>): void {
@@ -488,9 +486,6 @@ function toAlmErrorCode(error: Error): string {
 
 function toAlmPageRuntimeErrorCode(message: string): string {
     const prefixes = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES;
-    if (message.startsWith(prefixes.unknownDeliveryHandle)) {
-        return ALM_ERROR_CODES.unknownDeliveryHandle;
-    }
     if (message.startsWith(prefixes.deliveryStateTimeout)) {
         return ALM_ERROR_CODES.deliveryStateTimeout;
     }
@@ -510,7 +505,7 @@ function decodeAlmMessagesSendResultValue(
         handleId: requireAlmStringField(record, path, 'handleId'),
         ...(msgId === undefined ? {} : { msgId }),
         carrier: requireAlmCarrierField(record, path),
-        status: requireAlmStringField(record, path, 'status'),
+        status: requireAlmDeliveryState(record, path, 'status'),
         ...(reason === undefined ? {} : { reason })
     };
 }
@@ -522,11 +517,12 @@ function decodeAlmDeliveryResultValue(
     const path = 'delivery observation';
     return {
         handleId: requireAlmStringField(record, path, 'handleId'),
-        state: requireAlmStringField(record, path, 'state'),
+        state: requireAlmDeliveryState(record, path, 'state'),
         submitted: requireAlmBooleanField(record, path, 'submitted'),
-        confirmedPeerIds: requireAlmStringListField(record, path, 'confirmedPeerIds'),
-        unconfirmedPeerIds: requireAlmStringListField(record, path, 'unconfirmedPeerIds'),
-        attempts: requireAlmNumberField(record, path, 'attempts')
+        confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
+        unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
+        attempts: requireAlmNumberField(record, path, 'attempts'),
+        reason: readAlmOptionalStringField(record, path, 'reason')
     };
 }
 
@@ -653,4 +649,12 @@ function toAlmInvalidRuntimeResultError(field: string): Error {
 function toAlmEventStringField(record: RallarBlackBoxTestRecord, key: string): string {
     const value = record[key];
     return typeof value === 'string' ? value : '';
+}
+
+function requireAlmDeliveryState(record: RallarBlackBoxTestRecord, path: string, key: string): ALDeliveryState {
+    const state = AL_DELIVERY_STATES.find((candidate) => candidate === record[key]);
+    if (state === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${key}`);
+    }
+    return state;
 }

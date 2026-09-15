@@ -2,7 +2,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { DistributedRunMonitor } from './distributed-recipes.ts';
 
 export type RtcConnectStageId =

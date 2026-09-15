@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
-import type { RallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/types.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { RallarBlackBoxTestResult } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 type HttpResultValue = Readonly<{
     status: number;

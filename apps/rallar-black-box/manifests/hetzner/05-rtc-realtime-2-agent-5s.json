@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-realtime",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-realtime",
         "name": "RTC realtime position stream",
         "description": "Connect RTC and send game-style position updates at 10 Hz for the configured duration.",

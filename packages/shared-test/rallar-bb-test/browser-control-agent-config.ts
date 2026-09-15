@@ -5,7 +5,7 @@ import {
     type RallarBlackBoxProviderMode
 } from './client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from './types.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from './rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';

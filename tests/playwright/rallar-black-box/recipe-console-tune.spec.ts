@@ -26,7 +26,6 @@ const TUNE_EDITABLE_KNOB_PATHS = [
     '/recipes/0/recipe/commands/0/maxInFlight',
     '/recipes/0/recipe/commands/0/thresholds/minSendSuccessRatio',
     '/recipes/0/recipe/commands/0/thresholds/maxDroppedFrames',
-    '/recipes/0/recipe/commands/0/thresholds/maxBackpressureCount',
     '/recipes/0/recipe/commands/0/thresholds/maxP95SendDurationMs',
     '/recipes/0/recipe/commands/0/thresholds/maxP99SendDurationMs',
     '/recipes/0/recipe/commands/0/thresholds/maxAverageStartDriftMs',
@@ -34,7 +33,7 @@ const TUNE_EDITABLE_KNOB_PATHS = [
     '/recipes/0/recipe/commands/0/thresholds/maxJitterMs'
 ] as const;
 
-test('shows command percentiles cadence drift drops and backpressure for an RTC stream', async ({ context, page }) => {
+test('shows command percentiles cadence drift and drops for an RTC stream', async ({ context, page }) => {
     const fixture = await installRecipeConsoleTuneFixture(context);
     await page.goto(TUNE_ANALYZE_ROUTE);
     await chooseAnalyzeFiles(page, [createTuneArtifactUpload()]);
@@ -76,7 +75,6 @@ test('shows command percentiles cadence drift drops and backpressure for an RTC 
             '22 Hz completed',
             '28 ms max drift',
             '6 late',
-            '4 backpressure',
             'P50 23 ms',
             'P95 68 ms',
             'P99 92 ms',
@@ -195,7 +193,7 @@ test('renders explicit offline and invalid-focus states without candidate author
     await expect(tune.locator('[data-tune-command-timing]'))
         .toContainText('Command timing is unavailable for this source.');
     await expect(tune.locator('[data-tune-stream-health]'))
-        .toContainText('RTC frame disposition, cadence, drift, and backpressure are unavailable.');
+        .toContainText('RTC frame disposition, cadence, and drift are unavailable.');
     const candidate = tune.locator('[data-tune-candidate]');
     await expect(candidate).toContainText(
         'A paired distributed and control run is required.'

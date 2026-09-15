@@ -2,22 +2,24 @@ import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema,
-    type JsonSchema,
-    type JsonSchemaValidationIssue,
-    type RallarBlackBoxCommandCapability
-} from '@shared-test/rallar-bb-test/schema.ts';
 import type {
+    RallarBlackBoxCommandCapability,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRecipe
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+} from '@shared-test/rallar-bb-test/schema.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema,
+    type JsonSchemaValidationIssue
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '@shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA } from './shared-test-handoff-fixtures.ts';
 
 export type SchemaAuthoringTarget =

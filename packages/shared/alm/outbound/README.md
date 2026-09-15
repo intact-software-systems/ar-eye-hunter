@@ -175,6 +175,18 @@ registers the callback. Native completion invokes it after queue mutation. This 
 a language-level event bridge, not a forward dependency between services. No
 additional queue, pending-work registry, or timer is introduced by settlement.
 
+`ALOutboundMessageRuntime.cancel(msgId)` aborts one message's own live transport
+signal and states one `cancelled` settlement; disposal aborts every live signal but
+states none of its own. Either way, an attempt that already stated `attempt-started`
+still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
+false`) -- stated directly when the abort lands before the carrier runs (inside the
+admission-store reads `writeAttemptedSend` makes first), or by the carrier's own
+settlement when it lands during or after the send. Cancellation is held only for the
+owner's lifetime, in memory, never persisted: a row still pending when the owner is
+disposed may be drained by the next owner as an ordinary send. A durable cancel fact
+-- one that survives disposal or reload -- is a named sink seam left to S3 or I2
+(D13), not part of this settlement path.
+
 ## Atomic IndexedDB work storage
 
 [`openIndexedDbAdmissionDatabase`](../open-indexed-db-admission-database.ts) creates

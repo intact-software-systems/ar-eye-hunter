@@ -49,6 +49,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
             qboxEngine,
             socket,
             clientData,
@@ -83,7 +85,7 @@ describe('createBrowserWebSocketQueueBox', () => {
 
     it.each([
         { label: 'configured', connectTimeoutMs: 25, deadlineMs: 25 },
-        { label: 'default', connectTimeoutMs: undefined, deadlineMs: 10_000 }
+        { label: 'composition default', connectTimeoutMs: 10_000, deadlineMs: 10_000 }
     ])('aborts a pending real socket at the $label connect timeout', async ({ connectTimeoutMs, deadlineMs }) => {
         const socket = new JsonWebSocketClient('ws://test', createPassThroughTransportFaultPort());
         onTestFinished(() => socket.close(1000, 'test-finished'));
@@ -93,6 +95,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
             qboxEngine,
             socket,
             clientData,
@@ -125,6 +129,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
             qboxEngine,
             socket,
             clientData,
@@ -171,6 +177,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            outboundSettlements: () => {},
+            newConnectionRequestId: undefined,
             qboxEngine,
             socket,
             clientData,

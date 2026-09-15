@@ -2,7 +2,7 @@ import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCommandHistory
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../ui-persistence.ts';
 import type { LegacyDiagnosticContext } from '../../diagnostics/context/legacy-diagnostic-context.ts';

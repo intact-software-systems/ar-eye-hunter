@@ -1,157 +1,99 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
-import {
-    GAME_PROTOCOL,
-    type ArenaEvent,
-    type ArenaSnapshot,
-    type GameRealtimeMessage,
-    type RemotePlayer,
-    type RemoteShot
-} from '../../types.ts';
-import { withValidatedAvatarProfile } from '../arena-connection-helpers.ts';
-import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
-interface ArenaPeerMessageHandlersInput
-    extends Pick<ArenaStateAcceptance, 'acceptEyeAttack' | 'acceptPickup' | 'acceptPlayerHit'> {
+import { GAME_PROTOCOL, type GameRealtimeMessage, type RemotePlayer, type RemoteShot } from '../../types.ts';
+import { toValidatedPlayerPose } from '../state/to-validated-player-pose.ts';
+import { acceptArenaDirectorShot } from './arena-director-peer-message.ts';
+
+export interface ArenaPeerShotMessage extends Extract<GameRealtimeMessage, { kind: 'director-shot-accepted'; }> {
+    readonly roomRef: GroupRef;
+}
+
+export interface ArenaPeerShotReception {
+    readonly peerId: string;
+    readonly message: ArenaPeerShotMessage;
+    readonly roomRef: GroupRef;
+    readonly isCurrent: () => boolean;
+}
+
+export interface ArenaPeerMessageHandlers {
+    readonly acceptMotionMessage: (peerId: string, message: GameRealtimeMessage, isCurrent: () => boolean) => void;
+    readonly acceptPeerShot: (reception: ArenaPeerShotReception) => void;
+}
+
+interface ArenaPeerMessageHandlersInput {
+    readonly nowMs: () => number;
     readonly sessionRef: RefObject<AuthSession | undefined>;
-    readonly setActiveEvent: Dispatch<SetStateAction<ArenaEvent | undefined>>;
-    readonly setArenaSnapshot: Dispatch<SetStateAction<ArenaSnapshot | undefined>>;
-    readonly setRemoteEvents: Dispatch<SetStateAction<readonly ArenaEvent[]>>;
     readonly setRemotePlayers: Dispatch<SetStateAction<ReadonlyMap<string, RemotePlayer>>>;
     readonly setRemoteShots: Dispatch<SetStateAction<readonly RemoteShot[]>>;
 }
 
-export interface ArenaPeerMessageHandlers {
-    readonly acceptMotionMessage: (peerId: string, message: GameRealtimeMessage) => void;
-    readonly acceptRealtimeMessage: (peerId: string, message: GameRealtimeMessage) => void;
+interface ArenaMotionReception {
+    readonly peerId: string;
+    readonly message: GameRealtimeMessage;
+    readonly isCurrent: () => boolean;
 }
 
-export function useArenaPeerMessageHandlers(
-    input: ArenaPeerMessageHandlersInput
-): ArenaPeerMessageHandlers {
-    const {
-        acceptEyeAttack,
-        acceptPickup,
-        acceptPlayerHit,
-        sessionRef,
-        setActiveEvent,
-        setArenaSnapshot,
-        setRemoteEvents,
-        setRemotePlayers,
-        setRemoteShots
-    } = input;
-
-    const acceptMotionMessage = useCallback((
-        peerId: string,
-        message: GameRealtimeMessage
-    ) => {
-        if (message.protocol !== GAME_PROTOCOL) {
+export function useArenaPeerMessageHandlers(input: ArenaPeerMessageHandlersInput): ArenaPeerMessageHandlers {
+    const acceptMotionMessage = useCallback(
+        (peerId: string, message: GameRealtimeMessage, isCurrent: () => boolean) =>
+            acceptArenaMotion(input, { peerId, message, isCurrent }),
+        [input.nowMs, input.sessionRef, input.setRemotePlayers]
+    );
+    const acceptPeerShot = useCallback((reception: ArenaPeerShotReception) => {
+        const { message, roomRef, peerId, isCurrent } = reception;
+        if (
+            !isCurrent() || message?.protocol !== GAME_PROTOCOL || message.kind !== 'director-shot-accepted' ||
+            !message.roomRef || typeof message.roomRef.applicationId !== 'string' ||
+            typeof message.roomRef.workspaceId !== 'string' || typeof message.roomRef.groupId !== 'string' ||
+            !isSameGroupRef(message.roomRef, roomRef)
+        ) {
             return;
         }
-
-        const currentSessionId = sessionRef.current?.sessionId;
-        if (message.kind === 'player-pose') {
-            const pose = withValidatedAvatarProfile(message.pose);
-            if (pose.sessionId === currentSessionId || pose.sessionId !== peerId) {
-                return;
-            }
-
-            setRemotePlayers((previous) => {
-                const next = new Map(previous);
-                const existing = next.get(pose.sessionId);
-                if (existing && existing.pose.seq > pose.seq) {
-                    return previous;
-                }
-
-                next.set(pose.sessionId, {
-                    pose,
-                    lastSeenEpochMs: Date.now()
-                });
-                return next;
-            });
+        if (message.accepted?.shot?.sessionId !== peerId) {
             return;
         }
+        acceptArenaDirectorShot(input, message, isCurrent);
+    }, [input.nowMs, input.sessionRef, input.setRemoteShots]);
+    return { acceptMotionMessage, acceptPeerShot };
+}
 
+function acceptArenaMotion(input: ArenaPeerMessageHandlersInput, reception: ArenaMotionReception): void {
+    const { peerId, message, isCurrent } = reception;
+    if (!isCurrent() || message.protocol !== GAME_PROTOCOL) {
         return;
-    }, [acceptPickup, acceptPlayerHit]);
+    }
 
-    const acceptRealtimeMessage = useCallback((
-        peerId: string,
-        message: GameRealtimeMessage
-    ) => {
-        if (message.protocol !== GAME_PROTOCOL) {
+    const nowEpochMs = input.nowMs();
+    const currentSessionId = input.sessionRef.current?.sessionId;
+    if (message.kind === 'player-pose') {
+        const pose = toValidatedPlayerPose(message.pose);
+        if (pose.sessionId === currentSessionId || pose.sessionId !== peerId) {
             return;
         }
 
-        const currentSessionId = sessionRef.current?.sessionId;
-
-        if (message.kind === 'player-shot') {
-            const shot = message.shot;
-            if (shot.sessionId === currentSessionId || shot.sessionId !== peerId) {
-                return;
+        input.setRemotePlayers((previous) => {
+            if (!isCurrent()) {
+                return previous;
+            }
+            const next = new Map(previous);
+            const existing = next.get(pose.sessionId);
+            if (existing && existing.pose.seq > pose.seq) {
+                return previous;
             }
 
-            setRemoteShots((previous) => [
-                ...previous.slice(-24),
-                {
-                    id: `${shot.sessionId}:${shot.seq}`,
-                    shot,
-                    receivedAtEpochMs: Date.now()
-                }
-            ]);
-            return;
-        }
+            next.set(pose.sessionId, {
+                pose,
+                lastSeenEpochMs: nowEpochMs
+            });
+            return next;
+        });
+        return;
+    }
 
-        if (message.kind === 'director-shot-accepted') {
-            const accepted = message.accepted;
-            if (accepted.shot.sessionId === currentSessionId) {
-                return;
-            }
-
-            setRemoteShots((previous) => [
-                ...previous.slice(-32),
-                {
-                    id: `${accepted.shot.sessionId}:${accepted.shot.seq}:${accepted.revision}`,
-                    shot: accepted.shot,
-                    accepted,
-                    receivedAtEpochMs: Date.now()
-                }
-            ]);
-            return;
-        }
-
-        if (message.kind === 'director-player-hit-accepted') {
-            acceptPlayerHit(message.accepted);
-            return;
-        }
-
-        if (message.kind === 'director-pickup-accepted') {
-            acceptPickup(message.accepted);
-            return;
-        }
-
-        if (message.kind === 'director-eye-attack-accepted') {
-            acceptEyeAttack(message.accepted);
-            return;
-        }
-
-        if (message.kind === 'arena-event') {
-            setRemoteEvents((previous) => [
-                ...previous.filter((event) => event.id !== message.event.id).slice(-12),
-                message.event
-            ]);
-            setActiveEvent(message.event);
-            return;
-        }
-
-        if (message.kind === 'director-arena-snapshot') {
-            setArenaSnapshot(message.snapshot);
-            setActiveEvent(message.snapshot.activeEvent);
-            setRemoteEvents(message.snapshot.events);
-        }
-    }, [acceptEyeAttack, acceptPickup, acceptPlayerHit]);
-
-    return { acceptMotionMessage, acceptRealtimeMessage };
+    return;
 }

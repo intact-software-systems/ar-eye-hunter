@@ -12,6 +12,7 @@
     {
       "recipeId": "group-assertions-recipe",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "group-assertions-recipe",
         "name": "Group assertions recipe",
         "continueOnFailure": false,

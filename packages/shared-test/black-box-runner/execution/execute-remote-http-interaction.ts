@@ -1,7 +1,7 @@
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
 // deno-lint-ignore-file no-explicit-any
-import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     toHttpInteractionStatus,
     toStatus

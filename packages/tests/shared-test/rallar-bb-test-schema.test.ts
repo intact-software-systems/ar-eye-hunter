@@ -8,19 +8,21 @@ import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../app
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema,
-    validateRallarBlackBoxRecipeCompatibility
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '../../shared-test/rallar-bb-test/schema.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema
+} from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
@@ -57,21 +59,21 @@ function expectValid(schema: Parameters<typeof validateJsonSchema>[0], value: un
     expect(result.ok, result.ok ? undefined : formatJsonSchemaValidationErrors(result.errors)).toBe(true);
 }
 
-type GoldenCompatibilityCorpus = Readonly<{
-    schemaVersion: 1;
-    validRecipes: readonly RallarBlackBoxTestRecipe[];
-    validDistributedManifests: readonly unknown[];
-    invalidRecipes: readonly Readonly<{
+interface GoldenCompatibilityCorpus {
+    readonly schemaVersion: 1;
+    readonly validRecipes: readonly RallarBlackBoxTestRecipe[];
+    readonly validDistributedManifests: readonly unknown[];
+    readonly invalidRecipes: readonly Readonly<{
         caseId: string;
         value: unknown;
         expectedErrors: readonly string[];
     }>[];
-    invalidDistributedManifests: readonly Readonly<{
+    readonly invalidDistributedManifests: readonly Readonly<{
         caseId: string;
         value: unknown;
         expectedErrors: readonly string[];
     }>[];
-}>;
+}
 
 function readGoldenCompatibilityCorpus(): GoldenCompatibilityCorpus {
     return readJsonFile(goldenCompatibilityCorpusPath) as GoldenCompatibilityCorpus;
@@ -126,7 +128,9 @@ function jsonCodeBlocks(markdown: string): readonly unknown[] {
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
-    it('keeps catalog compatibility badges authoritative when preflight alone is clean', () => {
+    it('keeps catalog schema badges authoritative when preflight alone is clean', () => {
+        const recipe: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'schema-invalid-preflight-clean', commands: [{ kind: 'health' }] };
+        Reflect.set(recipe, 'schemaVersion', 2);
         const projection = projectDistributedRecipeCatalog({
             items: [{
                 itemId: 'schema-invalid-preflight-clean',
@@ -137,19 +141,14 @@ describe('rallar-bb-test capability and schema contract', () => {
                 prerequisites: ['connected browser control agents'],
                 live: false,
                 source: 'app-local',
-                recipe: {
-                    schemaVersion: 2,
-                    recipeId: 'schema-invalid-preflight-clean',
-                    commands: [{ kind: 'health' }]
-                } as unknown as RallarBlackBoxTestRecipe
+                recipe
             }]
         });
 
         expect(projection.entries[0]?.preflight.errors).toEqual([]);
         expect(projection.entries[0]?.schema).toMatchObject({
             ok: false,
-            status: 'invalid',
-            legacy: false
+            status: 'invalid'
         });
         expect(projection.entries[0]?.schema.errors.join('\n')).toContain('$.schemaVersion');
     });
@@ -298,15 +297,6 @@ describe('rallar-bb-test capability and schema contract', () => {
 
         for (const recipe of [...corpus.validRecipes, ...inlineRecipes]) {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
-            const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
-            expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-            if (recipe.schemaVersion === undefined) {
-                expect(compatibility.warnings.map((warning) => warning.path)).toContain('$.schemaVersion');
-            }
-            else {
-                expect(compatibility.warnings).toEqual([]);
-                expect(compatibility.schemaVersion).toBe(RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION);
-            }
         }
 
         for (const manifest of corpus.validDistributedManifests) {
@@ -344,16 +334,11 @@ describe('rallar-bb-test capability and schema contract', () => {
             if (block && typeof block === 'object' && 'distributedRunId' in block) {
                 expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, block);
                 for (const recipe of inlineRecipesInManifest(block)) {
-                    const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
-                    expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-                    expect(compatibility.warnings).toEqual([]);
+                    expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
                 }
             }
             else {
                 expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, block);
-                const compatibility = validateRallarBlackBoxRecipeCompatibility(block);
-                expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-                expect(compatibility.warnings).toEqual([]);
             }
         }
     });
@@ -373,8 +358,7 @@ describe('rallar-bb-test capability and schema contract', () => {
                         maxAverageStartDriftMs: 25,
                         maxStartDriftMs: 50,
                         maxJitterMs: 30,
-                        minSendSuccessRatio: 0.95,
-                        failOnBackpressure: true
+                        minSendSuccessRatio: 0.95
                     },
                     commands: [
                         {
@@ -737,7 +721,28 @@ describe('rallar-bb-test capability and schema contract', () => {
             title: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.title,
             type: 'object'
         });
-        expect(JSON.stringify(commandSchema)).toContain('#/components/schemas/RallarBlackBoxTestCommand');
+        const publishedCommandSchema = JSON.parse(JSON.stringify(commandSchema)) as JsonSchema;
+        const publishedManifestSchema = JSON.parse(JSON.stringify(manifestSchema)) as JsonSchema;
+        const leaf: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'leaf', commands: [{ kind: 'health' }] };
+        let recipe = leaf;
+        for (let depth = 0; depth < 4; depth += 1) {
+            recipe = { schemaVersion: 1, recipeId: `parent-${depth}`, commands: [{ kind: 'recipe.run', recipe }] };
+        }
+        const command = { kind: 'recipe.load', recipe };
+        const manifest = {
+            distributedRunId: 'published-schema',
+            group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe }],
+            targetPolicy: { mode: 'all-online-group-members' }
+        };
+        expectValid(publishedCommandSchema, command);
+        expectValid(publishedManifestSchema, manifest);
+        Reflect.deleteProperty(leaf, 'schemaVersion');
+        expect(validateJsonSchema(publishedCommandSchema, command).ok).toBe(false);
+        expect(validateJsonSchema(publishedManifestSchema, manifest).ok).toBe(false);
+        Reflect.set(leaf, 'schemaVersion', 2);
+        expect(validateJsonSchema(publishedCommandSchema, command).ok).toBe(false);
+        expect(validateJsonSchema(publishedManifestSchema, manifest).ok).toBe(false);
         expect(JSON.stringify(manifestSchema)).toContain('Rallar black-box distributed run manifest');
 
         const commandExamples = spec

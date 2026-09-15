@@ -26,7 +26,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { ControlRunManagerHttpError } from './control-http-error.ts';
 import { inheritControlResponseDocument, rememberControlResponseDocument } from './control-response-document.ts';
 

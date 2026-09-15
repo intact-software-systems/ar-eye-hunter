@@ -12,11 +12,8 @@ import {
     type RallarBlackBoxDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import { formatDistributedRunManifestValidationErrors, validateDistributedRunManifest } from '../../shared-test/rallar-bb-test/mod.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    validateJsonSchema
-} from '../../shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> = {}): RallarBlackBoxDistributedRunManifest {
     return {
@@ -676,6 +673,7 @@ describe('rallar-bb-test distributed run contract', () => {
                 {
                     recipeId: 'inline-probe',
                     recipe: {
+                        schemaVersion: 1,
                         recipeId: 'inline-probe',
                         commands: [{ kind: 'health', commandId: 'probe-health' }]
                     }

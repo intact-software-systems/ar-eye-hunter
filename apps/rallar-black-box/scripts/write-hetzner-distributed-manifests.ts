@@ -1,14 +1,14 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildHetznerDistributedManifestCatalog } from '../src/hetzner-distributed-manifests.ts';
+import { createHetznerDistributedManifestCatalog } from '../src/create-hetzner-distributed-manifest-catalog.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has('--check');
 
 async function main(): Promise<void> {
-    const catalog = buildHetznerDistributedManifestCatalog();
+    const catalog = createHetznerDistributedManifestCatalog();
     const mismatches: string[] = [];
 
     for (const entry of catalog) {

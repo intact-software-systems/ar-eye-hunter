@@ -1,3 +1,4 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
@@ -32,9 +33,9 @@ export interface BlackBoxRallarRoomWaitOptions {
     readonly timeoutMs: number;
 }
 
+/** The payload is resolved while decoding: the named payload or data, otherwise the whole send. */
 export interface BlackBoxRallarWsSendInput {
-    readonly data?: BlackBoxRallarSendInput['data'];
-    readonly payload?: BlackBoxRallarSendInput['payload'];
+    readonly payload: RallarMessagePayload;
     readonly scope?: 'room' | 'world' | 'all';
     readonly roomId?: string;
     readonly groupId?: string;

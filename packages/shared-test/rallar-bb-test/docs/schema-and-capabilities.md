@@ -1,18 +1,29 @@
 # Rallar Black-box Test Schemas And Capabilities
 
 `packages/shared-test/rallar-bb-test/schema.ts` is the machine-readable contract
-for browser-agent commands and recipes. It sits beside `types.ts`:
+for browser-agent commands and recipes. It sits beside
+`rallar-black-box-test-contracts.ts`:
 
-- `types.ts` defines the TypeScript runtime contract.
-- `schema.ts` defines command capability metadata and JSON Schema objects for
-  UI validation, control-server documentation, runner handoff, and future
-  distributed-run manifests.
+- `rallar-black-box-test-contracts.ts` defines the TypeScript runtime contract.
+- `schema/rallar-black-box-command-fields.ts` is the one list of the fields each
+  command and each nested command object may carry, which of them are
+  required, and the shared enum values. The JSON Schema, the capability
+  metadata, and the control-command validator all read it; the compiler rejects
+  a schema branch whose properties differ from it.
+- `schema.ts` defines the JSON Schema objects for UI validation,
+  control-server documentation, runner handoff, and distributed-run manifests.
+- `schema/rallar-black-box-command-capabilities.ts` defines the command
+  capability metadata.
+- `schema/json-schema-validation.ts` is the browser-safe JSON Schema validator.
 
 Runtime parsing and distributed artifact analysis must stay aligned with these
 schemas. For black-box control/distributed-run behavior, update
-`control-protocol.ts`, `control-snapshots.ts`, `distributed-artifact-analysis.ts`,
-and generated manifest JSON together so the browser agent, CLI analyzer, SPA,
-and Hetzner workflow agree.
+`control-protocol.ts`, `control/validate-rallar-black-box-test-command.ts`,
+`control-snapshots.ts`, `distributed-artifact-analysis.ts`, and generated
+manifest JSON together so the browser agent, CLI analyzer, SPA, and Hetzner
+workflow agree. The control-command validator deliberately does not import the
+JSON Schema or the capability metadata, so the headless agent bundle carries
+neither.
 
 ## Schema Catalog
 
@@ -91,7 +102,7 @@ in the browser runtime's own room resolution, not in the control protocol.
 `RALLAR_BLACK_BOX_TEST_COMMAND_KINDS` value:
 
 - command kind and human title
-- required and optional fields
+- required and optional fields, taken from the command field definition
 - supported provider modes
 - supported runtime surfaces
 - live-service requirements
@@ -128,25 +139,36 @@ that refusal fails the step.
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
 `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq` and `handleId`. It returns
-`{ handleId, msgId?, carrier, status, reason? }`. `handleId` defaults to the
+`{ handleId, msgId, carrier, status, reason? }`. `handleId` defaults to the
 command's own `commandId`, and every later delivery command addresses the send
 through that handle. Supersedence (`key`) and unicast targeting (`toPeerId`) are
 not part of this release; naming either one fails recipe validation.
 
-`messages.observe` waits for a handle to reach one of the states it lists, and
-`messages.receipts` reads the same observation without waiting. The states are
-`rejected`, `accepted`, `queued`, `transport-accepted`, `acknowledged`,
-`expired`, `superseded`, `failed` and `cancelled`. **This release derives the
-ledger from local admission only.** A send settles on `accepted` or `rejected`
-at admission time and never advances on a peer receipt, and both
-`confirmedPeerIds` and `unconfirmedPeerIds` stay empty. An observe that names a
-state admission cannot produce burns its whole timeout and then fails.
-`messages.cancel` moves a handle to `cancelled` locally; it does not recall a
-message the transport already accepted.
+`messages.observe` waits on the in-page message handle; `messages.receipts` reads
+its current lifecycle without waiting. The shared states are `submitted`,
+`rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
+`acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
+Carrier settlements update the handle directly. Observations include
+`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, and
+`reason`. The peer lists describe hop acknowledgements, not logical recipients.
+A terminal state ends a wait even when it was not requested; a true timeout
+reports the last state. A send waits for admission until the earlier of the
+command's timeout and absolute deadline (5,000 ms when it names neither, zero
+once the deadline has already passed), independently of the message TTL.
 
-The delivery ledger lives on the connection. Connecting clears it, so every
-observe, receipts or cancel for a handle must run before the next
-`rtc.connect` on that connection.
+`messages.cancel` stops the owner's remaining attempts for a live handle;
+it preserves terminal evidence and cannot recall a submitted frame. Handles
+survive transport reconnects. The ledger reads every handle through the browser
+session's delivery registry, which alone bounds how long an observation is kept.
+The registry applies its bounds only when a later send opens a new delivery, and no
+timer evicts anything: that send drops terminal handles whose terminal state is more
+than 60 seconds old, then drops the oldest handles beyond 512 entries (terminal ones
+first, and a live one ends `unobservable` for its own waiters). A terminal handle
+therefore stays readable until the first send after its 60 seconds. Once the
+registry drops a handle, including while an observe waits on it, and after a
+reload, observe, receipts, and cancel return `unobservable` with no attempts or
+hop lists, never an invented failure. The ledger projects handles and performs no
+admission-storage polling.
 
 `messages.received` counts inbound messages of a `typeId` (optionally one
 `msgId`). It scans the **whole** inbound event log rather than a trailing
@@ -331,11 +353,26 @@ conformance suites pin these semantics.
 
 ## Validation
 
-Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.
-Use `formatJsonSchemaValidationErrors(errors)` for operator-facing errors.
-Use `validateRallarBlackBoxRecipeCompatibility(value)` when a tool needs the
-v1 compatibility decision plus warnings for legacy recipes that omit
-`schemaVersion`.
+Use `validateJsonSchema(schema, value)` from `schema/json-schema-validation.ts`
+for lightweight browser-safe validation, and
+`formatJsonSchemaValidationErrors(errors)` for operator-facing errors.
+
+`validateRallarBlackBoxTestCommand(value)` from
+`control/validate-rallar-black-box-test-command.ts` is the control-path
+admission check that the control server, the browser control agent and the
+remote-browser adapter share. It reports every issue it finds as `messages`,
+and as one line each in `error`, with nested issues prefixed by the path of the
+recipe or composite child that holds them; route-ID issues are also returned as
+structured `issues`. Missing required fields are reported from the command field
+definition, except where a field's own rule words the absence more precisely.
+Per-family field rules live beside it in `control/`, and the ALM command rules
+in `alm/validate-alm-control-command.ts`. The control path does not admit
+`crdt.*` commands.
+
+Recipe format validation is strict: the recipe schema, the control-command
+validator and local runtime execution all reject a recipe, including a nested
+or inline one, whose `schemaVersion` is missing or is not `1`. There is no
+compatibility decision, warning, or conversion for unversioned recipes.
 
 Current automated coverage validates:
 
@@ -374,20 +411,21 @@ Current automated coverage validates:
 
 Treat schema changes as public command-center contract changes.
 
-- New `rallar-bb-test` recipes should include `schemaVersion: 1`.
-- Recipes without `schemaVersion` remain legacy-compatible v1 recipes for now;
-  compatibility validation returns a warning so authoring tools can guide users
-  toward explicit versioning.
-- Unsupported explicit recipe schema versions are invalid.
+- Every `rallar-bb-test` recipe must include `schemaVersion: 1`, including
+  nested and inline recipes. Missing or unsupported versions are invalid.
+- Author or regenerate explicit v1 input before dispatch; no automatic conversion
+  or saved-recipe migration is provided.
 - Distributed run manifests should include `schemaVersion: 1`, and inline
-  recipes inside manifests should also include `schemaVersion: 1`.
+  recipes inside manifests must include `schemaVersion: 1`.
 - Adding optional fields to an existing command is compatible.
 - Tightening a field type is a breaking change unless all shipped recipes and
   examples already satisfy it.
 - Adding a new command kind requires:
-  - a TypeScript command type in `types.ts`
+  - a TypeScript command type in `rallar-black-box-test-contracts.ts`
+  - its fields in `schema/rallar-black-box-command-fields.ts`
   - capability metadata
   - a command schema branch
+  - control-command validation, or an explicit refusal, in `control/`
   - at least one validating example
   - command-center and runtime tests
 - Removing or renaming a command kind is breaking and should require an
@@ -426,12 +464,11 @@ parallel group IDs.
 Loop results also include load-oriented observability. `value.pacing` records
 requested interval/rate, actual iteration timestamps, elapsed time, drift,
 jitter, skipped iterations, and cancelled iterations. `value.sends` records
-send counts, success ratio, duration statistics, queued/enqueued/backpressure
-counts, dropped/replaced payload counts, per-transport failure counts, and raw
+send counts, success ratio, duration statistics, queued counts,
+dropped/replaced payload counts, per-transport failure counts, and raw
 send observations when the adapter can expose them. `loop.thresholds` can fail
 the parent command with `RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED` when achieved
-rate, drift, jitter, send success ratio, or backpressure evidence misses the
-configured limits. The `stats` command mirrors the latest loop under
+rate, drift, jitter, or send success ratio misses the configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
 
@@ -440,7 +477,7 @@ to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns
 frame scheduling inside the browser agent, sends frames against a fixed
 wall-clock cadence, and returns one aggregate result with planned, attempted,
-completed, failed, dropped, and backpressured frame counts. It also records
+completed, failed, and dropped frame counts. It also records
 send duration percentiles (`p50Ms`, `p95Ms`, `p99Ms`, and `maxMs`), achieved
 schedule/completion Hz, pacing drift, jitter, threshold failures, and sampled
 frame observations.
@@ -457,10 +494,10 @@ Stream payloads support stream placeholders after normal config/session
 placeholders are resolved: `{stream.index}`, `{stream.iteration}`,
 `{stream.elapsedMs}`, `{stream.scheduledElapsedMs}`, and
 `{stream.commandId}`. Recipes must provide `count` or `durationMs`, and
-`intervalMs` or `rateHz`. `maxInFlight` bounds memory and backpressure; frames
+`intervalMs` or `rateHz`. `maxInFlight` bounds memory and pending sends; frames
 above the in-flight limit are recorded as dropped instead of creating unbounded
 promises. `rtc.stream.thresholds` can fail the command when delivery,
-backpressure, latency, drift, or jitter misses configured limits.
+latency, drift, or jitter misses configured limits.
 
 Composite conformance coverage lives in `composite-conformance.ts`. It defines
 the representative `loop`, `parallel`, `wait`, `assert`, cancellation, and

@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord
-} from '../../types.ts';
+} from '../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 
@@ -59,7 +59,7 @@ interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
 }
 
 interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
-    readonly state: 'accepted' | 'rejected' | 'cancelled';
+    readonly state: 'accepted' | 'rejected';
 }
 
 interface AlmConformanceAssertInput extends AlmConformanceMessageStepInput {
@@ -231,7 +231,10 @@ function toBoundedRejectionSenderCommands(
         }),
         toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
         toCancelCommand({ ...sender, index: 1 }),
-        toObserveCommand({ ...sender, index: 1, state: 'cancelled' })
+        {
+            ...toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
+            commandId: toCommandId(sender, 'observe-rejected-after-cancel-1')
+        }
     ];
 }
 
@@ -333,6 +336,7 @@ function toOrderingResyncReceiverCommands(
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
     return {
+        schemaVersion: 1,
         recipeId: `alm-${carrier}-${recipe.scenarioId}-${recipe.role}`,
         name: `ALM conformance ${recipe.scenarioId} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,

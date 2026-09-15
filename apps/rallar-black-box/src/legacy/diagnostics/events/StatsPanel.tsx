@@ -2,7 +2,7 @@ import {
     selectRallarBlackBoxFailures,
     selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 

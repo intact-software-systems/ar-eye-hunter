@@ -3,10 +3,25 @@ import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
+export interface ManualWorkbenchCommandInput {
+    readonly action: ManualWorkbenchAction;
+    readonly values: ManualWorkbenchValues;
+    readonly payload: unknown;
+    readonly sequence: number;
+    readonly requestId: string;
+}
+
+export interface ManualRtcDeliveryMatrixInput {
+    readonly values: ManualWorkbenchValues;
+    readonly payload: unknown;
+    readonly sequence: number;
+    readonly transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>;
+    readonly requestId: string;
+}
 
 export type ManualWorkbenchTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'ws'>;
 
@@ -21,60 +36,60 @@ export type ManualWorkbenchAction =
     | 'close'
     | 'reset';
 
-export type ManualWorkbenchValues = Readonly<{
-    environment: string;
-    apiBaseUrl: string;
-    applicationId: string;
-    workspaceId: string;
-    actor: string;
-    sessionId: string;
-    groupId: string;
-    scopeText: string;
-    roomRefText: string;
-    minSnapshotVersion: number;
-    connection: string;
-    targetClient: string;
-    multicastClients: string;
-    transport: ManualWorkbenchTransport;
-    deliveryMode: ManualDeliveryMode;
-    wsUrl: string;
-    topic: string;
-    typeId: string;
-    topicId: string;
-    timeoutMs: number;
-    providerMode: RallarBlackBoxProviderMode;
-    rallarUsername?: string;
-    rallarPassword?: string;
-    rallarRegister: boolean;
-    rallarRestoreSession: boolean;
-    rallarLogoutOnClose: boolean;
-    rallarLeaveRoomOnClose: boolean;
-}>;
+export interface ManualWorkbenchValues {
+    readonly environment: string;
+    readonly apiBaseUrl: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly actor: string;
+    readonly sessionId: string;
+    readonly groupId: string;
+    readonly scopeText: string;
+    readonly roomRefText: string;
+    readonly minSnapshotVersion: number;
+    readonly connection: string;
+    readonly targetClient: string;
+    readonly multicastClients: string;
+    readonly transport: ManualWorkbenchTransport;
+    readonly deliveryMode: ManualDeliveryMode;
+    readonly wsUrl: string;
+    readonly topic: string;
+    readonly typeId: string;
+    readonly topicId: string;
+    readonly timeoutMs: number;
+    readonly providerMode: RallarBlackBoxProviderMode;
+    readonly rallarUsername?: string;
+    readonly rallarPassword?: string;
+    readonly rallarRegister: boolean;
+    readonly rallarRestoreSession: boolean;
+    readonly rallarLogoutOnClose: boolean;
+    readonly rallarLeaveRoomOnClose: boolean;
+}
 
-export type ManualPayloadPreset = Readonly<{
-    presetId: string;
-    label: string;
-    payload: unknown;
-}>;
+export interface ManualPayloadPreset {
+    readonly presetId: string;
+    readonly label: string;
+    readonly payload: unknown;
+}
 
-export type ManualActionHistoryEntry = Readonly<{
-    actionId: string;
-    label: string;
-    commandIds: readonly string[];
-    commands: readonly RallarBlackBoxTestCommand[];
-    atEpochMs: number;
-}>;
+export interface ManualActionHistoryEntry {
+    readonly actionId: string;
+    readonly label: string;
+    readonly commandIds: readonly string[];
+    readonly commands: readonly RallarBlackBoxTestCommand[];
+    readonly atEpochMs: number;
+}
 
-export type ManualReceivedMessage = Readonly<{
-    eventId: string;
-    connection: string;
-    transport: string;
-    sender: string;
-    topic: string;
-    atEpochMs: number;
-    payload: unknown;
-    commandId?: string;
-}>;
+export interface ManualReceivedMessage {
+    readonly eventId: string;
+    readonly connection: string;
+    readonly transport: string;
+    readonly sender: string;
+    readonly topic: string;
+    readonly atEpochMs: number;
+    readonly payload: unknown;
+    readonly commandId?: string;
+}
 
 export type JsonParseResult =
     | Readonly<{ ok: true; value: unknown; }>
@@ -139,19 +154,19 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     rallarLeaveRoomOnClose: true
 };
 
-function clean(value: string): string | undefined {
+function toOptionalText(value: string): string | undefined {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function cleanList(value: string): readonly string[] {
+function toTargetIds(value: string): readonly string[] {
     return value
         .split(',')
         .map((entry) => entry.trim())
         .filter((entry) => entry.length > 0);
 }
 
-function timeoutMs(value: ManualWorkbenchValues): number | undefined {
+function toTimeoutMs(value: ManualWorkbenchValues): number | undefined {
     return Number.isFinite(value.timeoutMs) && value.timeoutMs > 0
         ? Math.round(value.timeoutMs)
         : undefined;
@@ -174,50 +189,43 @@ function parseOptionalRecord(text: string): Readonly<Record<string, unknown>> | 
     }
 }
 
-function minSnapshotVersionFrom(value: ManualWorkbenchValues): number | undefined {
+function toMinSnapshotVersion(value: ManualWorkbenchValues): number | undefined {
     return Number.isFinite(value.minSnapshotVersion) && value.minSnapshotVersion > 0
         ? Math.round(value.minSnapshotVersion)
         : undefined;
 }
 
-function defaultRoomRef(values: ManualWorkbenchValues): Readonly<Record<string, unknown>> | undefined {
-    const groupId = clean(values.groupId);
+function toDefaultRoomRef(values: ManualWorkbenchValues): Readonly<Record<string, unknown>> | undefined {
+    const groupId = toOptionalText(values.groupId);
     return groupId ? { groupId } : undefined;
 }
 
-function scopedRtcFields(
+function toScopedRtcFields(
     values: ManualWorkbenchValues
-): Readonly<{
-    applicationId?: string;
-    workspaceId?: string;
-    scope?: Readonly<Record<string, unknown>>;
-    roomRef?: Readonly<Record<string, unknown>>;
-    minSnapshotVersion?: number;
-}> {
+): ManualRtcScope {
+    const applicationId = toOptionalText(values.applicationId);
+    const workspaceId = toOptionalText(values.workspaceId);
+    const scope = parseOptionalRecord(values.scopeText);
+    const roomRef = parseOptionalRecord(values.roomRefText) ?? toDefaultRoomRef(values);
+    const minSnapshotVersion = toMinSnapshotVersion(values);
     return {
-        ...(clean(values.applicationId) ? { applicationId: clean(values.applicationId) } : {}),
-        ...(clean(values.workspaceId) ? { workspaceId: clean(values.workspaceId) } : {}),
-        ...(parseOptionalRecord(values.scopeText)
-            ? { scope: parseOptionalRecord(values.scopeText) }
-            : {}),
-        ...(parseOptionalRecord(values.roomRefText) ?? defaultRoomRef(values)
-            ? { roomRef: parseOptionalRecord(values.roomRefText) ?? defaultRoomRef(values) }
-            : {}),
-        ...(minSnapshotVersionFrom(values) !== undefined
-            ? { minSnapshotVersion: minSnapshotVersionFrom(values) }
-            : {})
+        ...(applicationId ? { applicationId } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(scope ? { scope } : {}),
+        ...(roomRef ? { roomRef } : {}),
+        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {})
     };
 }
 
-function rallarConfigFrom(
+function toRallarConfig(
     values: ManualWorkbenchValues
 ): Readonly<Record<string, unknown>> | undefined {
     if (values.providerMode !== 'browser-rallar') {
         return undefined;
     }
 
-    const username = clean(values.rallarUsername ?? '');
-    const password = clean(values.rallarPassword ?? '');
+    const username = toOptionalText(values.rallarUsername ?? '');
+    const password = toOptionalText(values.rallarPassword ?? '');
     const rallar: Record<string, unknown> = {
         ...(username ? { username } : {}),
         ...(password ? { password } : {}),
@@ -225,13 +233,13 @@ function rallarConfigFrom(
         ...(values.rallarRestoreSession ? { restoreSession: true } : {}),
         ...(values.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
         leaveRoomOnClose: values.rallarLeaveRoomOnClose,
-        ...scopedRtcFields(values)
+        ...toScopedRtcFields(values)
     };
 
     return Object.keys(rallar).length > 0 ? rallar : undefined;
 }
 
-function redactionFrom(
+function toRedaction(
     values: ManualWorkbenchValues
 ): RallarBlackBoxTestConfig['redaction'] | undefined {
     const secretValues = [
@@ -241,45 +249,31 @@ function redactionFrom(
     return secretValues.length > 0 ? { secretValues } : undefined;
 }
 
-function commandId(action: string, sequence: number): string {
+function toCommandId(action: string, sequence: number): string {
     return `manual-${action}-${sequence}`;
 }
 
-function asRtcSendCommand(
-    command: RallarBlackBoxTestCommand
-): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
-    if (command.kind !== 'rtc.send') {
-        throw new Error(`Expected rtc.send command, got ${command.kind}.`);
-    }
-
-    return command;
-}
-
-function pathSegment(value: string): string {
-    return encodeURIComponent(value);
-}
-
-function targetsFor(values: ManualWorkbenchValues): readonly string[] {
+function toTargets(values: ManualWorkbenchValues): readonly string[] {
     if (values.deliveryMode === 'broadcast') {
         return [];
     }
 
     if (values.deliveryMode === 'direct') {
-        const target = clean(values.targetClient);
+        const target = toOptionalText(values.targetClient);
         return target ? [target] : [];
     }
 
-    return cleanList(values.multicastClients);
+    return toTargetIds(values.multicastClients);
 }
 
-function withPayloadEnvelope(
+function toPayloadEnvelope(
     values: ManualWorkbenchValues,
     payload: unknown
 ): Record<string, unknown> {
-    const targets = targetsFor(values);
+    const targets = toTargets(values);
     return {
-        groupId: clean(values.groupId),
-        topic: clean(values.topic),
+        groupId: toOptionalText(values.groupId),
+        topic: toOptionalText(values.topic),
         deliveryMode: values.deliveryMode,
         targets,
         payload
@@ -305,16 +299,16 @@ export function manualConfigureCommand(
     values: ManualWorkbenchValues,
     sequence: number
 ): RallarBlackBoxTestCommand {
-    const rallar = rallarConfigFrom(values);
-    const redaction = redactionFrom(values);
+    const rallar = toRallarConfig(values);
+    const redaction = toRedaction(values);
     const config: RallarBlackBoxTestConfig = {
         runId: `manual-workbench-${sequence}`,
         agentId: 'visible-agent-local',
-        environment: clean(values.environment),
-        apiBaseUrl: clean(values.apiBaseUrl),
-        actor: clean(values.actor),
-        sessionId: clean(values.sessionId),
-        roomId: clean(values.groupId),
+        environment: toOptionalText(values.environment),
+        apiBaseUrl: toOptionalText(values.apiBaseUrl),
+        actor: toOptionalText(values.actor),
+        sessionId: toOptionalText(values.sessionId),
+        roomId: toOptionalText(values.groupId),
         transport: values.transport === 'ws' ? 'ws' : values.transport,
         control: {
             mode: 'manual-workbench',
@@ -323,10 +317,10 @@ export function manualConfigureCommand(
             connected: false
         },
         defaults: {
-            timeoutMs: timeoutMs(values),
-            connection: clean(values.connection),
+            timeoutMs: toTimeoutMs(values),
+            connection: toOptionalText(values.connection),
             providerMode: values.providerMode,
-            ...scopedRtcFields(values)
+            ...toScopedRtcFields(values)
         },
         ...(rallar ? { rallar } : {}),
         ...(redaction ? { redaction } : {})
@@ -334,7 +328,7 @@ export function manualConfigureCommand(
 
     return {
         kind: 'configure',
-        commandId: commandId('configure', sequence),
+        commandId: toCommandId('configure', sequence),
         label: 'Configure manual group',
         config
     };
@@ -347,15 +341,15 @@ export function manualConnectCommand(
     if (values.transport === 'ws') {
         return {
             kind: 'ws.open',
-            commandId: commandId('ws-open', sequence),
+            commandId: toCommandId('ws-open', sequence),
             label: 'Open manual WebSocket',
-            connection: clean(values.connection),
-            url: clean(values.wsUrl),
-            timeoutMs: timeoutMs(values),
+            connection: toOptionalText(values.connection),
+            url: toOptionalText(values.wsUrl),
+            timeoutMs: toTimeoutMs(values),
             metadata: {
                 manual: {
-                    groupId: clean(values.groupId),
-                    actor: clean(values.actor)
+                    groupId: toOptionalText(values.groupId),
+                    actor: toOptionalText(values.actor)
                 }
             }
         };
@@ -363,21 +357,21 @@ export function manualConnectCommand(
 
     return {
         kind: 'rtc.connect',
-        commandId: commandId('rtc-connect', sequence),
+        commandId: toCommandId('rtc-connect', sequence),
         label: 'Connect manual RTC client',
-        connection: clean(values.connection),
-        actor: clean(values.actor),
-        roomId: clean(values.groupId),
-        ...scopedRtcFields(values),
+        connection: toOptionalText(values.connection),
+        actor: toOptionalText(values.actor),
+        roomId: toOptionalText(values.groupId),
+        ...toScopedRtcFields(values),
         transport: values.transport,
-        timeoutMs: timeoutMs(values),
+        timeoutMs: toTimeoutMs(values),
         rallar: {
-            sessionId: clean(values.sessionId)
+            sessionId: toOptionalText(values.sessionId)
         },
         metadata: {
             manual: {
                 deliveryMode: values.deliveryMode,
-                expectedClients: targetsFor(values)
+                expectedClients: toTargets(values)
             }
         }
     };
@@ -385,19 +379,19 @@ export function manualConnectCommand(
 
 export function manualCreateGroupCommand(
     values: ManualWorkbenchValues,
-    sequence: number
+    sequence: number,
+    requestId: string
 ): RallarBlackBoxTestCommand {
-    const groupId = clean(values.groupId) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId;
-    const applicationId = clean(values.applicationId) ?? DEFAULT_STATE_APPLICATION_ID;
-    const workspaceId = clean(values.workspaceId) ?? DEFAULT_STATE_WORKSPACE_ID;
-    const requestId = crypto.randomUUID();
+    const groupId = toOptionalText(values.groupId) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId;
+    const applicationId = toOptionalText(values.applicationId) ?? DEFAULT_STATE_APPLICATION_ID;
+    const workspaceId = toOptionalText(values.workspaceId) ?? DEFAULT_STATE_WORKSPACE_ID;
     return {
         kind: 'http.request',
-        commandId: commandId('group-create', sequence),
+        commandId: toCommandId('group-create', sequence),
         label: 'Create manual Rallar group',
         request: {
             method: 'POST',
-            path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${pathSegment(workspaceId)}` +
+            path: `/api/state/apps/${encodeURIComponent(applicationId)}/workspaces/${encodeURIComponent(workspaceId)}` +
                 `/groups/requests/${requestId}`,
             body: {
                 groupId,
@@ -408,7 +402,7 @@ export function manualCreateGroupCommand(
                 metadata: {
                     source: 'rallar-black-box',
                     surface: 'manual-rallar',
-                    ...scopedRtcFields(values)
+                    ...toScopedRtcFields(values)
                 }
             }
         },
@@ -431,70 +425,34 @@ export function manualSendCommand(
     payload: unknown,
     sequence: number
 ): RallarBlackBoxTestCommand {
-    const targets = targetsFor(values);
+    const targets = toTargets(values);
     const manual = {
-        groupId: clean(values.groupId),
-        topic: clean(values.topic),
+        groupId: toOptionalText(values.groupId),
+        topic: toOptionalText(values.topic),
         deliveryMode: values.deliveryMode,
         targets,
-        ...scopedRtcFields(values)
+        ...toScopedRtcFields(values)
     };
 
     if (values.transport === 'ws') {
         return {
             kind: 'ws.send',
-            commandId: commandId(`ws-send-${values.deliveryMode}`, sequence),
+            commandId: toCommandId(`ws-send-${values.deliveryMode}`, sequence),
             label: `WS ${values.deliveryMode}`,
-            connection: clean(values.connection),
-            data: withPayloadEnvelope(values, payload),
-            timeoutMs: timeoutMs(values),
+            connection: toOptionalText(values.connection),
+            data: toPayloadEnvelope(values, payload),
+            timeoutMs: toTimeoutMs(values),
             metadata: {
                 manual
             }
         };
     }
 
-    const basePayload: Record<string, unknown> = values.transport === 'messages.rtc'
-        ? {
-            payload,
-            roomId: clean(values.groupId),
-            typeId: clean(values.typeId),
-            topicId: clean(values.topicId) ?? clean(values.topic)
-        }
-        : {
-            data: payload,
-            roomId: clean(values.groupId)
-        };
-
-    if (values.deliveryMode !== 'broadcast' && targets.length > 0) {
-        if (values.transport === 'messages.rtc') {
-            basePayload.nextHopPeerIds = targets;
-        }
-        else {
-            basePayload.peerIds = targets;
-        }
-    }
-
-    return {
-        kind: 'rtc.send',
-        commandId: commandId(`rtc-send-${values.deliveryMode}`, sequence),
-        label: `RTC ${values.deliveryMode}`,
-        connection: clean(values.connection),
-        transport: values.transport,
-        ...scopedRtcFields(values),
-        send: basePayload,
-        timeoutMs: timeoutMs(values),
-        metadata: {
-            manual
-        }
-    };
+    return toManualRtcSendCommand(values, payload, sequence);
 }
 
 export function manualRtcDeliveryMatrixCommands(
-    values: ManualWorkbenchValues,
-    payload: unknown,
-    sequence: number,
-    transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>
+    { values, payload, sequence, transport, requestId }: ManualRtcDeliveryMatrixInput
 ): readonly RallarBlackBoxTestCommand[] {
     const baseValues: ManualWorkbenchValues = {
         ...values,
@@ -505,7 +463,7 @@ export function manualRtcDeliveryMatrixCommands(
     let nextSequence = sequence + 1;
 
     if (baseValues.providerMode === 'browser-rallar') {
-        commands.push(manualCreateGroupCommand(baseValues, nextSequence));
+        commands.push(manualCreateGroupCommand(baseValues, nextSequence, requestId));
         nextSequence += 1;
     }
 
@@ -539,10 +497,10 @@ export function manualRtcNackProbeCommands(
         deliveryMode: 'direct',
         minSnapshotVersion: Math.max(values.minSnapshotVersion, 9_999_999)
     };
-    const send = asRtcSendCommand(manualSendCommand(scopedValues, payload, sequence));
+    const send = toManualRtcSendCommand(scopedValues, payload, sequence);
     return [{
         ...send,
-        commandId: commandId('rtc-nack-not-yet-in-sync', sequence),
+        commandId: toCommandId('rtc-nack-not-yet-in-sync', sequence),
         label: 'RTC not-yet-in-sync probe',
         metadata: {
             ...send.metadata,
@@ -556,80 +514,10 @@ export function manualRtcNegativeRecipeSnippet(
     values: ManualWorkbenchValues,
     payload: unknown
 ): string {
-    const transport = values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime';
-    const baseValues: ManualWorkbenchValues = {
-        ...values,
-        transport,
-        deliveryMode: 'direct'
-    };
-    const commands: RallarBlackBoxTestCommand[] = [
-        manualConfigureCommand(baseValues, 1),
-        manualConnectCommand(baseValues, 2),
-        {
-            ...asRtcSendCommand(manualSendCommand(
-                {
-                    ...baseValues,
-                    targetClient: 'missing-peer'
-                },
-                payload,
-                3
-            )),
-            commandId: 'manual-rtc-negative-missing-peer',
-            label: 'RTC missing peer negative',
-            metadata: {
-                negativeCase: 'missing-peer',
-                expectedOutcome: 'delivery-failure'
-            }
-        },
-        {
-            ...asRtcSendCommand(manualSendCommand(
-                {
-                    ...baseValues,
-                    targetClient: 'stale-agent'
-                },
-                payload,
-                4
-            )),
-            commandId: 'manual-rtc-negative-stale-agent',
-            label: 'RTC stale agent negative',
-            metadata: {
-                negativeCase: 'stale-agent',
-                expectedOutcome: 'delivery-failure'
-            }
-        },
-        {
-            ...manualConnectCommand(baseValues, 5),
-            commandId: 'manual-rtc-negative-duplicate-session',
-            label: 'RTC duplicate session negative',
-            metadata: {
-                negativeCase: 'duplicate-session',
-                expectedOutcome: 'permission-failure'
-            }
-        },
-        {
-            ...asRtcSendCommand(manualSendCommand(baseValues, payload, 6)),
-            commandId: 'manual-rtc-negative-permission-denied',
-            label: 'RTC permission denied negative',
-            metadata: {
-                negativeCase: 'permission-denied',
-                expectedOutcome: 'permission-failure'
-            }
-        },
-        manualSimpleCommand('close', 7),
-        {
-            ...asRtcSendCommand(manualSendCommand(baseValues, payload, 8)),
-            commandId: 'manual-rtc-negative-closed-transport',
-            label: 'RTC closed transport negative',
-            metadata: {
-                negativeCase: 'closed-transport',
-                expectedOutcome: 'transport-failure'
-            }
-        },
-        ...manualRtcNackProbeCommands(baseValues, payload, 9)
-    ];
-
+    const commands = toNegativeRtcCommands(values, payload);
     return JSON.stringify(
         {
+            schemaVersion: 1,
             recipeId: 'manual-rtc-negative-recipe',
             name: 'Manual RTC negative recipe',
             description:
@@ -648,16 +536,13 @@ export function manualSimpleCommand(
 ): RallarBlackBoxTestCommand {
     return {
         kind: action,
-        commandId: commandId(action, sequence),
+        commandId: toCommandId(action, sequence),
         label: `Manual ${action}`
     };
 }
 
 export function buildManualWorkbenchCommands(
-    action: ManualWorkbenchAction,
-    values: ManualWorkbenchValues,
-    payload: unknown,
-    sequence: number
+    { action, values, payload, sequence, requestId }: ManualWorkbenchCommandInput
 ): readonly RallarBlackBoxTestCommand[] {
     switch (action) {
         case 'configure':
@@ -666,7 +551,7 @@ export function buildManualWorkbenchCommands(
             if (values.providerMode === 'browser-rallar' && values.transport !== 'ws') {
                 return [
                     manualConfigureCommand(values, sequence),
-                    manualCreateGroupCommand(values, sequence + 1),
+                    manualCreateGroupCommand(values, sequence + 1, requestId),
                     manualConnectCommand(values, sequence + 2)
                 ];
             }
@@ -691,6 +576,7 @@ export function manualRecipeSnippet(
     const commands = entries.flatMap((entry) => entry.commands);
     return JSON.stringify(
         {
+            schemaVersion: 1,
             recipeId: 'manual-workbench-recipe',
             name: 'Manual workbench recipe',
             continueOnFailure: false,
@@ -701,13 +587,13 @@ export function manualRecipeSnippet(
     );
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+function toRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
         : {};
 }
 
-function firstString(...values: readonly unknown[]): string | undefined {
+function toFirstText(values: readonly unknown[]): string | undefined {
     for (const value of values) {
         if (typeof value === 'string' && value.trim().length > 0) {
             return value;
@@ -723,15 +609,15 @@ export function deriveManualReceivedMessages(
     return events
         .filter((event) => event.kind === 'message')
         .map((event) => {
-            const payload = asRecord(event.payload);
-            const data = asRecord(payload.data);
-            const nestedData = asRecord(data.data);
-            const envelope = asRecord(data.payload);
+            const payload = toRecord(event.payload);
+            const data = toRecord(payload.data);
+            const nestedData = toRecord(data.data);
+            const envelope = toRecord(data.payload);
             return {
                 eventId: event.eventId,
                 connection: event.connection ?? 'default',
                 transport: event.transport ?? 'runtime',
-                sender: firstString(
+                sender: toFirstText([
                     payload.senderId,
                     payload.remotePeerId,
                     data.senderId,
@@ -739,15 +625,15 @@ export function deriveManualReceivedMessages(
                     nestedData.senderId,
                     nestedData.sender,
                     event.actor
-                ) ?? '-',
-                topic: firstString(
+                ]) ?? '-',
+                topic: toFirstText([
                     payload.topicId,
                     payload.topic,
                     data.topic,
                     nestedData.topic,
                     envelope.topic,
                     event.topic
-                ) ?? event.topic,
+                ]) ?? event.topic,
                 atEpochMs: typeof payload.receivedAtEpochMs === 'number'
                     ? payload.receivedAtEpochMs
                     : event.atEpochMs,
@@ -755,4 +641,133 @@ export function deriveManualReceivedMessages(
                 commandId: event.commandId
             };
         });
+}
+
+function toNegativeRtcSend(
+    values: ManualWorkbenchValues,
+    payload: unknown,
+    caseId: keyof typeof NEGATIVE_RTC_SEND_CASES
+): RallarBlackBoxTestCommand {
+    const probe = NEGATIVE_RTC_SEND_CASES[caseId];
+    const targetClient = 'targetClient' in probe ? probe.targetClient : values.targetClient;
+    return {
+        ...toManualRtcSendCommand({ ...values, targetClient }, payload, probe.sequence),
+        commandId: probe.commandId,
+        label: probe.label,
+        metadata: probe.metadata
+    };
+}
+
+function toRtcSendPayload(values: ManualWorkbenchValues, payload: unknown): Record<string, unknown> {
+    const targets = toTargets(values);
+    const basePayload: Record<string, unknown> = values.transport === 'messages.rtc'
+        ? {
+            payload,
+            roomId: toOptionalText(values.groupId),
+            typeId: toOptionalText(values.typeId),
+            topicId: toOptionalText(values.topicId) ?? toOptionalText(values.topic)
+        }
+        : {
+            data: payload,
+            roomId: toOptionalText(values.groupId)
+        };
+    if (values.deliveryMode !== 'broadcast' && targets.length > 0) {
+        if (values.transport === 'messages.rtc') {
+            basePayload.nextHopPeerIds = targets;
+        }
+        else {
+            basePayload.peerIds = targets;
+        }
+    }
+    return basePayload;
+}
+
+function toManualRtcSendCommand(
+    values: ManualWorkbenchValues,
+    payload: unknown,
+    sequence: number
+): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
+    const targets = toTargets(values);
+    const manual = {
+        groupId: toOptionalText(values.groupId),
+        topic: toOptionalText(values.topic),
+        deliveryMode: values.deliveryMode,
+        targets,
+        ...toScopedRtcFields(values)
+    };
+
+    const basePayload = toRtcSendPayload(values, payload);
+    return {
+        kind: 'rtc.send',
+        commandId: toCommandId(`rtc-send-${values.deliveryMode}`, sequence),
+        label: `RTC ${values.deliveryMode}`,
+        connection: toOptionalText(values.connection),
+        transport: values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
+        ...toScopedRtcFields(values),
+        send: basePayload,
+        timeoutMs: toTimeoutMs(values),
+        metadata: {
+            manual
+        }
+    };
+}
+
+function toNegativeRtcCommands(values: ManualWorkbenchValues, payload: unknown): readonly RallarBlackBoxTestCommand[] {
+    const baseValues: ManualWorkbenchValues = {
+        ...values,
+        transport: values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
+        deliveryMode: 'direct'
+    };
+    return [
+        manualConfigureCommand(baseValues, 1),
+        manualConnectCommand(baseValues, 2),
+        toNegativeRtcSend(baseValues, payload, 'missingPeer'),
+        toNegativeRtcSend(baseValues, payload, 'staleAgent'),
+        {
+            ...manualConnectCommand(baseValues, 5),
+            commandId: 'manual-rtc-negative-duplicate-session',
+            label: 'RTC duplicate session negative',
+            metadata: { negativeCase: 'duplicate-session', expectedOutcome: 'permission-failure' }
+        },
+        toNegativeRtcSend(baseValues, payload, 'permissionDenied'),
+        manualSimpleCommand('close', 7),
+        toNegativeRtcSend(baseValues, payload, 'closedTransport'),
+        ...manualRtcNackProbeCommands(baseValues, payload, 9)
+    ];
+}
+const NEGATIVE_RTC_SEND_CASES = {
+    missingPeer: {
+        sequence: 3,
+        targetClient: 'missing-peer',
+        commandId: 'manual-rtc-negative-missing-peer',
+        label: 'RTC missing peer negative',
+        metadata: { negativeCase: 'missing-peer', expectedOutcome: 'delivery-failure' }
+    },
+    staleAgent: {
+        sequence: 4,
+        targetClient: 'stale-agent',
+        commandId: 'manual-rtc-negative-stale-agent',
+        label: 'RTC stale agent negative',
+        metadata: { negativeCase: 'stale-agent', expectedOutcome: 'delivery-failure' }
+    },
+    permissionDenied: {
+        sequence: 6,
+        commandId: 'manual-rtc-negative-permission-denied',
+        label: 'RTC permission denied negative',
+        metadata: { negativeCase: 'permission-denied', expectedOutcome: 'permission-failure' }
+    },
+    closedTransport: {
+        sequence: 8,
+        commandId: 'manual-rtc-negative-closed-transport',
+        label: 'RTC closed transport negative',
+        metadata: { negativeCase: 'closed-transport', expectedOutcome: 'transport-failure' }
+    }
+} as const;
+
+interface ManualRtcScope {
+    readonly applicationId?: string;
+    readonly workspaceId?: string;
+    readonly scope?: Readonly<Record<string, unknown>>;
+    readonly roomRef?: Readonly<Record<string, unknown>>;
+    readonly minSnapshotVersion?: number;
 }

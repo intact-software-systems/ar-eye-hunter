@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const RUN_MANAGER_COMMAND_PRESETS: readonly {
     presetId: string;

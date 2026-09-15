@@ -1,4 +1,4 @@
-import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema.ts';
+import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { toRecipeStepAction } from '../recipes/to-recipe-step-action.ts';
 import { directSafeOutputTransformSpec } from '../scenario-transform/safe-output-transform.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '../schema.ts';

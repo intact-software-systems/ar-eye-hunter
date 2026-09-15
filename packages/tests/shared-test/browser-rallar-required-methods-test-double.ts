@@ -1,7 +1,8 @@
-import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser-adapter.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
 type BrowserRallarRequiredTestMethods = Pick<
     RallarBlackBoxBrowserRallarRuntime,
+    | 'authenticate'
     | 'sendMessage'
     | 'observeDelivery'
     | 'cancelDelivery'
@@ -19,6 +20,7 @@ export function createBrowserRallarRequiredMethodsTestDouble(): BrowserRallarReq
         );
     };
     return {
+        authenticate: unsupported,
         sendMessage: unsupported,
         observeDelivery: unsupported,
         cancelDelivery: unsupported,

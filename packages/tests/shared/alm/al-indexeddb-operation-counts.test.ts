@@ -1,10 +1,12 @@
 import 'fake-indexeddb/auto';
 import { Temporal } from '@js-temporal/polyfill';
 import { decodeALAdmissionString } from '@shared/alm/al-admission-value-validation.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsEvent } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     AL_OUTBOUND_WORK_PAGE_SIZE,
@@ -31,6 +33,12 @@ import {
     readInboundTestAdmission,
     type InboundTestRuntime
 } from './inbound-runtime-test-fixture.ts';
+import {
+    createDefaultOutboundTestRuntime,
+    createOutboundMessage,
+    runOutboundWorkTask
+} from './outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from './outbound-test-payload.ts';
 
 const NOW_MS = 1_700_000_000_000;
 const INBOUND_NAMESPACE = 'al-inbound-counts';
@@ -182,6 +190,46 @@ describe('outbound work owner IndexedDB scan volume', () => {
 
         await vi.waitFor(() => expect(claimed).toEqual(['external-write']));
         handler.dispose();
+    });
+});
+
+describe('outbound default send IndexedDB volume', () => {
+    it('sends one default message in 10 al-admission and 15 al-work operations', async () => {
+        const observer = createCountingIndexedDbOperationObserver();
+        const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
+            dbName: `al-outbound-default-send-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer
+        });
+        const admissionStore = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'outbound-default-send',
+            decodePrepared: decodeOutboundTestPayload,
+            namespace: 'outbound-default-send',
+            backend,
+            supersedenceTrackTtlMs: 60_000,
+            retention: normalizeALRuntimeStoreRetention()
+        });
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: { admissionStore, workQueue: backend.workQueue },
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        });
+
+        const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage('msg-default-send'));
+        expect(enqueued.status).toBe('enqueued');
+        await runOutboundWorkTask(runtime);
+
+        const counts = observer.getCounts();
+        // Task 12 re-runs this exact pin as the delivery-lifecycle slice's "no new default write"
+        // proof, so a later change must show up as an edit to these two hardcoded figures.
+        expect(counts.byOwner['al-admission'], 'one default send spends 10 al-admission operations today').toBe(10);
+        expect(counts.byOwner['al-work'], 'one default send spends 15 al-work operations today').toBe(15);
+        runtime.dispose();
     });
 });
 

@@ -381,7 +381,7 @@ actual shell execution to explicit local tooling or the control server.
   artifact export.
 - `packages/shared-test/rallar-bb-test`: shared command/result/event/runtime
   contract.
-- `packages/shared-test/rallar-bb-test/provider-parity.ts`: portable SPA/runner
+- `packages/shared-test/rallar-bb-test/provider-parity/`: portable SPA/runner
   parity recipes, runner conversion, and report comparison helpers.
 - `packages/shared-test/black-box-runner/artifacts/handoff-contract.ts`: shared-test
   recipe catalog, artifact contract, and coverage ownership contract consumed by

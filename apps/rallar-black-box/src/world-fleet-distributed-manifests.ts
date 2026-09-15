@@ -10,8 +10,8 @@ import type {
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const WORLD_FLEET_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -60,7 +60,7 @@ const WORLD_FLEET_AGENT_COUNT = 50;
 const DEFAULT_CONTROL_RUN_ID = 'world-fleet-template-control-run';
 const DEFAULT_ACK_TIMEOUT_MS = 45_000;
 
-export function buildWorldFleetDistributedManifestCatalog(): readonly WorldFleetDistributedManifestEntry[] {
+export function createWorldFleetDistributedManifestCatalog(): readonly WorldFleetDistributedManifestEntry[] {
     return [
         principalEntry({
             filePath: WORLD_FLEET_DISTRIBUTED_MANIFEST_GREEN_ORDER[0],
@@ -94,17 +94,21 @@ export function buildWorldFleetDistributedManifestCatalog(): readonly WorldFleet
             durationSeconds: 3_600,
             diagnostic: true
         }),
-        ...[5, 10, 20].map((rateHz, index) =>
-            allPeerEntry({
-                filePath: WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER[index + 2],
-                durationSeconds: 3_600,
-                rateHz,
-                minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
-                receiverExpectedFrames: 49 * 3_600 * rateHz,
-                diagnostic: true
-            })
-        )
+        ...createLongAllPeerDiagnosticEntries()
     ];
+}
+
+function createLongAllPeerDiagnosticEntries(): readonly WorldFleetDistributedManifestEntry[] {
+    return [5, 10, 20].map((rateHz, index) =>
+        allPeerEntry({
+            filePath: WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER[index + 2],
+            durationSeconds: 3_600,
+            rateHz,
+            minReceiveRatio: rateHz === 20 ? 0.8 : rateHz === 10 ? 0.85 : 0.9,
+            receiverExpectedFrames: 49 * 3_600 * rateHz,
+            diagnostic: true
+        })
+    );
 }
 
 function principalEntry(
@@ -120,7 +124,7 @@ function principalEntry(
     const runIdSuffix = long
         ? `60m-20hz-${input.topologyProfile}`
         : `30s-20hz-${input.topologyProfile}`;
-    return buildWorldFleetManifestEntry({
+    return createWorldFleetManifestEntry({
         filePath: input.filePath,
         title: `RTC messages principal 50-agent ${long ? '60m' : '30s'} 20 Hz ${input.topologyProfile}${
             input.diagnostic ? ' diagnostic' : ''
@@ -178,7 +182,7 @@ function allPeerEntry(
 ): WorldFleetDistributedManifestEntry {
     const long = input.durationSeconds >= 3_600;
     const label = long ? '60m' : '30s';
-    return buildWorldFleetManifestEntry({
+    return createWorldFleetManifestEntry({
         filePath: input.filePath,
         title: `RTC messages all-peer 50-agent ${label} ${input.rateHz} Hz tree${
             input.diagnostic ? ' diagnostic' : ''
@@ -221,7 +225,7 @@ function allPeerEntry(
     });
 }
 
-function buildWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFleetDistributedManifestEntry {
+function createWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFleetDistributedManifestEntry {
     const recipes = input.recipes ?? (input.recipe ? [input.recipe] : []);
     const manifest = buildDistributedRunManifest({
         distributedRunId: input.distributedRunId,

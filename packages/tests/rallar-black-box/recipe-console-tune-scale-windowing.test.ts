@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rememberControlResponseDocument } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import { createControlSnapshotRevisionSession } from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { createTuneCandidateKnobIndex } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-candidate-knob-index.ts';
 import { createTuneRunCatalogCache, tuneRunCatalogCacheWorkForTest } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog-cache.ts';
 import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
@@ -258,7 +259,10 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('mounts at most 100 of 5,000 runs and reaches a late selected ID', async () => {
         const selection = scaleSelection('run-004999', 'run-000123');
-        const navigate = vi.fn();
+        const navigations: Partial<RecipeConsoleUrlState>[] = [];
+        const navigate = (patch: Partial<RecipeConsoleUrlState>) => {
+            navigations.push(patch);
+        };
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(TuneRunPicker, {
@@ -281,14 +285,17 @@ describe('Recipe Console Tune pressure UI', () => {
             .toBe('Showing 4,801–4,900 of 5,000 options.');
 
         await click(button('Previous'));
-        expect(navigate).not.toHaveBeenCalled();
+        expect(navigations).toEqual([]);
         expect(container.querySelectorAll('[role="option"]')).toHaveLength(100);
         await click(container.querySelector('[role="option"]'));
-        expect(navigate).toHaveBeenCalledTimes(1);
+        expect(navigations).toHaveLength(1);
     });
 
     it('keeps an open queried run page stable across a clone-equivalent poll', async () => {
-        const navigate = vi.fn();
+        const navigations: Partial<RecipeConsoleUrlState>[] = [];
+        const navigate = (patch: Partial<RecipeConsoleUrlState>) => {
+            navigations.push(patch);
+        };
         const render = (selection = scaleSelection(
             'run-004999',
             'run-000123'
@@ -325,10 +332,10 @@ describe('Recipe Console Tune pressure UI', () => {
         ).toBe(range);
         expect(container.querySelector('[data-searchable-listbox-popup]'))
             .not.toBeNull();
-        expect(navigate).not.toHaveBeenCalled();
+        expect(navigations).toEqual([]);
     });
 
-    it('indexes and reaches a late long-bidi pointer among 24,002 editable knobs', async () => {
+    it('indexes and reaches a late long-bidi pointer among 22,002 editable knobs', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
         const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
         const source = {
@@ -342,11 +349,11 @@ describe('Recipe Console Tune pressure UI', () => {
         )?.pointer;
         expect(pointer).toBeDefined();
         expect(index.work).toEqual({
-            knobRowsVisited: 24_002,
-            editableOptionsProjected: 24_002,
+            knobRowsVisited: 22_002,
+            editableOptionsProjected: 22_002,
             blockedRowsProjected: 0,
-            uniquePointersIndexed: 24_002,
-            revisionRowsProjected: 24_002,
+            uniquePointersIndexed: 22_002,
+            revisionRowsProjected: 22_002,
             hintRowsVisited: 0
         });
         expect(JSON.stringify(index.work))
@@ -404,7 +411,7 @@ describe('Recipe Console Tune pressure UI', () => {
         const range = container.querySelector(
             '[data-searchable-listbox-range]'
         )?.textContent;
-        expect(range).toMatch(/^Showing [\d,]+–[\d,]+ of 24,000 options\.$/u);
+        expect(range).toMatch(/^Showing [\d,]+–[\d,]+ of 22,000 options\.$/u);
 
         await act(async () => render(structuredClone(source)));
 
@@ -432,7 +439,10 @@ describe('Recipe Console Tune pressure UI', () => {
             decisions: undefined
         } as unknown as TuneSourceModel;
         const index = createTuneCandidateKnobIndex(source);
-        const onSelect = vi.fn();
+        const selectedPointers: string[] = [];
+        const onSelect = (pointer: string) => {
+            selectedPointers.push(pointer);
+        };
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(TuneKnobPicker, {
@@ -448,7 +458,7 @@ describe('Recipe Console Tune pressure UI', () => {
         expect(container.querySelector('[role="alert"]')?.textContent)
             .toContain('option keys must be unique');
         expect(container.querySelectorAll('[role="option"]')).toHaveLength(0);
-        expect(onSelect).not.toHaveBeenCalled();
+        expect(selectedPointers).toEqual([]);
         expect(index.work).toMatchObject({
             knobRowsVisited: 2,
             editableOptionsProjected: 2,

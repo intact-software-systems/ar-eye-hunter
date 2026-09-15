@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import type { RallarBlackBoxTestEvent } from '../../rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestEvent } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     rememberRtcCloseEvent,
     rememberRtcDiagnostic,

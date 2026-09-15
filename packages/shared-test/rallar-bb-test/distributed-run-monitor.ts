@@ -1,4 +1,4 @@
-import { rtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
+import { computeRtcReadinessWarnings } from './browser/compute-rtc-readiness-warnings.ts';
 import {
     flattenRallarBlackBoxCompositeResults,
     summarizeRallarBlackBoxCompositeResults,
@@ -54,7 +54,6 @@ import {
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
-import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
@@ -70,7 +69,8 @@ import {
     type RallarBlackBoxTestTransport,
     type RallarBlackBoxTestWaitCommand,
     type RallarBlackBoxTestWaitResultValue
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema/rallar-black-box-command-capabilities.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'
@@ -996,7 +996,7 @@ export function distributedRecipePreflight(
     ].filter((requirement) => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
     const warnings = uniqueValues([
         ...analyses.flatMap((analysis) => analysis.warnings),
-        ...rtcReadinessWarnings(recipe),
+        ...computeRtcReadinessWarnings(recipe),
         ...compatibilityWarnings(commandKinds, liveServiceRequirements)
     ]);
     const errors = uniqueValues(analyses.flatMap((analysis) => analysis.errors));

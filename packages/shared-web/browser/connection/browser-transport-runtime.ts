@@ -1,3 +1,4 @@
+import { toAuthSessionKey } from '@shared-web/browser/auth/auth-session-identity.ts';
 import {
     initialiseMiddleware,
     type MiddlewareInitOptions
@@ -5,8 +6,10 @@ import {
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface BrowserTransportRuntimePort {
+    readonly deliverySettlements: BrowserDeliverySettlements;
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     isReady(): boolean;
@@ -16,6 +19,7 @@ export interface BrowserTransportRuntimePort {
 }
 
 export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
+    readonly deliverySettlements = new BrowserDeliverySettlements();
     private activeMiddleware: ApiMiddleware | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
@@ -56,13 +60,14 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
             return Promise.reject(new Error('Cannot init middleware: no auth session.'));
         }
 
-        const pendingMiddleware = this.createMiddleware(session, options)
+        const epoch = this.deliverySettlements.open(options.deliverySettlements);
+        const pendingMiddleware = this.createMiddleware(session, { ...options, deliverySettlements: epoch.settlements })
             .then((middleware) => {
                 const currentSession = readSession();
                 if (
                     generation !== this.generation ||
                     !currentSession ||
-                    currentSession.sessionId !== session.sessionId
+                    toAuthSessionKey(currentSession) !== toAuthSessionKey(session)
                 ) {
                     this.shutdownMiddleware(middleware.middleware);
                     throw new Error('Rallar connection was cancelled because auth ended.');
@@ -70,6 +75,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
 
                 this.activeMiddleware = middleware;
                 return middleware;
+            })
+            .catch((error) => {
+                epoch.close();
+                throw error;
             })
             .finally(() => {
                 if (this.pendingMiddleware === pendingMiddleware) {
@@ -82,6 +91,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 
     public shutdown(reason = 'rallar-disconnect'): void {
+        this.deliverySettlements.close();
         this.generation += 1;
         this.pendingMiddleware = undefined;
         const middleware = this.activeMiddleware;
@@ -126,8 +136,6 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     }
 }
 
-export const browserTransportRuntime = new BrowserTransportRuntime();
-
 function runShutdownStep(step: () => void): void {
     try {
         step();
@@ -136,3 +144,5 @@ function runShutdownStep(step: () => void): void {
         // Transport cleanup must continue when a stale resource is already closed.
     }
 }
+
+export const browserTransportRuntime = new BrowserTransportRuntime();

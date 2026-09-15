@@ -11,10 +11,12 @@ import {
     distributedRecipePreflight,
     distributedRunTuningJsonPointer,
     inventoryDistributedRunTuningKnobs,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     validateDistributedRunManifest,
-    validateRallarBlackBoxRecipeCompatibility,
+    validateJsonSchema,
     validateRallarBlackBoxTestCommand
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): DistributedRunArtifactFiles {
     return {
@@ -65,6 +67,48 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
     };
 }
 
+function tuningCommands(): readonly RallarBlackBoxTestCommand[] {
+    return [{
+        kind: 'loop',
+        commandId: 'duplicate~/command',
+        count: 2,
+        durationMs: 2_000,
+        intervalMs: 25,
+        commands: [{
+            kind: 'rtc.stream',
+            commandId: 'duplicate~/command',
+            send: {},
+            count: 10,
+            durationMs: 1_000,
+            intervalMs: 50,
+            rateHz: 20,
+            maxInFlight: 8,
+            thresholds: { minSendSuccessRatio: 0.95, maxDroppedFrames: 1 }
+        }, {
+            kind: 'parallel',
+            commandId: 'parallel',
+            groups: [{
+                groupId: 'group~/one',
+                commands: [{
+                    kind: 'recipe.run',
+                    commandId: 'embedded',
+                    recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'embedded~/recipe',
+                        commands: [{
+                            kind: 'rtc.stream',
+                            commandId: 'duplicate~/command',
+                            send: {},
+                            durationMs: 500,
+                            rateHz: 5
+                        }]
+                    }
+                }]
+            }]
+        }]
+    }];
+}
+
 function tuningManifest(): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,
@@ -90,44 +134,7 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
             recipe: {
                 schemaVersion: 1,
                 recipeId: 'recipe~/inline',
-                commands: [{
-                    kind: 'loop',
-                    commandId: 'duplicate~/command',
-                    count: 2,
-                    durationMs: 2_000,
-                    intervalMs: 25,
-                    commands: [{
-                        kind: 'rtc.stream',
-                        commandId: 'duplicate~/command',
-                        send: {},
-                        count: 10,
-                        durationMs: 1_000,
-                        intervalMs: 50,
-                        rateHz: 20,
-                        maxInFlight: 8,
-                        thresholds: { minSendSuccessRatio: 0.95, maxDroppedFrames: 1 }
-                    }, {
-                        kind: 'parallel',
-                        commandId: 'parallel',
-                        groups: [{
-                            groupId: 'group~/one',
-                            commands: [{
-                                kind: 'recipe.run',
-                                commandId: 'embedded',
-                                recipe: {
-                                    recipeId: 'embedded~/recipe',
-                                    commands: [{
-                                        kind: 'rtc.stream',
-                                        commandId: 'duplicate~/command',
-                                        send: {},
-                                        durationMs: 500,
-                                        rateHz: 5
-                                    }]
-                                }
-                            }]
-                        }]
-                    }]
-                }]
+                commands: tuningCommands()
             }
         }, {
             recipeId: 'reference-only~/recipe',
@@ -284,7 +291,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             ...manifest,
             recipes: [{
                 recipeId: 'bounded',
-                recipe: { recipeId: 'bounded', commands }
+                recipe: { schemaVersion: 1, recipeId: 'bounded', commands }
             }]
         };
 
@@ -305,7 +312,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         }
 
         expect(validateDistributedRunManifest(candidate).errors).toEqual([]);
-        expect(validateRallarBlackBoxRecipeCompatibility(recipe).errors).toEqual([]);
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).errors).toEqual([]);
         expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
         expect(distributedRecipePreflight(recipe).errors).toEqual([]);
     });

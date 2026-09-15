@@ -7,7 +7,9 @@ import type {
     RallarRtcStatus,
     RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
+import type { RallarGameHostAppointResult } from '@shared-web/game/director/rallar-game-director-appointment-contracts.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 
@@ -40,70 +42,103 @@ export type ArenaAiStatus =
 
 export type DirectorAttemptSource = 'manual' | 'auto';
 
-export type DirectorAttemptState = Readonly<{
-    source?: DirectorAttemptSource;
-    status: 'idle' | 'pending' | 'succeeded' | 'not-elected' | 'not-ready' | 'failed';
-    resultStatus?: string;
-    reason?: string;
-    startedAtEpochMs?: number;
-    finishedAtEpochMs?: number;
-    durationMs?: number;
-}>;
+export interface CapabilityDelivery {
+    readonly state: 'pending' | 'confirmed' | 'failed' | 'expired' | 'superseded' | 'cancelled' | 'unobservable';
+    readonly evidence: ALDeliveryState;
+    readonly reason: string | undefined;
+}
 
-export type HttpProbeDiagnostics = Readonly<{
-    status: 'idle' | 'ok' | 'error';
-    durationMs?: number;
-    checkedAtEpochMs?: number;
-    reason?: string;
-    detail?: string;
-}>;
+interface IdleDirectorAttempt {
+    readonly status: 'idle';
+    readonly source?: never;
+    readonly startedAtEpochMs?: never;
+    readonly finishedAtEpochMs?: never;
+    readonly durationMs?: never;
+    readonly reason?: never;
+    readonly resultStatus?: never;
+    readonly capabilityDelivery?: never;
+}
 
-export type ArenaTransportDiagnostics = Readonly<{
-    refreshedAtEpochMs?: number;
-    ws?: RallarWsStatus;
-    rtc?: RallarRtcStatus;
-    realtimeHealth: readonly RallarRealtimeLaneHealth[];
-    rtcDiagnostics?: RallarRtcDiagnostics;
-    wsTicketBackoff?: WebSocketTicketBackoffState;
-    error?: string;
-}>;
+interface PendingDirectorAttempt {
+    readonly status: 'pending';
+    readonly source: DirectorAttemptSource;
+    readonly startedAtEpochMs: number;
+    readonly finishedAtEpochMs?: never;
+    readonly durationMs?: never;
+    readonly reason?: never;
+    readonly resultStatus?: never;
+    /** Absent when no WS handle was returned, or reporting has not completed. */
+    readonly capabilityDelivery: CapabilityDelivery | undefined;
+}
 
-export type ArenaHttpDiagnostics = Readonly<{
-    apiConfig: HttpProbeDiagnostics;
-    ice: HttpProbeDiagnostics;
-}>;
+export interface FinishedDirectorAttempt {
+    readonly status: 'succeeded' | 'not-elected' | 'not-ready' | 'failed';
+    readonly source: DirectorAttemptSource;
+    readonly startedAtEpochMs: number;
+    readonly finishedAtEpochMs: number;
+    readonly durationMs: number;
+    readonly reason: string | undefined;
+    readonly resultStatus: RallarGameHostAppointResult['status'];
+    /** Absent when reporting did not return a WS handle. */
+    readonly capabilityDelivery: CapabilityDelivery | undefined;
+}
 
-export type ArenaDiagnosticsRefreshOptions = Readonly<{
-    includeRtcStats?: boolean;
-}>;
+export type DirectorAttemptState = IdleDirectorAttempt | PendingDirectorAttempt | FinishedDirectorAttempt;
 
-export type ArenaConnection = Readonly<{
-    session?: AuthSession;
-    connectionState: ArenaConnectionState;
-    error?: string;
-    roomId?: string;
-    rooms: readonly RallarRoomSummary[];
-    directorStatus: RallarDirectorStatus;
-    rtcLanes: readonly RtcLaneStatus[];
-    directorAttempt: DirectorAttemptState;
-    gameDiagnostics?: RallarGameDiagnostics;
-    transportDiagnostics: ArenaTransportDiagnostics;
-    httpDiagnostics: ArenaHttpDiagnostics;
-    linkState: ArenaLinkState;
-    presenceNotices: readonly ArenaPresenceNotice[];
-    authStorageKind: AuthSessionStorageKind;
-    authGeneration: number;
-    networkEnabled: boolean;
-    logoutQuiesced: boolean;
-    aiStatus: ArenaAiStatus;
-    aiError?: string;
-    activeEvent?: ArenaEvent;
-    arenaSnapshot?: ArenaSnapshot;
-    remoteEvents: readonly ArenaEvent[];
-    remotePlayers: ReadonlyMap<string, RemotePlayer>;
-    remoteShots: readonly RemoteShot[];
-    remotePlayerHits: readonly PlayerHitAccepted[];
-    pickupAcceptances: readonly PickupAccepted[];
+export interface HttpProbeDiagnostics {
+    readonly status: 'idle' | 'ok' | 'error';
+    readonly durationMs?: number;
+    readonly checkedAtEpochMs?: number;
+    readonly reason?: string;
+    readonly detail?: string;
+}
+
+export interface ArenaTransportDiagnostics {
+    readonly refreshedAtEpochMs?: number;
+    readonly ws?: RallarWsStatus;
+    readonly rtc?: RallarRtcStatus;
+    readonly realtimeHealth: readonly RallarRealtimeLaneHealth[];
+    readonly rtcDiagnostics?: RallarRtcDiagnostics;
+    readonly wsTicketBackoff?: WebSocketTicketBackoffState;
+    readonly error?: string;
+}
+
+export interface ArenaHttpDiagnostics {
+    readonly apiConfig: HttpProbeDiagnostics;
+    readonly ice: HttpProbeDiagnostics;
+}
+
+export interface ArenaDiagnosticsRefreshOptions {
+    readonly includeRtcStats?: boolean;
+}
+
+export interface ArenaConnection {
+    readonly session?: AuthSession;
+    readonly connectionState: ArenaConnectionState;
+    readonly error?: string;
+    readonly roomId?: string;
+    readonly rooms: readonly RallarRoomSummary[];
+    readonly directorStatus: RallarDirectorStatus;
+    readonly rtcLanes: readonly RtcLaneStatus[];
+    readonly directorAttempt: DirectorAttemptState;
+    readonly gameDiagnostics?: RallarGameDiagnostics;
+    readonly transportDiagnostics: ArenaTransportDiagnostics;
+    readonly httpDiagnostics: ArenaHttpDiagnostics;
+    readonly linkState: ArenaLinkState;
+    readonly presenceNotices: readonly ArenaPresenceNotice[];
+    readonly authStorageKind: AuthSessionStorageKind;
+    readonly authGeneration: number;
+    readonly networkEnabled: boolean;
+    readonly logoutQuiesced: boolean;
+    readonly aiStatus: ArenaAiStatus;
+    readonly aiError?: string;
+    readonly activeEvent?: ArenaEvent;
+    readonly arenaSnapshot?: ArenaSnapshot;
+    readonly remoteEvents: readonly ArenaEvent[];
+    readonly remotePlayers: ReadonlyMap<string, RemotePlayer>;
+    readonly remoteShots: readonly RemoteShot[];
+    readonly remotePlayerHits: readonly PlayerHitAccepted[];
+    readonly pickupAcceptances: readonly PickupAccepted[];
     login(username: string, password: string): Promise<void>;
     register(
         username: string,
@@ -127,4 +162,4 @@ export type ArenaConnection = Readonly<{
     sendPickupIntent(intent: PickupIntent): void;
     startArenaMatch(durationMs: ArenaMatchDurationMs): Promise<void>;
     publishArenaSnapshot(snapshot: ArenaSnapshot): void;
-}>;
+}

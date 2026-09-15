@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { FLOW_BUILDER_TEMPLATES, type FlowBuilderStepKind } from '../../../flow-builder.ts';
 import { FLOW_STEP_BUTTONS } from './flow-builder-support.ts';
 

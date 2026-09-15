@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';

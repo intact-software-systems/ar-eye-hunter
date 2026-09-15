@@ -1,5 +1,5 @@
 import type { RallarBlackBoxControlAgentMessagingCapability } from '../distributed-run.ts';
-import type { RallarBlackBoxTestMessagesCarrier, RallarBlackBoxTestRecord } from '../types.ts';
+import type { RallarBlackBoxTestMessagesCarrier, RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 const CONTROL_AGENT_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'ws',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
+import { createAnalyzeArtifactModel, type AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import { validateTuneCatalogSelections } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-catalog-selection-validation.ts';
 import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
@@ -31,6 +31,7 @@ function run(id: string, controlRunId: string, updated = 2_000): ControlDistribu
             recipes: [{
                 recipeId: 'recipe-a',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'recipe-a',
                     commands: [{ kind: 'health', commandId: `health-${id}` }]
                 }
@@ -118,43 +119,30 @@ function artifact(
     controlRun: ControlRunSnapshot,
     support: AnalyzeArtifactModel['workspace']['support'] = 'supported'
 ): AnalyzeArtifactModel {
+    const model = createAnalyzeArtifactModel({
+        source: 'control',
+        label: 'Tune retained artifact fixture',
+        generatedAtEpochMs: 4_000,
+        files: {
+            'distributed-run.json': JSON.stringify(distributedRun),
+            'manifest.json': JSON.stringify(distributedRun.manifest),
+            'control-run.json': JSON.stringify(controlRun),
+            'events.jsonl': '',
+            'results.jsonl': ''
+        }
+    });
     return {
-        distributedRunId: distributedRun.distributedRunId,
-        controlRunId: distributedRun.controlRunId,
-        identity: {
-            distributedRunId: distributedRun.distributedRunId,
-            controlRunId: distributedRun.controlRunId
-        },
-        snapshots: { distributedRun, controlRun },
+        ...model,
         workspace: {
+            ...model.workspace,
             support,
             issues: support === 'supported' ? [] : [{
-                code: 'unsupported-test-artifact',
+                code: 'unsupported-family',
+                severity: 'error',
                 message: 'Unsupported artifact fixture.'
             }]
-        },
-        analysis: {
-            distributedRunId: distributedRun.distributedRunId,
-            controlRunId: distributedRun.controlRunId,
-            performance: {
-                commandTiming: { count: 1, p95Ms: 100, outlierCount: 0 },
-                agentCount: 1,
-                passRate: 1,
-                reconnectCount: 0,
-                diagnosticCount: 0,
-                warningDiagnosticCount: 0,
-                errorDiagnosticCount: 0,
-                exportedEventCount: controlRun.events.length,
-                agentReportedEventCount: 0,
-                failedAgentCount: 0,
-                missingAgentCount: 0,
-                staleAgentCount: 0,
-                flakyAgentCount: 0,
-                slowestAgents: []
-            }
-        },
-        provenance: { generatedAtEpochMs: 4_000 }
-    } as unknown as AnalyzeArtifactModel;
+        }
+    };
 }
 
 const url = (patch: Record<string, unknown> = {}) => ({
@@ -169,11 +157,11 @@ describe('Recipe Console Tune model hardening', () => {
         const baseline = run('baseline', 'control-baseline');
         const malformed = structuredClone(
             run('deep-invalid', 'control-invalid')
-        ) as unknown as Record<string, any>;
-        malformed.manifest.recipes = null;
+        );
+        Reflect.set(malformed.manifest, 'recipes', null);
         const querySnapshot = query('live', [
             baseline,
-            malformed as ControlDistributedRunSnapshot
+            malformed
         ], [control('control-baseline'), control('control-invalid')]);
         const deferred = buildTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
@@ -202,10 +190,10 @@ describe('Recipe Console Tune model hardening', () => {
     it('revalidates a deferred injected catalog before source dereferences it', () => {
         const malformed = structuredClone(
             run('deep-invalid', 'control-invalid')
-        ) as unknown as Record<string, any>;
-        malformed.manifest.recipes = null;
+        );
+        Reflect.set(malformed.manifest, 'recipes', null);
         const querySnapshot = query('live', [
-            malformed as ControlDistributedRunSnapshot
+            malformed
         ], [control('control-invalid')]);
         const deferred = buildTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
@@ -340,13 +328,9 @@ describe('Recipe Console Tune model hardening', () => {
     });
 
     it('fails closed on unreadable unselected manifest identities without full validation', () => {
-        const nullManifest = {
-            ...run('null-manifest', 'control-null'),
-            manifest: null
-        } as unknown as ControlDistributedRunSnapshot;
-        const throwingManifest = {
-            ...run('throwing-manifest', 'control-throwing')
-        } as unknown as Record<string, unknown>;
+        const nullManifest = run('null-manifest', 'control-null');
+        Reflect.set(nullManifest, 'manifest', null);
+        const throwingManifest = run('throwing-manifest', 'control-throwing');
         Object.defineProperty(throwingManifest, 'manifest', {
             enumerable: true,
             get: () => {
@@ -357,7 +341,7 @@ describe('Recipe Console Tune model hardening', () => {
         for (
             const malformed of [
                 nullManifest,
-                throwingManifest as unknown as ControlDistributedRunSnapshot
+                throwingManifest
             ]
         ) {
             let catalog: ReturnType<typeof buildTuneRunCatalog> | undefined;
@@ -386,10 +370,10 @@ describe('Recipe Console Tune model hardening', () => {
     it('marks deep manifests for selection validation and rejects invalid truth before authority', () => {
         const malformed = structuredClone(
             run('deep-invalid', 'control-invalid')
-        ) as unknown as Record<string, any>;
-        malformed.manifest.recipes = null;
+        );
+        Reflect.set(malformed.manifest, 'recipes', null);
         const querySnapshot = query('live', [
-            malformed as ControlDistributedRunSnapshot
+            malformed
         ], [control('control-invalid')]);
         const deferred = buildTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
@@ -589,22 +573,22 @@ describe('Recipe Console Tune model hardening', () => {
     it.each(
         [
             ['top-level distributed identity', (model: AnalyzeArtifactModel) => {
-                (model as unknown as { distributedRunId: string; }).distributedRunId = 'other';
+                Reflect.set(model, 'distributedRunId', 'other');
             }],
             ['projected distributed identity', (model: AnalyzeArtifactModel) => {
-                (model.identity as { distributedRunId: string; }).distributedRunId = 'other';
+                Reflect.set(model.identity, 'distributedRunId', 'other');
             }],
             ['top-level control identity', (model: AnalyzeArtifactModel) => {
-                (model as unknown as { controlRunId: string; }).controlRunId = 'control-other';
+                Reflect.set(model, 'controlRunId', 'control-other');
             }],
             ['projected control identity', (model: AnalyzeArtifactModel) => {
-                (model.identity as { controlRunId: string; }).controlRunId = 'control-other';
+                Reflect.set(model.identity, 'controlRunId', 'control-other');
             }],
             ['analysis distributed identity', (model: AnalyzeArtifactModel) => {
-                (model.analysis as { distributedRunId: string; }).distributedRunId = 'other';
+                Reflect.set(model.analysis, 'distributedRunId', 'other');
             }],
             ['analysis control identity', (model: AnalyzeArtifactModel) => {
-                (model.analysis as { controlRunId: string; }).controlRunId = 'control-other';
+                Reflect.set(model.analysis, 'controlRunId', 'control-other');
             }]
         ] as const
     )(
@@ -664,7 +648,7 @@ describe('Recipe Console Tune model hardening', () => {
                 query: query('stale', [selected], [selectedControl]),
                 retained: { status: 'ready', model: artifact(selected, selectedControl) },
                 sourceSearch: '?provider=browser-rallar&manualToken=secret'
-            } as Parameters<typeof deriveTuneSourceModel>[0]
+            }
         );
 
         expect(model.provenance).toMatchObject({ source: 'artifact', detail: 'detailed' });
@@ -676,13 +660,13 @@ describe('Recipe Console Tune model hardening', () => {
 
     it('contains malformed recipe collections at the catalog boundary', () => {
         const left = run('left', 'control-left');
-        const malformed = structuredClone(run('right', 'control-right')) as unknown as Record<string, any>;
-        malformed.manifest.recipes = null;
+        const malformed = structuredClone(run('right', 'control-right'));
+        Reflect.set(malformed.manifest, 'recipes', null);
         let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
         expect(() => {
             model = deriveTuneSelectionModel({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
-                query: query('live', [left, malformed as ControlDistributedRunSnapshot], [
+                query: query('live', [left, malformed], [
                     control('control-left'),
                     control('control-right')
                 ])
@@ -694,19 +678,19 @@ describe('Recipe Console Tune model hardening', () => {
 
     it.each(
         [
-            ['a null recipe selection', (candidate: Record<string, any>) => {
-                candidate.manifest.recipes = [null];
+            ['a null recipe selection', (candidate: ControlDistributedRunSnapshot) => {
+                Reflect.set(candidate.manifest, 'recipes', [null]);
             }],
-            ['outer/manifest distributed identity drift', (candidate: Record<string, any>) => {
-                candidate.manifest.distributedRunId = 'different-distributed-run';
+            ['outer/manifest distributed identity drift', (candidate: ControlDistributedRunSnapshot) => {
+                Reflect.set(candidate.manifest, 'distributedRunId', 'different-distributed-run');
             }],
-            ['outer/manifest control identity drift', (candidate: Record<string, any>) => {
-                candidate.manifest.controlRunId = 'different-control-run';
+            ['outer/manifest control identity drift', (candidate: ControlDistributedRunSnapshot) => {
+                Reflect.set(candidate.manifest, 'controlRunId', 'different-control-run');
             }]
         ] as const
     )('quarantines %s before comparison derivation', (_label, mutate) => {
         const left = run('left', 'control-left');
-        const malformed = structuredClone(run('right', 'control-right')) as unknown as Record<string, any>;
+        const malformed = structuredClone(run('right', 'control-right'));
         mutate(malformed);
         let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
 
@@ -715,7 +699,7 @@ describe('Recipe Console Tune model hardening', () => {
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [
                     left,
-                    malformed as ControlDistributedRunSnapshot
+                    malformed
                 ], [control('control-left'), control('control-right')])
             });
         }).not.toThrow();
@@ -735,7 +719,7 @@ describe('Recipe Console Tune model hardening', () => {
         const source = deriveTuneSourceModel({
             urlState: url({ distributedRunId: 'right' }),
             query: query('live', [
-                malformed as ControlDistributedRunSnapshot
+                malformed
             ], [control('control-right')])
         });
         expect(source.issues.map((issue) => issue.code)).toContain('invalid-manifest');

@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestRtcStreamThresholdFailure,
     RallarBlackBoxTestRtcStreamThresholds,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
 
 const STREAM_PLACEHOLDER_PATTERN = /\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}/g;
 const STREAM_EXACT_PLACEHOLDER_PATTERN = /^\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}$/;
@@ -131,7 +131,6 @@ export function summarizeRallarBlackBoxRtcStreamObservations(input: {
     const attemptedFrames = observations.filter((observation) => !observation.dropped).length;
     const completedFrames = observations.filter((observation) => observation.ok && !observation.dropped).length;
     const failedFrames = observations.filter((observation) => !observation.ok).length;
-    const backpressureCount = observations.filter((observation) => observation.backpressured).length;
     const lateThresholdMs = Math.max(1, Math.round(Math.max(input.intervalMs, 1) * 0.5));
     const value: RallarBlackBoxTestRtcStreamResultValue = {
         commandId: input.commandId,
@@ -142,7 +141,6 @@ export function summarizeRallarBlackBoxRtcStreamObservations(input: {
         completedFrames,
         failedFrames,
         droppedFrames,
-        backpressureCount,
         startedAtEpochMs: input.startedAtEpochMs,
         endedAtEpochMs: input.endedAtEpochMs,
         elapsedMs,
@@ -197,15 +195,6 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxDroppedFrames',
         'delivery',
         'Dropped frame count',
-        'above'
-    );
-    pushNumericFailure(
-        failures,
-        thresholds.maxBackpressureCount,
-        value.backpressureCount,
-        'maxBackpressureCount',
-        'backpressure',
-        'Backpressure count',
         'above'
     );
     if (
@@ -285,8 +274,7 @@ export function sampleRallarBlackBoxRtcStreamObservations(
         index === lastIndex ||
         observation.iteration % sampleEvery === 0 ||
         !observation.ok ||
-        observation.dropped === true ||
-        observation.backpressured === true
+        observation.dropped === true
     );
 }
 

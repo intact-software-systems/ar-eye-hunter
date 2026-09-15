@@ -156,11 +156,11 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-bounded-rejection-sender-observe-cancelled-1",
+            "commandId": "alm-ws-bounded-rejection-sender-observe-rejected-after-cancel-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-bounded-rejection-send-1",
             "state": [
-              "cancelled"
+              "rejected"
             ],
             "timeoutMs": 3000
           },
@@ -576,11 +576,11 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-bounded-rejection-sender-observe-cancelled-1",
+            "commandId": "alm-rtc-bounded-rejection-sender-observe-rejected-after-cancel-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-bounded-rejection-send-1",
             "state": [
-              "cancelled"
+              "rejected"
             ],
             "timeoutMs": 3000
           },
@@ -1176,11 +1176,11 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-observe-cancelled-1",
+            "commandId": "alm-rtc-with-ws-fallback-bounded-rejection-sender-observe-rejected-after-cancel-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-bounded-rejection-send-1",
             "state": [
-              "cancelled"
+              "rejected"
             ],
             "timeoutMs": 3000
           },

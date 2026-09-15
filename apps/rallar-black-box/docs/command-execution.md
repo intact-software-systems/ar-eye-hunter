@@ -116,7 +116,7 @@ The browser initiates the WebSocket connection. The server does not reach into t
 
 ## Provider Parity Helpers
 
-`packages/shared-test/rallar-bb-test/provider-parity.ts` provides the portable Iteration 18 parity path:
+`packages/shared-test/rallar-bb-test/provider-parity/` provides the portable Iteration 18 parity path:
 
 - `createRallarBlackBoxProviderParityRecipe(...)` builds a visible SPA recipe for configure, connect, direct send,
   multicast metadata, broadcast metadata, health, close, and reset.
@@ -465,10 +465,12 @@ HTTP request:
 
 ## Recipes
 
-A recipe is an ordered list of commands:
+A recipe is an ordered list of commands with explicit `schemaVersion: 1`.
+Nested and inline recipes require the same version; missing versions are rejected:
 
 ```json
 {
+  "schemaVersion": 1,
   "recipeId": "demo-recipe",
   "name": "Demo recipe",
   "continueOnFailure": false,

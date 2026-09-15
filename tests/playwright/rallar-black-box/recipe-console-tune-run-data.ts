@@ -62,7 +62,6 @@ export function createTuneManifest(
                     thresholds: {
                         minSendSuccessRatio: 0.98,
                         maxDroppedFrames: 0,
-                        maxBackpressureCount: 0,
                         maxP95SendDurationMs: 40,
                         maxP99SendDurationMs: 50,
                         maxAverageStartDriftMs: 8,

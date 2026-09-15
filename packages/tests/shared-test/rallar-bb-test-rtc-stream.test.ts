@@ -116,8 +116,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     completedAtEpochMs: 1_215,
                     startDriftMs: 20,
                     durationMs: 45,
-                    ok: true,
-                    backpressured: true
+                    ok: true
                 },
                 {
                     commandId: 'stream-position:f5',
@@ -148,7 +147,6 @@ describe('rallar-bb-test rtc stream helpers', () => {
             completedFrames: 4,
             failedFrames: 1,
             droppedFrames: 1,
-            backpressureCount: 1,
             elapsedMs: 320,
             requestedRateHz: 20,
             achievedScheduleHz: 15.625,

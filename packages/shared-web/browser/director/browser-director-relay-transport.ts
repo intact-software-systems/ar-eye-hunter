@@ -3,14 +3,18 @@ import type {
     RallarDirectorRelaySendResult,
     RallarDirectorStatus
 } from '@shared-web/browser/director/rallar-director-facade.ts';
-import type { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
-import type { RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarTargetedChannel,
     RallarTargetedChannelDefinition
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import {
+    AL_DELIVERY_ADMITTED_STATES,
+    isALDeliveryAdmitted,
+    type ALDeliveryLifecycle
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 export const RALLAR_DIRECTOR_RELAY_PROTOCOL = 'rallar.director.relay.v1';
@@ -24,7 +28,7 @@ export namespace BrowserDirectorRelayTransport {
         ): RallarTargetedChannel<T>;
         sendWsUnicast<T>(
             input: BrowserRallarMessageSender.WsUnicastInput<T>
-        ): Promise<RallarMessageSendResult>;
+        ): Promise<RallarMessageHandle>;
     }
 
     export interface SendIntentInput<T> {
@@ -95,13 +99,20 @@ export class BrowserDirectorRelayTransport {
             ttlMs: 5_000
         };
         const rtc = await this.input.messages.rtc.send(message);
-        if (isSuccessfulMessageSendStatus(rtc.status)) {
+        const rtcOutcome = await rtc.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
+        if (isSuccessfulDirectorDelivery(rtcOutcome.lifecycle)) {
             return { status: 'sent', rtc };
         }
         const ws = await this.input.messages.ws.send(message);
-        return isSuccessfulMessageSendStatus(ws.status)
+        const wsOutcome = await ws.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: message.ttlMs });
+        return isSuccessfulDirectorDelivery(wsOutcome.lifecycle)
             ? { status: 'sent', rtc, ws }
-            : { status: 'failed', rtc, ws, reason: ws.reason ?? rtc.reason };
+            : {
+                status: 'failed',
+                rtc,
+                ws,
+                reason: wsOutcome.lifecycle.evidence.reason ?? rtcOutcome.lifecycle.evidence.reason
+            };
     }
 
     private async sendIntentWithWsFallback<T>(
@@ -119,9 +130,13 @@ export class BrowserDirectorRelayTransport {
             typeId: input.typeId,
             route: { topicId: input.topicId, contextId: input.current.roomId }
         });
-        return isSuccessfulMessageSendStatus(ws.status)
+        const wsOutcome = await ws.wait({
+            until: AL_DELIVERY_ADMITTED_STATES,
+            timeoutMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+        });
+        return isSuccessfulDirectorDelivery(wsOutcome.lifecycle)
             ? { status: 'sent', rtc, ws }
-            : { status: 'failed', rtc, ws, reason: ws.reason };
+            : { status: 'failed', rtc, ws, reason: wsOutcome.lifecycle.evidence.reason };
     }
 
     private readIntentRejection(
@@ -185,7 +200,7 @@ function createEnvelope<T>(
     };
 }
 
-function isSuccessfulMessageSendStatus(status: ALOutboundEnqueueStatus): boolean {
-    return status === 'enqueued' || status === 'accepted' ||
-        status === 'duplicate' || status === 'superseded' || status === 'skipped';
+function isSuccessfulDirectorDelivery(lifecycle: ALDeliveryLifecycle): boolean {
+    // A newer intent replaced it; falling back over WS would resend stale state.
+    return isALDeliveryAdmitted(lifecycle) || lifecycle.state === 'superseded';
 }

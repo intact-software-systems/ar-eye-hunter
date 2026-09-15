@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AppTabId } from '../../../../app-tabs.ts';
 import type {
     ControlDistributedRunArtifactBundle,

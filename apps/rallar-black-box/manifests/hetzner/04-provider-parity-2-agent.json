@@ -12,6 +12,7 @@
     {
       "recipeId": "rallar-provider-parity-recipe",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rallar-provider-parity-recipe",
         "name": "Rallar provider parity recipe",
         "description": "Portable connect/send/health/close/reset recipe for visible SPA and black-box runner parity checks.",

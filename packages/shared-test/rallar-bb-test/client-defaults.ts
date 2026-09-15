@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestTransport } from './types.ts';
+import type { RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
 
 export type RallarBlackBoxProviderMode = 'simulated' | 'browser-rallar';
 

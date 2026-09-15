@@ -7,7 +7,7 @@ generate or validate `rallar-bb-test` browser-agent recipes.
 
 The current recipe schema version is `1`.
 
-New recipes should include:
+Every recipe must include:
 
 - `schemaVersion: 1`
 - stable `recipeId` values
@@ -15,10 +15,10 @@ New recipes should include:
   reports, control-server events, and artifacts
 - only fields accepted by `RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA`
 
-Existing recipes without `schemaVersion` are still treated as legacy-compatible
-v1 recipes. `validateRallarBlackBoxRecipeCompatibility(...)` returns a warning
-for those recipes so tools can nudge authors toward explicit versioning without
-breaking old fixtures.
+Recipes without `schemaVersion: 1` are rejected, including inline recipes in
+commands or distributed manifests at every nesting level. Author or regenerate
+an explicit v1 recipe before dispatch. No automatic conversion or saved-recipe
+migration is provided.
 
 Unsupported explicit recipe versions fail schema validation. Distributed run
 manifests also use `schemaVersion: 1` and should include explicit v1 inline
@@ -146,14 +146,13 @@ Use the lightweight schema validator before staging or executing generated
 JSON:
 
 - Recipes: `validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value)`
-- Recipe compatibility: `validateRallarBlackBoxRecipeCompatibility(value)`
 - Distributed manifests:
   `validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, value)`
 - Distributed manifest semantics:
   `validateDistributedRunManifestContract(value)`
 
-Treat compatibility warnings as authoring feedback. Treat validation errors as
-blocking failures.
+Treat validation errors as blocking failures. Catalog schema results report
+`valid` or `invalid`; they do not expose a legacy status or compatibility warning.
 
 ## Golden Corpus
 
@@ -176,7 +175,8 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 
 ## External Tool Rules
 
-- Emit `schemaVersion: 1` for every new recipe and distributed manifest.
+- Emit `schemaVersion: 1` for every recipe, including nested and inline recipes,
+  and for every distributed manifest.
 - Do not emit unknown top-level recipe fields.
 - Put non-contract authoring hints under `metadata` when the schema allows it.
 - Keep command IDs stable across repair prompts unless a command is split or

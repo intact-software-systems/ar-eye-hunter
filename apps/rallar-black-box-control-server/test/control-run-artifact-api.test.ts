@@ -528,3 +528,62 @@ Deno.test('final report artifact rows dedupe across WebSocket and HTTP ingress',
         await Deno.remove(storageDir, { recursive: true });
     }
 });
+
+Deno.test('run artifact directories stay disk-address distinct for colliding run ids over HTTP', async () => {
+    if (!(await canBindLoopback())) {
+        return;
+    }
+
+    const storageDir = await Deno.makeTempDir({
+        prefix: 'rallar-control-artifact-directory-'
+    });
+    // Retention is zero so the in-memory snapshot fallback is empty and events.jsonl responses
+    // can only come from the on-disk run directory, proving the directory codec rather than
+    // the runtime fallback.
+    const server = await startControlServer({
+        RALLAR_BLACK_BOX_STORAGE_DIR: storageDir,
+        RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS: '0',
+        RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS: '0'
+    });
+    try {
+        const percentRunId = '%';
+        const underscoreRunId = '_25';
+        await postReport(server.baseUrl, percentRunId, 'percent-marker');
+        await postReport(server.baseUrl, underscoreRunId, 'underscore-marker');
+
+        const percentEvents = await waitForJsonl(
+            server.baseUrl,
+            `/runs/${encodeURIComponent(percentRunId)}/events.jsonl`,
+            'percent-marker'
+        );
+        assert(!percentEvents.includes('underscore-marker'));
+
+        const underscoreEvents = await waitForJsonl(
+            server.baseUrl,
+            `/runs/${encodeURIComponent(underscoreRunId)}/events.jsonl`,
+            'underscore-marker'
+        );
+        assert(!underscoreEvents.includes('percent-marker'));
+    }
+    finally {
+        await server.stop();
+        await Deno.remove(storageDir, { recursive: true });
+    }
+});
+
+async function postReport(baseUrl: string, runId: string, marker: string): Promise<void> {
+    const response = await fetch(
+        `${baseUrl}/runs/${encodeURIComponent(runId)}/agents/agent-a/report`,
+        {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(reportEnvelope({
+                runId,
+                agentId: 'agent-a',
+                eventId: `report-${marker}`,
+                marker
+            }))
+        }
+    );
+    assertEquals(response.status, 202);
+}

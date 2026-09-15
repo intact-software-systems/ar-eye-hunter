@@ -26,7 +26,6 @@ describe('Recipe Console evidence-backed tuning decisions', () => {
                         completedFrames: 120,
                         droppedFrames: 80,
                         inFlightLimitDropCount: 10,
-                        backpressureCount: 20,
                         achievedCompletionHz: 8,
                         maxStartDriftMs: 5_000
                     }
@@ -52,7 +51,6 @@ describe('Recipe Console evidence-backed tuning decisions', () => {
                         failedFrames: 60,
                         droppedFrames: 60,
                         inFlightLimitDropCount: 8,
-                        backpressureCount: 13,
                         achievedCompletionHz: 9,
                         maxStartDriftMs: 4_200,
                         lateFrameCount: 90
@@ -74,7 +72,6 @@ describe('Recipe Console evidence-backed tuning decisions', () => {
         expect(cadence?.evidence).toEqual(expect.arrayContaining([
             '60 dropped frames',
             '8 in-flight-limit drops',
-            '13 backpressure events',
             '9Hz achieved vs 20Hz requested',
             '4200ms max start drift'
         ]));

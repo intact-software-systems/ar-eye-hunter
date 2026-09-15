@@ -283,7 +283,7 @@ run as the baseline.
 
 For realtime manifests, also review the stream timing section: stream count,
 completed/planned frames, attempted frames, failed frames, dropped frames,
-backpressure count, p50/p95/p99/max stream send duration, achieved Hz, and
+p50/p95/p99/max stream send duration, achieved Hz, and
 slowest stream agents. These manifests use one bounded `rtc.stream` command per
 agent instead of expanding the realtime traffic into many sequential `rtc.send`
 commands, so stream frame metrics are the primary performance baseline.
@@ -295,5 +295,5 @@ and JSONL files in the `rallar-black-box` Runs panel with `Import CI artifact`.
 The SPA uses the same analysis core as the CLI, then shows the verdict,
 likely cause, next action, minimal fix area, evidence file, warnings, and
 performance baseline beside the live distributed run monitor. Imported stream
-runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure,
+runs show stream frames, p50/p95/p99 stream send duration, drops,
 achieved Hz, and slowest stream agent rows in the Performance Health band.

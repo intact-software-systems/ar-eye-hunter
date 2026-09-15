@@ -1,13 +1,12 @@
 import {
-    afterEach,
     beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
-import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
 import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
@@ -103,10 +102,6 @@ vi.mock(import('@shared/repository/overlays-repository.ts'), async (importOrigin
 const connection = vi.mocked(mocks.context.middleware.webRtcConnectionService);
 
 describe('Rallar facade default scope behavior', () => {
-    afterEach(() => {
-        browserTransportRuntime.shutdown('test-cleanup');
-    });
-
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
@@ -145,6 +140,7 @@ describe('Rallar facade default scope behavior', () => {
     it('uses facade defaults as the operation scope when no explicit scope is passed', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
 
         facade.setDefaults({
             applicationId: 'default-app'
@@ -167,12 +163,13 @@ describe('Rallar facade default scope behavior', () => {
     it('uses facade defaults to build RTC group refs from room id strings', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'game-app',
             workspaceId: 'arena-1'
         });
 
-        const result = await facade.messages.rtc.send({
+        await facade.messages.rtc.send({
             roomId: 'match-1',
             typeId: 'game.input.v1',
             resourceId: 'input-1',
@@ -181,7 +178,7 @@ describe('Rallar facade default scope behavior', () => {
             }
         });
 
-        expect(result.message.targets).toMatchObject({
+        expect(vi.mocked(mocks.context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: {
                 applicationId: 'game-app',
@@ -189,12 +186,13 @@ describe('Rallar facade default scope behavior', () => {
                 groupId: 'match-1'
             }
         });
-        expect(result.message.targets).not.toHaveProperty('groupId');
+        expect(vi.mocked(mocks.context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
     it('uses facade room defaults for RTC and WS sends without per-call room ids', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'game-app',
             workspaceId: 'arena-1',
@@ -203,14 +201,14 @@ describe('Rallar facade default scope behavior', () => {
             }
         });
 
-        const rtcResult = await facade.messages.rtc.send({
+        await facade.messages.rtc.send({
             typeId: 'game.input.v1',
             resourceId: 'rtc-input-1',
             payload: {
                 x: 1
             }
         });
-        const wsResult = await facade.messages.ws.send({
+        await facade.messages.ws.send({
             topicId: 'room.game',
             typeId: 'game.event.v1',
             resourceId: 'ws-event-1',
@@ -219,11 +217,11 @@ describe('Rallar facade default scope behavior', () => {
             }
         });
 
-        expect(rtcResult.message.route).toMatchObject({
+        expect(vi.mocked(mocks.context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mock.calls[0][0].route).toMatchObject({
             contextId: 'match-1',
             resourceId: 'rtc-input-1'
         });
-        expect(rtcResult.message.targets).toMatchObject({
+        expect(vi.mocked(mocks.context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mock.calls[0][0].targets).toMatchObject({
             mode: 'multicast',
             groupRef: {
                 applicationId: 'game-app',
@@ -231,12 +229,12 @@ describe('Rallar facade default scope behavior', () => {
                 groupId: 'match-1'
             }
         });
-        expect(wsResult.message.route).toMatchObject({
+        expect(vi.mocked(mocks.context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mock.calls[0][0].route).toMatchObject({
             topicId: 'room.game',
             contextId: 'match-1',
             resourceId: 'ws-event-1'
         });
-        expect(wsResult.message.targets).toMatchObject({
+        expect(vi.mocked(mocks.context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mock.calls[0][0].targets).toMatchObject({
             mode: 'broadcast',
             scope: 'room'
         });
@@ -255,6 +253,7 @@ describe('Rallar facade default scope behavior', () => {
             }
         ];
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'default-app',
             rtc: {
@@ -276,6 +275,7 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             {
+                deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
                     transportFaultPort: { decideSend: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
@@ -312,6 +312,7 @@ describe('Rallar facade default scope behavior', () => {
         const transportFaultPort = createScriptedTransportFaultPort();
         const indexedDbOperationObserver = createCountingIndexedDbOperationObserver();
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'default-app',
             diagnosticsPorts: { transportFaultPort, indexedDbOperationObserver }
@@ -323,6 +324,7 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             expect.objectContaining({
+                deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
                     transportFaultPort,
                     indexedDbOperationObserver,
@@ -351,6 +353,7 @@ describe('Rallar facade default scope behavior', () => {
             channel: gameplay.channel
         });
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -397,6 +400,7 @@ describe('Rallar facade default scope behavior', () => {
             channel: reliable.channel
         });
         const facade = createRallarFacade();
+        onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'app-1',
             rtc: {

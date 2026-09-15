@@ -10,7 +10,7 @@ import {
     type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 
 describe('Hetzner distributed run artifact analysis', () => {
     it('uses JSONL fallback evidence consistently for CLI analysis and SPA snapshots', () => {
@@ -627,7 +627,6 @@ describe('Hetzner distributed run artifact analysis', () => {
                             completedFrames: 3,
                             failedFrames: 0,
                             droppedFrames: 0,
-                            backpressureCount: 0,
                             requestedRateHz: 20,
                             achievedScheduleHz: 20,
                             achievedCompletionHz: 20,
@@ -655,13 +654,12 @@ describe('Hetzner distributed run artifact analysis', () => {
                             completedFrames: 2,
                             failedFrames: 0,
                             droppedFrames: 0,
-                            backpressureCount: 1,
                             requestedRateHz: 20,
                             achievedScheduleHz: 18,
                             achievedCompletionHz: 18,
                             duration: { minMs: 40, p50Ms: 40, p95Ms: 50, p99Ms: 50, maxMs: 50, averageMs: 45 },
                             observations: [
-                                { index: 0, iteration: 1, durationMs: 40, ok: true, backpressured: true },
+                                { index: 0, iteration: 1, durationMs: 40, ok: true },
                                 { index: 1, iteration: 2, durationMs: 50, ok: true }
                             ],
                             thresholdFailures: []
@@ -680,7 +678,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 5,
             failedFrames: 0,
             droppedFrames: 0,
-            backpressureCount: 1,
             sendSuccessRatio: 1,
             duration: {
                 count: 5,
@@ -1016,7 +1013,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 3,
             failedFrames: 0,
             droppedFrames: 0,
-            backpressureCount: 0,
             requestedRateHz: 20,
             achievedScheduleHz: 20,
             achievedCompletionHz: 20,
@@ -1037,13 +1033,12 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 2,
             failedFrames: 0,
             droppedFrames: 0,
-            backpressureCount: 1,
             requestedRateHz: 20,
             achievedScheduleHz: 18,
             achievedCompletionHz: 18,
             duration: { minMs: 40, p50Ms: 40, p95Ms: 50, p99Ms: 50, maxMs: 50, averageMs: 45 },
             observations: [
-                { index: 0, iteration: 1, durationMs: 40, ok: true, backpressured: true },
+                { index: 0, iteration: 1, durationMs: 40, ok: true },
                 { index: 1, iteration: 2, durationMs: 50, ok: true }
             ],
             thresholdFailures: []
@@ -1135,7 +1130,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 5,
             failedFrames: 0,
             droppedFrames: 0,
-            backpressureCount: 1,
             sendSuccessRatio: 1,
             duration: {
                 count: 5,
@@ -1337,7 +1331,6 @@ describe('Hetzner distributed run artifact analysis', () => {
                                 completedFrames: 88,
                                 failedFrames: 0,
                                 droppedFrames: 12,
-                                backpressureCount: 0,
                                 requestedRateHz: 20,
                                 achievedScheduleHz: 20,
                                 achievedCompletionHz: 17.6,
@@ -1485,7 +1478,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 90,
             failedFrames: 0,
             droppedFrames: 10,
-            backpressureCount: 0,
             requestedRateHz: 20,
             achievedScheduleHz: 20,
             achievedCompletionHz: 18,
@@ -1587,7 +1579,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 79,
             failedFrames: 21,
             droppedFrames: 21,
-            backpressureCount: 0,
             requestedRateHz: 20,
             achievedScheduleHz: 10.45,
             achievedCompletionHz: 8.25,
@@ -1623,7 +1614,6 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 84,
             failedFrames: 16,
             droppedFrames: 16,
-            backpressureCount: 0,
             requestedRateHz: 20,
             achievedScheduleHz: 12,
             achievedCompletionHz: 10,
