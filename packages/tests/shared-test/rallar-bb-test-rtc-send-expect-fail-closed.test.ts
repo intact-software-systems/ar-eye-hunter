@@ -35,7 +35,8 @@ describe('rtc.send expect fail-closed boundary', () => {
     it('rejects a control-dispatched rtc.send carrying expect', () => {
         expect(validateRallarBlackBoxTestCommand(rtcSendWithExpect)).toEqual({
             ok: false,
-            error: 'rtc.send has unsupported field: expect.'
+            error: 'rtc.send has unsupported field: expect.',
+            messages: ['rtc.send has unsupported field: expect.']
         });
     });
 

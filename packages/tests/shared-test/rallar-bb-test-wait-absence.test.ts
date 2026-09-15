@@ -275,7 +275,8 @@ describe('rallar-bb-test wait absence', () => {
             }
         } as never)).toEqual({
             ok: false,
-            error: 'wait.absent must be true when present.'
+            error: 'wait.absent must be true when present.',
+            messages: ['wait.absent must be true when present.']
         });
 
         expect(

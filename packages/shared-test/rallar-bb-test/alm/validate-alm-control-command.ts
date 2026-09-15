@@ -7,7 +7,7 @@ import {
     validateIntegerField,
     validateNumberField,
     validateObjectField,
-    validateRequiredField,
+    validateRequiredFields,
     validateStringField
 } from '../control/validate-control-command-fields.ts';
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
@@ -46,10 +46,7 @@ export function validateAlmControlCommand(
         case 'storage.counters':
             return validateBooleanField(command, 'reset', kind);
         case 'agent.reload':
-            return [
-                ...validateRequiredField(command, 'readyTimeoutMs', kind),
-                ...validateIntegerField({ record: command, key: 'readyTimeoutMs', path: kind, minimum: 0 })
-            ];
+            return validateIntegerField({ record: command, key: 'readyTimeoutMs', path: kind, minimum: 0 });
     }
 }
 
@@ -58,11 +55,8 @@ function validateMessagesSendCommand(command: RallarBlackBoxTestRecord): readonl
     const values = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES;
     return [
         ...validateStringField(command, 'connection', path),
-        ...validateRequiredField(command, 'carrier', path),
         ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
-        ...validateRequiredField(command, 'typeId', path),
         ...validateStringField(command, 'typeId', path),
-        ...validateRequiredField(command, 'payload', path),
         ...['topicId', 'orderingKey', 'handleId'].flatMap((key) => validateStringField(command, key, path)),
         ...validateObjectField(command, 'roomRef', path),
         ...validateEnumField({ record: command, key: 'scope', path, allowed: values.messagesScope }),
@@ -77,11 +71,7 @@ function validateMessagesHandleCommand(
     command: RallarBlackBoxTestRecord,
     path: RallarBlackBoxTestAlmCommandKind
 ): readonly ControlCommandIssue[] {
-    return [
-        ...validateStringField(command, 'connection', path),
-        ...validateRequiredField(command, 'handleId', path),
-        ...validateStringField(command, 'handleId', path)
-    ];
+    return [...validateStringField(command, 'connection', path), ...validateStringField(command, 'handleId', path)];
 }
 
 function validateDeliveryStateField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
@@ -98,13 +88,10 @@ function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): rea
     const path = 'messages.received';
     return [
         ...validateStringField(command, 'connection', path),
-        ...validateRequiredField(command, 'typeId', path),
         ...validateStringField(command, 'typeId', path),
         ...validateStringField(command, 'msgId', path),
-        ...validateRequiredField(command, 'count', path),
         ...validateIntegerField({ record: command, key: 'count', path, minimum: 0 }),
         ...validateBooleanField(command, 'absent', path),
-        ...validateRequiredField(command, 'windowMs', path),
         ...validateIntegerField({ record: command, key: 'windowMs', path, minimum: 0 })
     ];
 }
@@ -112,9 +99,7 @@ function validateMessagesReceivedCommand(command: RallarBlackBoxTestRecord): rea
 function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const path = 'fault.inject';
     return [
-        ...validateRequiredField(command, 'faultId', path),
         ...validateStringField(command, 'faultId', path),
-        ...validateRequiredField(command, 'carrier', path),
         ...validateEnumField({
             record: command,
             key: 'carrier',
@@ -123,7 +108,6 @@ function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly
         }),
         ...validateFaultMatchField(command),
         ...validateFaultActionField(command),
-        ...validateRequiredField(command, 'remaining', path),
         ...validateNumberField(command, 'remaining', path)
     ];
 }
@@ -150,10 +134,7 @@ function validateFaultMatchField(command: RallarBlackBoxTestRecord): readonly Co
 function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const action = command.action;
     const path = 'fault.inject.action';
-    if (action === undefined) {
-        return [toControlCommandIssue(`${path} is required.`)];
-    }
-    if (action === 'drop') {
+    if (action === undefined || action === 'drop') {
         return [];
     }
     if (!isJsonRecordValue(action)) {
@@ -162,9 +143,10 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     if (command.carrier === 'rtc') {
         return [toControlCommandIssue(`${path} must be "drop" on the rtc carrier.`)];
     }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction;
     return [
-        ...validateAllowedFields(action, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, path),
-        ...validateRequiredField(action, 'delayMs', path),
+        ...validateAllowedFields(action, fields, path),
+        ...validateRequiredFields({ record: action, fields, path, ownMessageFields: [] }),
         ...validateNumberField(action, 'delayMs', path)
     ];
 }

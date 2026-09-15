@@ -243,6 +243,26 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     faultDelayAction: { required: ['delayMs'], optional: [] }
 } as const satisfies Readonly<Record<string, RallarBlackBoxCommandFieldSet>>;
 
+type RallarBlackBoxCommandObjectFields = typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS;
+
+/** Threshold fields that must be finite numbers no lower than zero. */
+export const RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS = {
+    loopThresholds: ['minAchievedRateHz', 'maxAverageStartDriftMs', 'maxStartDriftMs', 'maxJitterMs'],
+    rtcStreamThresholds: [
+        'maxDroppedFrames',
+        'maxBackpressureCount',
+        'maxP95SendDurationMs',
+        'maxP99SendDurationMs',
+        'maxAverageStartDriftMs',
+        'maxStartDriftMs',
+        'maxJitterMs'
+    ]
+} as const satisfies {
+    readonly [Name in keyof RallarBlackBoxCommandObjectFields]?: readonly RallarBlackBoxCommandFieldName<
+        RallarBlackBoxCommandObjectFields[Name]
+    >[];
+};
+
 export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     waitMatchKind: ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state'],
     waitMatchTransport: ['realtime', 'messages.rtc', 'ws', 'http'],

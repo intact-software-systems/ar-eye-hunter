@@ -4,7 +4,6 @@ import { toControlCommandIssue, type ControlCommandIssue } from './control-comma
 import {
     validateEnumField,
     validateObjectField,
-    validateRequiredField,
     validateStringField
 } from './validate-control-command-fields.ts';
 import { validateControlCommandRoomFields } from './validate-control-command-room-fields.ts';
@@ -37,7 +36,6 @@ function validateFormationCommandFields(command: RallarBlackBoxTestRecord): read
     const path = 'formation.command';
     const name = command.command;
     return [
-        ...validateRequiredField(command, 'command', path),
         ...validateStringField(command, 'command', path),
         ...(typeof name === 'string'
             ? validateEnumField({

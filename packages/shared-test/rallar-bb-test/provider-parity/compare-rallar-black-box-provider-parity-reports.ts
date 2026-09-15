@@ -10,10 +10,6 @@ import type {
 } from './provider-parity-contracts.ts';
 import { toOperationFromCommand } from './to-parity-command-metadata.ts';
 
-function toOperationFromResult(result: RallarBlackBoxTestResult): string {
-    return toOperationFromCommand(result);
-}
-
 function toOperationFromRunnerResult(result: RallarBlackBoxTestRecord): string {
     const name = typeof result.name === 'string' ? result.name.toLowerCase() : '';
     if (name.includes('receive') && name.includes('broadcast')) {

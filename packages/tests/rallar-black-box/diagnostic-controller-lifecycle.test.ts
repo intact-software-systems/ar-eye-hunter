@@ -1,11 +1,15 @@
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
-import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuthCommandCenterTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRuntimeEventInput,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessage, RallarMessageHandler, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarStartResult } from '@shared-web/browser/rallar.ts';
 import { act, createElement, StrictMode, useLayoutEffect } from 'react';
@@ -161,7 +165,7 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         quick.copyRunnerRecipe();
         const text = clipboard.mock.calls.at(-1)?.[0];
         expect(text).toBeDefined();
-        const recipe: unknown = JSON.parse(text ?? 'null');
+        const recipe = decodeCopiedRecipe(JSON.parse(text ?? 'null'));
         expect.soft(recipe).toMatchObject({ schemaVersion: 1, metadata: { requirements: expect.arrayContaining(['logged-in browser session']) } });
         expect.soft(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
         expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
@@ -676,4 +680,8 @@ function createDiagnosticMessage(text: string): RallarMessage<RallarMessagePaylo
             payload: { typeId: 'room.manual.message', contentType: 'application/json', resource: JSON.stringify({ text }) }
         }
     };
+}
+
+function decodeCopiedRecipe(value: unknown): RallarBlackBoxTestRecord | undefined {
+    return isJsonRecordValue(value) ? value : undefined;
 }

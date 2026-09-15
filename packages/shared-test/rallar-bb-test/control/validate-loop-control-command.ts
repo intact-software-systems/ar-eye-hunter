@@ -5,6 +5,7 @@ import {
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
+    RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
@@ -17,13 +18,6 @@ import {
     validateNumberField,
     validateRatioField
 } from './validate-control-command-fields.ts';
-
-const LOOP_THRESHOLD_NON_NEGATIVE_FIELDS = [
-    'minAchievedRateHz',
-    'maxAverageStartDriftMs',
-    'maxStartDriftMs',
-    'maxJitterMs'
-];
 
 /** Validates the loop's own fields; its child commands are validated by the command entry. */
 export function validateLoopControlCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
@@ -41,23 +35,27 @@ export function validateLoopControlCommand(command: RallarBlackBoxTestRecord): r
     ];
 }
 
-function validateLoopBounds(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+/** Loops and RTC streams share the composite iteration bounds. */
+export function validateCompositeCountAndDuration(
+    command: RallarBlackBoxTestRecord,
+    path: string
+): readonly ControlCommandIssue[] {
     const limits = RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS;
     return [
-        ...validateIntegerField({
-            record: command,
-            key: 'count',
-            path: 'loop',
-            minimum: 1,
-            maximum: limits.maxLoopCount
-        }),
+        ...validateIntegerField({ record: command, key: 'count', path, minimum: 1, maximum: limits.maxLoopCount }),
         ...validateIntegerField({
             record: command,
             key: 'durationMs',
-            path: 'loop',
+            path,
             minimum: 1,
             maximum: limits.maxLoopDurationMs
-        }),
+        })
+    ];
+}
+
+function validateLoopBounds(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    return [
+        ...validateCompositeCountAndDuration(command, 'loop'),
         ...validateIntegerField({ record: command, key: 'intervalMs', path: 'loop', minimum: 0 }),
         ...validateIntegerField({ record: command, key: 'delayMs', path: 'loop', minimum: 0 }),
         ...validateIntegerField({
@@ -65,7 +63,7 @@ function validateLoopBounds(command: RallarBlackBoxTestRecord): readonly Control
             key: 'maxCommands',
             path: 'loop',
             minimum: 1,
-            maximum: limits.maxExpandedCommands
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands
         })
     ];
 }
@@ -102,10 +100,15 @@ function validateLoopThresholds(command: RallarBlackBoxTestRecord): readonly Con
     if (!isJsonRecordValue(thresholds)) {
         return [toControlCommandIssue('loop.thresholds must be an object.')];
     }
+    const path = 'loop.thresholds';
     return [
-        ...validateAllowedFields(thresholds, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.loopThresholds, 'loop.thresholds'),
-        ...validateNonNegativeNumberFields(thresholds, LOOP_THRESHOLD_NON_NEGATIVE_FIELDS, 'loop.thresholds'),
-        ...validateRatioField(thresholds, 'minSendSuccessRatio', 'loop.thresholds'),
-        ...validateBooleanField(thresholds, 'failOnBackpressure', 'loop.thresholds')
+        ...validateAllowedFields(thresholds, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.loopThresholds, path),
+        ...validateNonNegativeNumberFields(
+            thresholds,
+            RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS.loopThresholds,
+            path
+        ),
+        ...validateRatioField(thresholds, 'minSendSuccessRatio', path),
+        ...validateBooleanField(thresholds, 'failOnBackpressure', path)
     ];
 }

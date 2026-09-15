@@ -19,7 +19,11 @@ describe('explicit browser recipe format', () => {
         Reflect.deleteProperty(recipe, 'schemaVersion');
         const command = { kind, recipe };
         expect.soft(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
-        expect.soft(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: false, error: `${kind}.recipe.schemaVersion must be 1.` });
+        expect.soft(validateRallarBlackBoxTestCommand(command)).toEqual({
+            ok: false,
+            error: `${kind}.recipe.schemaVersion must be 1.`,
+            messages: [`${kind}.recipe.schemaVersion must be 1.`]
+        });
         const runtime = createRallarBlackBoxTestRuntime();
         const result = await runtime.execute(command);
         expect.soft(result.ok).toBe(false);

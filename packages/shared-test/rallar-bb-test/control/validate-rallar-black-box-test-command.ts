@@ -1,5 +1,8 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
-import { validateAlmControlCommand } from '../alm/validate-alm-control-command.ts';
+import {
+    validateAlmControlCommand,
+    type RallarBlackBoxTestAlmCommandKind
+} from '../alm/validate-alm-control-command.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
@@ -25,20 +28,62 @@ import {
     validateIntegerField,
     validateNumberField,
     validateObjectField,
-    validateRequiredField,
+    validateRequiredFields,
     validateStringField
 } from './validate-control-command-fields.ts';
-import { validateDirectorControlCommand } from './validate-director-control-command.ts';
-import { validateFormationControlCommand } from './validate-formation-control-command.ts';
+import {
+    validateDirectorControlCommand,
+    type DirectorControlCommandKind
+} from './validate-director-control-command.ts';
+import {
+    validateFormationControlCommand,
+    type FormationControlCommandKind
+} from './validate-formation-control-command.ts';
 import { validateHttpControlCommand } from './validate-http-control-command.ts';
 import { validateLoopControlCommand } from './validate-loop-control-command.ts';
-import { validateRtcControlCommand } from './validate-rtc-control-command.ts';
+import { validateRtcControlCommand, type RtcControlCommandKind } from './validate-rtc-control-command.ts';
 import { validateWaitControlCommand } from './validate-wait-control-command.ts';
-import { validateWsControlCommand } from './validate-ws-control-command.ts';
+import { validateWsControlCommand, type WsControlCommandKind } from './validate-ws-control-command.ts';
 
 export type ControlCommandValidationResult =
     | Readonly<{ ok: true; }>
-    | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[]; }>;
+    | Readonly<{
+        ok: false;
+        /** Every issue message, one per line. */
+        error: string;
+        messages: readonly string[];
+        issues?: readonly RallarValidationIssue[];
+    }>;
+
+type CrdtCommandKind = Extract<RallarBlackBoxTestCommandKind, `crdt.${string}`>;
+type ControlCommandKind = Exclude<RallarBlackBoxTestCommandKind, CrdtCommandKind>;
+type ServiceCommandKind =
+    | RtcControlCommandKind
+    | RallarBlackBoxTestAlmCommandKind
+    | WsControlCommandKind
+    | 'http.request'
+    | FormationControlCommandKind
+    | DirectorControlCommandKind;
+
+/** Required fields whose absence the kind's own validator reports in more specific words. */
+const REQUIRED_FIELDS_WITH_OWN_MESSAGE: {
+    readonly [Kind in ControlCommandKind]?:
+        readonly (typeof RALLAR_BLACK_BOX_COMMAND_FIELDS)[Kind]['required'][number][];
+} = {
+    'recipe.load': ['recipe'],
+    loop: ['commands'],
+    parallel: ['groups'],
+    wait: ['match'],
+    'http.request': ['request'],
+    'messages.observe': ['state'],
+    'fault.inject': ['match'],
+    'director.intent': ['intent']
+};
+const RECIPE_FIELDS_WITH_OWN_MESSAGE:
+    readonly (typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS)['recipe']['required'][number][] = [
+        'schemaVersion',
+        'commands'
+    ];
 
 const UNSUPPORTED_COMMAND_ISSUE = toControlCommandIssue('Command must be an object with a supported kind.');
 
@@ -47,9 +92,12 @@ export function validateRallarBlackBoxTestCommand(value: unknown): ControlComman
     if (issues.length === 0) {
         return { ok: true };
     }
-    const error = issues.map((issue) => issue.message).join('\n');
+    const messages = issues.map((issue) => issue.message);
+    const error = messages.join('\n');
     const validationIssues = issues.flatMap((issue) => issue.validationIssues);
-    return validationIssues.length === 0 ? { ok: false, error } : { ok: false, error, issues: validationIssues };
+    return validationIssues.length === 0
+        ? { ok: false, error, messages }
+        : { ok: false, error, messages, issues: validationIssues };
 }
 
 function validateCommandRecord(command: RallarBlackBoxTestRecord, depth: number): readonly ControlCommandIssue[] {
@@ -61,9 +109,18 @@ function validateCommandRecord(command: RallarBlackBoxTestRecord, depth: number)
     if (depth > maxDepth) {
         return [toControlCommandIssue(`Command exceeds max composite depth ${maxDepth}.`)];
     }
-    return [
+    const fields: RallarBlackBoxCommandFieldSet = RALLAR_BLACK_BOX_COMMAND_FIELDS[kind];
+    const shapeIssues = [
         ...validateBaseFields(command),
-        ...validateAllowedFields(command, toCommandFieldSet(kind), kind),
+        ...validateAllowedFields(command, toCommandFieldSet(fields), kind)
+    ];
+    if (isCrdtCommandKind(kind)) {
+        return [...shapeIssues, toControlCommandIssue('Command kind is not supported.')];
+    }
+    const ownMessageFields: readonly string[] = REQUIRED_FIELDS_WITH_OWN_MESSAGE[kind] ?? [];
+    return [
+        ...shapeIssues,
+        ...validateRequiredFields({ record: command, fields, path: kind, ownMessageFields }),
         ...validateCommandKindFields(command, kind, depth)
     ];
 }
@@ -72,8 +129,12 @@ function isCommandKind(value: unknown): value is RallarBlackBoxTestCommandKind {
     return typeof value === 'string' && RALLAR_BLACK_BOX_TEST_COMMAND_KINDS.some((kind) => kind === value);
 }
 
-function toCommandFieldSet(kind: RallarBlackBoxTestCommandKind): RallarBlackBoxCommandFieldSet {
-    const fields = RALLAR_BLACK_BOX_COMMAND_FIELDS[kind];
+/** CRDT commands are browser-local documents; the control path does not dispatch them. */
+function isCrdtCommandKind(kind: RallarBlackBoxTestCommandKind): kind is CrdtCommandKind {
+    return kind.startsWith('crdt.');
+}
+
+function toCommandFieldSet(fields: RallarBlackBoxCommandFieldSet): RallarBlackBoxCommandFieldSet {
     return {
         required: ['kind', ...fields.required],
         optional: [...RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS, ...fields.optional]
@@ -92,12 +153,12 @@ function validateBaseFields(command: RallarBlackBoxTestRecord): readonly Control
 
 function validateCommandKindFields(
     command: RallarBlackBoxTestRecord,
-    kind: RallarBlackBoxTestCommandKind,
+    kind: ControlCommandKind,
     depth: number
 ): readonly ControlCommandIssue[] {
     switch (kind) {
         case 'configure':
-            return [...validateRequiredField(command, 'config', kind), ...validateObjectField(command, 'config', kind)];
+            return validateObjectField(command, 'config', kind);
         case 'recipe.load':
             return validateInlineRecipe(command, `${kind}.recipe`, depth);
         case 'recipe.run':
@@ -126,10 +187,9 @@ function validateCommandKindFields(
     }
 }
 
-/** CRDT commands are browser-local documents; the control path does not dispatch them. */
 function validateServiceCommandFields(
     command: RallarBlackBoxTestRecord,
-    kind: RallarBlackBoxTestCommandKind
+    kind: ServiceCommandKind
 ): readonly ControlCommandIssue[] {
     switch (kind) {
         case 'rtc.connect':
@@ -162,8 +222,6 @@ function validateServiceCommandFields(
         case 'director.sync.request':
         case 'director.relay.stop':
             return validateDirectorControlCommand(command, kind);
-        default:
-            return [toControlCommandIssue('Command kind is not supported.')];
     }
 }
 
@@ -176,10 +234,11 @@ function validateInlineRecipe(
     if (!isJsonRecordValue(recipe)) {
         return [toControlCommandIssue(`${path} must be an object.`)];
     }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe;
     return [
-        ...validateAllowedFields(recipe, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe, path),
+        ...validateAllowedFields(recipe, fields, path),
         ...(recipe.schemaVersion === 1 ? [] : [toControlCommandIssue(`${path}.schemaVersion must be 1.`)]),
-        ...validateRequiredField(recipe, 'recipeId', path),
+        ...validateRequiredFields({ record: recipe, fields, path, ownMessageFields: RECIPE_FIELDS_WITH_OWN_MESSAGE }),
         ...validateStringField(recipe, 'recipeId', path),
         ...validateCommandList(recipe, `${path}.commands`, depth)
     ];

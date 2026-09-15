@@ -6,6 +6,7 @@ import type {
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS } from '../schema/rallar-black-box-command-fields.ts';
 
 export interface LoopThresholdIssue {
     readonly message: string;
@@ -18,13 +19,6 @@ interface LoopPacingMaximum {
     readonly threshold: number | undefined;
     readonly actual: number | undefined;
 }
-
-const NON_NEGATIVE_THRESHOLD_KEYS = [
-    'minAchievedRateHz',
-    'maxAverageStartDriftMs',
-    'maxStartDriftMs',
-    'maxJitterMs'
-] as const;
 
 export function computeLoopThresholdFailures(
     thresholds: RallarBlackBoxTestLoopThresholds,
@@ -149,7 +143,7 @@ export function decodeLoopThresholds(value: unknown): Either<LoopThresholdIssue,
 }
 
 function toNonNegativeThresholdIssue(thresholds: RallarBlackBoxTestRecord): LoopThresholdIssue | undefined {
-    const key = NON_NEGATIVE_THRESHOLD_KEYS.find((candidate) => {
+    const key = RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS.loopThresholds.find((candidate) => {
         const threshold = thresholds[candidate];
         return threshold !== undefined &&
             (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0);

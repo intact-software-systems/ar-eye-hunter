@@ -15,8 +15,8 @@ import type {
 import { isAbortError } from '../runtime/sleep-with-abort.ts';
 import { computeCommandDeadlineEpochMs } from '../runtime/to-runtime-command-values.ts';
 import { computeLoopThresholdFailures } from './loop-command-thresholds.ts';
-import { runLoopUntilFirstSuccess, type LoopCommandWithId, type LoopIterationOutcome } from './loop-until.ts';
-import { resolveLoopPlan, type LoopPlan } from './resolve-loop-plan.ts';
+import { runLoopUntilFirstSuccess, type LoopIterationOutcome } from './loop-until.ts';
+import { resolveLoopPlan, type LoopCommandWithId, type LoopPlan } from './resolve-loop-plan.ts';
 import { toLoopChildCommand } from './to-loop-child-command.ts';
 import {
     toLoopCancelledOutcome,

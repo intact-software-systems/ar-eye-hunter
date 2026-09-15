@@ -20,6 +20,14 @@ export interface ControlCommandEnumFieldInput {
     readonly allowed: readonly string[];
 }
 
+export interface ControlCommandRequiredFieldsInput {
+    readonly record: RallarBlackBoxTestRecord;
+    readonly fields: RallarBlackBoxCommandFieldSet;
+    readonly path: string;
+    /** Required fields whose own validator reports their absence in its own words. */
+    readonly ownMessageFields: readonly string[];
+}
+
 const NO_ISSUES: readonly ControlCommandIssue[] = [];
 
 export function validateAllowedFields(
@@ -32,12 +40,11 @@ export function validateAllowedFields(
         .map((key) => toControlCommandIssue(`${path} has unsupported field: ${key}.`));
 }
 
-export function validateRequiredField(
-    record: RallarBlackBoxTestRecord,
-    key: string,
-    path: string
-): readonly ControlCommandIssue[] {
-    return record[key] === undefined ? [toControlCommandIssue(`${path}.${key} is required.`)] : NO_ISSUES;
+export function validateRequiredFields(input: ControlCommandRequiredFieldsInput): readonly ControlCommandIssue[] {
+    const { record, fields, path, ownMessageFields } = input;
+    return fields.required
+        .filter((key) => record[key] === undefined && !ownMessageFields.includes(key))
+        .map((key) => toControlCommandIssue(`${path}.${key} is required.`));
 }
 
 export function validateStringField(

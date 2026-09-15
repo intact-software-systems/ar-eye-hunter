@@ -58,6 +58,10 @@ export type DistributedRunTuningCandidateResult =
     }>
     | Readonly<{ ok: false; errors: readonly DistributedRunTuningCandidateError[]; }>;
 
+type PatchedTuningManifestResult =
+    | Readonly<{ ok: true; manifest: RallarBlackBoxDistributedRunManifest; }>
+    | Extract<DistributedRunTuningCandidateResult, { ok: false; }>;
+
 interface AcceptedChange {
     readonly change: DistributedRunTuningChange;
     readonly knob: DistributedRunTuningKnob;
@@ -172,10 +176,7 @@ function toTuningChangeError(
 function createPatchedTuningManifest(
     manifest: RallarBlackBoxDistributedRunManifest,
     patch: readonly DistributedRunTuningPatchOperation[]
-): { readonly ok: true; readonly manifest: RallarBlackBoxDistributedRunManifest; } | {
-    readonly ok: false;
-    readonly errors: readonly DistributedRunTuningCandidateError[];
-} {
+): PatchedTuningManifestResult {
     let candidate: RallarBlackBoxDistributedRunManifest;
     try {
         candidate = structuredClone(manifest);
@@ -370,7 +371,7 @@ function toRecipeTuningValidationErrors(
         });
         if (!agent.ok) {
             errors.push(
-                ...agent.error.split('\n').map((message) =>
+                ...agent.messages.map((message) =>
                     toCandidateError('agent-validation', tuningAgentIssuePointer(basePath, message), message)
                 )
             );

@@ -1,11 +1,13 @@
 import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_COMMAND_FIELDS } from '../schema/rallar-black-box-command-fields.ts';
+import {
+    RALLAR_BLACK_BOX_COMMAND_FIELDS,
+    type RallarBlackBoxCommandFieldName
+} from '../schema/rallar-black-box-command-fields.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
 import {
     validateBooleanField,
     validateIntegerField,
     validateNumberField,
-    validateRequiredField,
     validateStringField
 } from './validate-control-command-fields.ts';
 import { validateControlCommandRoomFields } from './validate-control-command-room-fields.ts';
@@ -28,7 +30,9 @@ const RELAY_STRING_FIELDS = [
     'heartbeatTypeId',
     'snapshotTypeId',
     'syncRequestTypeId'
-];
+] as const satisfies readonly RallarBlackBoxCommandFieldName<
+    (typeof RALLAR_BLACK_BOX_COMMAND_FIELDS)['director.relay.start']
+>[];
 
 export function validateDirectorControlCommand(
     command: RallarBlackBoxTestRecord,
@@ -52,35 +56,24 @@ export function validateDirectorControlCommand(
             return validateDirectorRelayStartCommand(command);
         case 'director.intent':
             return [
-                ...validateRequiredHandle(command, kind),
+                ...validateStringField(command, 'handle', kind),
                 ...(Object.hasOwn(command, 'intent')
                     ? []
                     : [toControlCommandIssue('director.intent.intent is required.')])
             ];
         case 'director.sync.request':
         case 'director.relay.stop':
-            return validateRequiredHandle(command, kind);
+            return validateStringField(command, 'handle', kind);
     }
 }
 
 function validateDirectorRelayStartCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const path = 'director.relay.start';
-    const requiredFields: readonly string[] = RALLAR_BLACK_BOX_COMMAND_FIELDS[path].required;
     return [
         ...validateControlCommandRoomFields(command, path),
-        ...RELAY_STRING_FIELDS.flatMap((key) => [
-            ...(requiredFields.includes(key) ? validateRequiredField(command, key, path) : []),
-            ...validateStringField(command, key, path)
-        ]),
+        ...RELAY_STRING_FIELDS.flatMap((key) => validateStringField(command, key, path)),
         ...['heartbeatIntervalMs', 'snapshotIntervalMs'].flatMap((key) =>
             validateIntegerField({ record: command, key, path, minimum: 0 })
         )
     ];
-}
-
-function validateRequiredHandle(
-    command: RallarBlackBoxTestRecord,
-    path: DirectorControlCommandKind
-): readonly ControlCommandIssue[] {
-    return [...validateRequiredField(command, 'handle', path), ...validateStringField(command, 'handle', path)];
 }

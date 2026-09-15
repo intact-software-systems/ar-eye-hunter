@@ -1,10 +1,8 @@
-import {
-    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    type RallarBlackBoxTestRecord
-} from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
+    RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
 import { toControlCommandIssue, type ControlCommandIssue } from './control-command-issue.ts';
@@ -16,22 +14,12 @@ import {
     validateNumberField,
     validateObjectField,
     validateRatioField,
-    validateRequiredField,
     validateStringField
 } from './validate-control-command-fields.ts';
 import { validateControlCommandRoomFields } from './validate-control-command-room-fields.ts';
+import { validateCompositeCountAndDuration } from './validate-loop-control-command.ts';
 
 export type RtcControlCommandKind = 'rtc.connect' | 'rtc.send' | 'rtc.stream';
-
-const RTC_STREAM_THRESHOLD_NON_NEGATIVE_FIELDS = [
-    'maxDroppedFrames',
-    'maxBackpressureCount',
-    'maxP95SendDurationMs',
-    'maxP99SendDurationMs',
-    'maxAverageStartDriftMs',
-    'maxStartDriftMs',
-    'maxJitterMs'
-];
 
 export function validateRtcControlCommand(
     command: RallarBlackBoxTestRecord,
@@ -83,7 +71,6 @@ function validateRtcConnectReadiness(command: RallarBlackBoxTestRecord): readonl
 
 function validateRtcStreamFields(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     return [
-        ...validateRequiredField(command, 'send', 'rtc.stream'),
         ...(command.count === undefined && command.durationMs === undefined
             ? [toControlCommandIssue('rtc.stream requires count or durationMs.')]
             : []),
@@ -97,17 +84,9 @@ function validateRtcStreamFields(command: RallarBlackBoxTestRecord): readonly Co
 }
 
 function validateRtcStreamPacing(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
-    const limits = RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS;
     const path = 'rtc.stream';
     return [
-        ...validateIntegerField({ record: command, key: 'count', path, minimum: 1, maximum: limits.maxLoopCount }),
-        ...validateIntegerField({
-            record: command,
-            key: 'durationMs',
-            path,
-            minimum: 1,
-            maximum: limits.maxLoopDurationMs
-        }),
+        ...validateCompositeCountAndDuration(command, path),
         ...validateIntegerField({ record: command, key: 'intervalMs', path, minimum: 1 }),
         ...validateRtcStreamRate(command),
         ...validateIntegerField({ record: command, key: 'maxInFlight', path, minimum: 1 }),
@@ -136,6 +115,10 @@ function validateRtcStreamThresholds(command: RallarBlackBoxTestRecord): readonl
     return [
         ...validateAllowedFields(thresholds, RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcStreamThresholds, path),
         ...validateRatioField(thresholds, 'minSendSuccessRatio', path),
-        ...validateNonNegativeNumberFields(thresholds, RTC_STREAM_THRESHOLD_NON_NEGATIVE_FIELDS, path)
+        ...validateNonNegativeNumberFields(
+            thresholds,
+            RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS.rtcStreamThresholds,
+            path
+        )
     ];
 }

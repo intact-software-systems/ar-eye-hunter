@@ -10,8 +10,6 @@ export const RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED = 'RALLAR_BLACK_BOX_LOOP_UNTI
 
 const DEFAULT_BACKOFF_MULTIPLIER = 1;
 
-export type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string; }>;
-
 export type LoopIterationOutcome =
     | Readonly<{ kind: 'completed'; failedChildResult?: RallarBlackBoxTestCompositeChildResult; }>
     | Readonly<{ kind: 'outcome'; outcome: RallarBlackBoxTestCommandOutcome; }>;
@@ -22,7 +20,7 @@ export interface LoopUntilValidationIssue {
 }
 
 export function validateLoopUntilCommand(
-    command: LoopCommandWithId
+    command: RallarBlackBoxTestLoopCommand
 ): readonly LoopUntilValidationIssue[] {
     const issues: LoopUntilValidationIssue[] = [];
     if (command.until !== undefined && command.until !== 'first-success') {
@@ -59,7 +57,7 @@ export function validateLoopUntilCommand(
 }
 
 export interface RunLoopUntilFirstSuccessInput {
-    readonly command: LoopCommandWithId;
+    readonly command: RallarBlackBoxTestLoopCommand;
     readonly count: number;
     readonly durationMs?: number;
     readonly intervalMs: number;

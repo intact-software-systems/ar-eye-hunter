@@ -90,7 +90,8 @@ describe('rallar-bb-test control protocol', () => {
             includeRtcDiagnostics: 'yes'
         })).toEqual({
             ok: false,
-            error: 'health.includeRtcDiagnostics must be a boolean.'
+            error: 'health.includeRtcDiagnostics must be a boolean.',
+            messages: ['health.includeRtcDiagnostics must be a boolean.']
         });
     });
 
@@ -289,7 +290,7 @@ describe('rallar-bb-test control protocol', () => {
             kind: 'loop',
             commands: [{ kind: 'health' }],
             thresholds
-        })).toEqual({ ok: false, error });
+        })).toEqual({ ok: false, error, messages: [error] });
     });
 
     it('reports every issue in a command, prefixing nested issues with their path', () => {
@@ -311,7 +312,12 @@ describe('rallar-bb-test control protocol', () => {
                 'recipe.load.recipe.commands[0]: loop.count must be >= 1.',
                 'recipe.load.recipe.commands[0]: loop.thresholds has unsupported field: bogus.',
                 'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
-            ].join('\n')
+            ].join('\n'),
+            messages: [
+                'recipe.load.recipe.commands[0]: loop.count must be >= 1.',
+                'recipe.load.recipe.commands[0]: loop.thresholds has unsupported field: bogus.',
+                'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
+            ]
         });
     });
 

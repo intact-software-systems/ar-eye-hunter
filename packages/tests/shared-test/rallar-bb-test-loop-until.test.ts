@@ -185,7 +185,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.continueOnFailure contradicts until mode.'
+            error: 'loop.continueOnFailure contradicts until mode.',
+            messages: ['loop.continueOnFailure contradicts until mode.']
         });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -195,7 +196,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier requires until mode.'
+            error: 'loop.backoffMultiplier requires until mode.',
+            messages: ['loop.backoffMultiplier requires until mode.']
         });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -206,7 +208,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier must be >= 1.'
+            error: 'loop.backoffMultiplier must be >= 1.',
+            messages: ['loop.backoffMultiplier must be >= 1.']
         });
 
         expect(

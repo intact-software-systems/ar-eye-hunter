@@ -351,12 +351,14 @@ for lightweight browser-safe validation, and
 `validateRallarBlackBoxTestCommand(value)` from
 `control/validate-rallar-black-box-test-command.ts` is the control-path
 admission check that the control server, the browser control agent and the
-remote-browser adapter share. It reports every issue it finds, one per line in
-`error`, with nested issues prefixed by the path of the recipe or composite
-child that holds them; route-ID issues are also returned as structured
-`issues`. Per-family field rules live beside it in `control/`, and the ALM
-command rules in `alm/validate-alm-control-command.ts`. The control path does
-not admit `crdt.*` commands.
+remote-browser adapter share. It reports every issue it finds as `messages`,
+and as one line each in `error`, with nested issues prefixed by the path of the
+recipe or composite child that holds them; route-ID issues are also returned as
+structured `issues`. Missing required fields are reported from the command field
+definition, except where a field's own rule words the absence more precisely.
+Per-family field rules live beside it in `control/`, and the ALM command rules
+in `alm/validate-alm-control-command.ts`. The control path does not admit
+`crdt.*` commands.
 
 Recipe format validation is strict: the recipe schema, the control-command
 validator and local runtime execution all reject a recipe, including a nested

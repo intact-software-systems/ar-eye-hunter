@@ -2,13 +2,16 @@ import { Either } from '@shared/resilience/Either.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestCommandOutcome,
+    type RallarBlackBoxTestLoopCommand,
     type RallarBlackBoxTestLoopThresholds,
     type RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 import { decodeNonNegativeInteger, decodePositiveInteger } from '../runtime/decode-runtime-result-values.ts';
 import { decodeLoopThresholds } from './loop-command-thresholds.ts';
-import { validateLoopUntilCommand, type LoopCommandWithId } from './loop-until.ts';
+import { validateLoopUntilCommand } from './loop-until.ts';
 import { toLoopInvalidOutcome, toLoopLimitExceededOutcome } from './to-loop-outcome.ts';
+
+export type LoopCommandWithId = RallarBlackBoxTestLoopCommand & Readonly<{ commandId: string; }>;
 
 export interface LoopPlan {
     readonly count: number;
