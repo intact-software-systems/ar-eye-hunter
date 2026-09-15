@@ -1472,21 +1472,6 @@ moved or changed test.
       }
     },
     {
-      "id": "browser-bridge-authentication-capability",
-      "domain": "Browser runtime authentication capability isolation",
-      "owner": "Shared Test maintainers",
-      "summary": "Missing authentication support fails without substituting a full runtime connection.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection",
-      "coverageRelation": "The test calls the public bridge authentication method with a runtime lacking authentication and observes rejection plus the untouched connection port.",
-      "interactionRequirement": {
-        "interactionKind": "absence",
-        "ownedPort": "Installed browser Rallar runtime connect capability",
-        "observableEffect": "An unsupported authentication request rejects without establishing a runtime session.",
-        "requiredConstraint": "The connect capability is never invoked as an authentication fallback.",
-        "failureRationale": "Opening a full connection can join rooms and allocate transports for a request that authorized authentication only."
-      }
-    },
-    {
       "id": "browser-bridge-invalid-config-admission",
       "domain": "Browser runtime configuration admission",
       "owner": "Shared Test maintainers",
@@ -4253,17 +4238,6 @@ moved or changed test.
       "owner": "Rallar realtime maintainers",
       "rationale": "Absence at the lane-opening port proves membership denial precedes transport work; the empty native send capture independently proves no frame escaped.",
       "semanticCoverage": "packages/tests/shared-web/realtime/browser-room-realtime-runtime.test.ts#does not open or send for a room the current session has not joined"
-    },
-    {
-      "id": "test-structure-coupling-e0edcf418c196587",
-      "path": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts",
-      "kind": "mock-invocation-count-or-order",
-      "contract": "browser-bridge-authentication-capability",
-      "disposition": "durable-boundary",
-      "boundary": "interaction",
-      "owner": "Shared Test maintainers",
-      "rationale": "A missing authentication capability must not start a full connection as a substitute, even if the bridge later rejects.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-rallar-runtime-bridge.test.ts#rejects missing authentication capability without starting a full connection"
     },
     {
       "id": "test-structure-coupling-7efeeba3a2a07e6e",
