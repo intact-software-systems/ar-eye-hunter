@@ -1,7 +1,3 @@
-import type { RallarBlackBoxBrowserRallarRuntime } from '../create-rallar-black-box-browser-test-runtime.ts';
-
-type RtcConnectReadinessBoundaryValue = Awaited<ReturnType<RallarBlackBoxBrowserRallarRuntime['health']>>;
-
 export interface RtcConnectReadinessAbortScope {
     readonly signal: AbortSignal;
     timedOut(): boolean;
@@ -11,7 +7,8 @@ export interface RtcConnectReadinessAbortScope {
 const READINESS_TIMEOUT_ERROR_NAME = 'RALLAR_BB_RTC_READINESS_TIMEOUT';
 const ABORT_ERROR_NAME = 'RALLAR_BLACK_BOX_ABORTED';
 
-export function toRtcConnectReadinessAbortError(reason: RtcConnectReadinessBoundaryValue): Error {
+/** A cancellation reason as the aborted-readiness Error; an already-aborted adapter error passes through. */
+export function decodeRtcConnectReadinessAbortReason(reason: unknown): Error {
     if (reason instanceof Error && reason.name === ABORT_ERROR_NAME) {
         return reason;
     }
@@ -27,7 +24,7 @@ export function toRtcConnectReadinessAbortError(reason: RtcConnectReadinessBound
     return error;
 }
 
-function toReadinessTimeoutError(): Error {
+function createReadinessTimeoutError(): Error {
     const error = new Error('RTC connect readiness timeout reached.');
     error.name = READINESS_TIMEOUT_ERROR_NAME;
     return error;
@@ -97,14 +94,14 @@ export function createRtcConnectReadinessAbortScope(
     let deadlineReached = false;
     const abortFromParent = () => {
         if (!controller.signal.aborted) {
-            controller.abort(toRtcConnectReadinessAbortError(parentSignal?.reason));
+            controller.abort(decodeRtcConnectReadinessAbortReason(parentSignal?.reason));
         }
     };
     const timeout = setTimeout(
         () => {
             deadlineReached = true;
             if (!controller.signal.aborted) {
-                controller.abort(toReadinessTimeoutError());
+                controller.abort(createReadinessTimeoutError());
             }
         },
         Math.max(0, timeoutMs)

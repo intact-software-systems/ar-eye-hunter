@@ -6,12 +6,15 @@ import {
     selectRallarBlackBoxEvents,
     selectRallarBlackBoxMessages,
     type RallarBlackBoxBrowserRallarConnectionConfig,
+    type RallarBlackBoxBrowserRallarRuntime,
     type RallarBlackBoxBrowserRallarRuntimeMethod,
     type RallarBlackBoxTestRtcStreamResultValue
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from '.././browser-rallar-required-methods-test-double.ts';
 
-type AdapterMethodInput = Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0];
+type AdapterMethodInput =
+    | Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0]
+    | Parameters<RallarBlackBoxBrowserRallarRuntime['send']>[0];
 
 interface RecordedAdapterCall {
     readonly name: string;

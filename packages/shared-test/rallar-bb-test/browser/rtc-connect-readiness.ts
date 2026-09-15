@@ -5,11 +5,11 @@ import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
 import type {
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserRallarTransport
-} from '../create-rallar-black-box-browser-test-runtime.ts';
+} from './browser-command-contracts.ts';
 import {
     createRtcConnectReadinessAbortScope,
+    decodeRtcConnectReadinessAbortReason,
     raceWithRtcConnectReadinessAbort,
-    toRtcConnectReadinessAbortError,
     waitForRtcConnectReadinessPoll,
     type RtcConnectReadinessAbortScope
 } from './rtc-connect-readiness-abort.ts';
@@ -77,7 +77,7 @@ type ReadinessSleepOutcome = 'slept' | 'timed-out';
 
 const ROOM_REFRESH_INTERVAL_MS = 1_000;
 
-function asRecord(
+function toReadinessRecord(
     value: ReadinessBoundaryValue
 ): Record<string, ReadinessBoundaryValue> | undefined {
     return value && typeof value === 'object' && !Array.isArray(value)
@@ -88,8 +88,8 @@ function asRecord(
 export function toRtcReadyPeerIds(
     value: ReadinessBoundaryValue
 ): readonly string[] {
-    const root = asRecord(value);
-    const rtcStatus = asRecord(root?.rtcStatus);
+    const root = toReadinessRecord(value);
+    const rtcStatus = toReadinessRecord(root?.rtcStatus);
     const readyPeerIds = Array.isArray(rtcStatus?.readyPeerIds)
         ? rtcStatus.readyPeerIds
         : Array.isArray(root?.readyPeerIds)
@@ -100,8 +100,8 @@ export function toRtcReadyPeerIds(
     );
 }
 
-function serializeReadinessError(
-    error: ReadinessBoundaryValue
+function decodeReadinessError(
+    error: unknown
 ): RtcConnectReadinessError {
     return error instanceof Error
         ? {
@@ -114,20 +114,16 @@ function serializeReadinessError(
         };
 }
 
-function shouldRetryRoomRefresh(error: ReadinessBoundaryValue): boolean {
-    return !isRallarValidationError(error) && shouldRetryRallarOperation(error);
-}
-
-function hasConfirmedRtcReadiness(input: ReadinessLoopInput): boolean {
+function isRtcReadinessConfirmed(input: ReadinessLoopInput): boolean {
     return (
         input.state.roomRefreshSuccesses > 0 &&
         input.state.readyPeerIds.length >= input.options.minReadyPeers
     );
 }
 
-function readinessResult(input: ReadinessLoopInput): RtcConnectReadinessResult {
+function toReadinessResult(input: ReadinessLoopInput): RtcConnectReadinessResult {
     return {
-        ready: hasConfirmedRtcReadiness(input),
+        ready: isRtcReadinessConfirmed(input),
         minReadyPeers: input.options.minReadyPeers,
         timeoutMs: input.options.timeoutMs,
         intervalMs: input.options.intervalMs,
@@ -143,17 +139,11 @@ function readinessResult(input: ReadinessLoopInput): RtcConnectReadinessResult {
     };
 }
 
-function throwParentAbortOrError(
-    error: ReadinessBoundaryValue,
-    parentSignal?: AbortSignal
-): never {
-    if (parentSignal?.aborted) {
-        throw toRtcConnectReadinessAbortError(parentSignal.reason);
-    }
-    throw error;
+function toParentAbortError(parentSignal: AbortSignal | undefined): Error | undefined {
+    return parentSignal?.aborted ? decodeRtcConnectReadinessAbortReason(parentSignal.reason) : undefined;
 }
 
-async function pollRtcConnectHealth(
+async function readRtcConnectHealth(
     input: ReadinessLoopInput
 ): Promise<HealthPollOutcome> {
     try {
@@ -166,7 +156,7 @@ async function pollRtcConnectHealth(
         if (input.abortScope.timedOut()) {
             return 'timed-out';
         }
-        throwParentAbortOrError(error, input.parentSignal);
+        throw toParentAbortError(input.parentSignal) ?? error;
     }
     input.state.readyPeerIds = toRtcReadyPeerIds(input.state.latestHealth);
     return 'polled';
@@ -195,11 +185,11 @@ async function refreshRtcConnectRoom(
         if (input.abortScope.timedOut()) {
             return 'timed-out';
         }
-        if (input.parentSignal?.aborted || !shouldRetryRoomRefresh(error)) {
-            throwParentAbortOrError(error, input.parentSignal);
+        if (input.parentSignal?.aborted || isRallarValidationError(error) || !shouldRetryRallarOperation(error)) {
+            throw toParentAbortError(input.parentSignal) ?? error;
         }
         input.state.roomRefreshRetryableFailures += 1;
-        input.state.lastRefreshError = serializeReadinessError(error);
+        input.state.lastRefreshError = decodeReadinessError(error);
     }
     input.state.nextRefreshAtEpochMs = Date.now() + ROOM_REFRESH_INTERVAL_MS;
     return 'refreshed';
@@ -220,7 +210,7 @@ async function sleepForRtcConnectPoll(
         if (input.abortScope.timedOut()) {
             return 'timed-out';
         }
-        throwParentAbortOrError(error, input.parentSignal);
+        throw toParentAbortError(input.parentSignal) ?? error;
     }
 }
 
@@ -229,19 +219,19 @@ async function runRtcConnectReadinessLoop(
 ): Promise<RtcConnectReadinessResult> {
     while (true) {
         if ((await refreshRtcConnectRoom(input)) === 'timed-out') {
-            return readinessResult(input);
+            return toReadinessResult(input);
         }
-        if ((await pollRtcConnectHealth(input)) === 'timed-out') {
-            return readinessResult(input);
+        if ((await readRtcConnectHealth(input)) === 'timed-out') {
+            return toReadinessResult(input);
         }
         if (
-            hasConfirmedRtcReadiness(input) ||
+            isRtcReadinessConfirmed(input) ||
             Date.now() >= input.deadlineEpochMs
         ) {
-            return readinessResult(input);
+            return toReadinessResult(input);
         }
         if ((await sleepForRtcConnectPoll(input)) === 'timed-out') {
-            return readinessResult(input);
+            return toReadinessResult(input);
         }
     }
 }
@@ -313,13 +303,13 @@ async function waitForRtcRoomConnectReadiness(
         }
         catch (error) {
             if (abortScope.timedOut()) {
-                return rtcRoomReadinessResult({
+                return toRtcRoomReadinessResult({
                     options,
                     startedAtEpochMs,
                     roomRefreshSuccesses
                 });
             }
-            throwParentAbortOrError(error, parentSignal);
+            throw toParentAbortError(parentSignal) ?? error;
         }
 
         let room: RallarRoomTransportStatus;
@@ -336,16 +326,16 @@ async function waitForRtcRoomConnectReadiness(
         }
         catch (error) {
             if (abortScope.timedOut()) {
-                return rtcRoomReadinessResult({
+                return toRtcRoomReadinessResult({
                     options,
                     startedAtEpochMs,
                     roomRefreshSuccesses
                 });
             }
-            throwParentAbortOrError(error, parentSignal);
+            throw toParentAbortError(parentSignal) ?? error;
         }
 
-        return rtcRoomReadinessResult({
+        return toRtcRoomReadinessResult({
             options,
             startedAtEpochMs,
             roomRefreshSuccesses,
@@ -364,7 +354,7 @@ interface RtcRoomReadinessResultInput {
     readonly room?: RallarRoomTransportStatus;
 }
 
-function rtcRoomReadinessResult(
+function toRtcRoomReadinessResult(
     input: RtcRoomReadinessResultInput
 ): RtcConnectReadinessResult {
     const readyPeerIds = input.room?.rtc.readyPeerIds ?? [];

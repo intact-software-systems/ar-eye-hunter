@@ -5,11 +5,9 @@ import {
     createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider
 } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import {
-    createRallarBlackBoxBrowserTestRuntime,
-    type RallarBlackBoxBrowserRallarRuntime
-} from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestEvent,

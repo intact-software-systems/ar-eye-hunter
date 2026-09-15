@@ -1,4 +1,4 @@
-import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
 type BrowserRallarRequiredTestMethods = Pick<
     RallarBlackBoxBrowserRallarRuntime,

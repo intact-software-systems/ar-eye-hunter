@@ -1,232 +1,55 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type { BlackBoxRallarRuntimeInstallationTarget } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
-import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { decodeBlackBoxRallarConnectionConfig } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-connection-config.ts';
 import {
     decodeBlackBoxRallarFormationCommandInput,
     decodeBlackBoxRallarFormationRoom,
     type BlackBoxRallarFormationInputIssue
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/formation/decode-black-box-rallar-formation-input.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+
 import type {
+    RallarBlackBoxBrowserRallarDirectorRuntime,
+    RallarBlackBoxBrowserRallarFormationRuntime,
     RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime,
+    RallarBlackBoxBrowserWebSocket,
     RallarBlackBoxBrowserWebSocketFactory
-} from './create-rallar-black-box-browser-test-runtime.ts';
+} from './browser/browser-command-contracts.ts';
 
 let runtimeImportPromise: Promise<void> | undefined;
 
-function browserWindow(): BlackBoxRallarRuntimeInstallationTarget {
-    if (typeof window === 'undefined') {
-        throw new Error('browser-rallar provider requires a browser window.');
-    }
-
-    return window;
-}
-
-async function loadBrowserRallarRuntime(): Promise<void> {
-    runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(
-        () => undefined
-    );
-    await runtimeImportPromise;
-}
-
-async function resolveBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
-    const targetWindow = browserWindow();
-    if (!targetWindow.__blackBoxRallar) {
-        await loadBrowserRallarRuntime();
-    }
-
-    const runtime = targetWindow.__blackBoxRallar;
-    if (!runtime) {
-        throw new Error(
-            'browser-rallar provider did not expose window.__blackBoxRallar.'
-        );
-    }
-
-    return runtime;
-}
-
-async function resolveBrowserRallarDirectorRuntime(): Promise<
-    NonNullable<RallarBlackBoxBrowserRallarRuntime['director']>
-> {
-    const runtime = await resolveBrowserRallarRuntime();
-    if (!runtime.director) {
-        throw new Error(
-            'browser-rallar provider did not expose director runtime commands.'
-        );
-    }
-    return runtime.director;
-}
-
-async function resolveBrowserRallarFormationRuntime(): Promise<BlackBoxRallarRuntime['formation']> {
-    const runtime = await resolveBrowserRallarRuntime();
-    if (!runtime.formation) {
-        throw new Error(
-            'browser-rallar provider did not expose formation runtime commands.'
-        );
-    }
-    return runtime.formation;
-}
-
-/** The decode the boundary owes the controller; issues become one thrown error the adapter records. */
-function requireDecoded<T>(decoding: {
-    left?: readonly BlackBoxRallarFormationInputIssue[];
-    right?: T;
-}): T {
-    if (decoding.right !== undefined) {
-        return decoding.right;
-    }
-    const issues = (decoding.left ?? [])
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join('; ');
-    throw new Error(
-        `browser-rallar formation command input is not valid. ${issues}`
-    );
-}
-
-/** The command payload the decoder owns, lifted out of the wire command's room and base fields. */
-function toFormationCommandInput(value: unknown): unknown {
-    if (!isBlackBoxCommandRecord(value)) {
-        return value;
-    }
-    const record = value as Record<string, unknown>;
-    return {
-        command: record['command'],
-        ...(record['layout'] === undefined ? {} : { layout: record['layout'] }),
-        ...(record['landing'] === undefined ? {} : { landing: record['landing'] })
-    };
-}
-
-function readOptionalReason(value: unknown): string | undefined {
-    if (!isBlackBoxCommandRecord(value)) {
-        return undefined;
-    }
-    const reason = (value as Record<string, unknown>)['reason'];
-    return typeof reason === 'string' ? reason : undefined;
-}
-
+/** The SPA provider: every call reaches the page runtime the black-box runner installed on `window`. */
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
-        async authenticate(config) {
-            return await (await resolveBrowserRallarRuntime()).authenticate(
-                decodeBlackBoxRallarConnectionConfig(config)
-            );
-        },
-        async connect(config) {
-            return await (
-                await resolveBrowserRallarRuntime()
-            ).connect(decodeBlackBoxRallarConnectionConfig(config));
-        },
-        async send(input) {
-            return await (await resolveBrowserRallarRuntime()).send(input);
-        },
-        async sendWs(input) {
-            return await (await resolveBrowserRallarRuntime()).sendWs?.(input);
-        },
-        async sendMessage(input) {
-            return await (await resolveBrowserRallarRuntime()).sendMessage(input);
-        },
-        async observeDelivery(input) {
-            return await (await resolveBrowserRallarRuntime()).observeDelivery(input);
-        },
-        async cancelDelivery(input) {
-            return await (await resolveBrowserRallarRuntime()).cancelDelivery(input);
-        },
-        async readReceipts(input) {
-            return await (await resolveBrowserRallarRuntime()).readReceipts(input);
-        },
-        async injectFault(input) {
-            await (await resolveBrowserRallarRuntime()).injectFault(input);
-        },
-        async readStorageCounters(input) {
-            return await (
-                await resolveBrowserRallarRuntime()
-            ).readStorageCounters(input);
-        },
-        async refreshRoom(options) {
-            return await (await resolveBrowserRallarRuntime()).refreshRoom(options);
-        },
-        async waitForRoom(options) {
-            return await (await resolveBrowserRallarRuntime()).waitForRoom(options);
-        },
-        director: {
-            async appoint(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).appoint(input);
-            },
-            async resign(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).resign(input);
-            },
-            async status(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).status(input);
-            },
-            async relayStart(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).relayStart(input);
-            },
-            async intent(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).intent(input);
-            },
-            async syncRequest(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).syncRequest(input);
-            },
-            async relayStop(input) {
-                return await (
-                    await resolveBrowserRallarDirectorRuntime()
-                ).relayStop(input);
-            }
-        },
-        formation: {
-            async command(input) {
-                const room = requireDecoded(decodeBlackBoxRallarFormationRoom(input));
-                const commandInput = requireDecoded(
-                    decodeBlackBoxRallarFormationCommandInput(
-                        toFormationCommandInput(input)
-                    )
-                );
-                const reason = readOptionalReason(input);
-                return await (
-                    await resolveBrowserRallarFormationRuntime()
-                ).command({
-                    ...room,
-                    input: commandInput,
-                    ...(reason === undefined ? {} : { reason })
-                });
-            },
-            async readiness(input) {
-                return await (
-                    await resolveBrowserRallarFormationRuntime()
-                ).readiness(requireDecoded(decodeBlackBoxRallarFormationRoom(input)));
-            }
-        },
-        async close() {
-            return await (await resolveBrowserRallarRuntime()).close();
-        },
-        async health(input?: unknown) {
-            return await (
-                await resolveBrowserRallarRuntime()
-            ).health({
-                includeRtcDiagnostics: isBlackBoxCommandRecord(input) &&
-                    input.includeRtcDiagnostics === true
-            });
-        }
+        authenticate: async (config) =>
+            await (await resolveBrowserRallarRuntime()).authenticate(decodeBlackBoxRallarConnectionConfig(config)),
+        connect: async (config) =>
+            await (await resolveBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config)),
+        send: async (input) => await (await resolveBrowserRallarRuntime()).send(input),
+        sendWs: async (input) => await (await resolveBrowserRallarRuntime()).sendWs(input),
+        sendMessage: async (input) => await (await resolveBrowserRallarRuntime()).sendMessage(input),
+        observeDelivery: async (input) => await (await resolveBrowserRallarRuntime()).observeDelivery(input),
+        cancelDelivery: async (input) => await (await resolveBrowserRallarRuntime()).cancelDelivery(input),
+        readReceipts: async (input) => await (await resolveBrowserRallarRuntime()).readReceipts(input),
+        injectFault: async (input) => await (await resolveBrowserRallarRuntime()).injectFault(input),
+        readStorageCounters: async (input) => await (await resolveBrowserRallarRuntime()).readStorageCounters(input),
+        refreshRoom: async (options) => await (await resolveBrowserRallarRuntime()).refreshRoom(options),
+        waitForRoom: async (options) => await (await resolveBrowserRallarRuntime()).waitForRoom(options),
+        director: createSpaBrowserRallarDirectorRuntime(),
+        formation: createSpaBrowserRallarFormationRuntime(),
+        close: async () => await (await resolveBrowserRallarRuntime()).close(),
+        health: async (input) =>
+            await (await resolveBrowserRallarRuntime()).health({
+                includeRtcDiagnostics: input?.includeRtcDiagnostics === true
+            })
     };
 }
 
 export function installSpaBrowserRallarEventBridge(
     runtime: Pick<RallarBlackBoxBrowserTestRuntime, 'receiveRallarBrowserEvent'>
 ): () => void {
-    const targetWindow = browserWindow();
+    const targetWindow = readBrowserWindow();
     const previous = targetWindow.__blackBoxRallarEmit;
     targetWindow.__blackBoxRallarEmit = (event) =>
         runtime.receiveRallarBrowserEvent({
@@ -242,58 +65,104 @@ export function installSpaBrowserRallarEventBridge(
 export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory {
     return (url, protocols) => {
         if (typeof WebSocket === 'undefined') {
-            throw new Error(
-                'WebSocket is not available for browser-rallar WebSocket commands.'
-            );
+            throw new Error('WebSocket is not available for browser-rallar WebSocket commands.');
         }
-
-        const socket = new WebSocket(
-            url,
-            typeof protocols === 'string'
-                ? protocols
-                : protocols
-                ? [...protocols]
-                : undefined
+        return toRallarBlackBoxBrowserWebSocket(
+            new WebSocket(url, typeof protocols === 'string' || protocols === undefined ? protocols : [...protocols])
         );
-        return {
-            get readyState() {
-                return socket.readyState;
-            },
-            get protocol() {
-                return socket.protocol;
-            },
-            get url() {
-                return socket.url;
-            },
-            get bufferedAmount() {
-                return socket.bufferedAmount;
-            },
-            send(data) {
-                if (ArrayBuffer.isView(data)) {
-                    socket.send(
-                        new Uint8Array(
-                            data.buffer,
-                            data.byteOffset,
-                            data.byteLength
-                        ).slice()
-                    );
-                    return;
-                }
-                if (
-                    typeof data === 'string' ||
-                    data instanceof ArrayBuffer ||
-                    data instanceof Blob
-                ) {
-                    socket.send(data);
-                    return;
-                }
-                throw new TypeError(
-                    'Browser WebSocket data must be text, Blob, or binary bytes.'
-                );
-            },
-            close: (code, reason) => socket.close(code, reason),
-            addEventListener: (type, listener) => socket.addEventListener(type, listener),
-            removeEventListener: (type, listener) => socket.removeEventListener(type, listener)
-        };
+    };
+}
+
+function createSpaBrowserRallarDirectorRuntime(): RallarBlackBoxBrowserRallarDirectorRuntime {
+    return {
+        appoint: async (input) => await (await resolveBrowserRallarRuntime()).director.appoint(input),
+        resign: async (input) => await (await resolveBrowserRallarRuntime()).director.resign(input),
+        status: async (input) => await (await resolveBrowserRallarRuntime()).director.status(input),
+        relayStart: async (input) => await (await resolveBrowserRallarRuntime()).director.relayStart(input),
+        intent: async (input) => await (await resolveBrowserRallarRuntime()).director.intent(input),
+        syncRequest: async (input) => await (await resolveBrowserRallarRuntime()).director.syncRequest(input),
+        relayStop: async (input) => await (await resolveBrowserRallarRuntime()).director.relayStop(input)
+    };
+}
+
+/** The wire command's room and base fields decode separately from the command payload the controller owns. */
+function createSpaBrowserRallarFormationRuntime(): RallarBlackBoxBrowserRallarFormationRuntime {
+    return {
+        command: async (input) => {
+            const room = requireDecoded(decodeBlackBoxRallarFormationRoom(input));
+            const commandInput = requireDecoded(decodeBlackBoxRallarFormationCommandInput({
+                command: input.command,
+                ...(input.layout === undefined ? {} : { layout: input.layout }),
+                ...(input.landing === undefined ? {} : { landing: input.landing })
+            }));
+            const reason = typeof input.reason === 'string' ? input.reason : undefined;
+            return await (await resolveBrowserRallarRuntime()).formation.command({
+                ...room,
+                input: commandInput,
+                ...(reason === undefined ? {} : { reason })
+            });
+        },
+        readiness: async (input) =>
+            await (await resolveBrowserRallarRuntime()).formation.readiness(
+                requireDecoded(decodeBlackBoxRallarFormationRoom(input))
+            )
+    };
+}
+
+async function resolveBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
+    const targetWindow = readBrowserWindow();
+    if (!targetWindow.__blackBoxRallar) {
+        runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(
+            () => undefined
+        );
+        await runtimeImportPromise;
+    }
+    const runtime = targetWindow.__blackBoxRallar;
+    if (!runtime) {
+        throw new Error('browser-rallar provider did not expose window.__blackBoxRallar.');
+    }
+    return runtime;
+}
+
+function readBrowserWindow(): BlackBoxRallarRuntimeInstallationTarget {
+    if (typeof window === 'undefined') {
+        throw new Error('browser-rallar provider requires a browser window.');
+    }
+    return window;
+}
+
+/** The formation decoders' issues become one thrown error, which the adapter records as the command failure. */
+function requireDecoded<T>(decoding: Either<readonly BlackBoxRallarFormationInputIssue[], T>): T {
+    return decoding.fold(
+        (issues) => {
+            const details = issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
+            throw new Error(`browser-rallar formation command input is not valid. ${details}`);
+        },
+        (decoded) => decoded
+    );
+}
+
+function toRallarBlackBoxBrowserWebSocket(socket: WebSocket): RallarBlackBoxBrowserWebSocket {
+    return {
+        get readyState() {
+            return socket.readyState;
+        },
+        get protocol() {
+            return socket.protocol;
+        },
+        get url() {
+            return socket.url;
+        },
+        get bufferedAmount() {
+            return socket.bufferedAmount;
+        },
+        send: (data) => {
+            socket.send(
+                ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice() : data
+            );
+        },
+        close: (code, reason) => socket.close(code, reason),
+        addEventListener: (type, listener) => socket.addEventListener(type, listener),
+        removeEventListener: (type, listener) => socket.removeEventListener(type, listener)
     };
 }

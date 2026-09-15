@@ -1,4 +1,8 @@
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecipe
+} from '../rallar-black-box-test-contracts.ts';
 
 type RtcConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
 type RecipeCommandNode = Readonly<{
@@ -18,14 +22,14 @@ const LOOPED_RTC_SEND_WARNING = 'Looped RTC sends are especially sensitive to mi
 const STREAMED_RTC_SEND_WARNING = 'Streamed RTC frames are especially sensitive to missing ready-peer checks ' +
     'before the first frame.';
 
-export function rtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+export function computeRtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
     return [
-        ...missingRtcReadinessWarnings(recipe),
+        ...computeMissingRtcReadinessWarnings(recipe),
         ...validateRtcReadinessRoomIdentity(recipe)
     ];
 }
 
-function recipeCommandNodes(
+function toRecipeCommandNodes(
     commands: readonly RallarBlackBoxTestCommand[],
     insideLoop = false
 ): readonly RecipeCommandNode[] {
@@ -34,19 +38,19 @@ function recipeCommandNodes(
         if (command.kind === 'loop') {
             return [
                 ...current,
-                ...recipeCommandNodes(command.commands, true)
+                ...toRecipeCommandNodes(command.commands, true)
             ];
         }
         if (command.kind === 'parallel') {
             return [
                 ...current,
-                ...command.groups.flatMap((group) => recipeCommandNodes(group.commands, insideLoop))
+                ...command.groups.flatMap((group) => toRecipeCommandNodes(group.commands, insideLoop))
             ];
         }
         if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
             return [
                 ...current,
-                ...recipeCommandNodes(command.recipe.commands, insideLoop)
+                ...toRecipeCommandNodes(command.recipe.commands, insideLoop)
             ];
         }
         return current;
@@ -57,8 +61,8 @@ function hasRtcConnectReadiness(command: RallarBlackBoxTestCommand): boolean {
     return command.kind === 'rtc.connect' && command.readiness !== undefined;
 }
 
-function missingRtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
-    const nodes = recipeCommandNodes(recipe.commands);
+function computeMissingRtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
+    const nodes = toRecipeCommandNodes(recipe.commands);
     const sends = nodes.filter((node) => node.command.kind === 'rtc.send' || node.command.kind === 'rtc.stream');
     if (sends.length === 0 || nodes.some((node) => hasRtcConnectReadiness(node.command))) {
         return [];
@@ -148,21 +152,21 @@ function hasExactRoomIdentity(
     const commandRallar = command.rallar;
     const roomRefValue = command.roomRef !== undefined
         ? command.roomRef
-        : selectedProperty(commandRallar, configuredRallar, 'roomRef');
-    const roomRef = recordValue(roomRefValue);
+        : resolveSelectedProperty(commandRallar, configuredRallar, 'roomRef');
+    const roomRef = toRecordValue(roomRefValue);
     if (
         roomRef &&
-        nonEmptyString(Reflect.get(roomRef, 'applicationId')) &&
-        nonEmptyString(Reflect.get(roomRef, 'groupId'))
+        toNonEmptyString(Reflect.get(roomRef, 'applicationId')) &&
+        toNonEmptyString(Reflect.get(roomRef, 'groupId'))
     ) {
         return true;
     }
 
     const scopeValue = command.scope !== undefined
         ? command.scope
-        : selectedProperty(commandRallar, configuredRallar, 'scope');
-    const scope = recordValue(scopeValue);
-    const rallarApplicationId = selectedProperty(
+        : resolveSelectedProperty(commandRallar, configuredRallar, 'scope');
+    const scope = toRecordValue(scopeValue);
+    const rallarApplicationId = resolveSelectedProperty(
         commandRallar,
         configuredRallar,
         'applicationId'
@@ -172,10 +176,10 @@ function hasExactRoomIdentity(
         : rallarApplicationId ??
             (scope ? Reflect.get(scope, 'applicationId') : undefined);
     const roomId = command.roomId ?? activeConfig?.roomId;
-    return nonEmptyString(applicationId) !== undefined && nonEmptyString(roomId) !== undefined;
+    return toNonEmptyString(applicationId) !== undefined && toNonEmptyString(roomId) !== undefined;
 }
 
-function selectedProperty(
+function resolveSelectedProperty(
     preferred: object | undefined,
     fallback: object | undefined,
     property: string
@@ -186,12 +190,12 @@ function selectedProperty(
     return fallback ? Reflect.get(fallback, property) : undefined;
 }
 
-function recordValue(value: RuntimeValue): object | undefined {
+function toRecordValue(value: RuntimeValue): object | undefined {
     return value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value
         : undefined;
 }
 
-function nonEmptyString(value: RuntimeValue): string | undefined {
+function toNonEmptyString(value: RuntimeValue): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }

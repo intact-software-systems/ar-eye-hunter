@@ -4,6 +4,21 @@ export * from './black-box-runner-adapter.ts';
 export * from './browser-control-agent-config.ts';
 export * from './browser-control-agent.ts';
 export * from './browser-rallar-runtime-bridge.ts';
+export type {
+    CreateRallarBlackBoxBrowserTestRuntimeOptions,
+    RallarBlackBoxBrowserRallarConnectionConfig,
+    RallarBlackBoxBrowserRallarCrdtRuntime,
+    RallarBlackBoxBrowserRallarDirectorRuntime,
+    RallarBlackBoxBrowserRallarEvent,
+    RallarBlackBoxBrowserRallarFormationRuntime,
+    RallarBlackBoxBrowserRallarRuntime,
+    RallarBlackBoxBrowserRallarRuntimeMethod,
+    RallarBlackBoxBrowserRallarTransport,
+    RallarBlackBoxBrowserRoomRefreshOptions,
+    RallarBlackBoxBrowserTestRuntime,
+    RallarBlackBoxBrowserWebSocket,
+    RallarBlackBoxBrowserWebSocketFactory
+} from './browser/browser-command-contracts.ts';
 export * from './client-defaults.ts';
 export * from './companion-coverage.ts';
 export * from './composite-conformance.ts';

@@ -3,70 +3,13 @@ import {
     normalizeRallarBlackBoxRuntimeDiagnostic
 } from '../diagnostics.ts';
 import type {
-    RallarBlackBoxTestRuntimeEventInput
+    RallarBlackBoxTestRuntimeEventInput,
+    RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
 
-import { RallarBlackBoxBrowserRallarEvent } from './browser-command-contracts.ts';
-import { toEventTransport } from './browser-command-values.ts';
+import type { RallarBlackBoxBrowserRallarEvent } from './browser-command-contracts.ts';
 
-export function toRallarBrowserEventInput(
-    event: RallarBlackBoxBrowserRallarEvent
-): RallarBlackBoxTestRuntimeEventInput {
-    const kind = event.kind === 'message'
-        ? 'message'
-        : event.kind === 'close'
-        ? 'event'
-        : 'diagnostic';
-
-    const payload = toRallarBrowserEventPayload(event);
-    const severity = inferRallarBlackBoxDiagnosticSeverity({
-        topic: event.topic ?? 'rallar.browser.event',
-        severity: event.severity,
-        error: event.error,
-        data: event.data,
-        payload
-    });
-
-    return {
-        kind,
-        topic: event.topic ?? 'rallar.browser.event',
-        connection: event.connection,
-        actor: event.actor,
-        transport: toEventTransport(event.transport),
-        severity: event.kind === 'message'
-            ? 'info'
-            : event.kind === 'close'
-            ? 'warning'
-            : severity,
-        payload: kind === 'diagnostic'
-            ? normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic: event.topic ?? 'rallar.browser.event',
-                severity,
-                transport: toEventTransport(event.transport),
-                connection: event.connection,
-                actor: event.actor,
-                roomId: event.roomId,
-                laneId: event.laneId,
-                peerId: event.peerId,
-                remotePeerId: event.remotePeerId,
-                senderId: event.senderId,
-                typeId: event.typeId,
-                topicId: event.topicId,
-                contextId: event.contextId,
-                resourceId: event.resourceId,
-                atEpochMs: event.atEpochMs,
-                data: event.data,
-                error: event.error,
-                payload,
-                source: 'browser-rallar-runtime'
-            })
-            : payload
-    };
-}
-
-function toRallarBrowserEventPayload(
-    event: RallarBlackBoxBrowserRallarEvent
-): Pick<
+type RallarBrowserEventPayload = Pick<
     RallarBlackBoxBrowserRallarEvent,
     | 'roomId'
     | 'roomRef'
@@ -83,7 +26,61 @@ function toRallarBrowserEventPayload(
     | 'resourceId'
     | 'data'
     | 'error'
-> {
+>;
+
+const DEFAULT_RALLAR_BROWSER_EVENT_TOPIC = 'rallar.browser.event';
+
+/** A page message stays a message, a close becomes a warning event, and everything else is a diagnostic. */
+export function toRallarBrowserEventInput(
+    event: RallarBlackBoxBrowserRallarEvent
+): RallarBlackBoxTestRuntimeEventInput {
+    const topic = event.topic ?? DEFAULT_RALLAR_BROWSER_EVENT_TOPIC;
+    const payload = toRallarBrowserEventPayload(event);
+    const base = { topic, connection: event.connection, actor: event.actor, transport: event.transport };
+    if (event.kind === 'message') {
+        return { ...base, kind: 'message', severity: 'info', payload };
+    }
+    if (event.kind === 'close') {
+        return { ...base, kind: 'event', severity: 'warning', payload };
+    }
+    const severity = inferRallarBlackBoxDiagnosticSeverity({
+        topic,
+        severity: event.severity,
+        error: event.error,
+        data: event.data,
+        payload
+    });
+    return { ...base, kind: 'diagnostic', severity, payload: toRallarBrowserDiagnosticPayload(event, severity) };
+}
+
+function toRallarBrowserDiagnosticPayload(
+    event: RallarBlackBoxBrowserRallarEvent,
+    severity: RallarBlackBoxTestSeverity
+): ReturnType<typeof normalizeRallarBlackBoxRuntimeDiagnostic> {
+    return normalizeRallarBlackBoxRuntimeDiagnostic({
+        topic: event.topic ?? DEFAULT_RALLAR_BROWSER_EVENT_TOPIC,
+        severity,
+        transport: event.transport,
+        connection: event.connection,
+        actor: event.actor,
+        roomId: event.roomId,
+        laneId: event.laneId,
+        peerId: event.peerId,
+        remotePeerId: event.remotePeerId,
+        senderId: event.senderId,
+        typeId: event.typeId,
+        topicId: event.topicId,
+        contextId: event.contextId,
+        resourceId: event.resourceId,
+        atEpochMs: event.atEpochMs,
+        data: event.data,
+        error: event.error,
+        payload: toRallarBrowserEventPayload(event),
+        source: 'browser-rallar-runtime'
+    });
+}
+
+function toRallarBrowserEventPayload(event: RallarBlackBoxBrowserRallarEvent): RallarBrowserEventPayload {
     return {
         roomId: event.roomId,
         roomRef: event.roomRef,

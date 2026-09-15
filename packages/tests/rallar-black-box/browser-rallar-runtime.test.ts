@@ -13,10 +13,8 @@ import {
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
-import {
-    createRallarBlackBoxBrowserTestRuntime,
-    type RallarBlackBoxBrowserRoomRefreshOptions
-} from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { RallarBlackBoxBrowserRoomRefreshOptions } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 
 import { createBrowserRallarRequiredMethodsTestDouble } from '../shared-test/browser-rallar-required-methods-test-double.ts';
 import {

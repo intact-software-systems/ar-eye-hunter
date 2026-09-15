@@ -1,4 +1,4 @@
-import { rtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
+import { computeRtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
 import {
     flattenRallarBlackBoxCompositeResults,
     summarizeRallarBlackBoxCompositeResults,
@@ -996,7 +996,7 @@ export function distributedRecipePreflight(
     ].filter((requirement) => requirement !== COMPOSITE_CHILD_REQUIREMENTS_LABEL));
     const warnings = uniqueValues([
         ...analyses.flatMap((analysis) => analysis.warnings),
-        ...rtcReadinessWarnings(recipe),
+        ...computeRtcReadinessWarnings(recipe),
         ...compatibilityWarnings(commandKinds, liveServiceRequirements)
     ]);
     const errors = uniqueValues(analyses.flatMap((analysis) => analysis.errors));

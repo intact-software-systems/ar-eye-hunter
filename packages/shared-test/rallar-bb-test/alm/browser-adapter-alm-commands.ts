@@ -1,7 +1,8 @@
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import type { RallarBlackBoxBrowserRallarRuntime } from '../create-rallar-black-box-browser-test-runtime.ts';
+import type { BrowserCommandAbortScope } from '../browser/browser-command-cancellation.ts';
+import type { RallarBlackBoxBrowserRallarRuntime } from '../browser/browser-command-contracts.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -22,18 +23,13 @@ export type RallarBlackBoxAlmCommandWithId =
     & Extract<RallarBlackBoxTestCommand, Readonly<{ kind: RallarBlackBoxTestAlmCommandKind; }>>
     & Readonly<{ commandId: string; }>;
 
-export interface RallarBlackBoxAlmAbortScope {
-    readonly signal?: AbortSignal;
-    cleanup(): void;
-}
-
 /** Everything the ALM handlers borrow from the browser adapter, bound by the adapter itself. */
 export interface RallarBlackBoxAlmBrowserPort {
     readonly requireRuntime: () => RallarBlackBoxBrowserRallarRuntime;
     readonly commandAbortScope: (
         command: RallarBlackBoxAlmCommandWithId,
         context: RallarBlackBoxTestCommandContext
-    ) => RallarBlackBoxAlmAbortScope;
+    ) => BrowserCommandAbortScope;
     readonly withAbort: <T>(operation: Promise<T>, signal: AbortSignal | undefined) => Promise<T>;
     readonly resolveCommandFields: (
         command: RallarBlackBoxAlmCommandWithId,

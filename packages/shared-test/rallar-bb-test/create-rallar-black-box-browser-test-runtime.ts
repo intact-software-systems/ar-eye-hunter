@@ -1,205 +1,87 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     dispatchAlmBrowserCommand,
     type RallarBlackBoxAlmBrowserPort,
     type RallarBlackBoxAlmCommandWithId
 } from './alm/browser-adapter-alm-commands.ts';
 import {
-    toRtcReadyPeerIds,
-    waitForRtcConnectReadiness,
-    type RtcConnectReadinessOptions,
-    type RtcConnectReadinessResult
-} from './browser/rtc-connect-readiness.ts';
-import {
-    normalizeRallarBlackBoxRuntimeDiagnostic
-} from './diagnostics.ts';
-import type {
-    RallarBlackBoxTestCleanupInput,
-    RallarBlackBoxTestCommandContext,
-    RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestConfig,
-    RallarBlackBoxTestError,
-    RallarBlackBoxTestRecord,
-    RallarBlackBoxTestSendObservation
-} from './rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
-
-import {
     createBrowserCommandAbortScope,
     sleep,
     withBrowserCommandAbort
 } from './browser/browser-command-cancellation.ts';
 import type {
-    RallarBlackBoxBrowserRallarConnectionConfig,
-    RallarBlackBoxBrowserRallarRuntimeResult
-} from './browser/browser-command-contracts.ts';
-import {
     CommandWithId,
     CreateRallarBlackBoxBrowserTestRuntimeOptions,
     RallarBlackBoxBrowserRallarEvent,
+    RallarBlackBoxBrowserRallarRuntimeResult,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocket,
     RallarBlackBoxBrowserWebSocketFactory
 } from './browser/browser-command-contracts.ts';
-import { BrowserCommandEnvironment, requireBrowserCommandRuntime } from './browser/browser-command-environment.ts';
-import {
-    replaceCommandPlaceholders,
-    replaceRtcReadyPeerPlaceholders,
-    requiresRtcReadyPeerPlaceholder
-} from './browser/browser-command-placeholders.ts';
-import {
-    isBrowserCommandRecord,
-    toBrowserCommandRecord,
-    toPositiveInteger,
-    toRtcTransport,
-    toStringValue
-} from './browser/browser-command-values.ts';
+import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser/browser-command-environment.ts';
+import { replaceCommandPlaceholders } from './browser/browser-command-placeholders.ts';
+import { decodeBrowserCommandString } from './browser/browser-command-values.ts';
 import { BrowserHttpRequests } from './browser/browser-http-requests.ts';
-import { toRallarConnectionConfig, toScopedRtcSend } from './browser/browser-rallar-command-input.ts';
 import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-commands.ts';
-import {
-    decodeRtcSendResult,
-    toRtcSendFailure,
-    toRtcSendObservation,
-    withSendObservationValue
-} from './browser/browser-rtc-send-observation.ts';
+import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
 import { BrowserWebSocketCommands } from './browser/browser-websocket-commands.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
-
-export type {
-    CreateRallarBlackBoxBrowserTestRuntimeOptions,
-    RallarBlackBoxBrowserRallarConnectionConfig,
-    RallarBlackBoxBrowserRallarCrdtRuntime,
-    RallarBlackBoxBrowserRallarDirectorRuntime,
-    RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserRallarFormationRuntime,
-    RallarBlackBoxBrowserRallarRuntime,
-    RallarBlackBoxBrowserRallarRuntimeMethod,
-    RallarBlackBoxBrowserRallarTransport,
-    RallarBlackBoxBrowserRoomRefreshOptions,
-    RallarBlackBoxBrowserTestRuntime,
-    RallarBlackBoxBrowserWebSocket,
-    RallarBlackBoxBrowserWebSocketFactory
-} from './browser/browser-command-contracts.ts';
+import type {
+    RallarBlackBoxTestCleanupInput,
+    RallarBlackBoxTestCommandContext,
+    RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestConfig
+} from './rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
 const DEFAULT_WS_OPEN_TIMEOUT_MS = 5_000;
-
 const DEFAULT_HTTP_BODY_LIMIT = 64_000;
 
-function commandLocalDelayMs(command: CommandWithId): number {
-    const value = command.metadata?.localDelayMs;
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return 0;
-    }
+const FEATURE_COMMAND_PREFIXES: readonly string[] = ['crdt.', 'director.', 'formation.'];
 
-    return Math.max(0, value);
-}
-
-function readOptionalBrowserSession(): AuthSession | undefined {
-    if (typeof localStorage === 'undefined') {
-        return undefined;
-    }
-
-    try {
-        return readSession();
-    }
-    catch {
-        return undefined;
-    }
-}
-
-function toAlmConnectionName(
-    command: RallarBlackBoxAlmCommandWithId,
-    config: RallarBlackBoxTestConfig | undefined
-): string {
-    const commandConnection = 'connection' in command ? command.connection : undefined;
-    return (
-        commandConnection ??
-            toStringValue(toBrowserCommandRecord(config?.defaults).connection) ??
-            config?.actor ??
-            'default'
-    );
-}
 namespace BrowserCommandAdapter {
-    export interface ReadinessInput {
-        readonly command: Extract<CommandWithId, { kind: 'rtc.connect'; }>;
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly connectionConfig: RallarBlackBoxBrowserRallarConnectionConfig;
-        readonly diagnostics: unknown;
-    }
-    export interface ConnectedInput {
-        readonly command: CommandWithId;
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly connectionConfig: RallarBlackBoxBrowserRallarConnectionConfig;
-        readonly value: unknown;
-    }
-    export interface ReadinessDiagnostic {
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly command: Extract<CommandWithId, { kind: 'rtc.connect'; }>;
-        readonly topic: string;
-        readonly severity: 'info' | 'error';
-        readonly payload: Readonly<Record<string, unknown>>;
-    }
-    export interface SendOutcomeInput {
-        readonly command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly diagnostics: unknown;
-        readonly sendStartedAtEpochMs: number;
-    }
-    export interface SendDiagnostic {
-        readonly command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
-        readonly context: RallarBlackBoxTestCommandContext;
-        readonly diagnostics: RallarBlackBoxBrowserRallarRuntimeResult;
-        readonly failure: RallarBlackBoxTestError | undefined;
-        readonly sendObservation: RallarBlackBoxTestSendObservation;
-    }
-    export interface CloseOptions {
-        readonly rallar: boolean;
-        readonly tolerant: boolean;
-    }
-    export interface ReadinessOutcome {
-        readiness: RtcConnectReadinessResult | undefined;
-        failure: RallarBlackBoxTestCommandOutcome | undefined;
-    }
     export interface ClosedResources {
-        webSocketCount: number;
-        rallar?: unknown;
-        errors?: unknown[];
+        readonly webSocketCount: number;
+        readonly rallar: RallarBlackBoxBrowserRallarRuntimeResult;
+        readonly errors: readonly BrowserWebSocketCommands.CloseError[];
     }
 }
+
+/** Routes one browser command to the owner of its capability; a kind it does not own returns undefined. */
 class BrowserCommandAdapter {
     private readonly environment: BrowserCommandEnvironment;
     private readonly sockets: BrowserWebSocketCommands;
     private readonly http: BrowserHttpRequests;
+    private readonly rtc: BrowserRtcCommands;
     private readonly features: BrowserRallarFeatureCommands;
+
     constructor(environment: BrowserCommandEnvironment) {
         this.environment = environment;
         this.sockets = new BrowserWebSocketCommands(environment);
         this.http = new BrowserHttpRequests(environment);
+        this.rtc = new BrowserRtcCommands(environment);
         this.features = new BrowserRallarFeatureCommands(environment);
     }
+
     async dispatch(
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext
     ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
-        const delayMs = commandLocalDelayMs(command);
+        const delayMs = toCommandLocalDelayMs(command);
         if (delayMs > 0) {
             await sleep(delayMs, context.abortSignal?.());
         }
-
-        if (
-            command.kind.startsWith('crdt.') || command.kind.startsWith('director.') ||
-            command.kind.startsWith('formation.')
-        ) {
+        if (FEATURE_COMMAND_PREFIXES.some((prefix) => command.kind.startsWith(prefix))) {
             return await this.features.dispatch(command, context);
         }
         switch (command.kind) {
             case 'rtc.connect':
-                return await this.connectRtc(command, context);
+                return await this.rtc.connectRtc(command, context);
             case 'rtc.send':
-                return await this.sendRtc(command, context);
+                return await this.rtc.sendRtc(command, context);
             case 'rtc.stream':
                 return await new BrowserRtcStream({ environment: this.environment, command, context }).start();
             case 'ws.open':
@@ -218,215 +100,17 @@ class BrowserCommandAdapter {
             case 'fault.inject':
             case 'storage.counters':
             case 'agent.reload':
-                return await dispatchAlmBrowserCommand(
-                    this.almBrowserPort(),
-                    command,
-                    context
-                );
-            case 'health':
-                return await this.health(command, context);
-            case 'close':
-                return await this.close(command, context);
-            case 'reset':
-                return await this.reset();
+                return await dispatchAlmBrowserCommand(this.createAlmBrowserPort(), command, context);
             default:
-                return undefined;
+                return await this.dispatchLifecycleCommand(command, context);
         }
-    }
-
-    private almBrowserPort(): RallarBlackBoxAlmBrowserPort {
-        return {
-            requireRuntime: () => requireBrowserCommandRuntime(this.environment),
-            commandAbortScope: (command, context) =>
-                createBrowserCommandAbortScope(command, context, this.environment.now),
-            withAbort: (operation, signal) => withBrowserCommandAbort(operation, signal),
-            resolveCommandFields: (command, context) =>
-                toBrowserCommandRecord(replaceCommandPlaceholders(command, {
-                    config: context.config(),
-                    session: this.environment.readSession()
-                })),
-            resolveConnection: (command, context) => toAlmConnectionName(command, context.config()),
-            sleep: (ms) => sleep(ms),
-            now: () => this.environment.now()
-        };
-    }
-
-    private async connectRtc(
-        command: Extract<CommandWithId, { kind: 'rtc.connect'; }>,
-        context: RallarBlackBoxTestCommandContext
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const connectionConfig = toRallarConnectionConfig(
-            replaceCommandPlaceholders(command, {
-                config: context.config(),
-                session: this.environment.readSession()
-            }),
-            context.config()
-        );
-        let diagnostics: unknown;
-        const connectAbort = createBrowserCommandAbortScope(command, context, this.environment.now);
-        try {
-            diagnostics = await withBrowserCommandAbort(
-                requireBrowserCommandRuntime(this.environment).connect(connectionConfig),
-                connectAbort.signal
-            );
-        }
-        finally {
-            connectAbort.cleanup();
-        }
-        const { readiness, failure } = await this.waitForRtcReadiness({
-            command,
-            context,
-            connectionConfig,
-            diagnostics
-        });
-        if (failure) {
-            return failure;
-        }
-        const value = readiness
-            ? withRtcConnectReadinessValue(diagnostics, readiness)
-            : diagnostics;
-        this.recordRtcConnected({ command, context, connectionConfig, value });
-
-        return {
-            status: 'ok',
-            value,
-            nextStatus: context.state().status === 'idle'
-                ? 'configured'
-                : context.state().status
-        };
-    }
-
-    private async sendRtc(
-        command: Extract<CommandWithId, { kind: 'rtc.send'; }>,
-        context: RallarBlackBoxTestCommandContext
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const scopedSend = await this.readRtcSendInput(command, context);
-        const abort = createBrowserCommandAbortScope(command, context, this.environment.now);
-        let diagnostics: unknown;
-        const sendStartedAtEpochMs = this.environment.now();
-        try {
-            diagnostics = await withBrowserCommandAbort(
-                requireBrowserCommandRuntime(this.environment).send(scopedSend),
-                abort.signal
-            );
-        }
-        finally {
-            abort.cleanup();
-        }
-
-        return this.recordRtcSendOutcome({ command, context, diagnostics, sendStartedAtEpochMs });
-    }
-
-    private rtcConnectReadinessOptions(
-        command: Extract<CommandWithId, { kind: 'rtc.connect'; }>
-    ): RtcConnectReadinessOptions | undefined {
-        if (!command.readiness) {
-            return undefined;
-        }
-
-        return {
-            minReadyPeers: toPositiveInteger(command.readiness.minReadyPeers, 1),
-            timeoutMs: toPositiveInteger(command.readiness.timeoutMs, 5_000),
-            intervalMs: toPositiveInteger(command.readiness.intervalMs, 100)
-        };
-    }
-
-    private recordRtcReadinessDiagnostic(
-        input: BrowserCommandAdapter.ReadinessDiagnostic
-    ): void {
-        const { context, command, topic, severity, payload } = input;
-        context.recordEvent({
-            kind: 'diagnostic',
-            topic,
-            commandId: command.commandId,
-            connection: command.connection,
-            transport: command.transport,
-            severity,
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic,
-                severity,
-                commandId: command.commandId,
-                connection: command.connection,
-                transport: command.transport,
-                data: payload,
-                payload,
-                message: typeof payload.message === 'string' ? payload.message : undefined,
-                source: 'browser-adapter'
-            })
-        });
-    }
-
-    private async health(
-        command: Extract<CommandWithId, { kind: 'health'; }>,
-        context: RallarBlackBoxTestCommandContext
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const rallar = this.environment.rallarRuntime
-            ? await this.environment.rallarRuntime.health({
-                includeRtcDiagnostics: command.includeRtcDiagnostics === true
-            })
-            : undefined;
-        return {
-            status: 'ok',
-            value: {
-                rallar,
-                stats: context.updateStats(command.commandId),
-                webSockets: this.sockets.connectionNames()
-            },
-            nextStatus: context.state().status
-        };
-    }
-
-    private async close(
-        command: Extract<CommandWithId, { kind: 'close'; }>,
-        context: RallarBlackBoxTestCommandContext
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const resources = await this.closeOwnedResources({
-            rallar: true,
-            tolerant: false
-        });
-        const value = {
-            closed: true,
-            rallar: resources.rallar,
-            webSocketCount: resources.webSocketCount
-        };
-        context.recordEvent({
-            kind: 'event',
-            topic: 'rallar.bb.closed',
-            commandId: command.commandId,
-            severity: 'info',
-            payload: value
-        });
-        return {
-            status: 'ok',
-            value,
-            nextStatus: 'idle'
-        };
-    }
-
-    private async reset(): Promise<RallarBlackBoxTestCommandOutcome> {
-        const value = await this.closeOwnedResources({
-            rallar: true,
-            tolerant: false
-        });
-        return {
-            status: 'ok',
-            value: {
-                reset: true,
-                rallar: value.rallar,
-                webSocketCount: value.webSocketCount
-            },
-            nextStatus: 'idle'
-        };
     }
 
     async cleanupOwnedResources(
         input: RallarBlackBoxTestCleanupInput,
         context: RallarBlackBoxTestCommandContext
     ): Promise<void> {
-        const value = await this.closeOwnedResources({
-            rallar: true,
-            tolerant: true
-        });
+        const resources = await this.closeOwnedResources(true);
         context.recordEvent({
             kind: 'event',
             topic: 'rallar.bb.cleanup.resources_closed',
@@ -434,223 +118,94 @@ class BrowserCommandAdapter {
             severity: 'info',
             payload: {
                 ...input,
-                ...value
+                webSocketCount: resources.webSocketCount,
+                rallar: resources.rallar,
+                ...(resources.errors.length > 0 ? { errors: resources.errors } : {})
             }
         });
     }
 
-    private async closeOwnedResources(
-        options: BrowserCommandAdapter.CloseOptions
-    ): Promise<BrowserCommandAdapter.ClosedResources> {
-        const { webSocketCount, errors } = this.sockets.closeAll();
-        let rallar: unknown;
-        if (options.rallar && this.environment.rallarRuntime) {
-            try {
-                rallar = await this.environment.rallarRuntime.close();
-            }
-            catch (error) {
-                errors.push({
-                    connection: 'rallar',
-                    error
-                });
-            }
-        }
-
-        if (errors.length > 0 && !options.tolerant) {
-            throw new Error('Failed to close one or more browser adapter resources.');
-        }
-
-        return {
-            webSocketCount,
-            rallar,
-            ...(errors.length > 0 ? { errors } : {})
-        };
-    }
-
-    private async waitForRtcReadiness(
-        input: BrowserCommandAdapter.ReadinessInput
-    ): Promise<BrowserCommandAdapter.ReadinessOutcome> {
-        const { command, context, connectionConfig, diagnostics } = input;
-        let readiness: RtcConnectReadinessResult | undefined;
-        const readinessOptions = this.rtcConnectReadinessOptions(command);
-        if (readinessOptions) {
-            const transport = toRtcTransport(connectionConfig.rallar.transport);
-            const readinessTimeoutMessage = transport === 'messages.rtc'
-                ? 'RTC connect timed out waiting for room transport readiness.'
-                : 'RTC connect timed out waiting for ready peers.';
-            this.recordRtcReadinessDiagnostic({
-                context: context,
-                command: command,
-                topic: 'rallar.bb.rtc.readiness_wait_started',
-                severity: 'info',
-                payload: {
-                    minReadyPeers: readinessOptions.minReadyPeers,
-                    timeoutMs: readinessOptions.timeoutMs,
-                    intervalMs: readinessOptions.intervalMs
-                }
-            });
-            readiness = await waitForRtcConnectReadiness({
-                runtime: requireBrowserCommandRuntime(this.environment),
-                transport,
-                options: readinessOptions,
-                parentSignal: context.abortSignal?.()
-            });
-            this.recordRtcReadinessDiagnostic({
-                context: context,
-                command: command,
-                topic: readiness.ready
-                    ? 'rallar.bb.rtc.readiness_ready'
-                    : 'rallar.bb.rtc.readiness_timeout',
-                severity: readiness.ready ? 'info' : 'error',
-                payload: {
-                    ...readiness,
-                    ...(!readiness.ready ? { message: readinessTimeoutMessage } : {})
-                }
-            });
-            if (!readiness.ready) {
+    private async dispatchLifecycleCommand(
+        command: CommandWithId,
+        context: RallarBlackBoxTestCommandContext
+    ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
+        switch (command.kind) {
+            case 'health':
                 return {
-                    readiness,
-                    failure: this.toRtcReadinessFailure(readiness, diagnostics, readinessTimeoutMessage)
+                    status: 'ok',
+                    value: {
+                        rallar: await this.environment.rallarRuntime?.health({
+                            includeRtcDiagnostics: command.includeRtcDiagnostics === true
+                        }),
+                        stats: context.updateStats(command.commandId),
+                        webSockets: this.sockets.connectionNames()
+                    },
+                    nextStatus: context.state().status
+                };
+            case 'close':
+                return await this.close(command, context);
+            case 'reset': {
+                const resources = await this.closeOwnedResources(false);
+                return {
+                    status: 'ok',
+                    value: { reset: true, rallar: resources.rallar, webSocketCount: resources.webSocketCount },
+                    nextStatus: 'idle'
                 };
             }
+            default:
+                return undefined;
         }
-
-        return { readiness, failure: undefined };
     }
 
-    private recordRtcConnected(
-        input: BrowserCommandAdapter.ConnectedInput
-    ): void {
-        const { command, context, connectionConfig, value } = input;
-        context.recordEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.bb.rtc.connected',
-            commandId: command.commandId,
-            connection: connectionConfig.connection,
-            actor: connectionConfig.actor,
-            transport: toRtcTransport(connectionConfig.rallar.transport),
-            severity: 'info',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic: 'rallar.bb.rtc.connected',
-                severity: 'info',
-                commandId: command.commandId,
-                connection: connectionConfig.connection,
-                actor: connectionConfig.actor,
-                transport: toRtcTransport(connectionConfig.rallar.transport),
-                roomId: connectionConfig.roomId,
-                data: value,
-                payload: value,
-                source: 'browser-adapter'
-            })
-        });
+    private createAlmBrowserPort(): RallarBlackBoxAlmBrowserPort {
+        return {
+            requireRuntime: () => requireBrowserCommandRuntime(this.environment),
+            commandAbortScope: (command, context) =>
+                createBrowserCommandAbortScope(command, context, this.environment.now),
+            withAbort: (operation, signal) => withBrowserCommandAbort(operation, signal),
+            resolveCommandFields: (command, context) =>
+                replaceCommandPlaceholders(command, {
+                    config: context.config(),
+                    session: this.environment.readSession(),
+                    wsTicket: undefined
+                }),
+            resolveConnection: (command, context) => resolveAlmConnectionName(command, context.config()),
+            sleep: (ms) => sleep(ms),
+            now: () => this.environment.now()
+        };
     }
 
-    private async readRtcSendInput(
-        command: Extract<CommandWithId, { kind: 'rtc.send'; }>,
+    private async close(
+        command: Extract<CommandWithId, { kind: 'close'; }>,
         context: RallarBlackBoxTestCommandContext
-    ): Promise<unknown> {
-        const resolvedSend = replaceCommandPlaceholders(command.send ?? {}, {
-            config: context.config(),
-            session: this.environment.readSession()
-        });
-        let scopedSend = toScopedRtcSend(command, resolvedSend);
-        if (requiresRtcReadyPeerPlaceholder(scopedSend)) {
-            const health = await requireBrowserCommandRuntime(this.environment).health();
-            scopedSend = replaceRtcReadyPeerPlaceholders(
-                scopedSend,
-                toRtcReadyPeerIds(health)
-            );
-        }
-
-        return scopedSend;
-    }
-
-    private recordRtcSendOutcome(
-        input: BrowserCommandAdapter.SendOutcomeInput
-    ): RallarBlackBoxTestCommandOutcome {
-        const { command, context, diagnostics, sendStartedAtEpochMs } = input;
-        const result = decodeRtcSendResult(diagnostics);
-        const failure = toRtcSendFailure(result);
-        const sendObservation = toRtcSendObservation({
-            command,
-            result,
-            durationMs: Math.max(0, this.environment.now() - sendStartedAtEpochMs),
-            ok: failure === undefined,
-            errorCode: failure?.code
-        });
-        this.recordRtcSendDiagnostic({ command, context, diagnostics, failure, sendObservation });
-
-        if (failure) {
-            return {
-                status: 'failed',
-                value: withSendObservationValue(diagnostics, sendObservation),
-                error: {
-                    code: failure.code,
-                    message: failure.message,
-                    details: failure.details
-                },
-                nextStatus: 'failed'
-            };
-        }
-
-        return {
-            status: 'ok',
-            value: withSendObservationValue(diagnostics, sendObservation),
-            nextStatus: context.state().status
-        };
-    }
-
-    private recordRtcSendDiagnostic(
-        input: BrowserCommandAdapter.SendDiagnostic
-    ): void {
-        const { command, context, diagnostics, failure, sendObservation } = input;
+    ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const resources = await this.closeOwnedResources(false);
+        const value = { closed: true, rallar: resources.rallar, webSocketCount: resources.webSocketCount };
         context.recordEvent({
-            kind: 'diagnostic',
-            topic: failure
-                ? 'rallar.bb.rtc.send_failed'
-                : 'rallar.bb.rtc.send_completed',
+            kind: 'event',
+            topic: 'rallar.bb.closed',
             commandId: command.commandId,
-            connection: command.connection,
-            transport: command.transport,
-            severity: failure ? 'error' : 'info',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic: failure
-                    ? 'rallar.bb.rtc.send_failed'
-                    : 'rallar.bb.rtc.send_completed',
-                severity: failure ? 'error' : 'info',
-                commandId: command.commandId,
-                connection: command.connection,
-                transport: command.transport,
-                data: diagnostics,
-                payload: failure
-                    ? {
-                        diagnostics,
-                        failure,
-                        sendObservation
-                    }
-                    : withSendObservationValue(diagnostics, sendObservation),
-                message: failure?.message,
-                error: failure,
-                source: 'browser-adapter'
-            })
+            severity: 'info',
+            payload: value
         });
+        return { status: 'ok', value, nextStatus: 'idle' };
     }
 
-    private toRtcReadinessFailure(
-        readiness: RtcConnectReadinessResult,
-        diagnostics: unknown,
-        readinessTimeoutMessage: string
-    ): RallarBlackBoxTestCommandOutcome {
-        return {
-            status: 'failed',
-            value: withRtcConnectReadinessValue(diagnostics, readiness),
-            error: {
-                code: 'RALLAR_BB_RTC_READY_TIMEOUT',
-                message: readinessTimeoutMessage,
-                details: readiness
-            },
-            nextStatus: 'failed'
-        };
+    /** A tolerant close (recipe cleanup) reports close errors; a close command fails on them. */
+    private async closeOwnedResources(tolerant: boolean): Promise<BrowserCommandAdapter.ClosedResources> {
+        const { webSocketCount, errors } = this.sockets.closeAll();
+        const closeErrors = [...errors];
+        let rallar: RallarBlackBoxBrowserRallarRuntimeResult;
+        try {
+            rallar = await this.environment.rallarRuntime?.close();
+        }
+        catch (caught) {
+            closeErrors.push({ connection: 'rallar', error: toError(caught) });
+        }
+        if (closeErrors.length > 0 && !tolerant) {
+            throw new Error('Failed to close one or more browser adapter resources.');
+        }
+        return { webSocketCount, rallar, errors: closeErrors };
     }
 }
 
@@ -681,11 +236,30 @@ export function createRallarBlackBoxBrowserTestRuntime(
         }
     });
 }
-function withRtcConnectReadinessValue(
-    diagnostics: RallarBlackBoxBrowserRallarRuntimeResult,
-    readiness: RtcConnectReadinessResult
-): RallarBlackBoxTestRecord {
-    return isBrowserCommandRecord(diagnostics) ? { ...diagnostics, readiness } : { diagnostics, readiness };
+
+function toCommandLocalDelayMs(command: CommandWithId): number {
+    const value = command.metadata?.localDelayMs;
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function readOptionalBrowserSession(): AuthSession | undefined {
+    if (typeof localStorage === 'undefined') {
+        return undefined;
+    }
+    try {
+        return readSession();
+    }
+    catch {
+        return undefined;
+    }
+}
+
+function resolveAlmConnectionName(
+    command: RallarBlackBoxAlmCommandWithId,
+    config: RallarBlackBoxTestConfig | undefined
+): string {
+    const commandConnection = 'connection' in command ? command.connection : undefined;
+    return commandConnection ?? decodeBrowserCommandString(config?.defaults?.connection) ?? config?.actor ?? 'default';
 }
 
 function createDefaultBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory | undefined {
@@ -693,10 +267,9 @@ function createDefaultBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
     if (!WebSocketConstructor) {
         return undefined;
     }
-
     return (url, protocols) =>
         new WebSocketConstructor(
             url,
-            protocols as string | string[] | undefined
+            typeof protocols === 'string' || protocols === undefined ? protocols : [...protocols]
         ) as RallarBlackBoxBrowserWebSocket;
 }

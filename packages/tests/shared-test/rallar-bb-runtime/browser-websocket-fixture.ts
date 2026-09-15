@@ -1,4 +1,4 @@
-import type { RallarBlackBoxBrowserWebSocket } from '../../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
+import type { RallarBlackBoxBrowserWebSocket } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
 type BrowserWebSocketData = Parameters<RallarBlackBoxBrowserWebSocket['send']>[0];
 type BrowserWebSocketListener = NonNullable<RallarBlackBoxBrowserWebSocket['onmessage']>;

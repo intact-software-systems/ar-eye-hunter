@@ -1,23 +1,40 @@
 import type {
-    RallarBlackBoxTestConfig
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcSendCommand
 } from '../rallar-black-box-test-contracts.ts';
 
-import { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
+import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
 import {
-    resolveFirstDefined,
-    toBrowserCommandRecord,
-    toNonEmptyStringValue,
-    toOptionalBrowserCommandRecord,
-    toRtcTransport,
-    toStringValue,
-    toWebSocketScope
+    decodeBrowserCommandRecord,
+    decodeBrowserCommandString,
+    decodeNonEmptyBrowserCommandString,
+    decodeRtcTransport,
+    decodeWebSocketScope,
+    isBrowserCommandRecord,
+    resolveFirstDefined
 } from './browser-command-values.ts';
+
+type WsSendCommand = Extract<CommandWithId, { kind: 'ws.send'; }>;
+
+interface WebSocketRoomSelection {
+    readonly applicationId: string | undefined;
+    readonly workspaceId: string | undefined;
+    readonly stateScope: RallarBlackBoxTestRecord | undefined;
+    readonly roomId: string | undefined;
+    readonly roomRef: RallarBlackBoxTestRecord | undefined;
+}
+
+interface WebSocketRoomSources {
+    readonly data: RallarBlackBoxTestRecord;
+    readonly configuredRallar: RallarBlackBoxTestRecord;
+    readonly config: RallarBlackBoxTestConfig | undefined;
+}
 
 export function toRallarAuthConnectionConfig(
     config: RallarBlackBoxTestConfig | undefined
 ): RallarBlackBoxBrowserRallarConnectionConfig {
-    const configuredRallar = toBrowserCommandRecord(config?.rallar);
-    const defaults = toBrowserCommandRecord(config?.defaults);
+    const configuredRallar = config?.rallar ?? {};
     const apiBaseUrl = resolveFirstDefined([configuredRallar.apiBaseUrl, config?.apiBaseUrl]);
     const expectedSessionId = resolveFirstDefined([
         configuredRallar.expectedSessionId,
@@ -26,7 +43,7 @@ export function toRallarAuthConnectionConfig(
     ]);
 
     return {
-        connection: toStringValue(defaults.connection) ?? config?.actor ?? 'default',
+        connection: resolveDefaultConnection(config),
         actor: config?.actor,
         rallar: {
             ...configuredRallar,
@@ -41,157 +58,57 @@ export function toRallarConnectionConfig(
     command: Extract<CommandWithId, { kind: 'rtc.connect'; }>,
     config: RallarBlackBoxTestConfig | undefined
 ): RallarBlackBoxBrowserRallarConnectionConfig {
-    const configuredRallar = toBrowserCommandRecord(config?.rallar);
-    const commandRallar = toBrowserCommandRecord(command.rallar);
-    const transport = command.transport ??
-        toRtcTransport(resolveFirstDefined([commandRallar.transport, config?.transport]));
-    const apiBaseUrl = resolveFirstDefined([commandRallar.apiBaseUrl, configuredRallar.apiBaseUrl, config?.apiBaseUrl]);
-    const expectedSessionId = resolveFirstDefined([
-        commandRallar.expectedSessionId,
-        commandRallar.sessionId,
-        configuredRallar.expectedSessionId,
-        configuredRallar.sessionId,
-        config?.sessionId
-    ]);
-    const rallar = {
-        ...configuredRallar,
-        ...commandRallar,
-        ...(apiBaseUrl ? { apiBaseUrl } : {}),
-        ...(transport ? { transport } : {}),
-        ...(expectedSessionId ? { expectedSessionId } : {}),
-        ...(command.applicationId !== undefined
-            ? { applicationId: command.applicationId }
-            : {}),
-        ...(command.workspaceId !== undefined
-            ? { workspaceId: command.workspaceId }
-            : {}),
-        ...(command.scope !== undefined ? { scope: command.scope } : {}),
-        ...(command.roomRef !== undefined ? { roomRef: command.roomRef } : {}),
-        ...(command.minSnapshotVersion !== undefined
-            ? { minSnapshotVersion: command.minSnapshotVersion }
-            : {})
-    };
-
     return {
-        connection: command.connection ??
-            toStringValue(toBrowserCommandRecord(config?.defaults).connection) ??
-            config?.actor ??
-            'default',
+        connection: command.connection ?? resolveDefaultConnection(config),
         actor: command.actor ?? config?.actor,
         roomId: command.roomId ?? config?.roomId,
         roomRef: command.roomRef,
-        rallar
+        rallar: toRtcConnectRallarConfig(command, config)
     };
 }
 
 export function toRallarWebSocketConnectionConfig(
-    command: Extract<CommandWithId, { kind: 'ws.send'; }>,
+    command: WsSendCommand,
     config: RallarBlackBoxTestConfig | undefined
 ): RallarBlackBoxBrowserRallarConnectionConfig {
-    const configuredRallar = toBrowserCommandRecord(config?.rallar);
-    const data = toBrowserCommandRecord(command.data);
-    const { applicationId, workspaceId, stateScope, roomId, roomRef } = resolveWebSocketRoom(
-        command,
-        configuredRallar,
-        config
-    );
-    const apiBaseUrl = toNonEmptyStringValue(
+    const configuredRallar = config?.rallar ?? {};
+    const data = decodeBrowserCommandRecord(command.data) ?? {};
+    const room = resolveWebSocketRoom({ data, configuredRallar, config });
+    const apiBaseUrl = decodeNonEmptyBrowserCommandString(
         resolveFirstDefined([configuredRallar.apiBaseUrl, config?.apiBaseUrl])
     );
-    const expectedSessionId = toNonEmptyStringValue(
+    const expectedSessionId = decodeNonEmptyBrowserCommandString(
         resolveFirstDefined([configuredRallar.expectedSessionId, configuredRallar.sessionId, config?.sessionId])
     );
-    const typeId = toNonEmptyStringValue(data.typeId);
-    const topicId = toNonEmptyStringValue(data.topicId);
-    const rallar = {
-        ...configuredRallar,
-        ...(apiBaseUrl ? { apiBaseUrl } : {}),
-        transport: 'realtime',
-        restoreSession: configuredRallar.restoreSession ?? true,
-        ...(expectedSessionId ? { expectedSessionId } : {}),
-        ...(applicationId ? { applicationId } : {}),
-        ...(workspaceId ? { workspaceId } : {}),
-        ...(stateScope ? { scope: stateScope } : {}),
-        ...(roomRef ? { roomRef } : {}),
-        ...(typeId ? { typeId } : {}),
-        ...(topicId ? { topicId } : {})
-    };
+    const typeId = decodeNonEmptyBrowserCommandString(data.typeId);
+    const topicId = decodeNonEmptyBrowserCommandString(data.topicId);
 
     return {
-        connection: command.connection ??
-            toStringValue(toBrowserCommandRecord(config?.defaults).connection) ??
-            config?.actor ??
-            'default',
+        connection: command.connection ?? resolveDefaultConnection(config),
         actor: config?.actor,
-        ...(roomId ? { roomId } : {}),
-        ...(roomRef ? { roomRef } : {}),
-        rallar
+        ...(room.roomId ? { roomId: room.roomId } : {}),
+        ...(room.roomRef ? { roomRef: room.roomRef } : {}),
+        rallar: {
+            ...configuredRallar,
+            ...(apiBaseUrl ? { apiBaseUrl } : {}),
+            transport: 'realtime',
+            restoreSession: configuredRallar.restoreSession ?? true,
+            ...(expectedSessionId ? { expectedSessionId } : {}),
+            ...(room.applicationId ? { applicationId: room.applicationId } : {}),
+            ...(room.workspaceId ? { workspaceId: room.workspaceId } : {}),
+            ...(room.stateScope ? { scope: room.stateScope } : {}),
+            ...(room.roomRef ? { roomRef: room.roomRef } : {}),
+            ...(typeId ? { typeId } : {}),
+            ...(topicId ? { topicId } : {})
+        }
     };
 }
 
-function resolveWebSocketRoom(
-    command: Extract<CommandWithId, { kind: 'ws.send'; }>,
-    configuredRallar: Record<string, unknown>,
-    config: RallarBlackBoxTestConfig | undefined
-): WebSocketRoomSelection {
-    const data = toBrowserCommandRecord(command.data);
-    const dataScope = toOptionalBrowserCommandRecord(data.scope);
-    const configuredScope = toOptionalBrowserCommandRecord(configuredRallar.scope);
-    const applicationId = toNonEmptyStringValue(
-        resolveFirstDefined([
-            data.applicationId,
-            dataScope?.applicationId,
-            configuredRallar.applicationId,
-            configuredScope?.applicationId
-        ])
-    );
-    const workspaceId = toNonEmptyStringValue(
-        resolveFirstDefined([
-            data.workspaceId,
-            dataScope?.workspaceId,
-            configuredRallar.workspaceId,
-            configuredScope?.workspaceId
-        ])
-    );
-    const stateScope = applicationId
-        ? {
-            applicationId,
-            ...(workspaceId ? { workspaceId } : {})
-        }
-        : configuredScope;
-    const wsScope = toWebSocketScope(data.scope);
-    const roomIdCandidate = toNonEmptyStringValue(
-        resolveFirstDefined([data.roomId, data.groupId, config?.roomId])
-    );
-    const roomId = wsScope === 'all' || wsScope === 'world' ? undefined : roomIdCandidate;
-    const configuredRoomRef = toOptionalBrowserCommandRecord(configuredRallar.roomRef);
-    const dataRoomRef = toOptionalBrowserCommandRecord(data.roomRef);
-    const roomRef = roomId
-        ? (dataRoomRef ??
-            configuredRoomRef ??
-            (applicationId
-                ? {
-                    applicationId,
-                    ...(workspaceId ? { workspaceId } : {}),
-                    groupId: roomId
-                }
-                : undefined))
-        : undefined;
-    return { applicationId, workspaceId, stateScope, roomId, roomRef };
-}
-
-interface WebSocketRoomSelection {
-    readonly applicationId: string | undefined;
-    readonly workspaceId: string | undefined;
-    readonly stateScope: Record<string, unknown> | undefined;
-    readonly roomId: string | undefined;
-    readonly roomRef: Record<string, unknown> | undefined;
-}
-
+/** The command's room scope fills only the fields the send value does not already name. */
 export function toScopedRtcSend(
     command: Extract<CommandWithId, { kind: 'rtc.send' | 'rtc.stream'; }>,
-    streamSend: unknown
-): unknown {
+    send: RallarBlackBoxTestRtcSendCommand['send']
+): RallarBlackBoxTestRtcSendCommand['send'] {
     const scopedSendFields = Object.fromEntries(
         Object.entries({
             roomId: 'roomId' in command ? command.roomId : undefined,
@@ -203,22 +120,87 @@ export function toScopedRtcSend(
         }).filter(([_key, value]) => value !== undefined)
     );
     if (Object.keys(scopedSendFields).length === 0) {
-        return streamSend;
+        return send;
     }
+    if (!isBrowserCommandRecord(send)) {
+        return { data: send, ...scopedSendFields };
+    }
+    return {
+        ...send,
+        ...Object.fromEntries(Object.entries(scopedSendFields).filter(([key]) => !Object.hasOwn(send, key)))
+    };
+}
 
-    return streamSend &&
-            typeof streamSend === 'object' &&
-            !Array.isArray(streamSend)
-        ? {
-            ...(streamSend as Record<string, unknown>),
-            ...Object.fromEntries(
-                Object.entries(scopedSendFields).filter(
-                    ([key]) => !Object.prototype.hasOwnProperty.call(streamSend, key)
-                )
-            )
-        }
-        : {
-            data: streamSend,
-            ...scopedSendFields
-        };
+function toRtcConnectRallarConfig(
+    command: Extract<CommandWithId, { kind: 'rtc.connect'; }>,
+    config: RallarBlackBoxTestConfig | undefined
+): RallarBlackBoxTestRecord {
+    const configuredRallar = config?.rallar ?? {};
+    const commandRallar = command.rallar ?? {};
+    const transport = command.transport ??
+        decodeRtcTransport(resolveFirstDefined([commandRallar.transport, config?.transport]));
+    const apiBaseUrl = resolveFirstDefined([commandRallar.apiBaseUrl, configuredRallar.apiBaseUrl, config?.apiBaseUrl]);
+    const expectedSessionId = resolveFirstDefined([
+        commandRallar.expectedSessionId,
+        commandRallar.sessionId,
+        configuredRallar.expectedSessionId,
+        configuredRallar.sessionId,
+        config?.sessionId
+    ]);
+    return {
+        ...configuredRallar,
+        ...commandRallar,
+        ...(apiBaseUrl ? { apiBaseUrl } : {}),
+        ...(transport ? { transport } : {}),
+        ...(expectedSessionId ? { expectedSessionId } : {}),
+        ...(command.applicationId !== undefined ? { applicationId: command.applicationId } : {}),
+        ...(command.workspaceId !== undefined ? { workspaceId: command.workspaceId } : {}),
+        ...(command.scope !== undefined ? { scope: command.scope } : {}),
+        ...(command.roomRef !== undefined ? { roomRef: command.roomRef } : {}),
+        ...(command.minSnapshotVersion !== undefined ? { minSnapshotVersion: command.minSnapshotVersion } : {})
+    };
+}
+
+function resolveDefaultConnection(config: RallarBlackBoxTestConfig | undefined): string {
+    return decodeBrowserCommandString(config?.defaults?.connection) ?? config?.actor ?? 'default';
+}
+
+function resolveWebSocketRoom(sources: WebSocketRoomSources): WebSocketRoomSelection {
+    const { data, configuredRallar, config } = sources;
+    const dataScope = decodeBrowserCommandRecord(data.scope);
+    const configuredScope = decodeBrowserCommandRecord(configuredRallar.scope);
+    const applicationId = decodeNonEmptyBrowserCommandString(
+        resolveFirstDefined([
+            data.applicationId,
+            dataScope?.applicationId,
+            configuredRallar.applicationId,
+            configuredScope?.applicationId
+        ])
+    );
+    const workspaceId = decodeNonEmptyBrowserCommandString(
+        resolveFirstDefined([
+            data.workspaceId,
+            dataScope?.workspaceId,
+            configuredRallar.workspaceId,
+            configuredScope?.workspaceId
+        ])
+    );
+    const wsScope = decodeWebSocketScope(data.scope);
+    const roomIdCandidate = decodeNonEmptyBrowserCommandString(
+        resolveFirstDefined([data.roomId, data.groupId, config?.roomId])
+    );
+    const roomId = wsScope === 'all' || wsScope === 'world' ? undefined : roomIdCandidate;
+    return {
+        applicationId,
+        workspaceId,
+        stateScope: applicationId ? { applicationId, ...(workspaceId ? { workspaceId } : {}) } : configuredScope,
+        roomId,
+        roomRef: roomId
+            ? decodeBrowserCommandRecord(data.roomRef) ??
+                decodeBrowserCommandRecord(configuredRallar.roomRef) ??
+                (applicationId
+                    ? { applicationId, ...(workspaceId ? { workspaceId } : {}), groupId: roomId }
+                    : undefined)
+            : undefined
+    };
 }

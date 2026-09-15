@@ -1,9 +1,13 @@
+import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestRuntime,
-    RallarBlackBoxTestTransport
+    RallarBlackBoxTestTransport,
+    RallarBlackBoxTestWsSendCommand
 } from '../rallar-black-box-test-contracts.ts';
 import type { CreateRallarBlackBoxTestRuntimeOptions } from '../runtime/create-rallar-black-box-test-runtime.ts';
 
@@ -12,22 +16,23 @@ export type RallarBlackBoxBrowserRallarTransport = Extract<
     'realtime' | 'messages.rtc' | 'messages.ws'
 >;
 
+/** The connection a command asks the page runtime for; the page decodes it and applies its own defaults. */
 export interface RallarBlackBoxBrowserRallarConnectionConfig {
     readonly connection: string;
     readonly actor?: string;
     readonly peerId?: string;
     readonly remotePeerId?: string;
     readonly roomId?: string;
-    readonly roomRef?: Readonly<Record<string, unknown>>;
-    readonly rallar: Readonly<Record<string, unknown>>;
+    readonly roomRef?: RallarBlackBoxTestRecord;
+    readonly rallar: RallarBlackBoxTestRecord;
 }
 
 /** A page runtime's result, recorded as the command's value; the adapter decodes only the fields it reads. */
 export type RallarBlackBoxBrowserRallarRuntimeResult = RallarBlackBoxTestCommandOutcome['value'];
 
 export type RallarBlackBoxBrowserRallarRuntimeMethod = (
-    input: unknown
-) => Promise<unknown>;
+    input: RallarBlackBoxTestRecord
+) => Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
 
 export interface RallarBlackBoxBrowserRallarCrdtRuntime {
     readonly open: RallarBlackBoxBrowserRallarRuntimeMethod;
@@ -62,15 +67,16 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
     readonly timeoutMs: number;
 }
 
+/** A provider may omit a feature it does not run; the adapter then refuses that feature's commands. */
 export interface RallarBlackBoxBrowserRallarRuntime {
     authenticate(
         config: RallarBlackBoxBrowserRallarConnectionConfig
-    ): Promise<unknown>;
+    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
     connect(
         config: RallarBlackBoxBrowserRallarConnectionConfig
-    ): Promise<unknown>;
-    send: RallarBlackBoxBrowserRallarRuntimeMethod;
-    sendWs?: RallarBlackBoxBrowserRallarRuntimeMethod;
+    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    send(input: RallarBlackBoxTestRtcSendCommand['send']): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    sendWs?(input: RallarBlackBoxTestWsSendCommand['data']): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
     sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
     observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     cancelDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
@@ -79,15 +85,16 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
     refreshRoom(
         options: RallarBlackBoxBrowserRoomRefreshOptions
-    ): Promise<unknown>;
+    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
     waitForRoom: BlackBoxRallarRuntime['waitForRoom'];
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     readonly director?: RallarBlackBoxBrowserRallarDirectorRuntime;
     readonly formation?: RallarBlackBoxBrowserRallarFormationRuntime;
-    close(): Promise<unknown>;
-    health(input?: unknown): Promise<unknown>;
+    close(): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    health(input?: RallarBlackBoxTestRecord): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
 }
 
+/** A page runtime event as the bridge forwards it; each field appears only when the event carries it. */
 export interface RallarBlackBoxBrowserRallarEvent {
     readonly kind?: 'diagnostic' | 'message' | 'close';
     readonly topic?: string;
@@ -97,8 +104,8 @@ export interface RallarBlackBoxBrowserRallarEvent {
     readonly severity?: 'debug' | 'info' | 'warning' | 'error';
     readonly atEpochMs?: number;
     readonly roomId?: string;
-    readonly roomRef?: Readonly<Record<string, unknown>>;
-    readonly scope?: Readonly<Record<string, unknown>>;
+    readonly roomRef?: RallarBlackBoxTestRecord;
+    readonly scope?: RallarBlackBoxTestRecord;
     readonly applicationId?: string;
     readonly workspaceId?: string;
     readonly laneId?: string;
@@ -109,27 +116,37 @@ export interface RallarBlackBoxBrowserRallarEvent {
     readonly topicId?: string;
     readonly contextId?: string;
     readonly resourceId?: string;
-    readonly data?: unknown;
-    readonly error?: unknown;
-    [key: string]: unknown;
+    readonly data?: BlackBoxRallarEvent['data'];
+    readonly error?: BlackBoxRallarEvent['error'];
 }
 
+export type RallarBlackBoxBrowserWebSocketData = string | ArrayBuffer | ArrayBufferView | Blob;
+
+/** The DOM WebSocket event fields the adapter reads; an event kind that carries a field leaves it present. */
+export interface RallarBlackBoxBrowserWebSocketEvent {
+    readonly type?: string;
+    readonly data?: RallarBlackBoxTestWsSendCommand['data'];
+    readonly code?: number;
+    readonly reason?: string;
+    readonly wasClean?: boolean;
+}
+
+export type RallarBlackBoxBrowserWebSocketListener = (event: RallarBlackBoxBrowserWebSocketEvent) => void;
+
+/** A DOM WebSocket or a double; listeners go through `addEventListener` when present, else the `on*` slots. */
 export interface RallarBlackBoxBrowserWebSocket {
     readonly readyState?: number;
     readonly protocol?: string;
     readonly url?: string;
     readonly bufferedAmount?: number;
-    send(data: unknown): void;
+    send(data: RallarBlackBoxBrowserWebSocketData): void;
     close(code?: number, reason?: string): void;
-    addEventListener?: (type: string, listener: (event: unknown) => void) => void;
-    removeEventListener?: (
-        type: string,
-        listener: (event: unknown) => void
-    ) => void;
-    onopen?: ((event: unknown) => void) | null;
-    onmessage?: ((event: unknown) => void) | null;
-    onclose?: ((event: unknown) => void) | null;
-    onerror?: ((event: unknown) => void) | null;
+    addEventListener?: (type: string, listener: RallarBlackBoxBrowserWebSocketListener) => void;
+    removeEventListener?: (type: string, listener: RallarBlackBoxBrowserWebSocketListener) => void;
+    onopen?: RallarBlackBoxBrowserWebSocketListener | null;
+    onmessage?: RallarBlackBoxBrowserWebSocketListener | null;
+    onclose?: RallarBlackBoxBrowserWebSocketListener | null;
+    onerror?: RallarBlackBoxBrowserWebSocketListener | null;
 }
 
 export type RallarBlackBoxBrowserWebSocketFactory = (
@@ -161,15 +178,8 @@ export type RallarBlackBoxBrowserRallarCrdtMethod = keyof RallarBlackBoxBrowserR
 
 export type RallarBlackBoxBrowserRallarDirectorMethod = keyof RallarBlackBoxBrowserRallarDirectorRuntime;
 
-export interface HttpResponseOptions {
-    readonly body?: HttpBodyMode;
-    readonly maxBodyChars?: number;
-    readonly acceptedStatusCodes?: readonly number[];
-}
-
-export type HttpBodyMode = 'none' | 'text' | 'json';
-
 export interface WebSocketTicketResolution {
     readonly ticket: string;
+    /** Present only when the ticket response names the session the ticket belongs to. */
     readonly sessionId?: string;
 }

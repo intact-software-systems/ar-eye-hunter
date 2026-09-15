@@ -1,115 +1,87 @@
-import type {
-    RallarBlackBoxTestCommandContext
-} from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommandContext } from '../rallar-black-box-test-contracts.ts';
 
-import { CommandWithId } from './browser-command-contracts.ts';
+import type { CommandWithId } from './browser-command-contracts.ts';
+
+/** One command's cancellation: the recipe's cancel and the command's own time budget, released by `cleanup`. */
+export interface BrowserCommandAbortScope {
+    /** Absent when the command has neither a parent signal nor a time budget, so nothing can abort it. */
+    readonly signal: AbortSignal | undefined;
+    cleanup(): void;
+}
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (ms <= 0) {
         return Promise.resolve();
     }
     if (signal?.aborted) {
-        return Promise.reject(toAbortError(signal.reason));
+        return Promise.reject(decodeAbortReason(signal.reason));
     }
 
     return new Promise((resolve, reject) => {
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        const cleanup = () => {
-            if (timeout) {
-                clearTimeout(timeout);
-                timeout = undefined;
-            }
-            signal?.removeEventListener('abort', abort);
-        };
-        const abort = () => {
-            cleanup();
-            reject(toAbortError(signal?.reason));
-        };
-
-        timeout = setTimeout(() => {
-            cleanup();
+        const listener = new AbortController();
+        const timeout = setTimeout(() => {
+            listener.abort();
             resolve();
         }, ms);
-        signal?.addEventListener('abort', abort, {
-            once: true
-        });
+        signal?.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            reject(decodeAbortReason(signal.reason));
+        }, { once: true, signal: listener.signal });
     });
 }
 
-export function toAbortError(reason: unknown): Error {
+/** A cancellation reason as the Error a cancelled command reports; a named reason keeps its message. */
+export function decodeAbortReason(reason: unknown): Error {
     if (reason instanceof Error) {
         return reason;
     }
-
-    const message = typeof reason === 'string' && reason.length > 0
-        ? reason
-        : 'Rallar black-box browser adapter operation was cancelled.';
-    const error = new Error(message);
+    const error = new Error(
+        typeof reason === 'string' && reason.length > 0
+            ? reason
+            : 'Rallar black-box browser adapter operation was cancelled.'
+    );
     error.name = 'RALLAR_BLACK_BOX_ABORTED';
     return error;
 }
 
-export function toTimeoutError(): Error {
-    const error = new Error('Rallar black-box command timeout reached.');
-    error.name = 'RALLAR_BLACK_BOX_TIMEOUT';
-    return error;
-}
 export function createBrowserCommandAbortScope(
     command: CommandWithId,
     context: RallarBlackBoxTestCommandContext,
     now: () => number
-): { signal?: AbortSignal; cleanup(): void; } {
+): BrowserCommandAbortScope {
     const parentSignal = context.abortSignal?.();
-    const timeoutMs = command.timeoutMs !== undefined
-        ? Math.max(0, command.timeoutMs)
-        : command.deadlineEpochMs !== undefined
-        ? Math.max(0, command.deadlineEpochMs - now())
-        : undefined;
+    const timeoutMs = resolveCommandTimeoutMs(command, now);
     if (!parentSignal && timeoutMs === undefined) {
-        return {
-            cleanup: () => undefined
-        };
+        return { signal: undefined, cleanup: () => undefined };
     }
 
     const controller = new AbortController();
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     const abortFromParent = () => {
         if (!controller.signal.aborted) {
-            controller.abort(
-                parentSignal?.reason ?? 'Rallar black-box command was cancelled.'
-            );
+            controller.abort(parentSignal?.reason ?? 'Rallar black-box command was cancelled.');
         }
     };
-    const cleanup = () => {
-        if (timeout) {
-            clearTimeout(timeout);
-            timeout = undefined;
-        }
-        parentSignal?.removeEventListener('abort', abortFromParent);
-    };
-
     if (parentSignal?.aborted) {
         abortFromParent();
     }
     else {
-        parentSignal?.addEventListener('abort', abortFromParent, {
-            once: true
-        });
+        parentSignal?.addEventListener('abort', abortFromParent, { once: true });
     }
-
-    if (timeoutMs !== undefined) {
-        timeout = setTimeout(() => {
-            if (!controller.signal.aborted) {
-                controller.abort(toTimeoutError());
-            }
-        }, timeoutMs);
-    }
+    const timeout = timeoutMs === undefined ? undefined : setTimeout(() => {
+        if (!controller.signal.aborted) {
+            controller.abort(createTimeoutError());
+        }
+    }, timeoutMs);
 
     return {
         signal: controller.signal,
-        cleanup
+        cleanup: () => {
+            clearTimeout(timeout);
+            parentSignal?.removeEventListener('abort', abortFromParent);
+        }
     };
 }
+
 export async function withBrowserCommandAbort<T>(
     promise: Promise<T>,
     signal: AbortSignal | undefined
@@ -118,30 +90,34 @@ export async function withBrowserCommandAbort<T>(
         return await promise;
     }
     if (signal.aborted) {
-        throw toAbortError(signal.reason);
+        throw decodeAbortReason(signal.reason);
     }
 
-    return await new Promise<T>((resolve, reject) => {
-        let settled = false;
-        const cleanup = () => {
-            signal.removeEventListener('abort', abort);
-        };
-        const complete = (callback: () => void) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            cleanup();
-            callback();
-        };
-        const abort = () => complete(() => reject(toAbortError(signal.reason)));
-
-        signal.addEventListener('abort', abort, {
-            once: true
+    const listener = new AbortController();
+    try {
+        return await new Promise<T>((resolve, reject) => {
+            signal.addEventListener('abort', () => reject(decodeAbortReason(signal.reason)), {
+                once: true,
+                signal: listener.signal
+            });
+            promise.then(resolve, reject);
         });
-        promise.then(
-            (value) => complete(() => resolve(value)),
-            (error) => complete(() => reject(error))
-        );
-    });
+    }
+    finally {
+        listener.abort();
+    }
+}
+
+/** The command's own budget: its timeout when it names one, else what remains of its absolute deadline. */
+function resolveCommandTimeoutMs(command: CommandWithId, now: () => number): number | undefined {
+    if (command.timeoutMs !== undefined) {
+        return Math.max(0, command.timeoutMs);
+    }
+    return command.deadlineEpochMs === undefined ? undefined : Math.max(0, command.deadlineEpochMs - now());
+}
+
+function createTimeoutError(): Error {
+    const error = new Error('Rallar black-box command timeout reached.');
+    error.name = 'RALLAR_BLACK_BOX_TIMEOUT';
+    return error;
 }
