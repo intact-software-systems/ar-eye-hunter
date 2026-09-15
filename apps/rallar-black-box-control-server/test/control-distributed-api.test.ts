@@ -99,6 +99,21 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
         assertEquals(unauthorizedCreate.status, 401);
 
         const signedOperatorToken = await operatorToken();
+        const unversionedRecipeResponse = await fetch(`${server.baseUrl}/distributed-runs`, {
+            method: 'POST',
+            headers: bearerJsonHeaders(signedOperatorToken),
+            body: JSON.stringify({
+                manifest: {
+                    ...distributedManifest(),
+                    recipes: [{ recipeId: 'api-health', recipe: { recipeId: 'api-health', commands: [] } }]
+                }
+            })
+        });
+        assertEquals(unversionedRecipeResponse.status, 400);
+        assertEquals(await unversionedRecipeResponse.json(), {
+            error: '$.recipes[0].recipe: Missing required property schemaVersion.'
+        });
+
         const previewResponse = await fetch(
             `${server.baseUrl}/distributed-runs/resolve-targets`,
             {

@@ -5,16 +5,7 @@ import {
     type ControlCommandEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    validateJsonSchema
-} from '@shared-test/rallar-bb-test/schema.ts';
 import { createControlArtifactRecorder } from './control-artifact-recorder.ts';
 import {
     controlRunArtifactContentType,
@@ -32,6 +23,7 @@ import { createControlSnapshotPersistence } from './control-snapshot-persistence
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins, createControlResponseHeaders } from './cors.ts';
 import { handleRetentionCleanup } from './retention-cleanup.ts';
 import { createRetentionPlanTokenAdapter } from './retention-plan-token.ts';
+import { decodeDistributedRunManifestRequest } from './routes/distributed-run-request-codec.ts';
 import { handleSwaggerRoute, swaggerFallbackResponse } from './routes/swagger-routes.ts';
 
 const DEFAULT_PORT = 5180;
@@ -476,16 +468,20 @@ async function controlSocketMessageData(data: unknown): Promise<unknown> {
 }
 
 async function createDistributedRun(request: Request): Promise<Response> {
-    let manifest: RallarBlackBoxDistributedRunManifest;
+    let body: unknown;
     try {
-        manifest = await readDistributedRunManifest(request);
+        body = await httpSecurity.readJsonBody(request);
     }
     catch (error) {
         return jsonErrorResponse(error);
     }
+    const manifest = decodeDistributedRunManifestRequest(body);
+    if (manifest.right === undefined) {
+        return jsonResponse({ error: manifest.left }, 400);
+    }
 
     try {
-        const distributedRun = controlService.createDistributedRun(manifest);
+        const distributedRun = controlService.createDistributedRun(manifest.right);
         snapshotPersistence.persist();
         return jsonResponse(distributedRun, 201);
     }
@@ -495,16 +491,20 @@ async function createDistributedRun(request: Request): Promise<Response> {
 }
 
 async function resolveDistributedTargets(request: Request): Promise<Response> {
-    let manifest: RallarBlackBoxDistributedRunManifest;
+    let body: unknown;
     try {
-        manifest = await readDistributedRunManifest(request);
+        body = await httpSecurity.readJsonBody(request);
     }
     catch (error) {
         return jsonErrorResponse(error);
     }
+    const manifest = decodeDistributedRunManifestRequest(body);
+    if (manifest.right === undefined) {
+        return jsonResponse({ error: manifest.left }, 400);
+    }
 
     try {
-        return jsonResponse(controlService.resolveDistributedRunTargets(manifest));
+        return jsonResponse(controlService.resolveDistributedRunTargets(manifest.right));
     }
     catch (error) {
         return distributedRunErrorResponse(error);
@@ -544,34 +544,6 @@ async function mutateDistributedRun(
     catch (error) {
         return distributedRunErrorResponse(error);
     }
-}
-
-async function readDistributedRunManifest(
-    request: Request
-): Promise<RallarBlackBoxDistributedRunManifest> {
-    const body = await httpSecurity.readJsonBody(request);
-    const manifest = isRecord(body) && 'manifest' in body ? body.manifest : body;
-
-    const schemaValidation = validateJsonSchema(
-        RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-        manifest
-    );
-    if (!schemaValidation.ok) {
-        throw new Error(formatJsonSchemaValidationErrors(schemaValidation.errors));
-    }
-
-    const contractValidation = validateDistributedRunManifestContract(
-        manifest as RallarBlackBoxDistributedRunManifest
-    );
-    if (!contractValidation.ok) {
-        throw new Error(
-            contractValidation.errors
-                .map((error) => `${error.path}: ${error.message}`)
-                .join('\n')
-        );
-    }
-
-    return manifest as RallarBlackBoxDistributedRunManifest;
 }
 
 function distributedRunErrorResponse(error: unknown): Response {

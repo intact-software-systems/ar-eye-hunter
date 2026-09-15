@@ -42,6 +42,7 @@ export function distributedManifest() {
             {
                 recipeId: 'api-health',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'api-health',
                     commands: [
                         {
