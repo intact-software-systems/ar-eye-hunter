@@ -203,6 +203,50 @@ describe('rallar-bb runtime composite', () => {
         ]);
     });
 
+    it('keeps scheduling later parallel groups when a child reports cancelled without a runtime cancellation', async () => {
+        const executedCommandIds: string[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command, context) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+
+                executedCommandIds.push(command.commandId ?? '');
+                return command.commandId?.includes('cancelled-send')
+                    ? { status: 'cancelled', nextStatus: 'cancelled' }
+                    : { status: 'ok', value: { sent: true }, nextStatus: context.state().status };
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'parallel',
+            commandId: 'child-cancelled-parallel',
+            maxConcurrency: 1,
+            groups: [
+                {
+                    groupId: 'left',
+                    commands: [{ kind: 'rtc.send', commandId: 'cancelled-send' }]
+                },
+                {
+                    groupId: 'right',
+                    commands: [{ kind: 'rtc.send', commandId: 'right-send' }]
+                }
+            ]
+        });
+        const value = result.value as RallarBlackBoxTestParallelResultValue;
+
+        // A cancelled child ends its own group; only a failed child stops the other groups.
+        expect(result.status).toBe('cancelled');
+        expect(value.groups.map((group) => [group.groupId, group.commandCount, group.cancelled])).toEqual([
+            ['left', 1, true],
+            ['right', 1, false]
+        ]);
+        expect(executedCommandIds).toEqual([
+            'child-cancelled-parallel:g1:left:c1:cancelled-send',
+            'child-cancelled-parallel:g2:right:c1:right-send'
+        ]);
+    });
+
     it('continues within parallel groups and reports ok when continueOnFailure is enabled', async () => {
         const executedCommandIds: string[] = [];
         const runtime = createRallarBlackBoxTestRuntime({

@@ -44,7 +44,7 @@ export namespace ParallelCommandExecution {
     }
     export interface GroupExecution {
         readonly result: RallarBlackBoxTestParallelGroupResult;
-        /** Absent when every child in the group passed. */
+        /** Absent when no child failed; a cancelled child ends its group without failing it. */
         readonly failedResult?: RallarBlackBoxTestResult;
         readonly cancelled: boolean;
         readonly timedOut: boolean;
@@ -128,7 +128,7 @@ export class ParallelCommandExecution {
                 durationMs: Math.max(0, this.ports.now() - startedAtEpochMs),
                 results
             },
-            failedResult: results.findLast((entry) => !entry.result.ok)?.result,
+            failedResult: results.findLast((entry) => !entry.result.ok && entry.result.status !== 'cancelled')?.result,
             cancelled: stop === 'cancelled',
             timedOut: stop === 'timed-out'
         };
