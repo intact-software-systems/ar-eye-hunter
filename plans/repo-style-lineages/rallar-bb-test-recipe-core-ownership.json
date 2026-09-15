@@ -31,7 +31,7 @@
       },
       "targets": [
         "packages/shared-test/rallar-bb-test/assert/compute-assert-command-outcome.ts",
-        "packages/shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts",
+        "packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts",
         "packages/shared-test/rallar-bb-test/loop/loop-command-execution.ts",
         "packages/shared-test/rallar-bb-test/loop/loop-command-thresholds.ts",
         "packages/shared-test/rallar-bb-test/loop/resolve-loop-plan.ts",

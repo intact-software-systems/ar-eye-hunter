@@ -16,7 +16,6 @@ export * from './control-retention.ts';
 export * from './control-snapshots.ts';
 export * from './control/validate-rallar-black-box-test-command.ts';
 export * from './create-rallar-black-box-browser-test-runtime.ts';
-export * from './create-rallar-black-box-test-runtime.ts';
 export * from './diagnostics.ts';
 export * from './distributed-artifact-analysis.ts';
 export * from './distributed-artifact-evidence.ts';
@@ -50,6 +49,7 @@ export * from './rallar-black-box-test-contracts.ts';
 export * from './recipe-fixtures.ts';
 export * from './redaction.ts';
 export * from './rtc-stream.ts';
+export * from './runtime/create-rallar-black-box-test-runtime.ts';
 export * from './schema.ts';
 export {
     formatJsonSchemaValidationErrors,

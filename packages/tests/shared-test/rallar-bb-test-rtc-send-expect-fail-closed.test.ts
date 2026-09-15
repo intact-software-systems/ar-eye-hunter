@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 

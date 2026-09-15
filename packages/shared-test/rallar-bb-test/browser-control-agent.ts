@@ -1,5 +1,4 @@
 import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
 import {
     remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
@@ -12,8 +11,13 @@ import {
     installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
 import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from './control-client.ts';
-import { createRallarBlackBoxTestRuntime } from './create-rallar-black-box-test-runtime.ts';
-import type { RallarBlackBoxTestRuntime, RallarBlackBoxTestRuntimeStatus, RallarBlackBoxTestState } from './rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
+import type {
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntimeStatus,
+    RallarBlackBoxTestState
+} from './rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'

@@ -10,13 +10,13 @@ import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRallarRuntime
 } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 

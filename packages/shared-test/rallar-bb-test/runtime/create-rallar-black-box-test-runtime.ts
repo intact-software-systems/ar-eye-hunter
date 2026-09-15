@@ -1,7 +1,7 @@
-import { computeAssertCommandOutcome } from './assert/compute-assert-command-outcome.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from './diagnostics.ts';
-import { LoopCommandExecution } from './loop/loop-command-execution.ts';
-import { ParallelCommandExecution } from './parallel/parallel-command-execution.ts';
+import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
+import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { LoopCommandExecution } from '../loop/loop-command-execution.ts';
+import { ParallelCommandExecution } from '../parallel/parallel-command-execution.ts';
 import type {
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommand,
@@ -19,15 +19,15 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStateListener,
     RallarBlackBoxTestStatsSnapshot
-} from './rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT, runRecipeCommands } from './recipe/run-recipe-commands.ts';
-import { validateExecutableRecipe } from './recipe/validate-executable-recipe.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
-import { isAbortError, sleepWithAbort } from './runtime/sleep-with-abort.ts';
-import { toMergedRuntimeConfig } from './runtime/to-merged-runtime-config.ts';
-import { computeCommandDeadlineEpochMs } from './runtime/to-runtime-command-values.ts';
-import { toRuntimeStats } from './runtime/to-runtime-stats.ts';
-import { waitForEvent } from './wait/wait-for-event.ts';
+} from '../rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT, runRecipeCommands } from '../recipe/run-recipe-commands.ts';
+import { validateExecutableRecipe } from '../recipe/validate-executable-recipe.ts';
+import { redactRallarBlackBoxValue } from '../redaction.ts';
+import { waitForEvent } from '../wait/wait-for-event.ts';
+import { isAbortError, sleepWithAbort } from './sleep-with-abort.ts';
+import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
+import { computeCommandDeadlineEpochMs } from './to-runtime-command-values.ts';
+import { toRuntimeStats } from './to-runtime-stats.ts';
 
 export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly now?: () => number;

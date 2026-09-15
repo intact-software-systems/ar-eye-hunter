@@ -1,5 +1,4 @@
 import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import {
     bootstrapFleetMetadata,
     rallarBlackBoxProviderModeFromConfig,
@@ -19,7 +18,7 @@ import {
     RallarBlackBoxControlClient,
     type RallarBlackBoxControlSnapshot
 } from '@shared-test/rallar-bb-test/control-client.ts';
-import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
@@ -32,6 +31,7 @@ import type {
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';

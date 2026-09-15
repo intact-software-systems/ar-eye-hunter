@@ -9,8 +9,8 @@ import {
     type ControlEventEnvelope,
     type ControlResultEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 type Listener = (event: unknown) => void;
 

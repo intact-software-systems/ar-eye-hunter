@@ -1,10 +1,10 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
-import type { CreateRallarBlackBoxTestRuntimeOptions } from '../create-rallar-black-box-test-runtime.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
+import type { CreateRallarBlackBoxTestRuntimeOptions } from '../runtime/create-rallar-black-box-test-runtime.ts';
 
 export type RallarBlackBoxBrowserRallarTransport = Extract<
     RallarBlackBoxTestTransport,

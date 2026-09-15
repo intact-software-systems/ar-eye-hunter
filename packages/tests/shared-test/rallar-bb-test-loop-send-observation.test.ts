@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 describe('loop send evidence', () => {
     it('preserves current simulated transport without inferring obsolete diagnostic statuses', async () => {

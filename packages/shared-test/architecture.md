@@ -107,8 +107,9 @@ captures the command wait deadline before invoking the installed messaging owner
 [WebSocket commands](./rallar-bb-test/browser/browser-websocket-commands.ts),
 [RTC stream scheduling](./rallar-bb-test/browser/browser-rtc-stream.ts), and
 [browser feature commands](./rallar-bb-test/browser/browser-rallar-feature-commands.ts)
-own their transport effects. The recipe runtime owns result caching, state, cancellation and cleanup;
-it delegates bounded scheduling and collected evidence to
+own their transport effects. The
+[recipe runtime](./rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts) owns result
+caching, state, cancellation and cleanup; it delegates bounded scheduling and collected evidence to
 [loop execution](./rallar-bb-test/loop/loop-command-execution.ts),
 [parallel execution](./rallar-bb-test/parallel/parallel-command-execution.ts) and
 [recipe commands](./rallar-bb-test/recipe/run-recipe-commands.ts), and assert evaluation to
