@@ -7,12 +7,15 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+
+const DEFAULT_CANCEL_REASON = 'Distributed run cancelled.';
 
 export function decodeDistributedRunManifestRequest(
     body: unknown
 ): Either<string, RallarBlackBoxDistributedRunManifest> {
-    const manifest = typeof body === 'object' && body !== null && 'manifest' in body ? body.manifest : body;
+    const manifest = isJsonRecordValue(body) && 'manifest' in body ? body.manifest : body;
     const schemaValidation = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
     if (!schemaValidation.ok) {
         return Either.ofLeft(formatJsonSchemaValidationErrors(schemaValidation.errors));
@@ -26,4 +29,9 @@ export function decodeDistributedRunManifestRequest(
         );
     }
     return Either.ofRight(schemaValidManifest);
+}
+
+export function decodeDistributedRunCancelReason(body: unknown): string {
+    const reason = isJsonRecordValue(body) && typeof body.reason === 'string' ? body.reason.trim() : '';
+    return reason.length > 0 ? reason : DEFAULT_CANCEL_REASON;
 }

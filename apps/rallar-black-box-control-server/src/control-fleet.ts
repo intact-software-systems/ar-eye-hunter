@@ -354,18 +354,6 @@ export function createControlFleetReportBundle(
     };
 }
 
-export function fleetReportFilterFromUrl(url: URL): FleetReportFilter {
-    return {
-        region: optionalParam(url, 'region'),
-        provider: optionalParam(url, 'provider'),
-        recipeId: optionalParam(url, 'recipeId'),
-        groupId: optionalParam(url, 'groupId'),
-        state: optionalParam(url, 'state'),
-        fromEpochMs: numberParam(url, 'fromEpochMs'),
-        toEpochMs: numberParam(url, 'toEpochMs')
-    };
-}
-
 function agentOutcome(
     input: Readonly<{
         agentId: string;
@@ -877,16 +865,6 @@ function fleetSummaryMarkdown(report: ControlFleetRunReport): string {
             } - ${signature.nextAction}`
         )
     ].join('\n');
-}
-
-function optionalParam(url: URL, key: string): string | undefined {
-    const value = url.searchParams.get(key)?.trim();
-    return value ? value : undefined;
-}
-
-function numberParam(url: URL, key: string): number | undefined {
-    const value = Number(url.searchParams.get(key) ?? '');
-    return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 function safeJson(value: unknown): string {

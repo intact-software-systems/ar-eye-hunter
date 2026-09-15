@@ -32,6 +32,10 @@ export function computeControlCommandRateWindow(input: ControlCommandRateWindowI
         : { enqueueTimestamps: [...retained, input.nowEpochMs], limited: false };
 }
 
+export function toCommandIdSegment(value: string, emptyFallback: string): string {
+    return value.trim().replace(/[^A-Za-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') || emptyFallback;
+}
+
 export function isDispatchableControlCommand(command: ControlCommandState, agent: ControlAgentState): boolean {
     return command.envelope.agentId === agent.agentId &&
         command.completedAtEpochMs === undefined &&

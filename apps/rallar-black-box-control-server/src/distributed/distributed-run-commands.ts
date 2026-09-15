@@ -5,6 +5,7 @@ import type {
     RallarBlackBoxTestRecord
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
+import { toCommandIdSegment } from '../control-command-queue-policy.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
 import { toDistributedRecipeKey, toRecipeSelectionsForAgent } from './distributed-run-targeting.ts';
 
@@ -39,6 +40,7 @@ interface DistributedRecipeTarget extends DistributedPhaseTarget {
 const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
 const BARRIER_RECIPE_KEY = 'ready';
 const CANCEL_RECIPE_KEY = 'run';
+const COMMAND_ID_FALLBACK_SEGMENT = 'segment';
 
 export function toDistributedStageCommands(
     distributedRun: ControlDistributedRunState
@@ -119,11 +121,6 @@ export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributed
     return typeof timeoutMs === 'number' && Number.isInteger(timeoutMs) && timeoutMs > 0
         ? timeoutMs
         : distributedRun.manifest.ackTimeoutMs ?? DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS;
-}
-
-export function toCommandIdSegment(value: string): string {
-    return value.trim().replace(/[^A-Za-z0-9_.:-]+/g, '-').replace(/^-+|-+$/g, '') ||
-        'segment';
 }
 
 function toDistributedStageCommand(target: DistributedRecipeTarget): RallarBlackBoxTestCommand {
@@ -245,9 +242,9 @@ function toBarrierMetadata(distributedRun: ControlDistributedRunState): RallarBl
 function toDistributedCommandId(target: DistributedPhaseTarget, recipeKey: string): string {
     return [
         'distributed',
-        toCommandIdSegment(target.distributedRun.distributedRunId),
+        toCommandIdSegment(target.distributedRun.distributedRunId, COMMAND_ID_FALLBACK_SEGMENT),
         target.phase,
-        toCommandIdSegment(target.agentId),
-        toCommandIdSegment(recipeKey)
+        toCommandIdSegment(target.agentId, COMMAND_ID_FALLBACK_SEGMENT),
+        toCommandIdSegment(recipeKey, COMMAND_ID_FALLBACK_SEGMENT)
     ].join('-');
 }

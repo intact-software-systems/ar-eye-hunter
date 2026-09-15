@@ -45,6 +45,7 @@ import { createControlDistributedRunArtifactBundle } from './control-artifacts.t
 import {
     computeControlCommandRateWindow,
     isDispatchableControlCommand,
+    toCommandIdSegment,
     toControlCommandFingerprint
 } from './control-command-queue-policy.ts';
 import {
@@ -76,7 +77,6 @@ import type {
     ControlTokenState
 } from './control-service-state.ts';
 import {
-    toCommandIdSegment,
     toDistributedBarrierCommands,
     toDistributedCancelCommands,
     toDistributedStageCommands,
@@ -550,7 +550,7 @@ export class RallarBlackBoxControlService {
             runId,
             agentId,
             atEpochMs,
-            eventId: `duplicate-agent-socket-${toCommandIdSegment(agentId)}-${atEpochMs}`,
+            eventId: `duplicate-agent-socket-${toCommandIdSegment(agentId, 'segment')}-${atEpochMs}`,
             payload: {
                 topic: 'rallar.bb.control.duplicate-agent-socket',
                 severity: 'warning',
