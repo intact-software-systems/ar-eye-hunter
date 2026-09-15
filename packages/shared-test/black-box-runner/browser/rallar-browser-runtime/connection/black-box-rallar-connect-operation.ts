@@ -327,6 +327,7 @@ export class BlackBoxRallarConnectOperation {
 
     #recordConnectionFailure(attempt: ConnectionAttempt, error: Error): void {
         const { config, phase } = attempt;
+        attempt.lifecycleSubscriptions?.unsubscribeFormationDiagnostics?.();
         attempt.lifecycleSubscriptions?.unsubscribeRtcLifecycle?.();
         attempt.lifecycleSubscriptions?.unsubscribeWsLifecycle?.();
         attempt.unsubscribeConsoleDiagnostics?.();
