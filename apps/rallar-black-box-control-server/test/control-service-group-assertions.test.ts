@@ -5,6 +5,8 @@ import type {
     RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assert } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
@@ -36,7 +38,7 @@ function registerEnvelope(agentId: string): ControlClientEnvelope {
 function recipeResultEnvelope(
     agentId: string,
     commandId: string,
-    probeValue: unknown
+    probeValue: RallarBlackBoxTestRecord | undefined
 ): ControlClientEnvelope {
     return {
         kind: 'result',
@@ -132,7 +134,7 @@ function groupAssertionManifest(
 
 function runGroupAssertionDistributedRun(
     groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[],
-    probeValueByAgentId: Readonly<Record<string, unknown>>
+    probeValueByAgentId: Readonly<Record<string, RallarBlackBoxTestRecord | undefined>>
 ) {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
     const agentIds = Object.keys(probeValueByAgentId);
@@ -219,8 +221,8 @@ Deno.test('group-assertion evidence commands keep full recipe results uncompacte
     const run = service.snapshotRun('run-1');
     assert(run);
     const startResult = run.results.find((result) => result.commandId.includes('-start-agent-1-'));
-    const value = startResult?.result?.value as { results?: unknown[]; };
-    assert(Array.isArray(value.results), 'Expected uncompacted recipe results.');
+    const value = startResult?.result?.value;
+    assert(isJsonRecordValue(value) && Array.isArray(value.results), 'Expected uncompacted recipe results.');
 });
 
 Deno.test('redacted per-agent value tables hide sensitive evidence values', () => {

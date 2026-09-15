@@ -4,6 +4,7 @@ import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assert } from '@std/assert';
 
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
@@ -358,24 +359,14 @@ Deno.test('control service compacts canonical reports and preserves arbitrary ev
     assert(run);
     assertJsonEquals(run.events.length, 2);
     assertJsonEquals(run.reports.length, 2);
-    const nestedReportPayload = run.reports.find((report) => report.eventId === 'report-duplicate')
-        ?.payload as {
-            payload?: {
-                summary?: { omittedResultCount?: number; omittedEventCount?: number; };
-                results?: unknown;
-                events?: unknown;
-            };
-        };
-    assertJsonEquals(nestedReportPayload.payload?.results, undefined);
-    assertJsonEquals(nestedReportPayload.payload?.events, undefined);
-    assertJsonEquals(nestedReportPayload.payload?.summary?.omittedResultCount, 1);
-    assertJsonEquals(nestedReportPayload.payload?.summary?.omittedEventCount, 1);
-    const opaquePayload = run.reports.find((report) => report.eventId === 'opaque-record')
-        ?.payload as {
-            summary?: { omittedResultCount?: number; omittedEventCount?: number; };
-            results?: unknown;
-            events?: unknown;
-        };
+    const nestedReport = run.reports.find((report) => report.eventId === 'report-duplicate')?.payload;
+    assert(isJsonRecordValue(nestedReport) && isJsonRecordValue(nestedReport.payload));
+    assertJsonEquals(nestedReport.payload, {
+        reportId: 'report-duplicate',
+        summary: { reason: 'disconnect', omittedResultCount: 1, omittedEventCount: 1 },
+        stats: { atEpochMs: 1_900 }
+    });
+    const opaquePayload = run.reports.find((report) => report.eventId === 'opaque-record')?.payload;
     assertJsonEquals(opaquePayload, opaqueEnvelope.payload);
 });
 
@@ -406,7 +397,8 @@ Deno.test('control service compacts recipe run results while preserving distribu
     assert(run);
     const recipeResult = run.results.find((result) => result.commandId === startCommand.commandId);
     assert(recipeResult);
-    const value = recipeResult.result?.value as { results?: unknown; resultCount?: number; };
+    const value = recipeResult.result?.value;
+    assert(isJsonRecordValue(value));
     assertJsonEquals(value.results, undefined);
     assertJsonEquals(value.resultCount, 1);
 });
@@ -463,16 +455,12 @@ Deno.test('control service compact result failure counts include all composite c
     assert(run);
     const loopResult = run.results.find((result) => result.commandId === 'loop-1');
     assert(loopResult);
-    const value = loopResult.result?.value as {
-        results?: unknown;
-        resultCount?: number;
-        failureCount?: number;
-        failures?: readonly unknown[];
-    };
+    const value = loopResult.result?.value;
+    assert(isJsonRecordValue(value) && Array.isArray(value.failures));
     assertJsonEquals(value.results, undefined);
     assertJsonEquals(value.resultCount, 25);
     assertJsonEquals(value.failureCount, 25);
-    assertJsonEquals(value.failures?.length, 20);
+    assertJsonEquals(value.failures.length, 20);
 });
 
 Deno.test('control service keeps terminal distributed rollups stable after runtime trimming', () => {
@@ -593,10 +581,9 @@ Deno.test('control service runtime retention trims old evidence but keeps active
     assert(reportRun);
     assertJsonEquals(reportRun.reports.length, 1);
     assertJsonEquals(reportRun.events.map((event) => event.eventId), ['report-1', 'report-2']);
-    assertJsonEquals(
-        (reportRun.reports[0].payload as { payload?: { reportId?: string; }; }).payload?.reportId,
-        'report-2'
-    );
+    const retainedReport = reportRun.reports[0].payload;
+    assert(isJsonRecordValue(retainedReport) && isJsonRecordValue(retainedReport.payload));
+    assertJsonEquals(retainedReport.payload.reportId, 'report-2');
 });
 
 Deno.test('control service report dedupe survives report payload retention trimming', () => {

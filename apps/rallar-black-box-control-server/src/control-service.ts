@@ -36,7 +36,6 @@ import type {
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -121,7 +120,7 @@ export interface RallarBlackBoxControlServiceDependencies {
 
 export interface RallarBlackBoxControlServiceConfig {
     readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
-    readonly allowedCommandKinds: readonly RallarBlackBoxTestCommandKind[] | undefined;
+    readonly allowedCommandKinds: readonly string[] | undefined;
     readonly commandRateLimitMax: number;
     readonly commandRateLimitWindowMs: number;
     readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
@@ -162,7 +161,7 @@ interface ControlRetentionDeletion {
 export class RallarBlackBoxControlService {
     private readonly dependencies: RallarBlackBoxControlServiceDependencies;
     private readonly config: RallarBlackBoxControlServiceConfig;
-    private readonly allowedCommandKinds: ReadonlySet<RallarBlackBoxTestCommandKind> | undefined;
+    private readonly allowedCommandKinds: ReadonlySet<string> | undefined;
     private readonly runs = new Map<string, ControlRunState>();
     private readonly distributedRuns = new Map<string, ControlDistributedRunState>();
     private readonly fleetReports = new Map<string, ControlFleetRunReport>();

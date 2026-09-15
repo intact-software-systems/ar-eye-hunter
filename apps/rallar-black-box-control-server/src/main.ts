@@ -1,7 +1,7 @@
 import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
 
 import { ControlAgentSockets } from './control-agent-sockets.ts';
-import { createControlArtifactRecorder } from './control-artifact-recorder.ts';
+import { ControlArtifactRecorder } from './control-artifact-recorder.ts';
 import { readBlackBoxControlServerConfiguration } from './control-server-configuration.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
 import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
@@ -33,9 +33,9 @@ const controlService = createRallarBlackBoxControlService({
         runtimeRetentionBounds: security.runtimeRetentionBounds
     }
 });
-const artifactRecorder = createControlArtifactRecorder({
+const artifactRecorder = new ControlArtifactRecorder({
     storageDir: security.storageDir,
-    commandSnapshot: (runId, commandId) => controlService.snapshotCommand(runId, commandId)
+    commandSnapshots: controlService
 });
 const agentSockets = new ControlAgentSockets(controlService);
 const snapshotPersistence = createControlSnapshotPersistence({

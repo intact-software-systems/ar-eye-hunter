@@ -3,7 +3,9 @@ import { assert, assertEquals } from '@std/assert';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { createControlArtifactRecorder, toRunDirectoryName } from '../src/control-artifact-recorder.ts';
+import { ControlArtifactRecorder, toRunDirectoryName } from '../src/control-artifact-recorder.ts';
+
+const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
 
 function emptyRunSnapshot(runId: string): ControlRunSnapshot {
     return {
@@ -33,7 +35,7 @@ function eventEnvelope(runId: string, eventId: string, marker: string): ControlC
 }
 
 function eventsTextForRun(
-    recorder: ReturnType<typeof createControlArtifactRecorder>,
+    recorder: ControlArtifactRecorder,
     runId: string
 ): Promise<string> {
     return recorder.response({ runId, kind: 'events', fallbackRun: emptyRunSnapshot(runId), corsOrigins: [] })
@@ -55,7 +57,7 @@ async function readTextFileOrEmpty(path: string): Promise<string> {
 Deno.test('artifact recorder keeps "%" and "_25" run ids on separate disk paths', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-percent-' });
     try {
-        const recorder = createControlArtifactRecorder({ storageDir });
+        const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS });
         recorder.record(eventEnvelope('%', 'percent-event', 'percent-marker'));
         recorder.record(eventEnvelope('_25', 'underscore-event', 'underscore-marker'));
 
@@ -75,7 +77,7 @@ Deno.test('artifact recorder keeps "%" and "_25" run ids on separate disk paths'
 Deno.test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-slash-' });
     try {
-        const recorder = createControlArtifactRecorder({ storageDir });
+        const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS });
         recorder.record(eventEnvelope('/', 'slash-event', 'slash-marker'));
         recorder.record(eventEnvelope('_2F', 'literal-2f-event', 'literal-2f-marker'));
 
@@ -95,7 +97,7 @@ Deno.test('artifact recorder keeps "/" and "_2F" run ids on separate disk paths'
 Deno.test('deleting one colliding run id leaves the other run\'s stored marker intact', async () => {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-artifact-recorder-delete-' });
     try {
-        const recorder = createControlArtifactRecorder({ storageDir });
+        const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS });
         recorder.record(eventEnvelope('%', 'percent-event', 'percent-marker'));
         recorder.record(eventEnvelope('_25', 'underscore-event', 'underscore-marker'));
 
@@ -117,7 +119,7 @@ Deno.test('recording and deleting "." and ".." run ids stays inside their own ru
     const snapshotPath = `${storageDir}/control-snapshot.json`;
     try {
         await Deno.writeTextFile(snapshotPath, 'root-marker');
-        const recorder = createControlArtifactRecorder({ storageDir });
+        const recorder = new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS });
 
         recorder.record(eventEnvelope('sibling-run', 'sibling-event', 'sibling-marker'));
         recorder.record(eventEnvelope('..', 'dotdot-event', 'dotdot-marker'));

@@ -9,7 +9,6 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { Either } from '@shared/resilience/Either.ts';
@@ -24,7 +23,7 @@ export interface ControlServiceInputOverrides {
     readonly now?: () => number;
     readonly createCommandId?: () => string;
     readonly redaction?: RallarBlackBoxTestRedactionOptions;
-    readonly allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+    readonly allowedCommandKinds?: readonly string[];
     readonly commandRateLimitMax?: number;
     readonly commandRateLimitWindowMs?: number;
     readonly runtimeRetentionBounds?: ControlRunSnapshotBounds;

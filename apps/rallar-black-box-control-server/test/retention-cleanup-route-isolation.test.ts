@@ -2,7 +2,7 @@ import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-sna
 import { assert, assertEquals } from '@std/assert';
 
 import { ControlAgentSockets } from '../src/control-agent-sockets.ts';
-import { createControlArtifactRecorder, toRunDirectoryName } from '../src/control-artifact-recorder.ts';
+import { ControlArtifactRecorder, toRunDirectoryName } from '../src/control-artifact-recorder.ts';
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
 import { createControlHttpResponses } from '../src/http/control-http-responses.ts';
 import { ControlHttpSecurity } from '../src/http/control-http-security.ts';
@@ -22,6 +22,7 @@ interface RetentionRouteHarness {
 }
 
 const PRESERVED_MARKER = 'manual-cleanup-must-preserve-this\n';
+const NO_COMMAND_SNAPSHOTS = { snapshotCommand: () => undefined };
 const OPEN_ACCESS_CONFIGURATION = {
     adminToken: undefined,
     allowedOrigins: [],
@@ -130,7 +131,7 @@ function createRetentionRouteDependencies(
         requestBody: createControlRequestBodyReader(8),
         responses: createControlHttpResponses(['*']),
         agentSockets,
-        artifactRecorder: createControlArtifactRecorder({ storageDir }),
+        artifactRecorder: new ControlArtifactRecorder({ storageDir, commandSnapshots: NO_COMMAND_SNAPSHOTS }),
         persistence: { restore: () => Promise.resolve(), persist: () => persistCalls.push('persist') },
         retentionPlanTokens: createRetentionPlanTokenAdapter({ key: new Uint8Array(32) }),
         commandDestinations: { httpAllowedHosts: [], httpAllowedOrigins: [], wsAllowedHosts: [], wsAllowedOrigins: [] },
