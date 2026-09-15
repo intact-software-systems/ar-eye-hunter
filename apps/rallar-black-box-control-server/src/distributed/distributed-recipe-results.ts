@@ -53,7 +53,7 @@ export function toDistributedRunResultError(result: ControlResultEnvelope): Rall
     };
 }
 
-export function computeNestedRecipeResultCount(result: ControlResultEnvelope): number {
+function computeNestedRecipeResultCount(result: ControlResultEnvelope): number {
     const value = result.result?.value;
     if (isJsonRecordValue(value) && Array.isArray(value.results)) {
         return value.results.length;

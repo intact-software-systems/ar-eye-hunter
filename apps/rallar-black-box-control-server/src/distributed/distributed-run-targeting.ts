@@ -178,7 +178,7 @@ export function toDistributedTargetFailure(
     return undefined;
 }
 
-export function toTrimmedIdentifier(value: string | undefined): string | undefined {
+function toTrimmedIdentifier(value: string | undefined): string | undefined {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
 }
