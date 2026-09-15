@@ -56,7 +56,7 @@ interface RealtimeSendSummary {
 
 const LATE_SEND_MESSAGE = 'Rallar send completed after the runtime closed.';
 
-/** Owns rtc.send for both the realtime lane and typed messages.rtc, chosen by the connection's transport. */
+/** Owns rtc.send for both the realtime lane and typed messages.rtc, chosen by the transport of the connection. */
 export class BlackBoxRallarRtcSendController {
     readonly #input: BlackBoxRallarRtcSendController.Input;
 

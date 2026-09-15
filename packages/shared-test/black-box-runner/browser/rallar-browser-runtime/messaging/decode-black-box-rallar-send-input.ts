@@ -14,7 +14,7 @@ import {
     type BlackBoxRallarInputIssue
 } from '../decode-black-box-rallar-command-input.ts';
 
-/** A send the page boundary classified: an envelope, decoded once the connection's transport is known, or a bare payload. */
+/** A send the page boundary classified: an envelope, decoded once the transport of the connection is known, or a bare payload. */
 export type BlackBoxRallarSendCommand =
     | { readonly kind: 'envelope'; readonly envelope: BlackBoxRallarCommandRecord; }
     | { readonly kind: 'payload'; readonly payload: RallarMessagePayload; };

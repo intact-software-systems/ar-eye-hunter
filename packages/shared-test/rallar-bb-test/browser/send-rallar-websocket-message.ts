@@ -55,7 +55,7 @@ export async function sendRallarWebSocketMessage(
     return { status: 'ok', value: { connection, via, sent: data, rallar, sendObservation } };
 }
 
-/** A send on a runtime that has not connected yet connects once with the command's connection and retries. */
+/** A send on a runtime that has not connected yet connects once with the connection the command names and retries. */
 async function writeRallarWebSocketMessage(
     input: SendRallarWebSocketMessageInput,
     data: RallarMessagePayload

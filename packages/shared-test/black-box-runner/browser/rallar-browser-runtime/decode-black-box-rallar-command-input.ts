@@ -67,7 +67,7 @@ export function decodeBlackBoxCommandRouting(
     return Either.ofRight({ roomRef, ack });
 }
 
-/** The window surface is a promise contract, so an unusable input rejects there with the issue's message. */
+/** The window surface is a promise contract, so an unusable input rejects there with the message of its issue. */
 export function requireBlackBoxRallarInput<T>(decoded: Either<BlackBoxRallarInputIssue, T>): T {
     return decoded.fold(
         (issue) => {
