@@ -1,5 +1,5 @@
 import { projectDistributedRecipeCatalog } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { useEffect, useMemo, useState } from 'react';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';

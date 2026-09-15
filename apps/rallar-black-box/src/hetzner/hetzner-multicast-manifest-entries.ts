@@ -2,7 +2,7 @@ import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { HetznerDistributedManifestEntry, ManifestCatalogInput } from './hetzner-manifest-entry.ts';
 import {
@@ -539,10 +539,10 @@ function toDurationLabel(seconds: number): string {
 }
 
 interface RtcMessagesMatrixInput {
-readonly profile: typeof RTC_MESSAGES_MATRIX_PROFILES[number];
-readonly participantCount: number;
-readonly durationSeconds: number;
-readonly rateHz: number;
+    readonly profile: typeof RTC_MESSAGES_MATRIX_PROFILES[number];
+    readonly participantCount: number;
+    readonly durationSeconds: number;
+    readonly rateHz: number;
 }
 
 function toRtcMessagesMatrixRoles(

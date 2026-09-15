@@ -10,7 +10,7 @@ import type {
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const WORLD_FLEET_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {

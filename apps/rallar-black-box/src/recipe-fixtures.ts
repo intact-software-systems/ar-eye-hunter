@@ -2,17 +2,24 @@ import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rall
 
 export {
     createRallarBlackBoxEnsureGroupRequestId,
+    type RallarBlackBoxLiveRecipeOptions
+} from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+export {
     createRallarBlackBoxProviderParityLiveRecipe,
+    createRallarBlackBoxRtcSmokeRecipe
+} from '@shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
+export {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
-    createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    createRallarBlackBoxRtcSmokeRecipe,
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+    type RallarBlackBoxRtcMessagesMulticastRecipeOptions
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
+export {
+    createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
+    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
     RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
@@ -20,13 +27,12 @@ export {
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
-    recipeFixtureText
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
-export type {
-    RallarBlackBoxLiveRecipeOptions,
-    RallarBlackBoxRecipeFixture,
-    RallarBlackBoxRtcMessagesMulticastRecipeOptions,
-    RallarBlackBoxRtcRealtimeRecipeOptions
+    type RallarBlackBoxRtcRealtimeRecipeOptions
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+export {
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
+    type RallarBlackBoxRecipeFixture,
+    toRecipeFixtureText
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 
 export const RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE: RallarBlackBoxTestCommand = {

@@ -7,46 +7,50 @@ import {
 import type { RallarBlackBoxDistributedGroupRef } from './distributed-run.ts';
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
+    createRallarBlackBoxRtcSmokeRecipe
+} from './fixtures/rtc-live-recipes.ts';
+import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
-    createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    createRallarBlackBoxRtcSmokeRecipe,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID
+} from './fixtures/rtc-multicast-recipes.ts';
+import {
+    createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
-} from './recipe-fixtures.ts';
+} from './fixtures/rtc-realtime-recipes.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from './schema.ts';
 
 const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
 
 export interface DistributedRecipeCatalogConfiguration {
-readonly group: RallarBlackBoxDistributedGroupRef;
-readonly apiBaseUrl: string;
-readonly rtcRealtimeDurationSeconds: number;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly apiBaseUrl: string;
+    readonly rtcRealtimeDurationSeconds: number;
 }
 
 export interface DistributedRecipeCatalogSchemaFact {
-readonly ok: boolean;
-readonly status: 'valid' | 'invalid';
-readonly label: string;
-readonly errors: readonly string[];
+    readonly ok: boolean;
+    readonly status: 'valid' | 'invalid';
+    readonly label: string;
+    readonly errors: readonly string[];
 }
 
 export interface DistributedRecipeCatalogEntryProjection {
-readonly item: DistributedRecipeCatalogItem;
-readonly commandKinds: ReturnType<typeof distributedRecipeCommandKinds>;
-readonly schema: DistributedRecipeCatalogSchemaFact;
-readonly preflight: DistributedRecipePreflightSummary;
+    readonly item: DistributedRecipeCatalogItem;
+    readonly commandKinds: ReturnType<typeof distributedRecipeCommandKinds>;
+    readonly schema: DistributedRecipeCatalogSchemaFact;
+    readonly preflight: DistributedRecipePreflightSummary;
 }
 
 export interface DistributedRecipeCatalogProjection {
-readonly entries: readonly DistributedRecipeCatalogEntryProjection[];
-readonly profiles: readonly string[];
-readonly providerModes: readonly string[];
+    readonly entries: readonly DistributedRecipeCatalogEntryProjection[];
+    readonly profiles: readonly string[];
+    readonly providerModes: readonly string[];
 }
 
 export const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] = RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(

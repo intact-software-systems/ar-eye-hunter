@@ -1,10 +1,10 @@
+import { createRallarBlackBoxRtcSmokeRecipe } from '@shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
 import {
     createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    createRallarBlackBoxRtcSmokeRecipe,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+    createRallarBlackBoxRtcRealtimeStabilityRecipe
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
     createHetznerGroupAssertions,
     createHetznerGroupAssertionsRecipe

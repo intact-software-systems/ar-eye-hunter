@@ -3,7 +3,7 @@
 import { isApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { createRallarBlackBoxRtcRealtimeRecipe } from '../../shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 function installStorage(): Storage {

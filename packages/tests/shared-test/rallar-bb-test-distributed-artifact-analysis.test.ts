@@ -10,7 +10,7 @@ import {
     type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
+import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 
 describe('Hetzner distributed run artifact analysis', () => {
     it('uses JSONL fallback evidence consistently for CLI analysis and SPA snapshots', () => {

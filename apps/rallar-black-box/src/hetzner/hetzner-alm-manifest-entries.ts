@@ -8,7 +8,7 @@ import {
 import {
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
-} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { HetznerDistributedManifestEntry } from './hetzner-manifest-entry.ts';
 import {
