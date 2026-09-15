@@ -86,13 +86,15 @@ function toCompactedReport(report: RallarBlackBoxTestRecord): RallarBlackBoxTest
 }
 
 function toCompactedCompositeValue(value: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord {
-    const childResults = Array.isArray(value.results) ? value.results : [];
-    const failedChildren = childResults.filter(isFailedCompositeChild);
+    const resultCount = Array.isArray(value.results) ? value.results.length : 0;
+    const failedChildren: readonly RallarBlackBoxTestRecord[] = Array.isArray(value.results)
+        ? value.results.filter(isFailedCompositeChild)
+        : [];
     const failures = failedChildren.slice(0, COMPACTED_CHILD_FAILURE_LIMIT).map(toCompactedChildFailure);
     const { results: _results, ...rest } = value;
     return {
         ...rest,
-        resultCount: childResults.length,
+        resultCount,
         failureCount: failedChildren.length,
         ...(failures.length > 0 ? { failures } : {}),
         resultsOmitted: true
