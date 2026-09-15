@@ -54,13 +54,6 @@ import {
     toControlReportDedupeKey,
     toGroupAssertionEvidenceCommandIds
 } from './control-evidence-compaction.ts';
-import {
-    createControlFleetAggregateReport,
-    createControlFleetReportBundle,
-    createControlFleetRunReport,
-    filterControlFleetReports,
-    type FleetReportFilter
-} from './control-fleet.ts';
 import { trimControlReportDedupeKeys, trimControlRunEvidence } from './control-runtime-retention.ts';
 import {
     toControlCommandSnapshot,
@@ -100,6 +93,13 @@ import {
     toExplicitDistributedTargetResolution,
     toNormalizedDistributedRunManifest
 } from './distributed/distributed-run-targeting.ts';
+import {
+    createControlFleetAggregateReport,
+    filterControlFleetReports,
+    type FleetReportFilter
+} from './fleet/control-fleet-aggregate-report.ts';
+import { createControlFleetReportBundle } from './fleet/create-control-fleet-report-bundle.ts';
+import { createControlFleetRunReport } from './fleet/create-control-fleet-run-report.ts';
 
 export type ControlServiceFailureCode =
     | 'command-kind-not-allowed'
@@ -394,7 +394,7 @@ export class RallarBlackBoxControlService {
 
     createFleetReportBundle(distributedRunId: string): ControlFleetReportBundle | undefined {
         const report = this.ensureFleetReport(distributedRunId);
-        return report ? createControlFleetReportBundle(report) : undefined;
+        return report ? createControlFleetReportBundle(report, this.dependencies.now()) : undefined;
     }
 
     rebuildFleetReports(): ControlFleetReportsResponse {

@@ -1,5 +1,5 @@
-import type { FleetReportFilter } from '../control-fleet.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
+import type { FleetReportFilter } from '../fleet/control-fleet-aggregate-report.ts';
 import type { ControlHttpResponses } from '../http/control-http-responses.ts';
 import { toNotFoundRejection } from './control-route-errors.ts';
 import { toPathParameters } from './control-route-requests.ts';

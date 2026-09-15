@@ -43,6 +43,22 @@
         "apps/rallar-black-box-control-server/src/routes/run-routes-admin.ts",
         "apps/rallar-black-box-control-server/src/routes/run-routes-read.ts"
       ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/control-fleet.ts",
+        "blob": "62b4b8bff5caa0ac6f68b14a9e66a488538669bb"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-aggregate-report.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-evidence.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-failure-guidance.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-failure-signatures.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-statistics.ts",
+        "apps/rallar-black-box-control-server/src/fleet/create-control-fleet-report-bundle.ts",
+        "apps/rallar-black-box-control-server/src/fleet/create-control-fleet-run-report.ts"
+      ]
     }
   ]
 }
