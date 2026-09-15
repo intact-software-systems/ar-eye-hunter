@@ -42,10 +42,18 @@ describe('schema authoring helpers', () => {
         expect(schemaValidation.ok).toBe(false);
         expect(schemaValidation.parseOk).toBe(true);
         expect(schemaValidation.errorText).toContain('Missing required property request');
+
+        const unversionedRecipeValidation = validateSchemaAuthoringValue('recipe', {
+            recipeId: 'unversioned-recipe',
+            commands: [{ kind: 'health' }]
+        });
+        expect(unversionedRecipeValidation.ok).toBe(false);
+        expect(unversionedRecipeValidation.errorText).toContain('Missing required property schemaVersion');
     });
 
     it('validates recipe and distributed manifests and derives command kinds from inline recipes', () => {
         const recipe = {
+            schemaVersion: 1,
             recipeId: 'authoring-recipe',
             commands: [
                 { kind: 'health' },
@@ -78,6 +86,7 @@ describe('schema authoring helpers', () => {
 
     it('derives capability hints recursively for composite recipes', () => {
         const recipe = {
+            schemaVersion: 1,
             recipeId: 'composite-authoring-recipe',
             commands: [
                 {
