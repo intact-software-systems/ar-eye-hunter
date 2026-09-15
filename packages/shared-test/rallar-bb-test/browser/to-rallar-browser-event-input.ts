@@ -30,7 +30,6 @@ type RallarBrowserEventPayload = Pick<
 
 const DEFAULT_RALLAR_BROWSER_EVENT_TOPIC = 'rallar.browser.event';
 
-/** A page message stays a message, a close becomes a warning event, and everything else is a diagnostic. */
 export function toRallarBrowserEventInput(
     event: RallarBlackBoxBrowserRallarEvent
 ): RallarBlackBoxTestRuntimeEventInput {

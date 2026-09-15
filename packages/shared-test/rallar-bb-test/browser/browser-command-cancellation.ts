@@ -2,7 +2,6 @@ import type { RallarBlackBoxTestCommandContext } from '../rallar-black-box-test-
 
 import type { CommandWithId } from './browser-command-contracts.ts';
 
-/** One command's cancellation: the recipe's cancel and the command's own time budget, released by `cleanup`. */
 export interface BrowserCommandAbortScope {
     /** Absent when the command has neither a parent signal nor a time budget, so nothing can abort it. */
     readonly signal: AbortSignal | undefined;
@@ -30,7 +29,6 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     });
 }
 
-/** A cancellation reason as the Error a cancelled command reports; a named reason keeps its message. */
 export function decodeAbortReason(reason: unknown): Error {
     if (reason instanceof Error) {
         return reason;
@@ -108,7 +106,6 @@ export async function withBrowserCommandAbort<T>(
     }
 }
 
-/** The command's own budget: its timeout when it names one, else what remains of its absolute deadline. */
 function resolveCommandTimeoutMs(command: CommandWithId, now: () => number): number | undefined {
     if (command.timeoutMs !== undefined) {
         return Math.max(0, command.timeoutMs);

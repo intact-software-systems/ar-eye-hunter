@@ -9,7 +9,6 @@ import type {
 } from './browser-command-contracts.ts';
 import { toRallarAuthConnectionConfig } from './browser-rallar-command-input.ts';
 
-/** The capabilities one adapter instance runs commands with; an absent capability refuses its commands. */
 export interface BrowserCommandEnvironment {
     readonly rallarRuntime: RallarBlackBoxBrowserRallarRuntime | undefined;
     readonly fetch: typeof fetch | undefined;
@@ -24,7 +23,7 @@ export interface BrowserCommandEnvironment {
 export interface BrowserCommandAuthInput {
     readonly command: CommandWithId;
     readonly context: RallarBlackBoxTestCommandContext;
-    /** Whether the command cannot run without a session: it names a Rallar path or an auth placeholder. */
+    /** True when the command names a Rallar path or an auth placeholder. */
     readonly required: boolean;
 }
 
@@ -53,7 +52,6 @@ export function requireBrowserWebSocketFactory(
     return environment.webSocketFactory;
 }
 
-/** Authenticates through the page runtime only when the command needs a session the browser does not hold yet. */
 export async function readBrowserCommandAuthSession(
     input: BrowserCommandAuthInput,
     environment: BrowserCommandEnvironment

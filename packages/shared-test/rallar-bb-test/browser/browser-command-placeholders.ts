@@ -51,7 +51,6 @@ export function replaceCommandPlaceholders<T>(value: T, values: CommandPlacehold
     return requiresReplacement ? toReplacedStringLeaves(value, values) : value;
 }
 
-/** Every string leaf of a recipe value, depth first. */
 export function decodeStringLeaves(value: unknown): readonly string[] {
     if (typeof value === 'string') {
         return [value];
@@ -62,7 +61,7 @@ export function decodeStringLeaves(value: unknown): readonly string[] {
     return isBrowserCommandRecord(value) ? Object.values(value).flatMap((item) => decodeStringLeaves(item)) : [];
 }
 
-/** Placeholders only ever replace string leaves, so the value keeps its shape. */
+/** Placeholders replace only string leaves with strings, so the value keeps its shape. */
 function toReplacedStringLeaves<T>(value: T, values: CommandPlaceholderValues): T {
     if (typeof value === 'string') {
         return toPlaceholderReplacedText(value, values) as T;

@@ -16,7 +16,6 @@ export type RallarBlackBoxBrowserRallarTransport = Extract<
     'realtime' | 'messages.rtc' | 'messages.ws'
 >;
 
-/** The connection a command asks the page runtime for; the page decodes it and applies its own defaults. */
 export interface RallarBlackBoxBrowserRallarConnectionConfig {
     readonly connection: string;
     readonly actor?: string;
@@ -27,7 +26,7 @@ export interface RallarBlackBoxBrowserRallarConnectionConfig {
     readonly rallar: RallarBlackBoxTestRecord;
 }
 
-/** A page runtime's result, recorded as the command's value; the adapter decodes only the fields it reads. */
+/** A page runtime result, recorded as the command value; the adapter decodes only the fields it reads. */
 export type RallarBlackBoxBrowserRallarRuntimeResult = RallarBlackBoxTestCommandOutcome['value'];
 
 export type RallarBlackBoxBrowserRallarRuntimeMethod = (
@@ -67,7 +66,7 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
     readonly timeoutMs: number;
 }
 
-/** A provider may omit a feature it does not run; the adapter then refuses that feature's commands. */
+/** A provider may omit a feature it does not run; the adapter then refuses the commands of that feature. */
 export interface RallarBlackBoxBrowserRallarRuntime {
     authenticate(
         config: RallarBlackBoxBrowserRallarConnectionConfig
@@ -94,7 +93,7 @@ export interface RallarBlackBoxBrowserRallarRuntime {
     health(input?: RallarBlackBoxTestRecord): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
 }
 
-/** A page runtime event as the bridge forwards it; each field appears only when the event carries it. */
+/** Each field appears only when the forwarded page event carries it. */
 export interface RallarBlackBoxBrowserRallarEvent {
     readonly kind?: 'diagnostic' | 'message' | 'close';
     readonly topic?: string;
@@ -122,7 +121,7 @@ export interface RallarBlackBoxBrowserRallarEvent {
 
 export type RallarBlackBoxBrowserWebSocketData = string | ArrayBuffer | ArrayBufferView | Blob;
 
-/** The DOM WebSocket event fields the adapter reads; an event kind that carries a field leaves it present. */
+/** Each field is present only on the DOM event kinds that carry it; `type` keeps a DOM Event assignable. */
 export interface RallarBlackBoxBrowserWebSocketEvent {
     readonly type?: string;
     readonly data?: RallarBlackBoxTestWsSendCommand['data'];
@@ -133,7 +132,6 @@ export interface RallarBlackBoxBrowserWebSocketEvent {
 
 export type RallarBlackBoxBrowserWebSocketListener = (event: RallarBlackBoxBrowserWebSocketEvent) => void;
 
-/** A DOM WebSocket or a double; listeners go through `addEventListener` when present, else the `on*` slots. */
 export interface RallarBlackBoxBrowserWebSocket {
     readonly readyState?: number;
     readonly protocol?: string;

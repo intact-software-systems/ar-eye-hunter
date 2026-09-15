@@ -68,7 +68,6 @@ const UNSUPPORTED_FEATURE_MESSAGES: Readonly<Record<FeatureName, string>> = {
     formation: 'Browser Rallar runtime does not support formation commands.'
 };
 
-/** Runs the CRDT, director and formation commands against the page runtime's optional feature runtimes. */
 export class BrowserRallarFeatureCommands {
     private readonly environment: BrowserCommandEnvironment;
 
@@ -152,7 +151,6 @@ export class BrowserRallarFeatureCommands {
         });
     }
 
-    /** A provider without the feature records the refusal before the command fails. */
     private requireFeatureRuntime<F extends FeatureName>(
         command: CommandWithId,
         context: RallarBlackBoxTestCommandContext,
@@ -237,7 +235,6 @@ export class BrowserRallarFeatureCommands {
     }
 }
 
-/** One feature command inside the command's abort scope, recording its success or its failure. */
 async function runFeatureCommand(
     environment: BrowserCommandEnvironment,
     input: RunFeatureCommandInput

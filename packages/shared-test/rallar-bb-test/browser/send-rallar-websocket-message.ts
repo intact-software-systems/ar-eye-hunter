@@ -19,7 +19,6 @@ export interface SendRallarWebSocketMessageInput {
     readonly connection: string;
 }
 
-/** A structured ws.send in browser-rallar mode rides the page runtime's signaling WebSocket, not a raw socket. */
 export async function sendRallarWebSocketMessage(
     input: SendRallarWebSocketMessageInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
@@ -52,7 +51,6 @@ export async function sendRallarWebSocketMessage(
     return { status: 'ok', value: { connection, via, sent: data, rallar, sendObservation } };
 }
 
-/** A page runtime that has not connected yet is connected once for this send, then the send is retried. */
 async function writeRallarWebSocketMessage(
     input: SendRallarWebSocketMessageInput,
     data: RallarBlackBoxTestWsSendCommand['data']

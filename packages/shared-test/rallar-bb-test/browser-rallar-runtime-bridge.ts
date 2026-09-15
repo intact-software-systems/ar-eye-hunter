@@ -19,7 +19,6 @@ import type {
 
 let runtimeImportPromise: Promise<void> | undefined;
 
-/** The SPA provider: every call reaches the page runtime the black-box runner installed on `window`. */
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
         authenticate: async (config) =>
@@ -85,7 +84,6 @@ function createSpaBrowserRallarDirectorRuntime(): RallarBlackBoxBrowserRallarDir
     };
 }
 
-/** The wire command's room and base fields decode separately from the command payload the controller owns. */
 function createSpaBrowserRallarFormationRuntime(): RallarBlackBoxBrowserRallarFormationRuntime {
     return {
         command: async (input) => {
@@ -131,7 +129,6 @@ function readBrowserWindow(): BlackBoxRallarRuntimeInstallationTarget {
     return window;
 }
 
-/** The formation decoders' issues become one thrown error, which the adapter records as the command failure. */
 function requireDecoded<T>(decoding: Either<readonly BlackBoxRallarFormationInputIssue[], T>): T {
     return decoding.fold(
         (issues) => {

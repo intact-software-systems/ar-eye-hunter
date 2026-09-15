@@ -49,7 +49,6 @@ export namespace BrowserWebSocketCommands {
     }
 }
 
-/** Owns the adapter's raw browser WebSockets: one per connection name, with their recorded events. */
 export class BrowserWebSocketCommands {
     private readonly webSockets = new Map<string, RallarBlackBoxBrowserWebSocket>();
     private readonly webSocketDisposers = new Map<string, ReadonlyArray<() => void>>();

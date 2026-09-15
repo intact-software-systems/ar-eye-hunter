@@ -50,7 +50,6 @@ namespace BrowserCommandAdapter {
     }
 }
 
-/** Routes one browser command to the owner of its capability; a kind it does not own returns undefined. */
 class BrowserCommandAdapter {
     private readonly environment: BrowserCommandEnvironment;
     private readonly sockets: BrowserWebSocketCommands;
@@ -191,7 +190,6 @@ class BrowserCommandAdapter {
         return { status: 'ok', value, nextStatus: 'idle' };
     }
 
-    /** A tolerant close (recipe cleanup) reports close errors; a close command fails on them. */
     private async closeOwnedResources(tolerant: boolean): Promise<BrowserCommandAdapter.ClosedResources> {
         const { webSocketCount, errors } = this.sockets.closeAll();
         const closeErrors = [...errors];

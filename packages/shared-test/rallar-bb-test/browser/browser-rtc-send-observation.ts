@@ -9,12 +9,11 @@ import type {
 import type { CommandWithId, RallarBlackBoxBrowserRallarRuntimeResult } from './browser-command-contracts.ts';
 import { isBrowserCommandRecord } from './browser-command-values.ts';
 
-/** What the page runtime reported about one rtc.send, read from its diagnostics. */
 export interface RtcSendResult {
     readonly diagnostics: RallarBlackBoxBrowserRallarRuntimeResult;
-    /** The realtime lane's status; a typed messages.rtc send reports its delivery instead. */
+    /** Absent for a typed messages.rtc send, which reports its delivery instead. */
     readonly laneStatus: 'sent' | 'no-peers' | undefined;
-    /** The messages.rtc handle's lifecycle when the page returned; a realtime-lane send has none. */
+    /** Absent for a realtime-lane send, which has no delivery handle. */
     readonly delivery: RtcSendDelivery | undefined;
     readonly peerResults: readonly RtcSendPeerResult[];
 }

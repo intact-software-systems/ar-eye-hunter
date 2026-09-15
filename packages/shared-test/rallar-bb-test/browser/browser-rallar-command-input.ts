@@ -104,7 +104,6 @@ export function toRallarWebSocketConnectionConfig(
     };
 }
 
-/** The command's room scope fills only the fields the send value does not already name. */
 export function toScopedRtcSend(
     command: Extract<CommandWithId, { kind: 'rtc.send' | 'rtc.stream'; }>,
     send: RallarBlackBoxTestRtcSendCommand['send']

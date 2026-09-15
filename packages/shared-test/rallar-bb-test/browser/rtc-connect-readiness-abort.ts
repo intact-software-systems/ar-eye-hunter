@@ -7,7 +7,6 @@ export interface RtcConnectReadinessAbortScope {
 const READINESS_TIMEOUT_ERROR_NAME = 'RALLAR_BB_RTC_READINESS_TIMEOUT';
 const ABORT_ERROR_NAME = 'RALLAR_BLACK_BOX_ABORTED';
 
-/** A cancellation reason as the aborted-readiness Error; an already-aborted adapter error passes through. */
 export function decodeRtcConnectReadinessAbortReason(reason: unknown): Error {
     if (reason instanceof Error && reason.name === ABORT_ERROR_NAME) {
         return reason;

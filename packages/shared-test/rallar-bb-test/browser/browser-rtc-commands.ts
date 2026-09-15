@@ -67,7 +67,6 @@ interface RtcSendDiagnostic {
 
 const DEFAULT_READINESS_OPTIONS: RtcConnectReadinessOptions = { minReadyPeers: 1, timeoutMs: 5_000, intervalMs: 100 };
 
-/** Runs rtc.connect (with its optional readiness wait) and rtc.send against the page runtime. */
 export class BrowserRtcCommands {
     private readonly environment: BrowserCommandEnvironment;
 
@@ -159,7 +158,6 @@ export class BrowserRtcCommands {
         return readiness;
     }
 
-    /** `{rtc.readyPeerIds}` placeholders read the page's ready peers just before the send. */
     private async readRtcSendInput(
         command: RtcSendCommand,
         context: RallarBlackBoxTestCommandContext

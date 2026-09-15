@@ -24,7 +24,6 @@ import { decodeBrowserCommandRecord } from './browser-command-values.ts';
 
 type HttpRequestCommand = Extract<CommandWithId, { kind: 'http.request'; }>;
 
-/** A JSON body as parsed, a text body trimmed to its limit, or nothing when the command asks for no body. */
 type HttpResponseBody = RallarBlackBoxTestJsonValue | undefined;
 
 interface BrowserHttpRequest {
@@ -70,7 +69,6 @@ export async function requestWebSocketTicket(
     };
 }
 
-/** Runs http.request with the browser's fetch, attaching the Rallar session only to the configured API. */
 export class BrowserHttpRequests {
     private readonly environment: BrowserCommandEnvironment;
 

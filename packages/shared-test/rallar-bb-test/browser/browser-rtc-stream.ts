@@ -39,7 +39,6 @@ interface StreamFrame {
     readonly startedAtEpochMs: number;
 }
 
-/** A frame that ended without a send result: dropped, thrown, or still in flight when the drain ran out. */
 interface UnsentFrameEnd {
     readonly completedAtEpochMs: number;
     readonly status: 'dropped' | 'failed' | 'drain-timeout';
@@ -67,7 +66,6 @@ export namespace BrowserRtcStream {
     }
 }
 
-/** Owns one rtc.stream run: frame pacing, the in-flight bound, the drain window, and its observations. */
 export class BrowserRtcStream {
     private readonly environment: BrowserCommandEnvironment;
     private readonly command: RtcStreamCommand;

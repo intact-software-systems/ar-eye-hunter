@@ -42,7 +42,6 @@ export function addWebSocketListener(
     };
 }
 
-/** Settles once: open, an error or close before open, the timeout, or the recipe's cancel. */
 export function waitForWebSocketOpen(input: WaitForWebSocketOpenInput): Promise<void> {
     const { socket, timeoutMs, signal } = input;
     if (socket.readyState === WEBSOCKET_OPEN_STATE) {

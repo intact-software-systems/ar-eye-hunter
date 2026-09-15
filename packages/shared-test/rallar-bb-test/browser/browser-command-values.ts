@@ -9,12 +9,11 @@ export function isBrowserCommandRecord(value: unknown): value is RallarBlackBoxT
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** A recipe field read as a record; any other value reads as absent. */
 export function decodeBrowserCommandRecord(value: unknown): RallarBlackBoxTestRecord | undefined {
     return isBrowserCommandRecord(value) ? value : undefined;
 }
 
-/** A recipe field in its string form; only an absent or null field reads as absent. */
+/** Any present, non-null field reads in its String form. */
 export function decodeBrowserCommandString(value: unknown): string | undefined {
     return value === undefined || value === null ? undefined : String(value);
 }
@@ -32,7 +31,6 @@ export function decodeRtcTransport(value: unknown): RallarBlackBoxBrowserRallarT
     return typeof value === 'string' ? RTC_TRANSPORTS.find((transport) => transport === value) : undefined;
 }
 
-/** A command's fields by name, for page runtime inputs that forward every field the recipe set. */
 export function toBrowserCommandFields(command: CommandWithId): RallarBlackBoxTestRecord {
     return Object.fromEntries(Object.entries(command));
 }
