@@ -198,45 +198,62 @@ export interface BlackBoxRallarAuthenticateDiagnostics {
     readonly username: string;
 }
 
-export interface BlackBoxRallarSendDiagnostics {
-    readonly status: 'sent' | 'no-peers';
+/** The room scope a send reports; each optional field appears only when the connection or the send names it. */
+export interface BlackBoxRallarSendScopeDiagnostics {
     readonly connection: string;
-    readonly actor?: string;
-    readonly transport: BlackBoxRallarTransport;
-    readonly roomId?: string;
+    readonly actor: string | undefined;
+    readonly roomId: string | undefined;
     readonly roomRef?: BlackBoxRallarRoomRef;
     readonly scope?: BlackBoxRallarScope;
     readonly applicationId?: string;
     readonly workspaceId?: string;
-    readonly laneId?: string;
-    readonly peerIds?: readonly string[];
-    readonly nextHopPeerIds?: readonly string[];
-    readonly typeId?: string;
-    readonly topicId?: string;
-    readonly contextId?: string;
-    readonly resourceId?: string;
-    readonly minSnapshotVersion?: number;
-    readonly results?: readonly RallarRealtimeSendResult[];
-    readonly message?: BlackBoxRallarDeliveryObservation;
+}
+
+/** A realtime-lane send; a messages.ws connection sends through the same lane. */
+export interface BlackBoxRallarRealtimeSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
+    readonly status: 'sent' | 'no-peers';
+    readonly transport: Exclude<BlackBoxRallarTransport, 'messages.rtc'>;
+    readonly laneId: string;
+    readonly peerIds: readonly string[];
+    readonly results: readonly RallarRealtimeSendResult[];
     readonly health: readonly RallarRealtimeLaneHealth[];
 }
 
+/** A typed messages.rtc send, projected from the handle the sender returned rather than a transport result. */
+export interface BlackBoxRallarMessagesRtcSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
+    readonly transport: 'messages.rtc';
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly contextId: string | undefined;
+    readonly resourceId: string | undefined;
+    readonly minSnapshotVersion: number | undefined;
+    readonly nextHopPeerIds: readonly string[] | undefined;
+    readonly message: BlackBoxRallarDeliveryObservation;
+    readonly health: readonly RallarRealtimeLaneHealth[];
+}
+
+export type BlackBoxRallarSendDiagnostics =
+    | BlackBoxRallarRealtimeSendDiagnostics
+    | BlackBoxRallarMessagesRtcSendDiagnostics;
+
+/** A WS lane send; the room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
     readonly status: 'sent';
     readonly connection: string;
-    readonly actor?: string;
+    readonly actor: string | undefined;
     readonly transport: 'ws';
-    readonly roomId?: string;
+    readonly roomId: string | undefined;
     readonly roomRef?: BlackBoxRallarRoomRef;
-    readonly scope?: 'room' | 'world' | 'all';
     readonly applicationId?: string;
     readonly workspaceId?: string;
+    readonly scope: 'room' | 'world' | 'all';
     readonly typeId: string;
-    readonly topicId?: string;
-    readonly contextId?: string;
-    readonly resourceId?: string;
-    readonly minSnapshotVersion?: number;
-    readonly message?: unknown;
+    readonly topicId: string | undefined;
+    readonly contextId: string | undefined;
+    readonly resourceId: string | undefined;
+    readonly minSnapshotVersion: number | undefined;
+    /** The payload the page handed the WS lane, echoed as sent. */
+    readonly message: unknown;
     readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;

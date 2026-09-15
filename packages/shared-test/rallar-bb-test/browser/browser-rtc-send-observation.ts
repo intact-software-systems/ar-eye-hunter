@@ -1,73 +1,108 @@
-import {
-    type RtcConnectReadinessResult
-} from '../browser/rtc-connect-readiness.ts';
+import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { RtcDataChannelSendResult } from '@shared/webrtc/qrtc-data-channel.ts';
+import type {
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestSendObservation
+} from '../rallar-black-box-test-contracts.ts';
 
-import { RtcSendFailure, RtcSendObservationInput } from './browser-command-contracts.ts';
-import { resolveFirstDefined, toBrowserCommandRecord, toStringValue } from './browser-command-values.ts';
+import type { CommandWithId, RallarBlackBoxBrowserRallarRuntimeResult } from './browser-command-contracts.ts';
+import { isBrowserCommandRecord } from './browser-command-values.ts';
 
-export const RTC_FAILURE_STATUSES = new Set([
-    'no-peers',
-    'no-route',
+/** What the page runtime reported about one rtc.send, read from its diagnostics. */
+export interface RtcSendResult {
+    readonly diagnostics: RallarBlackBoxBrowserRallarRuntimeResult;
+    /** The realtime lane's status; a typed messages.rtc send reports its delivery instead. */
+    readonly laneStatus: 'sent' | 'no-peers' | undefined;
+    /** The messages.rtc handle's lifecycle when the page returned; a realtime-lane send has none. */
+    readonly delivery: RtcSendDelivery | undefined;
+    readonly peerResults: readonly RtcSendPeerResult[];
+}
+
+export interface RtcSendDelivery {
+    readonly state: ALDeliveryState;
+    readonly reason: string | undefined;
+}
+
+export interface RtcSendObservationInput {
+    readonly command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
+    readonly result: RtcSendResult;
+    readonly durationMs: number;
+    readonly ok: boolean;
+    readonly errorCode: string | undefined;
+}
+
+interface RtcSendPeerResult {
+    readonly entry: RallarBlackBoxTestRecord;
+    readonly status: RtcDataChannelSendResult['status'];
+}
+
+/** A lost observation (`unobservable`) is never a failed send. */
+const RTC_SEND_FAILED_DELIVERY_STATES: readonly ALDeliveryState[] = [
+    'rejected',
     'failed',
-    'rate-limited',
-    'circuit-open',
-    'skipped',
+    'expired',
+    'cancelled',
+    'superseded'
+];
+
+const RTC_PEER_RESULT_STATUSES: readonly RtcDataChannelSendResult['status'][] = [
+    'sent',
+    'queued',
+    'dropped',
+    'replaced',
+    'closed',
+    'cancelled',
     'expired'
-]);
+];
 
-export const RTC_DATA_CHANNEL_FAILURE_STATUSES = new Set(['closed', 'dropped']);
+const RTC_PEER_SEND_FAILED_STATUSES: readonly RtcDataChannelSendResult['status'][] = ['closed', 'dropped'];
 
-export function withSendObservationValue(
-    value: unknown,
-    sendObservation: Readonly<Record<string, unknown>>
-): unknown {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? {
-            ...(value as Record<string, unknown>),
-            sendObservation
-        }
-        : {
-            diagnostics: value,
-            sendObservation
-        };
+export function decodeRtcSendResult(diagnostics: unknown): RtcSendResult {
+    const root = isBrowserCommandRecord(diagnostics) ? diagnostics : {};
+    return {
+        diagnostics,
+        laneStatus: root.status === 'sent' || root.status === 'no-peers' ? root.status : undefined,
+        delivery: decodeRtcSendDelivery(root.message),
+        peerResults: Array.isArray(root.results) ? root.results.flatMap(decodeRtcSendPeerResult) : []
+    };
 }
 
-export function withRtcConnectReadinessValue(
-    value: unknown,
-    readiness: RtcConnectReadinessResult
-): unknown {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? {
-            ...(value as Record<string, unknown>),
-            readiness
-        }
-        : {
-            diagnostics: value,
-            readiness
-        };
+export function toRtcSendStatus(result: RtcSendResult): string | undefined {
+    return result.delivery?.state ?? result.laneStatus;
 }
 
-export function countDataChannelStatuses(
-    diagnostics: unknown,
-    status: string
-): number | undefined {
-    const root = toBrowserCommandRecord(diagnostics);
-    if (!Array.isArray(root.results)) {
-        return undefined;
+export function toRtcSendFailure(result: RtcSendResult): RallarBlackBoxTestError | undefined {
+    if (result.laneStatus === 'no-peers') {
+        return {
+            code: 'RALLAR_BB_RTC_NO_PEERS',
+            message: 'RTC send resolved no target peers.',
+            details: result.diagnostics
+        };
     }
-
-    const count = root.results.filter((entry) => {
-        const result = toBrowserCommandRecord(toBrowserCommandRecord(entry).result);
-        return result.status === status;
-    }).length;
-    return count > 0 ? count : undefined;
+    const delivery = result.delivery;
+    if (delivery && RTC_SEND_FAILED_DELIVERY_STATES.includes(delivery.state)) {
+        return {
+            code: 'RALLAR_BB_RTC_SEND_FAILED',
+            message: delivery.reason
+                ? `RTC send failed with status ${delivery.state}: ${delivery.reason}`
+                : `RTC send failed with status: ${delivery.state}.`,
+            details: result.diagnostics
+        };
+    }
+    const failedResults = result.peerResults
+        .filter((peer) => RTC_PEER_SEND_FAILED_STATUSES.includes(peer.status))
+        .map((peer) => peer.entry);
+    return failedResults.length === 0 ? undefined : {
+        code: 'RALLAR_BB_RTC_PEER_SEND_FAILED',
+        message: `RTC send failed for ${failedResults.length} peer(s).`,
+        details: { diagnostics: result.diagnostics, failedResults }
+    };
 }
 
-export function rtcSendObservation(
-    input: RtcSendObservationInput
-): Readonly<Record<string, unknown>> {
-    const root = toBrowserCommandRecord(input.diagnostics);
-    const status = toRtcSendStatus(root);
+export function toRtcSendObservation(input: RtcSendObservationInput): RallarBlackBoxTestSendObservation {
+    const status = toRtcSendStatus(input.result);
+    const droppedPayloadCount = input.result.peerResults.filter((peer) => peer.status === 'dropped').length;
     return {
         commandId: input.command.commandId,
         kind: input.command.kind,
@@ -75,76 +110,36 @@ export function rtcSendObservation(
         durationMs: input.durationMs,
         ok: input.ok,
         status,
-        queued: status === 'queued' || status === 'buffered',
-        enqueued: status === 'enqueued',
-        backpressured: status === 'backpressure' ||
-            status === 'backpressured' ||
-            status === 'rate-limited' ||
-            status === 'buffer-full' ||
-            status === 'circuit-open',
-        droppedPayloadCount: countDataChannelStatuses(input.diagnostics, 'dropped'),
-        replacedPayloadCount: resolveFirstDefined([
-            typeof root.replacedPayloadCount === 'number'
-                ? root.replacedPayloadCount
-                : undefined,
-            typeof root.replacedCount === 'number' ? root.replacedCount : undefined
-        ]),
+        queued: status === 'queued',
+        droppedPayloadCount: droppedPayloadCount > 0 ? droppedPayloadCount : undefined,
         errorCode: input.errorCode
     };
 }
 
-export function rtcSendFailureFromDiagnostics(
-    diagnostics: unknown
-): RtcSendFailure | undefined {
-    const root = toBrowserCommandRecord(diagnostics);
-    const status = toStringValue(root.status);
-    if (status && RTC_FAILURE_STATUSES.has(status)) {
-        return {
-            code: status === 'no-peers'
-                ? 'RALLAR_BB_RTC_NO_PEERS'
-                : 'RALLAR_BB_RTC_SEND_FAILED',
-            message: status === 'no-peers'
-                ? 'RTC send resolved no target peers.'
-                : `RTC send failed with status: ${status}.`,
-            details: diagnostics
-        };
-    }
-
-    const message = toBrowserCommandRecord(root.message);
-    const messageStatus = toStringValue(message.state);
-    if (messageStatus && ['rejected', 'failed', 'expired', 'cancelled', 'superseded'].includes(messageStatus)) {
-        return {
-            code: 'RALLAR_BB_RTC_SEND_FAILED',
-            message: message.reason
-                ? `RTC send failed with status ${messageStatus}: ${String(message.reason)}`
-                : `RTC send failed with status: ${messageStatus}.`,
-            details: diagnostics
-        };
-    }
-
-    const failedResults = Array.isArray(root.results)
-        ? root.results.filter((entry) => {
-            const result = toBrowserCommandRecord(toBrowserCommandRecord(entry).result);
-            const resultStatus = toStringValue(result.status);
-            return Boolean(
-                resultStatus && RTC_DATA_CHANNEL_FAILURE_STATUSES.has(resultStatus)
-            );
-        })
-        : [];
-    if (failedResults.length > 0) {
-        return {
-            code: 'RALLAR_BB_RTC_PEER_SEND_FAILED',
-            message: `RTC send failed for ${failedResults.length} peer(s).`,
-            details: {
-                diagnostics,
-                failedResults
-            }
-        };
-    }
-
-    return undefined;
+export function withSendObservationValue(
+    diagnostics: RallarBlackBoxBrowserRallarRuntimeResult,
+    sendObservation: RallarBlackBoxTestSendObservation
+): RallarBlackBoxTestRecord {
+    return isBrowserCommandRecord(diagnostics)
+        ? { ...diagnostics, sendObservation }
+        : { diagnostics, sendObservation };
 }
 
-export function toRtcSendStatus(diagnostics: Record<string, unknown>): string | undefined {
-    return toStringValue(toBrowserCommandRecord(diagnostics.message).state) ?? toStringValue(diagnostics.status);
+function decodeRtcSendDelivery(message: unknown): RtcSendDelivery | undefined {
+    if (!isBrowserCommandRecord(message)) {
+        return undefined;
+    }
+    const state = AL_DELIVERY_STATES.find((candidate) => candidate === message.state);
+    return state === undefined
+        ? undefined
+        : { state, reason: typeof message.reason === 'string' ? message.reason : undefined };
+}
+
+function decodeRtcSendPeerResult(entry: unknown): readonly RtcSendPeerResult[] {
+    if (!isBrowserCommandRecord(entry) || !isBrowserCommandRecord(entry.result)) {
+        return [];
+    }
+    const resultStatus = entry.result.status;
+    const status = RTC_PEER_RESULT_STATUSES.find((candidate) => candidate === resultStatus);
+    return status === undefined ? [] : [{ entry, status }];
 }

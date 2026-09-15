@@ -1,6 +1,7 @@
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
@@ -20,6 +21,9 @@ export interface RallarBlackBoxBrowserRallarConnectionConfig {
     readonly roomRef?: Readonly<Record<string, unknown>>;
     readonly rallar: Readonly<Record<string, unknown>>;
 }
+
+/** A page runtime's result, recorded as the command's value; the adapter decodes only the fields it reads. */
+export type RallarBlackBoxBrowserRallarRuntimeResult = RallarBlackBoxTestCommandOutcome['value'];
 
 export type RallarBlackBoxBrowserRallarRuntimeMethod = (
     input: unknown
@@ -168,18 +172,4 @@ export type HttpBodyMode = 'none' | 'text' | 'json';
 export interface WebSocketTicketResolution {
     readonly ticket: string;
     readonly sessionId?: string;
-}
-
-export interface RtcSendFailure {
-    readonly code: string;
-    readonly message: string;
-    readonly details?: unknown;
-}
-
-export interface RtcSendObservationInput {
-    readonly command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
-    readonly diagnostics: object;
-    readonly durationMs: number;
-    readonly ok: boolean;
-    readonly errorCode?: string;
 }

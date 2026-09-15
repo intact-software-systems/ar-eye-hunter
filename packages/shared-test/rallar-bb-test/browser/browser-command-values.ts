@@ -1,9 +1,14 @@
 import type {
     RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
 
 import { RallarBlackBoxBrowserRallarTransport } from './browser-command-contracts.ts';
+
+export function isBrowserCommandRecord(value: unknown): value is RallarBlackBoxTestRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export function toBrowserCommandRecord(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' && !Array.isArray(value)

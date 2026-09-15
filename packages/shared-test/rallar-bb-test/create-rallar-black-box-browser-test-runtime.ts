@@ -18,7 +18,10 @@ import type {
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestConfig
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestSendObservation
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
@@ -29,7 +32,7 @@ import {
 } from './browser/browser-command-cancellation.ts';
 import type {
     RallarBlackBoxBrowserRallarConnectionConfig,
-    RtcSendFailure
+    RallarBlackBoxBrowserRallarRuntimeResult
 } from './browser/browser-command-contracts.ts';
 import {
     CommandWithId,
@@ -46,6 +49,7 @@ import {
     requiresRtcReadyPeerPlaceholder
 } from './browser/browser-command-placeholders.ts';
 import {
+    isBrowserCommandRecord,
     toBrowserCommandRecord,
     toPositiveInteger,
     toRtcTransport,
@@ -55,9 +59,9 @@ import { BrowserHttpRequests } from './browser/browser-http-requests.ts';
 import { toRallarConnectionConfig, toScopedRtcSend } from './browser/browser-rallar-command-input.ts';
 import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-commands.ts';
 import {
-    rtcSendFailureFromDiagnostics,
-    rtcSendObservation,
-    withRtcConnectReadinessValue,
+    decodeRtcSendResult,
+    toRtcSendFailure,
+    toRtcSendObservation,
     withSendObservationValue
 } from './browser/browser-rtc-send-observation.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
@@ -147,9 +151,9 @@ namespace BrowserCommandAdapter {
     export interface SendDiagnostic {
         readonly command: Extract<CommandWithId, { kind: 'rtc.send'; }>;
         readonly context: RallarBlackBoxTestCommandContext;
-        readonly diagnostics: unknown;
-        readonly failure: RtcSendFailure | undefined;
-        readonly sendObservation: ReturnType<typeof rtcSendObservation>;
+        readonly diagnostics: RallarBlackBoxBrowserRallarRuntimeResult;
+        readonly failure: RallarBlackBoxTestError | undefined;
+        readonly sendObservation: RallarBlackBoxTestSendObservation;
     }
     export interface CloseOptions {
         readonly rallar: boolean;
@@ -565,10 +569,11 @@ class BrowserCommandAdapter {
         input: BrowserCommandAdapter.SendOutcomeInput
     ): RallarBlackBoxTestCommandOutcome {
         const { command, context, diagnostics, sendStartedAtEpochMs } = input;
-        const failure = rtcSendFailureFromDiagnostics(diagnostics);
-        const sendObservation = rtcSendObservation({
+        const result = decodeRtcSendResult(diagnostics);
+        const failure = toRtcSendFailure(result);
+        const sendObservation = toRtcSendObservation({
             command,
-            diagnostics: toBrowserCommandRecord(diagnostics),
+            result,
             durationMs: Math.max(0, this.environment.now() - sendStartedAtEpochMs),
             ok: failure === undefined,
             errorCode: failure?.code
@@ -676,6 +681,13 @@ export function createRallarBlackBoxBrowserTestRuntime(
         }
     });
 }
+function withRtcConnectReadinessValue(
+    diagnostics: RallarBlackBoxBrowserRallarRuntimeResult,
+    readiness: RtcConnectReadinessResult
+): RallarBlackBoxTestRecord {
+    return isBrowserCommandRecord(diagnostics) ? { ...diagnostics, readiness } : { diagnostics, readiness };
+}
+
 function createDefaultBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketFactory | undefined {
     const WebSocketConstructor = globalThis.WebSocket;
     if (!WebSocketConstructor) {

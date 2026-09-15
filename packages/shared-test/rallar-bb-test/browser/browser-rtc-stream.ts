@@ -1,25 +1,30 @@
 import {
     normalizeRallarBlackBoxRuntimeDiagnostic
 } from '../diagnostics.ts';
+import type {
+    RallarBlackBoxTestCommandContext,
+    RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestRtcStreamFrameObservation
+} from '../rallar-black-box-test-contracts.ts';
 import {
     planRallarBlackBoxRtcStreamFrames,
     replaceRallarBlackBoxRtcStreamPlaceholders,
     sampleRallarBlackBoxRtcStreamObservations,
     summarizeRallarBlackBoxRtcStreamObservations
 } from '../rtc-stream.ts';
-import type {
-    RallarBlackBoxTestCommandContext,
-    RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestRtcStreamFrameObservation
-} from '../rallar-black-box-test-contracts.ts';
 
 import { createBrowserCommandAbortScope, sleep, withBrowserCommandAbort } from './browser-command-cancellation.ts';
 import { CommandWithId } from './browser-command-contracts.ts';
 import { BrowserCommandEnvironment, requireBrowserCommandRuntime } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
-import { toBrowserCommandRecord, toPositiveInteger } from './browser-command-values.ts';
+import { toPositiveInteger } from './browser-command-values.ts';
 import { toScopedRtcSend } from './browser-rallar-command-input.ts';
-import { rtcSendFailureFromDiagnostics, toRtcSendStatus } from './browser-rtc-send-observation.ts';
+import {
+    decodeRtcSendResult,
+    toRtcSendFailure,
+    toRtcSendStatus,
+    type RtcSendResult
+} from './browser-rtc-send-observation.ts';
 
 interface StreamFrame {
     readonly commandId: string;
@@ -38,7 +43,7 @@ export namespace BrowserRtcStream {
     export interface SettledFrame {
         readonly frame: StreamFrame;
         readonly completedAtEpochMs: number;
-        readonly diagnostics: unknown;
+        readonly result: RtcSendResult;
         readonly errorCode: string | undefined;
         readonly ok: boolean;
     }
@@ -236,17 +241,16 @@ export class BrowserRtcStream {
         const { environment, rallarRuntime, abort, observations, active } = this;
 
         try {
-            const diagnostics = await withBrowserCommandAbort(
-                rallarRuntime.send(scopedSend),
-                abort.signal
+            const result = decodeRtcSendResult(
+                await withBrowserCommandAbort(rallarRuntime.send(scopedSend), abort.signal)
             );
             const completedAtEpochMs = environment.now();
-            const failure = rtcSendFailureFromDiagnostics(diagnostics);
+            const failure = toRtcSendFailure(result);
             observations.push(
                 this.toRtcStreamObservation({
                     frame: activeFrame,
                     completedAtEpochMs: completedAtEpochMs,
-                    diagnostics: diagnostics,
+                    result,
                     errorCode: failure?.code,
                     ok: failure === undefined
                 })
@@ -414,9 +418,8 @@ export class BrowserRtcStream {
         return toScopedRtcSend(command, streamSend);
     }
     private toRtcStreamObservation(input: BrowserRtcStream.SettledFrame): RallarBlackBoxTestRtcStreamFrameObservation {
-        const { frame, completedAtEpochMs, diagnostics, errorCode, ok } = input;
-        const root = toBrowserCommandRecord(diagnostics);
-        const status = toRtcSendStatus(root);
+        const { frame, completedAtEpochMs, result, errorCode, ok } = input;
+        const status = toRtcSendStatus(result);
         return {
             commandId: frame.commandId,
             index: frame.index,
@@ -431,11 +434,6 @@ export class BrowserRtcStream {
             durationMs: Math.max(0, completedAtEpochMs - frame.startedAtEpochMs),
             ok,
             status,
-            backpressured: status === 'backpressure' ||
-                status === 'backpressured' ||
-                status === 'rate-limited' ||
-                status === 'buffer-full' ||
-                status === 'circuit-open',
             errorCode
         };
     }
