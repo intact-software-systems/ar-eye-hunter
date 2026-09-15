@@ -1,14 +1,13 @@
 import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
+import { toConfigureCommand, toStatsCommand } from '../conformance/composite-conformance-command-fixtures.ts';
 import {
     toCommandMetadata,
-    toConfigureCommand,
     toRecipeId,
     toRecipeMetadata,
-    toStatsCommand,
     toTimeoutMs
-} from '../conformance/composite-conformance-command-fixtures.ts';
+} from '../conformance/composite-conformance-recipe-values.ts';
 
 export function loopUntilConvergenceRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions

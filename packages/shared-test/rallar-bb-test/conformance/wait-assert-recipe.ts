@@ -3,19 +3,21 @@ import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contract
 import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
 import {
-    DEFAULT_CONNECTION,
-    DEFAULT_ROOM_ID,
     toCloseCommand,
-    toCommandMetadata,
     toConfigureCommand,
     toConformanceMessageProbe,
     toConformanceMessageWait,
+    toRtcConnectCommand,
+    toStatsCommand
+} from './composite-conformance-command-fixtures.ts';
+import {
+    DEFAULT_CONNECTION,
+    DEFAULT_ROOM_ID,
+    toCommandMetadata,
     toRecipeId,
     toRecipeMetadata,
-    toRtcConnectCommand,
-    toStatsCommand,
     toTimeoutMs
-} from './composite-conformance-command-fixtures.ts';
+} from './composite-conformance-recipe-values.ts';
 
 export function waitAssertRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions

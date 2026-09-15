@@ -1,25 +1,20 @@
-import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
-
 import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import {
-    DEFAULT_CONNECTION,
-    DEFAULT_ROOM_ID,
-    toCommandMetadata,
     toConfigureCommand,
-    toConformanceMessageProbe,
     toConformanceMessageWait,
+    toConformanceProbeCommands
+} from '../conformance/composite-conformance-command-fixtures.ts';
+import {
+    toCommandMetadata,
     toRecipeId,
     toRecipeMetadata,
-    toRtcConnectCommand,
     toTimeoutMs
-} from '../conformance/composite-conformance-command-fixtures.ts';
+} from '../conformance/composite-conformance-recipe-values.ts';
+import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 export function assertShapeCompleteViolatedRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
-    const transport = options.transport ?? 'realtime';
     return {
         schemaVersion: 1,
         recipeId: toRecipeId('assert-shape-complete-violated', options),
@@ -28,21 +23,10 @@ export function assertShapeCompleteViolatedRecipe(
         metadata: toRecipeMetadata('assert-shape-complete-violated'),
         commands: [
             toConfigureCommand('assert-shape-complete-violated', options),
-            toRtcConnectCommand({
+            ...toConformanceProbeCommands({
                 caseId: 'assert-shape-complete-violated',
-                commandId: 'assert-shape-violated-connect',
-                connection: connection,
-                roomId: roomId,
-                transport: transport,
-                options: options
-            }),
-            toConformanceMessageProbe({
+                commandPrefix: 'assert-shape-violated',
                 options,
-                caseId: 'assert-shape-complete-violated',
-                commandId: 'assert-shape-violated-send',
-                connection,
-                roomId,
-                transport,
                 data: {
                     topic: 'rallar.conformance.assert-shape',
                     items: ['expected-item', 'unexpected-item']
@@ -63,10 +47,7 @@ export function assertShapeCompleteViolatedRecipe(
                     topic: 'rallar.conformance.assert-shape',
                     items: ['expected-item']
                 },
-                metadata: toCommandMetadata(
-                    'assert-shape-complete-violated',
-                    'assert-shape-violated-complete'
-                )
+                metadata: toCommandMetadata('assert-shape-complete-violated', 'assert-shape-violated-complete')
             }
         ]
     };

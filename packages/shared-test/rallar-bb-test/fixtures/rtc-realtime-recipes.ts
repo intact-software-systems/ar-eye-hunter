@@ -1,5 +1,9 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord
+} from '../rallar-black-box-test-contracts.ts';
 import {
     computeRtcConnectCommandTimeoutMs,
     createRallarBlackBoxEnsureGroupCommands,
@@ -43,7 +47,7 @@ export interface RallarBlackBoxRtcRealtimeRecipeOptions {
     }>;
 }
 
-export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown): number {
+export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: number | string | undefined): number {
     const numeric = typeof value === 'number'
         ? value
         : typeof value === 'string'
@@ -59,7 +63,7 @@ export function normalizeRallarBlackBoxRtcRealtimeDurationSeconds(value: unknown
     );
 }
 
-export function normalizeRallarBlackBoxRtcRealtimeRateHz(value: unknown): number {
+export function normalizeRallarBlackBoxRtcRealtimeRateHz(value: number | string | undefined): number {
     const numeric = typeof value === 'number'
         ? value
         : typeof value === 'string'
@@ -142,7 +146,7 @@ interface RealtimeRecipeContext {
 function toRealtimePositionPayload(
     context: RealtimeRecipeContext,
     mode: 'loop' | 'stream'
-): Readonly<Record<string, unknown>> {
+): RallarBlackBoxTestRecord {
     const { group, roomRef, rateHz, intervalMs, durationSeconds, frameCount } = context;
     return {
         roomId: group.groupId,

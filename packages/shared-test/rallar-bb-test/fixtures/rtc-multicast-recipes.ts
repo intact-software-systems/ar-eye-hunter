@@ -1,5 +1,10 @@
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRtcStreamThresholds
+} from '../rallar-black-box-test-contracts.ts';
 import {
     createRallarBlackBoxEnsureGroupCommands,
     defaultRallarBlackBoxGroup,
@@ -48,7 +53,7 @@ export interface RallarBlackBoxRtcMessagesMulticastRecipeOptions {
     }>;
 }
 
-function normalizePositiveInteger(value: unknown, fallback: number, minimum = 1): number {
+function normalizePositiveInteger(value: number | string | undefined, fallback: number, minimum: number): number {
     const numeric = typeof value === 'number'
         ? value
         : typeof value === 'string'
@@ -60,7 +65,7 @@ function normalizePositiveInteger(value: unknown, fallback: number, minimum = 1)
     return Math.max(minimum, Math.round(numeric));
 }
 
-function normalizeRatio(value: unknown, fallback: number): number {
+function normalizeRatio(value: number | string | undefined, fallback: number): number {
     const numeric = typeof value === 'number'
         ? value
         : typeof value === 'string'
@@ -132,7 +137,7 @@ function messagesRtcConnectCommand(
         group: RallarBlackBoxDistributedGroupRef;
         minReadyPeers: number;
         readyTimeoutMs?: number;
-        metadata: Readonly<Record<string, unknown>>;
+        metadata: RallarBlackBoxTestRecord;
     }>
 ): RallarBlackBoxTestCommand {
     const roomRef = groupRoomRef(options.group);
@@ -161,17 +166,6 @@ function messagesRtcConnectCommand(
 function messagesRtcStreamCommand(
     options: MulticastStreamInput
 ): RallarBlackBoxTestCommand {
-    const roomRef = groupRoomRef(options.group);
-    const continueOnSendFailure = options.stream?.continueOnSendFailure ?? true;
-    const receiverDelivery = options.plan.expectedInboundMessages > 0
-        ? {
-            receiverDelivery: {
-                expectedInboundMessages: options.plan.expectedInboundMessages,
-                minExpectedInboundMessages: options.plan.minExpectedInboundMessages,
-                minReceiveRatio: options.plan.minReceiveRatio
-            }
-        }
-        : {};
     return {
         kind: 'rtc.stream',
         commandId: options.commandId,
@@ -181,46 +175,63 @@ function messagesRtcStreamCommand(
         applicationId: options.group.applicationId,
         workspaceId: options.group.workspaceId,
         roomId: options.group.groupId,
-        roomRef,
+        roomRef: groupRoomRef(options.group),
         count: options.plan.frameCount,
         intervalMs: options.plan.intervalMs,
         maxInFlight: options.stream?.maxInFlight ?? 64,
         drainTimeoutMs: options.stream?.drainTimeoutMs ?? 5_000,
         progressEveryMs: options.stream?.progressEveryMs ?? 1_000,
         sampleEvery: options.stream?.sampleEvery ?? 1,
-        continueOnSendFailure,
-        thresholds: {
-            minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.95,
-            maxDroppedFrames: options.stream?.maxDroppedFrames ??
-                Math.ceil(options.plan.frameCount * 0.05),
-            ...(options.stream?.maxP95SendDurationMs === undefined
-                ? {}
-                : { maxP95SendDurationMs: options.stream.maxP95SendDurationMs }),
-            ...(options.stream?.maxP99SendDurationMs === undefined
-                ? {}
-                : { maxP99SendDurationMs: options.stream.maxP99SendDurationMs })
-        },
-        metadata: {
-            profile: options.profile,
-            transport: 'messages.rtc',
-            rateHz: options.plan.rateHz,
-            intervalMs: options.plan.intervalMs,
-            durationSeconds: options.plan.durationSeconds,
-            frameCount: options.plan.frameCount,
-            participantCount: options.plan.participantCount,
-            senderCount: options.plan.senderCount,
-            receiverCount: options.plan.receiverCount,
-            logicalFanoutMessages: options.plan.logicalFanoutMessages,
-            ...receiverDelivery
-        },
+        continueOnSendFailure: options.stream?.continueOnSendFailure ?? true,
+        thresholds: toMulticastStreamThresholds(options),
+        metadata: toMulticastStreamMetadata(options),
         send: toMulticastPositionPayload(options)
+    };
+}
+
+function toMulticastStreamThresholds(options: MulticastStreamInput): RallarBlackBoxTestRtcStreamThresholds {
+    return {
+        minSendSuccessRatio: options.stream?.minSendSuccessRatio ?? 0.95,
+        maxDroppedFrames: options.stream?.maxDroppedFrames ?? Math.ceil(options.plan.frameCount * 0.05),
+        ...(options.stream?.maxP95SendDurationMs === undefined
+            ? {}
+            : { maxP95SendDurationMs: options.stream.maxP95SendDurationMs }),
+        ...(options.stream?.maxP99SendDurationMs === undefined
+            ? {}
+            : { maxP99SendDurationMs: options.stream.maxP99SendDurationMs })
+    };
+}
+
+function toMulticastStreamMetadata(options: MulticastStreamInput): RallarBlackBoxTestRecord {
+    const plan = options.plan;
+    const receiverDelivery = plan.expectedInboundMessages > 0
+        ? {
+            receiverDelivery: {
+                expectedInboundMessages: plan.expectedInboundMessages,
+                minExpectedInboundMessages: plan.minExpectedInboundMessages,
+                minReceiveRatio: plan.minReceiveRatio
+            }
+        }
+        : {};
+    return {
+        profile: options.profile,
+        transport: 'messages.rtc',
+        rateHz: plan.rateHz,
+        intervalMs: plan.intervalMs,
+        durationSeconds: plan.durationSeconds,
+        frameCount: plan.frameCount,
+        participantCount: plan.participantCount,
+        senderCount: plan.senderCount,
+        receiverCount: plan.receiverCount,
+        logicalFanoutMessages: plan.logicalFanoutMessages,
+        ...receiverDelivery
     };
 }
 
 function receiverDeliveryMetadata(
     plan: MulticastDeliveryPlan,
     profile: string
-): Readonly<Record<string, unknown>> {
+): RallarBlackBoxTestRecord {
     return {
         profile,
         transport: 'messages.rtc',
@@ -241,7 +252,7 @@ function receiverDeliveryMetadata(
 function multicastRunShapeMetadata(
     plan: MulticastDeliveryPlan,
     profile: string
-): Readonly<Record<string, unknown>> {
+): RallarBlackBoxTestRecord {
     const {
         expectedInboundMessages: _expectedInboundMessages,
         minExpectedInboundMessages: _minExpectedInboundMessages,
@@ -344,7 +355,7 @@ interface MulticastStreamInput {
     readonly stream?: RallarBlackBoxRtcMessagesMulticastRecipeOptions['stream'];
 }
 
-function toMulticastPositionPayload(options: MulticastStreamInput): Readonly<Record<string, unknown>> {
+function toMulticastPositionPayload(options: MulticastStreamInput): RallarBlackBoxTestRecord {
     const roomRef = groupRoomRef(options.group);
     return {
         roomId: options.group.groupId,
@@ -377,9 +388,9 @@ interface MulticastStatsLoopInput {
     readonly commandId: string;
     readonly count: number;
     readonly intervalMs: number;
-    readonly metadata: Readonly<Record<string, unknown>>;
+    readonly metadata: RallarBlackBoxTestRecord;
     readonly childCommandId: string;
-    readonly childMetadata: Readonly<Record<string, unknown>>;
+    readonly childMetadata: RallarBlackBoxTestRecord;
 }
 
 function toMulticastStatsLoop(input: MulticastStatsLoopInput): RallarBlackBoxTestCommand {
@@ -399,7 +410,7 @@ interface MulticastRecipeContext {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly connection: string;
     readonly plan: MulticastDeliveryPlan;
-    readonly metadata: Readonly<Record<string, unknown>>;
+    readonly metadata: RallarBlackBoxTestRecord;
     readonly baseSetupCommands: readonly RallarBlackBoxTestCommand[];
 }
 
@@ -423,21 +434,7 @@ function toPrincipalSenderRecipe(context: MulticastRecipeContext): RallarBlackBo
                 readyTimeoutMs: options.readyTimeoutMs,
                 metadata: metadata
             }),
-            toMulticastStatsLoop({
-                commandId: 'rtc-messages-principal-sender-warmup-stats-loop',
-                count: Math.ceil(
-                    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS /
-                        RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS
-                ) + 1,
-                intervalMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS,
-                metadata: {
-                    ...metadata,
-                    purpose: 'post-connect-receiver-settle',
-                    warmupDurationMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS
-                },
-                childCommandId: 'rtc-messages-principal-sender-warmup-stats',
-                childMetadata: metadata
-            }),
+            toPrincipalSenderWarmupLoop(metadata),
             messagesRtcStreamCommand({
                 commandId: 'rtc-messages-principal-multicast-stream',
                 connection,
@@ -508,7 +505,7 @@ function toPrincipalReceiverRecipe(context: MulticastRecipeContext): RallarBlack
 
 function toAllPeerRecipe(
     context: MulticastRecipeContext,
-    settleMetadata: Readonly<Record<string, unknown>>
+    settleMetadata: RallarBlackBoxTestRecord
 ): RallarBlackBoxTestRecipe {
     const { options, group, connection, plan, metadata } = context;
     return {
@@ -546,15 +543,11 @@ function toAllPeerRecipe(
                 commandId: 'rtc-messages-all-peer-receiver-stats-loop',
                 count: 5,
                 intervalMs: 1_000,
-                metadata: metadata,
+                metadata,
                 childCommandId: 'rtc-messages-all-peer-receiver-stats',
                 childMetadata: metadata
             }),
-            {
-                kind: 'stats',
-                commandId: 'rtc-messages-all-peer-final-stats',
-                metadata
-            },
+            { kind: 'stats', commandId: 'rtc-messages-all-peer-final-stats', metadata },
             toMulticastDeliveryAssertion({ commandId: 'rtc-messages-all-peer-delivery-threshold', plan, metadata })
         ]
     };
@@ -563,7 +556,7 @@ function toAllPeerRecipe(
 interface MulticastDeliveryAssertionInput {
     readonly commandId: string;
     readonly plan: MulticastDeliveryPlan;
-    readonly metadata: Readonly<Record<string, unknown>>;
+    readonly metadata: RallarBlackBoxTestRecord;
     readonly roomRef?: RallarBlackBoxDistributedGroupRef;
 }
 
@@ -586,7 +579,7 @@ function toMulticastDeliveryAssertion(input: MulticastDeliveryAssertionInput): R
     };
 }
 
-function toAllPeerSettleLoop(settleMetadata: Readonly<Record<string, unknown>>): RallarBlackBoxTestCommand {
+function toAllPeerSettleLoop(settleMetadata: RallarBlackBoxTestRecord): RallarBlackBoxTestCommand {
     return toMulticastStatsLoop({
         commandId: 'rtc-messages-all-peer-settle-stats-loop',
         count: Math.ceil(
@@ -601,5 +594,23 @@ function toAllPeerSettleLoop(settleMetadata: Readonly<Record<string, unknown>>):
         },
         childCommandId: 'rtc-messages-all-peer-settle-stats',
         childMetadata: settleMetadata
+    });
+}
+
+function toPrincipalSenderWarmupLoop(metadata: RallarBlackBoxTestRecord): RallarBlackBoxTestCommand {
+    return toMulticastStatsLoop({
+        commandId: 'rtc-messages-principal-sender-warmup-stats-loop',
+        count: Math.ceil(
+            RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS /
+                RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS
+        ) + 1,
+        intervalMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_INTERVAL_MS,
+        metadata: {
+            ...metadata,
+            purpose: 'post-connect-receiver-settle',
+            warmupDurationMs: RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_SENDER_WARMUP_DURATION_MS
+        },
+        childCommandId: 'rtc-messages-principal-sender-warmup-stats',
+        childMetadata: metadata
     });
 }

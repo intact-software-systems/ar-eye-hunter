@@ -35,7 +35,8 @@ Case recipes are built in
 (absence cases in `wait/wait-absence-conformance-recipes.ts`, assert shape
 cases in `assert/assert-shape-complete-violated-recipe.ts`, polling cases in
 `loop/loop-until-conformance-recipes.ts`) from the shared command fixtures
-in `conformance/composite-conformance-command-fixtures.ts`.
+in `conformance/composite-conformance-command-fixtures.ts` and the recipe values in
+`conformance/composite-conformance-recipe-values.ts`.
 
 Provider rows are:
 
@@ -60,7 +61,8 @@ the black-box-runner engines (`expect.comparators`, `compatible-complete`,
 `loop until: 'first-success'`), and every row must agree with the expected
 pass/fail verdict. A semantics divergence between the dialects fails
 `rallar-bb-test-assertion-outcome-parity.test.ts` by contract. The
-step-presence/status comparison in `provider-parity.ts` remains the
+step-presence/status comparison in
+`provider-parity/compare-rallar-black-box-provider-parity-reports.ts` remains the
 transport-level companion.
 
 ## Group Assertion Conformance

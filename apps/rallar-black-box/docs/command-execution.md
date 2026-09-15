@@ -116,7 +116,7 @@ The browser initiates the WebSocket connection. The server does not reach into t
 
 ## Provider Parity Helpers
 
-`packages/shared-test/rallar-bb-test/provider-parity.ts` provides the portable Iteration 18 parity path:
+`packages/shared-test/rallar-bb-test/provider-parity/` provides the portable Iteration 18 parity path:
 
 - `createRallarBlackBoxProviderParityRecipe(...)` builds a visible SPA recipe for configure, connect, direct send,
   multicast metadata, broadcast metadata, health, close, and reset.

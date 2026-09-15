@@ -1,27 +1,31 @@
-import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
-
 import { assertShapeCompleteViolatedRecipe } from '../assert/assert-shape-complete-violated-recipe.ts';
 import type {
     RallarBlackBoxCompositeConformanceCaseId,
     RallarBlackBoxCompositeConformanceRecipeOptions
 } from '../composite-conformance.ts';
 import { loopUntilConvergenceRecipe, loopUntilExhaustedRecipe } from '../loop/loop-until-conformance-recipes.ts';
-import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestLoopCommand,
+    RallarBlackBoxTestRecipe
+} from '../rallar-black-box-test-contracts.ts';
 import { waitAbsenceHoldRecipe, waitAbsenceViolatedRecipe } from '../wait/wait-absence-conformance-recipes.ts';
+import {
+    toCloseCommand,
+    toConfigureCommand,
+    toRtcConnectCommand,
+    toStatsCommand
+} from './composite-conformance-command-fixtures.ts';
 import {
     DEFAULT_CONNECTION,
     DEFAULT_ROOM_ID,
     DEFAULT_WS_CONNECTION,
-    toCloseCommand,
     toCommandMetadata,
-    toConfigureCommand,
     toRecipeId,
     toRecipeMetadata,
-    toRtcConnectCommand,
     toScopeFields,
-    toStatsCommand,
     toTimeoutMs
-} from './composite-conformance-command-fixtures.ts';
+} from './composite-conformance-recipe-values.ts';
 import { waitAssertRecipe } from './wait-assert-recipe.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
@@ -74,39 +78,51 @@ function loopedRtcRecipe(
                 transport: transport,
                 options: options
             }),
-            {
-                kind: 'loop',
-                commandId: 'looped-rtc-send-loop',
-                count: 3,
-                intervalMs: 10,
-                thresholds: {
-                    minSendSuccessRatio: 1,
-                    maxStartDriftMs: 1_000
-                },
-                metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-loop'),
-                commands: [
-                    {
-                        kind: 'rtc.send',
-                        commandId: 'looped-rtc-send-frame',
-                        connection,
-                        transport,
-                        timeoutMs: toTimeoutMs(options),
-                        send: {
-                            data: {
-                                topic: 'rallar.conformance.looped-rtc-send',
-                                frame: '{loop.index}',
-                                iteration: '{loop.iteration}',
-                                elapsedMs: '{loop.elapsedMs}'
-                            },
-                            roomId,
-                            ...toScopeFields(options)
-                        },
-                        metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-frame')
-                    }
-                ]
-            },
+            toLoopedRtcSendLoop({ options, connection, roomId, transport }),
             toStatsCommand('looped-rtc-send-stats', 'looped-rtc-send'),
             toCloseCommand('looped-rtc-send-close', 'looped-rtc-send')
+        ]
+    };
+}
+
+interface LoopedRtcSendLoopInput {
+    readonly options: RallarBlackBoxCompositeConformanceRecipeOptions;
+    readonly connection: string;
+    readonly roomId: string;
+    readonly transport: NonNullable<RallarBlackBoxCompositeConformanceRecipeOptions['transport']>;
+}
+
+function toLoopedRtcSendLoop(input: LoopedRtcSendLoopInput): RallarBlackBoxTestLoopCommand {
+    const { options, connection, roomId, transport } = input;
+    return {
+        kind: 'loop',
+        commandId: 'looped-rtc-send-loop',
+        count: 3,
+        intervalMs: 10,
+        thresholds: {
+            minSendSuccessRatio: 1,
+            maxStartDriftMs: 1_000
+        },
+        metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-loop'),
+        commands: [
+            {
+                kind: 'rtc.send',
+                commandId: 'looped-rtc-send-frame',
+                connection,
+                transport,
+                timeoutMs: toTimeoutMs(options),
+                send: {
+                    data: {
+                        topic: 'rallar.conformance.looped-rtc-send',
+                        frame: '{loop.index}',
+                        iteration: '{loop.iteration}',
+                        elapsedMs: '{loop.elapsedMs}'
+                    },
+                    roomId,
+                    ...toScopeFields(options)
+                },
+                metadata: toCommandMetadata('looped-rtc-send', 'looped-rtc-send-frame')
+            }
         ]
     };
 }

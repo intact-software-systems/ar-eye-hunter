@@ -47,6 +47,30 @@
         "packages/shared-test/rallar-bb-test/runtime/to-runtime-command-values.ts",
         "packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts"
       ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/provider-parity.ts",
+        "blob": "248cc0f8f22e4aaa8772c53a37247e897ef40b7e"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/provider-parity/compare-rallar-black-box-provider-parity-reports.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/create-rallar-black-box-provider-parity-recipe.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/provider-parity-contracts.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/to-parity-command-metadata.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/to-rallar-black-box-runner-parity-interactions.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/conformance/composite-conformance-command-fixtures.ts",
+        "blob": "f685d58fe1d59dc038b335c4079c6bb7dab0f151"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/conformance/composite-conformance-recipe-values.ts"
+      ]
     }
   ]
 }
