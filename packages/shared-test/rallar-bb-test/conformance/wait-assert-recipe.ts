@@ -1,7 +1,5 @@
-import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
-
 import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
-import type { RallarBlackBoxTestCommand } from '../rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 import {
     toCloseCommand,
     toConfigureCommand,

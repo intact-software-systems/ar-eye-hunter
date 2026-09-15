@@ -11,8 +11,7 @@ import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningKnob } fro
 import { validateDistributedRunManifest } from './distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';
-import { validateJsonSchema } from './schema/json-schema-validation.ts';
-import { isJsonRecordValue } from './schema/json-schema-validation.ts';
+import { isJsonRecordValue, validateJsonSchema } from './schema/json-schema-validation.ts';
 
 export interface DistributedRunTuningChange {
     readonly pointer: string;

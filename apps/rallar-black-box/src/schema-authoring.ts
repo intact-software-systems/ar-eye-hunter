@@ -2,8 +2,8 @@ import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxCommandCapability } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type {
+    RallarBlackBoxCommandCapability,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRecipe

@@ -17,8 +17,11 @@ import {
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '../../shared-test/rallar-bb-test/schema.ts';
-import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import type { JsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema
+} from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));

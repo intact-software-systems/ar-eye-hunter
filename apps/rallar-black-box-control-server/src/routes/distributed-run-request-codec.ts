@@ -5,9 +5,9 @@ import {
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import {
     formatJsonSchemaValidationErrors,
+    isJsonRecordValue,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 const DEFAULT_CANCEL_REASON = 'Distributed run cancelled.';
