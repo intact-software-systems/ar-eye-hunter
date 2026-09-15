@@ -306,12 +306,12 @@ async function handleRequest(request: Request): Promise<Response> {
             return jsonResponse({ error: 'Run not found.' }, 404);
         }
         if (fileName === 'events.jsonl' || fileName === 'results.jsonl') {
-            return await artifactRecorder.response(
+            return await artifactRecorder.response({
                 runId,
-                fileName === 'events.jsonl' ? 'events' : 'results',
-                run,
+                kind: fileName === 'events.jsonl' ? 'events' : 'results',
+                fallbackRun: run,
                 corsOrigins
-            );
+            });
         }
         const bundle = createControlRunArtifactBundle(run);
         return textResponse(bundle.files[fileName], 200, controlRunArtifactContentType(fileName));
@@ -322,7 +322,7 @@ async function handleRequest(request: Request): Promise<Response> {
         const runId = decodeURIComponent(runEventsJsonlMatch[1]);
         const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
         return run
-            ? await artifactRecorder.response(runId, 'events', run, corsOrigins)
+            ? await artifactRecorder.response({ runId, kind: 'events', fallbackRun: run, corsOrigins })
             : jsonResponse({ error: 'Run not found.' }, 404);
     }
 
@@ -331,7 +331,7 @@ async function handleRequest(request: Request): Promise<Response> {
         const runId = decodeURIComponent(runResultsJsonlMatch[1]);
         const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
         return run
-            ? await artifactRecorder.response(runId, 'results', run, corsOrigins)
+            ? await artifactRecorder.response({ runId, kind: 'results', fallbackRun: run, corsOrigins })
             : jsonResponse({ error: 'Run not found.' }, 404);
     }
 

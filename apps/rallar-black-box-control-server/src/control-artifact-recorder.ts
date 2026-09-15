@@ -15,15 +15,17 @@ import { createControlResponseHeaders } from './cors.ts';
 
 export type ControlArtifactJsonlKind = 'events' | 'results';
 
+export interface ControlArtifactResponseInput {
+    readonly runId: string;
+    readonly kind: ControlArtifactJsonlKind;
+    readonly fallbackRun: ControlRunSnapshot;
+    readonly corsOrigins: readonly string[];
+}
+
 export interface ControlArtifactRecorder {
     record(envelope: ControlClientEnvelope): void;
     deleteRun(runId: string): void;
-    response(
-        runId: string,
-        kind: ControlArtifactJsonlKind,
-        fallbackRun: ControlRunSnapshot,
-        corsOrigins: readonly string[]
-    ): Promise<Response>;
+    response(input: ControlArtifactResponseInput): Promise<Response>;
 }
 
 export interface CreateControlArtifactRecorderInput {
@@ -90,7 +92,7 @@ export function createControlArtifactRecorder(
                 )
                 .catch(() => undefined);
         },
-        async response(runId, kind, fallbackRun, corsOrigins) {
+        async response({ runId, kind, fallbackRun, corsOrigins }) {
             const storedPath = jsonlPath(runId, kind);
             if (storedPath) {
                 try {

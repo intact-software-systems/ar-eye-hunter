@@ -36,7 +36,8 @@ function eventsTextForRun(
     recorder: ReturnType<typeof createControlArtifactRecorder>,
     runId: string
 ): Promise<string> {
-    return recorder.response(runId, 'events', emptyRunSnapshot(runId), []).then((response) => response.text());
+    return recorder.response({ runId, kind: 'events', fallbackRun: emptyRunSnapshot(runId), corsOrigins: [] })
+        .then((response) => response.text());
 }
 
 async function readTextFileOrEmpty(path: string): Promise<string> {
