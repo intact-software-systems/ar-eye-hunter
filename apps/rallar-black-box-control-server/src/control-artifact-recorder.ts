@@ -1,4 +1,8 @@
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type {
+    ControlQueuedCommandSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 import {
     controlEventArtifactJsonl,
@@ -7,7 +11,6 @@ import {
     controlRunEventsJsonl,
     controlRunResultsJsonl
 } from './control-artifacts.ts';
-import type { ControlQueuedCommandSnapshot, ControlRunSnapshot } from './control-service.ts';
 import { createControlResponseHeaders } from './cors.ts';
 
 export type ControlArtifactJsonlKind = 'events' | 'results';
@@ -151,9 +154,21 @@ function commandIdFromArtifactEnvelope(envelope: ControlClientEnvelope): string 
 }
 
 function artifactRunDirectory(storageDir: string, runId: string): string {
-    return `${storageDir.replace(/\/+$/, '')}/runs/${safePathSegment(runId)}`;
+    return `${storageDir.replace(/\/+$/, '')}/runs/${toRunDirectoryName(runId)}`;
 }
 
-function safePathSegment(value: string): string {
-    return encodeURIComponent(value).replace(/%/g, '_');
+const RUN_DIRECTORY_NAME_LITERAL_CHARACTER = /^[a-z0-9-]$/;
+
+// Injective over every JS string, including lone surrogates: literal characters are drawn only
+// from [a-z0-9-], so the escaped `_` plus its fixed 4-hex-digit code unit can never be produced by
+// a run of literal characters, and no other run ID can therefore encode to the same output.
+export function toRunDirectoryName(runId: string): string {
+    let name = '';
+    for (let index = 0; index < runId.length; index += 1) {
+        const character = runId[index];
+        name += RUN_DIRECTORY_NAME_LITERAL_CHARACTER.test(character)
+            ? character
+            : `_${runId.charCodeAt(index).toString(16).padStart(4, '0')}`;
+    }
+    return name;
 }

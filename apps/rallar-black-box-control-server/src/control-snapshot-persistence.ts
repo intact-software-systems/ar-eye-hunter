@@ -1,8 +1,6 @@
-import type {
-    ControlRunSnapshotBounds,
-    ControlServerSnapshot,
-    RallarBlackBoxControlService
-} from './control-service.ts';
+import type { ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
+import type { RallarBlackBoxControlService } from './control-service.ts';
 
 const SNAPSHOT_PERSIST_DEBOUNCE_MS = 100;
 

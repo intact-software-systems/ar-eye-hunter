@@ -1,6 +1,5 @@
+import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestCommandKind } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-
-import type { ControlRunSnapshotBounds } from './control-service.ts';
 
 export interface BlackBoxControlEnvironment {
     get(key: string): string | undefined;

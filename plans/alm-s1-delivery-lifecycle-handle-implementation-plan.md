@@ -1013,6 +1013,19 @@ consumer enters the same closure, including the distributed monitor, control ser
 validation clients, SPA composition and their tests. The existing source navigation map follows the
 actual owner paths. New structural tests must prove behavior and boundaries rather than old paths.
 
+Task 9's `control-service.ts` closure removes its type re-export block, which brings
+`control-artifact-recorder.ts` into the same closure and exposed a separate, approved
+artifact-directory cutover: `safePathSegment` (`encodeURIComponent` with `%` rewritten to `_`)
+collided distinct run IDs (`"%"` and `"_25"`; `"/"` and `"_2F"`) into one on-disk `runs/` directory
+and let `"."`/`".."` escape the run root, so `record`, `response`, and retention-driven `deleteRun`
+could mix or destroy unrelated run evidence. The maintainer approved `toRunDirectoryName`: iterate
+the run ID by UTF-16 code unit, emit `[a-z0-9-]` literally, and escape every other code unit as `_`
+plus four lowercase hex digits, giving an injective codec whose output stays inside `[a-z0-9_-]`.
+There is no migration, old-directory fallback, or `runId` added to stored rows; existing `runs/`
+directories for IDs containing an uppercase letter, `_`, `.`, or an escaped character become
+unreachable by path (the bounded in-memory snapshot still serves those runs), while lowercase
+`[a-z0-9-]` IDs keep their existing directory name.
+
 The SPA recipe producers expose explicit v1 at history, matrix, negative and quick copy actions.
 Manual draft synchronization, recipe preview, and action effects have distinct owners. Browser
 clipboard availability and permission failures are values from one app I/O boundary; each controller

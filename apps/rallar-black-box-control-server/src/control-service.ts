@@ -10,9 +10,7 @@ import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-b
 import { planControlRunRetention, type ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
 import { resolveRetainedControlRunIds } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
-    ControlAgentSnapshot,
     ControlDistributedRunArtifactBundle,
-    ControlDistributedRunCommandLink,
     ControlDistributedRunCommandPhase,
     ControlDistributedRunSnapshot,
     ControlQueuedCommandSnapshot,
@@ -118,19 +116,6 @@ export interface RallarBlackBoxControlServiceOptions {
     runTokenTtlMs?: number;
     runtimeRetentionBounds?: ControlRunSnapshotBounds;
 }
-
-export type {
-    ControlAgentSnapshot,
-    ControlDistributedRunArtifactBundle,
-    ControlDistributedRunCommandLink,
-    ControlDistributedRunCommandPhase,
-    ControlDistributedRunSnapshot,
-    ControlQueuedCommandSnapshot,
-    ControlRunSnapshot,
-    ControlRunSnapshotBounds,
-    ControlRunToken,
-    ControlServerSnapshot
-};
 
 export interface RallarBlackBoxControlServiceReceiveResult {
     kind: ControlClientEnvelope['kind'];

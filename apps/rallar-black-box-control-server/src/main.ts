@@ -4,16 +4,17 @@ import {
     validateRallarBlackBoxTestCommand,
     type ControlCommandEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createControlArtifactRecorder } from './control-artifact-recorder.ts';
 import {
     controlRunArtifactContentType,
@@ -25,7 +26,7 @@ import { fleetReportFilterFromUrl } from './control-fleet.ts';
 import { createControlHttpSecurity } from './control-http-security.ts';
 import { PayloadTooLargeError } from './control-request-body.ts';
 import { readBlackBoxControlServerConfiguration } from './control-server-configuration.ts';
-import type { ControlRunSnapshotBounds, EnqueueControlCommandInput } from './control-service.ts';
+import type { EnqueueControlCommandInput } from './control-service.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
 import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins, createControlResponseHeaders } from './cors.ts';

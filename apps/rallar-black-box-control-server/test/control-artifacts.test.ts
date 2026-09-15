@@ -1,4 +1,6 @@
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+
 import {
     controlResultArtifactJsonl,
     controlResultEventArtifactJsonl,
@@ -8,7 +10,6 @@ import {
     createControlDistributedRunArtifactBundle,
     createControlRunArtifactBundle
 } from '../src/control-artifacts.ts';
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../src/control-service.ts';
 
 function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
     if (!condition) {
