@@ -562,11 +562,6 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
         path: 'packages/tests/shared-test/rallar-browser-runtime/director.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined

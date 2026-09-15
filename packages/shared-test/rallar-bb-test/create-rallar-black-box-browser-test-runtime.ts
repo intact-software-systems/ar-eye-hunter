@@ -27,7 +27,7 @@ import { BrowserHttpRequests } from './browser/browser-http-requests.ts';
 import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-commands.ts';
 import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
 import { BrowserRtcStream } from './browser/browser-rtc-stream.ts';
-import { BrowserWebSocketCommands } from './browser/browser-websocket-commands.ts';
+import { BrowserWebSocketCommands } from './browser/browser-web-socket-commands.ts';
 import { toRallarBrowserEventInput } from './browser/to-rallar-browser-event-input.ts';
 import type {
     RallarBlackBoxTestCleanupInput,

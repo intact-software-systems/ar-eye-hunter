@@ -1,4 +1,4 @@
-import { computeRtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
+import { computeRtcReadinessWarnings } from './browser/compute-rtc-readiness-warnings.ts';
 import {
     flattenRallarBlackBoxCompositeResults,
     summarizeRallarBlackBoxCompositeResults,
