@@ -99,6 +99,22 @@ Deno.test('immediate prune remains available beyond bounded preview candidate li
     assert(service.snapshotRun('immediate-run-1001'));
 });
 
+const EMPTY_ROLLUP_SUMMARY: ControlDistributedRunSnapshot['rollup']['summary'] = {
+    participants: 0,
+    requiredParticipants: 0,
+    readyParticipants: 0,
+    passedParticipants: 0,
+    failedParticipants: 0,
+    recipes: 0,
+    requiredRecipes: 0,
+    passedRecipes: 0,
+    failedRecipes: 0,
+    groupAssertions: 0,
+    passedGroupAssertions: 0,
+    failedGroupAssertions: 0,
+    blockingFailures: 0
+};
+
 function retentionSnapshot(): ControlServerSnapshot {
     return {
         runs: [
@@ -162,26 +178,7 @@ function distributedRun(): ControlDistributedRunSnapshot {
         updatedAtEpochMs: 1_000,
         targetAgentIds: [],
         commandLinks: [],
-        rollup: {
-            state: 'waiting-for-ack',
-            ok: false,
-            summary: {
-                participants: 0,
-                requiredParticipants: 0,
-                readyParticipants: 0,
-                passedParticipants: 0,
-                failedParticipants: 0,
-                recipes: 0,
-                requiredRecipes: 0,
-                passedRecipes: 0,
-                failedRecipes: 0,
-                groupAssertions: 0,
-                passedGroupAssertions: 0,
-                failedGroupAssertions: 0,
-                blockingFailures: 0
-            },
-            failures: []
-        }
+        rollup: { state: 'waiting-for-ack', ok: false, summary: EMPTY_ROLLUP_SUMMARY, failures: [] }
     };
 }
 
