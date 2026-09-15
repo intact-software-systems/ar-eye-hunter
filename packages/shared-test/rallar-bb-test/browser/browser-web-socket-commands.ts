@@ -1,11 +1,15 @@
+import {
+    isBlackBoxCommandRecord,
+    isRallarMessagePayload
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestRecord,
-    RallarBlackBoxTestSendObservation,
-    RallarBlackBoxTestWsSendCommand
+    RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
 
 import type {
@@ -23,7 +27,7 @@ import {
     requiresAuthSessionPlaceholder,
     requiresWsTicketPlaceholder
 } from './browser-command-placeholders.ts';
-import { decodeBrowserCommandString, isStructuredRallarWebSocketEnvelope } from './browser-command-values.ts';
+import { decodeBrowserCommandString } from './browser-command-values.ts';
 import { requestWebSocketTicket } from './browser-http-requests.ts';
 import { addWebSocketListener, toWebSocketClosePayload, waitForWebSocketOpen } from './browser-websocket-events.ts';
 import { sendRallarWebSocketMessage } from './send-rallar-websocket-message.ts';
@@ -93,7 +97,8 @@ export class BrowserWebSocketCommands {
         command: WsSendCommand,
         context: RallarBlackBoxTestCommandContext
     ): Promise<RallarBlackBoxTestCommandOutcome> {
-        if (command.data === undefined) {
+        const commandData = command.data;
+        if (!isRallarMessagePayload(commandData)) {
             return {
                 status: 'failed',
                 error: { code: 'RALLAR_BB_WS_SEND_DATA_REQUIRED', message: 'ws.send requires data.' },
@@ -101,15 +106,21 @@ export class BrowserWebSocketCommands {
             };
         }
         const connection = command.connection ?? 'default';
-        if (this.usesRallarSignaling(command, context)) {
-            return await sendRallarWebSocketMessage({ environment: this.environment, command, context, connection });
+        if (this.usesRallarSignaling(commandData, context)) {
+            return await sendRallarWebSocketMessage({
+                environment: this.environment,
+                command,
+                context,
+                connection,
+                data: commandData
+            });
         }
         const socket = this.webSockets.get(connection);
         if (!socket) {
             throw new Error('WebSocket connection is not open: ' + connection);
         }
 
-        const data = toWebSocketSendData(replaceCommandPlaceholders(command.data, {
+        const data = toWebSocketSendData(replaceCommandPlaceholders(commandData, {
             config: context.config(),
             session: this.environment.readSession(),
             wsTicket: undefined
@@ -178,10 +189,12 @@ export class BrowserWebSocketCommands {
         return [...this.webSockets.keys()];
     }
 
-    private usesRallarSignaling(command: WsSendCommand, context: RallarBlackBoxTestCommandContext): boolean {
+    /** Only a structured Rallar envelope in browser-rallar provider mode travels over the Rallar signaling socket. */
+    private usesRallarSignaling(data: RallarMessagePayload, context: RallarBlackBoxTestCommandContext): boolean {
         return Boolean(this.environment.rallarRuntime?.sendWs) &&
             decodeBrowserCommandString(context.config()?.control?.providerMode) === 'browser-rallar' &&
-            isStructuredRallarWebSocketEnvelope(command.data);
+            isBlackBoxCommandRecord(data) &&
+            ['typeId', 'topicId', 'contextId', 'resourceId'].some((key) => data[key] !== undefined);
     }
 
     private recordOpened(
@@ -325,7 +338,7 @@ interface CloseWebSocketResourceInput {
     readonly detachImmediately: boolean;
 }
 
-function toWebSocketSendData(data: RallarBlackBoxTestWsSendCommand['data']): RallarBlackBoxBrowserWebSocketData {
+function toWebSocketSendData(data: RallarMessagePayload): RallarBlackBoxBrowserWebSocketData {
     return typeof data === 'string' || data instanceof ArrayBuffer || ArrayBuffer.isView(data)
         ? data
         : JSON.stringify(data);

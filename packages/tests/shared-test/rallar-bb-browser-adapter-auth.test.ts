@@ -1078,7 +1078,7 @@ describe('rallar-bb browser adapter auth', () => {
                 connect: async () => ({ connected: true }),
                 send: async (input) => {
                     sends.push(input);
-                    return { sent: true };
+                    return { status: 'sent', transport: 'realtime', results: [] };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),

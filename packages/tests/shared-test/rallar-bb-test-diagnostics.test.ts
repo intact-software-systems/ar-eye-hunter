@@ -108,7 +108,9 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 connect: async () => ({ connected: true }),
                 send: async () => ({
                     status: 'no-peers',
+                    transport: 'realtime',
                     peerIds: ['bob-session'],
+                    results: [],
                     health: []
                 }),
                 refreshRoom: async () => undefined,

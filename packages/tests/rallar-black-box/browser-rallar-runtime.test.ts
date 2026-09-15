@@ -1257,6 +1257,74 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         });
     });
 
+    it.each([
+        ['a messages.rtc result with no delivery state', { transport: 'messages.rtc', message: { handleId: 'h-1' } }],
+        ['a messages.rtc result with an unknown delivery state', { transport: 'messages.rtc', message: { state: 'delivered' } }],
+        ['a realtime result with no peer results', { status: 'sent', transport: 'realtime' }],
+        ['a realtime peer result with an unknown status', {
+            status: 'sent',
+            transport: 'realtime',
+            results: [{ peerId: 'peer-a', laneId: 'realtime', result: { status: 'teleported', bufferedAmount: 0 } }]
+        }],
+        ['a result that is not a record', 'sent']
+    ])('fails rtc.send as an invalid result when the page runtime returns %s', async (_label, sendResult) => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(async () => sendResult),
+                refreshRoom: vi.fn(async () => undefined),
+                close: vi.fn(),
+                health: vi.fn()
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'malformed-send-result',
+            connection: 'aliceRtc',
+            send: { roomId: 'awesome', data: { text: 'hello' } }
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' });
+        expect(result.value).toMatchObject({
+            sendObservation: { ok: false, errorCode: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' }
+        });
+    });
+
+    it('counts an rtc.stream frame whose page runtime result does not decode as a failed frame', async () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(async () => ({ transport: 'messages.rtc', message: {} })),
+                refreshRoom: vi.fn(async () => undefined),
+                close: vi.fn(),
+                health: vi.fn()
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.stream',
+            commandId: 'malformed-stream-result',
+            connection: 'aliceRtc',
+            count: 2,
+            intervalMs: 1,
+            send: { data: { seq: '{stream.index}' } }
+        });
+
+        expect(result.value).toMatchObject({
+            attemptedFrames: 2,
+            completedFrames: 0,
+            failedFrames: 2,
+            observations: [
+                { ok: false, errorCode: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' },
+                { ok: false, errorCode: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' }
+            ]
+        });
+    });
+
     it('fails a messages.rtc send whose delivery lifecycle ends failed because no route remained', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             const detail = 'No outbound transport route for the room message.';

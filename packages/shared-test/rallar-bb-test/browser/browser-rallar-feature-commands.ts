@@ -10,18 +10,19 @@ import { createBrowserCommandAbortScope, withBrowserCommandAbort } from './brows
 import type {
     CommandWithId,
     RallarBlackBoxBrowserRallarRuntime,
-    RallarBlackBoxBrowserRallarRuntimeResult
+    RallarBlackBoxBrowserRallarRuntimeMethod
 } from './browser-command-contracts.ts';
 import type { BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
-import { decodeBrowserCommandRecord, toBrowserCommandFields } from './browser-command-values.ts';
+import { decodeBrowserCommandRecord } from './browser-command-values.ts';
 
 type FeatureName = 'crdt' | 'director' | 'formation';
 
 interface FeatureDiagnostic {
     readonly topic: string;
     readonly severity: 'info' | 'error';
-    readonly value: RallarBlackBoxBrowserRallarRuntimeResult;
+    /** Absent when the page runtime answered with no result record. */
+    readonly value: RallarBlackBoxTestRecord | undefined;
     readonly error: Error | undefined;
 }
 
@@ -31,7 +32,8 @@ interface RunFeatureCommandInput {
     readonly successTopic: string;
     readonly failureTopic: string;
     readonly failureValue: RallarBlackBoxTestRecord;
-    readonly invoke: () => Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    readonly method: RallarBlackBoxBrowserRallarRuntimeMethod;
+    readonly runtimeInput: RallarBlackBoxTestRecord;
 }
 
 const CRDT_COMMANDS = [
@@ -93,7 +95,8 @@ export class BrowserRallarFeatureCommands {
                 successTopic: director.successTopic,
                 failureTopic: 'rallar.bb.director.failed',
                 failureValue: { method: director.method, kind: command.kind, handle: input.handle },
-                invoke: () => runtime[director.method](input)
+                method: (runtimeInput) => runtime[director.method](runtimeInput),
+                runtimeInput: input
             });
         }
         const formation = FORMATION_COMMANDS.find((entry) => entry.kind === command.kind);
@@ -130,7 +133,8 @@ export class BrowserRallarFeatureCommands {
             successTopic,
             failureTopic: 'rallar.bb.crdt.failed',
             failureValue: { method, kind: command.kind, handle: input.handle },
-            invoke: () => runtime[method](input)
+            method: (runtimeInput) => runtime[method](runtimeInput),
+            runtimeInput: input
         });
     }
 
@@ -147,7 +151,8 @@ export class BrowserRallarFeatureCommands {
             successTopic: selection.successTopic,
             failureTopic: 'rallar.bb.formation.failed',
             failureValue: { method: selection.method, kind: command.kind },
-            invoke: () => runtime[selection.method](input)
+            method: (runtimeInput) => runtime[selection.method](runtimeInput),
+            runtimeInput: input
         });
     }
 
@@ -163,7 +168,7 @@ export class BrowserRallarFeatureCommands {
         const message = UNSUPPORTED_FEATURE_MESSAGES[feature];
         const refusal = feature === 'formation'
             ? { kind: command.kind }
-            : { kind: command.kind, handle: toBrowserCommandFields(command).handle, reason: 'unsupported-runtime' };
+            : { kind: command.kind, handle: toFeatureCommandFields(command).handle, reason: 'unsupported-runtime' };
         const topic = `rallar.bb.${feature}.failed`;
         context.recordEvent({
             kind: 'diagnostic',
@@ -188,7 +193,7 @@ export class BrowserRallarFeatureCommands {
         context: RallarBlackBoxTestCommandContext
     ): RallarBlackBoxTestRecord {
         const config = context.config();
-        const resolved = toBrowserCommandFields(replaceCommandPlaceholders(command, {
+        const resolved = toFeatureCommandFields(replaceCommandPlaceholders(command, {
             config,
             session: this.environment.readSession(),
             wsTicket: undefined
@@ -213,7 +218,7 @@ export class BrowserRallarFeatureCommands {
         context: RallarBlackBoxTestCommandContext
     ): RallarBlackBoxTestRecord {
         const config = context.config();
-        const resolved = toBrowserCommandFields(replaceCommandPlaceholders(command, {
+        const resolved = toFeatureCommandFields(replaceCommandPlaceholders(command, {
             config,
             session: this.environment.readSession(),
             wsTicket: undefined
@@ -242,7 +247,9 @@ async function runFeatureCommand(
     const { command, context } = input;
     const abort = createBrowserCommandAbortScope(command, context, environment.now);
     try {
-        const value = await withBrowserCommandAbort(input.invoke(), abort.signal);
+        const value = decodeBrowserCommandRecord(
+            await withBrowserCommandAbort(input.method(input.runtimeInput), abort.signal)
+        );
         recordFeatureDiagnostic(command, context, {
             topic: input.successTopic,
             severity: 'info',
@@ -287,4 +294,8 @@ function recordFeatureDiagnostic(
             source: 'browser-adapter'
         })
     });
+}
+
+function toFeatureCommandFields(command: CommandWithId): RallarBlackBoxTestRecord {
+    return Object.fromEntries(Object.entries(command));
 }

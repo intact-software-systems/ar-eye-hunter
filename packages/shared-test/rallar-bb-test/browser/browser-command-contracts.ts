@@ -1,13 +1,11 @@
 import type { BlackBoxRallarEvent } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestRecord,
-    RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestRuntime,
-    RallarBlackBoxTestTransport,
-    RallarBlackBoxTestWsSendCommand
+    RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
 import type { CreateRallarBlackBoxTestRuntimeOptions } from '../runtime/create-rallar-black-box-test-runtime.ts';
 
@@ -26,12 +24,8 @@ export interface RallarBlackBoxBrowserRallarConnectionConfig {
     readonly rallar: RallarBlackBoxTestRecord;
 }
 
-/** A page runtime result, recorded as the command value; the adapter decodes only the fields it reads. */
-export type RallarBlackBoxBrowserRallarRuntimeResult = RallarBlackBoxTestCommandOutcome['value'];
-
-export type RallarBlackBoxBrowserRallarRuntimeMethod = (
-    input: RallarBlackBoxTestRecord
-) => Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+/** A provider result is untrusted page output; an owner decodes a result before reading or recording it. */
+export type RallarBlackBoxBrowserRallarRuntimeMethod = (input: RallarBlackBoxTestRecord) => Promise<unknown>;
 
 export interface RallarBlackBoxBrowserRallarCrdtRuntime {
     readonly open: RallarBlackBoxBrowserRallarRuntimeMethod;
@@ -68,29 +62,23 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
 
 /** A provider may omit a feature it does not run; the adapter then refuses the commands of that feature. */
 export interface RallarBlackBoxBrowserRallarRuntime {
-    authenticate(
-        config: RallarBlackBoxBrowserRallarConnectionConfig
-    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
-    connect(
-        config: RallarBlackBoxBrowserRallarConnectionConfig
-    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
-    send(input: RallarBlackBoxTestRtcSendCommand['send']): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
-    sendWs?(input: RallarBlackBoxTestWsSendCommand['data']): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    authenticate(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
+    connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
+    send(input: RallarMessagePayload): Promise<unknown>;
+    sendWs?(input: RallarMessagePayload): Promise<unknown>;
     sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
     observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     cancelDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
     readReceipts: RallarBlackBoxBrowserRallarRuntimeMethod;
     injectFault: RallarBlackBoxBrowserRallarRuntimeMethod;
     readStorageCounters: RallarBlackBoxBrowserRallarRuntimeMethod;
-    refreshRoom(
-        options: RallarBlackBoxBrowserRoomRefreshOptions
-    ): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    refreshRoom(options: RallarBlackBoxBrowserRoomRefreshOptions): Promise<unknown>;
     waitForRoom: BlackBoxRallarRuntime['waitForRoom'];
     readonly crdt?: RallarBlackBoxBrowserRallarCrdtRuntime;
     readonly director?: RallarBlackBoxBrowserRallarDirectorRuntime;
     readonly formation?: RallarBlackBoxBrowserRallarFormationRuntime;
-    close(): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
-    health(input?: RallarBlackBoxTestRecord): Promise<RallarBlackBoxBrowserRallarRuntimeResult>;
+    close(): Promise<unknown>;
+    health(input?: RallarBlackBoxTestRecord): Promise<unknown>;
 }
 
 /** Each field appears only when the forwarded page event carries it. */
@@ -115,7 +103,7 @@ export interface RallarBlackBoxBrowserRallarEvent {
     readonly topicId?: string;
     readonly contextId?: string;
     readonly resourceId?: string;
-    readonly data?: BlackBoxRallarEvent['data'];
+    readonly data?: unknown;
     readonly error?: BlackBoxRallarEvent['error'];
 }
 
@@ -124,7 +112,7 @@ export type RallarBlackBoxBrowserWebSocketData = string | ArrayBuffer | ArrayBuf
 /** Each field is present only on the DOM event kinds that carry it; `type` keeps a DOM Event assignable. */
 export interface RallarBlackBoxBrowserWebSocketEvent {
     readonly type?: string;
-    readonly data?: RallarBlackBoxTestWsSendCommand['data'];
+    readonly data?: string | ArrayBuffer | Blob;
     readonly code?: number;
     readonly reason?: string;
     readonly wasClean?: boolean;

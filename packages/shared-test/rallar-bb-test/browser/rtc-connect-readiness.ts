@@ -1,6 +1,9 @@
+import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { shouldRetryRallarOperation } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+
+import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 import type {
     RallarBlackBoxBrowserRallarRuntime,
@@ -13,8 +16,6 @@ import {
     waitForRtcConnectReadinessPoll,
     type RtcConnectReadinessAbortScope
 } from './rtc-connect-readiness-abort.ts';
-
-type ReadinessBoundaryValue = Awaited<ReturnType<RallarBlackBoxBrowserRallarRuntime['health']>>;
 
 type RtcConnectReadinessError = Readonly<{
     name: string;
@@ -37,7 +38,7 @@ export type RtcConnectReadinessResult = Readonly<{
     roomRefreshAttempts: number;
     roomRefreshSuccesses: number;
     roomRefreshRetryableFailures: number;
-    health?: ReadinessBoundaryValue;
+    health?: RallarBlackBoxTestRecord;
     room?: RallarRoomTransportStatus;
     lastRefreshError?: RtcConnectReadinessError;
 }>;
@@ -52,7 +53,7 @@ export interface WaitForRtcConnectReadinessInput {
 }
 
 interface RtcConnectReadinessState {
-    latestHealth: ReadinessBoundaryValue;
+    latestHealth: RallarBlackBoxTestRecord | undefined;
     readyPeerIds: readonly string[];
     roomRefreshAttempts: number;
     roomRefreshSuccesses: number;
@@ -77,27 +78,16 @@ type ReadinessSleepOutcome = 'slept' | 'timed-out';
 
 const ROOM_REFRESH_INTERVAL_MS = 1_000;
 
-function toReadinessRecord(
-    value: ReadinessBoundaryValue
-): Record<string, ReadinessBoundaryValue> | undefined {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, ReadinessBoundaryValue>)
-        : undefined;
-}
-
-export function toRtcReadyPeerIds(
-    value: ReadinessBoundaryValue
-): readonly string[] {
-    const root = toReadinessRecord(value);
-    const rtcStatus = toReadinessRecord(root?.rtcStatus);
+/** The lane-level RTC status names the ready peers; an older health shape named them at its root. */
+export function decodeRtcReadyPeerIds(value: unknown): readonly string[] {
+    const root = isBlackBoxCommandRecord(value) ? value : undefined;
+    const rtcStatus = isBlackBoxCommandRecord(root?.rtcStatus) ? root.rtcStatus : undefined;
     const readyPeerIds = Array.isArray(rtcStatus?.readyPeerIds)
         ? rtcStatus.readyPeerIds
         : Array.isArray(root?.readyPeerIds)
         ? root.readyPeerIds
         : [];
-    return readyPeerIds.filter(
-        (peerId): peerId is string => typeof peerId === 'string'
-    );
+    return readyPeerIds.filter((peerId): peerId is string => typeof peerId === 'string');
 }
 
 function decodeReadinessError(
@@ -147,10 +137,9 @@ async function readRtcConnectHealth(
     input: ReadinessLoopInput
 ): Promise<HealthPollOutcome> {
     try {
-        input.state.latestHealth = await raceWithRtcConnectReadinessAbort(
-            input.runtime.health(),
-            input.abortScope.signal
-        );
+        const health = await raceWithRtcConnectReadinessAbort(input.runtime.health(), input.abortScope.signal);
+        input.state.latestHealth = isBlackBoxCommandRecord(health) ? health : undefined;
+        input.state.readyPeerIds = decodeRtcReadyPeerIds(health);
     }
     catch (error) {
         if (input.abortScope.timedOut()) {
@@ -158,7 +147,6 @@ async function readRtcConnectHealth(
         }
         throw toParentAbortError(input.parentSignal) ?? error;
     }
-    input.state.readyPeerIds = toRtcReadyPeerIds(input.state.latestHealth);
     return 'polled';
 }
 

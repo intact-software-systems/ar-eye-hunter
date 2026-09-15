@@ -50,9 +50,7 @@ describe('rallar-bb runtime capabilities', () => {
                 },
                 send: async (input) => {
                     calls.push({ name: 'send', value: input });
-                    return {
-                        sent: true
-                    };
+                    return { transport: 'messages.rtc', message: { state: 'queued' } };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => {
@@ -512,7 +510,7 @@ describe('rallar-bb runtime capabilities', () => {
                 connect: async () => ({ connected: true }),
                 send: async () => {
                     sendCallEpochMs.push(Date.now());
-                    return { sent: true };
+                    return { status: 'sent', transport: 'realtime', results: [] };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
@@ -547,10 +545,7 @@ describe('rallar-bb runtime capabilities', () => {
                 send: async (input) => {
                     sendStarts.push(Date.now());
                     await timers.setTimeout(80);
-                    return {
-                        status: 'sent',
-                        input
-                    };
+                    return { status: 'sent', transport: 'realtime', results: [], input };
                 },
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
@@ -656,7 +651,7 @@ describe('rallar-bb runtime capabilities', () => {
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
                 connect: async () => ({ connected: true }),
-                send: async () => ({ status: 'sent' }),
+                send: async () => ({ status: 'sent', transport: 'realtime', results: [] }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true })

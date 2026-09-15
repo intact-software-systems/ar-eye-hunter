@@ -15,14 +15,13 @@ import type {
     CommandWithId,
     CreateRallarBlackBoxBrowserTestRuntimeOptions,
     RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserRallarRuntimeResult,
     RallarBlackBoxBrowserTestRuntime,
     RallarBlackBoxBrowserWebSocket,
     RallarBlackBoxBrowserWebSocketFactory
 } from './browser/browser-command-contracts.ts';
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser/browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser/browser-command-placeholders.ts';
-import { decodeBrowserCommandString } from './browser/browser-command-values.ts';
+import { decodeBrowserCommandRecord, decodeBrowserCommandString } from './browser/browser-command-values.ts';
 import { BrowserHttpRequests } from './browser/browser-http-requests.ts';
 import { BrowserRallarFeatureCommands } from './browser/browser-rallar-feature-commands.ts';
 import { BrowserRtcCommands } from './browser/browser-rtc-commands.ts';
@@ -33,7 +32,8 @@ import type {
     RallarBlackBoxTestCleanupInput,
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestConfig
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecord
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
@@ -45,7 +45,8 @@ const FEATURE_COMMAND_PREFIXES: readonly string[] = ['crdt.', 'director.', 'form
 namespace BrowserCommandAdapter {
     export interface ClosedResources {
         readonly webSocketCount: number;
-        readonly rallar: RallarBlackBoxBrowserRallarRuntimeResult;
+        /** Absent without a page runtime, or when its close returned no result record. */
+        readonly rallar: RallarBlackBoxTestRecord | undefined;
         readonly errors: readonly BrowserWebSocketCommands.CloseError[];
     }
 }
@@ -193,9 +194,9 @@ class BrowserCommandAdapter {
     private async closeOwnedResources(tolerant: boolean): Promise<BrowserCommandAdapter.ClosedResources> {
         const { webSocketCount, errors } = this.sockets.closeAll();
         const closeErrors = [...errors];
-        let rallar: RallarBlackBoxBrowserRallarRuntimeResult;
+        let rallar: RallarBlackBoxTestRecord | undefined;
         try {
-            rallar = await this.environment.rallarRuntime?.close();
+            rallar = decodeBrowserCommandRecord(await this.environment.rallarRuntime?.close());
         }
         catch (caught) {
             closeErrors.push({ connection: 'rallar', error: toError(caught) });

@@ -1,10 +1,10 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestError,
     RallarBlackBoxTestRecord,
-    RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestRtcStreamFrameObservation,
     RallarBlackBoxTestRtcStreamResultValue
 } from '../rallar-black-box-test-contracts.ts';
@@ -26,7 +26,7 @@ import type { CommandWithId, RallarBlackBoxBrowserRallarRuntime } from './browse
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
 import { toPositiveInteger } from './browser-command-values.ts';
-import { toScopedRtcSend } from './browser-rallar-command-input.ts';
+import { decodeRtcSendPayload, toScopedRtcSend } from './browser-rallar-command-input.ts';
 import { decodeRtcSendResult, toRtcSendFailure, toRtcSendStatus } from './browser-rtc-send-observation.ts';
 
 type RtcStreamCommand = Extract<CommandWithId, { kind: 'rtc.stream'; }>;
@@ -104,7 +104,18 @@ export class BrowserRtcStream {
         this.lastProgressAtEpochMs = this.streamStartedAtEpochMs;
     }
 
+    /** A stream whose send no transport can carry fails before any frame is scheduled. */
     async start(): Promise<RallarBlackBoxTestCommandOutcome> {
+        return await decodeRtcSendPayload(this.command.send).fold<Promise<RallarBlackBoxTestCommandOutcome>>(
+            async (error) => {
+                this.abort.cleanup();
+                return { status: 'failed', error, nextStatus: 'failed' };
+            },
+            async (payload) => await this.runFrames(payload)
+        );
+    }
+
+    private async runFrames(payload: RallarMessagePayload): Promise<RallarBlackBoxTestCommandOutcome> {
         this.recordDiagnostic('rallar.bb.rtc.stream_started', {
             plannedFrames: this.plan.frames.length,
             intervalMs: this.plan.intervalMs,
@@ -113,7 +124,7 @@ export class BrowserRtcStream {
             drainTimeoutMs: this.drainTimeoutMs
         });
         try {
-            await this.scheduleFrames();
+            await this.scheduleFrames(payload);
             await this.drain();
         }
         finally {
@@ -123,7 +134,7 @@ export class BrowserRtcStream {
         return this.toOutcome();
     }
 
-    private async scheduleFrames(): Promise<void> {
+    private async scheduleFrames(payload: RallarMessagePayload): Promise<void> {
         for (const planned of this.plan.frames) {
             const scheduledAtEpochMs = this.streamStartedAtEpochMs + planned.scheduledElapsedMs;
             const delayMs = scheduledAtEpochMs - this.environment.now();
@@ -146,7 +157,7 @@ export class BrowserRtcStream {
                 }));
             }
             else {
-                this.startFrame(frame, {
+                this.startFrame(frame, payload, {
                     commandId: frame.commandId,
                     index: planned.index,
                     iteration: planned.iteration,
@@ -158,8 +169,12 @@ export class BrowserRtcStream {
         }
     }
 
-    private startFrame(frame: StreamFrame, streamContext: RallarBlackBoxRtcStreamPlaceholderContext): void {
-        const resolvedSend = replaceCommandPlaceholders(this.command.send, {
+    private startFrame(
+        frame: StreamFrame,
+        payload: RallarMessagePayload,
+        streamContext: RallarBlackBoxRtcStreamPlaceholderContext
+    ): void {
+        const resolvedSend = replaceCommandPlaceholders(payload, {
             config: this.context.config(),
             session: this.environment.readSession(),
             wsTicket: undefined
@@ -174,18 +189,22 @@ export class BrowserRtcStream {
         void sending.finally(() => this.inFlight.delete(sending));
     }
 
-    private async sendFrame(frame: StreamFrame, send: RallarBlackBoxTestRtcSendCommand['send']): Promise<void> {
+    /** A frame whose result does not decode completes as failed with the invalid-result code. */
+    private async sendFrame(frame: StreamFrame, send: RallarMessagePayload): Promise<void> {
         try {
-            const result = decodeRtcSendResult(
+            const decoded = decodeRtcSendResult(
                 await withBrowserCommandAbort(this.rallarRuntime.send(send), this.abort.signal)
             );
-            const failure = toRtcSendFailure(result);
             const completedAtEpochMs = this.environment.now();
             this.observations.push({
                 ...toFrameTiming(frame, completedAtEpochMs),
-                ok: failure === undefined,
-                status: toRtcSendStatus(result),
-                errorCode: failure?.code
+                ...decoded.fold<Pick<RallarBlackBoxTestRtcStreamFrameObservation, 'ok' | 'status' | 'errorCode'>>(
+                    (invalid) => ({ ok: false, status: undefined, errorCode: invalid.code }),
+                    (result) => {
+                        const failure = toRtcSendFailure(result);
+                        return { ok: failure === undefined, status: toRtcSendStatus(result), errorCode: failure?.code };
+                    }
+                )
             });
         }
         catch (error) {

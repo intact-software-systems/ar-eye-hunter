@@ -295,7 +295,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
                 send: async () => {
                     sendCount += 1;
                     now += 3;
-                    return { status: 'sent', frame: sendCount };
+                    return { status: 'sent', transport: 'realtime', results: [], frame: sendCount };
                 },
                 sendWs: async () => ({ status: 'sent' }),
                 refreshRoom: async () => undefined,
@@ -329,7 +329,8 @@ describe('rallar-bb-test composite conformance matrix', () => {
             composite: 1,
             failed: 0
         });
-        expect(JSON.stringify(report)).not.toContain('"results"');
+        // Compact means no composite child result tree; the per-peer lane results of a realtime send are evidence.
+        expect(JSON.stringify(report)).not.toContain('"commandIndex"');
     });
 
     it('redacts failure artifacts while preserving expected no-peer evidence', async () => {

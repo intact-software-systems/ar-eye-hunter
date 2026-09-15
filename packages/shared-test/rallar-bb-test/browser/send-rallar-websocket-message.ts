@@ -1,15 +1,16 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestSendObservation,
-    RallarBlackBoxTestWsSendCommand
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
 
 import { createBrowserCommandAbortScope, withBrowserCommandAbort } from './browser-command-cancellation.ts';
-import type { CommandWithId, RallarBlackBoxBrowserRallarRuntimeResult } from './browser-command-contracts.ts';
+import type { CommandWithId } from './browser-command-contracts.ts';
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
-import { isRuntimeNotConnectedError } from './browser-command-values.ts';
+import { decodeBrowserCommandRecord } from './browser-command-values.ts';
 import { toRallarWebSocketConnectionConfig } from './browser-rallar-command-input.ts';
 
 export interface SendRallarWebSocketMessageInput {
@@ -17,13 +18,16 @@ export interface SendRallarWebSocketMessageInput {
     readonly command: Extract<CommandWithId, { kind: 'ws.send'; }>;
     readonly context: RallarBlackBoxTestCommandContext;
     readonly connection: string;
+    readonly data: RallarMessagePayload;
 }
+
+const RUNTIME_NOT_CONNECTED_MESSAGE = 'Black-box Rallar runtime is not connected.';
 
 export async function sendRallarWebSocketMessage(
     input: SendRallarWebSocketMessageInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const { environment, command, context, connection } = input;
-    const data = replaceCommandPlaceholders(command.data, {
+    const data = replaceCommandPlaceholders(input.data, {
         config: context.config(),
         session: environment.readSession(),
         wsTicket: undefined
@@ -51,10 +55,11 @@ export async function sendRallarWebSocketMessage(
     return { status: 'ok', value: { connection, via, sent: data, rallar, sendObservation } };
 }
 
+/** A send on a runtime that has not connected yet connects once with the command's connection and retries. */
 async function writeRallarWebSocketMessage(
     input: SendRallarWebSocketMessageInput,
-    data: RallarBlackBoxTestWsSendCommand['data']
-): Promise<RallarBlackBoxBrowserRallarRuntimeResult> {
+    data: RallarMessagePayload
+): Promise<RallarBlackBoxTestRecord | undefined> {
     const { environment, command, context } = input;
     const runtime = requireBrowserCommandRuntime(environment);
     if (!runtime.sendWs) {
@@ -62,15 +67,15 @@ async function writeRallarWebSocketMessage(
     }
     const abort = createBrowserCommandAbortScope(command, context, environment.now);
     try {
-        return await withBrowserCommandAbort(runtime.sendWs(data), abort.signal);
+        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data), abort.signal));
     }
     catch (caught) {
-        if (!isRuntimeNotConnectedError(caught)) {
+        if (!(caught instanceof Error) || !caught.message.includes(RUNTIME_NOT_CONNECTED_MESSAGE)) {
             throw caught;
         }
         const connectionConfig = toRallarWebSocketConnectionConfig(command, context.config());
         await withBrowserCommandAbort(runtime.connect(connectionConfig), abort.signal);
-        return await withBrowserCommandAbort(runtime.sendWs(data), abort.signal);
+        return decodeBrowserCommandRecord(await withBrowserCommandAbort(runtime.sendWs(data), abort.signal));
     }
     finally {
         abort.cleanup();

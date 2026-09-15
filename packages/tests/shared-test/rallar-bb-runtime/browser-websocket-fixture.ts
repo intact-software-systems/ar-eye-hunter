@@ -1,8 +1,9 @@
-import type { RallarBlackBoxBrowserWebSocket } from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
-
-type BrowserWebSocketData = Parameters<RallarBlackBoxBrowserWebSocket['send']>[0];
-type BrowserWebSocketListener = NonNullable<RallarBlackBoxBrowserWebSocket['onmessage']>;
-type BrowserWebSocketEvent = Parameters<BrowserWebSocketListener>[0];
+import type {
+    RallarBlackBoxBrowserWebSocket,
+    RallarBlackBoxBrowserWebSocketData,
+    RallarBlackBoxBrowserWebSocketEvent,
+    RallarBlackBoxBrowserWebSocketListener
+} from '../../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 
 export namespace BrowserWebSocketFixture {
     export interface Options {
@@ -17,8 +18,8 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
     readyState = 0;
     bufferedAmount = 0;
     closeCount = 0;
-    readonly sent: BrowserWebSocketData[] = [];
-    private readonly listeners = new Map<string, BrowserWebSocketListener[]>();
+    readonly sent: RallarBlackBoxBrowserWebSocketData[] = [];
+    private readonly listeners = new Map<string, RallarBlackBoxBrowserWebSocketListener[]>();
 
     readonly url: string;
     private readonly options: BrowserWebSocketFixture.Options;
@@ -32,19 +33,20 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
         });
     }
 
-    addEventListener(type: string, listener: BrowserWebSocketListener): void {
+    addEventListener(type: string, listener: RallarBlackBoxBrowserWebSocketListener): void {
         this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
     }
 
-    removeEventListener(type: string, listener: BrowserWebSocketListener): void {
+    removeEventListener(type: string, listener: RallarBlackBoxBrowserWebSocketListener): void {
         this.listeners.set(type, (this.listeners.get(type) ?? []).filter((entry) => entry !== listener));
     }
 
-    send(data: BrowserWebSocketData): void {
+    send(data: RallarBlackBoxBrowserWebSocketData): void {
         this.sent.push(data);
         this.bufferedAmount = this.options.bufferedAmountAfterSend ?? 0;
         if (this.options.echoMessages) {
-            this.emit('message', { data });
+            // Inbound DOM message data is text, a Blob or an ArrayBuffer, never a view onto one.
+            this.emit('message', { data: ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength).slice().buffer : data });
         }
     }
 
@@ -54,7 +56,7 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
         this.emit('close', { code, reason, wasClean: true });
     }
 
-    private emit(type: string, event: BrowserWebSocketEvent): void {
+    private emit(type: string, event: RallarBlackBoxBrowserWebSocketEvent): void {
         for (const listener of this.listeners.get(type) ?? []) {
             listener(event);
         }

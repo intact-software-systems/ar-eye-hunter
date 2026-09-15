@@ -1,21 +1,25 @@
+import {
+    isBlackBoxCommandRecord,
+    isRallarMessagePayload
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type {
     RallarBlackBoxTestConfig,
-    RallarBlackBoxTestRecord,
-    RallarBlackBoxTestRtcSendCommand
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
 
 import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
 import {
     decodeBrowserCommandRecord,
     decodeBrowserCommandString,
-    decodeNonEmptyBrowserCommandString,
-    decodeRtcTransport,
-    decodeWebSocketScope,
-    isBrowserCommandRecord,
-    resolveFirstDefined
+    decodeRtcTransport
 } from './browser-command-values.ts';
 
 type WsSendCommand = Extract<CommandWithId, { kind: 'ws.send'; }>;
+
+const WEB_SOCKET_SCOPES = ['room', 'world', 'all'] as const;
 
 interface WebSocketRoomSelection {
     readonly applicationId: string | undefined;
@@ -104,10 +108,23 @@ export function toRallarWebSocketConnectionConfig(
     };
 }
 
+/** An rtc.send or rtc.stream that names no send carries an empty envelope; a value no transport can carry fails. */
+export function decodeRtcSendPayload(value: unknown): Either<RallarBlackBoxTestError, RallarMessagePayload> {
+    if (value === undefined) {
+        return Either.ofRight({});
+    }
+    return isRallarMessagePayload(value)
+        ? Either.ofRight(value)
+        : Either.ofLeft({
+            code: 'RALLAR_BB_RTC_INVALID_SEND_PAYLOAD',
+            message: 'RTC send must be a JSON value the page runtime can carry.'
+        });
+}
+
 export function toScopedRtcSend(
     command: Extract<CommandWithId, { kind: 'rtc.send' | 'rtc.stream'; }>,
-    send: RallarBlackBoxTestRtcSendCommand['send']
-): RallarBlackBoxTestRtcSendCommand['send'] {
+    send: RallarMessagePayload
+): RallarMessagePayload {
     const scopedSendFields = Object.fromEntries(
         Object.entries({
             roomId: 'roomId' in command ? command.roomId : undefined,
@@ -121,7 +138,7 @@ export function toScopedRtcSend(
     if (Object.keys(scopedSendFields).length === 0) {
         return send;
     }
-    if (!isBrowserCommandRecord(send)) {
+    if (!isBlackBoxCommandRecord(send)) {
         return { data: send, ...scopedSendFields };
     }
     return {
@@ -202,4 +219,17 @@ function resolveWebSocketRoom(sources: WebSocketRoomSources): WebSocketRoomSelec
                     : undefined)
             : undefined
     };
+}
+
+function decodeNonEmptyBrowserCommandString(value: unknown): string | undefined {
+    const text = decodeBrowserCommandString(value)?.trim();
+    return text && text.length > 0 ? text : undefined;
+}
+
+function decodeWebSocketScope(value: unknown): 'room' | 'world' | 'all' | undefined {
+    return typeof value === 'string' ? WEB_SOCKET_SCOPES.find((scope) => scope === value) : undefined;
+}
+
+function resolveFirstDefined<T>(values: readonly T[]): T | undefined {
+    return values.find((value) => value !== undefined);
 }

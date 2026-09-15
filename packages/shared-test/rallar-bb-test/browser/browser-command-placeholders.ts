@@ -1,9 +1,10 @@
+import { isBlackBoxCommandRecord } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { RallarBlackBoxTestConfig } from '../rallar-black-box-test-contracts.ts';
 
 import type { WebSocketTicketResolution } from './browser-command-contracts.ts';
-import { decodeBrowserCommandString, isBrowserCommandRecord } from './browser-command-values.ts';
+import { decodeBrowserCommandString } from './browser-command-values.ts';
 
 export interface CommandPlaceholderValues {
     readonly session: AuthSession | undefined;
@@ -58,7 +59,7 @@ export function decodeStringLeaves(value: unknown): readonly string[] {
     if (Array.isArray(value)) {
         return value.flatMap((item) => decodeStringLeaves(item));
     }
-    return isBrowserCommandRecord(value) ? Object.values(value).flatMap((item) => decodeStringLeaves(item)) : [];
+    return isBlackBoxCommandRecord(value) ? Object.values(value).flatMap((item) => decodeStringLeaves(item)) : [];
 }
 
 /** Placeholders replace only string leaves with strings, so the value keeps its shape. */
@@ -69,7 +70,7 @@ function toReplacedStringLeaves<T>(value: T, values: CommandPlaceholderValues): 
     if (Array.isArray(value)) {
         return value.map((item) => toReplacedStringLeaves(item, values)) as T;
     }
-    if (!isBrowserCommandRecord(value)) {
+    if (!isBlackBoxCommandRecord(value)) {
         return value;
     }
     return Object.fromEntries(
