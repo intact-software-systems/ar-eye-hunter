@@ -57,7 +57,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
         // With the S1 delivery composition and the page runtime's Either input decoders the agent
-        // measures 266.414 KiB; the maintainer-approved next whole-KiB ceiling is 267, with operator
+        // measures 266.362 KiB; the maintainer-approved next whole-KiB ceiling is 267, with operator
         // dependency exclusions intact.
         expect(result.brotliKiB).toBeLessThan(267);
     });
