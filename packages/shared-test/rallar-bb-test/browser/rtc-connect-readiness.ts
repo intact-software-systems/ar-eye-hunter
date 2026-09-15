@@ -240,11 +240,7 @@ export async function waitForRtcConnectReadiness(
     input: WaitForRtcConnectReadinessInput
 ): Promise<RtcConnectReadinessResult> {
     if (input.transport === 'messages.rtc') {
-        return await waitForRtcRoomConnectReadiness(
-            input.runtime,
-            input.options,
-            input.parentSignal
-        );
+        return await waitForRtcRoomConnectReadiness(input);
     }
 
     const startedAtEpochMs = Date.now();
@@ -279,71 +275,59 @@ export async function waitForRtcConnectReadiness(
 }
 
 async function waitForRtcRoomConnectReadiness(
-    runtime: RtcConnectReadinessRuntime,
-    options: RtcConnectReadinessOptions,
-    parentSignal?: AbortSignal
+    input: WaitForRtcConnectReadinessInput
 ): Promise<RtcConnectReadinessResult> {
+    const { runtime, options, parentSignal } = input;
     const startedAtEpochMs = Date.now();
     const deadlineEpochMs = startedAtEpochMs + options.timeoutMs;
-    const abortScope = createRtcConnectReadinessAbortScope(
-        options.timeoutMs,
-        parentSignal
-    );
-    let roomRefreshSuccesses = 0;
+    const abortScope = createRtcConnectReadinessAbortScope(options.timeoutMs, parentSignal);
+    const step = { abortScope, parentSignal };
     try {
-        try {
-            await raceWithRtcConnectReadinessAbort(
-                runtime.refreshRoom({
-                    signal: abortScope.signal,
-                    timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
-                }),
-                abortScope.signal
-            );
-            roomRefreshSuccesses = 1;
+        const refreshed = await raceRtcRoomReadinessStep(step, () =>
+            runtime.refreshRoom({
+                signal: abortScope.signal,
+                timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
+            }));
+        if (refreshed === undefined) {
+            return toRtcRoomReadinessResult({ options, startedAtEpochMs, roomRefreshSuccesses: 0 });
         }
-        catch (error) {
-            if (abortScope.timedOut()) {
-                return toRtcRoomReadinessResult({
-                    options,
-                    startedAtEpochMs,
-                    roomRefreshSuccesses
-                });
-            }
-            throw toParentAbortError(parentSignal) ?? error;
-        }
-
-        let room: RallarRoomTransportStatus;
-        try {
-            room = await raceWithRtcConnectReadinessAbort(
-                runtime.waitForRoom({
-                    connect: true,
-                    minReadyPeers: options.minReadyPeers,
-                    signal: abortScope.signal,
-                    timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
-                }),
-                abortScope.signal
-            );
-        }
-        catch (error) {
-            if (abortScope.timedOut()) {
-                return toRtcRoomReadinessResult({
-                    options,
-                    startedAtEpochMs,
-                    roomRefreshSuccesses
-                });
-            }
-            throw toParentAbortError(parentSignal) ?? error;
-        }
-
+        const waited = await raceRtcRoomReadinessStep(step, () =>
+            runtime.waitForRoom({
+                connect: true,
+                minReadyPeers: options.minReadyPeers,
+                signal: abortScope.signal,
+                timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
+            }));
         return toRtcRoomReadinessResult({
             options,
             startedAtEpochMs,
-            roomRefreshSuccesses,
-            room
+            roomRefreshSuccesses: 1,
+            ...(waited === undefined ? {} : { room: waited.value })
         });
     }
     finally {
         abortScope.cleanup();
+    }
+}
+
+interface RtcRoomReadinessStep {
+    readonly abortScope: RtcConnectReadinessAbortScope;
+    readonly parentSignal: AbortSignal | undefined;
+}
+
+/** Resolves undefined when the readiness budget ran out; a parent abort or a real failure rejects. */
+async function raceRtcRoomReadinessStep<T>(
+    step: RtcRoomReadinessStep,
+    operation: () => Promise<T>
+): Promise<{ readonly value: T; } | undefined> {
+    try {
+        return { value: await raceWithRtcConnectReadinessAbort(operation(), step.abortScope.signal) };
+    }
+    catch (error) {
+        if (step.abortScope.timedOut()) {
+            return undefined;
+        }
+        throw toParentAbortError(step.parentSignal) ?? error;
     }
 }
 

@@ -581,6 +581,51 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         });
     });
 
+    it('times out messages.rtc readiness when the room wait outlasts the readiness budget', async () => {
+        const waitForRoom: BlackBoxRallarRuntime['waitForRoom'] = (options) =>
+            new Promise((_resolve, reject) => {
+                options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), { once: true });
+            });
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(),
+                refreshRoom: async () => undefined,
+                waitForRoom,
+                close: vi.fn(),
+                health: async (): Promise<never> => {
+                    throw new Error('messages.rtc readiness must not poll global RTC health.');
+                }
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-room-wait-timeout',
+            connection: 'rtc',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            transport: 'messages.rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 20,
+                intervalMs: 1
+            }
+        });
+
+        expect(result.ok).toBe(false);
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+            message: 'RTC connect timed out waiting for room transport readiness.'
+        });
+        expect(result.value).toMatchObject({
+            readiness: { ready: false, roomRefreshAttempts: 1, roomRefreshSuccesses: 1, readyPeerIds: [] }
+        });
+        expect(result.value).not.toHaveProperty('readiness.room');
+    });
+
     it('does not retry a messages.rtc authority refresh failure', async () => {
         const refreshError = new Error('transient point-read failure');
         let refreshAttempts = 0;
