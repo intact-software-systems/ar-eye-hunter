@@ -1,19 +1,19 @@
 import type { RallarRealtimeLaneHealth } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcDiagnostics } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { resolveBlackBoxRallarLaneId, resolveBlackBoxRallarTransport } from './black-box-rallar-connection-policy.ts';
-import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
+import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput
-} from './black-box-rallar-operation-contracts.ts';
-import { blackBoxRallarScopeDiagnosticsOf } from './black-box-rallar-operation-policy.ts';
+} from '../black-box-rallar-operation-contracts.ts';
+import { blackBoxRallarScopeDiagnosticsOf } from '../black-box-rallar-operation-policy.ts';
 import {
     toBlackBoxRallarSerializedError,
     type BlackBoxRallarSerializedError
-} from './black-box-rallar-serialized-error.ts';
-import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
+} from '../black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
+import { resolveBlackBoxRallarLaneId, resolveBlackBoxRallarTransport } from './black-box-rallar-connection-policy.ts';
 export namespace BlackBoxRallarHealthReader {
     export interface Dependencies {
         readonly rallar: BlackBoxBrowserRallarRuntimeDependency;
@@ -40,7 +40,7 @@ export class BlackBoxRallarHealthReader {
         this.#rallar = dependencies.rallar;
         this.#runtimeDiagnostics = dependencies.diagnostics;
     }
-    readHealth = (config: BlackBoxRallarConnectionConfig): readonly RallarRealtimeLaneHealth[] => {
+    getLaneHealth = (config: BlackBoxRallarConnectionConfig): readonly RallarRealtimeLaneHealth[] => {
         if (resolveBlackBoxRallarTransport(config) !== 'realtime') {
             return [];
         }
@@ -50,8 +50,8 @@ export class BlackBoxRallarHealthReader {
             peerIds: config.rallar.peerIds
         });
     };
-    wsStatusFor = (): ReturnType<BlackBoxBrowserRallarRuntimeDependency['ws']['status']> => this.#rallar.ws.status();
-    rtcStatusFor = (
+    getWsStatus = (): ReturnType<BlackBoxBrowserRallarRuntimeDependency['ws']['status']> => this.#rallar.ws.status();
+    getRtcStatus = (
         config: BlackBoxRallarConnectionConfig
     ): ReturnType<BlackBoxBrowserRallarRuntimeDependency['rtc']['status']> =>
         this.#rallar.rtc.status({
@@ -59,12 +59,12 @@ export class BlackBoxRallarHealthReader {
                 ? resolveBlackBoxRallarLaneId(config)
                 : undefined
         });
-    statusDiagnostics = (config: BlackBoxRallarConnectionConfig): BlackBoxRallarHealthReader.Status => {
+    getStatusDiagnostics = (config: BlackBoxRallarConnectionConfig): BlackBoxRallarHealthReader.Status => {
         return {
             rallarStatus: this.#rallar.status(),
             rallarConnected: this.#rallar.isConnected(),
-            wsStatus: this.wsStatusFor(),
-            rtcStatus: this.rtcStatusFor(config)
+            wsStatus: this.getWsStatus(),
+            rtcStatus: this.getRtcStatus(config)
         };
     };
     health = async (
@@ -95,7 +95,7 @@ export class BlackBoxRallarHealthReader {
         return {
             connected: this.#rallar.isConnected(),
             status: this.#rallar.status(),
-            wsStatus: this.wsStatusFor(),
+            wsStatus: this.getWsStatus(),
             rtcStatus,
             connection: config?.connection,
             actor: config?.actor,
@@ -103,7 +103,7 @@ export class BlackBoxRallarHealthReader {
             roomId: config?.roomId,
             ...(config ? blackBoxRallarScopeDiagnosticsOf(config) : {}),
             session: this.#rallar.session(),
-            health: config ? this.readHealth(config) : [],
+            health: config ? this.getLaneHealth(config) : [],
             ...(rtcDiagnostics !== undefined ? { rtcDiagnostics } : {}),
             ...(rtcDiagnosticsError !== undefined ? { rtcDiagnosticsError } : {}),
             crdt: read.crdt,

@@ -1,25 +1,25 @@
 import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import {
-    toBlackBoxRallarAuthenticationKey,
-    toBlackBoxRallarSessionDiagnostic
-} from './black-box-rallar-connection-policy.ts';
-import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
-import type { BlackBoxRallarRuntimeDiagnostics } from './black-box-rallar-diagnostics.ts';
+import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarAuthenticateDiagnostics,
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarConnectDiagnostics,
     BlackBoxRallarConnectionConfig
-} from './black-box-rallar-operation-contracts.ts';
+} from '../black-box-rallar-operation-contracts.ts';
 import {
     blackBoxRallarScopeDiagnosticsOf,
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig
-} from './black-box-rallar-operation-policy.ts';
-import { toBlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
-import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
-import type { BlackBoxRallarLifecycleController } from './lifecycle-controller.ts';
+} from '../black-box-rallar-operation-policy.ts';
+import { toBlackBoxRallarSerializedError } from '../black-box-rallar-serialized-error.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
+import type { BlackBoxRallarLifecycleController } from '../lifecycle-controller.ts';
+import {
+    toBlackBoxRallarAuthenticationKey,
+    toBlackBoxRallarSessionDiagnostic
+} from './black-box-rallar-connection-policy.ts';
+import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 export namespace BlackBoxRallarAuthentication {
     export interface State {
         readonly key: string;

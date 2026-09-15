@@ -109,7 +109,7 @@ export interface BlackBoxBrowserRoomsDependency {
 
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
 
-/** The session registry the facade's senders open handles in; the ledger reads every handle back through it. */
+/** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {}
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */

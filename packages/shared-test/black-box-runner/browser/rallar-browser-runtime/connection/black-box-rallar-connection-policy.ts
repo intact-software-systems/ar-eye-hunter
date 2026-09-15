@@ -1,16 +1,18 @@
 import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/rallar-message-selectors.ts';
-import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarTransport
-} from './black-box-rallar-operation-contracts.ts';
+} from '../black-box-rallar-operation-contracts.ts';
 import {
     blackBoxRallarAuthenticationIdentityOf,
+    blackBoxRallarConnectionTargetOf,
     blackBoxRallarRoomRefOf,
-    blackBoxRallarScopeOf
-} from './black-box-rallar-operation-policy.ts';
-import type { BlackBoxBrowserRallarRuntimeDependency } from './browser-rallar-runtime-composition.ts';
-export const DEFAULT_LANE_ID = 'realtime';
+    blackBoxRallarScopeOf,
+    decideBlackBoxRallarLifecycleRequest
+} from '../black-box-rallar-operation-policy.ts';
+import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
+import type { BlackBoxRallarConnectionState } from './black-box-rallar-connection-state.ts';
+const DEFAULT_LANE_ID = 'realtime';
 export function resolveBlackBoxRallarTransport(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport {
     return config.rallar.transport ?? 'realtime';
 }
@@ -84,14 +86,6 @@ export function toBlackBoxRallarSessionDiagnostic(
         username: session.username
     };
 }
-export function toBlackBoxRallarOptionalNumber(value: unknown): number | undefined {
-    if (value === undefined || value === null || value === '') {
-        return undefined;
-    }
-
-    const parsed = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-}
 export function toBlackBoxRallarAuthenticationKey(
     config: BlackBoxRallarConnectionConfig,
     username = config.rallar.username ?? ''
@@ -102,4 +96,18 @@ export function toBlackBoxRallarAuthenticationKey(
             username
         })
     );
+}
+
+export function toConnectedTargetRejection(
+    state: BlackBoxRallarConnectionState.Value | undefined,
+    config: BlackBoxRallarConnectionConfig
+): Error | undefined {
+    if (!state) {
+        return undefined;
+    }
+    const decision = decideBlackBoxRallarLifecycleRequest(
+        { status: 'connected', activeTarget: blackBoxRallarConnectionTargetOf(state.config, state.session) },
+        { kind: 'connect', target: blackBoxRallarConnectionTargetOf(config, state.session) }
+    );
+    return decision.kind === 'reject' ? new Error(decision.reason) : undefined;
 }

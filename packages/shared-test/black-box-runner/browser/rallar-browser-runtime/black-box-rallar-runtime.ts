@@ -1,4 +1,3 @@
-import { BlackBoxRallarConnectionRuntime } from './black-box-rallar-connection-runtime.ts';
 import type {
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
@@ -8,6 +7,7 @@ import type {
 import {
     createBlackBoxBrowserRallarRuntimeDependency
 } from './browser-rallar-runtime-composition.ts';
+import { BlackBoxRallarConnectionRuntime } from './connection/black-box-rallar-connection-runtime.ts';
 export type {
     BlackBoxRallarAuthenticateDiagnostics,
     BlackBoxRallarCloseDiagnostics,

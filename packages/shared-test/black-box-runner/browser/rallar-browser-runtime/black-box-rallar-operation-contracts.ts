@@ -198,7 +198,7 @@ export interface BlackBoxRallarAuthenticateDiagnostics {
     readonly username: string;
 }
 
-/** The room scope a send reports; each optional field appears only when the connection or the send names it. */
+/** Each optional field appears only when the connection or the send names that scope. */
 export interface BlackBoxRallarSendScopeDiagnostics {
     readonly connection: string;
     readonly actor: string | undefined;
@@ -209,7 +209,6 @@ export interface BlackBoxRallarSendScopeDiagnostics {
     readonly workspaceId?: string;
 }
 
-/** A realtime-lane send; a messages.ws connection sends through the same lane. */
 export interface BlackBoxRallarRealtimeSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
     readonly status: 'sent' | 'no-peers';
     readonly transport: Exclude<BlackBoxRallarTransport, 'messages.rtc'>;
@@ -219,7 +218,6 @@ export interface BlackBoxRallarRealtimeSendDiagnostics extends BlackBoxRallarSen
     readonly health: readonly RallarRealtimeLaneHealth[];
 }
 
-/** A typed messages.rtc send, projected from the handle the sender returned rather than a transport result. */
 export interface BlackBoxRallarMessagesRtcSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
     readonly transport: 'messages.rtc';
     readonly typeId: string;
@@ -236,7 +234,7 @@ export type BlackBoxRallarSendDiagnostics =
     | BlackBoxRallarRealtimeSendDiagnostics
     | BlackBoxRallarMessagesRtcSendDiagnostics;
 
-/** A WS lane send; the room fields appear only when the send names a room or an application. */
+/** The room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
     readonly status: 'sent';
     readonly connection: string;
@@ -252,7 +250,6 @@ export interface BlackBoxRallarWsSendDiagnostics {
     readonly contextId: string | undefined;
     readonly resourceId: string | undefined;
     readonly minSnapshotVersion: number | undefined;
-    /** The payload the page handed the WS lane, echoed as sent. */
     readonly message: unknown;
     readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;

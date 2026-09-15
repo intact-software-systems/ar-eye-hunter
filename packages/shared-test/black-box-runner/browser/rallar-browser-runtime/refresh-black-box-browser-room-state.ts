@@ -7,6 +7,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { WebRtcGroupManager } from '@shared/services/web-rtc-group-manager.ts';
+
 export interface BlackBoxRoomStateRefreshOptions extends RallarScopedOperationOptions {
     readonly scope: StateScope;
     readonly timeoutMs: number;
@@ -114,7 +115,7 @@ function createAbortRejection(signal: AbortSignal): AbortRejection {
     const promise = new Promise<never>((_resolve, reject) => {
         rejectPromise = reject;
     });
-    const onAbort = () => rejectPromise(abortReason(signal));
+    const onAbort = () => rejectPromise(toAbortReason(signal));
     signal.addEventListener('abort', onAbort, { once: true });
     return {
         promise,
@@ -122,7 +123,7 @@ function createAbortRejection(signal: AbortSignal): AbortRejection {
     };
 }
 
-function abortReason(signal: AbortSignal): Error {
+function toAbortReason(signal: AbortSignal): Error {
     return signal.reason instanceof Error
         ? signal.reason
         : new Error('Room state refresh aborted.');
@@ -130,9 +131,10 @@ function abortReason(signal: AbortSignal): Error {
 
 function throwIfAborted(signal: AbortSignal): void {
     if (signal.aborted) {
-        throw abortReason(signal);
+        throw toAbortReason(signal);
     }
 }
+
 async function readAndHydrateRoomState(input: RefreshBlackBoxBrowserRoomStateInput): Promise<void> {
     const { options } = input;
 

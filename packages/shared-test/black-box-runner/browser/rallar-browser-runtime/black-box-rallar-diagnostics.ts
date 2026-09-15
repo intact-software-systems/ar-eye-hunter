@@ -80,7 +80,7 @@ export class BlackBoxRallarRuntimeDiagnostics {
     };
 
     emitConsoleWarning = (config: BlackBoxRallarConnectionConfig, args: readonly unknown[]): void => {
-        const warning = classifyConsoleWarning(args);
+        const warning = toConsoleWarning(args);
         if (!warning) {
             return;
         }
@@ -130,7 +130,7 @@ export function createBlackBoxRallarDiagnosticsPorts(
     };
 }
 
-function consoleWarningPart(value: unknown): string {
+function toConsoleWarningPart(value: unknown): string {
     if (typeof value === 'string') {
         return value;
     }
@@ -142,8 +142,8 @@ function consoleWarningPart(value: unknown): string {
     }
 }
 
-function classifyConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
-    const message = args.map(consoleWarningPart).join(' ');
+function toConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
+    const message = args.map(toConsoleWarningPart).join(' ');
     if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
         return { topic: 'rallar.browser.ws.unhandled_message', transport: 'ws', message };
     }
