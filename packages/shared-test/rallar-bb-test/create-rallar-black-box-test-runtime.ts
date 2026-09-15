@@ -1,50 +1,33 @@
-import {
-    assertValueMatches,
-    isRallarBlackBoxAssertOperator,
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS
-} from './assert/assert-value-operators.ts';
+import { computeAssertCommandOutcome } from './assert/compute-assert-command-outcome.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from './diagnostics.ts';
-import { LoopCommandExecution } from './loop-command-execution.ts';
-import { ParallelCommandExecution } from './parallel-command-execution.ts';
-import {
-    type RallarBlackBoxTestAssertCommand,
-    type RallarBlackBoxTestAssertResultValue,
-    type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestCommandContext,
-    type RallarBlackBoxTestCommandExecutor,
-    type RallarBlackBoxTestCommandOutcome,
-    type RallarBlackBoxTestConfig,
-    type RallarBlackBoxTestError,
-    type RallarBlackBoxTestEvent,
-    type RallarBlackBoxTestRecipe,
-    type RallarBlackBoxTestRecipeRunCommand,
-    type RallarBlackBoxTestResult,
-    type RallarBlackBoxTestRuntime,
-    type RallarBlackBoxTestRuntimeCleanup,
-    type RallarBlackBoxTestRuntimeEventInput,
-    type RallarBlackBoxTestRuntimeStatus,
-    type RallarBlackBoxTestState,
-    type RallarBlackBoxTestStateListener,
-    type RallarBlackBoxTestStatsSnapshot,
-    type RallarBlackBoxTestWaitCommand
+import { LoopCommandExecution } from './loop/loop-command-execution.ts';
+import { ParallelCommandExecution } from './parallel/parallel-command-execution.ts';
+import type {
+    RallarBlackBoxTestCleanupInput,
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandContext,
+    RallarBlackBoxTestCommandExecutor,
+    RallarBlackBoxTestCommandOutcome,
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestError,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntimeCleanup,
+    RallarBlackBoxTestRuntimeEventInput,
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestStateListener,
+    RallarBlackBoxTestStatsSnapshot
 } from './rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT, runRecipeCommands } from './recipe/run-recipe-commands.ts';
+import { validateExecutableRecipe } from './recipe/validate-executable-recipe.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
-import {
-    computeCommandDeadlineEpochMs,
-    isAbortError,
-    toBoundedDeadlineCommand,
-    toRecord
-} from './to-runtime-command-values.ts';
-import { toRuntimeStats } from './to-runtime-stats.ts';
-import { lookupPayloadPath, type PayloadPathLookup } from './wait/wait-event-match.ts';
+import { isAbortError, sleepWithAbort } from './runtime/sleep-with-abort.ts';
+import { toMergedRuntimeConfig } from './runtime/to-merged-runtime-config.ts';
+import { computeCommandDeadlineEpochMs } from './runtime/to-runtime-command-values.ts';
+import { toRuntimeStats } from './runtime/to-runtime-stats.ts';
 import { waitForEvent } from './wait/wait-for-event.ts';
-
-interface RecipeTimeoutInput {
-    readonly command: RecipeRunCommandWithId;
-    readonly recipe: RallarBlackBoxTestRecipe;
-    readonly results: readonly RallarBlackBoxTestResult[];
-    readonly deadlineEpochMs: number;
-}
 
 export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly now?: () => number;
@@ -55,200 +38,34 @@ export interface CreateRallarBlackBoxTestRuntimeOptions {
 }
 
 type CommandWithId = RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
-type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string; }>;
-type AssertCommandWithId = RallarBlackBoxTestAssertCommand & Readonly<{ commandId: string; }>;
-type RecipeRunCommandWithId = RallarBlackBoxTestRecipeRunCommand & Readonly<{ commandId: string; }>;
-const RECENT_ASSERT_SOURCE_LIMIT = 20;
-const ABORT_ERROR_CODE = 'RALLAR_BLACK_BOX_ABORTED';
-const RALLAR_CONFIG_AUTH_INTENT_KEYS = [
-    'username',
-    'password',
-    'token',
-    'register',
-    'displayName',
-    'restoreSession'
-] as const;
-const RALLAR_CONFIG_INHERITED_KEYS = [
-    ...RALLAR_CONFIG_AUTH_INTENT_KEYS,
-    'logoutOnClose',
-    'leaveRoomOnClose',
-    'timeoutMs'
-] as const;
 
-function initialState(): RallarBlackBoxTestState {
-    return {
-        status: 'idle',
-        commandHistory: [],
-        events: [],
-        failures: [],
-        resultCache: {}
-    };
-}
+type CommandOfKind<Kind extends RallarBlackBoxTestCommand['kind']> = Extract<CommandWithId, Readonly<{ kind: Kind; }>>;
 
-function defaultIdFactory(): (prefix: string) => string {
-    let sequence = 1;
-    return (prefix: string) => `${prefix}-${sequence++}`;
-}
+/** A child of a recipe, loop or parallel command always runs; only a top-level command replays its cached result. */
+type ResultCachePolicy = 'replay' | 'bypass';
 
-function toError(error: unknown, code = 'RALLAR_BLACK_BOX_COMMAND_FAILED'): RallarBlackBoxTestError {
-    if (error instanceof Error) {
-        return {
-            code,
-            message: error.message,
-            details: {
-                name: error.name,
-                stack: error.stack
-            }
-        };
+namespace InMemoryRallarBlackBoxTestRuntime {
+    export interface Dependencies {
+        readonly now: () => number;
+        readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+        readonly idFactory: (prefix: string) => string;
+        readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
+        readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
     }
-
-    return {
-        code,
-        message: String(error)
-    };
-}
-
-function validateExecutableRecipe(recipe: RallarBlackBoxTestRecipe): string | undefined {
-    if (recipe.schemaVersion !== 1) {
-        return 'Recipe schemaVersion must be 1.';
-    }
-    if (!recipe.recipeId) {
-        return 'Recipe requires recipeId.';
-    }
-    if (!Array.isArray(recipe.commands) || recipe.commands.length === 0) {
-        return 'Recipe requires at least one command.';
-    }
-    return validateInlineRecipeVersions(recipe.commands);
-}
-
-function validateInlineRecipeVersions(commands: readonly RallarBlackBoxTestCommand[]): string | undefined {
-    for (const command of commands) {
-        if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
-            if (command.recipe.schemaVersion !== 1) {
-                return 'Recipe schemaVersion must be 1.';
-            }
-            const nested = validateInlineRecipeVersions(command.recipe.commands);
-            if (nested) {
-                return nested;
-            }
-        }
-        const children = command.kind === 'loop'
-            ? command.commands
-            : command.kind === 'parallel'
-            ? command.groups.flatMap((group) => group.commands)
-            : [];
-        const error = validateInlineRecipeVersions(children);
-        if (error) {
-            return error;
-        }
-    }
-    return undefined;
-}
-
-function toInvalidRecipeOutcome(message: string): RallarBlackBoxTestCommandOutcome {
-    return { status: 'failed', error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message }, nextStatus: 'failed' };
-}
-
-function mergeConfigureConfig(
-    current: RallarBlackBoxTestConfig | undefined,
-    next: RallarBlackBoxTestConfig
-): RallarBlackBoxTestConfig {
-    if (!next.rallar) {
-        return next;
-    }
-
-    const nextRallar = toRecord(next.rallar);
-    const hasIncomingAuth = RALLAR_CONFIG_AUTH_INTENT_KEYS
-        .some((key) => Object.prototype.hasOwnProperty.call(nextRallar, key));
-    if (hasIncomingAuth) {
-        return next;
-    }
-
-    const currentRallar = toRecord(current?.rallar);
-    const inheritedAuth = Object.fromEntries(
-        RALLAR_CONFIG_INHERITED_KEYS
-            .filter((key) => currentRallar[key] !== undefined)
-            .map((key) => [key, currentRallar[key]])
-    );
-    if (Object.keys(inheritedAuth).length === 0) {
-        return next;
-    }
-
-    return {
-        ...next,
-        rallar: {
-            ...inheritedAuth,
-            ...nextRallar
-        }
-    };
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-    if (ms <= 0) {
-        return Promise.resolve();
-    }
-    if (signal?.aborted) {
-        return Promise.reject(toAbortError(signal.reason));
-    }
-
-    return new Promise((resolve, reject) => {
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        const cleanup = () => {
-            if (timeout) {
-                clearTimeout(timeout);
-                timeout = undefined;
-            }
-            signal?.removeEventListener('abort', abort);
-        };
-        const abort = () => {
-            cleanup();
-            reject(toAbortError(signal?.reason));
-        };
-
-        timeout = setTimeout(() => {
-            cleanup();
-            resolve();
-        }, ms);
-        signal?.addEventListener('abort', abort, {
-            once: true
-        });
-    });
-}
-
-function toAbortError(reason: unknown): Error {
-    if (reason instanceof Error) {
-        return reason;
-    }
-
-    const message = typeof reason === 'string' && reason.length > 0
-        ? reason
-        : 'Rallar black-box runtime operation was cancelled.';
-    const error = new Error(message);
-    error.name = ABORT_ERROR_CODE;
-    return error;
 }
 
 class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
-    private readonly now: () => number;
-    private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
-    private readonly idFactory: (prefix: string) => string;
-    private readonly commandExecutor: RallarBlackBoxTestCommandExecutor | undefined;
-    private readonly cleanup: RallarBlackBoxTestRuntimeCleanup | undefined;
+    private readonly dependencies: InMemoryRallarBlackBoxTestRuntime.Dependencies;
     private readonly listeners = new Set<RallarBlackBoxTestStateListener>();
-    private currentState: RallarBlackBoxTestState = initialState();
+    private currentState: RallarBlackBoxTestState = createInitialRuntimeState();
     private currentConfig: RallarBlackBoxTestConfig | undefined;
-    private currentRedaction: RallarBlackBoxTestConfig['redaction'] | undefined;
     private loadedRecipe: RallarBlackBoxTestRecipe | undefined;
     private cancelRequested = false;
     private cancellationController = new AbortController();
     private recipeExecutionDepth = 0;
 
-    constructor(options: CreateRallarBlackBoxTestRuntimeOptions = {}) {
-        this.now = options.now ?? (() => Date.now());
-        this.sleep = options.sleep ?? sleep;
-        this.idFactory = options.idFactory ?? defaultIdFactory();
-        this.commandExecutor = options.commandExecutor;
-        this.cleanup = options.cleanup;
+    constructor(dependencies: InMemoryRallarBlackBoxTestRuntime.Dependencies) {
+        this.dependencies = dependencies;
     }
 
     state(): RallarBlackBoxTestState {
@@ -264,69 +81,39 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     recordEvent(event: RallarBlackBoxTestRuntimeEventInput): void {
-        this.emitEvent(event);
+        this.appendEvent(event);
     }
 
-    async execute(
-        command: RallarBlackBoxTestCommand
-    ): Promise<RallarBlackBoxTestResult> {
-        return await this.executeCommand(command);
+    async execute(command: RallarBlackBoxTestCommand): Promise<RallarBlackBoxTestResult> {
+        return await this.runCommand(command, 'replay');
     }
 
-    private async executeCommand(
+    private async runCommand(
         command: RallarBlackBoxTestCommand,
-        options: Readonly<{ bypassCache?: boolean; }> = {}
+        cachePolicy: ResultCachePolicy
     ): Promise<RallarBlackBoxTestResult> {
-        const commandWithId = this.withCommandId(command);
-        if (
-            commandWithId.kind !== 'recipe.cancel' &&
-            this.currentState.status !== 'running' &&
-            this.cancellationController.signal.aborted
-        ) {
-            this.cancelRequested = false;
-            this.resetCancellationSignal();
+        const commandWithId = this.toCommandWithId(command);
+        if (commandWithId.kind !== 'recipe.cancel' && this.currentState.status !== 'running') {
+            this.clearAbortedCancellation();
         }
         const cached = this.currentState.resultCache[commandWithId.commandId];
-        if (cached && options.bypassCache !== true) {
-            return {
-                ...cached,
-                replayed: true
-            };
+        if (cached && cachePolicy === 'replay') {
+            return { ...cached, replayed: true };
         }
 
-        const startedAtEpochMs = this.now();
+        const startedAtEpochMs = this.dependencies.now();
         this.setState({
-            activeCommand: this.redact(commandWithId),
+            activeCommand: this.toRedacted(commandWithId),
             activeCommandStartedAtEpochMs: startedAtEpochMs,
-            status: commandWithId.kind === 'recipe.cancel'
-                ? this.currentState.status
-                : 'running'
+            status: commandWithId.kind === 'recipe.cancel' ? this.currentState.status : 'running'
         });
-
-        let outcome: RallarBlackBoxTestCommandOutcome;
-        try {
-            outcome = await this.perform(commandWithId);
-        }
-        catch (error) {
-            outcome = isAbortError(error)
-                ? {
-                    status: 'cancelled',
-                    error: toError(error, 'RALLAR_BLACK_BOX_COMMAND_CANCELLED'),
-                    nextStatus: 'cancelled'
-                }
-                : {
-                    status: 'failed',
-                    error: toError(error),
-                    nextStatus: 'failed'
-                };
-        }
-
+        const outcome = await this.runCommandOutcome(commandWithId).catch(decodeThrownCommandOutcome);
         const result = this.toResult(commandWithId, startedAtEpochMs, outcome);
-        this.commitResult(result, outcome.nextStatus);
+        this.commitResult(result, outcome);
         return result;
     }
 
-    private async perform(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
+    private async runCommandOutcome(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
         switch (command.kind) {
             case 'configure':
                 return this.configure(command.config);
@@ -345,133 +132,60 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             case 'reset':
                 return await this.reset(command);
             default:
-                return await this.dispatchExternalCommand(command);
-        }
-    }
-
-    private toCommandContext(): RallarBlackBoxTestCommandContext {
-        return {
-            state: () => this.currentState,
-            config: () => this.currentConfig,
-            abortSignal: () => this.cancellationController.signal,
-            recordEvent: (event) => this.emitEvent(event),
-            updateStats: (commandId) => this.updateStats(commandId)
-        };
-    }
-
-    private resetCancellationSignal(): void {
-        if (!this.cancellationController.signal.aborted) {
-            return;
-        }
-
-        this.cancellationController = new AbortController();
-    }
-
-    private requestCancellation(reason: string | undefined): void {
-        this.cancelRequested = true;
-        if (!this.cancellationController.signal.aborted) {
-            this.cancellationController.abort(reason ?? 'Rallar black-box recipe cancellation requested.');
-        }
-    }
-
-    private async cleanupOwnedResources(input: Parameters<RallarBlackBoxTestRuntimeCleanup>[0]): Promise<void> {
-        if (!this.cleanup) {
-            return;
-        }
-
-        try {
-            await this.cleanup(input, this.toCommandContext());
-            this.emitEvent({
-                kind: 'diagnostic',
-                topic: 'rallar.bb.cleanup.completed',
-                commandId: input.commandId,
-                severity: 'info',
-                payload: input
-            });
-        }
-        catch (error) {
-            this.emitEvent({
-                kind: 'diagnostic',
-                topic: 'rallar.bb.cleanup.failed',
-                commandId: input.commandId,
-                severity: 'error',
-                payload: {
-                    input,
-                    error: toError(error, 'RALLAR_BLACK_BOX_CLEANUP_FAILED')
-                }
-            });
+                return await this.runExternalCommand(command);
         }
     }
 
     private configure(config: RallarBlackBoxTestConfig): RallarBlackBoxTestCommandOutcome {
-        const mergedConfig = mergeConfigureConfig(this.currentConfig, config);
-        this.currentConfig = mergedConfig;
-        this.currentRedaction = mergedConfig.redaction;
-        const redactedConfig = this.redact(mergedConfig);
-        this.setState({
-            currentConfig: redactedConfig
-        });
-        this.emitEvent({
+        this.currentConfig = toMergedRuntimeConfig(this.currentConfig, config);
+        const redactedConfig = this.toRedacted(this.currentConfig);
+        this.setState({ currentConfig: redactedConfig });
+        this.appendEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.configured',
             severity: 'info',
             payload: redactedConfig
         });
-        return {
-            status: 'ok',
-            value: {
-                config: redactedConfig
-            },
-            nextStatus: 'configured'
-        };
+        return { status: 'ok', value: { config: redactedConfig }, nextStatus: 'configured' };
     }
 
     private loadRecipe(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestCommandOutcome {
-        const error = validateExecutableRecipe(recipe);
-        if (error) {
-            return toInvalidRecipeOutcome(error);
+        const issues = validateExecutableRecipe(recipe);
+        if (issues.length > 0) {
+            return toInvalidRecipeOutcome(issues);
         }
         this.loadedRecipe = recipe;
-        const redactedRecipe = this.redact(recipe);
-        this.setState({
-            loadedRecipe: redactedRecipe
-        });
-        this.emitEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.bb.recipe.loaded',
-            severity: 'info',
-            payload: {
-                recipeId: recipe.recipeId,
-                commandCount: recipe.commands.length
-            }
-        });
-        return {
-            status: 'ok',
-            value: {
-                recipeId: recipe.recipeId,
-                commandCount: recipe.commands.length
-            },
-            nextStatus: 'loaded'
-        };
+        this.setState({ loadedRecipe: this.toRedacted(recipe) });
+        const summary = { recipeId: recipe.recipeId, commandCount: recipe.commands.length };
+        this.appendEvent({ kind: 'diagnostic', topic: 'rallar.bb.recipe.loaded', severity: 'info', payload: summary });
+        return { status: 'ok', value: summary, nextStatus: 'loaded' };
     }
 
-    private async runRecipe(command: RecipeRunCommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
+    private async runRecipe(command: CommandOfKind<'recipe.run'>): Promise<RallarBlackBoxTestCommandOutcome> {
         const recipe = command.recipe ?? this.loadedRecipe;
-        if (!recipe) {
-            return toInvalidRecipeOutcome('No recipe is loaded.');
-        }
-        const error = validateExecutableRecipe(recipe);
-        if (error) {
-            return toInvalidRecipeOutcome(error);
+        const issues = recipe === undefined ? ['No recipe is loaded.'] : validateExecutableRecipe(recipe);
+        if (recipe === undefined || issues.length > 0) {
+            return toInvalidRecipeOutcome(issues);
         }
         this.cancelRequested = false;
-        this.resetCancellationSignal();
-        const deadlineEpochMs = computeCommandDeadlineEpochMs(command, this.now());
+        this.clearAbortedCancellation();
+        const deadlineEpochMs = computeCommandDeadlineEpochMs(command, this.dependencies.now());
         this.recipeExecutionDepth += 1;
         try {
-            const outcome = await this.runRecipeCommands(command, recipe, deadlineEpochMs);
+            const outcome = await runRecipeCommands({
+                recipe,
+                timeoutMs: command.timeoutMs,
+                deadlineEpochMs,
+                ports: this.toCompositePorts()
+            });
             if (outcome.status !== 'ok') {
-                await this.cleanupAfterTerminalRecipe(command, recipe, outcome);
+                await this.cleanupOwnedResources({
+                    reason: toTerminalCleanupReason(outcome),
+                    commandId: command.commandId,
+                    recipeId: recipe.recipeId,
+                    status: outcome.status,
+                    error: outcome.error
+                });
             }
             return outcome;
         }
@@ -480,218 +194,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
     }
 
-    private toRecipeChildCommand(
-        childCommand: RallarBlackBoxTestCommand,
-        recipeDeadlineEpochMs: number | undefined
-    ): RallarBlackBoxTestCommand {
-        if (recipeDeadlineEpochMs === undefined) {
-            return childCommand;
+    private async cancelRecipe(command: CommandOfKind<'recipe.cancel'>): Promise<RallarBlackBoxTestCommandOutcome> {
+        this.cancelRequested = true;
+        if (!this.cancellationController.signal.aborted) {
+            this.cancellationController.abort(command.reason ?? 'Rallar black-box recipe cancellation requested.');
         }
-
-        return toBoundedDeadlineCommand(childCommand, recipeDeadlineEpochMs);
-    }
-
-    private recipeTimedOut(input: RecipeTimeoutInput): RallarBlackBoxTestCommandOutcome {
-        const { command, recipe, results, deadlineEpochMs } = input;
-        return {
-            status: 'failed',
-            value: {
-                recipeId: recipe.recipeId,
-                results,
-                timedOut: true
-            },
-            error: {
-                code: 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT',
-                message: 'Recipe reached its timeout before all commands completed.',
-                details: {
-                    timeoutMs: command.timeoutMs,
-                    deadlineEpochMs,
-                    completedCommands: results.length,
-                    totalCommands: recipe.commands.length
-                }
-            },
-            nextStatus: 'failed'
-        };
-    }
-
-    private async cleanupAfterTerminalRecipe(
-        command: RecipeRunCommandWithId,
-        recipe: RallarBlackBoxTestRecipe,
-        outcome: RallarBlackBoxTestCommandOutcome
-    ): Promise<void> {
-        await this.cleanupOwnedResources({
-            reason: outcome.status === 'cancelled'
-                ? 'cancelled'
-                : outcome.error?.code === 'RALLAR_BLACK_BOX_RECIPE_TIMEOUT'
-                ? 'timed-out'
-                : 'failed',
-            commandId: command.commandId,
-            recipeId: recipe.recipeId,
-            status: outcome.status,
-            error: outcome.error
-        });
-    }
-
-    private async waitForEvent(command: WaitCommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
-        return await waitForEvent({
-            command,
-            now: this.now,
-            sleep: this.sleep,
-            cancellationSignal: this.cancellationController.signal,
-            cancelRequested: () => this.cancelRequested,
-            currentStatus: () => this.currentState.status,
-            currentEvents: () => this.currentState.events,
-            subscribe: (listener) => this.subscribe(() => listener())
-        });
-    }
-
-    private assertRuntimeEvidence(command: AssertCommandWithId): RallarBlackBoxTestCommandOutcome {
-        if (typeof command.source !== 'string' || command.source.trim().length === 0) {
-            return this.assertInvalid(command, 'Assert requires a non-empty source.');
-        }
-        if (!isRallarBlackBoxAssertOperator(command.operator)) {
-            return this.assertInvalid(command, 'Assert operator is not supported.', {
-                operator: command.operator,
-                supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
-            });
-        }
-
-        const source = this.resolveAssertSource(command.source);
-        const passed = assertValueMatches(
-            source,
-            command.operator,
-            command.expected
-        );
-        const value = this.toAssertResultValue(command, source, passed);
-
-        if (passed) {
-            return {
-                status: 'ok',
-                value,
-                nextStatus: this.currentState.status
-            };
-        }
-
-        return {
-            status: 'failed',
-            value,
-            error: {
-                code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
-                message: `Assert failed for ${command.source}.`,
-                details: value
-            },
-            nextStatus: 'failed'
-        };
-    }
-
-    private resolveAssertSource(source: string): PayloadPathLookup {
-        const trimmed = source.trim();
-        const [rootName, ...pathParts] = trimmed.split('.').filter((part) => part.length > 0);
-        if (!rootName) {
-            return { exists: false };
-        }
-
-        const roots = this.toAssertSourceRoots();
-        if (!Object.prototype.hasOwnProperty.call(roots, rootName)) {
-            return { exists: false };
-        }
-
-        const root = roots[rootName];
-        if (pathParts.length === 0) {
-            return {
-                exists: root !== undefined,
-                value: root
-            };
-        }
-
-        return lookupPayloadPath(root, pathParts.join('.'));
-    }
-
-    private toAssertSourceRoots(): Record<string, unknown> {
-        const events = this.currentState.events;
-        const messages = events.filter((event) => event.kind === 'message');
-        const diagnostics = events.filter((event) => event.kind === 'diagnostic');
-        const reports = events.filter((event) => event.kind === 'report');
-        const results = this.currentState.commandHistory;
-        const stateView = {
-            ...this.currentState,
-            results,
-            messages,
-            diagnostics,
-            reports
-        };
-
-        return {
-            state: stateView,
-            config: this.currentConfig,
-            currentConfig: this.currentConfig,
-            lastResult: results.at(-1),
-            events,
-            messages,
-            diagnostics,
-            reports,
-            recentEvents: events.slice(-RECENT_ASSERT_SOURCE_LIMIT),
-            recentMessages: messages.slice(-RECENT_ASSERT_SOURCE_LIMIT),
-            recentDiagnostics: diagnostics.slice(-RECENT_ASSERT_SOURCE_LIMIT),
-            latestStats: this.currentState.latestStats,
-            stats: this.currentState.latestStats,
-            failures: this.currentState.failures,
-            resultCache: this.currentState.resultCache
-        };
-    }
-
-    private toAssertResultValue(
-        command: AssertCommandWithId,
-        source: PayloadPathLookup,
-        passed: boolean
-    ): RallarBlackBoxTestAssertResultValue {
-        return {
-            commandId: command.commandId,
-            source: command.source,
-            operator: command.operator,
-            expected: command.expected,
-            actual: source.value,
-            exists: source.exists,
-            passed
-        };
-    }
-
-    private assertInvalid(
-        command: AssertCommandWithId,
-        message: string,
-        details?: unknown
-    ): RallarBlackBoxTestCommandOutcome {
-        return {
-            status: 'failed',
-            value: {
-                commandId: command.commandId,
-                source: command.source,
-                operator: command.operator,
-                expected: command.expected,
-                exists: false,
-                passed: false
-            } satisfies RallarBlackBoxTestAssertResultValue,
-            error: {
-                code: 'RALLAR_BLACK_BOX_ASSERT_INVALID',
-                message,
-                details
-            },
-            nextStatus: 'failed'
-        };
-    }
-
-    private async cancelRecipe(
-        command: Extract<CommandWithId, { kind: 'recipe.cancel'; }>
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        this.requestCancellation(command.reason);
-        this.emitEvent({
+        this.appendEvent({
             kind: 'diagnostic',
             topic: 'rallar.bb.recipe.cancel_requested',
             commandId: command.commandId,
             severity: 'warning',
-            payload: {
-                reason: command.reason
-            }
+            payload: { reason: command.reason }
         });
         if (this.recipeExecutionDepth === 0) {
             await this.cleanupOwnedResources({
@@ -702,38 +215,138 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
         return {
             status: 'ok',
-            value: {
-                cancelRequested: true,
-                reason: command.reason
-            },
-            nextStatus: this.currentState.status === 'running'
-                ? 'cancelled'
-                : this.currentState.status
+            value: { cancelRequested: true, reason: command.reason },
+            nextStatus: this.currentState.status === 'running' ? 'cancelled' : this.currentState.status
         };
     }
 
-    private fakeCommand(command: CommandWithId): RallarBlackBoxTestCommandOutcome {
-        this.emitEvent({
+    private async reset(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
+        const outcome = await this.dependencies.commandExecutor?.(command, this.toCommandContext());
+        this.currentState = createInitialRuntimeState();
+        this.currentConfig = undefined;
+        this.loadedRecipe = undefined;
+        this.cancelRequested = false;
+        this.clearAbortedCancellation();
+        this.notify();
+        return outcome
+            ? { ...outcome, nextStatus: 'idle' }
+            : { status: 'ok', value: { reset: true }, nextStatus: 'idle' };
+    }
+
+    private async runExternalCommand(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
+        const outcome = await this.dependencies.commandExecutor?.(command, this.toCommandContext());
+        if (outcome) {
+            return outcome;
+        }
+        switch (command.kind) {
+            case 'loop':
+                return await new LoopCommandExecution(command, this.toCompositePorts()).run();
+            case 'parallel':
+                return await new ParallelCommandExecution(command, this.toCompositePorts()).run();
+            case 'wait':
+                return await waitForEvent({
+                    command,
+                    now: this.dependencies.now,
+                    sleep: this.dependencies.sleep,
+                    cancellationSignal: this.cancellationController.signal,
+                    cancelRequested: () => this.cancelRequested,
+                    currentStatus: () => this.currentState.status,
+                    currentEvents: () => this.currentState.events,
+                    subscribe: (listener) => this.subscribe(() => listener())
+                });
+            case 'assert':
+                return computeAssertCommandOutcome({ command, state: this.currentState, config: this.currentConfig });
+            case 'health':
+                return {
+                    status: 'ok',
+                    value: toRuntimeHealth(this.currentState),
+                    nextStatus: this.currentState.status
+                };
+            case 'close':
+                this.appendEvent({
+                    kind: 'event',
+                    topic: 'rallar.bb.closed',
+                    commandId: command.commandId,
+                    severity: 'info'
+                });
+                return { status: 'ok', value: { closed: true }, nextStatus: 'idle' };
+            default:
+                return this.recordSimulatedCommand(command);
+        }
+    }
+
+    private recordSimulatedCommand(command: CommandWithId): RallarBlackBoxTestCommandOutcome {
+        const topic = `rallar.bb.fake.${command.kind}`;
+        this.appendEvent({
             kind: 'diagnostic',
-            topic: `rallar.bb.fake.${command.kind}`,
+            topic,
             commandId: command.commandId,
             severity: 'info',
             payload: normalizeRallarBlackBoxRuntimeDiagnostic({
-                topic: `rallar.bb.fake.${command.kind}`,
+                topic,
                 severity: 'info',
                 commandId: command.commandId,
-                payload: { command: this.redact(command) }
+                payload: { command: this.toRedacted(command) }
             })
         });
         return {
             status: 'ok',
-            value: {
-                fake: true,
-                kind: command.kind,
-                commandId: command.commandId
-            },
+            value: { fake: true, kind: command.kind, commandId: command.commandId },
             nextStatus: this.currentState.status
         };
+    }
+
+    private async cleanupOwnedResources(input: RallarBlackBoxTestCleanupInput): Promise<void> {
+        const cleanup = this.dependencies.cleanup;
+        if (!cleanup) {
+            return;
+        }
+        try {
+            await cleanup(input, this.toCommandContext());
+            this.appendEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.cleanup.completed',
+                commandId: input.commandId,
+                severity: 'info',
+                payload: input
+            });
+        }
+        catch (error) {
+            this.appendEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.cleanup.failed',
+                commandId: input.commandId,
+                severity: 'error',
+                payload: { input, error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_CLEANUP_FAILED') }
+            });
+        }
+    }
+
+    private toCommandContext(): RallarBlackBoxTestCommandContext {
+        return {
+            state: () => this.currentState,
+            config: () => this.currentConfig,
+            abortSignal: () => this.cancellationController.signal,
+            recordEvent: (event) => this.appendEvent(event),
+            updateStats: (commandId) => this.updateStats(commandId)
+        };
+    }
+
+    private toCompositePorts(): LoopCommandExecution.Ports {
+        return {
+            now: this.dependencies.now,
+            sleep: this.dependencies.sleep,
+            runChildCommand: (command) => this.runCommand(command, 'bypass'),
+            cancelRequested: () => this.cancelRequested,
+            abortSignal: () => this.cancellationController.signal
+        };
+    }
+
+    private clearAbortedCancellation(): void {
+        if (this.cancellationController.signal.aborted) {
+            this.cancelRequested = false;
+            this.cancellationController = new AbortController();
+        }
     }
 
     private toResult(
@@ -741,8 +354,8 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         startedAtEpochMs: number,
         outcome: RallarBlackBoxTestCommandOutcome
     ): RallarBlackBoxTestResult {
-        const endedAtEpochMs = this.now();
-        const result: RallarBlackBoxTestResult = {
+        const endedAtEpochMs = this.dependencies.now();
+        return {
             commandId: command.commandId,
             kind: command.kind,
             status: outcome.status,
@@ -750,36 +363,22 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             startedAtEpochMs,
             endedAtEpochMs,
             durationMs: Math.max(0, endedAtEpochMs - startedAtEpochMs),
-            value: this.redact(outcome.value),
-            error: this.redact(outcome.error)
+            value: this.toRedacted(outcome.value),
+            error: this.toRedacted(outcome.error)
         };
-        return result;
     }
 
-    private commitResult(
-        result: RallarBlackBoxTestResult,
-        nextStatus: RallarBlackBoxTestRuntimeStatus | undefined
-    ): void {
-        const commandHistory = [...this.currentState.commandHistory, result];
-        const failures = result.ok
-            ? this.currentState.failures
-            : [...this.currentState.failures, result];
-        const resultCache = {
-            ...this.currentState.resultCache,
-            [result.commandId]: result
-        };
-
+    private commitResult(result: RallarBlackBoxTestResult, outcome: RallarBlackBoxTestCommandOutcome): void {
         this.currentState = {
             ...this.currentState,
-            status: nextStatus ?? (result.ok ? 'completed' : 'failed'),
+            status: outcome.nextStatus ?? (result.ok ? 'completed' : 'failed'),
             activeCommand: undefined,
             activeCommandStartedAtEpochMs: undefined,
-            commandHistory,
-            failures,
-            resultCache
+            commandHistory: [...this.currentState.commandHistory, result],
+            failures: result.ok ? this.currentState.failures : [...this.currentState.failures, result],
+            resultCache: { ...this.currentState.resultCache, [result.commandId]: result }
         };
-
-        this.emitEvent({
+        this.appendEvent({
             kind: 'result',
             topic: 'rallar.bb.command.result',
             commandId: result.commandId,
@@ -790,45 +389,31 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot {
-        const latestStats = toRuntimeStats(this.currentState, this.now());
+        const latestStats = toRuntimeStats(this.currentState, this.dependencies.now());
         this.currentState = { ...this.currentState, latestStats };
-        this.emitEvent({ kind: 'stats', topic: 'rallar.bb.stats', commandId, severity: 'info', payload: latestStats });
+        this.appendEvent({
+            kind: 'stats',
+            topic: 'rallar.bb.stats',
+            commandId,
+            severity: 'info',
+            payload: latestStats
+        });
         return latestStats;
     }
 
-    private toHealth(): unknown {
-        return {
-            status: this.currentState.status,
-            configured: this.currentState.currentConfig !== undefined,
-            loadedRecipeId: this.currentState.loadedRecipe?.recipeId,
-            activeCommandId: this.currentState.activeCommand?.commandId,
-            commandCount: this.currentState.commandHistory.length,
-            eventCount: this.currentState.events.length,
-            failureCount: this.currentState.failures.length
-        };
-    }
-
-    private emitEvent(
-        event: RallarBlackBoxTestRuntimeEventInput
-    ): void {
+    private appendEvent(event: RallarBlackBoxTestRuntimeEventInput): void {
         const created: RallarBlackBoxTestEvent = {
             ...event,
-            eventId: this.idFactory('event'),
-            atEpochMs: this.now(),
-            payload: this.redact(event.payload)
+            eventId: this.dependencies.idFactory('event'),
+            atEpochMs: this.dependencies.now(),
+            payload: this.toRedacted(event.payload)
         };
-        this.currentState = {
-            ...this.currentState,
-            events: [...this.currentState.events, created]
-        };
+        this.currentState = { ...this.currentState, events: [...this.currentState.events, created] };
         this.notify();
     }
 
     private setState(patch: Partial<RallarBlackBoxTestState>): void {
-        this.currentState = {
-            ...this.currentState,
-            ...patch
-        };
+        this.currentState = { ...this.currentState, ...patch };
         this.notify();
     }
 
@@ -843,124 +428,95 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
     }
 
-    private withCommandId(command: RallarBlackBoxTestCommand): CommandWithId {
-        return {
-            ...command,
-            commandId: command.commandId ?? this.idFactory('command')
-        } as CommandWithId;
+    private toCommandWithId(command: RallarBlackBoxTestCommand): CommandWithId {
+        return { ...command, commandId: command.commandId ?? this.dependencies.idFactory('command') } as CommandWithId;
     }
 
-    private redact<T>(value: T): T {
-        return redactRallarBlackBoxValue(
-            value,
-            this.currentRedaction
-        );
-    }
-
-    private toCompositeExecutionPorts() {
-        return {
-            now: this.now,
-            sleep: this.sleep,
-            executeCommand: (command: RallarBlackBoxTestCommand, options?: Readonly<{ bypassCache?: boolean; }>) =>
-                this.executeCommand(command, options),
-            cancelRequested: () => this.cancelRequested,
-            abortSignal: () => this.cancellationController.signal
-        };
-    }
-
-    private async reset(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
-        const outcome = await this.commandExecutor?.(command, this.toCommandContext());
-        this.currentState = initialState();
-        this.currentConfig = undefined;
-        this.currentRedaction = undefined;
-        this.loadedRecipe = undefined;
-        this.cancelRequested = false;
-        this.resetCancellationSignal();
-        this.notify();
-        return outcome
-            ? { ...outcome, nextStatus: 'idle' }
-            : { status: 'ok', value: { reset: true }, nextStatus: 'idle' };
-    }
-
-    private async dispatchExternalCommand(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
-        const outcome = await this.commandExecutor?.(command, this.toCommandContext());
-        if (outcome) {
-            return outcome;
-        }
-        switch (command.kind) {
-            case 'loop':
-                return await new LoopCommandExecution(command, this.toCompositeExecutionPorts()).run();
-            case 'parallel':
-                return await new ParallelCommandExecution(command, this.toCompositeExecutionPorts()).run();
-            case 'wait':
-                return await this.waitForEvent(command);
-            case 'assert':
-                return this.assertRuntimeEvidence(command);
-            case 'health':
-                return { status: 'ok', value: this.toHealth(), nextStatus: this.currentState.status };
-            case 'close':
-                this.emitEvent({
-                    kind: 'event',
-                    topic: 'rallar.bb.closed',
-                    commandId: command.commandId,
-                    severity: 'info'
-                });
-                return { status: 'ok', value: { closed: true }, nextStatus: 'idle' };
-            default:
-                return this.fakeCommand(command);
-        }
-    }
-
-    private async runRecipeCommands(
-        command: RecipeRunCommandWithId,
-        recipe: RallarBlackBoxTestRecipe,
-        deadlineEpochMs: number | undefined
-    ): Promise<RallarBlackBoxTestCommandOutcome> {
-        const results: RallarBlackBoxTestResult[] = [];
-        for (const child of recipe.commands) {
-            if (this.cancelRequested) {
-                return this.toCancelledRecipeOutcome(recipe, results);
-            }
-            if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
-                return this.recipeTimedOut({ command, recipe, results, deadlineEpochMs });
-            }
-            const result = await this.executeCommand(this.toRecipeChildCommand(child, deadlineEpochMs), {
-                bypassCache: true
-            });
-            results.push(result);
-            if (this.cancelRequested || result.status === 'cancelled') {
-                return this.toCancelledRecipeOutcome(recipe, results);
-            }
-            if (!result.ok && recipe.continueOnFailure !== true) {
-                return {
-                    status: 'failed',
-                    value: { recipeId: recipe.recipeId, results },
-                    nextStatus: 'failed',
-                    error: {
-                        code: 'RALLAR_BLACK_BOX_RECIPE_FAILED',
-                        message: 'Recipe failed at command ' + result.commandId + '.',
-                        details: result.error
-                    }
-                };
-            }
-        }
-        return { status: 'ok', value: { recipeId: recipe.recipeId, results }, nextStatus: 'completed' };
-    }
-
-    private toCancelledRecipeOutcome(
-        recipe: RallarBlackBoxTestRecipe,
-        results: readonly RallarBlackBoxTestResult[]
-    ): RallarBlackBoxTestCommandOutcome {
-        return {
-            status: 'cancelled',
-            value: { recipeId: recipe.recipeId, results, cancelled: true },
-            nextStatus: 'cancelled'
-        };
+    private toRedacted<T>(value: T): T {
+        return redactRallarBlackBoxValue(value, this.currentConfig?.redaction);
     }
 }
 
 export function createRallarBlackBoxTestRuntime(
     options: CreateRallarBlackBoxTestRuntimeOptions = {}
 ): RallarBlackBoxTestRuntime {
-    return new InMemoryRallarBlackBoxTestRuntime(options);
+    return new InMemoryRallarBlackBoxTestRuntime(toRuntimeDependencies(options));
+}
+
+function toRuntimeDependencies(
+    options: CreateRallarBlackBoxTestRuntimeOptions
+): InMemoryRallarBlackBoxTestRuntime.Dependencies {
+    return {
+        now: options.now ?? (() => Date.now()),
+        sleep: options.sleep ?? sleepWithAbort,
+        idFactory: options.idFactory ?? createSequentialIdFactory(),
+        commandExecutor: options.commandExecutor,
+        cleanup: options.cleanup
+    };
+}
+
+function createInitialRuntimeState(): RallarBlackBoxTestState {
+    return { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };
+}
+
+function createSequentialIdFactory(): (prefix: string) => string {
+    let sequence = 1;
+    return (prefix: string) => `${prefix}-${sequence++}`;
+}
+
+function toRuntimeHealth(state: RallarBlackBoxTestState): RallarBlackBoxTestRuntimeHealth {
+    return {
+        status: state.status,
+        configured: state.currentConfig !== undefined,
+        loadedRecipeId: state.loadedRecipe?.recipeId,
+        activeCommandId: state.activeCommand?.commandId,
+        commandCount: state.commandHistory.length,
+        eventCount: state.events.length,
+        failureCount: state.failures.length
+    };
+}
+
+function toInvalidRecipeOutcome(issues: readonly string[]): RallarBlackBoxTestCommandOutcome {
+    return {
+        status: 'failed',
+        error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: issues.join('\n') },
+        nextStatus: 'failed'
+    };
+}
+
+function toTerminalCleanupReason(outcome: RallarBlackBoxTestCommandOutcome): RallarBlackBoxTestCleanupInput['reason'] {
+    if (outcome.status === 'cancelled') {
+        return 'cancelled';
+    }
+    return outcome.error?.code === RALLAR_BLACK_BOX_RECIPE_TIMEOUT ? 'timed-out' : 'failed';
+}
+
+function decodeThrownCommandOutcome(error: unknown): RallarBlackBoxTestCommandOutcome {
+    return isAbortError(error)
+        ? {
+            status: 'cancelled',
+            error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_COMMAND_CANCELLED'),
+            nextStatus: 'cancelled'
+        }
+        : {
+            status: 'failed',
+            error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_COMMAND_FAILED'),
+            nextStatus: 'failed'
+        };
+}
+
+function decodeRuntimeTestError(error: unknown, code: string): RallarBlackBoxTestError {
+    return error instanceof Error
+        ? { code, message: error.message, details: { name: error.name, stack: error.stack } }
+        : { code, message: String(error) };
+}
+
+interface RallarBlackBoxTestRuntimeHealth {
+    readonly status: RallarBlackBoxTestState['status'];
+    readonly configured: boolean;
+    readonly loadedRecipeId: string | undefined;
+    readonly activeCommandId: string | undefined;
+    readonly commandCount: number;
+    readonly eventCount: number;
+    readonly failureCount: number;
 }

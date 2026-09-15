@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     selectRallarBlackBoxEvents,
-    selectRallarBlackBoxMessages
+    selectRallarBlackBoxMessages,
+    type RallarBlackBoxBrowserRallarConnectionConfig,
+    type RallarBlackBoxBrowserRallarRuntimeMethod
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from '.././browser-rallar-required-methods-test-double.ts';
 import { BrowserWebSocketFixture } from './browser-websocket-fixture.ts';
@@ -186,7 +188,7 @@ describe('rallar-bb runtime sockets', () => {
     });
 
     it('routes ws.send through browser Rallar signaling when no raw socket is open', async () => {
-        const sends: unknown[] = [];
+        const sends: Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0][] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
                 ...createBrowserRallarRequiredMethodsTestDouble(),
@@ -259,8 +261,8 @@ describe('rallar-bb runtime sockets', () => {
 
     it('prefers browser Rallar signaling for app WS envelopes even when a raw socket is open', async () => {
         const sockets: BrowserWebSocketFixture[] = [];
-        const connects: unknown[] = [];
-        const sends: unknown[] = [];
+        const connects: RallarBlackBoxBrowserRallarConnectionConfig[] = [];
+        const sends: Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0][] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             webSocketFactory: (url) => {
                 const socket = new BrowserWebSocketFixture(url);

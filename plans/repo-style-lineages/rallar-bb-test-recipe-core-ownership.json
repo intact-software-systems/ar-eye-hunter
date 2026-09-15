@@ -22,6 +22,31 @@
         "packages/shared-test/rallar-bb-test/control/validate-ws-control-command.ts",
         "packages/shared-test/rallar-bb-test/distributed/decode-control-agent-identity.ts"
       ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/runtime.ts",
+        "blob": "21d7a0d62702360ed00827c4f49aa65269045bd4"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/assert/compute-assert-command-outcome.ts",
+        "packages/shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts",
+        "packages/shared-test/rallar-bb-test/loop/loop-command-execution.ts",
+        "packages/shared-test/rallar-bb-test/loop/loop-command-thresholds.ts",
+        "packages/shared-test/rallar-bb-test/loop/resolve-loop-plan.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-child-command.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-outcome.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-result-value.ts",
+        "packages/shared-test/rallar-bb-test/parallel/parallel-command-execution.ts",
+        "packages/shared-test/rallar-bb-test/recipe/run-recipe-commands.ts",
+        "packages/shared-test/rallar-bb-test/recipe/validate-executable-recipe.ts",
+        "packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts",
+        "packages/shared-test/rallar-bb-test/runtime/sleep-with-abort.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-merged-runtime-config.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-runtime-command-values.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts"
+      ]
     }
   ]
 }

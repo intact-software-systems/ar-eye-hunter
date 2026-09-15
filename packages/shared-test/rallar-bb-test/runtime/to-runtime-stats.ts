@@ -1,18 +1,19 @@
-import { toRecord } from './to-runtime-command-values.ts';
-import {
-    type RallarBlackBoxTestLoopPacingSummary,
-    type RallarBlackBoxTestLoopResultValue,
-    type RallarBlackBoxTestLoopSendSummary,
-    type RallarBlackBoxTestRtcStreamResultValue,
-    type RallarBlackBoxTestState,
-    type RallarBlackBoxTestStatsSnapshot
-} from './rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestLoopPacingSummary,
+    RallarBlackBoxTestLoopResultValue,
+    RallarBlackBoxTestLoopSendSummary,
+    RallarBlackBoxTestRtcStreamResultValue,
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestStatsSnapshot
+} from '../rallar-black-box-test-contracts.ts';
+import { decodeRecord } from './decode-runtime-result-values.ts';
+
 export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number): RallarBlackBoxTestStatsSnapshot {
     const events = state.events;
     const config = state.currentConfig;
     const durations = state.commandHistory.map((result) => result.durationMs);
-    const latestStats: RallarBlackBoxTestStatsSnapshot = {
-        atEpochMs: atEpochMs,
+    return {
+        atEpochMs,
         runId: config?.runId,
         agentId: config?.agentId,
         status: state.status,
@@ -38,18 +39,17 @@ export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number
         rallar: toRuntimeConnectionStats(state),
         load: toRuntimeLoadStats(state)
     };
-
-    return latestStats;
 }
-function toLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
-    const record = toRecord(value);
+
+function decodeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
+    const record = decodeRecord(value);
     return typeof record.commandId === 'string' && record.pacing !== undefined
         ? value as RallarBlackBoxTestLoopResultValue
         : undefined;
 }
 
-function toStreamResultValue(value: unknown): RallarBlackBoxTestRtcStreamResultValue | undefined {
-    const record = toRecord(value);
+function decodeStreamResultValue(value: unknown): RallarBlackBoxTestRtcStreamResultValue | undefined {
+    const record = decodeRecord(value);
     return typeof record.commandId === 'string' &&
             typeof record.plannedFrames === 'number' &&
             record.pacing !== undefined &&
@@ -142,10 +142,10 @@ function toStatsStreamSummary(
 function toRuntimeLoadStats(state: RallarBlackBoxTestState): RallarBlackBoxTestStatsSnapshot['load'] {
     const loopResults = state.commandHistory.filter((result) => result.kind === 'loop');
     const latestLoopResult = loopResults.at(-1);
-    const latestLoopValue = toLoopResultValue(latestLoopResult?.value);
+    const latestLoopValue = decodeLoopResultValue(latestLoopResult?.value);
     const streamResults = state.commandHistory.filter((result) => result.kind === 'rtc.stream');
     const latestStreamResult = streamResults.at(-1);
-    const latestStreamValue = toStreamResultValue(latestStreamResult?.value);
+    const latestStreamValue = decodeStreamResultValue(latestStreamResult?.value);
     return loopResults.length > 0 || streamResults.length > 0
         ? {
             loopCount: loopResults.length,
@@ -170,7 +170,7 @@ function toRuntimeConnectionStats(state: RallarBlackBoxTestState): RallarBlackBo
             event.topic.includes('rallar.browser.connect_completed')
         )
         .at(-1);
-    const lastRallarPayload = toRecord(lastRallarDiagnostic?.payload);
+    const lastRallarPayload = decodeRecord(lastRallarDiagnostic?.payload);
     return {
         connected: lastRallarDiagnostic !== undefined,
         actor: config?.actor,

@@ -107,9 +107,12 @@ captures the command wait deadline before invoking the installed messaging owner
 [WebSocket commands](./rallar-bb-test/browser/browser-websocket-commands.ts),
 [RTC stream scheduling](./rallar-bb-test/browser/browser-rtc-stream.ts), and
 [browser feature commands](./rallar-bb-test/browser/browser-rallar-feature-commands.ts)
-own their transport effects. The recipe runtime delegates bounded scheduling to
-[loop execution](./rallar-bb-test/loop-command-execution.ts) and
-[parallel execution](./rallar-bb-test/parallel-command-execution.ts).
+own their transport effects. The recipe runtime owns result caching, state, cancellation and cleanup;
+it delegates bounded scheduling and collected evidence to
+[loop execution](./rallar-bb-test/loop/loop-command-execution.ts),
+[parallel execution](./rallar-bb-test/parallel/parallel-command-execution.ts) and
+[recipe commands](./rallar-bb-test/recipe/run-recipe-commands.ts), and assert evaluation to
+[assert outcomes](./rallar-bb-test/assert/compute-assert-command-outcome.ts).
 
 The [control command validator](./rallar-bb-test/control/validate-rallar-black-box-test-command.ts)
 owns recursive wire validation and reports every issue; per-family field rules sit beside it in

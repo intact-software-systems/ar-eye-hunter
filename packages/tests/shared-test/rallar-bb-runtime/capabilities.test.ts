@@ -5,13 +5,28 @@ import {
     selectRallarBlackBoxDiagnostics,
     selectRallarBlackBoxEvents,
     selectRallarBlackBoxMessages,
+    type RallarBlackBoxBrowserRallarConnectionConfig,
+    type RallarBlackBoxBrowserRallarRuntimeMethod,
     type RallarBlackBoxTestRtcStreamResultValue
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from '.././browser-rallar-required-methods-test-double.ts';
 
+type AdapterMethodInput = Parameters<RallarBlackBoxBrowserRallarRuntimeMethod>[0];
+
+interface RecordedAdapterCall {
+    readonly name: string;
+    /** Absent for adapter calls that take no input. */
+    readonly value?: AdapterMethodInput | RallarBlackBoxBrowserRallarConnectionConfig;
+}
+
+interface RecordedFetchCall {
+    readonly input: RequestInfo | URL;
+    readonly init: RequestInit | undefined;
+}
+
 describe('rallar-bb runtime capabilities', () => {
     it('delegates RTC commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown; }> = [];
+        const calls: RecordedAdapterCall[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             now: (() => {
                 let now = 2_000;
@@ -144,8 +159,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('delegates CRDT commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown; }> = [];
-        const recordCrdtCall = (name: string) => async (input: unknown) => {
+        const calls: RecordedAdapterCall[] = [];
+        const recordCrdtCall = (name: string) => async (input: AdapterMethodInput) => {
             calls.push({ name, value: input });
             return {
                 status: name,
@@ -311,8 +326,8 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('delegates director commands to the browser Rallar runtime adapter', async () => {
-        const calls: Array<{ name: string; value?: unknown; }> = [];
-        const recordDirectorCall = (name: string) => async (input: unknown) => {
+        const calls: RecordedAdapterCall[] = [];
+        const recordDirectorCall = (name: string) => async (input: AdapterMethodInput) => {
             calls.push({ name, value: input });
             return {
                 status: name,
@@ -672,7 +687,7 @@ describe('rallar-bb runtime capabilities', () => {
     });
 
     it('executes browser-native HTTP requests through the adapter', async () => {
-        const fetchCalls: unknown[] = [];
+        const fetchCalls: RecordedFetchCall[] = [];
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             fetch: async (input, init) => {
                 fetchCalls.push({ input, init });

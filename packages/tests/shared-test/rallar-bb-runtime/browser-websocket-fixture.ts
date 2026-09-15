@@ -1,5 +1,9 @@
 import type { RallarBlackBoxBrowserWebSocket } from '../../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 
+type BrowserWebSocketData = Parameters<RallarBlackBoxBrowserWebSocket['send']>[0];
+type BrowserWebSocketListener = NonNullable<RallarBlackBoxBrowserWebSocket['onmessage']>;
+type BrowserWebSocketEvent = Parameters<BrowserWebSocketListener>[0];
+
 export namespace BrowserWebSocketFixture {
     export interface Options {
         readonly echoMessages?: boolean;
@@ -13,8 +17,8 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
     readyState = 0;
     bufferedAmount = 0;
     closeCount = 0;
-    readonly sent: unknown[] = [];
-    private readonly listeners = new Map<string, Array<(event: unknown) => void>>();
+    readonly sent: BrowserWebSocketData[] = [];
+    private readonly listeners = new Map<string, BrowserWebSocketListener[]>();
 
     readonly url: string;
     private readonly options: BrowserWebSocketFixture.Options;
@@ -28,15 +32,15 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
         });
     }
 
-    addEventListener(type: string, listener: (event: unknown) => void): void {
+    addEventListener(type: string, listener: BrowserWebSocketListener): void {
         this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
     }
 
-    removeEventListener(type: string, listener: (event: unknown) => void): void {
+    removeEventListener(type: string, listener: BrowserWebSocketListener): void {
         this.listeners.set(type, (this.listeners.get(type) ?? []).filter((entry) => entry !== listener));
     }
 
-    send(data: unknown): void {
+    send(data: BrowserWebSocketData): void {
         this.sent.push(data);
         this.bufferedAmount = this.options.bufferedAmountAfterSend ?? 0;
         if (this.options.echoMessages) {
@@ -50,7 +54,7 @@ export class BrowserWebSocketFixture implements RallarBlackBoxBrowserWebSocket {
         this.emit('close', { code, reason, wasClean: true });
     }
 
-    private emit(type: string, event: unknown): void {
+    private emit(type: string, event: BrowserWebSocketEvent): void {
         for (const listener of this.listeners.get(type) ?? []) {
             listener(event);
         }

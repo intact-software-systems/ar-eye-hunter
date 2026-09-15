@@ -1,28 +1,43 @@
-import { toRecord } from '../to-runtime-command-values.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type {
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopThresholdFailure,
-    RallarBlackBoxTestLoopThresholds
+    RallarBlackBoxTestLoopThresholds,
+    RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
-interface LoopThresholdIssue {
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+
+export interface LoopThresholdIssue {
     readonly message: string;
-    readonly details: unknown;
+    readonly details: RallarBlackBoxTestRecord;
 }
 
-export function evaluateLoopThresholds(
-    thresholds: RallarBlackBoxTestLoopThresholds | undefined,
+interface LoopPacingMaximum {
+    readonly name: 'maxAverageStartDriftMs' | 'maxStartDriftMs' | 'maxJitterMs';
+    readonly label: string;
+    readonly threshold: number | undefined;
+    readonly actual: number | undefined;
+}
+
+const NON_NEGATIVE_THRESHOLD_KEYS = [
+    'minAchievedRateHz',
+    'maxAverageStartDriftMs',
+    'maxStartDriftMs',
+    'maxJitterMs'
+] as const;
+
+export function computeLoopThresholdFailures(
+    thresholds: RallarBlackBoxTestLoopThresholds,
     value: RallarBlackBoxTestLoopResultValue
 ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
-    return thresholds
-        ? [
-            ...evaluateLoopRateThreshold(thresholds, value),
-            ...evaluateLoopDriftThresholds(thresholds, value),
-            ...evaluateLoopDeliveryThresholds(thresholds, value)
-        ]
-        : [];
+    return [
+        ...computeLoopRateFailures(thresholds, value),
+        ...computeLoopDriftFailures(thresholds, value),
+        ...computeLoopDeliveryFailures(thresholds, value)
+    ];
 }
 
-function evaluateLoopRateThreshold(
+function computeLoopRateFailures(
     thresholds: RallarBlackBoxTestLoopThresholds,
     value: RallarBlackBoxTestLoopResultValue
 ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
@@ -45,58 +60,45 @@ function evaluateLoopRateThreshold(
     return failures;
 }
 
-function evaluateLoopDriftThresholds(
+function computeLoopDriftFailures(
     thresholds: RallarBlackBoxTestLoopThresholds,
     value: RallarBlackBoxTestLoopResultValue
 ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
-    const failures: RallarBlackBoxTestLoopThresholdFailure[] = [];
     const pacing = value.pacing;
-    if (
-        thresholds.maxAverageStartDriftMs !== undefined &&
-        pacing?.averageStartDriftMs !== undefined &&
-        pacing.averageStartDriftMs > thresholds.maxAverageStartDriftMs
-    ) {
-        failures.push({
+    const maximums: readonly LoopPacingMaximum[] = [
+        {
             name: 'maxAverageStartDriftMs',
-            category: 'pacing',
+            label: 'Average loop start drift',
             threshold: thresholds.maxAverageStartDriftMs,
-            actual: pacing.averageStartDriftMs,
-            message:
-                `Average loop start drift was ${pacing.averageStartDriftMs} ms, above the configured ${thresholds.maxAverageStartDriftMs} ms maximum.`
-        });
-    }
-    if (
-        thresholds.maxStartDriftMs !== undefined &&
-        pacing?.maxStartDriftMs !== undefined &&
-        pacing.maxStartDriftMs > thresholds.maxStartDriftMs
-    ) {
-        failures.push({
+            actual: pacing?.averageStartDriftMs
+        },
+        {
             name: 'maxStartDriftMs',
-            category: 'pacing',
+            label: 'Maximum loop start drift',
             threshold: thresholds.maxStartDriftMs,
-            actual: pacing.maxStartDriftMs,
-            message:
-                `Maximum loop start drift was ${pacing.maxStartDriftMs} ms, above the configured ${thresholds.maxStartDriftMs} ms maximum.`
-        });
-    }
-    if (
-        thresholds.maxJitterMs !== undefined &&
-        pacing?.maxJitterMs !== undefined &&
-        pacing.maxJitterMs > thresholds.maxJitterMs
-    ) {
-        failures.push({
+            actual: pacing?.maxStartDriftMs
+        },
+        {
             name: 'maxJitterMs',
-            category: 'pacing',
+            label: 'Maximum loop jitter',
             threshold: thresholds.maxJitterMs,
-            actual: pacing.maxJitterMs,
-            message:
-                `Maximum loop jitter was ${pacing.maxJitterMs} ms, above the configured ${thresholds.maxJitterMs} ms maximum.`
-        });
-    }
-    return failures;
+            actual: pacing?.maxJitterMs
+        }
+    ];
+    return maximums.flatMap(({ name, label, threshold, actual }) =>
+        threshold !== undefined && actual !== undefined && actual > threshold
+            ? [{
+                name,
+                category: 'pacing' as const,
+                threshold,
+                actual,
+                message: `${label} was ${actual} ms, above the configured ${threshold} ms maximum.`
+            }]
+            : []
+    );
 }
 
-function evaluateLoopDeliveryThresholds(
+function computeLoopDeliveryFailures(
     thresholds: RallarBlackBoxTestLoopThresholds,
     value: RallarBlackBoxTestLoopResultValue
 ): readonly RallarBlackBoxTestLoopThresholdFailure[] {
@@ -132,75 +134,50 @@ function evaluateLoopDeliveryThresholds(
     return failures;
 }
 
-export function validateLoopThresholds(value: unknown): LoopThresholdIssue | undefined {
+/** Absent thresholds decode to an empty set, which no loop result can fail. */
+export function decodeLoopThresholds(value: unknown): Either<LoopThresholdIssue, RallarBlackBoxTestLoopThresholds> {
     if (value === undefined) {
-        return undefined;
+        return Either.ofRight({});
     }
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return {
-            message: 'Loop thresholds must be an object.',
-            details: {
-                thresholds: value
-            }
-        };
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft({ message: 'Loop thresholds must be an object.', details: { thresholds: value } });
     }
-
-    const thresholds = toRecord(value);
-
-    const nonNegativeNumbers = [
-        'minAchievedRateHz',
-        'maxAverageStartDriftMs',
-        'maxStartDriftMs',
-        'maxJitterMs'
-    ];
-    for (const key of nonNegativeNumbers) {
-        const value = thresholds[key];
-        if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
-            return {
-                message: 'Loop threshold values must be non-negative finite numbers.',
-                details: {
-                    threshold: key,
-                    value
-                }
-            };
-        }
-    }
-
-    return validateLoopDeliveryThresholds(thresholds);
+    const issue = toNonNegativeThresholdIssue(value) ?? toDeliveryThresholdIssue(value);
+    return issue === undefined
+        ? Either.ofRight(value as RallarBlackBoxTestLoopThresholds)
+        : Either.ofLeft(issue);
 }
 
-function validateLoopDeliveryThresholds(thresholds: Record<string, unknown>): LoopThresholdIssue | undefined {
+function toNonNegativeThresholdIssue(thresholds: RallarBlackBoxTestRecord): LoopThresholdIssue | undefined {
+    const key = NON_NEGATIVE_THRESHOLD_KEYS.find((candidate) => {
+        const threshold = thresholds[candidate];
+        return threshold !== undefined &&
+            (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0);
+    });
+    return key === undefined
+        ? undefined
+        : {
+            message: 'Loop threshold values must be non-negative finite numbers.',
+            details: { threshold: key, value: thresholds[key] }
+        };
+}
+
+function toDeliveryThresholdIssue(thresholds: RallarBlackBoxTestRecord): LoopThresholdIssue | undefined {
     const minSendSuccessRatio = thresholds.minSendSuccessRatio;
     if (
         minSendSuccessRatio !== undefined &&
-        (
-            typeof minSendSuccessRatio !== 'number' ||
-            !Number.isFinite(minSendSuccessRatio) ||
-            minSendSuccessRatio < 0 ||
-            minSendSuccessRatio > 1
-        )
+        (typeof minSendSuccessRatio !== 'number' || !Number.isFinite(minSendSuccessRatio) ||
+            minSendSuccessRatio < 0 || minSendSuccessRatio > 1)
     ) {
         return {
             message: 'Loop minSendSuccessRatio threshold must be between 0 and 1.',
-            details: {
-                threshold: 'minSendSuccessRatio',
-                value: minSendSuccessRatio
-            }
+            details: { threshold: 'minSendSuccessRatio', value: minSendSuccessRatio }
         };
     }
-
-    if (
-        thresholds.failOnBackpressure !== undefined &&
-        typeof thresholds.failOnBackpressure !== 'boolean'
-    ) {
-        return {
+    return thresholds.failOnBackpressure !== undefined && typeof thresholds.failOnBackpressure !== 'boolean'
+        ? {
             message: 'Loop failOnBackpressure threshold must be a boolean.',
-            details: {
-                threshold: 'failOnBackpressure',
-                value: thresholds.failOnBackpressure
-            }
-        };
-    }
-
-    return undefined;
+            details: { threshold: 'failOnBackpressure', value: thresholds.failOnBackpressure }
+        }
+        : undefined;
 }

@@ -6,7 +6,8 @@ import {
     selectRallarBlackBoxLatestStats,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestLoopResultValue,
-    type RallarBlackBoxTestParallelResultValue
+    type RallarBlackBoxTestParallelResultValue,
+    type RallarBlackBoxTestRecord
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { createDeterministicRuntime } from './create-deterministic-runtime.ts';
 
@@ -397,7 +398,7 @@ describe('rallar-bb runtime composite', () => {
         const value = result.value as RallarBlackBoxTestLoopResultValue;
         const sentPayloads = capturedCommands.map((command) =>
             ((command as Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>).send as {
-                data: Record<string, unknown>;
+                data: RallarBlackBoxTestRecord;
             }).data
         );
 

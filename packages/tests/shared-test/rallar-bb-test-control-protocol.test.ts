@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { parseControlServerMessage, type ControlCommandEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
-import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecord
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
@@ -316,7 +319,7 @@ describe('rallar-bb-test control protocol', () => {
         const controlCapabilities = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
             .filter((capability) => !capability.kind.startsWith('crdt.'));
         for (const capability of controlCapabilities) {
-            const example: Record<string, unknown> = { ...capability.example };
+            const example: RallarBlackBoxTestRecord = { ...capability.example };
             expect(validateRallarBlackBoxTestCommand(example), capability.kind).toEqual({ ok: true });
             expect(validateRallarBlackBoxTestCommand({ ...example, undeclared: true }), capability.kind).toMatchObject({
                 ok: false,
