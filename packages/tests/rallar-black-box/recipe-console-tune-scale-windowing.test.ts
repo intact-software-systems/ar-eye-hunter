@@ -328,7 +328,7 @@ describe('Recipe Console Tune pressure UI', () => {
         expect(navigate).not.toHaveBeenCalled();
     });
 
-    it('indexes and reaches a late long-bidi pointer among 24,002 editable knobs', async () => {
+    it('indexes and reaches a late long-bidi pointer among 22,002 editable knobs', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
         const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
         const source = {
@@ -342,11 +342,11 @@ describe('Recipe Console Tune pressure UI', () => {
         )?.pointer;
         expect(pointer).toBeDefined();
         expect(index.work).toEqual({
-            knobRowsVisited: 24_002,
-            editableOptionsProjected: 24_002,
+            knobRowsVisited: 22_002,
+            editableOptionsProjected: 22_002,
             blockedRowsProjected: 0,
-            uniquePointersIndexed: 24_002,
-            revisionRowsProjected: 24_002,
+            uniquePointersIndexed: 22_002,
+            revisionRowsProjected: 22_002,
             hintRowsVisited: 0
         });
         expect(JSON.stringify(index.work))
@@ -404,7 +404,7 @@ describe('Recipe Console Tune pressure UI', () => {
         const range = container.querySelector(
             '[data-searchable-listbox-range]'
         )?.textContent;
-        expect(range).toMatch(/^Showing [\d,]+–[\d,]+ of 24,000 options\.$/u);
+        expect(range).toMatch(/^Showing [\d,]+–[\d,]+ of 22,000 options\.$/u);
 
         await act(async () => render(structuredClone(source)));
 

@@ -121,8 +121,6 @@ function toLoopSendSummary(
         successRatio: observations.length > 0 ? toRoundedMetric(succeeded / observations.length) : undefined,
         duration: toSendDurationSummary(observations.map((observation) => observation.durationMs)),
         queuedCount: observations.filter((observation) => observation.queued).length,
-        enqueuedCount: observations.filter((observation) => observation.enqueued).length,
-        backpressureCount: observations.filter((observation) => observation.backpressured).length,
         droppedPayloadCount: observations.reduce((sum, observation) => sum + (observation.droppedPayloadCount ?? 0), 0),
         replacedPayloadCount: observations.reduce(
             (sum, observation) => sum + (observation.replacedPayloadCount ?? 0),
@@ -170,8 +168,6 @@ function toSendObservation(result: RallarBlackBoxTestResult): RallarBlackBoxTest
         ok: result.ok,
         status: decodeText(observation.status),
         queued: decodeBoolean(observation.queued) ?? false,
-        enqueued: decodeBoolean(observation.enqueued) ?? false,
-        backpressured: decodeBoolean(observation.backpressured) ?? false,
         droppedPayloadCount: decodeFiniteNumber(observation.droppedPayloadCount),
         replacedPayloadCount: decodeFiniteNumber(observation.replacedPayloadCount),
         errorCode: result.error?.code

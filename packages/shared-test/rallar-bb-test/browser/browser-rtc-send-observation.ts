@@ -102,6 +102,7 @@ export function toRtcSendFailure(result: RtcSendResult): RallarBlackBoxTestError
 export function toRtcSendObservation(input: RtcSendObservationInput): RallarBlackBoxTestSendObservation {
     const status = toRtcSendStatus(input.result);
     const droppedPayloadCount = input.result.peerResults.filter((peer) => peer.status === 'dropped').length;
+    const replacedPayloadCount = input.result.peerResults.filter((peer) => peer.status === 'replaced').length;
     return {
         commandId: input.command.commandId,
         kind: input.command.kind,
@@ -111,6 +112,7 @@ export function toRtcSendObservation(input: RtcSendObservationInput): RallarBlac
         status,
         queued: status === 'queued',
         droppedPayloadCount: droppedPayloadCount > 0 ? droppedPayloadCount : undefined,
+        replacedPayloadCount: replacedPayloadCount > 0 ? replacedPayloadCount : undefined,
         errorCode: input.errorCode
     };
 }

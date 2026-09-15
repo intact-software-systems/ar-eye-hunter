@@ -358,8 +358,7 @@ describe('rallar-bb-test capability and schema contract', () => {
                         maxAverageStartDriftMs: 25,
                         maxStartDriftMs: 50,
                         maxJitterMs: 30,
-                        minSendSuccessRatio: 0.95,
-                        failOnBackpressure: true
+                        minSendSuccessRatio: 0.95
                     },
                     commands: [
                         {

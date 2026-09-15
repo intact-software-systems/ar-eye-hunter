@@ -6,7 +6,7 @@ import {
 } from './rallar-black-box-test-contracts.ts';
 
 export const RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT = 2_000;
-export const RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND = 12;
+export const RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND = 11;
 
 const GLOBAL_TUNING_KNOB_COUNT = 2;
 const LONG_BIDI_SUFFIX = `\u202egnol-界-\u2066exact\u2069-${'stream'.repeat(22)}`;
@@ -113,7 +113,6 @@ function streamCommand(
         thresholds: {
             minSendSuccessRatio: 0.99,
             maxDroppedFrames: 1,
-            maxBackpressureCount: 2,
             maxP95SendDurationMs: 40,
             maxP99SendDurationMs: 80,
             maxAverageStartDriftMs: 10,

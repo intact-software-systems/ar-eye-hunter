@@ -464,12 +464,11 @@ parallel group IDs.
 Loop results also include load-oriented observability. `value.pacing` records
 requested interval/rate, actual iteration timestamps, elapsed time, drift,
 jitter, skipped iterations, and cancelled iterations. `value.sends` records
-send counts, success ratio, duration statistics, queued/enqueued/backpressure
-counts, dropped/replaced payload counts, per-transport failure counts, and raw
+send counts, success ratio, duration statistics, queued counts,
+dropped/replaced payload counts, per-transport failure counts, and raw
 send observations when the adapter can expose them. `loop.thresholds` can fail
 the parent command with `RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED` when achieved
-rate, drift, jitter, send success ratio, or backpressure evidence misses the
-configured limits. The `stats` command mirrors the latest loop under
+rate, drift, jitter, or send success ratio misses the configured limits. The `stats` command mirrors the latest loop under
 `stats.load` without raw iteration or send observation arrays for SPA and
 artifact summaries.
 
@@ -478,7 +477,7 @@ to model a realtime stream, such as 100 frames at 20 Hz, without expanding that
 stream into hundreds of sequential `rtc.send` commands. A stream command owns
 frame scheduling inside the browser agent, sends frames against a fixed
 wall-clock cadence, and returns one aggregate result with planned, attempted,
-completed, failed, dropped, and backpressured frame counts. It also records
+completed, failed, and dropped frame counts. It also records
 send duration percentiles (`p50Ms`, `p95Ms`, `p99Ms`, and `maxMs`), achieved
 schedule/completion Hz, pacing drift, jitter, threshold failures, and sampled
 frame observations.
@@ -495,10 +494,10 @@ Stream payloads support stream placeholders after normal config/session
 placeholders are resolved: `{stream.index}`, `{stream.iteration}`,
 `{stream.elapsedMs}`, `{stream.scheduledElapsedMs}`, and
 `{stream.commandId}`. Recipes must provide `count` or `durationMs`, and
-`intervalMs` or `rateHz`. `maxInFlight` bounds memory and backpressure; frames
+`intervalMs` or `rateHz`. `maxInFlight` bounds memory and pending sends; frames
 above the in-flight limit are recorded as dropped instead of creating unbounded
 promises. `rtc.stream.thresholds` can fail the command when delivery,
-backpressure, latency, drift, or jitter misses configured limits.
+latency, drift, or jitter misses configured limits.
 
 Composite conformance coverage lives in `composite-conformance.ts`. It defines
 the representative `loop`, `parallel`, `wait`, `assert`, cancellation, and

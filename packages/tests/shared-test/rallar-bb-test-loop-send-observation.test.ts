@@ -29,8 +29,6 @@ describe('loop send evidence', () => {
                     durationMs: 0,
                     status: undefined,
                     queued: false,
-                    enqueued: false,
-                    backpressured: false,
                     droppedPayloadCount: undefined,
                     replacedPayloadCount: undefined
                 }]
@@ -52,8 +50,6 @@ describe('loop send evidence', () => {
                                 transport: 'ws',
                                 durationMs: 7,
                                 queued: true,
-                                enqueued: false,
-                                backpressured: true,
                                 droppedPayloadCount: 2,
                                 replacedPayloadCount: 3
                             }
@@ -71,8 +67,6 @@ describe('loop send evidence', () => {
                     durationMs: 7,
                     status: 'queued',
                     queued: true,
-                    enqueued: false,
-                    backpressured: true,
                     droppedPayloadCount: 2,
                     replacedPayloadCount: 3
                 }]

@@ -62,11 +62,11 @@ Loop parent result values may also include:
 
 - `pacing`: requested interval/rate, actual iteration timestamps, elapsed time,
   drift, jitter, skipped iterations, and cancelled iterations.
-- `sends`: send counts, success ratio, duration statistics, queued/enqueued/
-  backpressure counts, dropped/replaced payload counts, per-transport failure
-  counts, and adapter send observations.
-- `thresholdFailures`: transport-neutral pacing, delivery, or backpressure
-  failures when `loop.thresholds` marks the parent command failed.
+- `sends`: send counts, success ratio, duration statistics, queued counts,
+  dropped/replaced payload counts, per-transport failure counts, and adapter
+  send observations.
+- `thresholdFailures`: transport-neutral pacing or delivery failures when
+  `loop.thresholds` marks the parent command failed.
 
 These fields are additive to the composite result contract. Helpers should keep
 flattening children from `value.results`; UI and artifact views can read the

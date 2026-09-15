@@ -162,7 +162,6 @@ export interface RallarBlackBoxTestLoopThresholds {
     readonly maxStartDriftMs?: number;
     readonly maxJitterMs?: number;
     readonly minSendSuccessRatio?: number;
-    readonly failOnBackpressure?: boolean;
 }
 
 export type RallarBlackBoxTestRecipeCancelCommand =
@@ -351,7 +350,6 @@ export type RallarBlackBoxTestAgentReloadCommand =
 export interface RallarBlackBoxTestRtcStreamThresholds {
     readonly minSendSuccessRatio?: number;
     readonly maxDroppedFrames?: number;
-    readonly maxBackpressureCount?: number;
     readonly maxP95SendDurationMs?: number;
     readonly maxP99SendDurationMs?: number;
     readonly maxAverageStartDriftMs?: number;
@@ -745,8 +743,6 @@ export interface RallarBlackBoxTestSendObservation {
     readonly ok: boolean;
     readonly status?: string;
     readonly queued?: boolean;
-    readonly enqueued?: boolean;
-    readonly backpressured?: boolean;
     readonly droppedPayloadCount?: number;
     readonly replacedPayloadCount?: number;
     readonly errorCode?: string;
@@ -764,8 +760,6 @@ export interface RallarBlackBoxTestLoopSendSummary {
         totalMs: number;
     }>;
     readonly queuedCount: number;
-    readonly enqueuedCount: number;
-    readonly backpressureCount: number;
     readonly droppedPayloadCount: number;
     readonly replacedPayloadCount: number;
     readonly perTransportFailureCounts: Readonly<Record<string, number>>;
@@ -774,9 +768,9 @@ export interface RallarBlackBoxTestLoopSendSummary {
 
 export interface RallarBlackBoxTestLoopThresholdFailure {
     readonly name: keyof RallarBlackBoxTestLoopThresholds;
-    readonly category: 'pacing' | 'delivery' | 'backpressure';
-    readonly threshold: number | boolean;
-    readonly actual?: number | boolean;
+    readonly category: 'pacing' | 'delivery';
+    readonly threshold: number;
+    readonly actual?: number;
     readonly message: string;
 }
 
@@ -804,16 +798,15 @@ export interface RallarBlackBoxTestRtcStreamFrameObservation {
     readonly durationMs?: number;
     readonly ok: boolean;
     readonly dropped?: boolean;
-    readonly backpressured?: boolean;
     readonly status?: string;
     readonly errorCode?: string;
 }
 
 export interface RallarBlackBoxTestRtcStreamThresholdFailure {
     readonly name: keyof RallarBlackBoxTestRtcStreamThresholds;
-    readonly category: 'pacing' | 'delivery' | 'backpressure';
-    readonly threshold: number | boolean;
-    readonly actual?: number | boolean;
+    readonly category: 'pacing' | 'delivery';
+    readonly threshold: number;
+    readonly actual?: number;
     readonly message: string;
 }
 
@@ -826,7 +819,6 @@ export interface RallarBlackBoxTestRtcStreamResultValue {
     readonly completedFrames: number;
     readonly failedFrames: number;
     readonly droppedFrames: number;
-    readonly backpressureCount: number;
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly elapsedMs: number;

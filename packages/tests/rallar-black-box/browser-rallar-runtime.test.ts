@@ -1214,6 +1214,49 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ).toBe(true);
     });
 
+    it('counts the replaced realtime peer payloads on the send observation', async () => {
+        const toPeerResult = (peerId: string, status: 'sent' | 'queued' | 'replaced') => ({
+            peerId,
+            laneId: 'realtime',
+            result: { status, bufferedAmount: 0 }
+        });
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createBrowserRallarRequiredMethodsTestDouble(),
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(async () => ({
+                    status: 'sent',
+                    transport: 'realtime',
+                    roomId: 'awesome',
+                    peerIds: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
+                    results: [
+                        toPeerResult('peer-a', 'sent'),
+                        toPeerResult('peer-b', 'replaced'),
+                        toPeerResult('peer-c', 'replaced'),
+                        toPeerResult('peer-d', 'queued')
+                    ],
+                    health: []
+                })),
+                refreshRoom: vi.fn(async () => undefined),
+                close: vi.fn(),
+                health: vi.fn()
+            }
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'manual-send-replaced',
+            connection: 'aliceRtc',
+            transport: 'realtime',
+            send: { roomId: 'awesome', data: { text: 'latest frame' } }
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.value).toMatchObject({
+            sendObservation: { status: 'sent', ok: true, replacedPayloadCount: 2 }
+        });
+    });
+
     it('fails a messages.rtc send whose delivery lifecycle ends failed because no route remained', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             const detail = 'No outbound transport route for the room message.';

@@ -98,8 +98,7 @@ export function cadenceHint(
         priority: 20,
         category: 'rtc-stream-performance',
         title: 'Lower stream cadence or increase its effective interval.',
-        rationale:
-            'Drops, backpressure, or material cadence/drift degradation show that the current load is not sustained.',
+        rationale: 'Drops or material cadence/drift degradation show that the current load is not sustained.',
         nextAction:
             'Edit one effective cadence knob, rerun, and compare frame disposition before considering maxInFlight.',
         evidence,
@@ -223,9 +222,6 @@ function cadenceEvidence(
     if (stream.inFlightLimitDropCount > 0) {
         evidence.push(`${stream.inFlightLimitDropCount} in-flight-limit drops`);
     }
-    if (stream.backpressureCount > 0) {
-        evidence.push(`${stream.backpressureCount} backpressure events`);
-    }
     if (
         stream.requestedRateHz && stream.achievedCompletionHz !== undefined &&
         stream.achievedCompletionHz < stream.requestedRateHz * 0.9
@@ -319,7 +315,6 @@ function thresholdActual(
     return ({
         'thresholds.minSendSuccessRatio': stream.sendSuccessRatio,
         'thresholds.maxDroppedFrames': stream.droppedFrames,
-        'thresholds.maxBackpressureCount': stream.backpressureCount,
         'thresholds.maxP95SendDurationMs': stream.duration.p95Ms,
         'thresholds.maxP99SendDurationMs': stream.duration.p99Ms,
         'thresholds.maxStartDriftMs': stream.maxStartDriftMs

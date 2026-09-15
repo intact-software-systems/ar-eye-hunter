@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import {
-    createRecipeConsoleTuneScaleFixture
+    createRecipeConsoleTuneScaleFixture,
+    RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND
 } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 import { installRecipeConsoleTuneFixture, tuneScaleRunNeedles } from './recipe-console-tune-fixture.ts';
 import { tuneListboxTrigger } from './recipe-console-tune-listbox-helpers.ts';
@@ -12,7 +13,7 @@ const COMMAND_COUNT = 2_000;
 
 export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
     await test.step(
-        'Tune keeps 5,000 runs and 24,002 knobs bounded during held refresh',
+        'Tune keeps 5,000 runs and 22,002 knobs bounded during held refresh',
         async () => {
             const context = await browser.newContext({
                 baseURL: PRODUCTION_BASE_URL,
@@ -63,7 +64,7 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
 
                 await expect(candidate).toHaveAttribute(
                     'data-tune-editable-options',
-                    '24002',
+                    '22002',
                     { timeout: 60_000 }
                 );
                 await expect.poll(() => heartbeat(page)).toBeGreaterThan(
@@ -103,11 +104,11 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-knob-rows-visited',
-                    '24002'
+                    '22002'
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-knob-revision-rows',
-                    '24002'
+                    '22002'
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-blocked-options',
@@ -224,7 +225,7 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                     const commandId = knobFixture.needles.commandIds[position];
                     const commandIndex = knobFixture.positions[position];
                     await knobSearch.fill(commandId);
-                    await expect(knobOptions).toHaveCount(12);
+                    await expect(knobOptions).toHaveCount(RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND);
                     await expect(knobSearch).toHaveValue(commandId);
                     for (const option of await knobOptions.all()) {
                         await expect(option).toHaveAttribute(
@@ -236,10 +237,10 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                 await knobSearch.fill('');
                 await knobSearch.press('Home');
                 await expect(knobPopup.locator('[data-searchable-listbox-range]'))
-                    .toHaveText('Showing 1–100 of 24,002 options.');
+                    .toHaveText('Showing 1–100 of 22,002 options.');
                 await knobSearch.press('End');
                 await expect(knobPopup.locator('[data-searchable-listbox-range]'))
-                    .toHaveText('Showing 24,001–24,002 of 24,002 options.');
+                    .toHaveText('Showing 22,001–22,002 of 22,002 options.');
                 await expect(knobOptions).toHaveCount(2);
                 await expect(knobSearch).toHaveAttribute(
                     'aria-activedescendant',

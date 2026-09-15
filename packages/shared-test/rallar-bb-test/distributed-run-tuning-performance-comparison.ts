@@ -27,7 +27,6 @@ export type DistributedRunTuningPerformanceComparison = Readonly<{
         failedFrames: DistributedRunTuningNumericDelta;
         droppedFrames: DistributedRunTuningNumericDelta;
         inFlightLimitDropCount: DistributedRunTuningNumericDelta;
-        backpressureCount: DistributedRunTuningNumericDelta;
         requestedRateHz: DistributedRunTuningNumericDelta;
         achievedCompletionHz: DistributedRunTuningNumericDelta;
         maxStartDriftMs: DistributedRunTuningNumericDelta;
@@ -68,7 +67,6 @@ export function compareDistributedRunTuningPerformance(
                 leftStream?.inFlightLimitDropCount,
                 rightStream?.inFlightLimitDropCount
             ),
-            backpressureCount: numericDelta(leftStream?.backpressureCount, rightStream?.backpressureCount),
             requestedRateHz: numericDelta(leftStream?.requestedRateHz, rightStream?.requestedRateHz),
             achievedCompletionHz: numericDelta(
                 leftStream?.achievedCompletionHz,
