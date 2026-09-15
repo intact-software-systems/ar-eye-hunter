@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/control-service.ts",
+        "blob": "94be0d6d75d36c35488b49da20f236050721f741"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/control-command-queue-policy.ts",
+        "apps/rallar-black-box-control-server/src/control-evidence-compaction.ts",
+        "apps/rallar-black-box-control-server/src/control-runtime-retention.ts",
+        "apps/rallar-black-box-control-server/src/control-service-snapshots.ts",
+        "apps/rallar-black-box-control-server/src/control-service-state.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-commands.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-evaluation.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-lifecycle.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-targeting.ts"
+      ]
+    }
+  ]
+}

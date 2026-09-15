@@ -1,14 +1,17 @@
-import type {
-    ControlClientEnvelope,
-    ControlCommandEnvelope,
-    ControlEventEnvelope,
-    ControlHeartbeatEnvelope,
-    ControlRegisterEnvelope,
-    ControlResultEnvelope
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlClientEnvelope,
+    type ControlCommandEnvelope,
+    type ControlEventEnvelope,
+    type ControlHeartbeatEnvelope,
+    type ControlRegisterEnvelope,
+    type ControlResultEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { planControlRunRetention, type ControlRetentionPlan } from '@shared-test/rallar-bb-test/control-retention.ts';
-import { resolveRetainedControlRunIds } from '@shared-test/rallar-bb-test/control-retention.ts';
+import {
+    planControlRunRetention,
+    resolveRetainedControlRunIds,
+    type ControlRetentionPlan
+} from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunCommandPhase,
@@ -22,9 +25,7 @@ import type {
 import {
     isDistributedRunTerminalState,
     resolveDistributedRunTargets,
-    rollupDistributedRunResult,
     type RallarBlackBoxDistributedRunManifest,
-    type RallarBlackBoxDistributedRunRecipeSelection,
     type RallarBlackBoxDistributedRunRollup,
     type RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -38,48 +39,34 @@ import type {
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { Either } from '@shared/resilience/Either.ts';
+
 import { createControlDistributedRunArtifactBundle } from './control-artifacts.ts';
-import { toControlCommandFingerprint } from './control-command-identity.ts';
 import {
-    safeCommandIdSegment,
-    toDistributedBarrierCommand,
-    toDistributedCommandId,
-    toDistributedCommandMetadata,
-    toDistributedStageCommand,
-    toDistributedStartCommand,
-    toRecoveredDistributedCommandLink,
-    type ReconcileDistributedCommandInput
-} from './control-distributed-commands.ts';
+    computeControlCommandRateWindow,
+    isDispatchableControlCommand,
+    toControlCommandFingerprint
+} from './control-command-queue-policy.ts';
 import {
-    isDistributedAckTimedOut,
-    isDistributedBarrierTimedOut,
-    toDistributedRunRollup
-} from './control-distributed-evaluation.ts';
-import {
-    isResolvedTargetPolicy,
-    toControlAgentCandidates,
-    toDistributedRecipeKey,
-    toDistributedTargetAgentIds,
-    toDistributedTargetFailure,
-    toExplicitDistributedTargetResolution,
-    toRecipeSelectionsForAgent
-} from './control-distributed-targeting.ts';
-import {
-    compactResultEnvelope,
     toCompactedControlReport,
-    toControlReportDedupeKey
+    toCompactedResultEnvelope,
+    toControlReportDedupeKey,
+    toGroupAssertionEvidenceCommandIds
 } from './control-evidence-compaction.ts';
 import {
     createControlFleetAggregateReport,
     createControlFleetReportBundle,
     createControlFleetRunReport,
-    filterControlFleetReports
+    filterControlFleetReports,
+    type FleetReportFilter
 } from './control-fleet.ts';
 import { trimControlReportDedupeKeys, trimControlRunEvidence } from './control-runtime-retention.ts';
 import {
     toControlCommandSnapshot,
+    toControlRetentionRunSafety,
     toControlRunSnapshot,
     toDistributedRunSnapshot,
+    toPassiveDistributedRunSnapshot,
     toRestoredControlSnapshot
 } from './control-service-snapshots.ts';
 import type {
@@ -88,49 +75,84 @@ import type {
     ControlRunState,
     ControlTokenState
 } from './control-service-state.ts';
+import {
+    toCommandIdSegment,
+    toDistributedBarrierCommands,
+    toDistributedCancelCommands,
+    toDistributedStageCommands,
+    toDistributedStartCommands,
+    toRecoveredDistributedCommandLinks,
+    type DistributedPhaseCommand
+} from './distributed/distributed-run-commands.ts';
+import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
+import {
+    resolveDistributedRunAdvance,
+    resolveDistributedRunStartStep,
+    type DistributedRunLifecycleInput,
+    type DistributedRunNextStep
+} from './distributed/distributed-run-lifecycle.ts';
+import {
+    isResolvedTargetPolicy,
+    toControlAgentCandidates,
+    toDistributedRecipeKey,
+    toDistributedTargetAgentIds,
+    toDistributedTargetFailure,
+    toExplicitDistributedTargetResolution,
+    toNormalizedDistributedRunManifest
+} from './distributed/distributed-run-targeting.ts';
 
-const DEFAULT_RUNTIME_RETENTION_BOUNDS: Required<ControlRunSnapshotBounds> = {
-    commands: 1_000,
-    results: 1_000,
-    events: 2_000,
-    stats: 500,
-    reports: 20,
-    heartbeats: 500
-};
+export type ControlServiceFailureCode =
+    | 'command-kind-not-allowed'
+    | 'command-payload-conflict'
+    | 'command-rate-limited'
+    | 'distributed-run-exists'
+    | 'distributed-run-not-found'
+    | 'distributed-run-terminal';
 
-export interface EnqueueControlCommandInput {
-    runId: string;
-    agentId: string;
-    commandId?: string;
-    command: RallarBlackBoxTestCommand;
-    deadlineEpochMs?: number;
+export interface ControlServiceFailure {
+    readonly code: ControlServiceFailureCode;
+    readonly message: string;
 }
 
-export interface RallarBlackBoxControlServiceOptions {
-    now?: () => number;
-    commandIdFactory?: () => string;
-    redaction?: RallarBlackBoxTestRedactionOptions;
-    allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
-    commandRateLimitMax?: number;
-    commandRateLimitWindowMs?: number;
-    runTokenTtlMs?: number;
-    runtimeRetentionBounds?: ControlRunSnapshotBounds;
+export interface RallarBlackBoxControlServiceDependencies {
+    readonly now: () => number;
+    readonly createCommandId: () => string;
+}
+
+export interface RallarBlackBoxControlServiceConfig {
+    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
+    readonly allowedCommandKinds: readonly RallarBlackBoxTestCommandKind[] | undefined;
+    readonly commandRateLimitMax: number;
+    readonly commandRateLimitWindowMs: number;
+    readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
+}
+
+export interface CreateRallarBlackBoxControlServiceInput {
+    readonly dependencies: RallarBlackBoxControlServiceDependencies;
+    readonly config: RallarBlackBoxControlServiceConfig;
+}
+
+export interface EnqueueControlCommandInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId?: string;
+    readonly command: RallarBlackBoxTestCommand;
+    readonly deadlineEpochMs?: number;
+}
+
+export interface IssueControlRunTokenInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly ttlMs: number;
 }
 
 export interface RallarBlackBoxControlServiceReceiveResult {
-    kind: ControlClientEnvelope['kind'];
-    runId: string;
-    agentId: string;
-    accepted: boolean;
+    readonly kind: ControlClientEnvelope['kind'];
+    readonly runId: string;
+    readonly agentId: string;
+    readonly accepted: boolean;
 }
 
-interface LinkedDistributedCommandInput {
-    readonly distributedRun: ControlDistributedRunState;
-    readonly phase: ControlDistributedRunCommandPhase;
-    readonly agentId: string;
-    readonly selection: RallarBlackBoxDistributedRunRecipeSelection | undefined;
-    readonly command: RallarBlackBoxTestCommand;
-}
 interface ControlRetentionDeletion {
     readonly deletedRunIds: readonly string[];
     readonly distributedRunIds: readonly string[];
@@ -138,56 +160,23 @@ interface ControlRetentionDeletion {
 }
 
 export class RallarBlackBoxControlService {
-    private readonly now: () => number;
-    private readonly commandIdFactory: () => string;
-    private readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
-    private readonly allowedCommandKinds: Set<RallarBlackBoxTestCommandKind> | undefined;
-    private readonly commandRateLimitMax: number;
-    private readonly commandRateLimitWindowMs: number;
-    private readonly runTokenTtlMs: number;
-    private readonly runtimeRetentionBounds: ControlRunSnapshotBounds;
+    private readonly dependencies: RallarBlackBoxControlServiceDependencies;
+    private readonly config: RallarBlackBoxControlServiceConfig;
+    private readonly allowedCommandKinds: ReadonlySet<RallarBlackBoxTestCommandKind> | undefined;
     private readonly runs = new Map<string, ControlRunState>();
     private readonly distributedRuns = new Map<string, ControlDistributedRunState>();
     private readonly fleetReports = new Map<string, ControlFleetRunReport>();
 
-    constructor(options: RallarBlackBoxControlServiceOptions = {}) {
-        this.now = options.now ?? (() => Date.now());
-        this.commandIdFactory = options.commandIdFactory ?? (() => crypto.randomUUID());
-        this.redaction = options.redaction;
-        this.allowedCommandKinds = options.allowedCommandKinds
-            ? new Set(options.allowedCommandKinds)
+    constructor(input: CreateRallarBlackBoxControlServiceInput) {
+        this.dependencies = input.dependencies;
+        this.config = input.config;
+        this.allowedCommandKinds = input.config.allowedCommandKinds
+            ? new Set(input.config.allowedCommandKinds)
             : undefined;
-        this.commandRateLimitMax = options.commandRateLimitMax ?? 120;
-        this.commandRateLimitWindowMs = options.commandRateLimitWindowMs ?? 60_000;
-        this.runTokenTtlMs = options.runTokenTtlMs ?? 15 * 60_000;
-        this.runtimeRetentionBounds = {
-            ...DEFAULT_RUNTIME_RETENTION_BOUNDS,
-            ...options.runtimeRetentionBounds
-        };
     }
 
-    receiveClientEnvelope(
-        envelope: ControlClientEnvelope
-    ): RallarBlackBoxControlServiceReceiveResult {
-        let accepted = true;
-        switch (envelope.kind) {
-            case 'register':
-                this.register(envelope);
-                break;
-            case 'heartbeat':
-                this.receiveHeartbeat(envelope);
-                break;
-            case 'result':
-                this.receiveResult(envelope);
-                break;
-            case 'event':
-            case 'diagnostic':
-            case 'stats':
-            case 'report':
-                accepted = this.receiveEvent(envelope);
-                break;
-        }
-
+    receiveClientEnvelope(envelope: ControlClientEnvelope): RallarBlackBoxControlServiceReceiveResult {
+        const accepted = this.receiveEnvelope(envelope);
         return {
             kind: envelope.kind,
             runId: envelope.runId,
@@ -196,57 +185,57 @@ export class RallarBlackBoxControlService {
         };
     }
 
-    enqueueCommand(input: EnqueueControlCommandInput): ControlCommandEnvelope {
+    enqueueCommand(input: EnqueueControlCommandInput): Either<ControlServiceFailure, ControlCommandEnvelope> {
         const run = this.ensureRun(input.runId);
         const agent = this.ensureAgent(run, input.agentId);
-        this.assertCommandAllowed(input.command.kind);
-        const commandId = input.commandId ?? this.commandIdFactory();
+        if (this.allowedCommandKinds && !this.allowedCommandKinds.has(input.command.kind)) {
+            return toFailure('command-kind-not-allowed', `Command kind is not allowed: ${input.command.kind}.`);
+        }
+
         const envelope: ControlCommandEnvelope = {
             kind: 'command',
             protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
             runId: input.runId,
             agentId: input.agentId,
-            commandId,
+            commandId: input.commandId ?? this.dependencies.createCommandId(),
             command: input.command,
             deadlineEpochMs: input.deadlineEpochMs
         };
         const fingerprint = toControlCommandFingerprint(envelope);
-        const existing = run.commands.get(commandId);
+        const existing = run.commands.get(envelope.commandId);
         if (existing) {
-            if (existing.fingerprint !== fingerprint) {
-                throw new Error(`Command ${commandId} already exists with a different payload.`);
-            }
-            return existing.envelope;
+            return existing.fingerprint === fingerprint
+                ? Either.ofRight(existing.envelope)
+                : toFailure(
+                    'command-payload-conflict',
+                    `Command ${envelope.commandId} already exists with a different payload.`
+                );
+        }
+        if (!this.admitCommandRate(agent)) {
+            return toFailure('command-rate-limited', 'Command rate limit exceeded.');
         }
 
-        this.assertCommandRateLimit(agent);
-        run.commands.set(commandId, {
+        run.commands.set(envelope.commandId, {
             envelope,
             fingerprint,
-            queuedAtEpochMs: this.now(),
+            queuedAtEpochMs: this.dependencies.now(),
             dispatchCount: 0
         });
         this.touch(run);
-        trimControlRunEvidence(run, this.distributedRuns.values(), this.runtimeRetentionBounds);
-        return envelope;
+        trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
+        return Either.ofRight(envelope);
     }
 
-    issueRunToken(
-        input: Readonly<{
-            runId: string;
-            agentId: string;
-            ttlMs?: number;
-        }>
-    ): ControlRunToken {
+    issueRunToken(input: IssueControlRunTokenInput): ControlRunToken {
         const run = this.ensureRun(input.runId);
         this.ensureAgent(run, input.agentId);
-        const issuedAtEpochMs = this.now();
+        const issuedAtEpochMs = this.dependencies.now();
         const token: ControlTokenState = {
             runId: input.runId,
             agentId: input.agentId,
             token: crypto.randomUUID(),
             issuedAtEpochMs,
-            expiresAtEpochMs: issuedAtEpochMs + Math.max(1, input.ttlMs ?? this.runTokenTtlMs)
+            expiresAtEpochMs: issuedAtEpochMs + Math.max(1, input.ttlMs)
         };
         run.tokens.set(token.token, token);
         run.issuedRunTokenStateRevision += 1;
@@ -260,217 +249,142 @@ export class RallarBlackBoxControlService {
             return false;
         }
 
-        const now = this.now();
+        const now = this.dependencies.now();
         return Array.from(run.tokens.values())
-            .some((token) =>
-                token.agentId === agentId &&
-                token.expiresAtEpochMs > now
-            );
+            .some((token) => token.agentId === agentId && token.expiresAtEpochMs > now);
     }
 
-    validateRunToken(
-        runId: string,
-        agentId: string,
-        token: string | undefined
-    ): boolean {
+    validateRunToken(runId: string, agentId: string, token: string | undefined): boolean {
         if (!token) {
             return false;
         }
 
         const stored = this.runs.get(runId)?.tokens.get(token);
-        return Boolean(
-            stored &&
-                stored.agentId === agentId &&
-                stored.expiresAtEpochMs > this.now()
-        );
+        return Boolean(stored && stored.agentId === agentId && stored.expiresAtEpochMs > this.dependencies.now());
     }
 
     createDistributedRun(
         manifest: RallarBlackBoxDistributedRunManifest
-    ): ControlDistributedRunSnapshot {
-        const controlRunId = cleanSegment(manifest.controlRunId) ?? manifest.distributedRunId;
+    ): Either<ControlServiceFailure, ControlDistributedRunSnapshot> {
         if (this.distributedRuns.has(manifest.distributedRunId)) {
-            throw new Error(`Distributed run ${manifest.distributedRunId} already exists.`);
+            return toFailure('distributed-run-exists', `Distributed run ${manifest.distributedRunId} already exists.`);
         }
 
-        this.ensureRun(controlRunId);
-        const now = this.now();
-        const stored: ControlDistributedRunState = {
+        const normalized = toNormalizedDistributedRunManifest(manifest);
+        this.ensureRun(normalized.controlRunId);
+        const now = this.dependencies.now();
+        const distributedRun: ControlDistributedRunState = {
             distributedRunId: manifest.distributedRunId,
-            controlRunId,
-            manifest: {
-                ...manifest,
-                schemaVersion: manifest.schemaVersion ?? 1,
-                controlRunId
-            },
+            controlRunId: normalized.controlRunId,
+            manifest: normalized.manifest,
             state: 'draft',
             createdAtEpochMs: now,
             updatedAtEpochMs: now,
             targetAgentIds: [],
             commandLinks: []
         };
-        this.refreshDistributedTargetResolution(stored);
-        this.distributedRuns.set(stored.distributedRunId, stored);
-        return this.snapshotDistributedRunValue(stored);
+        this.refreshDistributedTargetResolution(distributedRun);
+        this.distributedRuns.set(distributedRun.distributedRunId, distributedRun);
+        return Either.ofRight(this.refreshDistributedRunSnapshot(distributedRun));
     }
 
     resolveDistributedRunTargets(
         manifest: RallarBlackBoxDistributedRunManifest
     ): RallarBlackBoxDistributedTargetResolution {
-        const controlRunId = cleanSegment(manifest.controlRunId) ?? manifest.distributedRunId;
+        const normalized = toNormalizedDistributedRunManifest(manifest);
         return resolveDistributedRunTargets({
-            manifest: {
-                ...manifest,
-                schemaVersion: manifest.schemaVersion ?? 1,
-                controlRunId
-            },
-            agents: toControlAgentCandidates(this.runs.get(controlRunId)),
-            nowEpochMs: this.now()
+            manifest: normalized.manifest,
+            agents: toControlAgentCandidates(this.runs.get(normalized.controlRunId)),
+            nowEpochMs: this.dependencies.now()
         });
     }
 
     listDistributedRuns(): readonly ControlDistributedRunSnapshot[] {
         return Array.from(
             this.distributedRuns.values(),
-            (distributedRun) => this.snapshotDistributedRunValue(distributedRun)
+            (distributedRun) => this.refreshDistributedRunSnapshot(distributedRun)
         );
     }
 
-    snapshotDistributedRun(
-        distributedRunId: string
-    ): ControlDistributedRunSnapshot | undefined {
+    snapshotDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot | undefined {
         const distributedRun = this.distributedRuns.get(distributedRunId);
-        return distributedRun ? this.snapshotDistributedRunValue(distributedRun) : undefined;
+        return distributedRun ? this.refreshDistributedRunSnapshot(distributedRun) : undefined;
     }
 
-    stageDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
-        const distributedRun = this.requireDistributedRun(distributedRunId);
-        this.assertDistributedRunCanMutate(distributedRun, 'stage');
+    stageDistributedRun(distributedRunId: string): Either<ControlServiceFailure, ControlDistributedRunSnapshot> {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            return toDistributedRunNotFound(distributedRunId);
+        }
+        if (isDistributedRunTerminalState(distributedRun.state)) {
+            return toDistributedRunTerminal(distributedRun, 'stage');
+        }
+
         this.refreshDistributedTargetResolution(distributedRun);
-        distributedRun.updatedAtEpochMs = this.now();
-
-        if (this.rejectUnresolvedDistributedTargets(distributedRun)) {
-            return this.snapshotDistributedRunValue(distributedRun);
-        }
-
-        for (const agentId of distributedRun.targetAgentIds) {
-            for (const selection of toRecipeSelectionsForAgent(distributedRun, agentId)) {
-                this.enqueueLinkedDistributedCommand({
-                    distributedRun,
-                    phase: 'stage',
-                    agentId,
-                    selection,
-                    command: toDistributedStageCommand(distributedRun, agentId, selection)
-                });
-            }
-        }
-
-        distributedRun.state = 'waiting-for-ack';
-        distributedRun.stagedAtEpochMs ??= this.now();
-        distributedRun.updatedAtEpochMs = this.now();
-        return this.snapshotDistributedRunValue(distributedRun);
+        distributedRun.updatedAtEpochMs = this.dependencies.now();
+        const failure = this.failUnresolvedDistributedTargets(distributedRun)
+            ? undefined
+            : this.queueDistributedPhase(distributedRun, 'stage', toDistributedStageCommands(distributedRun));
+        return failure ? Either.ofLeft(failure) : Either.ofRight(this.refreshDistributedRunSnapshot(distributedRun));
     }
 
-    startDistributedRun(distributedRunId: string): ControlDistributedRunSnapshot {
-        const distributedRun = this.requireDistributedRun(distributedRunId);
+    startDistributedRun(distributedRunId: string): Either<ControlServiceFailure, ControlDistributedRunSnapshot> {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            return toDistributedRunNotFound(distributedRunId);
+        }
         this.refreshDistributedRunState(distributedRun);
-        this.assertDistributedRunCanMutate(distributedRun, 'start');
+        if (isDistributedRunTerminalState(distributedRun.state)) {
+            return toDistributedRunTerminal(distributedRun, 'start');
+        }
+
         if (distributedRun.targetAgentIds.length === 0) {
             this.refreshDistributedTargetResolution(distributedRun);
         }
-        if (this.rejectUnresolvedDistributedTargets(distributedRun)) {
-            return this.snapshotDistributedRunValue(distributedRun);
-        }
-
-        if (this.distributedRunStartPrerequisitePending(distributedRun)) {
-            return this.snapshotDistributedRunValue(distributedRun);
-        }
-
-        if (this.distributedRunScheduledStartPending(distributedRun)) {
-            distributedRun.state = 'ready';
-            distributedRun.updatedAtEpochMs = this.now();
-            return this.snapshotDistributedRunValue(distributedRun);
-        }
-
-        this.queueDistributedStartCommands(distributedRun);
-        return this.snapshotDistributedRunValue(distributedRun);
+        const failure = this.failUnresolvedDistributedTargets(distributedRun)
+            ? undefined
+            : this.applyDistributedRunStep(
+                distributedRun,
+                resolveDistributedRunStartStep(this.toLifecycleInput(distributedRun))
+            );
+        return failure ? Either.ofLeft(failure) : Either.ofRight(this.refreshDistributedRunSnapshot(distributedRun));
     }
 
     cancelDistributedRun(
         distributedRunId: string,
-        reason = 'Distributed run cancelled.'
-    ): ControlDistributedRunSnapshot {
-        const distributedRun = this.requireDistributedRun(distributedRunId);
-        if (!isDistributedRunTerminalState(distributedRun.state)) {
-            if (distributedRun.targetAgentIds.length === 0) {
-                distributedRun.targetAgentIds = toDistributedTargetAgentIds(
-                    distributedRun,
-                    this.runs.get(distributedRun.controlRunId)
-                );
-            }
-            for (const agentId of distributedRun.targetAgentIds) {
-                const commandId = toDistributedCommandId({
-                    distributedRun,
-                    phase: 'cancel',
-                    agentId,
-                    recipeKey: 'run'
-                });
-                this.enqueueLinkedDistributedCommand({
-                    distributedRun,
-                    phase: 'cancel',
-                    agentId,
-                    selection: undefined,
-                    command: {
-                        kind: 'recipe.cancel',
-                        commandId,
-                        label: `Cancel distributed run ${distributedRun.distributedRunId}`,
-                        reason,
-                        metadata: toDistributedCommandMetadata({
-                            distributedRun,
-                            phase: 'cancel',
-                            agentId,
-                            selection: undefined
-                        })
-                    }
-                });
-            }
-            distributedRun.state = 'cancelled';
-            distributedRun.cancelledAtEpochMs = this.now();
-            distributedRun.completedAtEpochMs = distributedRun.cancelledAtEpochMs;
-            distributedRun.updatedAtEpochMs = distributedRun.cancelledAtEpochMs;
+        reason: string
+    ): Either<ControlServiceFailure, ControlDistributedRunSnapshot> {
+        const distributedRun = this.distributedRuns.get(distributedRunId);
+        if (!distributedRun) {
+            return toDistributedRunNotFound(distributedRunId);
         }
 
-        return this.snapshotDistributedRunValue(distributedRun);
+        const failure = isDistributedRunTerminalState(distributedRun.state)
+            ? undefined
+            : this.queueDistributedCancel(distributedRun, reason);
+        return failure ? Either.ofLeft(failure) : Either.ofRight(this.refreshDistributedRunSnapshot(distributedRun));
     }
 
-    distributedRunArtifactBundle(
+    createDistributedRunArtifactBundle(
         distributedRunId: string,
-        bounds: ControlRunSnapshotBounds = {}
+        bounds: ControlRunSnapshotBounds
     ): ControlDistributedRunArtifactBundle | undefined {
         const distributedRun = this.distributedRuns.get(distributedRunId);
         if (!distributedRun) {
             return undefined;
         }
 
-        const snapshot = this.snapshotDistributedRunValue(distributedRun);
+        const snapshot = this.refreshDistributedRunSnapshot(distributedRun);
         const controlRun = this.snapshotRun(distributedRun.controlRunId, bounds);
-        return createControlDistributedRunArtifactBundle(snapshot, controlRun, this.now());
+        return createControlDistributedRunArtifactBundle(snapshot, controlRun, this.dependencies.now());
     }
 
-    listFleetReports(filter: Readonly<{
-        region?: string;
-        provider?: string;
-        recipeId?: string;
-        groupId?: string;
-        state?: string;
-        fromEpochMs?: number;
-        toEpochMs?: number;
-    }> = {}): ControlFleetReportsResponse {
+    listFleetReports(filter: FleetReportFilter): ControlFleetReportsResponse {
         this.ensureFleetReports();
         const reports = filterControlFleetReports([...this.fleetReports.values()], filter);
         return {
             reports,
-            aggregate: createControlFleetAggregateReport(reports, this.now())
+            aggregate: createControlFleetAggregateReport(reports, this.dependencies.now())
         };
     }
 
@@ -478,7 +392,7 @@ export class RallarBlackBoxControlService {
         return this.ensureFleetReport(distributedRunId);
     }
 
-    fleetReportBundle(distributedRunId: string): ControlFleetReportBundle | undefined {
+    createFleetReportBundle(distributedRunId: string): ControlFleetReportBundle | undefined {
         const report = this.ensureFleetReport(distributedRunId);
         return report ? createControlFleetReportBundle(report) : undefined;
     }
@@ -486,7 +400,7 @@ export class RallarBlackBoxControlService {
     rebuildFleetReports(): ControlFleetReportsResponse {
         this.fleetReports.clear();
         this.ensureFleetReports();
-        return this.listFleetReports();
+        return this.listFleetReports({});
     }
 
     takeDispatchableCommands(runId: string, agentId: string): readonly ControlCommandEnvelope[] {
@@ -497,31 +411,17 @@ export class RallarBlackBoxControlService {
             return [];
         }
 
-        const dispatchable: ControlCommandEnvelope[] = [];
-        for (const command of run.commands.values()) {
-            if (command.envelope.agentId !== agentId) {
-                continue;
-            }
-            if (command.completedAtEpochMs !== undefined) {
-                continue;
-            }
-            if (agent.resumeCompletedCommandIds.has(command.envelope.commandId)) {
-                continue;
-            }
-            if (command.lastDispatchedConnectionSequence === agent.connectionSequence) {
-                continue;
-            }
-
-            command.dispatchedAtEpochMs = this.now();
+        const dispatchable = Array.from(run.commands.values())
+            .filter((command) => isDispatchableControlCommand(command, agent));
+        for (const command of dispatchable) {
+            command.dispatchedAtEpochMs = this.dependencies.now();
             command.lastDispatchedConnectionSequence = agent.connectionSequence;
             command.dispatchCount += 1;
-            dispatchable.push(command.envelope);
         }
-
         if (dispatchable.length > 0) {
             this.touch(run);
         }
-        return dispatchable;
+        return dispatchable.map((command) => command.envelope);
     }
 
     markAgentDisconnected(runId: string, agentId: string): void {
@@ -532,7 +432,7 @@ export class RallarBlackBoxControlService {
         }
 
         agent.connected = false;
-        agent.disconnectedAtEpochMs = this.now();
+        agent.disconnectedAtEpochMs = this.dependencies.now();
         agent.lastSeenAtEpochMs = agent.disconnectedAtEpochMs;
         this.touch(run);
         this.refreshDistributedRunsForControlRun(runId);
@@ -575,33 +475,16 @@ export class RallarBlackBoxControlService {
         if (retainedIds === undefined) {
             return [];
         }
-        const deletedRunIds = runs.filter((run) => !retainedIds.has(run.runId)).map((run) => run.runId);
-        return this.deleteControlRunRecords(deletedRunIds);
+        return this.deleteControlRunRecords(runs.filter((run) => !retainedIds.has(run.runId)).map((run) => run.runId));
     }
 
     createRetentionPlan(maxRuns: number | undefined): ControlRetentionPlan {
         return planControlRunRetention({
             maxRuns,
             runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, {})),
-            distributedRuns: Array.from(
-                this.distributedRuns.values(),
-                (run) =>
-                    toDistributedRunSnapshot(run, run.rollup ?? rollupDistributedRunResult({ stateHint: run.state }))
-            ),
+            distributedRuns: Array.from(this.distributedRuns.values(), toPassiveDistributedRunSnapshot),
             fleetReports: Array.from(this.fleetReports.values()),
-            runSafety: Array.from(this.runs.values(), (run) => ({
-                runId: run.runId,
-                connectedAgentIds: Array.from(run.agents.values())
-                    .filter((agent) => agent.connected)
-                    .map((agent) => agent.agentId),
-                issuedRunTokens: Array.from(run.tokens.values(), (token) => ({
-                    agentId: token.agentId,
-                    issuedAtEpochMs: token.issuedAtEpochMs,
-                    expiresAtEpochMs: token.expiresAtEpochMs
-                })),
-                runStateFingerprint: `revision:${run.retentionRevision}`,
-                issuedRunTokenStateFingerprint: `revision:${run.issuedRunTokenStateRevision}`
-            }))
+            runSafety: Array.from(this.runs.values(), toControlRetentionRunSafety)
         });
     }
 
@@ -614,15 +497,15 @@ export class RallarBlackBoxControlService {
     }
 
     restoreSnapshot(snapshot: ControlServerSnapshot): void {
-        const restored = toRestoredControlSnapshot(snapshot, this.redaction);
+        const restored = toRestoredControlSnapshot(snapshot, this.config.redaction);
         this.runs.clear();
         this.distributedRuns.clear();
         this.fleetReports.clear();
         for (const [runId, run] of restored.runs) {
             this.runs.set(runId, run);
         }
-        for (const [runId, run] of restored.distributedRuns) {
-            this.distributedRuns.set(runId, run);
+        for (const [distributedRunId, distributedRun] of restored.distributedRuns) {
+            this.distributedRuns.set(distributedRunId, distributedRun);
         }
         for (const report of snapshot.fleetReports ?? []) {
             this.fleetReports.set(report.distributedRunId, report);
@@ -633,7 +516,7 @@ export class RallarBlackBoxControlService {
         return {
             runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, bounds)),
             distributedRuns: this.listDistributedRuns(),
-            fleetReports: this.listFleetReports().reports
+            fleetReports: this.listFleetReports({}).reports
         };
     }
 
@@ -645,18 +528,12 @@ export class RallarBlackBoxControlService {
         };
     }
 
-    snapshotRun(
-        runId: string,
-        bounds: ControlRunSnapshotBounds = {}
-    ): ControlRunSnapshot | undefined {
+    snapshotRun(runId: string, bounds: ControlRunSnapshotBounds = {}): ControlRunSnapshot | undefined {
         const run = this.runs.get(runId);
         return run ? toControlRunSnapshot(run, bounds) : undefined;
     }
 
-    snapshotCommand(
-        runId: string,
-        commandId: string
-    ): ControlQueuedCommandSnapshot | undefined {
+    snapshotCommand(runId: string, commandId: string): ControlQueuedCommandSnapshot | undefined {
         const command = this.runs.get(runId)?.commands.get(commandId);
         return command ? toControlCommandSnapshot(command) : undefined;
     }
@@ -664,7 +541,7 @@ export class RallarBlackBoxControlService {
     recordDuplicateAgentSocketReplacement(runId: string, agentId: string): void {
         const run = this.ensureRun(runId);
         const agent = this.ensureAgent(run, agentId);
-        const atEpochMs = this.now();
+        const atEpochMs = this.dependencies.now();
         agent.receivedEventCount += 1;
         agent.lastSeenAtEpochMs = atEpochMs;
         run.events.push({
@@ -673,7 +550,7 @@ export class RallarBlackBoxControlService {
             runId,
             agentId,
             atEpochMs,
-            eventId: `duplicate-agent-socket-${safeCommandIdSegment(agentId)}-${atEpochMs}`,
+            eventId: `duplicate-agent-socket-${toCommandIdSegment(agentId)}-${atEpochMs}`,
             payload: {
                 topic: 'rallar.bb.control.duplicate-agent-socket',
                 severity: 'warning',
@@ -683,7 +560,26 @@ export class RallarBlackBoxControlService {
             }
         });
         this.touch(run);
-        trimControlRunEvidence(run, this.distributedRuns.values(), this.runtimeRetentionBounds);
+        trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
+    }
+
+    private receiveEnvelope(envelope: ControlClientEnvelope): boolean {
+        switch (envelope.kind) {
+            case 'register':
+                this.register(envelope);
+                return true;
+            case 'heartbeat':
+                this.receiveHeartbeat(envelope);
+                return true;
+            case 'result':
+                this.receiveResult(envelope);
+                return true;
+            case 'event':
+            case 'diagnostic':
+            case 'stats':
+            case 'report':
+                return this.receiveEvent(envelope);
+        }
     }
 
     private register(envelope: ControlRegisterEnvelope): void {
@@ -693,7 +589,7 @@ export class RallarBlackBoxControlService {
         agent.connected = true;
         agent.registeredAtEpochMs = envelope.atEpochMs;
         agent.disconnectedAtEpochMs = undefined;
-        agent.lastSeenAtEpochMs = this.now();
+        agent.lastSeenAtEpochMs = this.dependencies.now();
         agent.identity = envelope.identity ?? agent.identity;
         agent.connectionSequence += 1;
         if (reconnecting) {
@@ -707,12 +603,12 @@ export class RallarBlackBoxControlService {
         const run = this.ensureRun(envelope.runId);
         const agent = this.ensureAgent(run, envelope.agentId);
         agent.lastHeartbeatAtEpochMs = envelope.atEpochMs;
-        agent.lastSeenAtEpochMs = this.now();
+        agent.lastSeenAtEpochMs = this.dependencies.now();
         agent.status = envelope.status;
         agent.identity = envelope.identity ?? agent.identity;
         run.heartbeats.push(envelope);
         this.touch(run);
-        trimControlRunEvidence(run, this.distributedRuns.values(), this.runtimeRetentionBounds);
+        trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
         this.refreshDistributedRunsForControlRun(run.runId);
     }
 
@@ -720,62 +616,37 @@ export class RallarBlackBoxControlService {
         const run = this.ensureRun(envelope.runId);
         const agent = this.ensureAgent(run, envelope.agentId);
         agent.receivedResultCount += 1;
-        agent.lastSeenAtEpochMs = this.now();
+        agent.lastSeenAtEpochMs = this.dependencies.now();
         agent.completedCommandIds.add(envelope.commandId);
         agent.resumeCompletedCommandIds.delete(envelope.commandId);
         run.results.set(
             envelope.commandId,
             this.isGroupAssertionEvidenceCommand(envelope.runId, envelope.commandId)
                 ? envelope
-                : compactResultEnvelope(envelope)
+                : toCompactedResultEnvelope(envelope)
         );
 
         const command = run.commands.get(envelope.commandId);
         if (command) {
-            command.completedAtEpochMs = this.now();
+            command.completedAtEpochMs = this.dependencies.now();
         }
         this.touch(run);
-        trimControlRunEvidence(run, this.distributedRuns.values(), this.runtimeRetentionBounds);
+        trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
         this.refreshDistributedRunsForControlRun(run.runId);
-    }
-
-    // Group assertions read per-command evidence out of start-phase recipe
-    // results after completion, so those envelopes keep their full composite
-    // value instead of the compacted resultCount projection.
-    private isGroupAssertionEvidenceCommand(runId: string, commandId: string): boolean {
-        for (const distributedRun of this.distributedRuns.values()) {
-            if (
-                distributedRun.controlRunId !== runId ||
-                (distributedRun.manifest.groupAssertions?.length ?? 0) === 0
-            ) {
-                continue;
-            }
-            const linked = distributedRun.commandLinks.some((link) =>
-                link.phase === 'start' && link.commandId === commandId
-            );
-            if (linked) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private receiveEvent(envelope: ControlEventEnvelope): boolean {
         const run = this.ensureRun(envelope.runId);
         const agent = this.ensureAgent(run, envelope.agentId);
         const storedEnvelope = envelope.kind === 'report'
-            ? toCompactedControlReport(envelope, this.redaction)
+            ? toCompactedControlReport(envelope, this.config.redaction)
             : envelope;
-        if (storedEnvelope.kind === 'report') {
-            const reportKey = toControlReportDedupeKey(storedEnvelope);
-            if (run.reportKeys.has(reportKey)) {
-                return false;
-            }
-            run.reportKeys.add(reportKey);
-            trimControlReportDedupeKeys(run);
+        if (storedEnvelope.kind === 'report' && !this.admitReportKey(run, storedEnvelope)) {
+            return false;
         }
+
         agent.receivedEventCount += 1;
-        agent.lastSeenAtEpochMs = this.now();
+        agent.lastSeenAtEpochMs = this.dependencies.now();
         run.events.push(storedEnvelope);
         if (storedEnvelope.kind === 'stats') {
             run.stats.push(storedEnvelope);
@@ -784,296 +655,202 @@ export class RallarBlackBoxControlService {
             run.reports.push(storedEnvelope);
         }
         this.touch(run);
-        trimControlRunEvidence(run, this.distributedRuns.values(), this.runtimeRetentionBounds);
+        trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
         return true;
     }
 
-    private assertCommandAllowed(kind: RallarBlackBoxTestCommandKind): void {
-        if (!this.allowedCommandKinds || this.allowedCommandKinds.has(kind)) {
-            return;
+    private admitReportKey(run: ControlRunState, report: ControlEventEnvelope): boolean {
+        const reportKey = toControlReportDedupeKey(report);
+        if (run.reportKeys.has(reportKey)) {
+            return false;
         }
-
-        throw new Error(`Command kind is not allowed: ${kind}.`);
+        run.reportKeys.add(reportKey);
+        trimControlReportDedupeKeys(run);
+        return true;
     }
 
-    private assertCommandRateLimit(agent: ControlAgentState): void {
-        if (this.commandRateLimitMax <= 0) {
-            return;
-        }
-
-        const now = this.now();
-        const windowStart = now - this.commandRateLimitWindowMs;
-        agent.commandEnqueueTimestamps = agent.commandEnqueueTimestamps
-            .filter((timestamp) => timestamp >= windowStart);
-        if (agent.commandEnqueueTimestamps.length >= this.commandRateLimitMax) {
-            throw new Error('Command rate limit exceeded.');
-        }
-
-        agent.commandEnqueueTimestamps.push(now);
+    private admitCommandRate(agent: ControlAgentState): boolean {
+        const rateWindow = computeControlCommandRateWindow({
+            enqueueTimestamps: agent.commandEnqueueTimestamps,
+            nowEpochMs: this.dependencies.now(),
+            maxCommands: this.config.commandRateLimitMax,
+            windowMs: this.config.commandRateLimitWindowMs
+        });
+        agent.commandEnqueueTimestamps = [...rateWindow.enqueueTimestamps];
+        return !rateWindow.limited;
     }
 
-    private requireDistributedRun(distributedRunId: string): ControlDistributedRunState {
-        const distributedRun = this.distributedRuns.get(distributedRunId);
-        if (!distributedRun) {
-            throw new Error(`Distributed run not found: ${distributedRunId}.`);
-        }
-        return distributedRun;
-    }
-
-    private assertDistributedRunCanMutate(
-        distributedRun: ControlDistributedRunState,
-        action: ControlDistributedRunCommandPhase
-    ): void {
-        if (!isDistributedRunTerminalState(distributedRun.state)) {
-            return;
-        }
-
-        throw new Error(
-            `Cannot ${action} distributed run ${distributedRun.distributedRunId} in terminal state ${distributedRun.state}.`
+    // Group assertions read per-command evidence out of start-phase recipe
+    // results after completion, so those envelopes keep their full composite
+    // value instead of the compacted resultCount projection.
+    private isGroupAssertionEvidenceCommand(runId: string, commandId: string): boolean {
+        return Array.from(this.distributedRuns.values()).some((distributedRun) =>
+            distributedRun.controlRunId === runId &&
+            toGroupAssertionEvidenceCommandIds(distributedRun).includes(commandId)
         );
     }
 
-    private refreshDistributedTargetResolution(
-        distributedRun: ControlDistributedRunState
-    ): RallarBlackBoxDistributedTargetResolution {
+    private refreshDistributedTargetResolution(distributedRun: ControlDistributedRunState): void {
         const resolution = isResolvedTargetPolicy(distributedRun.manifest)
             ? this.resolveDistributedRunTargets(distributedRun.manifest)
             : toExplicitDistributedTargetResolution(
                 distributedRun,
                 this.runs.get(distributedRun.controlRunId),
-                this.now()
+                this.dependencies.now()
             );
         distributedRun.targetResolution = resolution;
         distributedRun.targetAgentIds = [...resolution.targetAgentIds];
-        return resolution;
     }
 
-    private advanceDistributedRunOrchestration(distributedRun: ControlDistributedRunState): void {
-        if (isDistributedRunTerminalState(distributedRun.state)) {
-            return;
+    // Orchestration is re-evaluated on every refresh, so an automatic step whose command
+    // queueing is refused (rate limit, allowlist) leaves the run in its current state and is
+    // attempted again on the next refresh instead of failing the read that triggered it.
+    private advanceDistributedRun(distributedRun: ControlDistributedRunState): void {
+        const advance = resolveDistributedRunAdvance(this.toLifecycleInput(distributedRun));
+        if (advance.completesBarrier) {
+            distributedRun.barrierCompletedAtEpochMs ??= this.dependencies.now();
         }
+        this.applyDistributedRunStep(distributedRun, advance.next);
+    }
 
-        if (distributedRun.state === 'waiting-for-ack') {
-            if (isDistributedAckTimedOut(distributedRun, this.now())) {
-                return;
+    private applyDistributedRunStep(
+        distributedRun: ControlDistributedRunState,
+        step: DistributedRunNextStep
+    ): ControlServiceFailure | undefined {
+        switch (step) {
+            case 'queue-barrier':
+                return this.queueDistributedPhase(
+                    distributedRun,
+                    'barrier',
+                    toDistributedBarrierCommands(distributedRun)
+                );
+            case 'queue-start':
+                return this.queueDistributedPhase(distributedRun, 'start', toDistributedStartCommands(distributedRun));
+            case 'mark-ready':
+                distributedRun.state = 'ready';
+                distributedRun.updatedAtEpochMs = this.dependencies.now();
+                return undefined;
+            case 'hold':
+                return undefined;
+        }
+    }
+
+    private queueDistributedPhase(
+        distributedRun: ControlDistributedRunState,
+        phase: ControlDistributedRunCommandPhase,
+        commands: readonly DistributedPhaseCommand[]
+    ): ControlServiceFailure | undefined {
+        for (const phaseCommand of commands) {
+            const failure = this.enqueueLinkedDistributedCommand(distributedRun, phaseCommand);
+            if (failure) {
+                return failure;
             }
-            if (this.allTargetPhaseCommandsSucceeded(distributedRun, 'stage')) {
-                if (this.distributedRunBarrierEnabled(distributedRun)) {
-                    this.queueDistributedBarrierCommands(distributedRun);
-                    distributedRun.state = 'waiting-for-barrier';
-                    distributedRun.barrierStartedAtEpochMs ??= this.now();
-                    distributedRun.updatedAtEpochMs = this.now();
-                    return;
-                }
-                this.readyOrAutoStartDistributedRun(distributedRun);
-            }
         }
-
-        if (distributedRun.state === 'waiting-for-barrier') {
-            if (isDistributedBarrierTimedOut(distributedRun, this.now())) {
-                return;
-            }
-            if (this.allTargetPhaseCommandsSucceeded(distributedRun, 'barrier')) {
-                distributedRun.barrierCompletedAtEpochMs ??= this.now();
-                this.readyOrAutoStartDistributedRun(distributedRun);
-            }
-        }
-
-        if (distributedRun.state === 'ready' && this.shouldAutoStartDistributedRun(distributedRun)) {
-            this.queueDistributedStartCommands(distributedRun);
-        }
+        this.markDistributedPhaseQueued(distributedRun, phase);
+        return undefined;
     }
 
-    private readyOrAutoStartDistributedRun(distributedRun: ControlDistributedRunState): void {
-        if (this.shouldAutoStartDistributedRun(distributedRun)) {
-            this.queueDistributedStartCommands(distributedRun);
-            return;
-        }
-
-        distributedRun.state = 'ready';
-        distributedRun.updatedAtEpochMs = this.now();
-    }
-
-    private shouldAutoStartDistributedRun(distributedRun: ControlDistributedRunState): boolean {
-        if (distributedRun.manifest.startMode === 'auto-after-ready') {
-            return true;
-        }
-        return distributedRun.manifest.startMode === 'scheduled' &&
-            distributedRun.manifest.startDeadlineEpochMs !== undefined &&
-            this.now() >= distributedRun.manifest.startDeadlineEpochMs;
-    }
-
-    private distributedRunScheduledStartPending(distributedRun: ControlDistributedRunState): boolean {
-        return distributedRun.manifest.startMode === 'scheduled' &&
-            distributedRun.manifest.startDeadlineEpochMs !== undefined &&
-            this.now() < distributedRun.manifest.startDeadlineEpochMs;
-    }
-
-    private distributedRunStartPrerequisitePending(distributedRun: ControlDistributedRunState): boolean {
-        const hasStageLinks = distributedRun.commandLinks.some((link) => link.phase === 'stage');
-        if (hasStageLinks && !this.allTargetPhaseCommandsSucceeded(distributedRun, 'stage')) {
-            return true;
-        }
-
-        if (!this.distributedRunBarrierEnabled(distributedRun) || !hasStageLinks) {
-            return false;
-        }
-
-        if (!distributedRun.commandLinks.some((link) => link.phase === 'barrier')) {
-            this.queueDistributedBarrierCommands(distributedRun);
-            distributedRun.state = 'waiting-for-barrier';
-            distributedRun.barrierStartedAtEpochMs ??= this.now();
-            distributedRun.updatedAtEpochMs = this.now();
-            return true;
-        }
-
-        return !this.allTargetPhaseCommandsSucceeded(distributedRun, 'barrier');
-    }
-
-    private queueDistributedBarrierCommands(distributedRun: ControlDistributedRunState): void {
-        for (const agentId of distributedRun.targetAgentIds) {
-            this.enqueueLinkedDistributedCommand({
+    private queueDistributedCancel(
+        distributedRun: ControlDistributedRunState,
+        reason: string
+    ): ControlServiceFailure | undefined {
+        if (distributedRun.targetAgentIds.length === 0) {
+            distributedRun.targetAgentIds = toDistributedTargetAgentIds(
                 distributedRun,
-                phase: 'barrier',
-                agentId,
-                selection: undefined,
-                command: toDistributedBarrierCommand(distributedRun, agentId)
-            });
+                this.runs.get(distributedRun.controlRunId)
+            );
         }
+        return this.queueDistributedPhase(
+            distributedRun,
+            'cancel',
+            toDistributedCancelCommands(distributedRun, reason)
+        );
     }
 
-    private queueDistributedStartCommands(distributedRun: ControlDistributedRunState): void {
-        for (const agentId of distributedRun.targetAgentIds) {
-            for (const selection of toRecipeSelectionsForAgent(distributedRun, agentId)) {
-                this.enqueueLinkedDistributedCommand({
-                    distributedRun,
-                    phase: 'start',
-                    agentId,
-                    selection,
-                    command: toDistributedStartCommand(distributedRun, agentId, selection)
-                });
-            }
-        }
-
-        distributedRun.state = 'running';
-        distributedRun.startedAtEpochMs ??= this.now();
-        distributedRun.updatedAtEpochMs = this.now();
-    }
-
-    private reconcileDistributedCommandLinks(distributedRun: ControlDistributedRunState): void {
-        const run = this.runs.get(distributedRun.controlRunId);
-        if (!run || distributedRun.targetAgentIds.length === 0) {
-            return;
-        }
-
-        for (const agentId of distributedRun.targetAgentIds) {
-            for (const selection of toRecipeSelectionsForAgent(distributedRun, agentId)) {
-                this.reconcileDistributedCommandLink({
-                    distributedRun,
-                    run,
-                    phase: 'stage',
-                    agentId,
-                    selection
-                });
-                this.reconcileDistributedCommandLink({
-                    distributedRun,
-                    run,
-                    phase: 'start',
-                    agentId,
-                    selection
-                });
-            }
-            if (this.distributedRunBarrierEnabled(distributedRun)) {
-                this.reconcileDistributedCommandLink({
-                    distributedRun,
-                    run,
-                    phase: 'barrier',
-                    agentId,
-                    selection: undefined
-                });
-            }
-        }
-    }
-
-    private reconcileDistributedCommandLink(
-        input: ReconcileDistributedCommandInput
-    ): void {
-        const link = toRecoveredDistributedCommandLink(input);
-        if (!link) {
-            return;
-        }
-        const { distributedRun, phase } = input;
-        distributedRun.commandLinks.push(link);
-        if (phase === 'start') {
-            distributedRun.startedAtEpochMs ??= link.queuedAtEpochMs;
-        }
-        if (phase === 'barrier') {
-            distributedRun.barrierStartedAtEpochMs ??= link.queuedAtEpochMs;
-        }
-        distributedRun.updatedAtEpochMs = this.now();
-    }
-
-    private allTargetPhaseCommandsSucceeded(
+    private markDistributedPhaseQueued(
         distributedRun: ControlDistributedRunState,
         phase: ControlDistributedRunCommandPhase
-    ): boolean {
-        const run = this.runs.get(distributedRun.controlRunId);
-        if (!run || distributedRun.targetAgentIds.length === 0) {
-            return false;
+    ): void {
+        const now = this.dependencies.now();
+        switch (phase) {
+            case 'stage':
+                distributedRun.state = 'waiting-for-ack';
+                distributedRun.stagedAtEpochMs ??= now;
+                break;
+            case 'barrier':
+                distributedRun.state = 'waiting-for-barrier';
+                distributedRun.barrierStartedAtEpochMs ??= now;
+                break;
+            case 'start':
+                distributedRun.state = 'running';
+                distributedRun.startedAtEpochMs ??= now;
+                break;
+            case 'cancel':
+                distributedRun.state = 'cancelled';
+                distributedRun.cancelledAtEpochMs = now;
+                distributedRun.completedAtEpochMs = now;
+                break;
         }
-
-        return distributedRun.targetAgentIds.every((agentId) => {
-            const links = distributedRun.commandLinks.filter((link) =>
-                link.phase === phase && link.agentId === agentId
-            );
-            return links.length > 0 &&
-                links.every((link) => run.results.get(link.commandId)?.ok === true);
-        });
-    }
-
-    private distributedRunBarrierEnabled(distributedRun: ControlDistributedRunState): boolean {
-        return distributedRun.manifest.barrier?.enabled === true;
+        distributedRun.updatedAtEpochMs = now;
     }
 
     private enqueueLinkedDistributedCommand(
-        { distributedRun, phase, agentId, selection, command }: LinkedDistributedCommandInput
-    ): ControlCommandEnvelope {
+        distributedRun: ControlDistributedRunState,
+        { phase, agentId, selection, command }: DistributedPhaseCommand
+    ): ControlServiceFailure | undefined {
         const recipeId = selection ? toDistributedRecipeKey(selection) : undefined;
         const existingLink = distributedRun.commandLinks.find((link) =>
-            link.phase === phase &&
-            link.agentId === agentId &&
-            link.recipeId === recipeId
+            link.phase === phase && link.agentId === agentId && link.recipeId === recipeId
         );
-        if (existingLink) {
-            const run = this.runs.get(distributedRun.controlRunId);
-            const existingCommand = run?.commands.get(existingLink.commandId);
-            if (existingCommand) {
-                return existingCommand.envelope;
-            }
+        if (existingLink && this.runs.get(distributedRun.controlRunId)?.commands.has(existingLink.commandId)) {
+            return undefined;
         }
 
-        const envelope = this.enqueueCommand({
+        const enqueued = this.enqueueCommand({
             runId: distributedRun.controlRunId,
             agentId,
             commandId: command.commandId,
             command,
             deadlineEpochMs: phase === 'start' ? distributedRun.manifest.startDeadlineEpochMs : undefined
         });
+        if (enqueued.right === undefined) {
+            return enqueued.left;
+        }
         distributedRun.commandLinks.push({
             phase,
             agentId,
-            commandId: envelope.commandId,
+            commandId: enqueued.right.commandId,
             recipeId,
             role: selection?.role,
-            queuedAtEpochMs: this.now()
+            queuedAtEpochMs: this.dependencies.now()
         });
-        distributedRun.updatedAtEpochMs = this.now();
-        return envelope;
+        distributedRun.updatedAtEpochMs = this.dependencies.now();
+        return undefined;
     }
 
-    private snapshotDistributedRunValue(
-        distributedRun: ControlDistributedRunState
-    ): ControlDistributedRunSnapshot {
+    private reconcileDistributedCommandLinks(distributedRun: ControlDistributedRunState): void {
+        const run = this.runs.get(distributedRun.controlRunId);
+        for (const recovered of toRecoveredDistributedCommandLinks(distributedRun, run)) {
+            const queuedAtEpochMs = recovered.evidenceQueuedAtEpochMs ?? distributedRun.updatedAtEpochMs;
+            distributedRun.commandLinks.push({
+                phase: recovered.phase,
+                agentId: recovered.agentId,
+                commandId: recovered.commandId,
+                recipeId: recovered.recipeId,
+                role: recovered.role,
+                queuedAtEpochMs
+            });
+            if (recovered.phase === 'start') {
+                distributedRun.startedAtEpochMs ??= queuedAtEpochMs;
+            }
+            if (recovered.phase === 'barrier') {
+                distributedRun.barrierStartedAtEpochMs ??= queuedAtEpochMs;
+            }
+            distributedRun.updatedAtEpochMs = this.dependencies.now();
+        }
+    }
+
+    private refreshDistributedRunSnapshot(distributedRun: ControlDistributedRunState): ControlDistributedRunSnapshot {
         return toDistributedRunSnapshot(distributedRun, this.refreshDistributedRunState(distributedRun));
     }
 
@@ -1089,19 +866,19 @@ export class RallarBlackBoxControlService {
             this.fleetReports.delete(distributedRunId);
             return undefined;
         }
-        const snapshot = this.snapshotDistributedRunValue(distributedRun);
-        if (!isDistributedRunTerminalState(snapshot.state)) {
-            return this.fleetReports.get(distributedRunId);
-        }
+        const snapshot = this.refreshDistributedRunSnapshot(distributedRun);
         const existing = this.fleetReports.get(distributedRunId);
-        if (existing && existing.generatedAtEpochMs >= snapshot.updatedAtEpochMs) {
+        if (
+            !isDistributedRunTerminalState(snapshot.state) ||
+            (existing && existing.generatedAtEpochMs >= snapshot.updatedAtEpochMs)
+        ) {
             return existing;
         }
         const report = createControlFleetRunReport({
             distributedRun: snapshot,
             controlRun: this.snapshotRun(snapshot.controlRunId),
-            generatedAtEpochMs: this.now(),
-            redaction: this.redaction
+            generatedAtEpochMs: this.dependencies.now(),
+            redaction: this.config.redaction
         });
         this.fleetReports.set(distributedRunId, report);
         return report;
@@ -1115,26 +892,24 @@ export class RallarBlackBoxControlService {
         }
     }
 
-    private refreshDistributedRunState(
-        distributedRun: ControlDistributedRunState
-    ): RallarBlackBoxDistributedRunRollup {
+    private refreshDistributedRunState(distributedRun: ControlDistributedRunState): RallarBlackBoxDistributedRunRollup {
         if (isDistributedRunTerminalState(distributedRun.state) && distributedRun.rollup) {
             return distributedRun.rollup;
         }
 
         this.reconcileDistributedCommandLinks(distributedRun);
-        this.advanceDistributedRunOrchestration(distributedRun);
+        this.advanceDistributedRun(distributedRun);
         const evaluated = toDistributedRunRollup({
             distributedRun,
             run: this.runs.get(distributedRun.controlRunId),
-            redaction: this.redaction,
-            nowEpochMs: this.now()
+            redaction: this.config.redaction,
+            nowEpochMs: this.dependencies.now()
         });
         if (evaluated.state !== distributedRun.state) {
             distributedRun.state = evaluated.state;
-            distributedRun.updatedAtEpochMs = this.now();
+            distributedRun.updatedAtEpochMs = this.dependencies.now();
             if (isDistributedRunTerminalState(evaluated.state)) {
-                distributedRun.completedAtEpochMs ??= this.now();
+                distributedRun.completedAtEpochMs ??= this.dependencies.now();
             }
         }
         if (isDistributedRunTerminalState(distributedRun.state)) {
@@ -1143,13 +918,32 @@ export class RallarBlackBoxControlService {
         return evaluated;
     }
 
+    private toLifecycleInput(distributedRun: ControlDistributedRunState): DistributedRunLifecycleInput {
+        return {
+            distributedRun,
+            run: this.runs.get(distributedRun.controlRunId),
+            nowEpochMs: this.dependencies.now()
+        };
+    }
+
+    private failUnresolvedDistributedTargets(distributedRun: ControlDistributedRunState): boolean {
+        const error = toDistributedTargetFailure(distributedRun);
+        if (!error) {
+            return false;
+        }
+        distributedRun.state = 'failed';
+        distributedRun.completedAtEpochMs = this.dependencies.now();
+        distributedRun.error = error;
+        return true;
+    }
+
     private ensureRun(runId: string): ControlRunState {
         const existing = this.runs.get(runId);
         if (existing) {
             return existing;
         }
 
-        const now = this.now();
+        const now = this.dependencies.now();
         const run: ControlRunState = {
             runId,
             createdAtEpochMs: now,
@@ -1195,18 +989,7 @@ export class RallarBlackBoxControlService {
 
     private touch(run: ControlRunState): void {
         run.retentionRevision += 1;
-        run.updatedAtEpochMs = this.now();
-    }
-
-    private rejectUnresolvedDistributedTargets(distributedRun: ControlDistributedRunState): boolean {
-        const error = toDistributedTargetFailure(distributedRun);
-        if (!error) {
-            return false;
-        }
-        distributedRun.state = 'failed';
-        distributedRun.completedAtEpochMs = this.now();
-        distributedRun.error = error;
-        return true;
+        run.updatedAtEpochMs = this.dependencies.now();
     }
 
     private deleteRetainedRecords(
@@ -1229,19 +1012,33 @@ export class RallarBlackBoxControlService {
 
     private deleteControlRunRecords(deletedRunIds: readonly string[]): readonly string[] {
         const selected = new Set(deletedRunIds);
-        const distributedRunIds = Array.from(this.distributedRuns.values()).filter((run) =>
-            selected.has(run.controlRunId)
-        ).map((run) => run.distributedRunId);
+        const distributedRunIds = Array.from(this.distributedRuns.values())
+            .filter((distributedRun) => selected.has(distributedRun.controlRunId))
+            .map((distributedRun) => distributedRun.distributedRunId);
         return this.deleteRetainedRecords({ deletedRunIds, distributedRunIds, fleetReportIds: distributedRunIds });
     }
 }
 
 export function createRallarBlackBoxControlService(
-    options: RallarBlackBoxControlServiceOptions = {}
+    input: CreateRallarBlackBoxControlServiceInput
 ): RallarBlackBoxControlService {
-    return new RallarBlackBoxControlService(options);
+    return new RallarBlackBoxControlService(input);
 }
 
-function cleanSegment(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+function toFailure<TValue>(code: ControlServiceFailureCode, message: string): Either<ControlServiceFailure, TValue> {
+    return Either.ofLeft({ code, message });
+}
+
+function toDistributedRunNotFound<TValue>(distributedRunId: string): Either<ControlServiceFailure, TValue> {
+    return toFailure('distributed-run-not-found', `Distributed run not found: ${distributedRunId}.`);
+}
+
+function toDistributedRunTerminal<TValue>(
+    distributedRun: ControlDistributedRunState,
+    action: ControlDistributedRunCommandPhase
+): Either<ControlServiceFailure, TValue> {
+    return toFailure(
+        'distributed-run-terminal',
+        `Cannot ${action} distributed run ${distributedRun.distributedRunId} in terminal state ${distributedRun.state}.`
+    );
 }

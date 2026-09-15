@@ -8,13 +8,14 @@ import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    type RallarBlackBoxControlAgentIdentity,
-    type RallarBlackBoxDistributedRunManifest,
-    type RallarBlackBoxDistributedRunRollup,
-    type RallarBlackBoxDistributedRunState,
-    type RallarBlackBoxDistributedTargetResolution
+import type {
+    RallarBlackBoxControlAgentIdentity,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunRollup,
+    RallarBlackBoxDistributedRunState,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+
 export interface ControlCommandState {
     envelope: ControlCommandEnvelope;
     fingerprint: string;
@@ -24,6 +25,7 @@ export interface ControlCommandState {
     dispatchCount: number;
     lastDispatchedConnectionSequence?: number;
 }
+
 export interface ControlAgentState {
     runId: string;
     agentId: string;
@@ -42,6 +44,7 @@ export interface ControlAgentState {
     resumeCompletedCommandIds: Set<string>;
     commandEnqueueTimestamps: number[];
 }
+
 export interface ControlTokenState {
     runId: string;
     agentId: string;
@@ -49,6 +52,7 @@ export interface ControlTokenState {
     issuedAtEpochMs: number;
     expiresAtEpochMs: number;
 }
+
 export interface ControlRunState {
     runId: string;
     createdAtEpochMs: number;
@@ -65,6 +69,7 @@ export interface ControlRunState {
     retentionRevision: number;
     issuedRunTokenStateRevision: number;
 }
+
 export interface ControlDistributedRunState {
     distributedRunId: string;
     controlRunId: string;

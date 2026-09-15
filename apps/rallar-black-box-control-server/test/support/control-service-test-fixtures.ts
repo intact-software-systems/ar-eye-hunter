@@ -2,51 +2,104 @@ import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { createRallarBlackBoxControlService } from '../../src/control-service.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestCommandKind,
+    RallarBlackBoxTestRedactionOptions
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { assert } from '@std/assert';
+
+import type {
+    CreateRallarBlackBoxControlServiceInput,
+    RallarBlackBoxControlService
+} from '../../src/control-service.ts';
+
+export interface ControlServiceInputOverrides {
+    readonly now?: () => number;
+    readonly createCommandId?: () => string;
+    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+    readonly allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
+    readonly commandRateLimitMax?: number;
+    readonly commandRateLimitWindowMs?: number;
+    readonly runtimeRetentionBounds?: ControlRunSnapshotBounds;
+}
+
 interface ControlRegisterFixtureInput {
     readonly runId?: string;
     readonly agentId?: string;
     readonly completedCommandIds?: readonly string[];
     readonly identity?: RallarBlackBoxControlAgentIdentity;
 }
+
 interface ControlResultFixtureInput {
     readonly runId: string;
     readonly agentId: string;
     readonly command: Readonly<{ commandId: string; command: RallarBlackBoxTestCommand; }>;
     readonly ok: boolean;
 }
-export function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
+
+const RECIPE_RUN_RESULT_VALUE = {
+    recipeId: 'health-only',
+    results: [
+        {
+            commandId: 'health-child',
+            kind: 'health',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 2_001,
+            endedAtEpochMs: 2_002,
+            durationMs: 1
+        }
+    ]
+};
+
+const PRODUCTION_RUNTIME_RETENTION_BOUNDS: ControlRunSnapshotBounds = {
+    commands: 1_000,
+    results: 1_000,
+    events: 2_000,
+    stats: 500,
+    reports: 20,
+    heartbeats: 500
+};
+
+export function toControlServiceInput(
+    overrides: ControlServiceInputOverrides = {}
+): CreateRallarBlackBoxControlServiceInput {
+    return {
+        dependencies: {
+            now: overrides.now ?? (() => Date.now()),
+            createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID())
+        },
+        config: {
+            redaction: overrides.redaction,
+            allowedCommandKinds: overrides.allowedCommandKinds,
+            commandRateLimitMax: overrides.commandRateLimitMax ?? 120,
+            commandRateLimitWindowMs: overrides.commandRateLimitWindowMs ?? 60_000,
+            runtimeRetentionBounds: overrides.runtimeRetentionBounds ?? PRODUCTION_RUNTIME_RETENTION_BOUNDS
+        }
+    };
 }
-export function assertEquals<T>(actual: T, expected: T): void {
+
+// Compares serialized JSON, so absent and undefined fields are equal and key order matters.
+export function assertJsonEquals<TValue>(actual: TValue, expected: TValue): void {
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         throw new Error(
             `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
         );
     }
 }
-export function assertThrows(callback: () => unknown, includes: string): void {
-    try {
-        callback();
-    }
-    catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        assert(
-            message.includes(includes),
-            `Expected error to include ${includes}, got ${message}`
-        );
-        return;
-    }
 
-    throw new Error('Expected function to throw.');
+export function assertRight<TFailure, TValue>(result: Either<TFailure, TValue>): TValue {
+    assert(result.right !== undefined, `Expected success, got ${JSON.stringify(result.left)}.`);
+    return result.right;
 }
+
 export function toConfigureCommand(): RallarBlackBoxTestCommand {
     return {
         kind: 'configure',
@@ -90,26 +143,8 @@ export function toCommandResultEnvelope(
             startedAtEpochMs: 2_000,
             endedAtEpochMs: 2_010,
             durationMs: 10,
-            value: command.command.kind === 'recipe.run'
-                ? {
-                    recipeId: 'health-only',
-                    results: [
-                        {
-                            commandId: 'health-child',
-                            kind: 'health',
-                            status: 'ok',
-                            ok: true,
-                            startedAtEpochMs: 2_001,
-                            endedAtEpochMs: 2_002,
-                            durationMs: 1
-                        }
-                    ]
-                }
-                : { ok },
-            error: ok ? undefined : {
-                code: 'TEST_FAILURE',
-                message: 'Simulated failure.'
-            }
+            value: command.command.kind === 'recipe.run' ? RECIPE_RUN_RESULT_VALUE : { ok },
+            error: ok ? undefined : { code: 'TEST_FAILURE', message: 'Simulated failure.' }
         }
     };
 }
@@ -164,7 +199,7 @@ export function toFleetIdentity(
     };
 }
 export function registerFleetAgents(
-    service: ReturnType<typeof createRallarBlackBoxControlService>,
+    service: RallarBlackBoxControlService,
     count: number
 ): void {
     for (let index = 1; index <= count; index += 1) {

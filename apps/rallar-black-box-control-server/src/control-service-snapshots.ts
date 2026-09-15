@@ -1,3 +1,4 @@
+import type { ControlRetentionRunSafety } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
@@ -6,13 +7,17 @@ import type {
     ControlRunSnapshotBounds,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { toControlCommandFingerprint } from './control-command-identity.ts';
+
+import { toControlCommandFingerprint } from './control-command-queue-policy.ts';
 import {
-    compactResultEnvelope,
     toCompactedControlReport,
-    toControlReportDedupeKey
+    toCompactedResultEnvelope,
+    toControlReportDedupeKey,
+    toGroupAssertionEvidenceCommandIds
 } from './control-evidence-compaction.ts';
+import { toBoundedTail } from './control-runtime-retention.ts';
 import type {
     ControlAgentState,
     ControlCommandState,
@@ -20,12 +25,15 @@ import type {
     ControlRunState
 } from './control-service-state.ts';
 
-export function toBoundedTail<T>(values: readonly T[], limit: number | undefined): readonly T[] {
-    if (limit === undefined || !Number.isFinite(limit) || limit < 0) {
-        return values;
-    }
+export interface RestoredControlSnapshot {
+    readonly runs: Map<string, ControlRunState>;
+    readonly distributedRuns: Map<string, ControlDistributedRunState>;
+}
 
-    return values.slice(Math.max(0, values.length - Math.floor(limit)));
+interface RestoredControlRunInput {
+    readonly runSnapshot: ControlRunSnapshot;
+    readonly evidenceCommandKeys: ReadonlySet<string>;
+    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
 }
 
 export function toControlCommandSnapshot(command: ControlCommandState): ControlQueuedCommandSnapshot {
@@ -101,9 +109,29 @@ export function toDistributedRunSnapshot(
         error: distributedRun.error
     };
 }
-export interface RestoredControlSnapshot {
-    readonly runs: Map<string, ControlRunState>;
-    readonly distributedRuns: Map<string, ControlDistributedRunState>;
+export function toPassiveDistributedRunSnapshot(
+    distributedRun: ControlDistributedRunState
+): ControlDistributedRunSnapshot {
+    return toDistributedRunSnapshot(
+        distributedRun,
+        distributedRun.rollup ?? rollupDistributedRunResult({ stateHint: distributedRun.state })
+    );
+}
+
+export function toControlRetentionRunSafety(run: ControlRunState): ControlRetentionRunSafety {
+    return {
+        runId: run.runId,
+        connectedAgentIds: Array.from(run.agents.values())
+            .filter((agent) => agent.connected)
+            .map((agent) => agent.agentId),
+        issuedRunTokens: Array.from(run.tokens.values(), (token) => ({
+            agentId: token.agentId,
+            issuedAtEpochMs: token.issuedAtEpochMs,
+            expiresAtEpochMs: token.expiresAtEpochMs
+        })),
+        runStateFingerprint: `revision:${run.retentionRevision}`,
+        issuedRunTokenStateFingerprint: `revision:${run.issuedRunTokenStateRevision}`
+    };
 }
 
 export function toRestoredControlSnapshot(
@@ -125,23 +153,12 @@ export function toRestoredControlSnapshot(
 
 function toGroupAssertionEvidenceKeys(snapshot: ControlServerSnapshot): ReadonlySet<string> {
     const evidenceCommandKeys = new Set<string>();
-    for (const run of snapshot.distributedRuns ?? []) {
-        if ((run.manifest.groupAssertions?.length ?? 0) === 0) {
-            continue;
-        }
-        for (const link of run.commandLinks) {
-            if (link.phase === 'start') {
-                evidenceCommandKeys.add(toResultCommandKey(run.controlRunId, link.commandId));
-            }
+    for (const distributedRun of snapshot.distributedRuns ?? []) {
+        for (const commandId of toGroupAssertionEvidenceCommandIds(distributedRun)) {
+            evidenceCommandKeys.add(toResultCommandKey(distributedRun.controlRunId, commandId));
         }
     }
     return evidenceCommandKeys;
-}
-
-interface RestoredControlRunInput {
-    readonly runSnapshot: ControlRunSnapshot;
-    readonly evidenceCommandKeys: ReadonlySet<string>;
-    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
 }
 
 function toRestoredControlRun(
@@ -178,7 +195,7 @@ function toRestoredControlRun(
             result.commandId,
             evidenceCommandKeys.has(toResultCommandKey(run.runId, result.commandId))
                 ? result
-                : compactResultEnvelope(result)
+                : toCompactedResultEnvelope(result)
         );
     }
     return run;

@@ -1,6 +1,10 @@
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxDistributedRecipeResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRecipeResult,
+    RallarBlackBoxDistributedRunError
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 export interface ToDistributedRecipeResultInput {
     readonly link: ControlDistributedRunCommandLink;
@@ -11,8 +15,7 @@ export interface ToDistributedRecipeResultInput {
 export function toDistributedRecipeResult(
     input: ToDistributedRecipeResultInput
 ): RallarBlackBoxDistributedRecipeResult {
-    const link = input.link;
-    const result = input.result;
+    const { link, result } = input;
     const recipeKey = [
         link.agentId,
         link.recipeId ?? link.role ?? link.commandId
@@ -43,11 +46,7 @@ export function toDistributedRecipeResult(
     };
 }
 
-export function toDistributedRunResultError(result: ControlResultEnvelope): Readonly<{
-    code: string;
-    message: string;
-    details?: unknown;
-}> {
+export function toDistributedRunResultError(result: ControlResultEnvelope): RallarBlackBoxDistributedRunError {
     return result.error ?? result.result?.error ?? {
         code: 'RALLAR_BB_DISTRIBUTED_COMMAND_FAILED',
         message: `Distributed command ${result.commandId} failed.`
@@ -56,16 +55,11 @@ export function toDistributedRunResultError(result: ControlResultEnvelope): Read
 
 export function computeNestedRecipeResultCount(result: ControlResultEnvelope): number {
     const value = result.result?.value;
-    if (
-        value && typeof value === 'object' && Array.isArray((value as { results?: unknown; }).results)
-    ) {
-        return (value as { results: readonly unknown[]; }).results.length;
+    if (isJsonRecordValue(value) && Array.isArray(value.results)) {
+        return value.results.length;
     }
-    if (
-        value && typeof value === 'object' &&
-        typeof (value as { resultCount?: unknown; }).resultCount === 'number'
-    ) {
-        return (value as { resultCount: number; }).resultCount;
+    if (isJsonRecordValue(value) && typeof value.resultCount === 'number') {
+        return value.resultCount;
     }
     return result.result ? 1 : 0;
 }

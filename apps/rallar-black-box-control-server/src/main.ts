@@ -17,8 +17,11 @@ import { fleetReportFilterFromUrl } from './control-fleet.ts';
 import { createControlHttpSecurity } from './control-http-security.ts';
 import { PayloadTooLargeError } from './control-request-body.ts';
 import { readBlackBoxControlServerConfiguration } from './control-server-configuration.ts';
-import type { EnqueueControlCommandInput } from './control-service.ts';
-import { createRallarBlackBoxControlService } from './control-service.ts';
+import {
+    createRallarBlackBoxControlService,
+    type ControlServiceFailure,
+    type EnqueueControlCommandInput
+} from './control-service.ts';
 import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins, createControlResponseHeaders } from './cors.ts';
 import { handleRetentionCleanup } from './retention-cleanup.ts';
@@ -41,11 +44,17 @@ assertBlackBoxControlProductionEnv(Deno.env);
 
 const security = readBlackBoxControlServerConfiguration(Deno.env);
 const controlService = createRallarBlackBoxControlService({
-    allowedCommandKinds: security.allowedCommandKinds,
-    commandRateLimitMax: security.commandRateLimitMax,
-    commandRateLimitWindowMs: security.commandRateLimitWindowMs,
-    runTokenTtlMs: security.runTokenTtlMs,
-    runtimeRetentionBounds: security.runtimeRetentionBounds
+    dependencies: {
+        now: () => Date.now(),
+        createCommandId: () => crypto.randomUUID()
+    },
+    config: {
+        redaction: undefined,
+        allowedCommandKinds: security.allowedCommandKinds,
+        commandRateLimitMax: security.commandRateLimitMax,
+        commandRateLimitWindowMs: security.commandRateLimitWindowMs,
+        runtimeRetentionBounds: security.runtimeRetentionBounds
+    }
 });
 const artifactRecorder = createControlArtifactRecorder({
     storageDir: security.storageDir,
@@ -151,7 +160,7 @@ async function handleRequest(request: Request): Promise<Response> {
     const fleetReportArtifactMatch = url.pathname.match(/^\/fleet\/reports\/([^/]+)\/artifacts$/);
     if (isRead && fleetReportArtifactMatch) {
         const distributedRunId = decodeURIComponent(fleetReportArtifactMatch[1]);
-        const bundle = controlService.fleetReportBundle(distributedRunId);
+        const bundle = controlService.createFleetReportBundle(distributedRunId);
         return bundle ? jsonResponse(bundle) : jsonResponse({ error: 'Fleet report not found.' }, 404);
     }
 
@@ -197,7 +206,7 @@ async function handleRequest(request: Request): Promise<Response> {
     );
     if (isRead && distributedRunArtifactsMatch) {
         const distributedRunId = decodeURIComponent(distributedRunArtifactsMatch[1]);
-        const bundle = controlService.distributedRunArtifactBundle(
+        const bundle = controlService.createDistributedRunArtifactBundle(
             distributedRunId,
             ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS
         );
@@ -480,14 +489,12 @@ async function createDistributedRun(request: Request): Promise<Response> {
         return jsonResponse({ error: manifest.left }, 400);
     }
 
-    try {
-        const distributedRun = controlService.createDistributedRun(manifest.right);
-        snapshotPersistence.persist();
-        return jsonResponse(distributedRun, 201);
+    const distributedRun = controlService.createDistributedRun(manifest.right);
+    if (distributedRun.right === undefined) {
+        return controlServiceFailureResponse(distributedRun.left);
     }
-    catch (error) {
-        return distributedRunErrorResponse(error);
-    }
+    snapshotPersistence.persist();
+    return jsonResponse(distributedRun.right, 201);
 }
 
 async function resolveDistributedTargets(request: Request): Promise<Response> {
@@ -503,12 +510,7 @@ async function resolveDistributedTargets(request: Request): Promise<Response> {
         return jsonResponse({ error: manifest.left }, 400);
     }
 
-    try {
-        return jsonResponse(controlService.resolveDistributedRunTargets(manifest.right));
-    }
-    catch (error) {
-        return distributedRunErrorResponse(error);
-    }
+    return jsonResponse(controlService.resolveDistributedRunTargets(manifest.right));
 }
 
 async function mutateDistributedRun(
@@ -516,7 +518,7 @@ async function mutateDistributedRun(
     distributedRunId: string,
     action: 'stage' | 'start' | 'cancel'
 ): Promise<Response> {
-    let reason: string | undefined;
+    let reason = 'Distributed run cancelled.';
     if (action === 'cancel') {
         try {
             const body = await httpSecurity.readJsonBody(request, true);
@@ -529,33 +531,29 @@ async function mutateDistributedRun(
         }
     }
 
-    try {
-        const distributedRun = action === 'stage'
-            ? controlService.stageDistributedRun(distributedRunId)
-            : action === 'start'
-            ? controlService.startDistributedRun(distributedRunId)
-            : controlService.cancelDistributedRun(distributedRunId, reason);
-        distributedRun.targetAgentIds.forEach((agentId) =>
-            sendDispatchableCommands(distributedRun.controlRunId, agentId)
-        );
-        snapshotPersistence.persist();
-        return jsonResponse(distributedRun, 202);
+    const mutated = action === 'stage'
+        ? controlService.stageDistributedRun(distributedRunId)
+        : action === 'start'
+        ? controlService.startDistributedRun(distributedRunId)
+        : controlService.cancelDistributedRun(distributedRunId, reason);
+    const distributedRun = mutated.right;
+    if (distributedRun === undefined) {
+        return controlServiceFailureResponse(mutated.left);
     }
-    catch (error) {
-        return distributedRunErrorResponse(error);
-    }
+    distributedRun.targetAgentIds.forEach((agentId) => sendDispatchableCommands(distributedRun.controlRunId, agentId));
+    snapshotPersistence.persist();
+    return jsonResponse(distributedRun, 202);
 }
 
-function distributedRunErrorResponse(error: unknown): Response {
-    const message = errorMessage(error);
-    const status = message.includes('not found')
+function controlServiceFailureResponse(failure: ControlServiceFailure | undefined): Response {
+    const status = failure?.code === 'distributed-run-not-found'
         ? 404
-        : message.includes('terminal state')
+        : failure?.code === 'distributed-run-terminal'
         ? 409
-        : message.includes('rate limit')
+        : failure?.code === 'command-rate-limited'
         ? 429
         : 400;
-    return jsonResponse({ error: message }, status);
+    return jsonResponse({ error: failure?.message }, status);
 }
 
 async function enqueueCommand(
@@ -585,20 +583,16 @@ async function enqueueCommand(
         return jsonResponse({ error: destinationError }, 403);
     }
 
-    let envelope: ControlCommandEnvelope;
-    try {
-        envelope = controlService.enqueueCommand({
-            runId,
-            agentId,
-            commandId: body.commandId,
-            command: body.command,
-            deadlineEpochMs: body.deadlineEpochMs
-        });
-    }
-    catch (error) {
-        return jsonResponse({
-            error: error instanceof Error ? error.message : String(error)
-        }, error instanceof Error && error.message.includes('rate limit') ? 429 : 400);
+    const enqueued = controlService.enqueueCommand({
+        runId,
+        agentId,
+        commandId: body.commandId,
+        command: body.command,
+        deadlineEpochMs: body.deadlineEpochMs
+    });
+    const envelope = enqueued.right;
+    if (envelope === undefined) {
+        return controlServiceFailureResponse(enqueued.left);
     }
     sendDispatchableCommands(runId, agentId);
     snapshotPersistence.persist();
@@ -663,8 +657,8 @@ async function enqueueBulkCommand(
         : undefined;
     const commands: ControlCommandEnvelope[] = [];
 
-    try {
-        agentIds.forEach((agentId, index) => {
+    for (const [index, agentId] of agentIds.entries()) {
+        {
             const commandId = baseCommandId
                 ? agentIds.length === 1 && typeof record.commandId === 'string'
                     ? baseCommandId
@@ -676,20 +670,18 @@ async function enqueueBulkCommand(
                     commandId
                 } as RallarBlackBoxTestCommand
                 : commandTemplate;
-            const envelope = controlService.enqueueCommand({
+            const enqueued = controlService.enqueueCommand({
                 runId,
                 agentId,
                 commandId: commandId ?? `bulk-${Date.now()}-${index + 1}`,
                 command,
                 deadlineEpochMs
             });
-            commands.push(envelope);
-        });
-    }
-    catch (error) {
-        return jsonResponse({
-            error: error instanceof Error ? error.message : String(error)
-        }, error instanceof Error && error.message.includes('rate limit') ? 429 : 400);
+            if (enqueued.right === undefined) {
+                return controlServiceFailureResponse(enqueued.left);
+            }
+            commands.push(enqueued.right);
+        }
     }
 
     agentIds.forEach((agentId) => sendDispatchableCommands(runId, agentId));
