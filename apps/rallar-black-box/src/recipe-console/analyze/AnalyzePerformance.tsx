@@ -36,6 +36,11 @@ export function AnalyzePerformance({
                     value={stream ? `${stream.completedFrames}/${stream.plannedFrames}` : 'Not available'}
                     warn={Boolean(stream && stream.completedFrames < stream.plannedFrames)}
                 />
+                <Metric
+                    label="Backpressure"
+                    value={String(stream?.backpressureCount ?? 0)}
+                    warn={(stream?.backpressureCount ?? 0) > 0}
+                />
             </dl>
             <p className={styles.summaryLine}>
                 {performance

@@ -111,6 +111,7 @@ function createTuneStreamSummary(): RallarBlackBoxTestRtcStreamResultValue {
                 durationMs,
                 ok: !dropped && index !== 22,
                 dropped,
+                backpressured: index >= 18 && index <= 21,
                 status: dropped ? 'dropped' : index === 22 ? 'failed' : 'ok',
                 errorCode: index >= 23 && index <= 24
                     ? 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT'
@@ -127,6 +128,7 @@ function createTuneStreamSummary(): RallarBlackBoxTestRtcStreamResultValue {
         completedFrames: 22,
         failedFrames: 1,
         droppedFrames: 5,
+        backpressureCount: 4,
         startedAtEpochMs,
         endedAtEpochMs,
         elapsedMs: 1_000,

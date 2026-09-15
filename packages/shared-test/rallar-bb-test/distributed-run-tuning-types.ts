@@ -3,6 +3,7 @@ import type { RallarBlackBoxTestRtcStreamThresholds } from './rallar-black-box-t
 export const DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES = [
     'minSendSuccessRatio',
     'maxDroppedFrames',
+    'maxBackpressureCount',
     'maxP95SendDurationMs',
     'maxP99SendDurationMs',
     'maxAverageStartDriftMs',

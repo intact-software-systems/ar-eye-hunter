@@ -205,6 +205,11 @@ export function ImportedDistributedArtifactAnalysisPanel({
                         tone={(streamTiming?.lateFrameCount ?? 0) > 0 ? 'warn' : 'good'}
                     />
                     <Metric
+                        label="Backpressure"
+                        value={String(streamTiming?.backpressureCount ?? 0)}
+                        tone={(streamTiming?.backpressureCount ?? 0) > 0 ? 'warn' : 'good'}
+                    />
+                    <Metric
                         label="Achieved Hz"
                         value={formatStreamRate(streamTiming?.achievedCompletionHz)}
                         tone={streamTiming?.achievedCompletionHz !== undefined ? 'active' : 'muted'}

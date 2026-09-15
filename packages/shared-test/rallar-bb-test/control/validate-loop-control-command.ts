@@ -108,6 +108,7 @@ function validateLoopThresholds(command: RallarBlackBoxTestRecord): readonly Con
             RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS.loopThresholds,
             path
         ),
-        ...validateRatioField(thresholds, 'minSendSuccessRatio', path)
+        ...validateRatioField(thresholds, 'minSendSuccessRatio', path),
+        ...validateBooleanField(thresholds, 'failOnBackpressure', path)
     ];
 }

@@ -203,7 +203,8 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
             'maxAverageStartDriftMs',
             'maxStartDriftMs',
             'maxJitterMs',
-            'minSendSuccessRatio'
+            'minSendSuccessRatio',
+            'failOnBackpressure'
         ]
     },
     waitMatch: {
@@ -228,6 +229,7 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
         optional: [
             'minSendSuccessRatio',
             'maxDroppedFrames',
+            'maxBackpressureCount',
             'maxP95SendDurationMs',
             'maxP99SendDurationMs',
             'maxAverageStartDriftMs',
@@ -248,6 +250,7 @@ export const RALLAR_BLACK_BOX_COMMAND_NON_NEGATIVE_FIELDS = {
     loopThresholds: ['minAchievedRateHz', 'maxAverageStartDriftMs', 'maxStartDriftMs', 'maxJitterMs'],
     rtcStreamThresholds: [
         'maxDroppedFrames',
+        'maxBackpressureCount',
         'maxP95SendDurationMs',
         'maxP99SendDurationMs',
         'maxAverageStartDriftMs',

@@ -137,6 +137,7 @@ test('renders real Tune evidence without invented values', async ({ context, pag
             '22 Hz completed',
             '28 ms max drift',
             '6 late',
+            '4 backpressure',
             'P95 68 ms',
             'P99 92 ms',
             TUNE_SLOW_AGENT_ID

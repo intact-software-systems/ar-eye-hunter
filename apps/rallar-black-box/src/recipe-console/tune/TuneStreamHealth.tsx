@@ -33,7 +33,8 @@ export function TuneStreamHealth({
                                 `${stream.failedFrames} failed`,
                                 `${stream.droppedFrames} dropped`,
                                 `${stream.inFlightLimitDropCount} in-flight drops`,
-                                `${stream.lateFrameCount} late`
+                                `${stream.lateFrameCount} late`,
+                                `${stream.backpressureCount} backpressure`
                             ].map((value) => (
                                 <li key={value}>
                                     <strong>{value}</strong>
@@ -62,7 +63,7 @@ export function TuneStreamHealth({
                 )
                 : (
                     <p className={styles.empty}>
-                        RTC frame disposition, cadence, and drift are unavailable.
+                        RTC frame disposition, cadence, drift, and backpressure are unavailable.
                     </p>
                 )}
         </section>

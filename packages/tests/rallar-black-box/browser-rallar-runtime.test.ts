@@ -1257,6 +1257,42 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         });
     });
 
+    it.each(['dropped', 'replaced'] as const)(
+        'fails a loop with failOnBackpressure when a realtime send reports a %s payload',
+        async (peerStatus) => {
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    ...createBrowserRallarRequiredMethodsTestDouble(),
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(async () => ({
+                        status: 'sent',
+                        transport: 'realtime',
+                        results: [{ peerId: 'peer-a', laneId: 'realtime', result: { status: peerStatus, bufferedAmount: 0 } }],
+                        health: []
+                    })),
+                    refreshRoom: vi.fn(async () => undefined),
+                    close: vi.fn(),
+                    health: vi.fn()
+                }
+            });
+
+            const result = await runtime.execute({
+                kind: 'loop',
+                commandId: `loop-${peerStatus}`,
+                count: 1,
+                continueOnFailure: true,
+                thresholds: { failOnBackpressure: true },
+                commands: [{ kind: 'rtc.send', transport: 'realtime', send: { data: { text: 'frame' } } }]
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.value).toMatchObject({
+                sends: { [`${peerStatus}PayloadCount`]: 1 },
+                thresholdFailures: [{ name: 'failOnBackpressure', category: 'backpressure' }]
+            });
+        }
+    );
+
     it.each([
         ['a messages.rtc result with no delivery state', { transport: 'messages.rtc', message: { handleId: 'h-1' } }],
         ['a messages.rtc result with an unknown delivery state', { transport: 'messages.rtc', message: { state: 'delivered' } }],

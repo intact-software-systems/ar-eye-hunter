@@ -21,24 +21,24 @@ describe('Recipe Console Tune scale fixture', () => {
         expect(source.trimEnd().split(/\r?\n/u).length).toBeLessThanOrEqual(220);
     });
 
-    it('creates a valid 2,000-command stream recipe with 22,002 unique editable knobs', () => {
+    it('creates a valid 2,000-command stream recipe with 24,002 unique editable knobs', () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
         const second = createRecipeConsoleTuneScaleFixture();
         const validation = validateDistributedRunManifest(fixture.manifest);
         const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
 
         expect(RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT).toBe(2_000);
-        expect(RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND).toBe(11);
+        expect(RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND).toBe(12);
         expect(fixture.counts).toEqual({
             commands: 2_000,
-            expectedKnobs: 22_002,
-            expectedEditableKnobs: 22_002
+            expectedKnobs: 24_002,
+            expectedEditableKnobs: 24_002
         });
         expect(fixture.recipe.commands).toHaveLength(2_000);
         expect(validation.ok, JSON.stringify(validation.errors, null, 2)).toBe(true);
         expect(inventory.limitations).toEqual([]);
-        expect(inventory.knobs).toHaveLength(22_002);
-        expect(new Set(inventory.knobs.map((knob) => knob.pointer)).size).toBe(22_002);
+        expect(inventory.knobs).toHaveLength(24_002);
+        expect(new Set(inventory.knobs.map((knob) => knob.pointer)).size).toBe(24_002);
         expect(inventory.knobs.every((knob) => knob.effective && knob.availability !== 'blocked')).toBe(true);
         expect(second).toEqual(fixture);
         expect(second).not.toBe(fixture);
@@ -60,10 +60,10 @@ describe('Recipe Console Tune scale fixture', () => {
 
         expect(fixture.counts).toEqual({
             commands: 8,
-            expectedKnobs: 90,
-            expectedEditableKnobs: 90
+            expectedKnobs: 98,
+            expectedEditableKnobs: 98
         });
-        expect(inventory.knobs).toHaveLength(90);
+        expect(inventory.knobs).toHaveLength(98);
         expect(inventory.limitations).toEqual([]);
         expect(validateDistributedRunManifest(fixture.manifest).ok).toBe(true);
     });

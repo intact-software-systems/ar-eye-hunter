@@ -127,6 +127,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 failedFrames: 1,
                 droppedFrames: 0,
                 inFlightLimitDropCount: 0,
+                backpressureCount: 1,
                 requestedRateHz: 10,
                 achievedScheduleHz: 9,
                 achievedCompletionHz: 6,
@@ -179,6 +180,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             failedFrames: 1,
             droppedFrames: 0,
             inFlightLimitDropCount: 0,
+            backpressureCount: 1,
             pacing: { lateFrameCount: 0 },
             observations: [
                 { index: 0, durationMs: 20, ok: true },
@@ -263,6 +265,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 completedFrames: 99,
                 failedFrames: 1,
                 droppedFrames: 1,
+                backpressureCount: 0,
                 pacing: { lateFrameCount: 4 },
                 observations: [
                     { index: 0, iteration: 1, durationMs: 10, ok: true },

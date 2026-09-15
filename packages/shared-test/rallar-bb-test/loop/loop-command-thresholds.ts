@@ -112,6 +112,19 @@ function computeLoopDeliveryFailures(
                 `Loop send success ratio was ${sends.successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`
         });
     }
+    if (
+        thresholds.failOnBackpressure === true &&
+        sends !== undefined &&
+        (sends.backpressureCount > 0 || sends.droppedPayloadCount > 0 || sends.replacedPayloadCount > 0)
+    ) {
+        failures.push({
+            name: 'failOnBackpressure',
+            category: 'backpressure',
+            threshold: true,
+            actual: true,
+            message: 'Loop observed send backpressure, dropped payloads, or replaced payloads.'
+        });
+    }
     return failures;
 }
 
@@ -155,5 +168,10 @@ function toDeliveryThresholdIssue(thresholds: RallarBlackBoxTestRecord): LoopThr
             details: { threshold: 'minSendSuccessRatio', value: minSendSuccessRatio }
         };
     }
-    return undefined;
+    return thresholds.failOnBackpressure !== undefined && typeof thresholds.failOnBackpressure !== 'boolean'
+        ? {
+            message: 'Loop failOnBackpressure threshold must be a boolean.',
+            details: { threshold: 'failOnBackpressure', value: thresholds.failOnBackpressure }
+        }
+        : undefined;
 }

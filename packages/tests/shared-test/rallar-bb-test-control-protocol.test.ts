@@ -241,7 +241,8 @@ describe('rallar-bb-test control protocol', () => {
                             maxAverageStartDriftMs: 25,
                             maxStartDriftMs: 50,
                             maxJitterMs: 20,
-                            minSendSuccessRatio: 0.95
+                            minSendSuccessRatio: 0.95,
+                            failOnBackpressure: true
                         },
                         commands: [{ kind: 'health' }]
                     }]
@@ -283,7 +284,7 @@ describe('rallar-bb-test control protocol', () => {
         [{ minSendSuccessRatio: Number.NaN }, 'loop.thresholds.minSendSuccessRatio must be a finite number.'],
         [{ unknown: 1 }, 'loop.thresholds has unsupported field: unknown.'],
         ['invalid', 'loop.thresholds must be an object.'],
-        [{ failOnBackpressure: true }, 'loop.thresholds has unsupported field: failOnBackpressure.']
+        [{ failOnBackpressure: 'yes' }, 'loop.thresholds.failOnBackpressure must be a boolean.']
     ])('rejects direct malformed loop threshold input %#', (thresholds, error) => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'loop',
@@ -292,15 +293,14 @@ describe('rallar-bb-test control protocol', () => {
         })).toEqual({ ok: false, error, messages: [error] });
     });
 
-    it('rejects the removed rtc.stream backpressure threshold as unsupported', () => {
-        const error = 'rtc.stream.thresholds has unsupported field: maxBackpressureCount.';
+    it('accepts the rtc.stream backpressure threshold', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'rtc.stream',
             send: {},
             count: 2,
             intervalMs: 50,
             thresholds: { maxBackpressureCount: 0 }
-        })).toEqual({ ok: false, error, messages: [error] });
+        })).toEqual({ ok: true });
     });
 
     it('rejects a ws.send that carries no data', () => {

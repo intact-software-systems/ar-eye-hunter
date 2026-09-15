@@ -13,7 +13,7 @@ const COMMAND_COUNT = 2_000;
 
 export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
     await test.step(
-        'Tune keeps 5,000 runs and 22,002 knobs bounded during held refresh',
+        'Tune keeps 5,000 runs and 24,002 knobs bounded during held refresh',
         async () => {
             const context = await browser.newContext({
                 baseURL: PRODUCTION_BASE_URL,
@@ -64,7 +64,7 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
 
                 await expect(candidate).toHaveAttribute(
                     'data-tune-editable-options',
-                    '22002',
+                    '24002',
                     { timeout: 60_000 }
                 );
                 await expect.poll(() => heartbeat(page)).toBeGreaterThan(
@@ -104,11 +104,11 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-knob-rows-visited',
-                    '22002'
+                    '24002'
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-knob-revision-rows',
-                    '22002'
+                    '24002'
                 );
                 await expect(candidate).toHaveAttribute(
                     'data-tune-blocked-options',
@@ -237,10 +237,10 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                 await knobSearch.fill('');
                 await knobSearch.press('Home');
                 await expect(knobPopup.locator('[data-searchable-listbox-range]'))
-                    .toHaveText('Showing 1–100 of 22,002 options.');
+                    .toHaveText('Showing 1–100 of 24,002 options.');
                 await knobSearch.press('End');
                 await expect(knobPopup.locator('[data-searchable-listbox-range]'))
-                    .toHaveText('Showing 22,001–22,002 of 22,002 options.');
+                    .toHaveText('Showing 24,001–24,002 of 24,002 options.');
                 await expect(knobOptions).toHaveCount(2);
                 await expect(knobSearch).toHaveAttribute(
                     'aria-activedescendant',

@@ -133,6 +133,7 @@ const rtcConnectReadinessSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OB
 const rtcStreamThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcStreamThresholds, {
     minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
     maxDroppedFrames: { type: 'number', minimum: 0 },
+    maxBackpressureCount: { type: 'number', minimum: 0 },
     maxP95SendDurationMs: { type: 'number', minimum: 0 },
     maxP99SendDurationMs: { type: 'number', minimum: 0 },
     maxAverageStartDriftMs: { type: 'number', minimum: 0 },
@@ -404,7 +405,8 @@ const loopThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_
     maxAverageStartDriftMs: { type: 'number', minimum: 0 },
     maxStartDriftMs: { type: 'number', minimum: 0 },
     maxJitterMs: { type: 'number', minimum: 0 },
-    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 }
+    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+    failOnBackpressure: booleanSchema
 });
 
 const messagesCarrierSchema: JsonSchema = {

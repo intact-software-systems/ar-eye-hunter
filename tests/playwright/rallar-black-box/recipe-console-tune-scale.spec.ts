@@ -10,7 +10,7 @@ test.use({
     viewport: { width: 932, height: 430 }
 });
 
-test('keeps 5,000 Tune runs and 22,002 knobs bounded, responsive, and poll-stable', async ({ browser }) => {
+test('keeps 5,000 Tune runs and 24,002 knobs bounded, responsive, and poll-stable', async ({ browser }) => {
     test.setTimeout(120_000);
     await verifyTuneScalePressure(browser);
 });

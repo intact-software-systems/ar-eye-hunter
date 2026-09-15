@@ -682,8 +682,8 @@ describe('rallar-bb runtime composite', () => {
                             transport: 'realtime',
                             durationMs,
                             ok: true,
-                            status: sendCount === 2 ? 'queued' : 'sent',
-                            queued: sendCount === 2
+                            status: sendCount === 2 ? 'rate-limited' : 'sent',
+                            backpressured: sendCount === 2
                         }
                     },
                     nextStatus: context.state().status
@@ -721,7 +721,7 @@ describe('rallar-bb runtime composite', () => {
             succeeded: 3,
             failed: 0,
             successRatio: 1,
-            queuedCount: 1,
+            backpressureCount: 1,
             duration: {
                 minMs: 5,
                 maxMs: 15,
@@ -737,12 +737,12 @@ describe('rallar-bb runtime composite', () => {
         expect('iterations' in (stats?.load?.latestPacing ?? {})).toBe(false);
         expect(stats?.load?.latestSends).toMatchObject({
             sendCount: 3,
-            queuedCount: 1
+            backpressureCount: 1
         });
         expect('observations' in (stats?.load?.latestSends ?? {})).toBe(false);
     });
 
-    it('fails loops when a configured pacing threshold is missed', async () => {
+    it('fails loops when configured pacing or backpressure thresholds are missed', async () => {
         let now = 2_000;
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
@@ -764,7 +764,8 @@ describe('rallar-bb runtime composite', () => {
                             transport: 'realtime',
                             durationMs: 15,
                             ok: true,
-                            status: 'sent'
+                            status: 'rate-limited',
+                            backpressured: true
                         }
                     },
                     nextStatus: context.state().status
@@ -778,7 +779,8 @@ describe('rallar-bb runtime composite', () => {
             count: 2,
             intervalMs: 10,
             thresholds: {
-                minAchievedRateHz: 50
+                minAchievedRateHz: 50,
+                failOnBackpressure: true
             },
             commands: [{ kind: 'rtc.send', commandId: 'threshold-send', transport: 'realtime' }]
         });
@@ -787,7 +789,11 @@ describe('rallar-bb runtime composite', () => {
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_THRESHOLD_FAILED');
         expect(value.failed).toBe(0);
-        expect(value.thresholdFailures?.map((failure) => failure.category)).toEqual(['pacing']);
+        expect(value.thresholdFailures?.map((failure) => failure.category)).toEqual([
+            'pacing',
+            'backpressure'
+        ]);
+        expect(value.sends?.backpressureCount).toBe(2);
     });
 
     it('stops duration-based loops at the configured duration boundary', async () => {

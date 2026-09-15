@@ -28,6 +28,7 @@ function completeStreamSummary(
         failedFrames: 0,
         droppedFrames: 0,
         inFlightLimitDropCount: 0,
+        backpressureCount: 0,
         observations: [{ durationMs: completedFrames, marker }],
         thresholdFailures: []
     };
@@ -1177,6 +1178,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             completedFrames: 3,
                             failedFrames: 0,
                             droppedFrames: 0,
+                            backpressureCount: 0,
                             pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 20,
@@ -1205,13 +1207,14 @@ describe('Hetzner distributed run artifact analysis', () => {
                             completedFrames: 2,
                             failedFrames: 0,
                             droppedFrames: 0,
+                            backpressureCount: 1,
                             pacing: { lateFrameCount: 0 },
                             requestedRateHz: 20,
                             achievedScheduleHz: 18,
                             achievedCompletionHz: 18,
                             duration: { minMs: 40, p50Ms: 40, p95Ms: 50, p99Ms: 50, maxMs: 50, averageMs: 45 },
                             observations: [
-                                { index: 0, iteration: 1, durationMs: 40, ok: true },
+                                { index: 0, iteration: 1, durationMs: 40, ok: true, backpressured: true },
                                 { index: 1, iteration: 2, durationMs: 50, ok: true }
                             ],
                             thresholdFailures: []
@@ -1230,6 +1233,7 @@ describe('Hetzner distributed run artifact analysis', () => {
             completedFrames: 5,
             failedFrames: 0,
             droppedFrames: 0,
+            backpressureCount: 1,
             sendSuccessRatio: 1,
             duration: {
                 count: 5,
@@ -1292,6 +1296,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             inFlightLimitDropCount: 0,
+                            backpressureCount: 0,
                             pacing: { lateFrameCount: 0 }
                         }
                     })
@@ -1387,6 +1392,7 @@ describe('Hetzner distributed run artifact analysis', () => {
                                 failedFrames: 0,
                                 droppedFrames: 0,
                                 inFlightLimitDropCount: 0,
+                                backpressureCount: 0,
                                 pacing: { lateFrameCount: 0 },
                                 duration: { p50Ms: 25, p95Ms: 40, p99Ms: 45, maxMs: 50 }
                             }

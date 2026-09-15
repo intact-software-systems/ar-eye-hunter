@@ -31,7 +31,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     kind: 'loop',
                     commandId: 'loop-health',
                     count: 2,
-                    thresholds: { minAchievedRateHz: 1 },
+                    thresholds: { minAchievedRateHz: 1, failOnBackpressure: false },
                     commands: [{ kind: 'health', commandId: 'health' }]
                 }, {
                     kind: 'rtc.stream',

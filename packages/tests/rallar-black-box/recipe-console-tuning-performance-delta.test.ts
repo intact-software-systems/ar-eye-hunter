@@ -65,7 +65,7 @@ describe('Recipe Console narrow tuning performance comparison', () => {
         });
     });
 
-    it('compares RTC frame cadence drift and drop evidence together', () => {
+    it('compares RTC frame cadence drift drop and backpressure evidence together', () => {
         const comparison = compareDistributedRunTuningPerformance({
             timingMetric: 'stream-send-duration',
             left: tuningPerformance({
@@ -75,6 +75,7 @@ describe('Recipe Console narrow tuning performance comparison', () => {
                     failedFrames: 5,
                     droppedFrames: 5,
                     inFlightLimitDropCount: 1,
+                    backpressureCount: 2,
                     requestedRateHz: 20,
                     achievedCompletionHz: 19.5,
                     maxStartDriftMs: 50,
@@ -88,6 +89,7 @@ describe('Recipe Console narrow tuning performance comparison', () => {
                     failedFrames: 40,
                     droppedFrames: 40,
                     inFlightLimitDropCount: 9,
+                    backpressureCount: 12,
                     requestedRateHz: 20,
                     achievedCompletionHz: 12.5,
                     maxStartDriftMs: 4_000,
@@ -102,6 +104,7 @@ describe('Recipe Console narrow tuning performance comparison', () => {
             failedFrames: { left: 5, right: 40, delta: 35 },
             droppedFrames: { left: 5, right: 40, delta: 35 },
             inFlightLimitDropCount: { left: 1, right: 9, delta: 8 },
+            backpressureCount: { left: 2, right: 12, delta: 10 },
             achievedCompletionHz: { left: 19.5, right: 12.5, delta: -7 },
             maxStartDriftMs: { left: 50, right: 4_000, delta: 3_950 },
             lateFrameCount: { left: 3, right: 80, delta: 77 }

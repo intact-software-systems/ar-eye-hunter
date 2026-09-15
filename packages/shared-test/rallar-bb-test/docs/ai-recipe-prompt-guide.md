@@ -242,7 +242,8 @@ Constraints:
 - Put rateHz, intervalMs, frameCount, and durationSeconds in metadata, not as
   unknown top-level loop fields.
 - Optional loop thresholds may use minAchievedRateHz, maxStartDriftMs,
-  maxAverageStartDriftMs, maxJitterMs, and minSendSuccessRatio.
+  maxAverageStartDriftMs, maxJitterMs, minSendSuccessRatio, and
+  failOnBackpressure.
 - Include roomRef on RTC commands.
 - Use timeoutMs 60000 for rtc.connect and rtc.send.
 - Do not include credentials or access tokens.

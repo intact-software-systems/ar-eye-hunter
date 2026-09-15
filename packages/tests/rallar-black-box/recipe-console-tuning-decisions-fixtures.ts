@@ -122,6 +122,7 @@ export function tuningPerformance(input: Readonly<{
         failedFrames: 0,
         droppedFrames: 0,
         inFlightLimitDropCount: 0,
+        backpressureCount: 0,
         sendSuccessRatio: 1,
         requestedRateHz: 20,
         achievedScheduleHz: 20,

@@ -102,6 +102,8 @@ function toStatsSendSummary(
         successRatio: sends.successRatio,
         duration: sends.duration,
         queuedCount: sends.queuedCount,
+        enqueuedCount: sends.enqueuedCount,
+        backpressureCount: sends.backpressureCount,
         droppedPayloadCount: sends.droppedPayloadCount,
         replacedPayloadCount: sends.replacedPayloadCount,
         perTransportFailureCounts: sends.perTransportFailureCounts
@@ -124,6 +126,7 @@ function toStatsStreamSummary(
         completedFrames: stream.completedFrames,
         failedFrames: stream.failedFrames,
         droppedFrames: stream.droppedFrames,
+        backpressureCount: stream.backpressureCount,
         startedAtEpochMs: stream.startedAtEpochMs,
         endedAtEpochMs: stream.endedAtEpochMs,
         elapsedMs: stream.elapsedMs,
