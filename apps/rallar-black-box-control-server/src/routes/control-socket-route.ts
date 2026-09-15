@@ -1,18 +1,19 @@
 import { parseControlClientMessage, type ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 import type { ControlAgentSockets } from '../control-agent-sockets.ts';
 import type { ControlArtifactRecorder } from '../control-artifact-recorder.ts';
 import type { RallarBlackBoxControlService } from '../control-service.ts';
 import type { ControlSnapshotPersistence } from '../control-snapshot-persistence.ts';
-import type { ControlHttpResponses } from '../http/control-http-responses.ts';
+import type { ControlHttpRejection, ControlHttpResponses } from '../http/control-http-responses.ts';
 import { toControlRequestToken, type ControlHttpSecurity } from '../http/control-http-security.ts';
-import type { ControlRequestBodyReader } from '../http/control-request-body.ts';
+import { decodeControlMessageText, type ControlRequestBodyReader } from '../http/control-request-body.ts';
 import { RUN_TOKEN_REJECTION } from './control-route-errors.ts';
 
 export interface ControlSocketRouteDependencies {
     readonly controlService: Pick<RallarBlackBoxControlService, 'markAgentDisconnected' | 'receiveClientEnvelope'>;
     readonly security: Pick<ControlHttpSecurity, 'authorizeRunToken'>;
-    readonly requestBody: Pick<ControlRequestBodyReader, 'decodeMessageText'>;
+    readonly requestBody: Pick<ControlRequestBodyReader, 'maxRequestBytes'>;
     readonly agentSockets: ControlAgentSockets;
     readonly artifactRecorder: Pick<ControlArtifactRecorder, 'record'>;
     readonly persistence: Pick<ControlSnapshotPersistence, 'persist'>;
@@ -22,7 +23,7 @@ export interface ControlSocketRouteDependencies {
 interface ControlSocketMessage {
     readonly socket: WebSocket;
     readonly socketToken: string | undefined;
-    readonly data: MessageEvent['data'];
+    readonly frameText: Either<ControlHttpRejection, string>;
 }
 
 const MESSAGE_TOO_BIG_CLOSE_CODE = 1009;
@@ -37,7 +38,9 @@ export function openControlSocket(request: Request, dependencies: ControlSocketR
     const socketToken = toControlRequestToken(request, new URL(request.url));
     const { socket, response } = Deno.upgradeWebSocket(request);
     socket.onmessage = (event) => {
-        void receiveControlSocketMessage({ socket, socketToken, data: event.data }, dependencies);
+        void decodeControlMessageText(event.data, dependencies.requestBody.maxRequestBytes).then((frameText) =>
+            receiveControlSocketMessage({ socket, socketToken, frameText }, dependencies)
+        );
     };
     socket.onclose = () => {
         const agent = dependencies.agentSockets.release(socket);
@@ -49,17 +52,16 @@ export function openControlSocket(request: Request, dependencies: ControlSocketR
     return response;
 }
 
-async function receiveControlSocketMessage(
-    { socket, socketToken, data }: ControlSocketMessage,
+function receiveControlSocketMessage(
+    { socket, socketToken, frameText }: ControlSocketMessage,
     dependencies: ControlSocketRouteDependencies
-): Promise<void> {
-    const text = await dependencies.requestBody.decodeMessageText(data);
-    if (text.left !== undefined) {
-        const closeCode = text.left.status === 413 ? MESSAGE_TOO_BIG_CLOSE_CODE : UNSUPPORTED_DATA_CLOSE_CODE;
-        socket.close(closeCode, text.left.message);
+): void {
+    if (frameText.left !== undefined) {
+        const closeCode = frameText.left.status === 413 ? MESSAGE_TOO_BIG_CLOSE_CODE : UNSUPPORTED_DATA_CLOSE_CODE;
+        socket.close(closeCode, frameText.left.message);
         return;
     }
-    const parsed = parseControlClientMessage(text.right);
+    const parsed = parseControlClientMessage(frameText.right);
     if (!parsed.ok) {
         socket.close(UNSUPPORTED_DATA_CLOSE_CODE, parsed.error);
         return;

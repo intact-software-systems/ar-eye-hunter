@@ -63,7 +63,7 @@ export function decodeBulkCommandRequest(body: unknown): Either<string, BulkComm
         return Either.ofLeft('Bulk command request requires command.');
     }
     const agentIds = Array.isArray(body.agentIds)
-        ? body.agentIds.map((agentId) => typeof agentId === 'string' ? agentId.trim() : '').filter(Boolean)
+        ? body.agentIds.map(decodeTrimmedText).filter((agentId) => agentId !== undefined)
         : [];
     if (agentIds.length === 0) {
         return Either.ofLeft('Bulk command request requires agentIds.');

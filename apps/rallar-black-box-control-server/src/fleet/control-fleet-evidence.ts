@@ -14,19 +14,19 @@ const NO_FIELDS: Readonly<Record<string, never>> = {};
 export function decodeFleetDiagnostic(payload: unknown): FleetDiagnostic | undefined {
     const record = isJsonRecordValue(payload) ? payload : NO_FIELDS;
     const inner = isJsonRecordValue(record.payload) ? record.payload : NO_FIELDS;
-    const data = isJsonRecordValue(record.data) ? record.data : NO_FIELDS;
-    const severity = decodeText(record.severity) ?? decodeText(inner.severity) ?? decodeText(data.severity);
+    const detailFields = isJsonRecordValue(record.data) ? record.data : NO_FIELDS;
+    const severity = decodeText(record.severity) ?? decodeText(inner.severity) ?? decodeText(detailFields.severity);
     const topic = decodeText(record.diagnosticTypeId) ?? decodeText(inner.diagnosticTypeId) ??
-        decodeText(data.diagnosticTypeId) ?? decodeText(record.topic) ?? decodeText(inner.topic);
+        decodeText(detailFields.diagnosticTypeId) ?? decodeText(record.topic) ?? decodeText(inner.topic);
     if (!severity && !topic) {
         return undefined;
     }
     return {
         severity: severity ?? 'info',
-        message: decodeText(record.message) ?? decodeText(inner.message) ?? decodeText(data.message) ??
+        message: decodeText(record.message) ?? decodeText(inner.message) ?? decodeText(detailFields.message) ??
             decodeText(record.reason) ?? decodeText(inner.reason) ?? topic ?? 'diagnostic',
         diagnosticTypeId: topic ?? 'runtime.diagnostic',
-        transport: decodeText(record.transport) ?? decodeText(inner.transport) ?? decodeText(data.transport)
+        transport: decodeText(record.transport) ?? decodeText(inner.transport) ?? decodeText(detailFields.transport)
     };
 }
 
