@@ -54,7 +54,6 @@ import {
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
-import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
@@ -71,6 +70,7 @@ import {
     type RallarBlackBoxTestWaitCommand,
     type RallarBlackBoxTestWaitResultValue
 } from './rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema/rallar-black-box-command-capabilities.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'

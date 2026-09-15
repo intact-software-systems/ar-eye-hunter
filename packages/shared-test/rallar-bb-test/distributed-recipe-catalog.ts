@@ -23,7 +23,8 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from './fixtures/rtc-realtime-recipes.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from './schema.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';
+import { validateJsonSchema } from './schema/json-schema-validation.ts';
 
 const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
 

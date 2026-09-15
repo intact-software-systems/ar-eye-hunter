@@ -3,11 +3,8 @@ import {
     type RallarBlackBoxDistributedRunManifest,
     type RallarBlackBoxDistributedRunValidationResult
 } from './distributed-run.ts';
-import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    validateJsonSchema,
-    type JsonSchemaValidationResult
-} from './schema.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from './schema.ts';
+import { validateJsonSchema, type JsonSchemaValidationResult } from './schema/json-schema-validation.ts';
 
 export type DistributedRunManifestValidationIssue = Readonly<{
     source: 'schema' | 'contract';

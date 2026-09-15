@@ -5,23 +5,20 @@ import {
     createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider
 } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     type RallarBlackBoxBrowserRallarRuntime
 } from '../../shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
-import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/create-rallar-black-box-test-runtime.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema
-} from '../../shared-test/rallar-bb-test/schema.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const ALM_COMMAND_KINDS = [
     'messages.send',

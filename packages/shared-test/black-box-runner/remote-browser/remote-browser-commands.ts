@@ -1,12 +1,12 @@
 import { Either } from '../../../shared/resilience/Either.ts';
 
-import { validateRallarBlackBoxTestCommand } from '../../rallar-bb-test/control-protocol.ts';
+import { validateRallarBlackBoxTestCommand } from '../../rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../rallar-bb-test/schema.ts';
 import {
     formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     validateJsonSchema
-} from '../../rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+} from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { isRecord } from '../execution/black-box-redaction.ts';
 import { toRallarScopeDiagnostics, type RecipeRallarScopeFields } from '../recipes/recipe-rallar-scope.ts';
 import { toRtcPayload } from '../rtc-provider.ts';

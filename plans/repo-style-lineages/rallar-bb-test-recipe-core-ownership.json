@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/control-protocol.ts",
+        "blob": "9129744c1666e3ce204dd2a189a62c1e8bcdde45"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/control/control-command-issue.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-control-command-fields.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-control-command-room-fields.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-director-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-formation-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-http-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-loop-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-rtc-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-ws-control-command.ts",
+        "packages/shared-test/rallar-bb-test/distributed/decode-control-agent-identity.ts"
+      ]
+    }
+  ]
+}

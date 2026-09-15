@@ -1,4 +1,4 @@
-import { validateRallarBlackBoxTestCommand } from './control-protocol.ts';
+import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
 import { distributedRecipePreflight } from './distributed-run-monitor.ts';
 import {
     tuningAgentIssuePointer,
@@ -10,7 +10,8 @@ import {
 import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningKnob } from './distributed-run-tuning.ts';
 import { validateDistributedRunManifest } from './distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from './schema.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';
+import { validateJsonSchema } from './schema/json-schema-validation.ts';
 import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export interface DistributedRunTuningChange {
@@ -369,11 +370,11 @@ function toRecipeTuningValidationErrors(
             recipe
         });
         if (!agent.ok) {
-            errors.push(toCandidateError(
-                'agent-validation',
-                tuningAgentIssuePointer(basePath, agent.error),
-                agent.error
-            ));
+            errors.push(
+                ...agent.error.split('\n').map((message) =>
+                    toCandidateError('agent-validation', tuningAgentIssuePointer(basePath, message), message)
+                )
+            );
         }
     }
     catch (error) {

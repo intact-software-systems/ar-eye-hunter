@@ -1,13 +1,17 @@
 import { RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES } from '../alm/rallar-black-box-alm-command-capabilities.ts';
 import type { RallarBlackBoxCommandCapability } from '../rallar-black-box-test-contracts.ts';
+import {
+    RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS,
+    RALLAR_BLACK_BOX_COMMAND_FIELDS
+} from './rallar-black-box-command-fields.ts';
 
-export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxCommandCapability[] = [
+type CommandCapabilityWithoutFields = Omit<RallarBlackBoxCommandCapability, 'requiredFields' | 'optionalFields'>;
+
+const COMMAND_CAPABILITIES_WITHOUT_FIELDS: readonly CommandCapabilityWithoutFields[] = [
     {
         kind: 'configure',
         title: 'Configure Runtime',
         description: 'Sets run, agent, provider, default room, transport, browser, control, and redaction context.',
-        requiredFields: ['config'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -37,8 +41,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'recipe.load',
         title: 'Load Recipe',
         description: 'Stages a recipe in a browser agent without starting unrelated shell execution.',
-        requiredFields: ['recipe'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
@@ -57,8 +59,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'recipe.run',
         title: 'Run Recipe',
         description: 'Runs an inline or previously loaded browser-agent recipe and records command results.',
-        requiredFields: [],
-        optionalFields: ['recipe', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
@@ -77,8 +77,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'recipe.cancel',
         title: 'Cancel Recipe',
         description: 'Requests cancellation of the active browser-agent recipe.',
-        requiredFields: [],
-        optionalFields: ['reason', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
@@ -94,23 +92,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Loop Commands',
         description:
             'Composite browser-agent command that repeats child commands with bounded count or duration and optional cadence.',
-        requiredFields: ['commands'],
-        optionalFields: [
-            'count',
-            'durationMs',
-            'intervalMs',
-            'delayMs',
-            'continueOnFailure',
-            'until',
-            'backoffMultiplier',
-            'maxCommands',
-            'thresholds',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -153,17 +134,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Parallel Command Groups',
         description:
             'Composite browser-agent command that runs bounded groups concurrently while each group runs its child commands sequentially.',
-        requiredFields: ['groups'],
-        optionalFields: [
-            'maxConcurrency',
-            'failFast',
-            'continueOnFailure',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -214,15 +184,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Wait For Runtime Evidence',
         description:
             'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
-        requiredFields: ['match'],
-        optionalFields: [
-            'absent',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -254,8 +215,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Assert Runtime Evidence',
         description:
             'Checks a read-only browser-agent evidence source with equality, containment, numeric-bound, length, regex, and JSON-shape operators.',
-        requiredFields: ['source', 'operator'],
-        optionalFields: ['expected', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -282,25 +241,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'rtc.connect',
         title: 'RTC Connect',
         description: 'Connects an RTC/realtime provider and can wait for exact-room ready peers.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'actor',
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'rallar',
-            'readiness',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -331,22 +271,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'rtc.send',
         title: 'RTC Send',
         description: 'Sends JSON through a connected RTC/realtime provider.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'send',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -384,33 +308,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'RTC Stream',
         description:
             'Schedules a bounded RTC/realtime frame stream inside one browser-agent command and records aggregate pacing, delivery, and latency metrics.',
-        requiredFields: ['send'],
-        optionalFields: [
-            'connection',
-            'actor',
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'minSnapshotVersion',
-            'transport',
-            'count',
-            'durationMs',
-            'intervalMs',
-            'rateHz',
-            'maxInFlight',
-            'drainTimeoutMs',
-            'continueOnSendFailure',
-            'progressEveryMs',
-            'sampleEvery',
-            'thresholds',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: [
@@ -455,18 +352,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'ws.open',
         title: 'WebSocket Open',
         description: 'Opens a browser-agent WebSocket connection.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'url',
-            'protocols',
-            'headers',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['WebSocket endpoint and ticket/token when the target server requires auth'],
@@ -483,8 +368,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'ws.send',
         title: 'WebSocket Send',
         description: 'Sends JSON or text through an open WebSocket connection.',
-        requiredFields: [],
-        optionalFields: ['connection', 'data', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['open WebSocket connection'],
@@ -507,17 +390,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'ws.close',
         title: 'WebSocket Close',
         description: 'Closes a named WebSocket connection.',
-        requiredFields: [],
-        optionalFields: [
-            'connection',
-            'code',
-            'reason',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['open or known WebSocket connection'],
@@ -535,8 +407,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'HTTP Request',
         description:
             'Runs a fetch-compatible HTTP request and stores response metadata/body according to response options.',
-        requiredFields: ['request'],
-        optionalFields: ['response', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['HTTP endpoint', 'access token for protected Rallar Server APIs'],
@@ -558,31 +428,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.open',
         title: 'CRDT Open',
         description: 'Opens a Rallar CRDT document through the browser Rallar facade and stores it under a handle.',
-        requiredFields: ['name'],
-        optionalFields: [
-            'handle',
-            'applicationId',
-            'workspaceId',
-            'documentId',
-            'documentType',
-            'scope',
-            'roomRef',
-            'principalId',
-            'customScope',
-            'transport',
-            'persist',
-            'tabSync',
-            'initialValue',
-            'policies',
-            'validation',
-            'encryption',
-            'durableCatchUp',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: [
@@ -620,8 +465,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.apply',
         title: 'CRDT Apply',
         description: 'Applies an existing Rallar CRDT operation batch to an opened document handle.',
-        requiredFields: ['handle', 'batch'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle'],
@@ -648,8 +491,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.read',
         title: 'CRDT Read',
         description: 'Reads the materialized value and ref from an opened CRDT document handle.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle'],
@@ -664,8 +505,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.sync',
         title: 'CRDT Sync',
         description: 'Runs CRDT document sync with an optional transport override.',
-        requiredFields: ['handle'],
-        optionalFields: ['reason', 'transport', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle; live transport or HTTP catch-up when configured'],
@@ -683,8 +522,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.health',
         title: 'CRDT Status',
         description: 'Returns health for an opened CRDT document handle.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle'],
@@ -699,17 +536,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.wait',
         title: 'CRDT Wait',
         description: 'Polls an opened CRDT document until materialized value or health conditions match.',
-        requiredFields: ['handle', 'conditions'],
-        optionalFields: [
-            'intervalMs',
-            'stableForMs',
-            'sync',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: [
@@ -758,8 +584,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.undo',
         title: 'CRDT Undo',
         description: 'Applies actor-owned CRDT undo operations for a target operation group.',
-        requiredFields: ['handle', 'targetOperationGroupId', 'operations'],
-        optionalFields: ['operationGroupId', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle and caller-supplied inverse operations'],
@@ -784,8 +608,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.redo',
         title: 'CRDT Redo',
         description: 'Reapplies actor-owned CRDT redo operations for a target operation group.',
-        requiredFields: ['handle', 'targetOperationGroupId', 'operations'],
-        optionalFields: ['operationGroupId', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle and caller-supplied redo operations'],
@@ -810,8 +632,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.close',
         title: 'CRDT Close',
         description: 'Closes an opened CRDT document handle without destroying local durable artifacts.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle'],
@@ -826,8 +646,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'crdt.destroy',
         title: 'CRDT Destroy',
         description: 'Destroys an opened CRDT document handle and its local browser artifacts.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['opened CRDT document handle'],
@@ -842,20 +660,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'director.appoint',
         title: 'Appoint SPA Director',
         description: 'Appoints the current browser session as the Rallar group director through the browser facade.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'heartbeatTtlMs',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session with group update authorization'],
@@ -873,19 +677,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'director.resign',
         title: 'Resign SPA Director',
         description: 'Clears the current browser session director appointment when it is the appointed director.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session'],
@@ -903,21 +694,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Read SPA Director Status',
         description:
             'Reads local director appointment, freshness, and role state, optionally refreshing room metadata first.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'refresh',
-            'now',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session; Rallar API when refresh is true'],
@@ -936,27 +712,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Start SPA Director Relay',
         description:
             'Starts a deterministic test relay backed by rallar.director.createRelay and stores it under a handle.',
-        requiredFields: ['handle', 'intentTypeId', 'outputTypeId'],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'laneId',
-            'topicId',
-            'heartbeatTypeId',
-            'snapshotTypeId',
-            'syncRequestTypeId',
-            'heartbeatIntervalMs',
-            'snapshotIntervalMs',
-            'snapshot',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session with RTC/WS message subscriptions'],
@@ -979,8 +734,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'director.intent',
         title: 'Send SPA Director Intent',
         description: 'Sends an intent through a started director relay toward the appointed director.',
-        requiredFields: ['handle', 'intent'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['started director relay and fresh director appointment'],
@@ -1001,8 +754,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'director.sync.request',
         title: 'Request SPA Director Sync',
         description: 'Requests a director snapshot through a started director relay.',
-        requiredFields: ['handle'],
-        optionalFields: ['payload', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['started director relay and fresh director appointment'],
@@ -1020,8 +771,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'director.relay.stop',
         title: 'Stop SPA Director Relay',
         description: 'Stops a previously started director relay and clears its heartbeat/snapshot timers.',
-        requiredFields: ['handle'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['started director relay handle'],
@@ -1037,22 +786,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Command Room Formation',
         description:
             'Issues one of the eight room formation lifecycle commands through the browser facade and reports the receipt beside the room formation summary.',
-        requiredFields: ['command'],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'layout',
-            'landing',
-            'reason',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['connected browser Rallar session holding the named room'],
@@ -1071,19 +804,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         title: 'Await Room Readiness',
         description:
             'Awaits the browser\'s own room readiness without refreshing the room or opening lanes, and reports the room formation summary captured when it resolved.',
-        requiredFields: [],
-        optionalFields: [
-            'roomId',
-            'applicationId',
-            'workspaceId',
-            'scope',
-            'roomRef',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['connected browser Rallar session holding the named room'],
@@ -1100,8 +820,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'health',
         title: 'Health',
         description: 'Returns browser-agent runtime health without network side effects.',
-        requiredFields: [],
-        optionalFields: ['includeRtcDiagnostics', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -1123,8 +841,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'stats',
         title: 'Stats',
         description: 'Captures a browser-agent stats snapshot.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -1145,8 +861,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'close',
         title: 'Close',
         description: 'Closes active browser-agent transports without clearing the whole runtime state.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -1167,8 +881,6 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         kind: 'reset',
         title: 'Reset',
         description: 'Resets browser-agent runtime command state and closes active transports.',
-        requiredFields: [],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: [
             'simulated',
             'browser-rallar',
@@ -1186,3 +898,22 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         }
     }
 ];
+
+export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxCommandCapability[] =
+    COMMAND_CAPABILITIES_WITHOUT_FIELDS.map(toCommandCapability);
+
+function toCommandCapability(capability: CommandCapabilityWithoutFields): RallarBlackBoxCommandCapability {
+    const fields = RALLAR_BLACK_BOX_COMMAND_FIELDS[capability.kind];
+    return {
+        kind: capability.kind,
+        title: capability.title,
+        description: capability.description,
+        requiredFields: fields.required,
+        optionalFields: [...fields.optional, ...RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS],
+        supportedProviderModes: capability.supportedProviderModes,
+        runtimeSurfaces: capability.runtimeSurfaces,
+        liveServiceRequirements: capability.liveServiceRequirements,
+        artifactExpectations: capability.artifactExpectations,
+        example: capability.example
+    };
+}

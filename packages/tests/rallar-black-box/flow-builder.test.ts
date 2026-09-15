@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '@shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

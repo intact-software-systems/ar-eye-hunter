@@ -43,7 +43,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
                 'apps/rallar-black-box/src/rtc-diagnostics.ts',
                 'apps/rallar-black-box/src/topology-graph.ts',
                 'apps/rallar-black-box/src/flow-builder.ts',
-                'apps/rallar-black-box/src/schema-authoring.ts'
+                'apps/rallar-black-box/src/schema-authoring.ts',
+                'packages/shared-test/rallar-bb-test/schema.ts',
+                'packages/shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts',
+                'packages/shared-test/rallar-bb-test/alm/rallar-black-box-alm-command-capabilities.ts'
             ]
         ) {
             expect(inputs, `headless bundle should not include ${forbidden}`).not.toContainEqual(
@@ -51,9 +54,11 @@ describe('rallar-black-box-headless bundle boundary', () => {
             );
         }
 
-        // S1 lifecycle composition measures 262.419921875 KiB. The maintainer-approved
-        // next whole-KiB ceiling is 263, with operator dependency exclusions intact.
-        expect(result.brotliKiB).toBeLessThan(263);
+        // The control-command validator reads its field tables from the canonical command-field
+        // definition, so neither the JSON schema nor the capability catalog ships to the agent.
+        // With the S1 delivery composition the agent measures 265.665 KiB; the maintainer-approved
+        // next whole-KiB ceiling is 266, with operator dependency exclusions intact.
+        expect(result.brotliKiB).toBeLessThan(266);
     });
 });
 

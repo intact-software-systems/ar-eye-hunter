@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from './assert/assert-value-operators.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
@@ -7,28 +8,19 @@ import {
 } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA } from './distributed/rallar-black-box-group-assertions-schema.ts';
 import {
-    formatJsonSchemaValidationErrors,
-    validateJsonSchema,
-    type JsonSchema,
-    type JsonSchemaValidationIssue,
-    type JsonSchemaValidationResult
-} from './schema/json-schema-validation.ts';
-import {
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
-} from './schema/rallar-black-box-command-capabilities.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    type RallarBlackBoxCommandCapability
+    type RallarBlackBoxTestCommandKind
 } from './rallar-black-box-test-contracts.ts';
-
-export {
-    formatJsonSchemaValidationErrors,
-    type JsonSchema,
-    type JsonSchemaValidationIssue,
-    type JsonSchemaValidationResult,
-    validateJsonSchema
-};
+import type { JsonSchema } from './schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema/rallar-black-box-command-capabilities.ts';
+import {
+    RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS,
+    RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
+    RALLAR_BLACK_BOX_COMMAND_FIELDS,
+    RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS,
+    type RallarBlackBoxCommandFieldName,
+    type RallarBlackBoxCommandFieldSet
+} from './schema/rallar-black-box-command-fields.ts';
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
 export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
@@ -49,7 +41,17 @@ const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
 const recursiveCommandSchema: JsonSchema = { $ref: '#/$defs/command' };
 
-function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): Record<string, JsonSchema> {
+type CommandPropertySchemas<Kind extends RallarBlackBoxTestCommandKind> = Readonly<
+    Record<RallarBlackBoxCommandFieldName<(typeof RALLAR_BLACK_BOX_COMMAND_FIELDS)[Kind]>, JsonSchema>
+>;
+
+type ObjectPropertySchemas<FieldSet extends RallarBlackBoxCommandFieldSet> = Readonly<
+    Record<RallarBlackBoxCommandFieldName<FieldSet>, JsonSchema>
+>;
+
+function commandBaseProperties(
+    kind: RallarBlackBoxTestCommandKind
+): Readonly<Record<'kind' | (typeof RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS)[number], JsonSchema>> {
     return {
         kind: { const: kind },
         commandId: stringSchema,
@@ -60,18 +62,29 @@ function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): R
     };
 }
 
-function strictCommandSchema(
-    kind: RallarBlackBoxCommandCapability['kind'],
-    required: readonly string[],
-    properties: Readonly<Record<string, JsonSchema>> = {}
+function strictCommandSchema<Kind extends RallarBlackBoxTestCommandKind>(
+    kind: Kind,
+    properties: CommandPropertySchemas<Kind>
 ): JsonSchema {
     return {
         type: 'object',
-        required: ['kind', ...required],
+        required: ['kind', ...RALLAR_BLACK_BOX_COMMAND_FIELDS[kind].required],
         properties: {
             ...commandBaseProperties(kind),
             ...properties
         },
+        additionalProperties: false
+    };
+}
+
+function strictObjectSchema<FieldSet extends RallarBlackBoxCommandFieldSet>(
+    fields: FieldSet,
+    properties: ObjectPropertySchemas<FieldSet>
+): JsonSchema {
+    return {
+        type: 'object',
+        ...(fields.required.length > 0 ? { required: fields.required } : {}),
+        properties,
         additionalProperties: false
     };
 }
@@ -107,34 +120,26 @@ const configSchema: JsonSchema = {
     additionalProperties: false
 };
 
-const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
+const rtcTransportSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcSendTransport };
 const rtcConnectTransportSchema: JsonSchema = {
     type: 'string',
-    enum: ['realtime', 'messages.rtc', 'messages.ws']
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.rtcConnectTransport
 };
-const rtcConnectReadinessSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minReadyPeers: { type: 'integer', minimum: 1 },
-        timeoutMs: { type: 'integer', minimum: 1 },
-        intervalMs: { type: 'integer', minimum: 1 }
-    },
-    additionalProperties: false
-};
-const rtcStreamThresholdsSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
-        maxDroppedFrames: { type: 'number', minimum: 0 },
-        maxBackpressureCount: { type: 'number', minimum: 0 },
-        maxP95SendDurationMs: { type: 'number', minimum: 0 },
-        maxP99SendDurationMs: { type: 'number', minimum: 0 },
-        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
-        maxStartDriftMs: { type: 'number', minimum: 0 },
-        maxJitterMs: { type: 'number', minimum: 0 }
-    },
-    additionalProperties: false
-};
+const rtcConnectReadinessSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcConnectReadiness, {
+    minReadyPeers: { type: 'integer', minimum: 1 },
+    timeoutMs: { type: 'integer', minimum: 1 },
+    intervalMs: { type: 'integer', minimum: 1 }
+});
+const rtcStreamThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.rtcStreamThresholds, {
+    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+    maxDroppedFrames: { type: 'number', minimum: 0 },
+    maxBackpressureCount: { type: 'number', minimum: 0 },
+    maxP95SendDurationMs: { type: 'number', minimum: 0 },
+    maxP99SendDurationMs: { type: 'number', minimum: 0 },
+    maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+    maxStartDriftMs: { type: 'number', minimum: 0 },
+    maxJitterMs: { type: 'number', minimum: 0 }
+});
 const crdtTransportSchema: JsonSchema = {
     type: 'string',
     enum: ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback']
@@ -310,7 +315,7 @@ const crdtWaitConditionSchema: JsonSchema = {
     additionalProperties: false
 };
 
-const commandRoomProperties: Readonly<Record<string, JsonSchema>> = {
+const commandRoomProperties = {
     roomId: stringSchema,
     applicationId: stringSchema,
     workspaceId: stringSchema,
@@ -318,7 +323,7 @@ const commandRoomProperties: Readonly<Record<string, JsonSchema>> = {
     roomRef: recordSchema
 };
 
-const directorRelayConfigProperties: Readonly<Record<string, JsonSchema>> = {
+const directorRelayConfigProperties = {
     handle: stringSchema,
     laneId: stringSchema,
     topicId: stringSchema,
@@ -345,142 +350,101 @@ const crdtWaitSyncSchema: JsonSchema = {
     ]
 };
 
-const httpRequestSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        url: stringSchema,
-        path: stringSchema,
-        method: stringSchema,
-        headers: stringRecordSchema,
-        body: anySchema,
-        credentials: { type: 'string', enum: ['omit', 'same-origin', 'include'] },
-        mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] }
-    },
-    additionalProperties: false
-};
+const httpRequestSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.httpRequest, {
+    url: stringSchema,
+    path: stringSchema,
+    method: stringSchema,
+    headers: stringRecordSchema,
+    body: anySchema,
+    credentials: { type: 'string', enum: ['omit', 'same-origin', 'include'] },
+    mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] }
+});
 
-const httpResponseSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        body: { type: 'string', enum: ['none', 'text', 'json'] },
-        maxBodyChars: integerSchema,
-        acceptedStatusCodes: {
-            type: 'array',
-            minItems: 1,
-            items: { type: 'integer', minimum: 100, maximum: 599 }
-        }
-    },
-    additionalProperties: false
-};
+const httpResponseSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.httpResponse, {
+    body: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.httpResponseBody },
+    maxBodyChars: integerSchema,
+    acceptedStatusCodes: {
+        type: 'array',
+        minItems: 1,
+        items: { type: 'integer', minimum: 100, maximum: 599 }
+    }
+});
 
-const waitMatchSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        kind: { type: 'string', enum: ['event', 'diagnostic', 'message', 'stats', 'report', 'result', 'state'] },
-        topic: stringSchema,
-        commandId: stringSchema,
-        connection: stringSchema,
-        transport: { type: 'string', enum: ['realtime', 'messages.rtc', 'ws', 'http'] },
-        severity: { type: 'string', enum: ['debug', 'info', 'warning', 'error'] },
-        payloadPath: stringSchema,
-        equals: anySchema,
-        contains: stringSchema,
-        exists: booleanSchema,
-        sinceEpochMs: { type: 'integer', minimum: 0 }
-    },
-    additionalProperties: false
-};
+const waitMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.waitMatch, {
+    kind: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchKind },
+    topic: stringSchema,
+    commandId: stringSchema,
+    connection: stringSchema,
+    transport: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchTransport },
+    severity: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.waitMatchSeverity },
+    payloadPath: stringSchema,
+    equals: anySchema,
+    contains: stringSchema,
+    exists: booleanSchema,
+    sinceEpochMs: { type: 'integer', minimum: 0 }
+});
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: [
-        'equals',
-        'notEquals',
-        'contains',
-        'exists',
-        'gte',
-        'lte',
-        'gt',
-        'lt',
-        'between',
-        'length',
-        'matches',
-        'matchesShape',
-        'matchesShapeComplete'
-    ]
+    enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
 };
 
-const parallelGroupSchema: JsonSchema = {
-    type: 'object',
-    required: ['commands'],
-    properties: {
-        groupId: stringSchema,
-        label: stringSchema,
-        commands: {
-            type: 'array',
-            minItems: 1,
-            items: recursiveCommandSchema
-        },
-        metadata: recordSchema
+const parallelGroupSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.parallelGroup, {
+    groupId: stringSchema,
+    label: stringSchema,
+    commands: {
+        type: 'array',
+        minItems: 1,
+        items: recursiveCommandSchema
     },
-    additionalProperties: false
-};
+    metadata: recordSchema
+});
 
-const loopThresholdsSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        minAchievedRateHz: { type: 'number', minimum: 0 },
-        maxAverageStartDriftMs: { type: 'number', minimum: 0 },
-        maxStartDriftMs: { type: 'number', minimum: 0 },
-        maxJitterMs: { type: 'number', minimum: 0 },
-        minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
-        failOnBackpressure: booleanSchema
-    },
-    additionalProperties: false
-};
+const loopThresholdsSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.loopThresholds, {
+    minAchievedRateHz: { type: 'number', minimum: 0 },
+    maxAverageStartDriftMs: { type: 'number', minimum: 0 },
+    maxStartDriftMs: { type: 'number', minimum: 0 },
+    maxJitterMs: { type: 'number', minimum: 0 },
+    minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
+    failOnBackpressure: booleanSchema
+});
 
-const messagesCarrierSchema: JsonSchema = { type: 'string', enum: ['ws', 'rtc', 'rtc-with-ws-fallback'] };
-const messagesReliabilitySchema: JsonSchema = { type: 'string', enum: ['best-effort', 'at-least-once'] };
-const messagesScopeSchema: JsonSchema = { type: 'string', enum: ['room', 'world', 'all'] };
-const messagesAckSchema: JsonSchema = {
+const messagesCarrierSchema: JsonSchema = {
     type: 'string',
-    enum: ['none', 'receiver', 'all-logical-recipients', 'group-leader']
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesCarrier
 };
-const faultMatchSchema: JsonSchema = {
-    type: 'object',
-    properties: {
-        controlType: { type: 'string', enum: ['ack', 'nack', 'repair'] },
-        typeId: stringSchema,
-        msgId: stringSchema
-    },
-    additionalProperties: false
+const messagesReliabilitySchema: JsonSchema = {
+    type: 'string',
+    enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReliability
 };
+const messagesScopeSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesScope };
+const messagesAckSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesAck };
+const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
+    controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
+    typeId: stringSchema,
+    msgId: stringSchema
+});
 const faultActionSchema: JsonSchema = {
     oneOf: [
         { type: 'string', enum: ['drop'] },
-        {
-            type: 'object',
-            required: ['delayMs'],
-            properties: { delayMs: numberSchema },
-            additionalProperties: false
-        }
+        strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSchema })
     ]
 };
 
-const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
-    configure: strictCommandSchema('configure', ['config'], {
+const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema>> = {
+    configure: strictCommandSchema('configure', {
         config: configSchema
     }),
-    'recipe.load': strictCommandSchema('recipe.load', ['recipe'], {
+    'recipe.load': strictCommandSchema('recipe.load', {
         recipe: inlineRecipeSchema
     }),
-    'recipe.run': strictCommandSchema('recipe.run', [], {
+    'recipe.run': strictCommandSchema('recipe.run', {
         recipe: inlineRecipeSchema
     }),
-    'recipe.cancel': strictCommandSchema('recipe.cancel', [], {
+    'recipe.cancel': strictCommandSchema('recipe.cancel', {
         reason: stringSchema
     }),
-    loop: strictCommandSchema('loop', ['commands'], {
+    loop: strictCommandSchema('loop', {
         commands: {
             type: 'array',
             minItems: 1,
@@ -499,7 +463,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         intervalMs: { type: 'integer', minimum: 0 },
         delayMs: { type: 'integer', minimum: 0 },
         continueOnFailure: booleanSchema,
-        until: { const: 'first-success' },
+        until: { const: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.loopUntil[0] },
         backoffMultiplier: { type: 'number', minimum: 1 },
         maxCommands: {
             type: 'integer',
@@ -508,7 +472,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         },
         thresholds: loopThresholdsSchema
     }),
-    parallel: strictCommandSchema('parallel', ['groups'], {
+    parallel: strictCommandSchema('parallel', {
         groups: {
             type: 'array',
             minItems: 1,
@@ -522,16 +486,16 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         failFast: booleanSchema,
         continueOnFailure: booleanSchema
     }),
-    wait: strictCommandSchema('wait', ['match'], {
+    wait: strictCommandSchema('wait', {
         match: waitMatchSchema,
         absent: { const: true }
     }),
-    assert: strictCommandSchema('assert', ['source', 'operator'], {
+    assert: strictCommandSchema('assert', {
         source: stringSchema,
         operator: assertOperatorSchema,
         expected: anySchema
     }),
-    'rtc.connect': strictCommandSchema('rtc.connect', [], {
+    'rtc.connect': strictCommandSchema('rtc.connect', {
         connection: stringSchema,
         actor: stringSchema,
         roomId: stringSchema,
@@ -544,7 +508,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         rallar: recordSchema,
         readiness: rtcConnectReadinessSchema
     }),
-    'rtc.send': strictCommandSchema('rtc.send', [], {
+    'rtc.send': strictCommandSchema('rtc.send', {
         connection: stringSchema,
         send: anySchema,
         applicationId: stringSchema,
@@ -555,7 +519,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         transport: rtcTransportSchema
     }),
     'rtc.stream': {
-        ...strictCommandSchema('rtc.stream', ['send'], {
+        ...strictCommandSchema('rtc.stream', {
             connection: stringSchema,
             actor: stringSchema,
             roomId: stringSchema,
@@ -592,7 +556,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             }
         ]
     },
-    'messages.send': strictCommandSchema('messages.send', ['carrier', 'typeId', 'payload'], {
+    'messages.send': strictCommandSchema('messages.send', {
         connection: stringSchema,
         carrier: messagesCarrierSchema,
         typeId: stringSchema,
@@ -607,16 +571,16 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         seq: numberSchema,
         handleId: stringSchema
     }),
-    'messages.observe': strictCommandSchema('messages.observe', ['handleId', 'state'], {
+    'messages.observe': strictCommandSchema('messages.observe', {
         connection: stringSchema,
         handleId: stringSchema,
         state: { type: 'array', items: stringSchema }
     }),
-    'messages.cancel': strictCommandSchema('messages.cancel', ['handleId'], {
+    'messages.cancel': strictCommandSchema('messages.cancel', {
         connection: stringSchema,
         handleId: stringSchema
     }),
-    'messages.received': strictCommandSchema('messages.received', ['typeId', 'count', 'windowMs'], {
+    'messages.received': strictCommandSchema('messages.received', {
         connection: stringSchema,
         typeId: stringSchema,
         msgId: stringSchema,
@@ -624,28 +588,24 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         absent: booleanSchema,
         windowMs: { type: 'integer', minimum: 0 }
     }),
-    'messages.receipts': strictCommandSchema('messages.receipts', ['handleId'], {
+    'messages.receipts': strictCommandSchema('messages.receipts', {
         connection: stringSchema,
         handleId: stringSchema
     }),
-    'fault.inject': strictCommandSchema(
-        'fault.inject',
-        ['faultId', 'carrier', 'match', 'action', 'remaining'],
-        {
-            faultId: stringSchema,
-            carrier: { type: 'string', enum: ['ws', 'rtc'] },
-            match: faultMatchSchema,
-            action: faultActionSchema,
-            remaining: numberSchema
-        }
-    ),
-    'storage.counters': strictCommandSchema('storage.counters', [], {
+    'fault.inject': strictCommandSchema('fault.inject', {
+        faultId: stringSchema,
+        carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultCarrier },
+        match: faultMatchSchema,
+        action: faultActionSchema,
+        remaining: numberSchema
+    }),
+    'storage.counters': strictCommandSchema('storage.counters', {
         reset: booleanSchema
     }),
-    'agent.reload': strictCommandSchema('agent.reload', ['readyTimeoutMs'], {
+    'agent.reload': strictCommandSchema('agent.reload', {
         readyTimeoutMs: { type: 'integer', minimum: 0 }
     }),
-    'ws.open': strictCommandSchema('ws.open', [], {
+    'ws.open': strictCommandSchema('ws.open', {
         connection: stringSchema,
         url: stringSchema,
         protocols: {
@@ -656,20 +616,20 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         },
         headers: stringRecordSchema
     }),
-    'ws.send': strictCommandSchema('ws.send', [], {
+    'ws.send': strictCommandSchema('ws.send', {
         connection: stringSchema,
         data: anySchema
     }),
-    'ws.close': strictCommandSchema('ws.close', [], {
+    'ws.close': strictCommandSchema('ws.close', {
         connection: stringSchema,
         code: integerSchema,
         reason: stringSchema
     }),
-    'http.request': strictCommandSchema('http.request', ['request'], {
+    'http.request': strictCommandSchema('http.request', {
         request: httpRequestSchema,
         response: httpResponseSchema
     }),
-    'crdt.open': strictCommandSchema('crdt.open', ['name'], {
+    'crdt.open': strictCommandSchema('crdt.open', {
         handle: stringSchema,
         name: stringSchema,
         applicationId: stringSchema,
@@ -689,22 +649,22 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         encryption: recordSchema,
         durableCatchUp: crdtDurableCatchUpSchema
     }),
-    'crdt.apply': strictCommandSchema('crdt.apply', ['handle', 'batch'], {
+    'crdt.apply': strictCommandSchema('crdt.apply', {
         handle: stringSchema,
         batch: crdtOperationBatchSchema
     }),
-    'crdt.read': strictCommandSchema('crdt.read', ['handle'], {
+    'crdt.read': strictCommandSchema('crdt.read', {
         handle: stringSchema
     }),
-    'crdt.sync': strictCommandSchema('crdt.sync', ['handle'], {
+    'crdt.sync': strictCommandSchema('crdt.sync', {
         handle: stringSchema,
         reason: stringSchema,
         transport: crdtTransportSchema
     }),
-    'crdt.health': strictCommandSchema('crdt.health', ['handle'], {
+    'crdt.health': strictCommandSchema('crdt.health', {
         handle: stringSchema
     }),
-    'crdt.wait': strictCommandSchema('crdt.wait', ['handle', 'conditions'], {
+    'crdt.wait': strictCommandSchema('crdt.wait', {
         handle: stringSchema,
         intervalMs: { type: 'integer', minimum: 0 },
         stableForMs: { type: 'integer', minimum: 0 },
@@ -715,100 +675,86 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             items: crdtWaitConditionSchema
         }
     }),
-    'crdt.undo': strictCommandSchema('crdt.undo', ['handle', 'targetOperationGroupId', 'operations'], {
+    'crdt.undo': strictCommandSchema('crdt.undo', {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
         operationGroupId: stringSchema
     }),
-    'crdt.redo': strictCommandSchema('crdt.redo', ['handle', 'targetOperationGroupId', 'operations'], {
+    'crdt.redo': strictCommandSchema('crdt.redo', {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
         operationGroupId: stringSchema
     }),
-    'crdt.close': strictCommandSchema('crdt.close', ['handle'], {
+    'crdt.close': strictCommandSchema('crdt.close', {
         handle: stringSchema
     }),
-    'crdt.destroy': strictCommandSchema('crdt.destroy', ['handle'], {
+    'crdt.destroy': strictCommandSchema('crdt.destroy', {
         handle: stringSchema
     }),
-    'director.appoint': strictCommandSchema('director.appoint', [], {
+    'director.appoint': strictCommandSchema('director.appoint', {
         ...commandRoomProperties,
         heartbeatTtlMs: { type: 'integer', minimum: 1 }
     }),
-    'director.resign': strictCommandSchema('director.resign', [], {
+    'director.resign': strictCommandSchema('director.resign', {
         ...commandRoomProperties
     }),
-    'director.status': strictCommandSchema('director.status', [], {
+    'director.status': strictCommandSchema('director.status', {
         ...commandRoomProperties,
         refresh: booleanSchema,
         now: numberSchema
     }),
-    'director.relay.start': strictCommandSchema('director.relay.start', ['handle', 'intentTypeId', 'outputTypeId'], {
+    'director.relay.start': strictCommandSchema('director.relay.start', {
         ...commandRoomProperties,
         ...directorRelayConfigProperties
     }),
-    'director.intent': strictCommandSchema('director.intent', ['handle', 'intent'], {
+    'director.intent': strictCommandSchema('director.intent', {
         handle: stringSchema,
         intent: anySchema
     }),
-    'director.sync.request': strictCommandSchema('director.sync.request', ['handle'], {
+    'director.sync.request': strictCommandSchema('director.sync.request', {
         handle: stringSchema,
         payload: anySchema
     }),
-    'director.relay.stop': strictCommandSchema('director.relay.stop', ['handle'], {
+    'director.relay.stop': strictCommandSchema('director.relay.stop', {
         handle: stringSchema
     }),
-    'formation.command': strictCommandSchema('formation.command', ['command'], {
+    'formation.command': strictCommandSchema('formation.command', {
         ...commandRoomProperties,
         command: {
             type: 'string',
-            enum: [
-                'plan',
-                'connect',
-                'activate',
-                'reconfigure',
-                'pause',
-                'resume',
-                'reset',
-                'start'
-            ]
+            enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.formationCommand
         },
         layout: recordSchema,
         landing: { type: 'string', enum: ['apply', 'hold'] },
         reason: stringSchema
     }),
-    'formation.readiness': strictCommandSchema('formation.readiness', [], {
+    'formation.readiness': strictCommandSchema('formation.readiness', {
         ...commandRoomProperties
     }),
-    health: strictCommandSchema('health', [], {
+    health: strictCommandSchema('health', {
         includeRtcDiagnostics: booleanSchema
     }),
-    stats: strictCommandSchema('stats', []),
-    close: strictCommandSchema('close', []),
-    reset: strictCommandSchema('reset', [])
+    stats: strictCommandSchema('stats', {}),
+    close: strictCommandSchema('close', {}),
+    reset: strictCommandSchema('reset', {})
 };
 const commandSchema: JsonSchema = {
     oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind])
 };
-const recipeSchema: JsonSchema = {
-    type: 'object',
-    required: ['schemaVersion', 'recipeId', 'commands'],
-    properties: {
-        schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
-        recipeId: stringSchema,
-        name: stringSchema,
-        description: stringSchema,
-        continueOnFailure: booleanSchema,
-        metadata: recordSchema,
-        commands: {
-            type: 'array',
-            items: recursiveCommandSchema
-        }
-    },
-    additionalProperties: false
-};
+const recipeSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe, {
+    schemaVersion: { const: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION },
+    recipeId: stringSchema,
+    name: stringSchema,
+    description: stringSchema,
+    continueOnFailure: booleanSchema,
+    metadata: recordSchema,
+    commands: {
+        type: 'array',
+        items: recursiveCommandSchema
+    }
+});
 const commandDefinitions: Readonly<Record<string, JsonSchema>> = { command: commandSchema, recipe: recipeSchema };
 
 export const RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA: JsonSchema = {
@@ -984,12 +930,3 @@ export const RALLAR_BLACK_BOX_SCHEMA_CATALOG = {
     controlCommandEnvelope: RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     distributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
 } as const;
-
-export {
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
-} from './schema/rallar-black-box-command-capabilities.ts';
-export type {
-    RallarBlackBoxCommandCapability,
-    RallarBlackBoxCommandProviderMode,
-    RallarBlackBoxCommandRuntimeSurface
-} from './rallar-black-box-test-contracts.ts';

@@ -8,19 +8,18 @@ import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../app
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { JsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');

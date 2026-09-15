@@ -7,8 +7,9 @@ import {
     type ManualRallarWorkbenchModel
 } from '../../../apps/rallar-black-box/src/legacy/runner/manual/use-manual-rallar-workbench.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
 const state: RallarBlackBoxTestState = { status: 'idle', commandHistory: [], events: [], failures: [], resultCache: {} };

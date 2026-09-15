@@ -13,8 +13,9 @@ import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, validateJsonSchema } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;

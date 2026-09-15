@@ -9,11 +9,8 @@ import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    validateJsonSchema
-} from '../../../packages/shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 type ManifestCommand = Readonly<{
     kind?: string;

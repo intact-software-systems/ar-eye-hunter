@@ -1,15 +1,13 @@
-import {
-    type RallarValidationIssue
-} from '@shared/api/rallar-validation.ts';
+import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
-import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
-import { parseControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
-import { isJsonRecordValue } from './schema/json-schema-validation.ts';
+import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
+import { decodeControlAgentIdentity } from './distributed/decode-control-agent-identity.ts';
 import {
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestEvent,
     type RallarBlackBoxTestResult
 } from './rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export const RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION = 1;
 
@@ -89,125 +87,36 @@ export type ParseControlClientMessageResult =
     | Readonly<{ ok: true; envelope: ControlClientEnvelope; }>
     | Readonly<{ ok: false; error: string; }>;
 
-export type ControlCommandValidationResult =
-    | Readonly<{ ok: true; }>
-    | Readonly<{ ok: false; error: string; issues?: readonly RallarValidationIssue[]; }>;
-
-function optionalString(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0
-        ? value
-        : undefined;
+export interface ControlClientIdentity {
+    readonly runId: string;
+    readonly agentId: string;
 }
 
-function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentIdentity | undefined {
-    if (!isJsonRecordValue(value)) {
-        return undefined;
-    }
+type ControlEnvelopeRecord = Readonly<Record<string, unknown>>;
 
-    const identity: RallarBlackBoxControlAgentIdentity = {
-        principalId: optionalString(value.principalId),
-        clientId: optionalString(value.clientId),
-        username: optionalString(value.username),
-        sessionId: optionalString(value.sessionId),
-        clientInstanceId: optionalString(value.clientInstanceId),
-        applicationId: optionalString(value.applicationId),
-        workspaceId: optionalString(value.workspaceId),
-        groupId: optionalString(value.groupId),
-        providerMode: optionalString(value.providerMode),
-        browserLabel: optionalString(value.browserLabel),
-        sessionLabel: optionalString(value.sessionLabel),
-        region: optionalString(value.region),
-        provider: optionalString(value.provider),
-        datacenter: optionalString(value.datacenter),
-        hostId: optionalString(value.hostId),
-        agentPoolId: optionalString(value.agentPoolId),
-        deploymentId: optionalString(value.deploymentId),
-        browserName: optionalString(value.browserName),
-        browserVersion: optionalString(value.browserVersion),
-        os: optionalString(value.os),
-        tags: parseStringArray(value.tags),
-        location: parseGeoLocation(value.location),
-        capabilities: parseControlAgentCapabilities(value.capabilities),
-        updatedAtEpochMs: typeof value.updatedAtEpochMs === 'number'
-            ? value.updatedAtEpochMs
-            : undefined
-    };
+type ControlEnvelopeRecordResult =
+    | Readonly<{ ok: true; value: ControlEnvelopeRecord; }>
+    | Readonly<{ ok: false; error: string; }>;
 
-    return Object.values(identity).some((entry) => entry !== undefined)
-        ? identity
-        : undefined;
-}
-
-function parseGeoLocation(value: unknown): RallarBlackBoxGeoLocation | undefined {
-    if (!isJsonRecordValue(value)) {
-        return undefined;
-    }
-
-    const latitude = typeof value.latitude === 'number' ? value.latitude : undefined;
-    const longitude = typeof value.longitude === 'number' ? value.longitude : undefined;
-    if (
-        latitude === undefined ||
-        longitude === undefined ||
-        !Number.isFinite(latitude) ||
-        !Number.isFinite(longitude) ||
-        latitude < -90 ||
-        latitude > 90 ||
-        longitude < -180 ||
-        longitude > 180
-    ) {
-        return undefined;
-    }
-
-    return {
-        latitude,
-        longitude,
-        label: optionalString(value.label),
-        precision: value.precision === 'approximate' ? 'approximate' : 'exact'
-    };
-}
-
-function parseStringArray(value: unknown): readonly string[] | undefined {
-    if (!Array.isArray(value)) {
-        return undefined;
-    }
-    const strings = value
-        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-        .map((entry) => entry.trim());
-    return strings.length > 0 ? strings : undefined;
-}
+type ControlCommandAddressResult =
+    | Readonly<{ ok: true; agentId: string | undefined; commandId: string; }>
+    | Readonly<{ ok: false; error: string; }>;
 
 export function parseControlServerMessage(
-    data: unknown,
-    expected: Readonly<{
-        runId: string;
-        agentId: string;
-    }>
+    message: unknown,
+    expected: ControlClientIdentity
 ): ParseControlMessageResult {
-    const input = parseControlEnvelopeInput(data, 'Control message');
+    const input = decodeControlEnvelopeRecord(message, 'Control message');
     if (!input.ok) {
         return input;
     }
-    const parsed = input.value;
-    if (parsed.kind !== 'command') {
-        return { ok: false, error: 'Unsupported control message kind.' };
+    const envelope = input.value;
+    const address = decodeControlCommandAddress(envelope, expected);
+    if (!address.ok) {
+        return address;
     }
 
-    if (parsed.runId !== expected.runId) {
-        return { ok: false, error: 'Control command runId does not match this agent.' };
-    }
-
-    if (
-        parsed.agentId !== undefined &&
-        parsed.agentId !== expected.agentId
-    ) {
-        return { ok: false, error: 'Control command agentId does not match this agent.' };
-    }
-
-    if (typeof parsed.commandId !== 'string' || parsed.commandId.length === 0) {
-        return { ok: false, error: 'Control command requires commandId.' };
-    }
-
-    const commandValidation = validateRallarBlackBoxTestCommand(parsed.command);
+    const commandValidation = validateRallarBlackBoxTestCommand(envelope.command);
     if (!commandValidation.ok) {
         return {
             ok: false,
@@ -215,11 +124,8 @@ export function parseControlServerMessage(
             issues: commandValidation.issues
         };
     }
-
-    if (
-        parsed.deadlineEpochMs !== undefined &&
-        typeof parsed.deadlineEpochMs !== 'number'
-    ) {
+    const deadlineEpochMs = envelope.deadlineEpochMs;
+    if (deadlineEpochMs !== undefined && typeof deadlineEpochMs !== 'number') {
         return { ok: false, error: 'Control command deadlineEpochMs must be a number.' };
     }
 
@@ -228,40 +134,41 @@ export function parseControlServerMessage(
         envelope: {
             kind: 'command',
             protocolVersion: 1,
-            runId: parsed.runId,
-            agentId: parsed.agentId,
-            commandId: parsed.commandId,
-            command: parsed.command as RallarBlackBoxTestCommand,
-            deadlineEpochMs: parsed.deadlineEpochMs
+            runId: expected.runId,
+            agentId: address.agentId,
+            commandId: address.commandId,
+            command: envelope.command as RallarBlackBoxTestCommand,
+            deadlineEpochMs
         }
     };
 }
 
-export function parseControlClientMessage(data: unknown): ParseControlClientMessageResult {
-    const input = parseControlEnvelopeInput(data, 'Control client message');
+export function parseControlClientMessage(message: unknown): ParseControlClientMessageResult {
+    const input = decodeControlEnvelopeRecord(message, 'Control client message');
     if (!input.ok) {
         return input;
     }
-    const parsed = input.value;
-    if (typeof parsed.runId !== 'string' || parsed.runId.length === 0) {
+    const envelope = input.value;
+    const { runId, agentId } = envelope;
+    if (typeof runId !== 'string' || runId.length === 0) {
         return { ok: false, error: 'Control client message requires runId.' };
     }
-    if (typeof parsed.agentId !== 'string' || parsed.agentId.length === 0) {
+    if (typeof agentId !== 'string' || agentId.length === 0) {
         return { ok: false, error: 'Control client message requires agentId.' };
     }
-    const identity = { runId: parsed.runId, agentId: parsed.agentId };
-    switch (parsed.kind) {
+    const identity = { runId, agentId };
+    switch (envelope.kind) {
         case 'register':
-            return parseRegisterEnvelope(parsed, identity);
+            return decodeRegisterEnvelope(envelope, identity);
         case 'heartbeat':
-            return parseHeartbeatEnvelope(parsed, identity);
+            return decodeHeartbeatEnvelope(envelope, identity);
         case 'result':
-            return parseResultEnvelope(parsed, identity);
+            return decodeResultEnvelope(envelope, identity);
         case 'event':
         case 'diagnostic':
         case 'stats':
         case 'report':
-            return parseEventEnvelope(parsed, identity, parsed.kind);
+            return decodeEventEnvelope(envelope, { ...identity, kind: envelope.kind });
         default:
             return { ok: false, error: 'Unsupported control client message kind.' };
     }
@@ -272,16 +179,8 @@ export function toControlEventEnvelope(
     runId: string,
     agentId: string
 ): ControlEventEnvelope {
-    const kind = event.kind === 'stats'
-        ? 'stats'
-        : event.kind === 'report'
-        ? 'report'
-        : event.kind === 'diagnostic'
-        ? 'diagnostic'
-        : 'event';
-
     return {
-        kind,
+        kind: toControlEventEnvelopeKind(event),
         protocolVersion: 1,
         runId,
         agentId,
@@ -292,50 +191,92 @@ export function toControlEventEnvelope(
     };
 }
 
-export { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
+function toControlEventEnvelopeKind(event: RallarBlackBoxTestEvent): ControlEventEnvelope['kind'] {
+    switch (event.kind) {
+        case 'stats':
+        case 'report':
+        case 'diagnostic':
+            return event.kind;
+        default:
+            return 'event';
+    }
+}
 
-function parseRegisterEnvelope(
-    parsed: Record<string, unknown>,
+function decodeControlCommandAddress(
+    envelope: ControlEnvelopeRecord,
+    expected: ControlClientIdentity
+): ControlCommandAddressResult {
+    const { agentId, commandId } = envelope;
+    if (envelope.kind !== 'command') {
+        return { ok: false, error: 'Unsupported control message kind.' };
+    }
+    if (envelope.runId !== expected.runId) {
+        return { ok: false, error: 'Control command runId does not match this agent.' };
+    }
+    if (agentId !== undefined && agentId !== expected.agentId) {
+        return { ok: false, error: 'Control command agentId does not match this agent.' };
+    }
+    if (typeof commandId !== 'string' || commandId.length === 0) {
+        return { ok: false, error: 'Control command requires commandId.' };
+    }
+    return { ok: true, agentId: agentId === undefined ? undefined : expected.agentId, commandId };
+}
+
+function decodeControlEnvelopeRecord(
+    message: unknown,
+    label: 'Control message' | 'Control client message'
+): ControlEnvelopeRecordResult {
+    let decoded: unknown;
+    try {
+        decoded = typeof message === 'string' ? JSON.parse(message) : message;
+    }
+    catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    if (!isJsonRecordValue(decoded)) {
+        return { ok: false, error: `${label} must be an object.` };
+    }
+    if (decoded.protocolVersion !== RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION) {
+        return { ok: false, error: 'Unsupported control protocol version.' };
+    }
+    return { ok: true, value: decoded };
+}
+
+function decodeRegisterEnvelope(
+    envelope: ControlEnvelopeRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
-    if (typeof parsed.atEpochMs !== 'number') {
+    const { atEpochMs, resume } = envelope;
+    if (typeof atEpochMs !== 'number') {
         return { ok: false, error: 'Control register requires atEpochMs.' };
     }
-    if (
-        !isJsonRecordValue(parsed.resume) ||
-        !Array.isArray(parsed.resume.completedCommandIds) ||
-        !parsed.resume.completedCommandIds.every((id) => typeof id === 'string')
-    ) {
-        return {
-            ok: false,
-            error: 'Control register requires resume.completedCommandIds.'
-        };
+    const completedCommandIds = isJsonRecordValue(resume) ? resume.completedCommandIds : undefined;
+    if (!Array.isArray(completedCommandIds) || !completedCommandIds.every((id) => typeof id === 'string')) {
+        return { ok: false, error: 'Control register requires resume.completedCommandIds.' };
     }
     return {
         ok: true,
         envelope: {
             kind: 'register',
             protocolVersion: 1,
-            runId: identity.runId,
-            agentId: identity.agentId,
-            token: typeof parsed.token === 'string' ? parsed.token : undefined,
-            atEpochMs: parsed.atEpochMs,
-            identity: parseControlAgentIdentity(parsed.identity),
-            resume: {
-                completedCommandIds: parsed.resume.completedCommandIds
-            }
+            ...identity,
+            token: typeof envelope.token === 'string' ? envelope.token : undefined,
+            atEpochMs,
+            identity: decodeControlAgentIdentity(envelope.identity),
+            resume: { completedCommandIds }
         }
     };
 }
 
-function parseHeartbeatEnvelope(
-    parsed: Record<string, unknown>,
+function decodeHeartbeatEnvelope(
+    envelope: ControlEnvelopeRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
-    if (typeof parsed.atEpochMs !== 'number') {
+    const { atEpochMs, status } = envelope;
+    if (typeof atEpochMs !== 'number') {
         return { ok: false, error: 'Control heartbeat requires atEpochMs.' };
     }
-    if (typeof parsed.status !== 'string') {
+    if (typeof status !== 'string') {
         return { ok: false, error: 'Control heartbeat requires status.' };
     }
     return {
@@ -343,29 +284,27 @@ function parseHeartbeatEnvelope(
         envelope: {
             kind: 'heartbeat',
             protocolVersion: 1,
-            runId: identity.runId,
-            agentId: identity.agentId,
-            atEpochMs: parsed.atEpochMs,
-            status: parsed.status,
-            identity: parseControlAgentIdentity(parsed.identity),
-            lastCommandId: typeof parsed.lastCommandId === 'string'
-                ? parsed.lastCommandId
-                : undefined,
-            lastEventAtEpochMs: typeof parsed.lastEventAtEpochMs === 'number'
-                ? parsed.lastEventAtEpochMs
+            ...identity,
+            atEpochMs,
+            status,
+            identity: decodeControlAgentIdentity(envelope.identity),
+            lastCommandId: typeof envelope.lastCommandId === 'string' ? envelope.lastCommandId : undefined,
+            lastEventAtEpochMs: typeof envelope.lastEventAtEpochMs === 'number'
+                ? envelope.lastEventAtEpochMs
                 : undefined
         }
     };
 }
 
-function parseResultEnvelope(
-    parsed: Record<string, unknown>,
+function decodeResultEnvelope(
+    envelope: ControlEnvelopeRecord,
     identity: ControlClientIdentity
 ): ParseControlClientMessageResult {
-    if (typeof parsed.commandId !== 'string' || parsed.commandId.length === 0) {
+    const { commandId, ok } = envelope;
+    if (typeof commandId !== 'string' || commandId.length === 0) {
         return { ok: false, error: 'Control result requires commandId.' };
     }
-    if (typeof parsed.ok !== 'boolean') {
+    if (typeof ok !== 'boolean') {
         return { ok: false, error: 'Control result requires ok.' };
     }
     return {
@@ -373,66 +312,35 @@ function parseResultEnvelope(
         envelope: {
             kind: 'result',
             protocolVersion: 1,
-            runId: identity.runId,
-            agentId: identity.agentId,
-            commandId: parsed.commandId,
-            ok: parsed.ok,
-            result: parsed.result as RallarBlackBoxTestResult | undefined,
-            error: parsed.error as ControlResultEnvelope['error'],
-            replayed: typeof parsed.replayed === 'boolean' ? parsed.replayed : undefined
+            ...identity,
+            commandId,
+            ok,
+            result: envelope.result as RallarBlackBoxTestResult | undefined,
+            error: envelope.error as ControlResultEnvelope['error'],
+            replayed: typeof envelope.replayed === 'boolean' ? envelope.replayed : undefined
         }
     };
 }
 
-function parseEventEnvelope(
-    parsed: Record<string, unknown>,
-    identity: ControlClientIdentity,
-    kind: 'event' | 'diagnostic' | 'stats' | 'report'
+function decodeEventEnvelope(
+    envelope: ControlEnvelopeRecord,
+    address: ControlClientIdentity & Pick<ControlEventEnvelope, 'kind'>
 ): ParseControlClientMessageResult {
-    if (typeof parsed.atEpochMs !== 'number') {
+    const atEpochMs = envelope.atEpochMs;
+    if (typeof atEpochMs !== 'number') {
         return { ok: false, error: 'Control event requires atEpochMs.' };
     }
     return {
         ok: true,
         envelope: {
-            kind,
+            kind: address.kind,
             protocolVersion: 1,
-            runId: identity.runId,
-            agentId: identity.agentId,
-            atEpochMs: parsed.atEpochMs,
-            eventId: typeof parsed.eventId === 'string' ? parsed.eventId : undefined,
-            commandId: typeof parsed.commandId === 'string' ? parsed.commandId : undefined,
-            payload: parsed.payload
+            runId: address.runId,
+            agentId: address.agentId,
+            atEpochMs,
+            eventId: typeof envelope.eventId === 'string' ? envelope.eventId : undefined,
+            commandId: typeof envelope.commandId === 'string' ? envelope.commandId : undefined,
+            payload: envelope.payload
         }
     };
-}
-
-interface ControlClientIdentity {
-    readonly runId: string;
-    readonly agentId: string;
-}
-
-type ControlEnvelopeInputResult = { readonly ok: true; readonly value: Record<string, unknown>; } | {
-    readonly ok: false;
-    readonly error: string;
-};
-
-function parseControlEnvelopeInput(
-    data: unknown,
-    label: 'Control message' | 'Control client message'
-): ControlEnvelopeInputResult {
-    let parsed: unknown;
-    try {
-        parsed = typeof data === 'string' ? JSON.parse(data) : data;
-    }
-    catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
-    if (!isJsonRecordValue(parsed)) {
-        return { ok: false, error: label + ' must be an object.' };
-    }
-    if (parsed.protocolVersion !== RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION) {
-        return { ok: false, error: 'Unsupported control protocol version.' };
-    }
-    return { ok: true, value: parsed };
 }

@@ -14,6 +14,7 @@ export * from './control-client.ts';
 export * from './control-protocol.ts';
 export * from './control-retention.ts';
 export * from './control-snapshots.ts';
+export * from './control/validate-rallar-black-box-test-command.ts';
 export * from './create-rallar-black-box-browser-test-runtime.ts';
 export * from './create-rallar-black-box-test-runtime.ts';
 export * from './diagnostics.ts';
@@ -36,19 +37,7 @@ export {
 } from './fixtures/live-rtc-setup.ts';
 export * from './fixtures/rtc-live-recipes.ts';
 export * from './fixtures/rtc-multicast-recipes.ts';
-export {
-    createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
-    RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
-    type RallarBlackBoxRtcRealtimeRecipeOptions
-} from './fixtures/rtc-realtime-recipes.ts';
+export * from './fixtures/rtc-realtime-recipes.ts';
 export * from './fleet-geography.ts';
 export * from './fleet-report-analysis.ts';
 export * from './fleet-report-validation.ts';
@@ -59,5 +48,13 @@ export * from './recipe-fixtures.ts';
 export * from './redaction.ts';
 export * from './rtc-stream.ts';
 export * from './schema.ts';
+export {
+    formatJsonSchemaValidationErrors,
+    type JsonSchema,
+    type JsonSchemaValidationIssue,
+    type JsonSchemaValidationResult,
+    validateJsonSchema
+} from './schema/json-schema-validation.ts';
+export * from './schema/rallar-black-box-command-capabilities.ts';
 export * from './selectors.ts';
 export * from './wait/wait-for-event.ts';

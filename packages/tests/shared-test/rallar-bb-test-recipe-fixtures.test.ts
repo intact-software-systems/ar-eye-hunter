@@ -13,7 +13,8 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const EXPECTED_MESSAGES_RTC_MULTICAST_SELECTOR = {
     typeId: 'black-box.group.multicast.position',

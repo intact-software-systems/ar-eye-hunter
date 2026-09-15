@@ -9,8 +9,9 @@ import {
     parseManualPayload,
     type ManualActionHistoryEntry
 } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
 import type { RallarBlackBoxTestEvent } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 describe('rallar-black-box manual workbench helpers', () => {
     it('builds direct realtime sends with explicit peer targets', () => {

@@ -1,18 +1,29 @@
 # Rallar Black-box Test Schemas And Capabilities
 
 `packages/shared-test/rallar-bb-test/schema.ts` is the machine-readable contract
-for browser-agent commands and recipes. It sits beside `types.ts`:
+for browser-agent commands and recipes. It sits beside
+`rallar-black-box-test-contracts.ts`:
 
-- `types.ts` defines the TypeScript runtime contract.
-- `schema.ts` defines command capability metadata and JSON Schema objects for
-  UI validation, control-server documentation, runner handoff, and future
-  distributed-run manifests.
+- `rallar-black-box-test-contracts.ts` defines the TypeScript runtime contract.
+- `schema/rallar-black-box-command-fields.ts` is the one list of the fields each
+  command and each nested command object may carry, which of them are
+  required, and the shared enum values. The JSON Schema, the capability
+  metadata, and the control-command validator all read it; the compiler rejects
+  a schema branch whose properties differ from it.
+- `schema.ts` defines the JSON Schema objects for UI validation,
+  control-server documentation, runner handoff, and distributed-run manifests.
+- `schema/rallar-black-box-command-capabilities.ts` defines the command
+  capability metadata.
+- `schema/json-schema-validation.ts` is the browser-safe JSON Schema validator.
 
 Runtime parsing and distributed artifact analysis must stay aligned with these
 schemas. For black-box control/distributed-run behavior, update
-`control-protocol.ts`, `control-snapshots.ts`, `distributed-artifact-analysis.ts`,
-and generated manifest JSON together so the browser agent, CLI analyzer, SPA,
-and Hetzner workflow agree.
+`control-protocol.ts`, `control/validate-rallar-black-box-test-command.ts`,
+`control-snapshots.ts`, `distributed-artifact-analysis.ts`, and generated
+manifest JSON together so the browser agent, CLI analyzer, SPA, and Hetzner
+workflow agree. The control-command validator deliberately does not import the
+JSON Schema or the capability metadata, so the headless agent bundle carries
+neither.
 
 ## Schema Catalog
 
@@ -91,7 +102,7 @@ in the browser runtime's own room resolution, not in the control protocol.
 `RALLAR_BLACK_BOX_TEST_COMMAND_KINDS` value:
 
 - command kind and human title
-- required and optional fields
+- required and optional fields, taken from the command field definition
 - supported provider modes
 - supported runtime surfaces
 - live-service requirements
@@ -333,11 +344,24 @@ conformance suites pin these semantics.
 
 ## Validation
 
-Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.
-Use `formatJsonSchemaValidationErrors(errors)` for operator-facing errors.
-Use `validateRallarBlackBoxRecipeCompatibility(value)` when a tool needs the
-v1 compatibility decision plus warnings for legacy recipes that omit
-`schemaVersion`.
+Use `validateJsonSchema(schema, value)` from `schema/json-schema-validation.ts`
+for lightweight browser-safe validation, and
+`formatJsonSchemaValidationErrors(errors)` for operator-facing errors.
+
+`validateRallarBlackBoxTestCommand(value)` from
+`control/validate-rallar-black-box-test-command.ts` is the control-path
+admission check that the control server, the browser control agent and the
+remote-browser adapter share. It reports every issue it finds, one per line in
+`error`, with nested issues prefixed by the path of the recipe or composite
+child that holds them; route-ID issues are also returned as structured
+`issues`. Per-family field rules live beside it in `control/`, and the ALM
+command rules in `alm/validate-alm-control-command.ts`. The control path does
+not admit `crdt.*` commands.
+
+Recipe format validation is strict: the recipe schema, the control-command
+validator and local runtime execution all reject a recipe, including a nested
+or inline one, whose `schemaVersion` is missing or is not `1`. There is no
+compatibility decision, warning, or conversion for unversioned recipes.
 
 Current automated coverage validates:
 
@@ -386,9 +410,11 @@ Treat schema changes as public command-center contract changes.
 - Tightening a field type is a breaking change unless all shipped recipes and
   examples already satisfy it.
 - Adding a new command kind requires:
-  - a TypeScript command type in `types.ts`
+  - a TypeScript command type in `rallar-black-box-test-contracts.ts`
+  - its fields in `schema/rallar-black-box-command-fields.ts`
   - capability metadata
   - a command schema branch
+  - control-command validation, or an explicit refusal, in `control/`
   - at least one validating example
   - command-center and runtime tests
 - Removing or renaming a command kind is breaking and should require an

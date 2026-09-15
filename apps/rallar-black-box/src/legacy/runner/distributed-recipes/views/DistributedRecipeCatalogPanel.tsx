@@ -3,7 +3,8 @@ import {
     distributedRecipePreflight,
     type DistributedRecipeCatalogItem
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '@shared-test/rallar-bb-test/schema.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import {
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,

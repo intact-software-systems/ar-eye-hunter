@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-    parseControlServerMessage,
-    validateRallarBlackBoxTestCommand,
-    type ControlCommandEnvelope
-} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import { parseControlServerMessage, type ControlCommandEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
     return {
@@ -289,5 +287,51 @@ describe('rallar-bb-test control protocol', () => {
             commands: [{ kind: 'health' }],
             thresholds
         })).toEqual({ ok: false, error });
+    });
+
+    it('reports every issue in a command, prefixing nested issues with their path', () => {
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'recipe.load',
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'several-issues',
+                commands: [{
+                    kind: 'loop',
+                    count: 0,
+                    commands: [{ kind: 'health' }],
+                    thresholds: { maxJitterMs: -1, bogus: true }
+                }]
+            }
+        })).toEqual({
+            ok: false,
+            error: [
+                'recipe.load.recipe.commands[0]: loop.count must be >= 1.',
+                'recipe.load.recipe.commands[0]: loop.thresholds has unsupported field: bogus.',
+                'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
+            ].join('\n')
+        });
+    });
+
+    it('admits the capability catalog fields and requires each of its required fields', () => {
+        const controlCapabilities = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
+            .filter((capability) => !capability.kind.startsWith('crdt.'));
+        for (const capability of controlCapabilities) {
+            const example: Record<string, unknown> = { ...capability.example };
+            expect(validateRallarBlackBoxTestCommand(example), capability.kind).toEqual({ ok: true });
+            expect(validateRallarBlackBoxTestCommand({ ...example, undeclared: true }), capability.kind).toMatchObject({
+                ok: false,
+                error: expect.stringContaining(`${capability.kind} has unsupported field: undeclared.`)
+            });
+            for (const field of [...capability.requiredFields, ...capability.optionalFields]) {
+                const withField = validateRallarBlackBoxTestCommand({ ...example, [field]: example[field] ?? null });
+                const error = withField.ok ? '' : withField.error;
+                expect(error, `${capability.kind}.${field}`).not.toContain('has unsupported field');
+            }
+            for (const field of capability.requiredFields) {
+                const withoutField = { ...example };
+                Reflect.deleteProperty(withoutField, field);
+                expect(validateRallarBlackBoxTestCommand(withoutField).ok, `${capability.kind} without ${field}`).toBe(false);
+            }
+        }
     });
 });

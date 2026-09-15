@@ -16,7 +16,7 @@ import type {
     RallarBlackBoxTestStorageCountersResultValue
 } from '../rallar-black-box-test-contracts.ts';
 import { waitDeadlineEpochMs } from '../wait/wait-for-event.ts';
-import type { RallarBlackBoxTestAlmCommandKind } from './control-protocol-alm-commands.ts';
+import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
 export type RallarBlackBoxAlmCommandWithId =
     & Extract<RallarBlackBoxTestCommand, Readonly<{ kind: RallarBlackBoxTestAlmCommandKind; }>>

@@ -1,29 +1,15 @@
 import { AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { RallarBlackBoxCommandCapability } from '../rallar-black-box-test-contracts.ts';
-export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxCommandCapability[] = [
+
+export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
+    RallarBlackBoxCommandCapability,
+    'requiredFields' | 'optionalFields'
+>[] = [
     {
         kind: 'messages.send',
         title: 'Send ALM Message',
         description:
             'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status.',
-        requiredFields: ['carrier', 'typeId', 'payload'],
-        optionalFields: [
-            'connection',
-            'topicId',
-            'roomRef',
-            'scope',
-            'reliability',
-            'ack',
-            'ttlMs',
-            'orderingKey',
-            'seq',
-            'handleId',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -43,8 +29,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         description: 'Waits for a prior messages.send handle to reach one of the given delivery states. ' +
             `The shared states are ${AL_DELIVERY_STATES.join(', ')}. ` +
             'The in-page handle projects admission, carrier attempts and hop acknowledgements; a lost handle is unobservable.',
-        requiredFields: ['handleId', 'state'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -61,8 +45,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         title: 'Cancel ALM Send',
         description: 'Stops the owner remaining attempts for a live messages.send handle. ' +
             'Terminal evidence is preserved; cancellation does not recall a submitted frame.',
-        requiredFields: ['handleId'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -80,17 +62,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
             'compares against an expected count. A presence claim settles as soon as the count is ' +
             'reached; absent holds the whole windowMs and then passes only if fewer than count ' +
             '(at least one) arrived.',
-        requiredFields: ['typeId', 'count', 'windowMs'],
-        optionalFields: [
-            'connection',
-            'msgId',
-            'absent',
-            'commandId',
-            'label',
-            'timeoutMs',
-            'deadlineEpochMs',
-            'metadata'
-        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -109,8 +80,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         description:
             'Reads the in-page lifecycle observation for a messages.send handle, including confirmedHopPeerIds, ' +
             'unconfirmedHopPeerIds, attempts, submission facts and reason. Unknown handles are unobservable.',
-        requiredFields: ['handleId'],
-        optionalFields: ['connection', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['api-v1'],
@@ -126,8 +95,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         title: 'Inject Transport Fault',
         description:
             'Schedules a scripted drop or delay for matching ws/rtc traffic, bounded by a remaining-match count.',
-        requiredFields: ['faultId', 'carrier', 'match', 'action', 'remaining'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
@@ -148,8 +115,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         description: 'Reads (and optionally resets) the AL-owned IndexedDB operation counters by owner ' +
             '(al-admission, al-work) and by operation kind. The scripted storage observer is only ' +
             'attached when the active connection names an application.',
-        requiredFields: [],
-        optionalFields: ['reset', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
@@ -164,8 +129,6 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly RallarBlackBoxC
         title: 'Reload Agent',
         description: 'Asks the control agent to reload its page and resume the run when it is ready again. ' +
             'On the spa-local surface nothing reloads and the command only records the request.',
-        requiredFields: ['readyTimeoutMs'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],

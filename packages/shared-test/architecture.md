@@ -112,7 +112,11 @@ own their transport effects. The recipe runtime delegates bounded scheduling to
 [parallel execution](./rallar-bb-test/parallel-command-execution.ts).
 
 The [control command validator](./rallar-bb-test/control/validate-rallar-black-box-test-command.ts)
-owns recursive wire validation. [Schema publication](./rallar-bb-test/schema.ts)
+owns recursive wire validation and reports every issue; per-family field rules sit beside it in
+`control/`. It and [schema publication](./rallar-bb-test/schema.ts) read the fields each command may
+carry from one [command field definition](./rallar-bb-test/schema/rallar-black-box-command-fields.ts),
+so the headless agent never loads the JSON Schema or the capability catalog.
+[Schema publication](./rallar-bb-test/schema.ts)
 uses finite local references to canonical command and recipe definitions;
 [JSON validation](./rallar-bb-test/schema/json-schema-validation.ts) resolves those
 references and requires explicit v1 recipes throughout nested command trees.
