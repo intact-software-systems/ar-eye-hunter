@@ -42,7 +42,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
                 'apps/rallar-black-box/src/distributed-recipes.ts',
                 'apps/rallar-black-box/src/rtc-diagnostics.ts',
                 'apps/rallar-black-box/src/topology-graph.ts',
-                'apps/rallar-black-box/src/flow-builder.ts',
+                'apps/rallar-black-box/src/flow-builder',
                 'apps/rallar-black-box/src/schema-authoring.ts',
                 'packages/shared-test/rallar-bb-test/schema.ts',
                 'packages/shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts',
