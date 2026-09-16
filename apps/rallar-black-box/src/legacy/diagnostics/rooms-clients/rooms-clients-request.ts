@@ -1,11 +1,11 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    applyRallarServerEndpointPreset,
-    RALLAR_SERVER_ENDPOINT_PRESETS,
-    type RallarServerRestRequestInput,
-    type RallarServerWorkbenchVariables
-} from '../../../rallar-server-workbench.ts';
-import type { RallarServerEndpointPreset } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import { RALLAR_SERVER_ENDPOINT_PRESETS } from '../../../rallar-server-workbench/rallar-server-endpoint-presets.ts';
+import type {
+    RallarServerEndpointPreset,
+    RallarServerRestRequestInput,
+    RallarServerWorkbenchVariables
+} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import { toRallarServerEndpointDraft } from '../../../rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
 
 function rallarServerPresetById(presetId: string): RallarServerEndpointPreset {
     const preset = RALLAR_SERVER_ENDPOINT_PRESETS.find(
@@ -28,7 +28,7 @@ export function buildPresetRequestInput(
         attachAuth?: boolean;
     }>
 ): RallarServerRestRequestInput {
-    const draft = applyRallarServerEndpointPreset(
+    const draft = toRallarServerEndpointDraft(
         rallarServerPresetById(input.presetId),
         input.variables
     );
@@ -46,6 +46,7 @@ export function buildPresetRequestInput(
         responseBodyMode: draft.responseBodyMode,
         attachAuth: input.attachAuth ?? draft.attachAuth,
         authSession: input.authSession,
-        timeoutMs: input.timeoutMs
+        timeoutMs: input.timeoutMs,
+        forbidPlaceholderBaseUrl: false
     };
 }

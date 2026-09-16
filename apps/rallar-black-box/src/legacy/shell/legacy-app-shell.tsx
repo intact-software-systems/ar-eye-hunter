@@ -12,7 +12,7 @@ import type {
 } from './legacy-shell-contracts.ts';
 import { LegacyDiagnosticDrawer } from './LegacyDiagnosticDrawer.tsx';
 import { Header } from './LegacyRunHeader.tsx';
-import { DiagnosticEvidenceTabPanels } from './tabs/DiagnosticEvidenceTabPanels.tsx';
+import { DiagnosticEvidenceTabPanels } from './tabs/diagnostic-evidence-tab-panels.tsx';
 import { DirectConnectionTabPanels } from './tabs/direct-connection-tab-panels.tsx';
 import { DirectResourceTabPanels } from './tabs/DirectResourceTabPanels.tsx';
 import { RunnerWorkspaceTabPanels } from './tabs/runner-workspace-tab-panels.tsx';

@@ -125,7 +125,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const DIRECT_RALLAR_TAB_GROUPS = [
     'apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx',
     'apps/rallar-black-box/src/legacy/shell/tabs/DirectResourceTabPanels.tsx',
-    'apps/rallar-black-box/src/legacy/shell/tabs/DiagnosticEvidenceTabPanels.tsx'
+    'apps/rallar-black-box/src/legacy/shell/tabs/diagnostic-evidence-tab-panels.tsx'
 ].map((relativePath) => path.resolve(repositoryRoot, relativePath));
 const BLACK_BOX_RUNTIME_STORE = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/runtime-store.ts');
 const DIAGNOSTICS_SOURCE_ROOT = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/legacy/diagnostics');

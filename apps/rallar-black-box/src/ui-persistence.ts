@@ -2,9 +2,10 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 import type { AppModeId, AppTabId } from './app-tabs.ts';
 import { appModeFromValue, appTabFromValue } from './app-tabs.ts';
 import type { ManualDeliveryMode, ManualWorkbenchTransport, ManualWorkbenchValues } from './manual-workbench.ts';
-import type { RallarServerRestCollection, RallarServerRestCollectionVariables } from './rallar-server-workbench.ts';
 import type {
     RallarServerResponseBodyMode,
+    RallarServerRestCollection,
+    RallarServerRestCollectionVariables,
     RallarServerRestMethod
 } from './rallar-server-workbench/rallar-server-workbench-contracts.ts';
 

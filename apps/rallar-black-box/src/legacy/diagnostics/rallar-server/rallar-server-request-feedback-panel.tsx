@@ -1,5 +1,8 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { redactRallarServerText, redactRallarServerUrl } from '../../../rallar-server-workbench.ts';
+import {
+    redactRallarServerText,
+    redactRallarServerUrl
+} from '../../../rallar-server-workbench/redact-rallar-server-value.ts';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
 import type { RallarServerRequestFeedback } from './rallar-server-contracts.ts';
 

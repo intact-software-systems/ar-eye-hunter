@@ -2,7 +2,7 @@ import { EventStreamPanel } from '../../diagnostics/events/EventStreamPanel.tsx'
 import { ExecutionFocusPanel } from '../../diagnostics/events/ExecutionFocusPanel.tsx';
 import { RallarTracePanel } from '../../diagnostics/events/RallarTracePanel.tsx';
 import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
-import { RallarServerPanel } from '../../diagnostics/rallar-server/RallarServerPanel.tsx';
+import { RallarServerPanel } from '../../diagnostics/rallar-server/rallar-server-panel.tsx';
 import { CommandHistoryPanel } from '../../runner/advanced/CommandHistoryPanel.tsx';
 import { FailurePanel } from '../../runner/runs/FailurePanel.tsx';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';

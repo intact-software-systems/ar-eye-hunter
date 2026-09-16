@@ -329,10 +329,16 @@ actual shell execution to explicit local tooling or the control server.
   used by Rallar-mode UI actions.
 - `src/ui-persistence.ts`: reload-safe tab, selected-command, Manual Rallar,
   Event Stream, and Rallar Server draft persistence with storage-time redaction.
-- `src/rallar-server-workbench.ts`: request construction, endpoint presets, auth
-  header injection, response parsing, redaction, cURL export, black-box command
-  export, collection templates, variable substitution, assertions, extraction,
-  and collection recipe export for the Rallar Server tab.
+- `src/rallar-server-workbench/`: the Rallar Server tab owners. Endpoint presets
+  and drafts (`rallar-server-endpoint-presets.ts`,
+  `to-rallar-server-endpoint-draft.ts`, `to-rallar-server-workbench-variables.ts`),
+  request translation with auth header injection
+  (`decode-rallar-server-request-text.ts`, `to-rallar-server-rest-request.ts`),
+  sending and response parsing (`send-rallar-server-rest-request.ts`), redaction
+  (`redact-rallar-server-value.ts`), cURL and black-box command export, OpenAPI
+  endpoint reads, and the REST collection templates, variable substitution,
+  assertions, extraction, and recipe export. `rallar-server-workbench-contracts.ts`
+  holds their contracts.
 - `src/flow-builder/`: the Flow Builder tab owners. `flow-builder-contracts.ts`
   holds the authored flow and template contracts, `flow-builder-templates.ts`
   the templates, `flow-builder-steps.ts` flow-step insertion,

@@ -1,17 +1,20 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import { redactRallarServerUrl, redactRallarServerValue } from '../../../rallar-server-workbench.ts';
 import type {
     RallarServerResponseBodyMode,
     RallarServerRestMethod
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import {
+    redactRallarServerUrl,
+    redactRallarServerValue
+} from '../../../rallar-server-workbench/redact-rallar-server-value.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { redactedJson, uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { formatDuration } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import { RallarServerRequestFeedbackPanel } from './RallarServerRequestFeedbackPanel.tsx';
+import { RallarServerRequestFeedbackPanel } from './rallar-server-request-feedback-panel.tsx';
 import type { RallarServerControllerModel } from './use-rallar-server-controller.ts';
 
 export function RallarServerView({

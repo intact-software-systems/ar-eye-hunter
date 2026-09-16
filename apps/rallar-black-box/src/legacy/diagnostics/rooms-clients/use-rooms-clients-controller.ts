@@ -3,13 +3,13 @@ import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/s
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { configureDirectRallarFacade, createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
-import {
-    defaultRallarServerWorkbenchVariables,
-    executeRallarServerRestRequest,
-    toRallarServerBlackBoxCommand,
-    type RallarServerRestResponse,
-    type RallarServerWorkbenchVariables
-} from '../../../rallar-server-workbench.ts';
+import type {
+    RallarServerRestResponse,
+    RallarServerWorkbenchVariables
+} from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
+import { toRallarServerBlackBoxCommand } from '../../../rallar-server-workbench/to-rallar-server-black-box-command.ts';
+import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workbench/to-rallar-server-workbench-variables.ts';
 import { deriveRtcDiagnostics } from '../../../rtc-diagnostics.ts';
 import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
@@ -23,7 +23,7 @@ import {
     type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import { findStringDeep } from '../shared/deep-string-value.ts';
-import { restLogEntry, type CommandCenterRestActionLog } from '../shared/rest-action-log.ts';
+import { toRestActionLogEntry, type CommandCenterRestActionLog } from '../shared/to-rest-action-log-entry.ts';
 import {
     ROOMS_CLIENTS_ACTIONS,
     type ClientSortId,
@@ -62,22 +62,25 @@ export function useRoomsClientsController({
     const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
     const defaultVariables = useMemo(
         () =>
-            defaultRallarServerWorkbenchVariables({
-                applicationId: globalValues?.applicationId,
-                workspaceId: globalValues?.workspaceId,
-                principalId: globalValues?.clientId ??
-                    authSession?.clientId ??
-                    config?.actor ??
-                    bootstrap.actor,
-                sessionId: globalValues?.sessionId ??
-                    authSession?.sessionId ??
-                    config?.sessionId ??
-                    bootstrap.sessionId,
-                groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
-                username: authSession?.username ??
-                    globalValues?.clientId ??
-                    config?.actor ??
-                    bootstrap.actor
+            toRallarServerWorkbenchVariables({
+                hints: {
+                    applicationId: globalValues?.applicationId,
+                    workspaceId: globalValues?.workspaceId,
+                    principalId: globalValues?.clientId ??
+                        authSession?.clientId ??
+                        config?.actor ??
+                        bootstrap.actor,
+                    sessionId: globalValues?.sessionId ??
+                        authSession?.sessionId ??
+                        config?.sessionId ??
+                        bootstrap.sessionId,
+                    groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+                    username: authSession?.username ??
+                        globalValues?.clientId ??
+                        config?.actor ??
+                        bootstrap.actor
+                },
+                createOpaqueId: () => crypto.randomUUID()
             }),
         [
             authSession?.clientId,
@@ -235,8 +238,13 @@ export function useRoomsClientsController({
                     'Sending authenticated Rallar Server request.'
                 )
             );
-            const response = await executeRallarServerRestRequest(requestInput);
-            appendAction(restLogEntry(action.label, response));
+            const response = (await sendRallarServerRestRequest({ request: requestInput, fetch })).fold(
+                (message) => {
+                    throw new Error(message);
+                },
+                (sent) => sent
+            );
+            appendAction(toRestActionLogEntry(action.label, response));
             setActionFeedback(
                 completedActionFeedback({
                     label: action.label,
@@ -323,8 +331,13 @@ export function useRoomsClientsController({
                         `Running refresh step ${completed + 1}.`
                     )
                 );
-                const response = await executeRallarServerRestRequest(requestInput);
-                appendAction(restLogEntry(action.label, response));
+                const response = (await sendRallarServerRestRequest({ request: requestInput, fetch })).fold(
+                    (message) => {
+                        throw new Error(message);
+                    },
+                    (sent) => sent
+                );
+                appendAction(toRestActionLogEntry(action.label, response));
                 completed += 1;
                 if (!response.ok && !failedResponse) {
                     failedResponse = response;
@@ -565,9 +578,14 @@ export function useRoomsClientsController({
                 timeoutMs,
                 query: action.query
             });
-            return toRallarServerBlackBoxCommand(
-                input,
-                `rooms-clients-${index + 1}-${action.actionId}`
+            return toRallarServerBlackBoxCommand({
+                request: input,
+                commandId: `rooms-clients-${index + 1}-${action.actionId}`
+            }).fold(
+                (message) => {
+                    throw new Error(message);
+                },
+                (command) => command
             );
         });
         void navigator.clipboard?.writeText(
