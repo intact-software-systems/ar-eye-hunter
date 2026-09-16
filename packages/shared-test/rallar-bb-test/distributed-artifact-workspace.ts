@@ -76,7 +76,7 @@ interface WorkspaceAnalysis {
     readonly support: DistributedArtifactWorkspaceSupport;
     readonly issues: readonly DistributedArtifactWorkspaceIssue[];
     /** Absent when the artifacts hold no analyzable distributed run. */
-    readonly derived?: DistributedRunArtifactPipelineAnalysisResult;
+    readonly pipelineAnalysis?: DistributedRunArtifactPipelineAnalysisResult;
 }
 
 const MISSING_GENERATION_TIME_ISSUE: DistributedArtifactWorkspaceIssue = {
@@ -102,14 +102,14 @@ export function computeDistributedArtifactWorkspace(
         generatedAtEpochMs,
         support: identityIssues.length > 0 ? 'incompatible' : toAssessedWorkspaceSupport(parsed, family, schema)
     });
-    const { derived } = analysis;
+    const { pipelineAnalysis } = analysis;
     const workspace = {
         family,
         source: projection.source,
         support: analysis.support,
         generatedAtEpochMs,
         artifactSchemaVersion: schema.artifactSchemaVersion,
-        distributedRunId: derived?.analysis.distributedRunId ?? projection.distributedRunId,
+        distributedRunId: pipelineAnalysis?.analysis.distributedRunId ?? projection.distributedRunId,
         files: projection.files,
         inventory: schema.inventory,
         issues: [
@@ -118,11 +118,11 @@ export function computeDistributedArtifactWorkspace(
             ...identityIssues,
             ...analysis.issues
         ],
-        analysis: derived?.analysis,
-        snapshots: derived?.snapshots,
-        bundle: derived?.snapshots?.artifactBundle
+        analysis: pipelineAnalysis?.analysis,
+        snapshots: pipelineAnalysis?.snapshots,
+        bundle: pipelineAnalysis?.snapshots?.artifactBundle
     } satisfies DistributedArtifactWorkspace;
-    return { parsed, workspace, monitor: derived?.monitor, report: derived?.report };
+    return { parsed, workspace, monitor: pipelineAnalysis?.monitor, report: pipelineAnalysis?.report };
 }
 
 /** A caller version that contradicts the envelope clears the version; otherwise an unsupported version is flagged. */
@@ -262,16 +262,16 @@ function toDistributedRunWorkspaceAnalysis(
     generatedAtEpochMs: number
 ): WorkspaceAnalysis {
     const { parsed, schema, support } = analysisInput;
-    const derived = computeDistributedRunArtifactPipelineAnalysis({
+    const pipelineAnalysis = computeDistributedRunArtifactPipelineAnalysis({
         parsed,
         content,
         generatedAtEpochMs,
         artifactSchemaVersion: schema.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
     });
-    const identityConflict = toIdentityConflictIssue(parsed, derived.analysis);
+    const identityConflict = toIdentityConflictIssue(parsed, pipelineAnalysis.analysis);
     return identityConflict === undefined
-        ? { support, issues: [], derived }
-        : { support: 'incompatible', issues: [identityConflict], derived };
+        ? { support, issues: [], pipelineAnalysis }
+        : { support: 'incompatible', issues: [identityConflict], pipelineAnalysis };
 }
 
 function toAnalysisFailedIssue(rejection: DistributedRunArtifactRejection): DistributedArtifactWorkspaceIssue {
