@@ -1,3 +1,5 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 import type { ControlEventEnvelope, ControlResultEnvelope } from '../control-protocol.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
@@ -19,17 +21,23 @@ const RECORDER_OUTCOMES = ['SUCCESS', 'FAILURE'] as const;
 export function decodeJsonlControlResultEnvelope(
     value: unknown,
     runId: string
-): ControlResultEnvelope | undefined {
-    if (!isJsonRecordValue(value) || !isNonEmptyText(value.agentId)) {
-        return undefined;
+): Either<string, ControlResultEnvelope> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('the row must be a JSON object');
+    }
+    if (!isNonEmptyText(value.agentId)) {
+        return Either.ofLeft('agentId must be a non-empty string');
     }
     const commandId = decodeResultCommandId(value.commandId, value.resultKey);
+    if (commandId === undefined) {
+        return Either.ofLeft('commandId or an agentId:commandId resultKey must name the command');
+    }
     const ok = typeof value.ok === 'boolean' ? value.ok : decodeRecorderOutcome(value.status);
-    if (commandId === undefined || ok === undefined) {
-        return undefined;
+    if (ok === undefined) {
+        return Either.ofLeft('ok must be a boolean or status must be SUCCESS or FAILURE');
     }
     const error = ok ? undefined : decodeResultError(value.error ?? value.actual);
-    return {
+    return Either.ofRight({
         kind: 'result',
         protocolVersion: 1,
         runId,
@@ -39,27 +47,36 @@ export function decodeJsonlControlResultEnvelope(
         ...(isTestResult(value.result) ? { result: value.result } : {}),
         ...(error === undefined ? {} : { error }),
         ...(typeof value.replayed === 'boolean' ? { replayed: value.replayed } : {})
-    };
+    });
 }
 
 /** The recorder writes the control envelope kind as `status` and its payload as `value`. */
 export function decodeJsonlControlEventEnvelope(
     value: unknown,
     runId: string
-): ControlEventEnvelope | undefined {
-    if (!isJsonRecordValue(value) || !isNonEmptyText(value.agentId) || !isFiniteNumber(value.atEpochMs)) {
-        return undefined;
+): Either<string, ControlEventEnvelope> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('the row must be a JSON object');
+    }
+    if (!isNonEmptyText(value.agentId)) {
+        return Either.ofLeft('agentId must be a non-empty string');
+    }
+    if (!isFiniteNumber(value.atEpochMs)) {
+        return Either.ofLeft('atEpochMs must be a finite number');
     }
     const kind = isOneOf(value.kind, EVENT_ENVELOPE_KINDS)
         ? value.kind
         : isOneOf(value.status, EVENT_ENVELOPE_KINDS)
         ? value.status
         : undefined;
-    const payload = value.value !== undefined ? value.value : value.payload;
-    if (kind === undefined || payload === undefined) {
-        return undefined;
+    if (kind === undefined) {
+        return Either.ofLeft('kind or status must be event, diagnostic, stats or report');
     }
-    return {
+    const payload = value.value !== undefined ? value.value : value.payload;
+    if (payload === undefined) {
+        return Either.ofLeft('value or payload must carry the event payload');
+    }
+    return Either.ofRight({
         kind,
         protocolVersion: 1,
         runId,
@@ -68,7 +85,12 @@ export function decodeJsonlControlEventEnvelope(
         ...(isNonEmptyText(value.eventId) ? { eventId: value.eventId } : {}),
         ...(isNonEmptyText(value.commandId) ? { commandId: value.commandId } : {}),
         payload
-    };
+    });
+}
+
+/** The recorder mirrors every result into events.jsonl as a step-result row, which stands in for no event. */
+export function isJsonlResultMirrorRow(value: unknown): boolean {
+    return isJsonRecordValue(value) && value.kind === 'step-result';
 }
 
 function decodeResultCommandId(commandId: unknown, resultKey: unknown): string | undefined {

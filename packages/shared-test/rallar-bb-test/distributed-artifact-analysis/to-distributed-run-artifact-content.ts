@@ -8,6 +8,7 @@ import type {
 import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonlRows,
+    type ParsedDistributedArtifactJsonlRow,
     type ParsedDistributedArtifactPipeline
 } from '../distributed-artifact-pipeline.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
@@ -44,7 +45,11 @@ import {
     decodeDistributedRunRunnerSummary,
     type DistributedRunRunnerSummary
 } from './decode-distributed-run-runner-summary.ts';
-import { decodeJsonlControlEventEnvelope, decodeJsonlControlResultEnvelope } from './decode-jsonl-control-envelopes.ts';
+import {
+    decodeJsonlControlEventEnvelope,
+    decodeJsonlControlResultEnvelope,
+    isJsonlResultMirrorRow
+} from './decode-jsonl-control-envelopes.ts';
 
 export interface ControlPostFailureArtifact {
     readonly request: DistributedRunControlPostRequest;
@@ -71,7 +76,7 @@ export interface ControlPostFailureJsonBody {
 
 export interface DistributedRunBundleContent {
     readonly variant: 'distributed-run';
-    /** The optional evidence readings' warnings; an unavailable control run carries its own reason. */
+    /** The optional evidence readings' warnings, JSONL stand-ins included; an unavailable control run carries its own reason. */
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly controlRun: DistributedRunControlRunReading;
@@ -119,6 +124,11 @@ const CONTROL_POST_REQUEST_FILE = {
     fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME,
     contractName: 'a control request record'
 } as const;
+
+interface JsonlStandIn {
+    readonly fileName: string;
+    readonly envelopeName: string;
+}
 
 interface RecordedTargetResolution {
     /** Absent when target-resolution.json records null. */
@@ -182,12 +192,13 @@ function toBundleContent(
             );
             const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
             const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
+            const controlRun = toControlRunReading(parsed);
             return {
                 variant: 'distributed-run',
-                parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events]
+                parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events, controlRun]
                     .flatMap((reading) => reading.warnings),
                 distributedRun,
-                controlRun: toControlRunReading(parsed),
+                controlRun: controlRun.value,
                 ...(fleetReport.value === undefined ? {} : { fleetReport: fleetReport.value }),
                 ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
                 ...targetResolution.value,
@@ -198,46 +209,93 @@ function toBundleContent(
         });
 }
 
-function toControlRunReading(parsed: ParsedDistributedArtifactPipeline): DistributedRunControlRunReading {
+function toControlRunReading(
+    parsed: ParsedDistributedArtifactPipeline
+): ArtifactFileReading<DistributedRunControlRunReading> {
     const file = distributedArtifactPipelineFile(parsed, CONTROL_RUN_FILE.fileName);
     if (file.status === 'missing' || file.status === 'empty') {
         return {
-            status: 'unavailable',
-            reason: {
-                fileName: CONTROL_RUN_FILE.fileName,
-                message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
-            }
+            value: {
+                status: 'unavailable',
+                reason: {
+                    fileName: CONTROL_RUN_FILE.fileName,
+                    message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
+                }
+            },
+            warnings: []
         };
     }
     return toRequiredJsonFileValue(parsed, CONTROL_RUN_FILE, decodeControlRunSnapshot).fold(
-        (reason): DistributedRunControlRunReading => ({ status: 'unavailable', reason }),
-        (snapshot) => ({ status: 'recorded', snapshot: toControlRunWithJsonlEnvelopes(parsed, snapshot) })
+        (reason): ArtifactFileReading<DistributedRunControlRunReading> => ({
+            value: { status: 'unavailable', reason },
+            warnings: []
+        }),
+        (snapshot) => {
+            const withJsonlEnvelopes = toControlRunWithJsonlEnvelopes(parsed, snapshot);
+            return {
+                value: { status: 'recorded', snapshot: withJsonlEnvelopes.value },
+                warnings: withJsonlEnvelopes.warnings
+            };
+        }
     );
 }
 
 /**
  * An artifact import whose control-run.json holds no results or events carries that evidence in the
- * recorder JSONL files; rows that name their agent, command and outcome stand in for the envelopes.
+ * recorder JSONL files; rows that name their agent, command and outcome stand in for the envelopes and
+ * every other JSON object row is a warning.
  */
 function toControlRunWithJsonlEnvelopes(
     parsed: ParsedDistributedArtifactPipeline,
     controlRun: ControlRunSnapshot
-): ControlRunSnapshot {
-    const toRowValues = (fileName: string) =>
-        distributedArtifactPipelineJsonlRows(parsed, fileName).flatMap((row) =>
-            row.status === 'parsed' ? [row.value] : []
+): ArtifactFileReading<ControlRunSnapshot> {
+    const { runId } = controlRun;
+    const results = controlRun.results.length > 0
+        ? { value: controlRun.results, warnings: [] }
+        : toJsonlStandInEnvelopes(
+            distributedArtifactPipelineJsonlRows(parsed, 'results.jsonl'),
+            { fileName: 'results.jsonl', envelopeName: 'a control result' },
+            (row) => decodeJsonlControlResultEnvelope(row, runId)
+        );
+    const events = controlRun.events.length > 0
+        ? { value: controlRun.events, warnings: [] }
+        : toJsonlStandInEnvelopes(
+            distributedArtifactPipelineJsonlRows(parsed, 'events.jsonl')
+                .filter((row) => !isJsonlResultMirrorRow(row.value)),
+            { fileName: 'events.jsonl', envelopeName: 'a control event' },
+            (row) => decodeJsonlControlEventEnvelope(row, runId)
         );
     return {
-        ...controlRun,
-        results: controlRun.results.length > 0
-            ? controlRun.results
-            : toRowValues('results.jsonl').flatMap((row) =>
-                decodeJsonlControlResultEnvelope(row, controlRun.runId) ?? []
-            ),
-        events: controlRun.events.length > 0
-            ? controlRun.events
-            : toRowValues('events.jsonl').flatMap((row) => decodeJsonlControlEventEnvelope(row, controlRun.runId) ?? [])
+        value: { ...controlRun, results: results.value, events: events.value },
+        warnings: [...results.warnings, ...events.warnings]
     };
+}
+
+/** Rows that are not JSON objects already carry the evidence reader's warning, so only object rows are decoded. */
+function toJsonlStandInEnvelopes<Envelope>(
+    rows: readonly ParsedDistributedArtifactJsonlRow[],
+    standIn: JsonlStandIn,
+    decodeRow: (value: unknown) => Either<string, Envelope>
+): ArtifactFileReading<readonly Envelope[]> {
+    const envelopes: Envelope[] = [];
+    const warnings: DistributedRunArtifactParseWarning[] = [];
+    for (const row of rows) {
+        if (row.status !== 'parsed' || !isJsonRecordValue(row.value)) {
+            continue;
+        }
+        const decoded = decodeRow(row.value);
+        if (decoded.right !== undefined) {
+            envelopes.push(decoded.right);
+            continue;
+        }
+        warnings.push({
+            fileName: standIn.fileName,
+            lineNumber: row.lineNumber,
+            message:
+                `${standIn.fileName}:${row.lineNumber} cannot stand in for ${standIn.envelopeName}: ${decoded.left}.`
+        });
+    }
+    return { value: envelopes, warnings };
 }
 
 /** The runner summary and manifest are optional evidence of the run that was never created. */

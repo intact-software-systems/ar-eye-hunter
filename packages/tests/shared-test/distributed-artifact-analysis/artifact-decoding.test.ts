@@ -207,6 +207,71 @@ describe('distributed run artifact decoding', () => {
         expect(snapshots?.controlRun.events).toEqual([]);
     });
 
+    it('warns about JSONL rows that cannot stand in for control envelopes instead of dropping them silently', () => {
+        const files = toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-jsonl-stand-in',
+                controlRunId: 'run-jsonl-stand-in',
+                state: 'passed',
+                agentIds: ['agent-a']
+            }),
+            controlRun: createControlRunSnapshot({ runId: 'run-jsonl-stand-in', agents: [{ agentId: 'agent-a' }] }),
+            files: {
+                'results.jsonl': [
+                    JSON.stringify({ resultKey: 'agent-a:health', status: 'SUCCESS', agentId: 'agent-a' }),
+                    JSON.stringify({ status: 'FAILURE', action: 'rtc.send' }),
+                    JSON.stringify({ agentId: 'agent-a', commandId: 'wait', status: 'PENDING' })
+                ].join('\n'),
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'step-result',
+                        name: 'health',
+                        status: 'SUCCESS',
+                        agentId: 'agent-a',
+                        commandId: 'health'
+                    }),
+                    JSON.stringify({
+                        kind: 'runtime',
+                        status: 'event',
+                        agentId: 'agent-a',
+                        commandId: 'health',
+                        atEpochMs: 5,
+                        value: { message: 'loaded' }
+                    }),
+                    JSON.stringify({
+                        kind: 'rtc-diagnostic',
+                        agentId: 'agent-a',
+                        value: { severity: 'error', message: 'No RTC route.' }
+                    })
+                ].join('\n')
+            }
+        });
+
+        const analysis = analyzedRun(files);
+        const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
+
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'results.jsonl',
+                lineNumber: 2,
+                message: 'results.jsonl:2 cannot stand in for a control result: agentId must be a non-empty string.'
+            },
+            {
+                fileName: 'results.jsonl',
+                lineNumber: 3,
+                message: 'results.jsonl:3 cannot stand in for a control result: ok must be a boolean or status must be SUCCESS or FAILURE.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 3,
+                message: 'events.jsonl:3 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
+        expect(snapshots?.controlRun.results.map((result) => result.commandId)).toEqual(['health']);
+        expect(snapshots?.controlRun.events.map((event) => event.commandId)).toEqual(['health']);
+        expect(snapshots?.parseWarnings).toEqual(analysis.parseWarnings);
+    });
+
     it('rejects artifacts that hold neither a distributed run snapshot nor a failed control request record', () => {
         const analyzed = computeDistributedRunArtifactAnalysis({
             files: {
@@ -358,7 +423,13 @@ describe('distributed run artifact decoding', () => {
         const analysis = analyzedRun(passedRunFiles({
             'fleet-report.json': '{',
             'events.jsonl': [
-                JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
+                JSON.stringify({
+                    kind: 'runtime',
+                    status: 'event',
+                    agentId: 'agent-a',
+                    atEpochMs: 20,
+                    value: { severity: 'info', message: 'loaded' }
+                }),
                 '{not-json'
             ].join('\n')
         }));
@@ -378,7 +449,13 @@ describe('distributed run artifact decoding', () => {
     it('skips JSONL rows that are not JSON objects with a warning instead of counting them as evidence', () => {
         const analysis = analyzedRun(passedRunFiles({
             'events.jsonl': [
-                JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
+                JSON.stringify({
+                    kind: 'runtime',
+                    status: 'event',
+                    agentId: 'agent-a',
+                    atEpochMs: 20,
+                    value: { severity: 'info', message: 'loaded' }
+                }),
                 '42'
             ].join('\n')
         }));
@@ -446,5 +523,8 @@ describe('distributed run artifact decoding', () => {
         });
         expect(analysis.parseWarnings).toEqual([bundle.left]);
         expect(analysis.spa.verdict).toBeDefined();
+        const snapshots = toDistributedArtifactSnapshots(filesWithoutManifest, 456).right;
+        expect(snapshots?.artifactBundle).toBeUndefined();
+        expect(snapshots?.parseWarnings).toEqual([bundle.left]);
     });
 });

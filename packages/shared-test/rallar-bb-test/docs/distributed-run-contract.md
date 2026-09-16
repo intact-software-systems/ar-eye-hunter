@@ -387,11 +387,17 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   A fact the artifacts do not record stays absent — without a fleet report the
   missing, stale and flaky agent counts are unknown, not zero. JSONL rows stand
   in for control-run results or events only when `control-run.json` holds
-  none.
+  none. A result row stands in when it names its agent, command and outcome; an
+  event row also needs its time, envelope kind and payload. Every other JSON
+  object row is a parse warning naming the file, the line and the missing field,
+  except the `step-result` rows the recorder mirrors into `events.jsonl`, which
+  stand in for no event.
 - `toDistributedArtifactBundle` and `toDistributedArtifactSnapshots` return the
   same rejections. Snapshots need the control run, so
   `toDistributedArtifactSnapshots` also rejects with the control-run.json warning
   when that file is unavailable, and a bundle needs `control-run.json` text.
+  Snapshots carry the same `parseWarnings` as the analysis, including the
+  rejection that explains a missing `artifactBundle`.
   `computeDistributedArtifactWorkspace` reports rejections as workspace issues
   (`analysis-failed`, `control-request-failure`, `missing-generation-time`); a
   workspace without a usable `control-run.json` carries the analysis but no

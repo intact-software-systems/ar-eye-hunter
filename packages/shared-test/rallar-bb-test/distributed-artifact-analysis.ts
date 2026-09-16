@@ -274,8 +274,10 @@ export interface DistributedRunSnapshots {
 }
 
 export interface DistributedRunArtifactSnapshots extends DistributedRunSnapshots {
-    /** Absent when the artifact files cannot form a bundle; the analysis warnings say why. */
+    /** Absent when the artifact files cannot form a bundle; parseWarnings says why. */
     readonly artifactBundle?: ControlDistributedRunArtifactBundle;
+    /** The artifact warnings of the files these snapshots were read from, the bundle rejection included. */
+    readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
 }
 
 /** The analysis of artifacts that record a failed control request instead of a distributed run. */
@@ -453,7 +455,8 @@ function toArtifactSnapshots(
     return Either.ofRight({
         distributedRun: content.distributedRun,
         controlRun: content.controlRun.snapshot,
-        ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right })
+        ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right }),
+        parseWarnings: [...content.parseWarnings, ...(bundle.left ? [bundle.left] : [])]
     });
 }
 

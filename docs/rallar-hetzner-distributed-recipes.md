@@ -294,7 +294,8 @@ report, the agent count). No `performance.md` is written.
 When `control-run.json` holds no results or events, `results.jsonl` and
 `events.jsonl` rows that name their agent, command and outcome stand in for
 them; the analysis never invents command links or placeholder identities from
-those rows.
+those rows. A row that cannot stand in is a parse warning naming its line and
+the missing field.
 
 ## Success Handling
 
