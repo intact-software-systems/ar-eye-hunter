@@ -1,6 +1,10 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessageHandle, RallarTypedMessageSendOptions } from '@shared-web/browser/rallar.ts';
-import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    AL_DELIVERY_ADMITTED_STATES,
+    type ALDeliveryLifecycle,
+    type ALDeliveryUnroutableReason
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -27,19 +31,26 @@ export namespace BlackBoxRallarDeliveryLedger {
     }
 }
 
+const BACKPRESSURE_ADMISSION_REASONS: readonly ALDeliveryUnroutableReason[] = ['rate-limited', 'circuit-open'];
+
 /** A handle the registry never held or has evicted reads with no evidence, as if this page never sent it. */
 export function toDeliveryObservation(
     handleId: string,
     lifecycle: ALDeliveryLifecycle | undefined
 ): BlackBoxRallarDeliveryObservation {
+    const attempts = lifecycle?.evidence.attempts ?? [];
     return {
         handleId,
         state: lifecycle?.state ?? 'unobservable',
-        submitted: lifecycle?.evidence.attempts.some((attempt) => attempt.submissionAttempted) ?? false,
+        submitted: attempts.some((attempt) => attempt.submissionAttempted),
         confirmedHopPeerIds: lifecycle?.evidence.confirmedHopPeerIds ?? [],
         unconfirmedHopPeerIds: lifecycle?.evidence.unconfirmedHopPeerIds ?? [],
-        attempts: lifecycle?.evidence.attempts.length ?? 0,
-        reason: lifecycle?.evidence.reason
+        attempts: attempts.length,
+        reason: lifecycle?.evidence.reason,
+        backpressured: attempts.some((attempt) =>
+            attempt.unroutableReason !== undefined && BACKPRESSURE_ADMISSION_REASONS.includes(attempt.unroutableReason)
+        ),
+        enqueued: lifecycle?.evidence.admittedDurable === true
     };
 }
 

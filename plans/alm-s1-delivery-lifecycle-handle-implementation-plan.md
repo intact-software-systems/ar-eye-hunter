@@ -185,6 +185,9 @@ export type ALDeliveryAttemptOutcome =
     | 'superseded'
     | 'unroutable';
 
+/** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
+export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
+
 export type ALDeliveryAdmissionVerdict =
     | Readonly<{ kind: 'admitted'; durable: boolean; queuedAttempts: number; }>
     | Readonly<{ kind: 'duplicate'; }>
@@ -198,7 +201,7 @@ export type ALDeliveryAdmissionVerdict =
     }>
     | Readonly<{
         kind: 'unroutable';
-        reason: 'no-route' | 'rate-limited' | 'circuit-open';
+        reason: ALDeliveryUnroutableReason;
         detail: string;
     }>
     | Readonly<{ kind: 'superseded'; detail: string; }>
@@ -274,12 +277,16 @@ export interface ALDeliveryAttempt {
     readonly outcome: ALDeliveryAttemptOutcome | undefined;
     readonly submissionAttempted: boolean;
     readonly detail: string | undefined;
+    /** Undefined on a carrier attempt: only an `unroutable` admission row states a reason. */
+    readonly unroutableReason: ALDeliveryUnroutableReason | undefined;
 }
 
 export interface ALDeliveryEvidence {
     readonly submittedAtMs: number;
     /** Undefined until an `admitted` or `duplicate` verdict. */
     readonly admittedAtMs: number | undefined;
+    /** Undefined until an `admitted` verdict: a duplicate states nothing about the durability of the original. */
+    readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
     readonly confirmedHopPeerIds: readonly string[];
     readonly unconfirmedHopPeerIds: readonly string[];
@@ -328,12 +335,12 @@ evidence appended — the state never changes):
 
 | Settlement                                                                                   | Result                                                                                                                                                                                                                                                                                     |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `admission` `admitted`                                                                       | `queued` when `queuedAttempts > 0`, else `accepted`; `evidence.admittedAtMs = atMs`                                                                                                                                                                                                        |
-| `admission` `duplicate`                                                                      | `accepted`; `admittedAtMs = atMs`                                                                                                                                                                                                                                                          |
+| `admission` `admitted`                                                                       | `queued` when `queuedAttempts > 0`, else `accepted`; `evidence.admittedAtMs = atMs`, `evidence.admittedDurable = durable`                                                                                                                                                                  |
+| `admission` `duplicate`                                                                      | `accepted`; `admittedAtMs = atMs`; `admittedDurable` unchanged, because a duplicate states nothing about the durability of the original admission                                                                                                                                          |
 | `admission` `pending`                                                                        | unchanged (`submitted` or `pending-authority`)                                                                                                                                                                                                                                             |
 | `admission` `deferred`                                                                       | `pending-authority`; `reason` stays undefined (non-terminal)                                                                                                                                                                                                                               |
 | `admission` `refused`                                                                        | `rejected`; `reason = detail`                                                                                                                                                                                                                                                              |
-| `admission` `unroutable`                                                                     | state unchanged; one attempt appended with `attemptId = admission:${carrier}:${atMs}`, `outcome: 'unroutable'`, `submissionAttempted: false`, `settledAtMs = atMs`                                                                                                                         |
+| `admission` `unroutable`                                                                     | state unchanged; one attempt appended with `attemptId = admission:${carrier}:${atMs}`, `outcome: 'unroutable'`, `submissionAttempted: false`, `settledAtMs = atMs`, `unroutableReason = reason`                                                                                            |
 | `admission` `superseded` / `expired` / `failed`                                              | `superseded` / `expired` / `failed`; `reason = detail`                                                                                                                                                                                                                                     |
 | `admission` `skipped`                                                                        | `failed`; `reason = detail` (a disposed owner admitted nothing: honest as `failed`, not `cancelled`, because the caller did not cancel)                                                                                                                                                    |
 | `attempts-exhausted`                                                                         | `failed`; `reason = detail`                                                                                                                                                                                                                                                                |
@@ -351,6 +358,12 @@ Terminal states: `rejected`, `acknowledged`, `expired`, `superseded`, `failed`, 
 `unobservable`, and `transport-accepted` when `ackMode === 'none'`. An `attempt-settled` whose
 `attemptId` is unknown appends a row (the observer may have opened after the start); an
 `attempt-started` whose id already exists leaves the row alone.
+
+The evidence keeps the two admission facts the verdict carries and the state cannot recover:
+`admittedDurable`, because a durable admission and a volatile one both read `accepted`, and
+`unroutableReason` on the synthetic admission row, because a rate-limited carrier, an open circuit
+and a carrier with no peer all read `unroutable`. Every later observer reads them from the evidence
+rather than from a second channel of its own.
 
 - [ ] **Step 1: Write the failing tests.** One `it.each` per table row over both `ackMode: 'none'` and
       `ackMode: 'receiver'`, plus: the terminal guard (a `sent` after `cancelled` leaves `cancelled`
@@ -1056,10 +1069,12 @@ and references so serialization preserves nested validation through control and 
 **Interfaces:**
 
 - Consumes: `RallarMessageHandle`, `AL_DELIVERY_STATES`, `AL_DELIVERY_ADMITTED_STATES`, `ALDeliveryState`.
-- Produces: `BlackBoxRallarDeliveryObservation { handleId; state: ALDeliveryState; submitted: boolean; confirmedHopPeerIds; unconfirmedHopPeerIds; attempts: number; reason: string | undefined; }`
+- Produces: `BlackBoxRallarDeliveryObservation { handleId; state: ALDeliveryState; submitted: boolean; confirmedHopPeerIds; unconfirmedHopPeerIds; attempts: number; reason: string | undefined; backpressured: boolean; enqueued: boolean; }`
   (the two peer lists renamed per D9 across the contract, the adapter decoder, the recipe result type,
   the schema capability prose, the corpus, and the doc; `attempts = lifecycle.evidence.attempts.length`;
-  `submitted = attempts.some((attempt) => attempt.submissionAttempted)`);
+  `submitted = attempts.some((attempt) => attempt.submissionAttempted)`;
+  `backpressured = attempts.some((attempt) => attempt.unroutableReason is 'rate-limited' or 'circuit-open')`,
+  `enqueued = lifecycle.evidence.admittedDurable === true`);
   `BlackBoxRallarMessageSendDiagnostics.status: ALDeliveryState` (the state after admission),
   `.message` removed, `.reason` from the evidence; the `hasMessageAdmission` port,
   `hasBlackBoxBrowserMessageAdmission`, `DELIVERY_POLL_INTERVAL_MS`, `PendingMessageAdmission`,
@@ -1074,6 +1089,14 @@ and returns the observation; `readReceipts` reads the observation; an unknown `h
 observation with `state: 'unobservable'`, `attempts: 0`, empty lists (the page-reload case, D13) instead
 of throwing; `resetDeliveryLedger` is deleted with its reconnect call: handles outlive a reconnect
 because the registry does, and the doc sentence "Connecting clears it" goes with it.
+
+The recipe-side send vocabulary becomes a projection of the same evidence rather than a second
+account of it: a `messages.rtc` send and an `rtc.stream` frame report `queued` from the lifecycle
+state, `enqueued` from `admittedDurable`, and `backpressured` from an `unroutableReason` of
+`rate-limited` or `circuit-open` — never from `no-route`, which is an absent peer, not a full one.
+`failOnBackpressure` and `maxBackpressureCount` keep the semantics they have on main and become
+observable for the first time, because the page runtime's own status could only say `sent` or
+`no-peers`.
 
 - [ ] **Step 1: Failing tests.** Move the ledger cases to the dedicated browser-runtime delivery
       suite and exercise the actual session registry and production sender. Prove send → observe

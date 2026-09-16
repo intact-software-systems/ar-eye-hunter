@@ -18,6 +18,9 @@ export interface RtcSendDeliveryResult {
     readonly diagnostics: RallarBlackBoxTestRecord;
     readonly state: ALDeliveryState;
     readonly reason: string | undefined;
+    /** The admission facts the page runtime projected from the handle; absent evidence reads false. */
+    readonly backpressured: boolean;
+    readonly enqueued: boolean;
 }
 
 export interface RtcSendLaneResult {
@@ -121,10 +124,17 @@ export function toRtcSendObservation(input: RtcSendObservationInput): RallarBlac
         ok: input.ok,
         status,
         queued: status === 'queued',
+        enqueued: input.result.kind === 'delivery' && input.result.enqueued,
+        backpressured: isRtcSendBackpressured(input.result),
         droppedPayloadCount: droppedPayloadCount > 0 ? droppedPayloadCount : undefined,
         replacedPayloadCount: replacedPayloadCount > 0 ? replacedPayloadCount : undefined,
         errorCode: input.errorCode
     };
+}
+
+/** A lane send has no admission of its own, so only a typed delivery can report carrier backpressure. */
+export function isRtcSendBackpressured(result: RtcSendResult): boolean {
+    return result.kind === 'delivery' && result.backpressured;
 }
 
 function decodeRtcSendDelivery(
@@ -141,7 +151,14 @@ function decodeRtcSendDelivery(
             diagnostics
         );
     }
-    return Either.ofRight({ kind: 'delivery', diagnostics, state, reason });
+    return Either.ofRight({
+        kind: 'delivery',
+        diagnostics,
+        state,
+        reason,
+        backpressured: isBlackBoxCommandRecord(message) && message.backpressured === true,
+        enqueued: isBlackBoxCommandRecord(message) && message.enqueued === true
+    });
 }
 
 function decodeRtcSendLane(diagnostics: RallarBlackBoxTestRecord): Either<RallarBlackBoxTestError, RtcSendLaneResult> {

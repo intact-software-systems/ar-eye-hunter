@@ -290,6 +290,10 @@ export interface BlackBoxRallarDeliveryObservation {
     readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
     readonly reason: string | undefined;
+    /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
+    readonly backpressured: boolean;
+    /** The message reached a durable carrier queue, which is what a persistent admission promises. */
+    readonly enqueued: boolean;
 }
 
 export interface BlackBoxRallarDeliveryHandleInput {

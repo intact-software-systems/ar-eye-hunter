@@ -26,7 +26,12 @@ import type { CommandWithId, RallarBlackBoxBrowserRallarRuntime } from './browse
 import { requireBrowserCommandRuntime, type BrowserCommandEnvironment } from './browser-command-environment.ts';
 import { replaceCommandPlaceholders } from './browser-command-placeholders.ts';
 import { toPositiveInteger } from './browser-command-values.ts';
-import { decodeRtcSendResult, toRtcSendFailure, toRtcSendStatus } from './browser-rtc-send-observation.ts';
+import {
+    decodeRtcSendResult,
+    isRtcSendBackpressured,
+    toRtcSendFailure,
+    toRtcSendStatus
+} from './browser-rtc-send-observation.ts';
 import { decodeRtcSendPayload, toScopedRtcSend } from './to-scoped-rtc-send.ts';
 
 type RtcStreamCommand = Extract<CommandWithId, { kind: 'rtc.stream'; }>;
@@ -38,6 +43,11 @@ interface StreamFrame {
     readonly scheduledAtEpochMs: number;
     readonly startedAtEpochMs: number;
 }
+
+type StreamFrameOutcome = Pick<
+    RallarBlackBoxTestRtcStreamFrameObservation,
+    'ok' | 'status' | 'backpressured' | 'errorCode'
+>;
 
 interface UnsentFrameEnd {
     readonly completedAtEpochMs: number;
@@ -198,11 +208,16 @@ export class BrowserRtcStream {
             const completedAtEpochMs = this.environment.now();
             this.observations.push({
                 ...toFrameTiming(frame, completedAtEpochMs),
-                ...decoded.fold<Pick<RallarBlackBoxTestRtcStreamFrameObservation, 'ok' | 'status' | 'errorCode'>>(
-                    (invalid) => ({ ok: false, status: undefined, errorCode: invalid.code }),
+                ...decoded.fold<StreamFrameOutcome>(
+                    (invalid) => ({ ok: false, status: undefined, backpressured: false, errorCode: invalid.code }),
                     (result) => {
                         const failure = toRtcSendFailure(result);
-                        return { ok: failure === undefined, status: toRtcSendStatus(result), errorCode: failure?.code };
+                        return {
+                            ok: failure === undefined,
+                            status: toRtcSendStatus(result),
+                            backpressured: isRtcSendBackpressured(result),
+                            errorCode: failure?.code
+                        };
                     }
                 )
             });

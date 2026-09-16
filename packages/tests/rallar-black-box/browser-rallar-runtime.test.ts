@@ -70,6 +70,38 @@ async function withBrowserRuntimeTiming(
     }
 }
 
+async function connectMessagesRtcRuntime(nativeRuntime: BlackBoxRallarRuntime): Promise<void> {
+    await nativeRuntime.connect({
+        connection: 'aliceRtc',
+        roomId: 'awesome',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1',
+            username: 'alice',
+            password: 'secret',
+            transport: 'messages.rtc',
+            typeId: 'manual.type'
+        }
+    });
+}
+
+/** The carrier refuses admission and the sender has no carrier left, the way the dispatch settles it. */
+function mockUnroutableRtcMessageSend(reason: 'rate-limited' | 'circuit-open' | 'no-route'): void {
+    const detail = `${reason} at the rtc carrier`;
+    facade.behavior.rtcMessageSend.mockImplementation(async () => {
+        const handle = openFacadeDelivery('rtc', { kind: 'unroutable', reason, detail });
+        facade.deliveries.record({
+            kind: 'attempts-exhausted',
+            msgId: handle.msgId,
+            carrier: 'rtc',
+            atMs: Date.now(),
+            detail
+        });
+        return handle;
+    });
+}
+
 describe('rallar-black-box SPA browser-rallar runtime', () => {
     it('returns browser runtime results through the SPA bridge', async () => {
         await withBrowserRuntime(async () => {
@@ -1358,6 +1390,63 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 { ok: false, errorCode: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' },
                 { ok: false, errorCode: 'RALLAR_BB_RTC_INVALID_SEND_RESULT' }
             ]
+        });
+    });
+
+    it('projects a rate-limited messages.rtc admission as backpressured and fails a loop with failOnBackpressure', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            await connectMessagesRtcRuntime(nativeRuntime);
+            mockUnroutableRtcMessageSend('rate-limited');
+            const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
+
+            const result = await runtime.execute({
+                kind: 'loop',
+                commandId: 'loop-rate-limited',
+                count: 1,
+                continueOnFailure: true,
+                thresholds: { failOnBackpressure: true },
+                commands: [{
+                    kind: 'rtc.send',
+                    connection: 'aliceRtc',
+                    transport: 'messages.rtc',
+                    send: { roomId: 'awesome', typeId: 'manual.type', payload: { text: 'frame' } }
+                }]
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.value).toMatchObject({
+                sends: {
+                    backpressureCount: 1,
+                    observations: [{ backpressured: true, enqueued: false, queued: false }]
+                },
+                thresholdFailures: [{ name: 'failOnBackpressure', category: 'backpressure' }]
+            });
+        });
+    });
+
+    it('counts a circuit-open rtc.stream frame toward maxBackpressureCount and fails above the threshold', async () => {
+        await withBrowserRuntime(async (nativeRuntime) => {
+            await connectMessagesRtcRuntime(nativeRuntime);
+            mockUnroutableRtcMessageSend('circuit-open');
+            const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
+
+            const result = await runtime.execute({
+                kind: 'rtc.stream',
+                commandId: 'stream-circuit-open',
+                connection: 'aliceRtc',
+                transport: 'messages.rtc',
+                count: 2,
+                intervalMs: 1,
+                thresholds: { maxBackpressureCount: 0 },
+                send: { roomId: 'awesome', typeId: 'manual.type', payload: { seq: '{stream.index}' } }
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.value).toMatchObject({
+                backpressureCount: 2,
+                observations: [{ backpressured: true }, { backpressured: true }],
+                thresholdFailures: [{ name: 'maxBackpressureCount', category: 'backpressure' }]
+            });
         });
     });
 

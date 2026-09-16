@@ -149,8 +149,12 @@ its current lifecycle without waiting. The shared states are `submitted`,
 `rejected`, `pending-authority`, `accepted`, `queued`, `transport-accepted`,
 `acknowledged`, `expired`, `superseded`, `failed`, `cancelled`, and `unobservable`.
 Carrier settlements update the handle directly. Observations include
-`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`, and
-`reason`. The peer lists describe hop acknowledgements, not logical recipients.
+`submitted`, `attempts`, `confirmedHopPeerIds`, `unconfirmedHopPeerIds`,
+`reason`, `backpressured`, and `enqueued`. The peer lists describe hop
+acknowledgements, not logical recipients. `backpressured` is true when a carrier
+refused admission for its own rate limit or open circuit, never when it simply
+had no peer; `enqueued` is true once a durable admission put the message in a
+carrier queue.
 A terminal state ends a wait even when it was not requested; a true timeout
 reports the last state. A send waits for admission until the earlier of the
 command's timeout and absolute deadline (5,000 ms when it names neither, zero

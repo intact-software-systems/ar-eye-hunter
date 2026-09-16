@@ -36,7 +36,9 @@ const unknownObservation = {
     attempts: 0,
     confirmedHopPeerIds: [],
     unconfirmedHopPeerIds: [],
-    reason: undefined
+    reason: undefined,
+    backpressured: false,
+    enqueued: false
 };
 
 function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined) {
@@ -90,7 +92,9 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         attempts: 0,
         confirmedHopPeerIds: [],
         unconfirmedHopPeerIds: [],
-        reason: undefined
+        reason: undefined,
+        backpressured: false,
+        enqueued: true
     });
     const before = events.slice();
     delivery.registry.record({ kind: 'attempt-started', msgId: delivery.msgId, carrier: 'ws', atMs: Date.now(), attemptId: 'attempt-1' });
@@ -201,6 +205,44 @@ it.each([new Error('ws lane closed'), new RallarValidationError('Invalid payload
         expect(await runtime.readReceipts(query)).toMatchObject({ state: 'unobservable', attempts: 0 });
     }
 );
+
+it('projects a durable admission as enqueued and a queued admission as queued', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+
+    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', enqueued: true, backpressured: false });
+});
+
+it('projects a non-durable admission as accepted without calling it enqueued', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 0 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+
+    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'accepted', enqueued: false, backpressured: false });
+});
+
+it.each([
+    { reason: 'rate-limited' as const, backpressured: true },
+    { reason: 'circuit-open' as const, backpressured: true },
+    { reason: 'no-route' as const, backpressured: false }
+])('reads an unroutable $reason admission as backpressured=$backpressured', async ({ reason, backpressured }) => {
+    const runtime = await loadRuntime();
+    const detail = `${reason} at the ws carrier`;
+    facade.behavior.typedSend.mockImplementation(async () => {
+        const handle = openFacadeDelivery('ws', { kind: 'unroutable', reason, detail });
+        facade.deliveries.record({ kind: 'attempts-exhausted', msgId: handle.msgId, carrier: 'ws', atMs: Date.now(), detail });
+        return handle;
+    });
+    await runtime.connect(connection);
+    await runtime.sendMessage(send);
+
+    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'failed', backpressured, enqueued: false });
+});
 
 it('reads a handle the session registry dropped after terminal retention as unobservable', async () => {
     vi.setSystemTime(1_000);
