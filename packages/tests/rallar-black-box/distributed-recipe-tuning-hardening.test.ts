@@ -1,7 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { toControlEventEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
-import { decodeDistributedRunResultEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
-import { computeDistributedRunPerformance } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
 import {
     computeDistributedRunArtifactAnalysis,
     inventoryDistributedRunTuningKnobs,
@@ -140,7 +137,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         expect(outer?.manifest.controlRunId).toBe('manifest-control');
     });
 
-    it('does not double count normalized fallback and explicit RTC results', () => {
+    it('counts a results.jsonl stream row once when the same row stands in for a control result', () => {
         const result = {
             resultKey: 'stream-result-a',
             agentId: 'agent-a',
@@ -183,21 +180,9 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             [result]
         );
         const snapshots = toDistributedArtifactSnapshots(artifactFiles, 2_000).right;
-        if (!snapshots) {
-            throw new Error('Expected decoded snapshots.');
-        }
-        const resultEvidence = decodeDistributedRunResultEvidence(result);
-        if (!resultEvidence) {
-            throw new Error('Expected result evidence.');
-        }
-        const performance = computeDistributedRunPerformance({
-            ...snapshots,
-            results: [resultEvidence],
-            events: snapshots.controlRun.events.map(toControlEventEvidence)
-        });
 
-        expect(performance).toEqual(analyzedPerformance(artifactFiles));
-        expect(performance.streamTiming).toMatchObject({
+        expect(snapshots?.controlRun.results.map((envelope) => envelope.commandId)).toEqual(['stream-a']);
+        expect(analyzedPerformance(artifactFiles).streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 3,
             completedFrames: 2,

@@ -32,7 +32,37 @@ export * from './control-snapshots.ts';
 export * from './control/validate-rallar-black-box-test-command.ts';
 export * from './create-rallar-black-box-browser-test-runtime.ts';
 export * from './diagnostics.ts';
-export * from './distributed-artifact-analysis.ts';
+export {
+    computeDistributedRunArtifactAnalysis,
+    type DistributedRunAnalysis,
+    type DistributedRunAnalysisGroup,
+    type DistributedRunAnalysisInput,
+    type DistributedRunAnalysisSections,
+    type DistributedRunAnalysisSummary,
+    type DistributedRunArtifactAnalysis,
+    type DistributedRunArtifactFiles,
+    type DistributedRunArtifactParseWarning,
+    type DistributedRunArtifactRejection,
+    type DistributedRunArtifactSnapshots,
+    type DistributedRunControlRequestFailureAnalysis,
+    type DistributedRunFailedAnalysis,
+    type DistributedRunFailureAnalysis,
+    type DistributedRunLowestReceiver,
+    type DistributedRunPassedAnalysis,
+    type DistributedRunPerformanceAnalysis,
+    type DistributedRunReceiverDelivery,
+    type DistributedRunSlowestAgent,
+    type DistributedRunSlowestStreamAgent,
+    type DistributedRunSnapshots,
+    type DistributedRunSpaAnalysis,
+    type DistributedRunStreamTiming,
+    type DistributedRunTargetResolutionAnalysis,
+    type DistributedRunTimingSummary,
+    toDistributedArtifactBundle,
+    toDistributedArtifactSnapshots
+} from './distributed-artifact-analysis.ts';
+export type { DistributedRunControlPostRequest } from './distributed-artifact-analysis/decode-control-post-request.ts';
+export type { DistributedRunRunnerSummary } from './distributed-artifact-analysis/decode-distributed-run-runner-summary.ts';
 export * from './distributed-artifact-evidence.ts';
 export * from './distributed-artifact-pipeline.ts';
 export type {
@@ -98,7 +128,7 @@ export * from './distributed-run-monitor.ts';
 export * from './distributed-run-observation/distributed-recipe-state-tone.ts';
 export * from './distributed-run-observation/distributed-run-row-contracts.ts';
 export * from './distributed-run-observation/validate-distributed-run-artifact.ts';
-export * from './distributed-run-performance/compute-distributed-run-performance.ts';
+export { computeDistributedRunSnapshotPerformance } from './distributed-run-performance/compute-distributed-run-performance.ts';
 export * from './distributed-run-tuning-candidate.ts';
 export * from './distributed-run-tuning-decisions.ts';
 export * from './distributed-run-tuning.ts';
