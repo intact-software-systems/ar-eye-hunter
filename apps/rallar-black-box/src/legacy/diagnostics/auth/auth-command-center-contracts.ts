@@ -51,8 +51,8 @@ export interface AuthCommandCenterOperations {
     negativeWsTicket(): Promise<void>;
     expiredWsTicket(): Promise<void>;
     negativeLogin(): Promise<void>;
-    copyDiagnostics(): void;
-    copyRecipe(): void;
+    copyDiagnostics(): Promise<void>;
+    copyRecipe(): Promise<void>;
 }
 
 export interface AuthCommandCenterModel

@@ -92,14 +92,14 @@ export interface RallarServerRequestOperations {
     applyPreset(preset: RallarServerEndpointPreset): void;
     sendRequest(): Promise<void>;
     refreshOpenApi(): Promise<void>;
-    copyCurl(): void;
-    copyCommand(): void;
+    copyCurl(): Promise<void>;
+    copyCommand(): Promise<void>;
 }
 
 export interface RallarServerCollectionOperations {
     applyCollectionTemplate(collectionId: string): void;
     addCurrentRequestToCollection(): void;
     runCollection(): Promise<void>;
-    copyCollection(): void;
-    copyCollectionRecipe(): void;
+    copyCollection(): Promise<void>;
+    copyCollectionRecipe(): Promise<void>;
 }

@@ -57,6 +57,19 @@ function RallarServerHarness(props: { input: UseRallarServerControllerInput; cap
     return null;
 }
 
+const CLIPBOARD_FAILURES = [
+    {
+        name: 'an unavailable clipboard',
+        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
+        error: 'Clipboard access is unavailable in this browser.'
+    },
+    {
+        name: 'a rejected copy',
+        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
+        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
+    }
+];
+
 describe('Rallar Server controller preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
@@ -391,5 +404,20 @@ describe('Rallar Server controller preservation', () => {
             bodyLeaks: false,
             headers: 'application/json'
         });
+    });
+
+    it.each(
+        CLIPBOARD_FAILURES.flatMap((failure) => [
+            { ...failure, copy: 'copyCurl' as const, shown: 'localError' as const },
+            { ...failure, copy: 'copyCommand' as const, shown: 'localError' as const },
+            { ...failure, copy: 'copyCollection' as const, shown: 'collectionError' as const },
+            { ...failure, copy: 'copyCollectionRecipe' as const, shown: 'collectionError' as const }
+        ])
+    )('shows $name through $shown when $copy cannot write', async ({ arrange, copy, shown, error }) => {
+        await render();
+        arrange();
+        await act(async () => view[copy]());
+
+        expect({ shown: view[shown], copies: copied.length }).toEqual({ shown: error, copies: 0 });
     });
 });

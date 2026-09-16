@@ -10,7 +10,7 @@ interface FlowBuilderEditorProps {
     normalizeFlowJson(): void;
     runFlow(): Promise<void>;
     readonly recipe: RallarBlackBoxTestRecipe | undefined;
-    copyText(text: string): void;
+    copyText(text: string): Promise<void>;
     readonly recipeText: string;
     readonly runnerText: string;
     readonly runnerScenario: FlowBuilderRunnerScenario | undefined;
@@ -83,14 +83,14 @@ export function FlowBuilderEditor({
                 </button>
                 <button
                     type="button"
-                    onClick={() => copyText(recipeText)}
+                    onClick={() => void copyText(recipeText)}
                     disabled={!recipe}
                 >
                     Copy SPA Recipe
                 </button>
                 <button
                     type="button"
-                    onClick={() => copyText(runnerText)}
+                    onClick={() => void copyText(runnerText)}
                     disabled={!runnerScenario}
                 >
                     Copy Runner Scenario

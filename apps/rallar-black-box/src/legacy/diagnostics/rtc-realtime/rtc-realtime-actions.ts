@@ -6,6 +6,7 @@ import type * as React from 'react';
 import { parseJsonText, splitCsvValues } from '../../shared/json-presentation.ts';
 import { recordValue } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import {
     completedActionFeedback,
@@ -171,13 +172,17 @@ export class RtcRealtimeActions implements RtcRealtimeOperations {
                 })
         );
 
-    readonly copyRecipe = (): void => {
+    readonly copyRecipe = (): Promise<void> => {
         const { form, globalValues, state, authSession } = this.input;
         const sendInputs = this.toSendInputs(toRecipePayload(form.payloadText));
-        void navigator.clipboard?.writeText(
-            redactedJson(toRtcRealtimeRecipe({ form, globalValues, sendInputs }), state, authSession)
-        );
+        return this.copyText(redactedJson(toRtcRealtimeRecipe({ form, globalValues, sendInputs }), state, authSession));
     };
+
+    private async copyText(text: string): Promise<void> {
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setLocalError);
+    }
 
     private async runAction(label: string, action: () => Promise<RtcRealtimeActivity['result']>): Promise<void> {
         const { transport } = this.input.form;

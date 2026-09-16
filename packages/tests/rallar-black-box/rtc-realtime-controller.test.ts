@@ -70,6 +70,19 @@ function RtcRealtimeHarness(props: { input: UseRtcRealtimeControllerInput; captu
     return null;
 }
 
+const CLIPBOARD_FAILURES = [
+    {
+        name: 'an unavailable clipboard',
+        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
+        error: 'Clipboard access is unavailable in this browser.'
+    },
+    {
+        name: 'a rejected copy',
+        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
+        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
+    }
+];
+
 describe('RTC realtime controller preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
@@ -566,5 +579,13 @@ describe('RTC realtime controller preservation', () => {
             after: { realtime: 'yes', rtc: 'yes' },
             feedback: true
         });
+    });
+
+    it.each(CLIPBOARD_FAILURES)('shows $name as a visible error when copying the recipe', async ({ arrange, error }) => {
+        await render();
+        arrange();
+        await act(async () => view.copyRecipe());
+
+        expect(view.localError).toBe(error);
     });
 });

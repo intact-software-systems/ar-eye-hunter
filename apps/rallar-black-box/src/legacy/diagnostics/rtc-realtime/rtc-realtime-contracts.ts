@@ -79,7 +79,7 @@ export interface RtcRealtimeOperations {
     sendRtcMessage(): Promise<void>;
     waitForRoomLane(): Promise<void>;
     refreshHealth(): Promise<void>;
-    copyRecipe(): void;
+    copyRecipe(): Promise<void>;
 }
 
 export interface RtcRealtimeViewModel

@@ -19,6 +19,7 @@ import { toRallarServerEndpointDraft } from '../../../rallar-server-workbench/to
 import { toRallarServerRestRequest } from '../../../rallar-server-workbench/to-rallar-server-rest-request.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import type { RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { RallarServerRequestFeedback, RallarServerRequestOperations } from './rallar-server-contracts.ts';
 
 export namespace RallarServerRequestActions {
@@ -100,15 +101,20 @@ export class RallarServerRequestActions implements RallarServerRequestOperations
         }
     };
 
-    readonly copyCurl = (): void => {
-        toRallarServerCurl(this.input.requestInput).fold(this.input.setLocalError, (curl) => {
-            void navigator.clipboard?.writeText(curl);
-        });
+    readonly copyCurl = async (): Promise<void> => {
+        await toRallarServerCurl(this.input.requestInput).fold(
+            async (message) => this.input.setLocalError(message),
+            (curl) => this.copyText(curl)
+        );
     };
 
-    readonly copyCommand = (): void => {
-        void navigator.clipboard?.writeText(this.input.commandPreview);
-    };
+    readonly copyCommand = (): Promise<void> => this.copyText(this.input.commandPreview);
+
+    private async copyText(text: string): Promise<void> {
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setLocalError);
+    }
 
     private recordRequestFailure(summary: RallarServerRequestFeedback, message: string): void {
         const { authSession } = this.input;

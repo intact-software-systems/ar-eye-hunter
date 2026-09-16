@@ -50,7 +50,7 @@ export interface FlowBuilderControllerModel {
     addStep(kind: FlowBuilderStepKind): void;
     normalizeFlowJson(): void;
     runFlow(): Promise<void>;
-    copyText(text: string): void;
+    copyText(text: string): Promise<void>;
 }
 
 interface FlowBuilderDrafts {

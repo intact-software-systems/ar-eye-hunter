@@ -19,6 +19,7 @@ import type {
 import type { RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import {
     decodeRallarServerCollectionDraftText,
     decodeRallarServerCollectionText
@@ -105,19 +106,17 @@ export class RallarServerCollectionActions implements RallarServerCollectionOper
         }
     };
 
-    readonly copyCollection = (): void => {
+    readonly copyCollection = async (): Promise<void> => {
         const { state, authSession } = this.input;
-        decodeRallarServerCollectionDraftText(this.input.collectionText, this.input.collectionVariablesText).fold(
-            this.input.setCollectionError,
-            ({ collection, variables }) => {
-                void navigator.clipboard?.writeText(redactedJson({ ...collection, variables }, state, authSession));
-            }
+        await decodeRallarServerCollectionDraftText(this.input.collectionText, this.input.collectionVariablesText).fold(
+            async (message) => this.input.setCollectionError(message),
+            ({ collection, variables }) => this.copyText(redactedJson({ ...collection, variables }, state, authSession))
         );
     };
 
-    readonly copyCollectionRecipe = (): void => {
+    readonly copyCollectionRecipe = async (): Promise<void> => {
         const { state, authSession, draft, providerMode } = this.input;
-        decodeRallarServerCollectionDraftText(this.input.collectionText, this.input.collectionVariablesText)
+        await decodeRallarServerCollectionDraftText(this.input.collectionText, this.input.collectionVariablesText)
             .flatMap(
                 (error) => Either.ofLeft(error),
                 ({ collection, variables }) =>
@@ -130,10 +129,17 @@ export class RallarServerCollectionActions implements RallarServerCollectionOper
                         forbidPlaceholderBaseUrl: providerMode === 'browser-rallar'
                     })
             )
-            .fold(this.input.setCollectionError, (recipe) => {
-                void navigator.clipboard?.writeText(redactedJson(recipe, state, authSession));
-            });
+            .fold(
+                async (message) => this.input.setCollectionError(message),
+                (recipe) => this.copyText(redactedJson(recipe, state, authSession))
+            );
     };
+
+    private async copyText(text: string): Promise<void> {
+        this.input.setCollectionError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setCollectionError);
+    }
 
     private async runCollectionSteps(
         collection: RallarServerRestCollection,

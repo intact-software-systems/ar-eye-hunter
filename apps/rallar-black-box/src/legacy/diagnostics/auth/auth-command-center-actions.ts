@@ -11,6 +11,7 @@ import { sendRallarServerMutationRequest } from '../../../rallar-server-workbenc
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { recordValue } from '../../shared/record-value.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import { readCurrentAuthSession } from '../../shell/read-current-auth-session.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 import { toRestActionLogEntry, type CommandCenterRestActionLog } from '../shared/to-rest-action-log-entry.ts';
@@ -152,13 +153,9 @@ export class AuthCommandCenterActions implements AuthCommandCenterOperations {
         });
     };
 
-    readonly copyDiagnostics = (): void => {
-        void navigator.clipboard?.writeText(this.input.diagnosticsText);
-    };
+    readonly copyDiagnostics = (): Promise<void> => this.copyText(this.input.diagnosticsText);
 
-    readonly copyRecipe = (): void => {
-        void navigator.clipboard?.writeText(this.input.recipeText);
-    };
+    readonly copyRecipe = (): Promise<void> => this.copyText(this.input.recipeText);
 
     private async authenticate(attempt: AuthCommandCenterActions.LoginAttempt): Promise<void> {
         await this.runWithBusy(attempt.label, async () => {
@@ -216,6 +213,12 @@ export class AuthCommandCenterActions implements AuthCommandCenterOperations {
         finally {
             this.input.setBusyAction(undefined);
         }
+    }
+
+    private async copyText(text: string): Promise<void> {
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setLocalError);
     }
 
     private appendAction(entry: CommandCenterRestActionLog): void {

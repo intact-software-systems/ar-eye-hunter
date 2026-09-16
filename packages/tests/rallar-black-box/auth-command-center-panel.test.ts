@@ -37,6 +37,19 @@ const authSession: AuthSession = {
     expiresAtEpochMs: Date.now() + 60_000
 };
 
+const CLIPBOARD_FAILURES = [
+    {
+        name: 'an unavailable clipboard',
+        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
+        error: 'Clipboard access is unavailable in this browser.'
+    },
+    {
+        name: 'a rejected copy',
+        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
+        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
+    }
+];
+
 describe('auth command-center panel preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
@@ -304,5 +317,18 @@ describe('auth command-center panel preservation', () => {
             leaked: false,
             recipe: 'rallar-auth-command-center'
         });
+    });
+
+    it.each(
+        CLIPBOARD_FAILURES.flatMap((failure) => [
+            { ...failure, button: 'Copy diagnostics' },
+            { ...failure, button: 'Copy auth recipe' }
+        ])
+    )('shows $name as a visible error from $button', async ({ arrange, button, error }) => {
+        await render();
+        arrange();
+        await click(button);
+
+        expect({ error: container.querySelector('.workbench-error')?.textContent, copies: copied.length }).toEqual({ error, copies: 0 });
     });
 });

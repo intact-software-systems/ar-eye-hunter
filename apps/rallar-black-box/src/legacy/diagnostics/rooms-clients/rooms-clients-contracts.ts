@@ -146,7 +146,7 @@ export interface RoomsClientsOperations {
     runPresetAction(action: RoomsClientsAction): Promise<void>;
     refreshState(): Promise<void>;
     runDirectRoomsAction(action: RoomsClientsDirectAction): Promise<void>;
-    copyStateRecipe(): void;
+    copyStateRecipe(): Promise<void>;
 }
 
 export interface RoomsClientsSortOption<T extends GroupSortId | ClientSortId> {

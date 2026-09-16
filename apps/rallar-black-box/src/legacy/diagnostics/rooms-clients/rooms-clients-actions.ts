@@ -16,6 +16,7 @@ import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { recordArray, recordValue } from '../../shared/record-value.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import {
     completedActionFeedback,
@@ -189,7 +190,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
         }
     };
 
-    readonly copyStateRecipe = (): void => {
+    readonly copyStateRecipe = async (): Promise<void> => {
         const commands = ROOMS_CLIENTS_ACTIONS.filter((action) => RECIPE_ACTION_IDS.includes(action.actionId)).map((
             action,
             index
@@ -203,7 +204,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
             this.input.setLocalError(failure);
             return;
         }
-        void navigator.clipboard?.writeText(
+        await this.copyText(
             json({
                 schemaVersion: 1,
                 recipeId: 'rallar-rooms-clients-command-center',
@@ -213,6 +214,12 @@ export class RoomsClientsActions implements RoomsClientsOperations {
             })
         );
     };
+
+    private async copyText(text: string): Promise<void> {
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setLocalError);
+    }
 
     private startAttempt(label: string): RoomsClientsActions.ActionAttempt {
         this.input.setBusyAction(label);

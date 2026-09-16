@@ -6,6 +6,7 @@ import { appendFlowBuilderStep } from '../../../flow-builder/flow-builder-steps.
 import { resolveFlowBuilderTemplate } from '../../../flow-builder/flow-builder-templates.ts';
 import { toFlowBuilderText } from '../../../flow-builder/to-flow-builder-text.ts';
 import type { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { toFlowBuilderVariablesText } from './to-flow-builder-variables-text.ts';
 
@@ -81,7 +82,9 @@ export class FlowBuilderActions {
         }
     };
 
-    readonly copyText = (text: string): void => {
-        void navigator.clipboard?.writeText(text);
+    readonly copyText = async (text: string): Promise<void> => {
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        written.foldLeft(this.input.setLocalError);
     };
 }
