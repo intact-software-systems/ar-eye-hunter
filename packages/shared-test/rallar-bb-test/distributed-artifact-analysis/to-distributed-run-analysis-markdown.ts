@@ -31,6 +31,9 @@ export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysis
         analysis.performance === undefined
             ? 'Performance: not analyzed, because it needs the control run snapshot that control-run.json records.'
             : undefined,
+        analysis.spa === undefined
+            ? 'SPA report and verdict: not analyzed, because they need the control run snapshot that control-run.json records.'
+            : undefined,
         analysis.ok ? undefined : `First focus: ${analysis.failure.title}`,
         ''
     ]);

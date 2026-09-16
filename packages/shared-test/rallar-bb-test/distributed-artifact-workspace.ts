@@ -38,9 +38,9 @@ import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 export interface DistributedArtifactWorkspaceComputed {
     readonly parsed: ParsedDistributedArtifactPipeline;
     readonly workspace: DistributedArtifactWorkspace;
-    /** Absent when the workspace holds no analyzable distributed run. */
+    /** Absent when the workspace holds no analyzable distributed run or its control-run.json is unavailable. */
     readonly monitor?: DistributedRunMonitor;
-    /** Absent when the workspace holds no analyzable distributed run. */
+    /** Absent when the workspace holds no analyzable distributed run or its control-run.json is unavailable. */
     readonly report?: DistributedRunAnalysisReport;
 }
 
@@ -103,6 +103,7 @@ export function computeDistributedArtifactWorkspace(
         support: identityIssues.length > 0 ? 'incompatible' : toAssessedWorkspaceSupport(parsed, family, schema)
     });
     const { pipelineAnalysis } = analysis;
+    const recorded = pipelineAnalysis?.controlRunStatus === 'recorded' ? pipelineAnalysis : undefined;
     const workspace = {
         family,
         source: projection.source,
@@ -119,10 +120,10 @@ export function computeDistributedArtifactWorkspace(
             ...analysis.issues
         ],
         analysis: pipelineAnalysis?.analysis,
-        snapshots: pipelineAnalysis?.snapshots,
-        bundle: pipelineAnalysis?.snapshots?.artifactBundle
+        snapshots: recorded?.snapshots,
+        bundle: recorded?.snapshots.artifactBundle
     } satisfies DistributedArtifactWorkspace;
-    return { parsed, workspace, monitor: pipelineAnalysis?.monitor, report: pipelineAnalysis?.report };
+    return { parsed, workspace, monitor: recorded?.monitor, report: recorded?.report };
 }
 
 /** A caller version that contradicts the envelope clears the version; otherwise an unsupported version is flagged. */
@@ -255,7 +256,10 @@ function toWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAn
     );
 }
 
-/** An envelope that names a different run than distributed-run.json makes the analyzed workspace incompatible. */
+/**
+ * A loaded control-run.json that is not a control run snapshot, or an envelope that names a different run
+ * than distributed-run.json, makes the analyzed workspace incompatible.
+ */
 function toDistributedRunWorkspaceAnalysis(
     analysisInput: WorkspaceAnalysisInput,
     content: DistributedRunBundleContent,
@@ -268,10 +272,11 @@ function toDistributedRunWorkspaceAnalysis(
         generatedAtEpochMs,
         artifactSchemaVersion: schema.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
     });
-    const identityConflict = toIdentityConflictIssue(parsed, pipelineAnalysis.analysis);
-    return identityConflict === undefined
-        ? { support, issues: [], pipelineAnalysis }
-        : { support: 'incompatible', issues: [identityConflict], pipelineAnalysis };
+    const issues = [
+        toUndecodedControlRunIssue(schema, pipelineAnalysis),
+        toIdentityConflictIssue(parsed, pipelineAnalysis.analysis)
+    ].filter((issue): issue is DistributedArtifactWorkspaceIssue => issue !== undefined);
+    return { support: issues.length === 0 ? support : 'incompatible', issues, pipelineAnalysis };
 }
 
 function toAnalysisFailedIssue(rejection: DistributedRunArtifactRejection): DistributedArtifactWorkspaceIssue {
@@ -293,6 +298,24 @@ function toControlRequestFailureIssue(
         message:
             `The artifacts record a failed control ${content.controlPostFailure.request.phase} request and contain no distributed run; analyze the folder with the distributed-run artifact CLI.`
     };
+}
+
+/**
+ * The inventory checks control-run.json only as JSON; a loaded file the analysis cannot read as a control
+ * run snapshot is named here, while a missing or malformed one already carries its inventory issue.
+ */
+function toUndecodedControlRunIssue(
+    schema: WorkspaceSchema,
+    pipelineAnalysis: DistributedRunArtifactPipelineAnalysisResult
+): DistributedArtifactWorkspaceIssue | undefined {
+    if (pipelineAnalysis.controlRunStatus === 'recorded') {
+        return undefined;
+    }
+    const { reason } = pipelineAnalysis;
+    const inventoryItem = schema.inventory.find((item) => item.fileName === reason.fileName);
+    return inventoryItem?.status === 'loaded'
+        ? { code: 'incompatible-file', severity: 'error', fileName: reason.fileName, message: reason.message }
+        : undefined;
 }
 
 function toIdentityConflictIssue(

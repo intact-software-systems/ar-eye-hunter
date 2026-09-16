@@ -232,7 +232,8 @@ export interface DistributedRunAnalysisSections {
     readonly performance?: DistributedRunPerformanceAnalysis;
     /** Absent when neither target-resolution.json nor the run snapshot records target resolution. */
     readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
-    readonly spa: DistributedRunSpaAnalysis;
+    /** Absent when control-run.json is missing or malformed, as the report and verdict read the control run; the summary says so. */
+    readonly spa?: DistributedRunSpaAnalysis;
     readonly summaryMarkdown: string;
     /** Absent with the performance section. */
     readonly performanceMarkdown?: string;
@@ -315,7 +316,7 @@ export function toDistributedArtifactBundle(
         (content) =>
             toPipelineArtifactBundle({
                 parsed,
-                distributedRunId: content.distributedRun.distributedRunId,
+                content,
                 generatedAtEpochMs,
                 artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
             })

@@ -3,8 +3,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { DistributedRunArtifactRejection } from './distributed-artifact-analysis.ts';
 import {
     computeDistributedRunArtifactPipelineAnalysis,
-    resolveArtifactSchemaVersion,
-    toDistributedRunContentSnapshots
+    resolveArtifactSchemaVersion
 } from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
 import { toDistributedRunBundleContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
 import {
@@ -36,35 +35,34 @@ export function deriveDistributedArtifactEvidence(
     input: DeriveDistributedArtifactEvidenceInput
 ): Either<DistributedRunArtifactRejection, DistributedArtifactEvidenceIndex> {
     const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
-    const parsed = parseDistributedArtifactPipeline(input.files, {
-        projection: 'literal-loose-files'
-    });
+    const parsed = parseDistributedArtifactPipeline(input.files, { projection: 'literal-loose-files' });
     const artifactSchemaVersion = resolveArtifactSchemaVersion(parsed);
     return toDistributedRunBundleContent(parsed).flatMap(
         (rejection) => Either.ofLeft(rejection),
-        (content) =>
-            toDistributedRunContentSnapshots({ parsed, content, generatedAtEpochMs, artifactSchemaVersion })
-                .mapRight((snapshots) => {
-                    const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
-                        parsed,
-                        content,
-                        generatedAtEpochMs,
-                        artifactSchemaVersion
-                    });
-                    return deriveDistributedArtifactEvidenceIndex({
-                        analysis: analysisResult.analysis,
-                        snapshots,
-                        monitor: analysisResult.monitor,
-                        parsedControlRun: distributedArtifactPipelineJsonRecord(parsed, 'control-run.json'),
-                        sourceFileNames: Object.keys(parsed.projectedFiles).filter(
-                            (fileName) => parsed.projectedFiles[fileName] !== undefined
-                        ),
-                        sourceFiles: parsed.projectedFiles,
-                        indexLimit: input.indexLimit,
-                        summaryLimit: input.summaryLimit,
-                        payloadSummaryLimit: input.payloadSummaryLimit
-                    });
-                })
+        (content) => {
+            const pipelineAnalysis = computeDistributedRunArtifactPipelineAnalysis({
+                parsed,
+                content,
+                generatedAtEpochMs,
+                artifactSchemaVersion
+            });
+            if (pipelineAnalysis.controlRunStatus === 'unavailable') {
+                return Either.ofLeft(pipelineAnalysis.reason);
+            }
+            return Either.ofRight(deriveDistributedArtifactEvidenceIndex({
+                analysis: pipelineAnalysis.analysis,
+                snapshots: pipelineAnalysis.snapshots,
+                monitor: pipelineAnalysis.monitor,
+                parsedControlRun: distributedArtifactPipelineJsonRecord(parsed, 'control-run.json'),
+                sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+                    (fileName) => parsed.projectedFiles[fileName] !== undefined
+                ),
+                sourceFiles: parsed.projectedFiles,
+                indexLimit: input.indexLimit,
+                summaryLimit: input.summaryLimit,
+                payloadSummaryLimit: input.payloadSummaryLimit
+            }));
+        }
     );
 }
 

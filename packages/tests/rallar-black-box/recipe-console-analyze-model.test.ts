@@ -381,6 +381,33 @@ describe('Recipe Console Analyze artifact model', () => {
         expect(rejection?.workspace.analysis).not.toHaveProperty('performance');
     });
 
+    it('rejects a control-run.json that is not a control run snapshot as unusable and names the file', () => {
+        let rejection: AnalyzeArtifactModelError | undefined;
+        try {
+            createAnalyzeArtifactModel({
+                files: coreFiles({ 'control-run.json': 'null' }),
+                source: 'local-files',
+                label: 'Evicted control run bundle',
+                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+            });
+        }
+        catch (error) {
+            if (!(error instanceof AnalyzeArtifactModelError)) {
+                throw error;
+            }
+            rejection = error;
+        }
+
+        expect(rejection).toMatchObject({ code: 'unusable-distributed-artifact' });
+        expect(rejection?.workspace.support).toBe('incompatible');
+        expect(rejection?.workspace.issues).toContainEqual({
+            code: 'incompatible-file',
+            severity: 'error',
+            fileName: 'control-run.json',
+            message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
+        });
+    });
+
     it('retains usable analysis when an optional evidence file is malformed', () => {
         const model = createAnalyzeArtifactModel({
             files: coreFiles({ 'events.jsonl': '{not-json\n' }),

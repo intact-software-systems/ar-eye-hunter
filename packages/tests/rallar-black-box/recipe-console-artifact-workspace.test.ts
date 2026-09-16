@@ -315,6 +315,42 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         }));
     });
 
+    it('flags a control-run.json that parses but is not a control run snapshot as incompatible and says why', () => {
+        const cases = [
+            {
+                name: 'control run recorded as null',
+                controlRunText: 'null',
+                message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
+            },
+            {
+                name: 'control run from a different snapshot shape',
+                controlRunText: JSON.stringify({ runId: 'control-import' }),
+                message: 'control-run.json is not a control run snapshot: createdAtEpochMs must be a finite number.'
+            }
+        ];
+
+        for (const controlRunCase of cases) {
+            const files = serverV2Files({ 'control-run.json': controlRunCase.controlRunText });
+            const workspace = computeWorkspace({ files, generatedAtEpochMs: 9_194 });
+
+            expect(workspace.support, controlRunCase.name).toBe('incompatible');
+            expect(inventoryStatus(workspace, 'control-run.json'), controlRunCase.name).toBe('loaded');
+            expect(workspace.issues, controlRunCase.name).toContainEqual({
+                code: 'incompatible-file',
+                severity: 'error',
+                fileName: 'control-run.json',
+                message: controlRunCase.message
+            });
+            expect(workspace.analysis, controlRunCase.name).not.toHaveProperty('spa');
+            expect(workspace.snapshots, controlRunCase.name).toBeUndefined();
+            expect(workspace.bundle, controlRunCase.name).toBeUndefined();
+            expect(toDistributedArtifactBundle(files, 9_194).left, controlRunCase.name).toEqual({
+                fileName: 'control-run.json',
+                message: controlRunCase.message
+            });
+        }
+    });
+
     it('marks unknown schema versions without coercing them to a supported version', () => {
         const workspace = computeWorkspace({
             files: {

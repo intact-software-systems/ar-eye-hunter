@@ -373,7 +373,7 @@ describe('distributed run artifact decoding', () => {
         }
     });
 
-    it('warns about a control-run.json that is not a control run snapshot and omits what needs the control run', () => {
+    it('warns about a control-run.json that is not a control run snapshot and forms nothing that needs the control run', () => {
         const controlRun = createControlRunSnapshot({ runId: 'run-decoded', agents: [{ agentId: 'agent-a' }] });
         const cases = [
             {
@@ -403,8 +403,14 @@ describe('distributed run artifact decoding', () => {
 
             expect(analysis.parseWarnings, decodeCase.name).toEqual([expectedWarning]);
             expect(analysis, decodeCase.name).not.toHaveProperty('performance');
+            expect(analysis, decodeCase.name).not.toHaveProperty('spa');
             expect(analysis.summaryMarkdown, decodeCase.name).toContain('Agents: unknown');
+            expect(analysis.summaryMarkdown, decodeCase.name).toContain(
+                'SPA report and verdict: not analyzed, because they need the control run snapshot that control-run.json records.'
+            );
             expect(toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).left, decodeCase.name)
+                .toEqual(expectedWarning);
+            expect(toDistributedArtifactBundle(files, GENERATED_AT_EPOCH_MS).left, decodeCase.name)
                 .toEqual(expectedWarning);
         }
     });
@@ -518,7 +524,7 @@ describe('distributed run artifact decoding', () => {
             message: 'manifest.json is required to form a distributed-run artifact bundle.'
         });
         expect(analysis.parseWarnings).toEqual([bundle.left]);
-        expect(analysis.spa.verdict).toBeDefined();
+        expect(analysis.spa?.verdict).toBeDefined();
         const snapshots = toDistributedArtifactSnapshots(filesWithoutManifest, 456).right;
         expect(snapshots?.artifactBundle).toBeUndefined();
         expect(snapshots?.parseWarnings).toEqual([bundle.left]);

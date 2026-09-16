@@ -6,7 +6,8 @@ import {
     createControlRunSnapshot,
     createDistributedRunSnapshot,
     createQueuedCommandSnapshot,
-    toDistributedRunArtifactFiles
+    toDistributedRunArtifactFiles,
+    type DistributedRunSnapshotFixtureInput
 } from './distributed-artifact-files-fixture.ts';
 
 describe('distributed run artifact failure resolution', () => {
@@ -138,8 +139,8 @@ describe('distributed run artifact failure resolution', () => {
         expect(analysis.fixProposalMarkdown).toContain('RTC route failure');
         expect(analysis.fixProposalMarkdown).toContain('send-rtc');
         expect(analysis.summaryMarkdown).toContain('dist-failed');
-        expect(analysis.spa.verdict.title).toBe('Outcome failed');
-        expect(analysis.spa.report.nextActions[0]?.category).toBe('command');
+        expect(analysis.spa?.verdict.title).toBe('Outcome failed');
+        expect(analysis.spa?.report.nextActions[0]?.category).toBe('command');
     });
 
     it('falls back to distributed and control artifacts when fleet report is missing', () => {
@@ -229,6 +230,52 @@ describe('distributed run artifact failure resolution', () => {
             affectedAgents: ['agent-a'],
             commandId: 'cmd-payload',
             evidenceFile: 'events.jsonl'
+        });
+    });
+
+    it('focuses a failed run without control-run.json on what distributed-run.json records, not on a report that needs the control run', () => {
+        const runFiles = (failures: DistributedRunSnapshotFixtureInput['failures']) => ({
+            ...toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-no-control-run',
+                    controlRunId: 'run-no-control-run',
+                    state: 'failed',
+                    agentIds: ['agent-a'],
+                    startedAtEpochMs: 100,
+                    completedAtEpochMs: 200,
+                    failures
+                }),
+                controlRun: createControlRunSnapshot({ runId: 'run-no-control-run' })
+            }),
+            'control-run.json': undefined
+        });
+
+        const withoutRollupFailure = computeFailedDistributedRunAnalysis(runFiles([]), ANALYSIS_GENERATED_AT_EPOCH_MS);
+        const withRollupFailure = computeFailedDistributedRunAnalysis(
+            runFiles([{
+                kind: 'participant',
+                key: 'agent-a',
+                state: 'failed',
+                required: true,
+                error: { code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT', message: 'Missing ACK.' }
+            }]),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(withoutRollupFailure).not.toHaveProperty('spa');
+        expect(withoutRollupFailure.failure).toMatchObject({
+            category: 'runtime',
+            title: 'Distributed run ended with state failed.',
+            evidenceFile: 'distributed-run.json'
+        });
+        expect(withRollupFailure).not.toHaveProperty('spa');
+        expect(withRollupFailure.failure).toMatchObject({
+            category: 'readiness',
+            title: 'Agent did not ACK staging',
+            likelyCause: 'An agent did not load or acknowledge the recipe before ackTimeoutMs expired.',
+            minimalFixArea: 'headless agent readiness',
+            affectedAgents: ['agent-a'],
+            evidenceFile: 'distributed-run.json'
         });
     });
 });

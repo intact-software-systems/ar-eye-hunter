@@ -351,9 +351,9 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
 
 - A `DistributedRunAnalysis` is a `DistributedRunPassedAnalysis` (`ok: true`)
   or a `DistributedRunFailedAnalysis` (`ok: false`, with its required `failure`
-  and `fixProposalMarkdown`). The schema version, control run id, SPA report and
-  verdict are always written; consumers that read a bounded projection (the
-  Analyze view, tuning decisions) declare their own narrower contract.
+  and `fixProposalMarkdown`). The schema version and control run id are always
+  written; consumers that read a bounded projection (the Analyze view, tuning
+  decisions) declare their own narrower contract.
 - `distributed-run.json` is decoded strictly against
   `ControlDistributedRunSnapshot`. A missing, empty, malformed or non-conforming
   file is a rejection; no identity, timestamp, start mode or command link is
@@ -363,10 +363,11 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   control run id and can fetch the run. When it is missing, empty, malformed or
   non-conforming, a parse warning names the file, and the analysis omits only
   what needs the control run: `performance`, `performanceMarkdown` (and so
-  `performance.md`) and, without a fleet report, `summary.agents`. `summary.md`
-  says that performance was not analyzed and why. The SPA report and verdict are
-  still derived from `distributed-run.json`, as the live monitor does before a
-  control run is loaded.
+  `performance.md`), the `spa` report and verdict and, without a fleet report,
+  `summary.agents`. `summary.md` says that performance and the SPA report and
+  verdict were not analyzed and why. Without that report, the failure focus
+  explains the first failure `distributed-run.json` records instead of the
+  report's next action.
 - A folder with `control-post-error-metadata.json` and no
   `distributed-run.json` is the `control-request-failure` variant: the run id
   from `runner-summary.json` or `manifest.json`, the failed request, its status,
@@ -393,15 +394,16 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   except the `step-result` rows the recorder mirrors into `events.jsonl`, which
   stand in for no event.
 - `toDistributedArtifactBundle` and `toDistributedArtifactSnapshots` return the
-  same rejections. Snapshots need the control run, so
-  `toDistributedArtifactSnapshots` also rejects with the control-run.json warning
-  when that file is unavailable, and a bundle needs `control-run.json` text.
+  same rejections. Snapshots and bundles need the control run, so both also
+  reject with the control-run.json warning when that file is unavailable.
   Snapshots carry the same `parseWarnings` as the analysis, including the
   rejection that explains a missing `artifactBundle`.
   `computeDistributedArtifactWorkspace` reports rejections as workspace issues
   (`analysis-failed`, `control-request-failure`, `missing-generation-time`); a
   workspace without a usable `control-run.json` carries the analysis but no
-  snapshots or bundle.
+  snapshots or bundle, and a `control-run.json` that is valid JSON but not a
+  control run snapshot makes it `incompatible` with an `incompatible-file` issue
+  naming the file.
 
 Capability owners live in `distributed-artifact-analysis/` (content decoding,
 evidence row decoders, the pipeline analysis and bundle formation that the

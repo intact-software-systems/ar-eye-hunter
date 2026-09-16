@@ -207,7 +207,7 @@ describe('distributed run artifact analysis CLI', () => {
         );
     });
 
-    it('analyzes a runner folder without control-run.json and omits only the performance it cannot measure', async () => {
+    it('analyzes a runner folder without control-run.json and omits only the sections that need the control run', async () => {
         const distributedRun = createDistributedRunSnapshot({
             distributedRunId: 'dist-cli-no-control-run',
             controlRunId: 'run-cli-no-control-run',
@@ -242,26 +242,25 @@ describe('distributed run artifact analysis CLI', () => {
             controlRunId: 'run-cli-no-control-run',
             status: 'passed',
             ok: true,
-            summary: { passRate: 1, failureGroups: 0, blockingFailures: 0 },
-            spa: { report: expect.any(Object), verdict: expect.any(Object) }
+            summary: { passRate: 1, failureGroups: 0, blockingFailures: 0 }
         });
         expect(analysis).not.toHaveProperty('performance');
         expect(analysis).not.toHaveProperty('performanceMarkdown');
+        expect(analysis).not.toHaveProperty('spa');
         expect(analysis.summary).not.toHaveProperty('agents');
         expect(analysis.parseWarnings).toEqual([
             {
                 fileName: 'control-run.json',
                 message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
-            },
-            {
-                fileName: 'control-run.json',
-                message: 'control-run.json is required to form a distributed-run artifact bundle.'
             }
         ]);
         const summary = await readFile(path.join(outDir, 'summary.md'), 'utf8');
         expect(summary).toContain('Agents: unknown');
         expect(summary).toContain(
             'Performance: not analyzed, because it needs the control run snapshot that control-run.json records.'
+        );
+        expect(summary).toContain(
+            'SPA report and verdict: not analyzed, because they need the control run snapshot that control-run.json records.'
         );
         await expect(access(path.join(outDir, 'performance.md'))).rejects.toMatchObject({ code: 'ENOENT' });
     });

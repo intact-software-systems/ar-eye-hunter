@@ -288,8 +288,10 @@ The runner exports `control-run.json` only when it has a control run id and its
 GET succeeds, so the analyzer treats that file as optional evidence. When it is
 missing or does not match the control run snapshot contract, the analysis still
 runs: a parse warning names the file, `analysis/summary.md` says that performance
-was not analyzed, and `analysis.json` omits `performance` (and, without a fleet
-report, the agent count). No `performance.md` is written.
+and the SPA report and verdict were not analyzed, and `analysis.json` omits
+`performance` and `spa` (and, without a fleet report, the agent count). No
+`performance.md` is written, and where the failure focus would use the SPA
+report it explains the first failure `distributed-run.json` records.
 
 When `control-run.json` holds no results or events, `results.jsonl` and
 `events.jsonl` rows that name their agent, command and outcome stand in for

@@ -56,7 +56,8 @@ export interface AnalyzeWorkerAnalysisProjection {
     readonly performance?: DistributedRunPerformanceAnalysis;
     /** Absent when the analysis records no target resolution or the projection is minimal. */
     readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
-    readonly spa: Readonly<{ verdict: RunVerdictView; }>;
+    /** Absent when the analysis omits the SPA report and verdict for an unavailable control run. */
+    readonly spa?: Readonly<{ verdict: RunVerdictView; }>;
     readonly summaryMarkdown: string;
     /** Absent when the run passed or the projection is minimal. */
     readonly fixProposalMarkdown?: string;

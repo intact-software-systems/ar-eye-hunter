@@ -1,6 +1,13 @@
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunFailureAnalysis } from '../distributed-artifact-analysis.ts';
+import type { DistributedFailureExplanation } from '../distributed-run-analysis/distributed-failure-explanation-contracts.ts';
 import type { DistributedRunAnalysisReport } from '../distributed-run-analysis/distributed-run-analysis-report.ts';
+import { toDistributedFailureExplanation } from '../distributed-run-analysis/to-distributed-failure-explanation.ts';
+import {
+    resolveFirstDistributedFailure,
+    toDistributedRunRecordedFailures
+} from '../distributed-run-observation/distributed-run-failure-rows.ts';
+import type { DistributedRunFailureRow } from '../distributed-run-observation/distributed-run-row-contracts.ts';
 import { computeControlRequestFailure } from './compute-control-request-failure.ts';
 import { computeStreamPerformanceFailure, computeStreamTimeoutFailure } from './compute-stream-failure.ts';
 import type { DistributedRunEventEvidence } from './decode-distributed-run-event-evidence.ts';
@@ -32,13 +39,15 @@ export interface DistributedRunFailureInput {
     readonly controlPostFailure?: ControlPostFailureArtifact;
     readonly results: readonly DistributedRunResultEvidence[];
     readonly events: readonly DistributedRunEventEvidence[];
-    readonly spaReport: DistributedRunAnalysisReport;
+    /** Undefined when control-run.json is unavailable, because the report reads the control run. */
+    readonly spaReport: DistributedRunAnalysisReport | undefined;
 }
 
 /**
  * The first focus of a run that did not pass, from the most specific evidence to the least: a failed
  * control request, stream thresholds, receiver delivery, fleet signatures, failed results, stalled
- * streams, the report's next action, failures.json, runtime diagnostics, and finally the run state.
+ * streams, the report's next action (without the control run the report reads, the first failure
+ * distributed-run.json records), failures.json, runtime diagnostics, and finally the run state.
  */
 export function computeDistributedRunFailure(input: DistributedRunFailureInput): DistributedRunFailureAnalysis {
     return (input.controlPostFailure ? computeControlRequestFailure(input.controlPostFailure) : undefined) ??
@@ -47,7 +56,9 @@ export function computeDistributedRunFailure(input: DistributedRunFailureInput):
         computeFleetSignatureFailure(input.fleetReport?.firstFailureSignature, input.results) ??
         computeFailedResultFailure(input.results) ??
         computeStreamTimeoutFailure(input.distributedRun, input.events) ??
-        computeReportActionFailure(input.spaReport) ??
+        (input.spaReport
+            ? computeReportActionFailure(input.spaReport)
+            : computeRecordedRunFailure(input.distributedRun)) ??
         computeBundledFailure(input.bundledFailure) ??
         computeDiagnosticFailure(input.events) ??
         computeRunStateFailure(input.distributedRun);
@@ -140,27 +151,43 @@ function computeReportActionFailure(
     spaReport: DistributedRunAnalysisReport
 ): DistributedRunFailureAnalysis | undefined {
     const action = spaReport.nextActions[0];
-    if (!action) {
-        return undefined;
-    }
-    const failure = spaReport.firstFailure;
+    return action
+        ? toExplanationFailure(action, spaReport.firstFailure, resolveEvidenceFileForAction(action.category))
+        : undefined;
+}
+
+/** The first failure distributed-run.json records, explained the way the report explains it. */
+function computeRecordedRunFailure(
+    distributedRun: ControlDistributedRunSnapshot
+): DistributedRunFailureAnalysis | undefined {
+    const failure = resolveFirstDistributedFailure(toDistributedRunRecordedFailures(distributedRun));
+    return failure
+        ? toExplanationFailure(toDistributedFailureExplanation(failure), failure, 'distributed-run.json')
+        : undefined;
+}
+
+function toExplanationFailure(
+    explanation: DistributedFailureExplanation,
+    failure: DistributedRunFailureRow | DistributedRunAnalysisReport['firstFailure'],
+    evidenceFile: string
+): DistributedRunFailureAnalysis {
     const minimalFix = resolveMinimalFixArea({
-        category: action.category,
+        category: explanation.category,
         transport: undefined,
-        text: `${action.title} ${action.likelyCause} ${action.nextAction}`
+        text: `${explanation.title} ${explanation.likelyCause} ${explanation.nextAction}`
     });
     return {
-        category: action.category,
-        title: action.title,
-        likelyCause: action.likelyCause,
-        nextAction: action.nextAction,
+        category: explanation.category,
+        title: explanation.title,
+        likelyCause: explanation.likelyCause,
+        nextAction: explanation.nextAction,
         minimalFixArea: minimalFix,
         verificationCommand: resolveVerificationCommand(minimalFix),
         affectedAgents: toAffectedAgents(failure?.agentId),
         affectedRegions: [],
         commandId: failure?.commandId,
         recipeId: failure?.recipeId,
-        evidenceFile: resolveEvidenceFileForAction(action.category)
+        evidenceFile
     };
 }
 

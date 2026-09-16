@@ -52,7 +52,7 @@ export function projectAnalyzeAnalysis(
         ...(analysis.targetResolution
             ? { targetResolution: projectTargetResolution(analysis.targetResolution) }
             : {}),
-        spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) },
+        ...(analysis.spa === undefined ? {} : { spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) } }),
         summaryMarkdown: boundedText(analysis.summaryMarkdown),
         ...(analysis.ok ? {} : { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }),
         ...(analysis.performanceMarkdown === undefined
@@ -73,15 +73,19 @@ export function minimalAnalyzeAnalysis(
         ok: analysis.ok,
         summary: { ...analysis.summary },
         parseWarnings: [],
-        spa: {
-            verdict: {
-                ...projectAnalyzeVerdict(analysis.spa.verdict),
-                primaryEvidence: [],
-                successSignals: [],
-                warningSignals: [],
-                causalTrail: []
-            }
-        },
+        ...(analysis.spa === undefined
+            ? {}
+            : {
+                spa: {
+                    verdict: {
+                        ...projectAnalyzeVerdict(analysis.spa.verdict),
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                }
+            }),
         summaryMarkdown: PROJECTION_OMISSION_MESSAGE
     };
 }

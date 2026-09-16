@@ -1,6 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { ControlDistributedRunArtifactBundle } from '../control-snapshots.ts';
+import type { ControlDistributedRunArtifactBundle, ControlRunSnapshot } from '../control-snapshots.ts';
 import type {
     DistributedRunAnalysis,
     DistributedRunAnalysisGroup,
@@ -44,32 +44,43 @@ export interface DistributedRunArtifactPipelineInput {
     readonly artifactSchemaVersion: number;
 }
 
-export interface DistributedRunArtifactPipelineAnalysisResult {
+/** The pipeline analysis of a run whose control-run.json holds a control run snapshot. */
+export interface DistributedRunRecordedControlRunAnalysis {
+    readonly controlRunStatus: 'recorded';
     readonly analysis: DistributedRunAnalysis;
-    /** Absent when control-run.json is missing or malformed; the analysis warnings say why. */
-    readonly snapshots?: DistributedRunArtifactSnapshots;
+    readonly snapshots: DistributedRunArtifactSnapshots;
     readonly monitor: DistributedRunMonitor;
     readonly report: DistributedRunAnalysisReport;
 }
+
+/**
+ * The pipeline analysis of a run whose control-run.json is missing or malformed. Snapshots, the monitor
+ * and its report all read the control run, so none of them exists; the reason says why.
+ */
+export interface DistributedRunUnavailableControlRunAnalysis {
+    readonly controlRunStatus: 'unavailable';
+    readonly analysis: DistributedRunAnalysis;
+    readonly reason: DistributedRunArtifactParseWarning;
+}
+
+export type DistributedRunArtifactPipelineAnalysisResult =
+    | DistributedRunRecordedControlRunAnalysis
+    | DistributedRunUnavailableControlRunAnalysis;
 
 /** A run analysis before its markdown renderings. */
 export type DistributedRunAnalysisFacts =
     | Omit<DistributedRunPassedAnalysis, 'summaryMarkdown' | 'performanceMarkdown'>
     | Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>;
 
-export interface ToPipelineArtifactBundleInput {
-    readonly parsed: ParsedDistributedArtifactPipeline;
-    readonly distributedRunId: string;
-    readonly generatedAtEpochMs: number;
-    readonly artifactSchemaVersion: number;
-}
-
 interface DistributedRunAnalysisFactsInput {
     readonly content: DistributedRunBundleContent;
     readonly generatedAtEpochMs: number;
     readonly artifactSchemaVersion: number;
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    readonly spa: DistributedRunSpaAnalysis;
+    /** Undefined when control-run.json is unavailable, because performance reads the control run. */
+    readonly performance: DistributedRunPerformanceAnalysis | undefined;
+    /** Undefined when control-run.json is unavailable, because the SPA report and verdict read the control run. */
+    readonly spa: DistributedRunSpaAnalysis | undefined;
 }
 
 const DISTRIBUTED_ARTIFACT_FILE_NAMES: ReadonlySet<string> = new Set([
@@ -91,75 +102,40 @@ const DISTRIBUTED_ARTIFACT_FILE_NAMES: ReadonlySet<string> = new Set([
     'metadata.json'
 ]);
 
-const BUNDLE_CORE_FILE_NAMES = ['distributed-run.json', 'control-run.json', 'manifest.json'] as const;
-
 const DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES = ['report.json', 'failures.json', 'metadata.json'] as const;
 
 export function computeDistributedRunArtifactPipelineAnalysis(
     input: DistributedRunArtifactPipelineInput
 ): DistributedRunArtifactPipelineAnalysisResult {
-    const { parsed, content, generatedAtEpochMs, artifactSchemaVersion } = input;
-    const { distributedRun } = content;
-    const controlRun = content.controlRun.status === 'recorded' ? content.controlRun.snapshot : undefined;
-    const bundle = toPipelineArtifactBundle({
-        parsed,
-        distributedRunId: distributedRun.distributedRunId,
-        generatedAtEpochMs,
-        artifactSchemaVersion
-    });
-    const artifactBundle = bundle.right;
-    const monitor = deriveDistributedRunMonitor({
-        distributedRun,
-        controlRun,
-        artifactBundle,
-        artifactValidation: validateDistributedRunArtifactFromParsed(artifactBundle, parsed)
-    });
-    const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, artifactBundle, monitor });
-    const facts = computeDistributedRunAnalysisFacts({
-        content,
-        generatedAtEpochMs,
-        artifactSchemaVersion,
-        parseWarnings: [
-            ...(content.controlRun.status === 'unavailable' ? [content.controlRun.reason] : []),
-            ...content.parseWarnings.map((warning) => ({ ...warning })),
-            ...(bundle.left ? [bundle.left] : [])
-        ],
-        spa: { report, verdict: deriveRunVerdictView({ distributedRun, monitor, report, artifactBundle }) }
-    });
-    return {
-        analysis: toDistributedRunAnalysis(facts),
-        ...(controlRun === undefined ? {} : { snapshots: toArtifactSnapshots(content, bundle).right }),
-        monitor,
-        report
-    };
+    const { controlRun } = input.content;
+    return controlRun.status === 'recorded'
+        ? computeRecordedControlRunAnalysis(input, controlRun.snapshot)
+        : computeUnavailableControlRunAnalysis(input, controlRun.reason);
 }
 
 /** Snapshots need the control run; the artifact bundle rides along when the files form one. */
 export function toDistributedRunContentSnapshots(
     input: DistributedRunArtifactPipelineInput
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
-    const { parsed, content } = input;
-    return toArtifactSnapshots(
-        content,
-        toPipelineArtifactBundle({
-            parsed,
-            distributedRunId: content.distributedRun.distributedRunId,
-            generatedAtEpochMs: input.generatedAtEpochMs,
-            artifactSchemaVersion: input.artifactSchemaVersion
-        })
-    );
+    const { controlRun } = input.content;
+    return controlRun.status === 'recorded'
+        ? Either.ofRight(toRecordedSnapshots(input, controlRun.snapshot))
+        : Either.ofLeft(controlRun.reason);
 }
 
-/** A bundle needs the run snapshot, the control run and the manifest; other known artifact files ride along. */
+/** A bundle needs the decoded run snapshot, a recorded control run and manifest.json; other known artifact files ride along. */
 export function toPipelineArtifactBundle(
-    input: ToPipelineArtifactBundleInput
+    input: DistributedRunArtifactPipelineInput
 ): Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle> {
-    const files = input.parsed.projectedFiles;
-    const missingFileName = BUNDLE_CORE_FILE_NAMES.find((fileName) => files[fileName] === undefined);
-    if (missingFileName !== undefined) {
+    const { parsed, content } = input;
+    if (content.controlRun.status === 'unavailable') {
+        return Either.ofLeft(content.controlRun.reason);
+    }
+    const files = parsed.projectedFiles;
+    if (files['manifest.json'] === undefined) {
         return Either.ofLeft({
-            fileName: missingFileName,
-            message: `${missingFileName} is required to form a distributed-run artifact bundle.`
+            fileName: 'manifest.json',
+            message: 'manifest.json is required to form a distributed-run artifact bundle.'
         });
     }
     const bundleFiles: Record<string, string> = {};
@@ -170,7 +146,7 @@ export function toPipelineArtifactBundle(
     }
     return Either.ofRight({
         artifactSchemaVersion: input.artifactSchemaVersion,
-        distributedRunId: input.distributedRunId,
+        distributedRunId: content.distributedRun.distributedRunId,
         generatedAtEpochMs: input.generatedAtEpochMs,
         files: bundleFiles as ControlDistributedRunArtifactBundle['files']
     });
@@ -185,26 +161,73 @@ export function resolveArtifactSchemaVersion(parsed: ParsedDistributedArtifactPi
         : 1;
 }
 
-function toArtifactSnapshots(
-    content: DistributedRunBundleContent,
-    bundle: Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle>
-): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
-    if (content.controlRun.status === 'unavailable') {
-        return Either.ofLeft(content.controlRun.reason);
-    }
-    return Either.ofRight({
+function computeRecordedControlRunAnalysis(
+    input: DistributedRunArtifactPipelineInput,
+    controlRun: ControlRunSnapshot
+): DistributedRunRecordedControlRunAnalysis {
+    const { content } = input;
+    const { distributedRun } = content;
+    const snapshots = toRecordedSnapshots(input, controlRun);
+    const { artifactBundle } = snapshots;
+    const monitor = deriveDistributedRunMonitor({
+        distributedRun,
+        controlRun,
+        artifactBundle,
+        artifactValidation: validateDistributedRunArtifactFromParsed(artifactBundle, input.parsed)
+    });
+    const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, artifactBundle, monitor });
+    const facts = computeDistributedRunAnalysisFacts({
+        content,
+        generatedAtEpochMs: input.generatedAtEpochMs,
+        artifactSchemaVersion: input.artifactSchemaVersion,
+        parseWarnings: snapshots.parseWarnings.map((warning) => ({ ...warning })),
+        performance: computeDistributedRunPerformance({
+            distributedRun,
+            controlRun,
+            fleetReport: content.fleetReport,
+            results: content.results,
+            events: content.events
+        }),
+        spa: { report, verdict: deriveRunVerdictView({ distributedRun, monitor, report, artifactBundle }) }
+    });
+    return { controlRunStatus: 'recorded', analysis: toDistributedRunAnalysis(facts), snapshots, monitor, report };
+}
+
+/** The reason leads the warnings; performance and the SPA sections read the control run, so they are left out. */
+function computeUnavailableControlRunAnalysis(
+    input: DistributedRunArtifactPipelineInput,
+    reason: DistributedRunArtifactParseWarning
+): DistributedRunUnavailableControlRunAnalysis {
+    const { content } = input;
+    const facts = computeDistributedRunAnalysisFacts({
+        content,
+        generatedAtEpochMs: input.generatedAtEpochMs,
+        artifactSchemaVersion: input.artifactSchemaVersion,
+        parseWarnings: [reason, ...content.parseWarnings].map((warning) => ({ ...warning })),
+        performance: undefined,
+        spa: undefined
+    });
+    return { controlRunStatus: 'unavailable', analysis: toDistributedRunAnalysis(facts), reason };
+}
+
+function toRecordedSnapshots(
+    input: DistributedRunArtifactPipelineInput,
+    controlRun: ControlRunSnapshot
+): DistributedRunArtifactSnapshots {
+    const { content } = input;
+    const bundle = toPipelineArtifactBundle(input);
+    return {
         distributedRun: content.distributedRun,
-        controlRun: content.controlRun.snapshot,
+        controlRun,
         ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right }),
         parseWarnings: [...content.parseWarnings, ...(bundle.left ? [bundle.left] : [])]
-    });
+    };
 }
 
 function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsInput): DistributedRunAnalysisFacts {
-    const { content, spa } = input;
+    const { content, performance, spa } = input;
     const { distributedRun, fleetReport } = content;
     const ok = fleetReport?.ok ?? distributedRun.rollup.ok;
-    const performance = computeRecordedPerformance(content);
     const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
     const sections = {
         generatedAtEpochMs: input.generatedAtEpochMs,
@@ -218,7 +241,7 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         parseWarnings: input.parseWarnings,
         ...(performance === undefined ? {} : { performance }),
         targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
-        spa
+        ...(spa === undefined ? {} : { spa })
     };
     if (ok) {
         return { ok, ...sections };
@@ -230,25 +253,9 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         controlPostFailure: content.controlPostFailure,
         results: content.results,
         events: content.events,
-        spaReport: spa.report
+        spaReport: spa?.report
     });
     return { ok, ...sections, failure };
-}
-
-/** Performance needs the control run's agents, commands and results, so an unavailable control run leaves it absent. */
-function computeRecordedPerformance(
-    content: DistributedRunBundleContent
-): DistributedRunPerformanceAnalysis | undefined {
-    if (content.controlRun.status === 'unavailable') {
-        return undefined;
-    }
-    return computeDistributedRunPerformance({
-        distributedRun: content.distributedRun,
-        controlRun: content.controlRun.snapshot,
-        fleetReport: content.fleetReport,
-        results: content.results,
-        events: content.events
-    });
 }
 
 /** The fleet report's counts win; without one the run snapshot and the measured performance stand in. */
