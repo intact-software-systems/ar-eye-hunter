@@ -11,10 +11,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { act, createElement, StrictMode, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { UseRallarServerControllerInput } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-contracts.ts';
 import {
     useRallarServerController,
-    type RallarServerControllerModel,
-    type UseRallarServerControllerInput
+    type RallarServerControllerModel
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts';
 import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
 
@@ -48,9 +48,7 @@ const input: UseRallarServerControllerInput = {
         clientId: 'client',
         sessionId: 'session',
         roomId: 'room-a'
-    },
-    control: { state: 'idle', reconnectAttempt: 0, sentCount: 0, receivedCount: 0 },
-    onGlobalValueChange: () => {}
+    }
 };
 
 function RallarServerHarness(props: { input: UseRallarServerControllerInput; capture(view: RallarServerControllerModel): void; }) {

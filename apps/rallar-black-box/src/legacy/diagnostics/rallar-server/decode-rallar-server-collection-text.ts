@@ -5,6 +5,11 @@ import type {
     RallarServerRestCollectionVariables
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
+export interface RallarServerCollectionDraftValues {
+    readonly collection: RallarServerRestCollection;
+    readonly variables: RallarServerRestCollectionVariables;
+}
+
 export function decodeRallarServerCollectionText(text: string): Either<string, RallarServerRestCollection> {
     try {
         const value = JSON.parse(text);
@@ -32,6 +37,20 @@ export function decodeRallarServerCollectionVariablesText(
     catch (error) {
         return Either.ofLeft(error instanceof Error ? error.message : String(error));
     }
+}
+
+export function decodeRallarServerCollectionDraftText(
+    collectionText: string,
+    variablesText: string
+): Either<string, RallarServerCollectionDraftValues> {
+    return decodeRallarServerCollectionText(collectionText).flatMap(
+        (error) => Either.ofLeft(error),
+        (collection) =>
+            decodeRallarServerCollectionVariablesText(variablesText).mapRight((variables) => ({
+                collection,
+                variables
+            }))
+    );
 }
 
 function isRallarServerRestCollection(value: unknown): value is RallarServerRestCollection {
