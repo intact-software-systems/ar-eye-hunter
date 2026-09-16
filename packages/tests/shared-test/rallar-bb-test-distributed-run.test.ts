@@ -347,8 +347,8 @@ describe('rallar-bb-test distributed run contract', () => {
     it('rolls participant readiness and recipe results into one distributed state', () => {
         expect(rollupDistributedRunResult({
             participants: [
-                { agentId: 'alice-agent', state: 'ready', required: true },
-                { agentId: 'bob-agent', state: 'ready', required: true }
+                { agentId: 'alice-agent', state: 'ready', roles: [] },
+                { agentId: 'bob-agent', state: 'ready', roles: [] }
             ]
         })).toMatchObject({
             state: 'ready',
@@ -362,8 +362,8 @@ describe('rallar-bb-test distributed run contract', () => {
         expect(
             rollupDistributedRunResult({
                 participants: [
-                    { agentId: 'alice-agent', state: 'running', required: true },
-                    { agentId: 'bob-agent', state: 'ready', required: true }
+                    { agentId: 'alice-agent', state: 'running', roles: [] },
+                    { agentId: 'bob-agent', state: 'ready', roles: [] }
                 ],
                 recipes: [
                     { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'running' }
@@ -373,8 +373,8 @@ describe('rallar-bb-test distributed run contract', () => {
 
         expect(rollupDistributedRunResult({
             participants: [
-                { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'bob-agent', state: 'passed', required: true }
+                { agentId: 'alice-agent', state: 'passed', roles: [] },
+                { agentId: 'bob-agent', state: 'passed', roles: [] }
             ],
             recipes: [
                 { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'passed' },
@@ -390,18 +390,18 @@ describe('rallar-bb-test distributed run contract', () => {
         });
     });
 
-    it('rolls required failures, timeouts, and cancellations before optional failures', () => {
-        const optionalFailure = rollupDistributedRunResult({
+    it('rolls every participant and recipe failure, timeout, and cancellation into the distributed state', () => {
+        const participantFailure = rollupDistributedRunResult({
             participants: [
-                { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'observer-agent', state: 'failed', required: false }
+                { agentId: 'alice-agent', state: 'passed', roles: [] },
+                { agentId: 'observer-agent', state: 'failed', roles: [] }
             ],
             recipes: [
                 { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'passed' }
             ]
         });
-        expect(optionalFailure.state).toBe('passed');
-        expect(optionalFailure.summary.blockingFailures).toBe(0);
+        expect(participantFailure.state).toBe('failed');
+        expect(participantFailure.summary.blockingFailures).toBe(1);
 
         const requiredFailure = rollupDistributedRunResult({
             recipes: [
@@ -429,7 +429,7 @@ describe('rallar-bb-test distributed run contract', () => {
 
         expect(
             rollupDistributedRunResult({
-                participants: [{ agentId: 'alice-agent', state: 'timed-out' }]
+                participants: [{ agentId: 'alice-agent', state: 'timed-out', roles: [] }]
             }).state
         ).toBe('timed-out');
 
@@ -437,8 +437,8 @@ describe('rallar-bb-test distributed run contract', () => {
             rollupDistributedRunResult({
                 stateHint: 'waiting-for-barrier',
                 participants: [
-                    { agentId: 'alice-agent', state: 'acknowledged' },
-                    { agentId: 'bob-agent', state: 'acknowledged' }
+                    { agentId: 'alice-agent', state: 'acknowledged', roles: [] },
+                    { agentId: 'bob-agent', state: 'acknowledged', roles: [] }
                 ]
             }).state
         ).toBe('waiting-for-barrier');
@@ -446,7 +446,7 @@ describe('rallar-bb-test distributed run contract', () => {
         expect(
             rollupDistributedRunResult({
                 stateHint: 'cancelled',
-                participants: [{ agentId: 'alice-agent', state: 'running' }]
+                participants: [{ agentId: 'alice-agent', state: 'running', roles: [] }]
             }).state
         ).toBe('cancelled');
     });
@@ -528,8 +528,8 @@ describe('rallar-bb-test distributed run contract', () => {
     it('rolls failed group assertions into blocking failures and summary counts', () => {
         const rollup = rollupDistributedRunResult({
             participants: [
-                { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'bob-agent', state: 'passed', required: true }
+                { agentId: 'alice-agent', state: 'passed', roles: [] },
+                { agentId: 'bob-agent', state: 'passed', roles: [] }
             ],
             recipes: [
                 { recipeKey: 'alice:health', agentId: 'alice-agent', state: 'passed' },

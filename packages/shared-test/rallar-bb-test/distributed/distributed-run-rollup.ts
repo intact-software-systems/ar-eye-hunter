@@ -67,24 +67,22 @@ export function rollupDistributedRunResult(
     const participants = input.participants ?? [];
     const recipes = input.recipes ?? [];
     const groupAssertions = input.groupAssertions ?? [];
-    const requiredParticipants = participants.filter((item) => item.required !== false);
-    const requiredRecipes = recipes.filter((item) => item.required !== false);
-    const requiredItems = [
-        ...requiredParticipants.map((item) => ({
+    const items = [
+        ...participants.map((item) => ({
             kind: 'participant' as const,
             key: item.agentId,
             item
         })),
-        ...requiredRecipes.map((item) => ({ kind: 'recipe' as const, key: itemKey(item), item }))
+        ...recipes.map((item) => ({ kind: 'recipe' as const, key: itemKey(item), item }))
     ];
     const failures: RallarBlackBoxDistributedRunRollupFailure[] = [
-        ...requiredItems
+        ...items
             .filter(({ item }) => isBlockingItemFailure(item))
             .map(({ kind, key, item }) => ({
                 kind,
                 key,
                 state: item.state,
-                required: item.required !== false,
+                required: true,
                 error: item.error
             })),
         ...groupAssertions
@@ -100,8 +98,8 @@ export function rollupDistributedRunResult(
 
     const state = deriveRollupState({
         stateHint: input.stateHint,
-        participants: requiredParticipants,
-        recipes: requiredRecipes,
+        participants,
+        recipes,
         failures
     });
 
@@ -110,17 +108,17 @@ export function rollupDistributedRunResult(
         ok: state === 'passed',
         summary: {
             participants: participants.length,
-            requiredParticipants: requiredParticipants.length,
+            requiredParticipants: participants.length,
             readyParticipants:
-                requiredParticipants.filter((item) =>
+                participants.filter((item) =>
                     item.state === 'ready' || item.state === 'running' || item.state === 'passed'
                 ).length,
-            passedParticipants: requiredParticipants.filter((item) => item.state === 'passed').length,
-            failedParticipants: requiredParticipants.filter(isBlockingItemFailure).length,
+            passedParticipants: participants.filter((item) => item.state === 'passed').length,
+            failedParticipants: participants.filter(isBlockingItemFailure).length,
             recipes: recipes.length,
-            requiredRecipes: requiredRecipes.length,
-            passedRecipes: requiredRecipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
-            failedRecipes: requiredRecipes.filter(isBlockingItemFailure).length,
+            requiredRecipes: recipes.length,
+            passedRecipes: recipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
+            failedRecipes: recipes.filter(isBlockingItemFailure).length,
             groupAssertions: groupAssertions.length,
             passedGroupAssertions: groupAssertions.filter((result) => result.ok).length,
             failedGroupAssertions: groupAssertions.filter((result) => !result.ok).length,

@@ -361,10 +361,7 @@ export interface RallarBlackBoxDistributedParticipantResult {
     readonly clientId?: string;
     /** Absent when the agent has not reported a session identity. */
     readonly sessionId?: string;
-    /** Absent when the participant result was assembled outside control-server evaluation. */
-    readonly roles?: readonly string[];
-    /** Absent when the participant is required, the rollup's reading of an unmarked participant. */
-    readonly required?: boolean;
+    readonly roles: readonly string[];
     readonly state: RallarBlackBoxDistributedRunItemState;
     /** Absent while the participant's readiness or outcome is undecided. */
     readonly ok?: boolean;
@@ -382,12 +379,9 @@ export interface RallarBlackBoxDistributedRecipeResult {
     readonly recipeKey: string;
     /** Absent when the start command link names no recipe. */
     readonly recipeId?: string;
-    /** Absent when the result was assembled outside control-server evaluation. */
-    readonly agentId?: string;
+    readonly agentId: string;
     /** Absent when the start command link names no role. */
     readonly role?: string;
-    /** Absent when the recipe is required, the rollup's reading of an unmarked recipe. */
-    readonly required?: boolean;
     readonly state: RallarBlackBoxDistributedRunItemState;
     /** Absent until the recipe's start command has a result. */
     readonly ok?: boolean;

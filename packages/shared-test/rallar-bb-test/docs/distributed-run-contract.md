@@ -124,23 +124,18 @@ one distributed-run status.
 The rollup rules are deliberately simple and deterministic:
 
 - Explicit terminal `stateHint` wins.
-- Required timeouts roll up to `timed-out`.
-- Required cancellations roll up to `cancelled`.
-- Required failures, disconnected required participants, or `ok: false` roll up
-  to `failed`.
-- Optional participant or recipe failures are counted as evidence but do not
-  fail the distributed run.
+- Every participant and recipe result blocks the run: timeouts roll up to
+  `timed-out` and cancellations to `cancelled`.
+- Failures, disconnected participants, or `ok: false` roll up to `failed`.
 - Failed group assertion results are blocking failures with
   `kind: 'group-assertion'`; a run whose recipes all passed still rolls up to
   `failed` when any group assertion failed.
-- If all required recipe results passed, the distributed run is `passed`.
-- If any required participant or recipe is running, the distributed run is
-  `running`.
-- If all required participants are ready before recipe execution, the run is
-  `ready`.
+- If all recipe results passed, the distributed run is `passed`.
+- If any participant or recipe is running, the distributed run is `running`.
+- If all participants are ready before recipe execution, the run is `ready`.
 - If stage ACKs passed but the optional barrier has not finished, the run is
   `waiting-for-barrier`.
-- If any required participant has acknowledged but not all are ready, the run is
+- If any participant has acknowledged but not all are ready, the run is
   `waiting-for-ack`.
 - Otherwise the state remains the supplied non-terminal hint or `draft`.
 
