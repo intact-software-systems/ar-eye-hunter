@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { AuthSession, LoginRequest } from '@shared/api/api-config.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,9 +15,16 @@ interface RecordedRequest {
     readonly body: string | undefined;
 }
 
+const bootstrapPatches = vi.hoisted(() => [] as Array<Record<string, string | boolean | undefined>>);
+const loadFacade = vi.hoisted(() => vi.fn());
+const restorableSession = vi.hoisted(() => ({ current: undefined as undefined | Record<string, string | number> }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
-    rallarBlackBoxRuntimeStore: { updateBootstrapConfig: () => {} },
+    rallarBlackBoxRuntimeStore: { updateBootstrapConfig: (patch: Record<string, string | boolean | undefined>) => bootstrapPatches.push(patch) },
     rallarBlackBoxProviderModeFromConfig: () => 'browser-rallar'
+}));
+vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts', () => ({ loadBrowserRallarFacade: loadFacade }));
+vi.mock('../../../apps/rallar-black-box/src/legacy/shell/read-current-auth-session.ts', () => ({
+    readCurrentAuthSession: () => restorableSession.current
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -33,24 +41,58 @@ describe('auth command-center panel preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
     const requests: RecordedRequest[] = [];
+    const authenticated: Array<string | undefined> = [];
+    const logins: string[] = [];
+    const copied: string[] = [];
+    let logouts = 0;
+    let loginFailure: Error | undefined;
 
-    async function render(): Promise<void> {
+    async function render(
+        session: AuthSession | undefined = authSession,
+        apiBaseUrl = 'http://localhost:18080'
+    ): Promise<void> {
         await act(async () =>
             root.render(createElement(AuthCommandCenterPanel, {
                 state,
                 bootstrap: resolveRallarBlackBoxBootstrapConfig('?provider=browser-rallar&apiBaseUrl=http%3A%2F%2Flocalhost%3A18080', {}, ''),
-                authSession,
+                authSession: session,
                 globalValues: {
-                    apiBaseUrl: 'http://localhost:18080',
+                    apiBaseUrl,
                     applicationId: 'app',
                     workspaceId: 'workspace',
                     clientId: 'client',
                     sessionId: 'session',
                     roomId: 'room-a'
                 },
-                onAuthenticated: () => {},
-                onLogout: async () => {}
+                onAuthenticated: (next) => authenticated.push(next?.sessionId),
+                onLogout: async () => {
+                    logouts += 1;
+                }
             }))
+        );
+    }
+
+    function field(label: string): HTMLInputElement {
+        const control = [...container.querySelectorAll('label')]
+            .find((candidate) => candidate.querySelector('span')?.textContent === label)
+            ?.querySelector('input');
+        if (!(control instanceof HTMLInputElement)) {
+            throw new Error(`Missing ${label} field`);
+        }
+        return control;
+    }
+
+    async function type(label: string, value: string): Promise<void> {
+        const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        await act(async () => {
+            setValue?.call(field(label), value);
+            field(label).dispatchEvent(new Event('input', { bubbles: true }));
+        });
+    }
+
+    function actionRows(): readonly string[] {
+        return [...container.querySelectorAll('.command-center-action-row')].map((row) =>
+            `${row.querySelector('strong')?.textContent} ${row.querySelector('.pill')?.textContent}`
         );
     }
 
@@ -73,6 +115,38 @@ describe('auth command-center panel preservation', () => {
 
     beforeEach(() => {
         requests.length = 0;
+        authenticated.length = 0;
+        logins.length = 0;
+        copied.length = 0;
+        bootstrapPatches.length = 0;
+        logouts = 0;
+        loginFailure = undefined;
+        restorableSession.current = undefined;
+        const storedSessions = new Map<string, string>();
+        vi.stubGlobal('localStorage', {
+            getItem: (key: string) => storedSessions.get(key) ?? null,
+            setItem: (key: string, value: string) => storedSessions.set(key, value),
+            removeItem: (key: string) => storedSessions.delete(key)
+        });
+        vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async (text) => {
+            copied.push(text);
+        });
+        loadFacade.mockResolvedValue({
+            configure: (config: { apiBaseUrl: string; }) => logins.push(`configure ${config.apiBaseUrl}`),
+            auth: {
+                login: async (request: LoginRequest) => {
+                    logins.push(`login ${request.username}`);
+                    if (loginFailure) {
+                        throw loginFailure;
+                    }
+                    return { ...authSession, sessionId: 'logged-in-session', username: request.username };
+                },
+                registerAndLogin: async (request: LoginRequest) => {
+                    logins.push(`register ${request.username}`);
+                    return { ...authSession, sessionId: 'registered-session', username: request.username };
+                }
+            }
+        });
         vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
             const headers = (init.headers ?? {}) as Record<string, string>;
             const path = new URL(url).pathname;
@@ -166,6 +240,69 @@ describe('auth command-center panel preservation', () => {
             requests: 0,
             error: 'Rallar Server API base URL is required.',
             actions: 0
+        });
+    });
+    it('logs in, registers and logs in, and shows a rejected login', async () => {
+        await render(undefined);
+        await type('Username', 'operator');
+        await type('Password', 'pass-word');
+        await click('Login');
+        await click('Register and login');
+        const succeeded = { authenticated: [...authenticated], logins: [...logins], rows: actionRows(), patches: bootstrapPatches.length };
+        loginFailure = new ApiHttpError('POST', '/api/auth/login', 401, JSON.stringify({ code: 'auth-invalid-credentials' }));
+        await click('Login');
+
+        expect({ succeeded, error: container.querySelector('.workbench-error')?.textContent, authenticated }).toEqual({
+            succeeded: {
+                authenticated: ['logged-in-session', 'registered-session'],
+                logins: ['configure http://localhost:18080', 'login operator', 'configure http://localhost:18080', 'register operator'],
+                rows: ['Register and login 201', 'Login 200'],
+                patches: 2
+            },
+            error: expect.stringContaining('401'),
+            authenticated: ['logged-in-session', 'registered-session']
+        });
+    });
+
+    it('restores, clears and logs out the browser session', async () => {
+        await render();
+        await click('Restore session');
+        const missing = container.querySelector('.workbench-error')?.textContent;
+        restorableSession.current = { ...authSession, sessionId: 'restored-session' };
+        await click('Restore session');
+        await click('Clear local session');
+        await click('Logout');
+
+        expect({ missing, authenticated, rows: actionRows(), logouts, patches: bootstrapPatches.length }).toEqual({
+            missing: 'No restorable browser auth session was found.',
+            authenticated: [undefined, 'restored-session', undefined],
+            rows: ['Clear local session 200', 'Restore session 200'],
+            logouts: 1,
+            patches: 1
+        });
+    });
+
+    it('follows the global API base URL and copies redacted diagnostics and a strict recipe', async () => {
+        await render();
+        await render(authSession, 'http://localhost:18090');
+        const followed = field('API Base URL').value;
+        await click('Create WS ticket');
+        await click('Copy diagnostics');
+        await click('Copy auth recipe');
+        const diagnostics = JSON.parse(copied[0] ?? 'null');
+
+        expect({
+            followed,
+            ticketRequest: requests[0]?.path.startsWith('/api/auth/ws-ticket/requests/'),
+            diagnostics: [diagnostics?.apiBaseUrl, diagnostics?.wsTicket, diagnostics?.recentActions?.length],
+            leaked: copied.some((text) => text.includes('auth-secret-token') || text.includes('ticket-secret')),
+            recipe: JSON.parse(copied[1] ?? 'null')?.recipeId
+        }).toEqual({
+            followed: 'http://localhost:18090',
+            ticketRequest: true,
+            diagnostics: ['http://localhost:18090', '<redacted>', 1],
+            leaked: false,
+            recipe: 'rallar-auth-command-center'
         });
     });
 });

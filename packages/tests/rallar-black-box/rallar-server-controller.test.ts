@@ -16,6 +16,7 @@ import {
     type RallarServerControllerModel,
     type UseRallarServerControllerInput
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts';
+import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
 
 interface RecordedRequest {
     readonly method: string;
@@ -64,15 +65,16 @@ describe('Rallar Server controller preservation', () => {
     let view: RallarServerControllerModel;
     const requests: RecordedRequest[] = [];
     const copied: string[] = [];
+    const stored = new Map<string, string>();
     let respond: (url: string) => StubResponse;
 
-    async function render(): Promise<void> {
+    async function render(next: UseRallarServerControllerInput = input): Promise<void> {
         await act(async () =>
             root.render(createElement(
                 StrictMode,
                 null,
                 createElement(RallarServerHarness, {
-                    input,
+                    input: next,
                     capture: (captured) => {
                         view = captured;
                     }
@@ -87,7 +89,12 @@ describe('Rallar Server controller preservation', () => {
     }
 
     beforeEach(() => {
-        window.localStorage?.clear();
+        stored.clear();
+        vi.stubGlobal('localStorage', {
+            getItem: (key: string) => stored.get(key) ?? null,
+            setItem: (key: string, value: string) => stored.set(key, value),
+            removeItem: (key: string) => stored.delete(key)
+        });
         requests.length = 0;
         copied.length = 0;
         runtimeEvents.length = 0;
@@ -276,6 +283,115 @@ describe('Rallar Server controller preservation', () => {
             valid: { ok: true },
             error: 'Collection JSON requires collectionId, name, and steps.',
             copies: 1
+        });
+    });
+    it('follows the global base URL until the operator edits the draft, persists it redacted, and restores it as edited', async () => {
+        const withBaseUrl = (apiBaseUrl: string): UseRallarServerControllerInput => ({
+            ...input,
+            globalValues: { ...input.globalValues!, apiBaseUrl }
+        });
+        await render(withBaseUrl('http://localhost:18081'));
+        const followed = view.apiBaseUrl;
+        const preset = view.allPresets.find((entry) => entry.presetId === 'groups-list');
+        await act(async () => view.applyPreset(preset!));
+        await render(withBaseUrl('http://localhost:18082'));
+        const kept = view.apiBaseUrl;
+        const persisted = JSON.parse(stored.get(UI_STORAGE_KEYS.rallarServerDraft) ?? 'null');
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        await render(withBaseUrl('http://localhost:18083'));
+
+        expect({
+            followed,
+            kept,
+            persisted: [persisted?.selectedPresetId, persisted?.path, persisted?.apiBaseUrl],
+            leaked: [...stored.values()].some((value) => value.includes('server-secret-token')),
+            restored: [view.apiBaseUrl, view.selectedPresetId, view.path]
+        }).toEqual({
+            followed: 'http://localhost:18081',
+            kept: 'http://localhost:18081',
+            persisted: ['groups-list', '/api/state/apps/app/workspaces/workspace/groups', 'http://localhost:18081'],
+            leaked: false,
+            restored: ['http://localhost:18081', 'groups-list', '/api/state/apps/app/workspaces/workspace/groups']
+        });
+    });
+
+    it('persists a decodable collection draft and leaves the stored draft alone for an invalid one', async () => {
+        await render();
+        await act(async () => view.setCollectionText(JSON.stringify({ collectionId: 'draft', name: 'Draft', steps: [] })));
+        const valid = JSON.parse(stored.get(UI_STORAGE_KEYS.rallarServerCollectionDraft) ?? 'null');
+        await act(async () => view.setCollectionText('{'));
+
+        expect({
+            valid: valid?.collection?.collectionId,
+            afterInvalid: JSON.parse(stored.get(UI_STORAGE_KEYS.rallarServerCollectionDraft) ?? 'null')?.collection?.collectionId
+        }).toEqual({ valid: 'draft', afterInvalid: 'draft' });
+    });
+
+    it('applies a collection template, appends the current request with its last status, and reports invalid collection and body JSON', async () => {
+        await render();
+        const template = view.collectionTemplates[1];
+        await act(async () => view.applyCollectionTemplate(template.collectionId));
+        const applied = [view.selectedCollectionId, JSON.parse(view.collectionText).collectionId, JSON.parse(view.collectionVariablesText)];
+        await act(async () => view.applyCollectionTemplate('unknown-collection'));
+        const unknownKept = view.selectedCollectionId;
+        await act(async () => view.sendRequest());
+        await act(async () => view.addCurrentRequestToCollection());
+        const appended = JSON.parse(view.collectionText).steps.at(-1);
+        await act(async () => {
+            view.setMethod('POST');
+            view.setBodyText('{');
+        });
+        await act(async () => view.addCurrentRequestToCollection());
+        const bodyError = view.collectionError;
+        await act(async () => view.setCollectionText('[]'));
+        await act(async () => view.addCurrentRequestToCollection());
+
+        expect({ applied, unknownKept, appended, bodyError: typeof bodyError, collectionError: view.collectionError }).toEqual({
+            applied: [template.collectionId, template.collectionId, template.variables ?? {}],
+            unknownKept: template.collectionId,
+            appended: {
+                stepId: `request-${template.steps.length + 1}`,
+                label: 'Read runtime config',
+                request: {
+                    method: 'GET',
+                    path: '/api/config',
+                    headers: {},
+                    query: {},
+                    responseBodyMode: 'auto',
+                    attachAuth: false,
+                    timeoutMs: 5_000
+                },
+                expect: { status: 200 }
+            },
+            bodyError: 'string',
+            collectionError: 'Collection JSON must be an object.'
+        });
+    });
+
+    it('copies the redacted collection with its variables and the command preview, and derives the response views', async () => {
+        respond = () => ({
+            status: 200,
+            body: { group: { groupId: 'room-z' }, principalId: 'principal-z', sessionId: 'session-z', token: 'server-secret-token' }
+        });
+        await render();
+        await act(async () => view.setCollectionVariablesText('{"extra":"value"}'));
+        await act(async () => view.copyCollection());
+        await act(async () => view.copyCommand());
+        await act(async () => view.sendRequest());
+
+        expect({
+            collectionVariables: JSON.parse(copied[0] ?? 'null')?.variables,
+            command: copied[1] === view.commandPreview,
+            latest: [view.latestGroupId, view.latestClientId, view.latestSessionId],
+            bodyLeaks: view.responseBodyText.includes('server-secret-token'),
+            headers: JSON.parse(view.responseHeadersText)['content-type']
+        }).toEqual({
+            collectionVariables: { extra: 'value' },
+            command: true,
+            latest: ['room-z', 'principal-z', 'session-z'],
+            bodyLeaks: false,
+            headers: 'application/json'
         });
     });
 });
