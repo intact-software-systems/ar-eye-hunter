@@ -4,6 +4,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -1645,99 +1647,121 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(runState.locator('.metric').filter({ hasText: 'RTC' })).toContainText('ready');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('awesome');
 
-    await page.evaluate(() => {
-        (window as any).__lastRallarWsSend = undefined;
-        (window as any).__rallarCallLog = [];
-        (window as any).__rallarWsMessageHandler = undefined;
-        let connected = false;
-        const session = {
-            clientId: 'alice-client',
-            accessToken: 'secret-token-value',
-            username: 'alice',
-            sessionId: 'alice-session',
-            expiresAtEpochMs: Date.now() + 60_000
-        };
-        (window as any).__rallarDirectFacade = {
-            configure: (config: unknown) => {
-                (window as any).__rallarCallLog.push({
-                    kind: 'configure',
-                    config
-                });
-            },
-            setDefaults: (defaults: unknown) => {
-                (window as any).__rallarCallLog.push({
-                    kind: 'setDefaults',
-                    defaults
-                });
-            },
-            defaults: () => ({}),
-            status: () => connected ? 'connected' : 'idle',
-            isConnected: () => connected,
-            session: () => session,
-            auth: {
-                restore: () => session
-            },
-            start: async (config: unknown) => {
-                connected = true;
-                (window as any).__rallarCallLog.push({
-                    kind: 'start',
-                    config
-                });
-                return { session, connected: true };
-            },
-            connect: async () => {
-                connected = true;
-                return { status: 'connected' };
-            },
-            disconnect: async () => {
-                connected = false;
-            },
-            rooms: {
-                current: () => undefined,
-                list: () => [],
-                create: async (input: unknown) => input,
-                join: async (groupId: string) => ({ groupId })
-            },
-            people: {
-                list: () => []
-            },
-            messages: {
-                ws: {
-                    send: async (input: unknown) => {
-                        if (!connected) {
-                            throw new Error('Rallar direct facade is not connected.');
+    await page.evaluate(
+        ({ joinedGroupSnapshot, sentLifecycle }) => {
+            (window as any).__lastRallarWsSend = undefined;
+            (window as any).__rallarCallLog = [];
+            (window as any).__rallarWsMessageHandler = undefined;
+            let connected = false;
+            const session = {
+                clientId: 'alice-client',
+                accessToken: 'secret-token-value',
+                username: 'alice',
+                sessionId: 'alice-session',
+                expiresAtEpochMs: Date.now() + 60_000
+            };
+            (window as any).__rallarDirectFacade = {
+                configure: (config: unknown) => {
+                    (window as any).__rallarCallLog.push({
+                        kind: 'configure',
+                        config
+                    });
+                },
+                setDefaults: (defaults: unknown) => {
+                    (window as any).__rallarCallLog.push({
+                        kind: 'setDefaults',
+                        defaults
+                    });
+                },
+                defaults: () => ({}),
+                status: () => connected ? 'connected' : 'idle',
+                isConnected: () => connected,
+                session: () => session,
+                auth: {
+                    restore: () => session
+                },
+                start: async (config: unknown) => {
+                    connected = true;
+                    (window as any).__rallarCallLog.push({
+                        kind: 'start',
+                        config
+                    });
+                    return { session, connected: true };
+                },
+                connect: async () => {
+                    connected = true;
+                    return { status: 'connected' };
+                },
+                disconnect: async () => {
+                    connected = false;
+                },
+                rooms: {
+                    current: () => undefined,
+                    list: () => [],
+                    create: async (input: unknown) => input,
+                    join: async (groupId: string) => ({
+                        ...joinedGroupSnapshot,
+                        group: { ...joinedGroupSnapshot.group, groupId }
+                    })
+                },
+                people: {
+                    list: () => []
+                },
+                messages: {
+                    ws: {
+                        send: async (input: unknown) => {
+                            if (!connected) {
+                                throw new Error('Rallar direct facade is not connected.');
+                            }
+                            (window as any).__rallarCallLog.push({
+                                kind: 'messages.ws.send',
+                                input
+                            });
+                            (window as any).__lastRallarWsSend = input;
+                            return {
+                                msgId: sentLifecycle.msgId,
+                                typeId: sentLifecycle.typeId,
+                                lifecycle: () => sentLifecycle,
+                                onEvent: () => () => undefined,
+                                wait: async () => ({ status: 'settled', lifecycle: sentLifecycle })
+                            };
+                        },
+                        onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
+                            (window as any).__rallarWsMessageHandler = handler;
+                            return () => {
+                                (window as any).__rallarWsMessageHandler = undefined;
+                            };
                         }
-                        (window as any).__rallarCallLog.push({
-                            kind: 'messages.ws.send',
-                            input
-                        });
-                        (window as any).__lastRallarWsSend = input;
-                        return {
-                            status: 'sent',
-                            transport: 'ws',
-                            input
-                        };
-                    },
-                    onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
-                        (window as any).__rallarWsMessageHandler = handler;
-                        return () => {
-                            (window as any).__rallarWsMessageHandler = undefined;
-                        };
                     }
+                },
+                ws: {
+                    status: () => ({ readyState: 'open', isOpen: connected }),
+                    waitForOpen: async () => ({ status: 'open' })
+                },
+                rtc: {
+                    status: () => ({ readyPeerIds: ['bob-session'] })
+                },
+                realtime: {
+                    health: () => ({ connected })
                 }
-            },
-            ws: {
-                status: () => ({ readyState: 'open', isOpen: connected }),
-                waitForOpen: async () => ({ status: 'open' })
-            },
-            rtc: {
-                status: () => ({ readyPeerIds: ['bob-session'] })
-            },
-            realtime: {
-                health: () => ({ connected })
-            }
-        };
-    });
+            };
+        },
+        {
+            joinedGroupSnapshot: createGroupSnapshotFixture({
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'awesome',
+                sessionIds: ['alice-session']
+            }),
+            sentLifecycle: createInitialALDeliveryLifecycle({
+                msgId: 'ws-probe-message',
+                typeId: 'room.black-box.ws.probe',
+                ackMode: 'none',
+                expiresAtMs: Date.now() + 60_000,
+                submittedAtMs: Date.now()
+            })
+        }
+    );
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar Direct live/ })
         .click();
