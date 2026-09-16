@@ -35,6 +35,17 @@ export * from './diagnostics.ts';
 export * from './distributed-artifact-analysis.ts';
 export * from './distributed-artifact-evidence.ts';
 export * from './distributed-artifact-pipeline.ts';
+export type {
+    DistributedArtifactFamily,
+    DistributedArtifactInventoryItem,
+    DistributedArtifactInventoryStatus,
+    DistributedArtifactWorkspace,
+    DistributedArtifactWorkspaceInput,
+    DistributedArtifactWorkspaceIssue,
+    DistributedArtifactWorkspaceIssueCode,
+    DistributedArtifactWorkspaceSource,
+    DistributedArtifactWorkspaceSupport
+} from './distributed-artifact-workspace-contracts.ts';
 export * from './distributed-artifact-workspace.ts';
 export * from './distributed-recipe-catalog.ts';
 export {
@@ -87,6 +98,7 @@ export * from './distributed-run-monitor.ts';
 export * from './distributed-run-observation/distributed-recipe-state-tone.ts';
 export * from './distributed-run-observation/distributed-run-row-contracts.ts';
 export * from './distributed-run-observation/validate-distributed-run-artifact.ts';
+export * from './distributed-run-performance/compute-distributed-run-performance.ts';
 export * from './distributed-run-tuning-candidate.ts';
 export * from './distributed-run-tuning-decisions.ts';
 export * from './distributed-run-tuning.ts';

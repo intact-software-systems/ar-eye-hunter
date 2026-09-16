@@ -1,4 +1,4 @@
-import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
 import { distributedRunManifestContractIssues } from './tune-run-catalog-safety.ts';
 import type { TuneQuarantinedRun, TuneRunCatalog, TuneRunOption } from './tune-run-catalog.ts';
 

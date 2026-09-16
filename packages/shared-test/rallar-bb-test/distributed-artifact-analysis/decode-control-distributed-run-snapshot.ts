@@ -312,7 +312,6 @@ function decodeOptionalTargetResolution(
         return Either.ofLeft('targetResolution must be a JSON object when present');
     }
     const group = value.group;
-    const summary = value.summary;
     const issue = toFirstDecodeIssue([
         [
             isJsonRecordValue(group) &&
@@ -328,26 +327,7 @@ function decodeOptionalTargetResolution(
             'targetResolution.targetPolicyMode must be a target policy mode'
         ],
         [isTextArray(value.targetAgentIds), 'targetResolution.targetAgentIds must be an array of strings'],
-        [isJsonRecordValue(summary), 'targetResolution.summary must be a JSON object'],
-        ...TARGET_SUMMARY_COUNTERS.map((key) =>
-            [
-                isJsonRecordValue(summary) && isFiniteNumber(summary[key]),
-                `targetResolution.summary.${key} must be a finite number`
-            ] as const
-        ),
-        [
-            isJsonRecordValue(summary) &&
-            isAbsentOrFiniteNumber(summary.expectedParticipantCount) &&
-            isAbsentOrFiniteNumber(summary.assertionCapabilityBlockedAgents),
-            'targetResolution.summary optional counters must be finite numbers when present'
-        ],
-        [
-            isJsonRecordValue(summary) &&
-            isFiniteNumberRecord(summary.roleCounts) &&
-            isFiniteNumberRecord(summary.regions) &&
-            isFiniteNumberRecord(summary.providers),
-            'targetResolution.summary roleCounts, regions and providers must map names to counts'
-        ]
+        ...decodeTargetResolutionSummaryChecks(value.summary)
     ]);
     if (issue !== undefined) {
         return Either.ofLeft(issue);
@@ -362,6 +342,28 @@ function decodeOptionalTargetResolution(
             targetResolution: { ...value, blockers: blockers.right } as RallarBlackBoxDistributedTargetResolution
         })
         : Either.ofLeft(entryIssue);
+}
+
+function decodeTargetResolutionSummaryChecks(summary: unknown): readonly (readonly [boolean, string])[] {
+    if (!isJsonRecordValue(summary)) {
+        return [[false, 'targetResolution.summary must be a JSON object']];
+    }
+    return [
+        ...TARGET_SUMMARY_COUNTERS.map((key) =>
+            [isFiniteNumber(summary[key]), `targetResolution.summary.${key} must be a finite number`] as const
+        ),
+        [
+            isAbsentOrFiniteNumber(summary.expectedParticipantCount) &&
+            isAbsentOrFiniteNumber(summary.assertionCapabilityBlockedAgents),
+            'targetResolution.summary optional counters must be finite numbers when present'
+        ],
+        [
+            isFiniteNumberRecord(summary.roleCounts) &&
+            isFiniteNumberRecord(summary.regions) &&
+            isFiniteNumberRecord(summary.providers),
+            'targetResolution.summary roleCounts, regions and providers must map names to counts'
+        ]
+    ];
 }
 
 function decodeRoleAssignment(

@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
     computeDistributedRunArtifactAnalysis,
-    computeDistributedRunSnapshotPerformance,
     toDistributedArtifactBundle,
     toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createDistributedArtifactWorkspace } from '../../../shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
+import { computeDistributedRunSnapshotPerformance } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
 import { createRecipeConsoleScaleFixture } from '../../../shared-test/rallar-bb-test/scale-fixture.ts';
 import {
     createControlRunSnapshot,

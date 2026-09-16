@@ -417,37 +417,32 @@ export function useRunnerRunsController({
                 selectedFiles,
                 generatedAtEpochMs
             );
-            if (read.right === undefined) {
-                setDistributedError(read.left?.message);
-                return;
-            }
-            const {
-                artifactFiles,
-                analysis,
-                snapshots,
-                artifactBundle
-            } = read.right;
-            activeSyntheticSeedRef.current = undefined;
-            setActiveSyntheticSeed(undefined);
-            setSelectedSyntheticSeedId('');
-            setImportedArtifactAnalysis(analysis);
-            setImportedArtifactStatus(distributedArtifactImportStatus(
-                artifactFiles,
-                analysis.parseWarnings.length
-            ));
-            setDistributedRuns((current) => [
-                snapshots.distributedRun,
-                ...current.filter((item) => item.distributedRunId !== snapshots.distributedRun.distributedRunId)
-            ]);
-            setSelectedDistributedRun(snapshots.distributedRun);
-            setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
-            setControlRunId(snapshots.controlRun.runId);
-            setDistributedControlRun(snapshots.controlRun);
-            setArtifactBundle(artifactBundle ?? snapshots.artifactBundle);
-            setLastDistributedRefresh(generatedAtEpochMs);
-            setCompareLeftId(snapshots.distributedRun.distributedRunId);
-            setCompareRightId('');
-            writeDistributedRunSeedToUrl(undefined);
+            read.fold(
+                (rejection) => setDistributedError(rejection.message),
+                ({ artifactFiles, analysis, snapshots, artifactBundle }) => {
+                    activeSyntheticSeedRef.current = undefined;
+                    setActiveSyntheticSeed(undefined);
+                    setSelectedSyntheticSeedId('');
+                    setImportedArtifactAnalysis(analysis);
+                    setImportedArtifactStatus(distributedArtifactImportStatus(
+                        artifactFiles,
+                        analysis.parseWarnings.length
+                    ));
+                    setDistributedRuns((current) => [
+                        snapshots.distributedRun,
+                        ...current.filter((item) => item.distributedRunId !== snapshots.distributedRun.distributedRunId)
+                    ]);
+                    setSelectedDistributedRun(snapshots.distributedRun);
+                    setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
+                    setControlRunId(snapshots.controlRun.runId);
+                    setDistributedControlRun(snapshots.controlRun);
+                    setArtifactBundle(artifactBundle ?? snapshots.artifactBundle);
+                    setLastDistributedRefresh(generatedAtEpochMs);
+                    setCompareLeftId(snapshots.distributedRun.distributedRunId);
+                    setCompareRightId('');
+                    writeDistributedRunSeedToUrl(undefined);
+                }
+            );
         }
         catch (error) {
             setDistributedError(runnerFriendlyErrorMessage(error));

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts",
+        "blob": "e42739a3da1bcea5bf6f76e2771b0fdf3233eee4"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-control-request-failure.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-distributed-run-failure.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-stream-failure.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-artifact-json-values.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-post-request.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-event-evidence.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-report-evidence.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-result-evidence.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-runner-summary.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-stream-summary.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-jsonl-control-envelopes.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-receiver-delivery-spec.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/distributed-run-failure-vocabulary.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/to-distributed-run-analysis-markdown.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/to-distributed-run-artifact-content.ts",
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/to-pipeline-artifact-bundle.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-command-timing.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-receiver-delivery.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-stream-timing-samples.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-stream-timing.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/compute-timing-summary.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/stream-sample-group-heap.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-performance/to-stream-timing-samples.ts"
+      ]
+    }
+  ]
+}

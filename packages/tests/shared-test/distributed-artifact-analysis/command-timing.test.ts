@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     computeDistributedRunArtifactAnalysis,
-    computeDistributedRunSnapshotPerformance,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunSnapshotPerformance } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
 import {
     createControlRunSnapshot,
     createDistributedRunSnapshot,
@@ -102,9 +102,7 @@ describe('distributed run artifact command timing', () => {
                 stats: [],
                 reports: [],
                 heartbeats: []
-            } satisfies ControlRunSnapshot,
-            artifactResults: [],
-            artifactEvents: []
+            } satisfies ControlRunSnapshot
         });
 
         expect(performance.commandTiming).toMatchObject({

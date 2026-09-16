@@ -3,9 +3,9 @@ import {
     computeDistributedRunArtifactAnalysis,
     computeDistributedRunArtifactPipelineAnalysis,
     toDistributedArtifactBundle,
-    toDistributedArtifactSnapshots,
-    toDistributedRunArtifactContent
+    toDistributedArtifactSnapshots
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { toDistributedRunArtifactContent } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
 import {
     declaredDistributedArtifactSchemaVersion,
     distributedArtifactGeneratedAt,

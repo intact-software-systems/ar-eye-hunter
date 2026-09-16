@@ -10,6 +10,8 @@ const EVENT_ENVELOPE_KINDS: readonly ControlEventEnvelope['kind'][] = ['event', 
 
 const RESULT_STATUSES: readonly RallarBlackBoxTestResult['status'][] = ['ok', 'failed', 'cancelled', 'skipped'];
 
+const RECORDER_OUTCOMES = ['SUCCESS', 'FAILURE'] as const;
+
 /**
  * A row stands in for a control result only when it carries the agent, command and outcome the
  * envelope requires; the control artifact recorder writes `agentId:commandId` result keys.
@@ -81,10 +83,7 @@ function decodeResultCommandId(commandId: unknown, resultKey: unknown): string |
 }
 
 function decodeRecorderOutcome(status: unknown): boolean | undefined {
-    if (status === 'SUCCESS') {
-        return true;
-    }
-    return status === 'FAILURE' ? false : undefined;
+    return isOneOf(status, RECORDER_OUTCOMES) ? status === 'SUCCESS' : undefined;
 }
 
 function decodeResultError(value: unknown): ControlResultEnvelope['error'] {
