@@ -15,7 +15,7 @@ const loadFacade = vi.hoisted(() => vi.fn());
 const ticketRequest = vi.hoisted(() => vi.fn());
 const runtimeEvents = vi.hoisted(() => [] as Array<Readonly<{ event: RallarBlackBoxTestRuntimeEventInput; lastAction: string | undefined; }>>);
 vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts', () => ({ loadBrowserRallarFacade: loadFacade }));
-vi.mock('../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/request-web-socket-ticket.ts', () => ({ requestWebSocketTicket: ticketRequest }));
+vi.mock('../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/write-web-socket-ticket.ts', () => ({ writeWebSocketTicket: ticketRequest }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: {
         recordRuntimeEvent: (event: RallarBlackBoxTestRuntimeEventInput, lastAction?: string) => runtimeEvents.push({ event, lastAction })

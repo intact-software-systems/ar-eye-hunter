@@ -33,7 +33,7 @@ import { createMessageDelivery } from '../shared-web/messages/test-message-deliv
 
 const loadFacade = vi.hoisted(() => vi.fn());
 const ticketRequest = vi.hoisted(() => vi.fn());
-vi.mock('../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/request-web-socket-ticket.ts', () => ({ requestWebSocketTicket: ticketRequest }));
+vi.mock('../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/write-web-socket-ticket.ts', () => ({ writeWebSocketTicket: ticketRequest }));
 const runtimeEvents = vi.hoisted(() => [] as RallarBlackBoxTestRuntimeEventInput[]);
 vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts', () => ({ loadBrowserRallarFacade: loadFacade }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({

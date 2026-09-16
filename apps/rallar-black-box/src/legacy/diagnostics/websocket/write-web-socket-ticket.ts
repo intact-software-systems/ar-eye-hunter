@@ -5,7 +5,7 @@ import { sendRallarServerMutationRequest } from '../../../rallar-server-workbenc
 import { recordValue } from '../../shared/record-value.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 
-export interface WebSocketTicketRequest {
+export interface WebSocketTicketWriteInput {
     readonly apiBaseUrl: string;
     readonly authSession: AuthSession | undefined;
     readonly requestId: string;
@@ -13,8 +13,8 @@ export interface WebSocketTicketRequest {
     nowMs(): number;
 }
 
-export async function requestWebSocketTicket(
-    input: WebSocketTicketRequest
+export async function writeWebSocketTicket(
+    input: WebSocketTicketWriteInput
 ): Promise<Either<string, AuthCommandCenterTicket>> {
     const sent = await sendRallarServerMutationRequest({
         request: {

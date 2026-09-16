@@ -9,10 +9,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { requestWebSocketTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/request-web-socket-ticket.ts';
 import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-web-socket-command-center-controller.ts';
 import type { UseWebSocketCommandCenterControllerInput } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
 import type { WebSocketCommandCenterViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-view-contracts.ts';
+import { writeWebSocketTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/write-web-socket-ticket.ts';
 
 interface StubResponse {
     readonly status: number;
@@ -75,7 +75,7 @@ class RecordingSocket extends EventTarget {
     }
 }
 
-describe('WebSocket ticket requests through the raw-socket actions', () => {
+describe('WebSocket ticket writes through the raw-socket actions', () => {
     let root: Root;
     let container: HTMLDivElement;
     let websocket: WebSocketCommandCenterViewModel;
@@ -149,7 +149,7 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
     });
 
     it('stamps the ticket with the time its response arrived, read from the injected clock', async () => {
-        const requested = await requestWebSocketTicket({
+        const requested = await writeWebSocketTicket({
             apiBaseUrl: 'http://localhost',
             authSession,
             requestId: 'ticket-request-000001',

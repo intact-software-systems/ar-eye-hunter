@@ -3,9 +3,9 @@ import { formatTime } from '../../shared/time-format.ts';
 import { completedActionFeedback, runningActionFeedback } from '../shared/action-feedback.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 import { observeRawWebSocket } from './observe-raw-web-socket.ts';
-import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
 import type { WebSocketCommandCenterActions } from './web-socket-command-center-actions.ts';
 import { resolveWebSocketUrlTemplate } from './websocket-routing.ts';
+import { writeWebSocketTicket } from './write-web-socket-ticket.ts';
 
 export namespace WebSocketRawSocketActions {
     export interface Input extends WebSocketCommandCenterActions.Input {
@@ -69,7 +69,7 @@ export class WebSocketRawSocketActions {
             signal,
             failedWaitStatus: undefined,
             run: async (startedAtEpochMs) => {
-                const requested = await this.requestWsTicket(requestId, signal);
+                const requested = await this.writeTicket(requestId, signal);
                 if (!signal.aborted) {
                     requested.fold(
                         (message) =>
@@ -106,11 +106,11 @@ export class WebSocketRawSocketActions {
         });
     }
 
-    private async requestWsTicket(
+    private async writeTicket(
         requestId: string,
         signal: AbortSignal
     ): Promise<Either<string, AuthCommandCenterTicket>> {
-        const requested = await requestWebSocketTicket({
+        const requested = await writeWebSocketTicket({
             apiBaseUrl: this.input.values.apiBaseUrl,
             authSession: this.input.authSession,
             requestId,
@@ -129,7 +129,7 @@ export class WebSocketRawSocketActions {
             this.openResolvedRawSocket(attempt, undefined);
             return;
         }
-        const requested = await this.requestWsTicket(ticketRequestId, signal);
+        const requested = await this.writeTicket(ticketRequestId, signal);
         if (signal.aborted) {
             return;
         }
