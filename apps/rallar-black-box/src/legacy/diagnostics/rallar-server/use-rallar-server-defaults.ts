@@ -26,13 +26,13 @@ export interface RallarServerDefaults {
 export function useRallarServerDefaults(input: UseRallarServerControllerInput): RallarServerDefaults {
     const config = selectRallarBlackBoxCurrentConfig(input.state);
     const variables = useRallarServerVariables(input, config);
-    const { bootstrap, globalValues } = input;
+    const { apiBaseUrl } = input.globalValues;
     const defaultDraft = useMemo<RallarServerWorkbenchDraft>(() => ({
         ...toRallarServerEndpointDraft(RALLAR_SERVER_ENDPOINT_PRESETS[0], variables),
-        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        apiBaseUrl,
         selectedPresetId: RALLAR_SERVER_ENDPOINT_PRESETS[0].presetId,
         timeoutMs: 5_000
-    }), [bootstrap.apiBaseUrl, config?.apiBaseUrl, globalValues?.apiBaseUrl, variables]);
+    }), [apiBaseUrl, variables]);
     const collectionTemplates = useMemo(() => createRallarServerRestCollectionTemplates(variables), [variables]);
     const defaultCollectionDraft = useMemo<RallarServerRestCollectionDraft>(() => {
         const collection = collectionTemplates[0];
@@ -53,20 +53,14 @@ function useRallarServerVariables(
                 createOpaqueId: () => crypto.randomUUID()
             }),
         [
-            authSession?.clientId,
-            authSession?.sessionId,
             authSession?.username,
             bootstrap.actor,
-            bootstrap.roomId,
-            bootstrap.sessionId,
             config?.actor,
-            config?.roomId,
-            config?.sessionId,
-            globalValues?.applicationId,
-            globalValues?.clientId,
-            globalValues?.roomId,
-            globalValues?.sessionId,
-            globalValues?.workspaceId
+            globalValues.applicationId,
+            globalValues.clientId,
+            globalValues.roomId,
+            globalValues.sessionId,
+            globalValues.workspaceId
         ]
     );
 }
@@ -76,11 +70,11 @@ function toRallarServerVariableHints(
     config: RallarBlackBoxTestConfig | undefined
 ): Partial<RallarServerWorkbenchVariables> {
     return {
-        applicationId: globalValues?.applicationId,
-        workspaceId: globalValues?.workspaceId,
-        principalId: globalValues?.clientId ?? authSession?.clientId ?? config?.actor ?? bootstrap.actor,
-        sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        principalId: globalValues.clientId,
+        sessionId: globalValues.sessionId,
+        groupId: globalValues.roomId,
         username: authSession?.username ?? config?.actor ?? bootstrap.actor
     };
 }

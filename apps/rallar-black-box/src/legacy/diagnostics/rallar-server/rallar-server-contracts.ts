@@ -35,8 +35,7 @@ export interface UseRallarServerControllerInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     /** Absent until the browser signs in. */
     readonly authSession?: AuthSession;
-    /** Absent when the panel renders outside the command-center shell. */
-    readonly globalValues?: CommandCenterGlobalValues;
+    readonly globalValues: CommandCenterGlobalValues;
 }
 
 export interface RallarServerRequestDraftModel extends RallarServerWorkbenchDraft {

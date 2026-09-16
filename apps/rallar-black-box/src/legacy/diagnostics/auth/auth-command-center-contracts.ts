@@ -11,8 +11,7 @@ export interface AuthCommandCenterPanelProps {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     /** Absent until the browser signs in. */
     readonly authSession?: AuthSession;
-    /** Absent when the panel renders outside the command-center shell. */
-    readonly globalValues?: CommandCenterGlobalValues;
+    readonly globalValues: CommandCenterGlobalValues;
     /** Receives undefined when the local session is cleared or no stored session can be restored. */
     onAuthenticated(session: AuthSession | undefined): void;
     onLogout(): Promise<void>;

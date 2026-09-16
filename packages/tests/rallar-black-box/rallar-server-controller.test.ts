@@ -299,7 +299,7 @@ describe('Rallar Server controller preservation', () => {
     it('follows the global base URL until the operator edits the draft, persists it redacted, and restores it as edited', async () => {
         const withBaseUrl = (apiBaseUrl: string): UseRallarServerControllerInput => ({
             ...input,
-            globalValues: { ...input.globalValues!, apiBaseUrl }
+            globalValues: { ...input.globalValues, apiBaseUrl }
         });
         await render(withBaseUrl('http://localhost:18081'));
         const followed = view.apiBaseUrl;

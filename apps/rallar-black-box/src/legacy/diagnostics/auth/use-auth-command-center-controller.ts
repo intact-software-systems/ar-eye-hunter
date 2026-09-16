@@ -113,18 +113,16 @@ function toAuthCommandCenterOperations(operations: AuthCommandCenterActions): Au
 }
 
 function useAuthCommandCenterDraft(
-    { state, bootstrap, authSession, globalValues }: AuthCommandCenterPanelProps
+    { bootstrap, authSession, globalValues }: AuthCommandCenterPanelProps
 ): AuthCommandCenterDraft {
-    const [apiBaseUrl, setApiBaseUrl] = useState(
-        globalValues?.apiBaseUrl ?? selectRallarBlackBoxCurrentConfig(state)?.apiBaseUrl ?? bootstrap.apiBaseUrl
-    );
+    const [apiBaseUrl, setApiBaseUrl] = useState(globalValues.apiBaseUrl);
     const [username, setUsername] = useState(authSession?.username ?? bootstrap.rallarUsername ?? bootstrap.actor);
     const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
     useEffect(() => {
-        if (globalValues?.apiBaseUrl) {
+        if (globalValues.apiBaseUrl) {
             setApiBaseUrl(globalValues.apiBaseUrl);
         }
-    }, [globalValues?.apiBaseUrl]);
+    }, [globalValues.apiBaseUrl]);
     return { apiBaseUrl, setApiBaseUrl, username, setUsername, password, setPassword };
 }
 

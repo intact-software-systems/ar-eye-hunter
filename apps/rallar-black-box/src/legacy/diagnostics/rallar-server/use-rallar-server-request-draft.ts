@@ -31,7 +31,7 @@ export function useRallarServerRequestDraft(
             const apiBaseUrl = defaults.defaultDraft.apiBaseUrl;
             setDraft((current) => current.apiBaseUrl === apiBaseUrl ? current : { ...current, apiBaseUrl });
         }
-    }, [input.bootstrap.apiBaseUrl, defaults.config?.apiBaseUrl, input.globalValues?.apiBaseUrl, serverDraftEdited]);
+    }, [defaults.defaultDraft.apiBaseUrl, serverDraftEdited]);
     useEffect(() => {
         writeRallarServerWorkbenchDraft(browserUiStorage(), draft, uiSecretValues(undefined, input.authSession));
     }, [draft, input.authSession?.accessToken]);
