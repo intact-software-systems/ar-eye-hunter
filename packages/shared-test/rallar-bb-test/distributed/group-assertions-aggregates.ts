@@ -1,9 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
 import { assertValueMatches } from '../assert/assert-value-operators.ts';
-import type { GroupAssertionEvidenceRow } from './group-assertions-evidence.ts';
+import type { ResolvedGroupAssertionEvidenceRow } from './group-assertions-evidence.ts';
 import type {
+    RallarBlackBoxCountMatchingGroupAssertion,
     RallarBlackBoxDistributedGroupAssertion,
-    RallarBlackBoxGroupAssertionAgentRow
+    RallarBlackBoxGroupAssertionAgentRow,
+    RallarBlackBoxPredicateGroupAssertion
 } from './group-assertions.ts';
 
 export interface GroupAssertionVerdict {
@@ -41,7 +43,7 @@ export function deepEqualJson(left: any, right: any): boolean {
 
 export function evaluateGroupAssertionAggregate(
     assertion: RallarBlackBoxDistributedGroupAssertion,
-    resolved: readonly GroupAssertionEvidenceRow[]
+    resolved: readonly ResolvedGroupAssertionEvidenceRow[]
 ): GroupAssertionVerdict {
     switch (assertion.aggregate) {
         case 'allMatch':
@@ -56,12 +58,8 @@ export function evaluateGroupAssertionAggregate(
 }
 
 function evaluatePredicateAggregate(
-    assertion:
-        & RallarBlackBoxDistributedGroupAssertion
-        & Readonly<{
-            aggregate: 'allMatch' | 'noneMatch' | 'countMatching';
-        }>,
-    resolved: readonly GroupAssertionEvidenceRow[]
+    assertion: RallarBlackBoxPredicateGroupAssertion | RallarBlackBoxCountMatchingGroupAssertion,
+    resolved: readonly ResolvedGroupAssertionEvidenceRow[]
 ): GroupAssertionVerdict {
     const verdictByAgentId = new Map<string, RallarBlackBoxGroupAssertionAgentRow['verdict']>();
     const matchingAgentIds: string[] = [];
@@ -78,6 +76,20 @@ function evaluatePredicateAggregate(
     }
     const matchingCount = matchingAgentIds.length;
 
+    if (assertion.aggregate === 'countMatching') {
+        const bounds = assertion.count;
+        const ok = (bounds.equals === undefined || matchingCount === bounds.equals) &&
+            (bounds.gte === undefined || matchingCount >= bounds.gte) &&
+            (bounds.lte === undefined || matchingCount <= bounds.lte);
+        return {
+            ok,
+            violatingAgentIds: [],
+            matchingCount,
+            reason: `matching count ${matchingCount} violates ${JSON.stringify(bounds)}`,
+            detail: { count: bounds },
+            verdictByAgentId
+        };
+    }
     if (assertion.aggregate === 'allMatch') {
         const violating = resolved
             .map((row) => row.agentId)
@@ -90,30 +102,16 @@ function evaluatePredicateAggregate(
             verdictByAgentId
         };
     }
-    if (assertion.aggregate === 'noneMatch') {
-        return {
-            ok: matchingCount === 0,
-            violatingAgentIds: matchingAgentIds,
-            matchingCount,
-            reason: `${matchingCount} participants matched a predicate none may match`,
-            verdictByAgentId
-        };
-    }
-    const bounds = assertion.count;
-    const ok = (bounds.equals === undefined || matchingCount === bounds.equals) &&
-        (bounds.gte === undefined || matchingCount >= bounds.gte) &&
-        (bounds.lte === undefined || matchingCount <= bounds.lte);
     return {
-        ok,
-        violatingAgentIds: [],
+        ok: matchingCount === 0,
+        violatingAgentIds: matchingAgentIds,
         matchingCount,
-        reason: `matching count ${matchingCount} violates ${JSON.stringify(bounds)}`,
-        detail: { count: bounds },
+        reason: `${matchingCount} participants matched a predicate none may match`,
         verdictByAgentId
     };
 }
 
-function evaluateAllEqual(resolved: readonly GroupAssertionEvidenceRow[]): GroupAssertionVerdict {
+function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]): GroupAssertionVerdict {
     const classes: { value: any; agentIds: string[]; }[] = [];
     for (const row of resolved) {
         const existing = classes.find((candidate) => deepEqualJson(candidate.value, row.value));
@@ -141,7 +139,7 @@ function evaluateAllEqual(resolved: readonly GroupAssertionEvidenceRow[]): Group
 }
 
 function evaluateAllEqualWithin(
-    resolved: readonly GroupAssertionEvidenceRow[],
+    resolved: readonly ResolvedGroupAssertionEvidenceRow[],
     tolerance: number
 ): GroupAssertionVerdict {
     const nonNumeric = resolved.filter((row) => typeof row.value !== 'number');
@@ -169,7 +167,7 @@ function evaluateAllEqualWithin(
 }
 
 function toEqualityVerdicts(
-    resolved: readonly GroupAssertionEvidenceRow[],
+    resolved: readonly ResolvedGroupAssertionEvidenceRow[],
     violatingAgentIds: readonly string[]
 ): ReadonlyMap<string, RallarBlackBoxGroupAssertionAgentRow['verdict']> {
     const verdictByAgentId = new Map<string, RallarBlackBoxGroupAssertionAgentRow['verdict']>();

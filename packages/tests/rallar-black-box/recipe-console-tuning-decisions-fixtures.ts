@@ -4,7 +4,10 @@ import type {
     DistributedRunTargetResolutionAnalysis
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
-import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import {
+    computeDistributedRunTuningInventory,
+    type DistributedRunTuningInventory
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedRunManifest
@@ -88,7 +91,7 @@ export function streamCommand(input: Readonly<{
 export function tuningInventory(
     manifest = tuningManifest()
 ): DistributedRunTuningInventory {
-    return inventoryDistributedRunTuningKnobs(manifest);
+    return computeDistributedRunTuningInventory(manifest);
 }
 
 export function tuningAnalysis(input: Readonly<{

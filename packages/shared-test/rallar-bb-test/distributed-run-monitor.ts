@@ -6,7 +6,7 @@ import type {
 import {
     createDistributedRunMonitorFailureIndex,
     createDistributedRunMonitorIndex,
-    recordDistributedRunMonitorDerivation,
+    setDistributedRunMonitorDerivation,
     type DistributedRunMonitorIndex
 } from './distributed-run-monitor-index.ts';
 import { computeDistributedRunAgentProgress } from './distributed-run-observation/compute-distributed-run-agent-progress.ts';
@@ -127,7 +127,7 @@ export function deriveDistributedRunMonitor(
         runtimeDiagnostics,
         compositeDrilldowns
     };
-    recordDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
+    setDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
     return monitor;
 }
 

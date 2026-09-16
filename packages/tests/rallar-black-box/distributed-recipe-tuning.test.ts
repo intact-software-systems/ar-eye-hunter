@@ -8,10 +8,10 @@ import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/sha
 import {
     computeDistributedArtifactWorkspace,
     computeDistributedRunSnapshotPerformance,
+    computeDistributedRunTuningInventory,
     distributedRecipePreflight,
-    distributedRunTuningJsonPointer,
-    inventoryDistributedRunTuningKnobs,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+    toDistributedRunTuningJsonPointer,
     validateDistributedRunManifest,
     validateJsonSchema,
     validateRallarBlackBoxTestCommand
@@ -271,13 +271,13 @@ describe('distributed recipe tuning Task 2 contracts', () => {
     });
 
     it('escapes dynamic RFC 6901 pointer tokens for later candidate composition', () => {
-        expect(distributedRunTuningJsonPointer(['recipes', 0, 'recipe~/id'])).toBe(
+        expect(toDistributedRunTuningJsonPointer(['recipes', 0, 'recipe~/id'])).toBe(
             '/recipes/0/recipe~0~1id'
         );
     });
 
     it('inventories recursive tuning knobs by structural JSON Pointer in stable order', () => {
-        const inventory = inventoryDistributedRunTuningKnobs(tuningManifest());
+        const inventory = computeDistributedRunTuningInventory(tuningManifest());
         const pointers = inventory.knobs.map((knob) => knob.pointer);
 
         expect(pointers.slice(0, 8)).toEqual([
@@ -304,7 +304,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
     });
 
     it('marks unset, shadowed, constrained, and reference-only inventory truth explicitly', () => {
-        const inventory = inventoryDistributedRunTuningKnobs(tuningManifest());
+        const inventory = computeDistributedRunTuningInventory(tuningManifest());
         const nestedStream = '/recipes/0/recipe/commands/0/commands/0';
         const knob = (pointer: string) => inventory.knobs.find((row) => row.pointer === pointer);
 
@@ -349,7 +349,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             }]
         };
 
-        const inventory = inventoryDistributedRunTuningKnobs(bounded);
+        const inventory = computeDistributedRunTuningInventory(bounded);
 
         expect(inventory.limitations).toContainEqual(expect.objectContaining({
             code: 'command-limit-exceeded',

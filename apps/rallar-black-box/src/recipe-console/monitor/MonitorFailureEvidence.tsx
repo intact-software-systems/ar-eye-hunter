@@ -1,4 +1,4 @@
-import { deriveDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
+import { computeDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type { MonitorEvidenceSelection } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
@@ -33,7 +33,7 @@ export function MonitorFailureEvidence({
         );
     }
     const explanation = model.report.nextActions.find((action) => action.evidence.includes(failure.key));
-    const destinations = deriveDistributedRunFailureEvidenceDestinations({
+    const destinations = computeDistributedRunFailureEvidenceDestinations({
         failure,
         monitor: model.monitor
     });

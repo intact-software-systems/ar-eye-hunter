@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
-    inventoryDistributedRunTuningKnobs,
+    computeDistributedRunTuningInventory,
     toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles,
     type DistributedRunPerformanceAnalysis,
@@ -352,10 +352,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] }
         }]);
 
-        expect(() => inventoryDistributedRunTuningKnobs(malformed)).not.toThrow();
-        expect(inventoryDistributedRunTuningKnobs(malformed).limitations)
+        expect(() => computeDistributedRunTuningInventory(malformed)).not.toThrow();
+        expect(computeDistributedRunTuningInventory(malformed).limitations)
             .toContainEqual(expect.objectContaining({ code: 'malformed-command' }));
-        expect(inventoryDistributedRunTuningKnobs(tooDeep).limitations)
+        expect(computeDistributedRunTuningInventory(tooDeep).limitations)
             .toContainEqual(expect.objectContaining({ code: 'depth-limit-exceeded' }));
     });
 
@@ -384,8 +384,8 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             }]
         };
 
-        expect(() => inventoryDistributedRunTuningKnobs(wide)).not.toThrow();
-        expect(inventoryDistributedRunTuningKnobs(wide).limitations)
+        expect(() => computeDistributedRunTuningInventory(wide)).not.toThrow();
+        expect(computeDistributedRunTuningInventory(wide).limitations)
             .toContainEqual(expect.objectContaining({
                 code: 'command-limit-exceeded',
                 recipeId: 'wide'
@@ -414,7 +414,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 required: true
             }, later]
         };
-        expect(() => inventoryDistributedRunTuningKnobs(wideRecipes)).not.toThrow();
+        expect(() => computeDistributedRunTuningInventory(wideRecipes)).not.toThrow();
 
         const references = Array.from({ length: 2_100 }, (_, index) => ({
             recipeId: `reference-${index}`,
@@ -431,7 +431,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             ...manifest(),
             recipes: references
         };
-        const referenceInventory = inventoryDistributedRunTuningKnobs(wideReferences);
+        const referenceInventory = computeDistributedRunTuningInventory(wideReferences);
         expect(referenceInventory.limitations).toContainEqual(expect.objectContaining({
             code: 'command-limit-exceeded'
         }));

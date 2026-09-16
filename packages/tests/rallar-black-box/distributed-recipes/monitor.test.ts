@@ -6,17 +6,17 @@ import type {
 } from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
 import * as distributedRecipeCompatibility from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
+    computeDistributedRunFailureEvidenceDestinations,
     deriveDistributedRunAnalysisReport,
-    deriveDistributedRunFailureEvidenceDestinations,
     deriveDistributedRunMonitor,
     deriveDistributedRunWarningRegressionReport,
     type DistributedRecipeCatalogItem,
     type DistributedRunFailureRow
 } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
+import * as sharedDistributedRecipes from '../../../shared-test/rallar-bb-test/mod.ts';
 import {
     createRallarBlackBoxTestRuntime,
-    deriveAdvancedDiagnosticHandoffTargets as deriveSharedAdvancedDiagnosticHandoffTargets,
-    deriveDistributedRunFailureEvidenceDestinations as deriveSharedDistributedRunFailureEvidenceDestinations
+    deriveAdvancedDiagnosticHandoffTargets as deriveSharedAdvancedDiagnosticHandoffTargets
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import { distributedArtifactBundle, distributedControlRun, distributedRun } from './distributed-run-fixture.ts';
 
@@ -110,10 +110,10 @@ describe('distributed recipes monitor', () => {
     it('exports deterministic selected-failure evidence from the app compatibility barrel', () => {
         expect(Reflect.get(
             distributedRecipeCompatibility,
-            'deriveDistributedRunFailureEvidenceDestinations'
+            'computeDistributedRunFailureEvidenceDestinations'
         )).toBeTypeOf('function');
-        expect(deriveDistributedRunFailureEvidenceDestinations).toBe(
-            deriveSharedDistributedRunFailureEvidenceDestinations
+        expect(computeDistributedRunFailureEvidenceDestinations).toBe(
+            sharedDistributedRecipes.computeDistributedRunFailureEvidenceDestinations
         );
     });
 
@@ -240,7 +240,7 @@ describe('distributed recipes monitor', () => {
             return row;
         };
         const destinations = (kind: DistributedRunFailureRow['kind'], key: string) =>
-            deriveDistributedRunFailureEvidenceDestinations({
+            computeDistributedRunFailureEvidenceDestinations({
                 failure: failure(kind, key),
                 monitor
             });
@@ -322,14 +322,14 @@ describe('distributed recipes monitor', () => {
                 }
             ]
         };
-        expect(deriveDistributedRunFailureEvidenceDestinations({
+        expect(computeDistributedRunFailureEvidenceDestinations({
             failure: failure('recipe', 'health-only'),
             monitor: monitorWithDimensionalDiagnostics
         })).toEqual(expect.arrayContaining([
             expect.objectContaining({ kind: 'diagnostic', id: 'diagnostic-health-only' })
         ]));
         expect(
-            deriveDistributedRunFailureEvidenceDestinations({
+            computeDistributedRunFailureEvidenceDestinations({
                 failure: failure('command', 'start-b'),
                 monitor: monitorWithDimensionalDiagnostics
             }).some((destination) =>
@@ -343,7 +343,7 @@ describe('distributed recipes monitor', () => {
             controlRun: evidenceControlRun
         });
         expect(
-            deriveDistributedRunFailureEvidenceDestinations({
+            computeDistributedRunFailureEvidenceDestinations({
                 failure: failure('command', 'start-b'),
                 monitor: monitorWithoutArtifact
             }).some((destination) => destination.kind === 'artifact')
@@ -360,7 +360,7 @@ describe('distributed recipes monitor', () => {
             }
         });
         expect(
-            deriveDistributedRunFailureEvidenceDestinations({
+            computeDistributedRunFailureEvidenceDestinations({
                 failure: failure('command', 'start-b'),
                 monitor: monitorWithInvalidArtifact
             }).some((destination) => destination.kind === 'artifact')
@@ -684,7 +684,7 @@ describe('distributed recipes monitor', () => {
         if (!compositeFailure) {
             throw new Error('Missing composite child failure.');
         }
-        const evidenceDestinations = deriveDistributedRunFailureEvidenceDestinations({
+        const evidenceDestinations = computeDistributedRunFailureEvidenceDestinations({
             failure: compositeFailure,
             monitor
         });

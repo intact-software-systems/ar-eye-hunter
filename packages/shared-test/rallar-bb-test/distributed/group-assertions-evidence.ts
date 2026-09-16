@@ -1,13 +1,13 @@
-// deno-lint-ignore-file no-explicit-any
 import { flattenRallarBlackBoxCompositeResults } from '../composite-results.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { lookupPayloadPath } from '../wait/wait-event-match.ts';
 import type {
-    RallarBlackBoxGroupAssertionEvidenceStatus,
-    RallarBlackBoxGroupAssertionSource
+    RallarBlackBoxGroupAssertionSource,
+    RallarBlackBoxGroupAssertionValue
 } from './group-assertions.ts';
 
 export interface DistributedGroupAssertionParticipant {
@@ -15,19 +15,49 @@ export interface DistributedGroupAssertionParticipant {
     readonly roles: readonly string[];
 }
 
-export interface DistributedGroupAssertionRecipeEvidence {
+export type DistributedGroupAssertionRecipeEvidence =
+    | DistributedGroupAssertionRecordedRecipeEvidence
+    | DistributedGroupAssertionPendingRecipeEvidence;
+
+interface DistributedGroupAssertionRecipeEvidenceFields {
     readonly agentId: string;
+    /** Absent when the start command link names no recipe. */
     readonly recipeId?: string;
+    /** Absent when the start command link names no role. */
     readonly role?: string;
-    readonly hasResult: boolean;
-    readonly resultValue?: any;
 }
 
-export interface GroupAssertionEvidenceRow {
+export interface DistributedGroupAssertionRecordedRecipeEvidence extends DistributedGroupAssertionRecipeEvidenceFields {
+    readonly hasResult: true;
+    readonly resultValue: RallarBlackBoxGroupAssertionValue;
+}
+
+export interface DistributedGroupAssertionPendingRecipeEvidence extends DistributedGroupAssertionRecipeEvidenceFields {
+    readonly hasResult: false;
+}
+
+export type GroupAssertionEvidenceRow = ResolvedGroupAssertionEvidenceRow | UnusableGroupAssertionEvidenceRow;
+
+interface GroupAssertionEvidenceRowFields {
     readonly agentId: string;
+    /** Absent when the participant holds no role. */
     readonly role?: string;
-    readonly status: RallarBlackBoxGroupAssertionEvidenceStatus;
-    readonly value?: any;
+}
+
+export interface ResolvedGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
+    readonly status: 'resolved';
+    readonly value: RallarBlackBoxGroupAssertionValue;
+}
+
+export interface UnusableGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
+    readonly status: 'missing' | 'duplicate' | 'unresolved';
+}
+
+interface RecipeCommandResult {
+    readonly commandId: string;
+    /** Absent when the command result is not a composite child. */
+    readonly originalCommandId?: string;
+    readonly result: RallarBlackBoxTestResult;
 }
 
 // The participant set is frozen at target resolution: evaluation reads the
@@ -57,26 +87,28 @@ export function toDistributedGroupAssertionRecipeEvidence(
 ): readonly DistributedGroupAssertionRecipeEvidence[] {
     return input.commandLinks
         .filter((link) => link.phase === 'start')
-        .map((link) => {
+        .map((link): DistributedGroupAssertionRecipeEvidence => {
             const result = input.resultByCommandId.get(link.commandId);
-            return {
-                agentId: link.agentId,
-                recipeId: link.recipeId,
-                role: link.role,
-                hasResult: result !== undefined,
-                resultValue: result?.result?.value
-            };
+            return result === undefined
+                ? { agentId: link.agentId, recipeId: link.recipeId, role: link.role, hasResult: false }
+                : {
+                    agentId: link.agentId,
+                    recipeId: link.recipeId,
+                    role: link.role,
+                    hasResult: true,
+                    resultValue: result.result?.value
+                };
         });
 }
 
-export interface CollectGroupAssertionEvidenceInput {
+export interface ComputeGroupAssertionEvidenceRowsInput {
     readonly source: RallarBlackBoxGroupAssertionSource;
     readonly participants: readonly DistributedGroupAssertionParticipant[];
     readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
 }
 
-export function collectGroupAssertionEvidence(
-    input: CollectGroupAssertionEvidenceInput
+export function computeGroupAssertionEvidenceRows(
+    input: ComputeGroupAssertionEvidenceRowsInput
 ): readonly GroupAssertionEvidenceRow[] {
     return input.participants.map((participant) =>
         toGroupAssertionEvidenceRow(participant, input.source, input.recipeEvidence)
@@ -127,12 +159,8 @@ function toGroupAssertionEvidenceRow(
     };
 }
 
-function toRecipeCommandResults(resultValue: any): readonly Readonly<{
-    commandId: string;
-    originalCommandId?: string;
-    result: RallarBlackBoxTestResult;
-}>[] {
-    const results = Array.isArray(resultValue?.results) ? resultValue.results : [];
+function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue): readonly RecipeCommandResult[] {
+    const results = isJsonRecordValue(resultValue) && Array.isArray(resultValue.results) ? resultValue.results : [];
     const rootResults = results.filter(isCommandResult);
     return flattenRallarBlackBoxCompositeResults(rootResults).map((entry) => ({
         commandId: entry.commandId,
@@ -141,9 +169,8 @@ function toRecipeCommandResults(resultValue: any): readonly Readonly<{
     }));
 }
 
-function isCommandResult(candidate: any): candidate is RallarBlackBoxTestResult {
-    return Boolean(candidate) &&
-        typeof candidate === 'object' &&
+function isCommandResult(candidate: unknown): candidate is RallarBlackBoxTestResult {
+    return isJsonRecordValue(candidate) &&
         typeof candidate.commandId === 'string' &&
         typeof candidate.kind === 'string';
 }

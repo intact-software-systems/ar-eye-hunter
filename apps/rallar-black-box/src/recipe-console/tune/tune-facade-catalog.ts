@@ -84,9 +84,10 @@ export function projectTuneFacadeCatalog(
         );
     }
     const distributedRun = facadeSnapshot(facade, manifest);
+    const analysis = facade.analysis as unknown as DistributedRunAnalysis;
     const artifactEvidence = {
         distributedRun,
-        analysis: facade.analysis as unknown as DistributedRunAnalysis,
+        analysis,
         performance: facade.analysis.performance,
         pairStatus: 'missing' as const
     };
@@ -106,7 +107,7 @@ export function projectTuneFacadeCatalog(
             controlRunId,
             source: 'artifact',
             distributedRun,
-            analysis: facade.analysis as unknown as DistributedRunAnalysis,
+            analysis,
             performance: facade.analysis.performance,
             identity,
             pairStatus: 'missing',

@@ -1,4 +1,4 @@
-import { inventoryDistributedRunTuningKnobs } from '@shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedRunTuningInventory } from '@shared-test/rallar-bb-test/mod.ts';
 import { projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import { projectAnalyzeIdentity, projectWorkspaceIssue } from './analyze-artifact-display-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
@@ -36,7 +36,7 @@ export function projectAnalyzeTuneArtifactFacade(
         .filter(
             (recipeId): recipeId is string => recipeId !== undefined
         );
-    const inventory = inventoryDistributedRunTuningKnobs(manifest);
+    const inventory = computeDistributedRunTuningInventory(manifest);
     const candidateManifest = inventory.knobs.length <= MAX_TUNE_ROWS &&
             isExactCandidateManifestSafe(manifest)
         ? manifest

@@ -5,7 +5,7 @@ import {
     hasCrdtCommandKind
 } from '../distributed-recipe-preflight/distributed-recipe-command-preview.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
-import { collectDistributedAssertionFeatures } from '../distributed/control-agent-capabilities.ts';
+import { computeDistributedAssertionFeatures } from '../distributed/control-agent-capabilities.ts';
 import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import type {
     RallarBlackBoxTestCommandKind,
@@ -39,7 +39,7 @@ export function distributedRecipeTargetRows(
     const requiredCrdtTransports = toUniqueSortedValues(
         (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports)
     );
-    const requiredAssertionFeatures = collectDistributedAssertionFeatures(
+    const requiredAssertionFeatures = computeDistributedAssertionFeatures(
         input.requiredRecipes ?? []
     );
     const rows = agents.map((agent) =>

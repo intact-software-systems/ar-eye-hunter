@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
-import { evaluateDistributedGroupAssertions } from '../distributed/group-assertions-evaluation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '../distributed-run.ts';
+import { computeDistributedGroupAssertionResults } from '../distributed/group-assertions-evaluation.ts';
 import type { DistributedGroupAssertionRecipeEvidence } from '../distributed/group-assertions-evidence.ts';
 import type {
     RallarBlackBoxDistributedGroupAssertion,
@@ -361,7 +362,7 @@ export const GROUP_ASSERTION_CONFORMANCE_CASES: readonly GroupAssertionConforman
 export function evaluateGroupAssertionConformanceCase(
     conformanceCase: GroupAssertionConformanceCase
 ): RallarBlackBoxDistributedGroupAssertionResult {
-    const results = evaluateDistributedGroupAssertions({
+    const results = computeDistributedGroupAssertionResults({
         manifest: toConformanceManifest(conformanceCase),
         participants: conformanceCase.agents.map((agent) => ({
             agentId: agent.agentId,
@@ -382,18 +383,33 @@ export function evaluateGroupAssertionConformanceCase(
     return results[0];
 }
 
-function toConformanceManifest(conformanceCase: GroupAssertionConformanceCase): any {
+function toConformanceManifest(conformanceCase: GroupAssertionConformanceCase): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,
         distributedRunId: `conformance-${conformanceCase.caseId}`,
+        controlRunId: `conformance-${conformanceCase.caseId}`,
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
             groupId: 'conformance-room'
         },
-        recipes: [{ recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID }],
-        targetPolicy: { mode: 'all-online-group-members' },
-        groupAssertions: [conformanceCase.assertion]
+        recipes: [{ recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID, variables: {}, secretRefs: [], required: true }],
+        targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [conformanceCase.assertion],
+        metadata: {}
     };
 }
 

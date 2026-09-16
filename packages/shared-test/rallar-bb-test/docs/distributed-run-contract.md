@@ -288,7 +288,7 @@ register-envelope parse.
 
 Staging preflight scans every inline manifest recipe (including nested
 `loop`/`parallel`/`recipe.load`/`recipe.run` children) with
-`collectDistributedAssertionFeatures(...)`. A targeted agent that does not
+`computeDistributedAssertionFeatures(...)`. A targeted agent that does not
 advertise a required feature becomes a `missing-assertion-capability`
 blocker with a named reason listing exactly what is missing, so staging
 fails before dispatch instead of the run failing agent-side at

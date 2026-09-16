@@ -1,6 +1,6 @@
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from '../distributed-run.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import { parseControlAgentCapabilities } from './control-agent-capabilities.ts';
+import { decodeControlAgentCapabilities } from './control-agent-capabilities.ts';
 
 export function decodeControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentIdentity | undefined {
     if (!isJsonRecordValue(value)) {
@@ -30,7 +30,7 @@ export function decodeControlAgentIdentity(value: unknown): RallarBlackBoxContro
         os: decodeNonEmptyText(value.os),
         tags: decodeTags(value.tags),
         location: decodeGeoLocation(value.location),
-        capabilities: parseControlAgentCapabilities(value.capabilities),
+        capabilities: decodeControlAgentCapabilities(value.capabilities).right,
         updatedAtEpochMs: typeof value.updatedAtEpochMs === 'number' ? value.updatedAtEpochMs : undefined
     };
 

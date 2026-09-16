@@ -1,17 +1,17 @@
-// deno-lint-ignore-file no-explicit-any
 import type {
     RallarBlackBoxDistributedRecipeResult,
     RallarBlackBoxDistributedRunItemState,
     RallarBlackBoxDistributedRunManifest
 } from '../distributed-run.ts';
-import { redactRallarBlackBoxValue } from '../redaction.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '../rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '../redaction.ts';
 import { evaluateGroupAssertionAggregate, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
 import {
-    collectGroupAssertionEvidence,
+    computeGroupAssertionEvidenceRows,
     type DistributedGroupAssertionParticipant,
     type DistributedGroupAssertionRecipeEvidence,
-    type GroupAssertionEvidenceRow
+    type GroupAssertionEvidenceRow,
+    type ResolvedGroupAssertionEvidenceRow
 } from './group-assertions-evidence.ts';
 import {
     RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING,
@@ -31,11 +31,12 @@ const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] 
     'skipped'
 ];
 
-export interface EvaluateDistributedGroupAssertionsInput {
+export interface ComputeDistributedGroupAssertionResultsInput {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
     readonly participants: readonly DistributedGroupAssertionParticipant[];
     readonly recipeResults: readonly RallarBlackBoxDistributedRecipeResult[];
     readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
+    /** Absent when recorded evidence values are reported without redaction. */
     readonly redaction?: RallarBlackBoxTestRedactionOptions;
 }
 
@@ -43,10 +44,10 @@ export interface EvaluateDistributedGroupAssertionsInput {
 // undefined while dispatched recipes are still executing; the control-server
 // rollup calls this on every refresh, so the first fully completed pass is
 // the one that decides.
-export function evaluateDistributedGroupAssertions(
-    input: EvaluateDistributedGroupAssertionsInput
+export function computeDistributedGroupAssertionResults(
+    input: ComputeDistributedGroupAssertionResultsInput
 ): readonly RallarBlackBoxDistributedGroupAssertionResult[] | undefined {
-    const groupAssertions = input.manifest.groupAssertions ?? [];
+    const groupAssertions = input.manifest.groupAssertions;
     if (groupAssertions.length === 0) {
         return undefined;
     }
@@ -56,12 +57,12 @@ export function evaluateDistributedGroupAssertions(
     if (!complete) {
         return undefined;
     }
-    return groupAssertions.map((assertion) => evaluateGroupAssertion(assertion, input));
+    return groupAssertions.map((assertion) => computeGroupAssertionResult(assertion, input));
 }
 
-function evaluateGroupAssertion(
+function computeGroupAssertionResult(
     assertion: RallarBlackBoxDistributedGroupAssertion,
-    input: EvaluateDistributedGroupAssertionsInput
+    input: ComputeDistributedGroupAssertionResultsInput
 ): RallarBlackBoxDistributedGroupAssertionResult {
     const scopeRole = assertion.scope?.role;
     const scopedParticipants = scopeRole === undefined
@@ -71,12 +72,12 @@ function evaluateGroupAssertion(
         return toNoParticipantsResult(assertion);
     }
 
-    const rows = collectGroupAssertionEvidence({
+    const rows = computeGroupAssertionEvidenceRows({
         source: assertion.source,
         participants: scopedParticipants,
         recipeEvidence: input.recipeEvidence
     });
-    const resolved = rows.filter((row) => row.status === 'resolved');
+    const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
     const brokenEvidence = rows.filter((row) => row.status === 'duplicate' || row.status === 'unresolved');
     const missingAgentIds = rows

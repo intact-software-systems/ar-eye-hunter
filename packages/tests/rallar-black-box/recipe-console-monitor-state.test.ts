@@ -40,7 +40,7 @@ import {
     setMonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
 import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
+import { getDistributedRunMonitorDerivationWork } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',
@@ -732,7 +732,7 @@ describe('Recipe Console Monitor coherent state', () => {
         expect(monitorDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation.mock.calls[0]?.[0].monitor).toBe(model?.monitor);
-        expect(distributedRunMonitorDerivationWorkForTest(model!.report)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(model!.report)).toMatchObject({
             monitorDerivationCount: 1,
             reportDerivationCount: 1,
             commandLinkVisitCount: 0,

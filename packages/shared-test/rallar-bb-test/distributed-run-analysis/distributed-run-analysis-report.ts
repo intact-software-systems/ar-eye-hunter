@@ -7,9 +7,9 @@ import type {
 } from '../control-snapshots.ts';
 import { computeDistributedRunDuration } from '../distributed-run-history/compute-distributed-run-duration.ts';
 import {
-    distributedRunMonitorAnalysisReuseFor,
-    distributedRunMonitorFirstPhaseForCommand,
-    recordDistributedRunAnalysisReportDerivation,
+    getDistributedRunMonitorAnalysisReuse,
+    getDistributedRunMonitorFirstPhase,
+    setDistributedRunAnalysisReportDerivation,
     type DistributedRunMonitorAnalysisReuse
 } from '../distributed-run-monitor-index.ts';
 import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
@@ -94,7 +94,7 @@ export function deriveDistributedRunAnalysisReport(
     }>
 ): DistributedRunAnalysisReport {
     const monitor = input.monitor ?? deriveDistributedRunMonitor(input);
-    const analysisReuse = distributedRunMonitorAnalysisReuseFor(
+    const analysisReuse = getDistributedRunMonitorAnalysisReuse(
         monitor,
         input.distributedRun
     );
@@ -132,7 +132,7 @@ export function deriveDistributedRunAnalysisReport(
         nextActions: explanations,
         rawEvidence: toReportRawEvidence(monitor)
     };
-    recordDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
+    setDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
     return report;
 }
 
@@ -234,7 +234,7 @@ function createReportFirstPhaseLookup(
             if (commandId !== undefined) {
                 reportWork.reportCommandLinkLookupCount += 1;
             }
-            return distributedRunMonitorFirstPhaseForCommand(analysisReuse, commandId);
+            return getDistributedRunMonitorFirstPhase(analysisReuse, commandId);
         }
         if (commandId === undefined) {
             return undefined;

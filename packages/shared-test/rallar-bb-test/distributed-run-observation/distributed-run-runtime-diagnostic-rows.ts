@@ -1,7 +1,7 @@
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxRuntimeDiagnosticPayload } from '../diagnostics.ts';
 import {
-    distributedRunCorrelatedFailureKeys,
+    computeDistributedRunCorrelatedFailureKeys,
     type DistributedRunMonitorFailureIndex
 } from '../distributed-run-monitor-index.ts';
 import type {
@@ -117,7 +117,7 @@ export function toCorrelatedDistributedRunRuntimeDiagnostics(
 ): readonly DistributedRunRuntimeDiagnosticRow[] {
     return diagnostics.map((diagnostic) => ({
         ...diagnostic,
-        correlatedFailureKeys: distributedRunCorrelatedFailureKeys(
+        correlatedFailureKeys: computeDistributedRunCorrelatedFailureKeys(
             diagnostic,
             failureIndex
         )

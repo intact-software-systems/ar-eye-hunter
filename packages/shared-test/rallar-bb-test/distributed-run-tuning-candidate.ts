@@ -7,7 +7,7 @@ import {
     tuningPreflightIssuePointer,
     tuningSchemaPathToPointer
 } from './distributed-run-tuning-paths.ts';
-import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningKnob } from './distributed-run-tuning.ts';
+import { computeDistributedRunTuningInventory, type DistributedRunTuningKnob } from './distributed-run-tuning.ts';
 import { validateDistributedRunManifest } from './distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';
@@ -114,7 +114,7 @@ function toAcceptedTuningChanges(
     readonly ok: false;
     readonly errors: readonly DistributedRunTuningCandidateError[];
 } {
-    const inventory = inventoryDistributedRunTuningKnobs(input.manifest);
+    const inventory = computeDistributedRunTuningInventory(input.manifest);
     const knobByPointer = new Map(inventory.knobs.map((knob, index) => [knob.pointer, { knob, index }]));
     const seenPointers = new Set<string>();
     const errors: DistributedRunTuningCandidateError[] = [];

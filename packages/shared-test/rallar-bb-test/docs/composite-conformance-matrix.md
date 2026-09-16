@@ -73,7 +73,7 @@ aggregate vocabulary: every aggregate (`allMatch`, `noneMatch`,
 case and one deliberately-broken control, plus evidence-rule cases for
 missing, duplicate, and unresolved evidence, the `minParticipants`
 relaxation, role scoping, and the empty-scope fail-closed path. The cases
-run through the production `evaluateDistributedGroupAssertions` entry in
+run through the production `computeDistributedGroupAssertionResults` entry in
 `rallar-bb-test-group-assertion-conformance.test.ts`, which also pins the
 three-vocabulary comparison boundary (`deepEqualJson` vs `sameJsonValue` vs
 `json-compare` exact).

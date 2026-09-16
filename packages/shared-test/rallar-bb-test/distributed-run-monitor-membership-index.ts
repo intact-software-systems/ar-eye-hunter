@@ -1,5 +1,5 @@
 import type { ControlDistributedRunSnapshot } from './control-snapshots.ts';
-import { distributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
+import { resolveDistributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from './distributed-run.ts';
 
 export type DistributedRunMonitorMembershipWork = {
@@ -84,10 +84,9 @@ export function createDistributedRunMonitorMembershipIndex(
     for (const selection of distributedRun.manifest.recipes) {
         work.recipeSelectionVisitCount += 1;
         recipeSelections.push(selection);
-        const recipeId = distributedRunRecipeSelectionKey(selection) ??
-            `recipe-${recipeIndex + 1}`;
+        const selectionKey = resolveDistributedRunRecipeSelectionKey(selection) || undefined;
+        const recipeId = selectionKey ?? `recipe-${recipeIndex + 1}`;
         recipeIds.push(recipeId);
-        const selectionKey = distributedRunRecipeSelectionKey(selection);
         recipeMembershipDescriptors.push({
             selectionKey,
             role: selection.role

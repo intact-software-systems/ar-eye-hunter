@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../shared-test/rallar-bb-test/control-snapshots.ts';
 import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-test/distributed-run-analysis/distributed-run-analysis-report.ts';
 import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
-import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
+import { getDistributedRunMonitorDerivationWork } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 const SCALE = 5_000;
@@ -39,7 +39,7 @@ describe('distributed run monitor indexed derivation', () => {
         expect(sha256(monitor)).toBe(SCALE_MONITOR_SHA256);
         expect(sha256(report)).toBe(SCALE_REPORT_SHA256);
         expect(sha256(verdict)).toBe(SCALE_VERDICT_SHA256);
-        expect(distributedRunMonitorDerivationWorkForTest(report)).toEqual({
+        expect(getDistributedRunMonitorDerivationWork(report)).toEqual({
             monitorDerivationCount: 1,
             reportDerivationCount: 1,
             commandLinkIndexPassCount: 1,
@@ -126,7 +126,7 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRun,
             controlRun: input.controlRun
         });
-        const work = distributedRunMonitorDerivationWorkForTest(monitor);
+        const work = getDistributedRunMonitorDerivationWork(monitor);
 
         expect(sha256(monitor)).toBe(SCALE_MEMBERSHIP_MONITOR_SHA256);
         expect(work).toEqual({
@@ -198,7 +198,7 @@ describe('distributed run monitor indexed derivation', () => {
         });
 
         const monitor = deriveDistributedRunMonitor(input);
-        const work = distributedRunMonitorDerivationWorkForTest(monitor);
+        const work = getDistributedRunMonitorDerivationWork(monitor);
 
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
@@ -252,7 +252,7 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRun,
             controlRun: input.controlRun
         });
-        const work = distributedRunMonitorDerivationWorkForTest(monitor);
+        const work = getDistributedRunMonitorDerivationWork(monitor);
 
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
@@ -522,7 +522,7 @@ describe('distributed run monitor indexed derivation', () => {
             row.targetCount,
             row.missingCount
         ])).toEqual([[4, 4], [4, 4]]);
-        expect(distributedRunMonitorDerivationWorkForTest(monitor)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(monitor)).toMatchObject({
             membershipIntersectionCandidateVisitCount: 2,
             recipeTargetCountProjectionVisitCount: 2
         });
@@ -583,7 +583,7 @@ describe('distributed run monitor indexed derivation', () => {
                 monitor
             });
         }).not.toThrow();
-        expect(distributedRunMonitorDerivationWorkForTest(report!)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(report!)).toMatchObject({
             monitorDerivationCount: 1,
             reportDerivationCount: 1,
             commandLinkVisitCount: 2,
@@ -793,7 +793,7 @@ describe('distributed run monitor indexed derivation', () => {
 
         expect(report.nextActions.find((action) => action.category === 'command')?.nextAction)
             .toContain('recipe-load output');
-        expect(distributedRunMonitorDerivationWorkForTest(report))
+        expect(getDistributedRunMonitorDerivationWork(report))
             .toMatchObject({ reportCommandLinkLookupCount: 1 });
     });
 
@@ -816,20 +816,20 @@ describe('distributed run monitor indexed derivation', () => {
         const secondReport = deriveDistributedRunAnalysisReport({ ...input, monitor });
 
         expect([
-            distributedRunMonitorDerivationWorkForTest(firstReport)
-                .reportCommandLinkLookupCount,
-            distributedRunMonitorDerivationWorkForTest(secondReport)
-                .reportCommandLinkLookupCount,
-            distributedRunMonitorDerivationWorkForTest(monitor)
-                .reportCommandLinkLookupCount
+            getDistributedRunMonitorDerivationWork(firstReport)
+                ?.reportCommandLinkLookupCount,
+            getDistributedRunMonitorDerivationWork(secondReport)
+                ?.reportCommandLinkLookupCount,
+            getDistributedRunMonitorDerivationWork(monitor)
+                ?.reportCommandLinkLookupCount
         ]).toEqual([1, 1, 0]);
         expect([
-            distributedRunMonitorDerivationWorkForTest(firstReport)
-                .reportDerivationCount,
-            distributedRunMonitorDerivationWorkForTest(secondReport)
-                .reportDerivationCount,
-            distributedRunMonitorDerivationWorkForTest(monitor)
-                .reportDerivationCount
+            getDistributedRunMonitorDerivationWork(firstReport)
+                ?.reportDerivationCount,
+            getDistributedRunMonitorDerivationWork(secondReport)
+                ?.reportDerivationCount,
+            getDistributedRunMonitorDerivationWork(monitor)
+                ?.reportDerivationCount
         ]).toEqual([1, 1, 0]);
     });
 
@@ -927,7 +927,7 @@ describe('distributed run monitor indexed derivation', () => {
                 monitor: suppliedMonitor
             });
         }).not.toThrow();
-        expect(distributedRunMonitorDerivationWorkForTest(report!)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(report!)).toMatchObject({
             reportFallbackCommandLinkIndexPassCount: 0,
             reportFallbackCommandLinkVisitCount: 0,
             reportFallbackCommandPhaseLookupCount: 0
@@ -968,14 +968,14 @@ describe('distributed run monitor indexed derivation', () => {
         });
 
         expect(report).toEqual(headReport);
-        expect(distributedRunMonitorDerivationWorkForTest(headReport)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(headReport)).toMatchObject({
             monitorDerivationCount: 0,
             reportDerivationCount: 1,
             reportFallbackCommandLinkIndexPassCount: 1,
             reportFallbackCommandLinkVisitCount: SCALE,
             reportFallbackCommandPhaseLookupCount: 1
         });
-        expect(distributedRunMonitorDerivationWorkForTest(report)).toMatchObject({
+        expect(getDistributedRunMonitorDerivationWork(report)).toMatchObject({
             reportCommandLinkLookupCount: 0,
             reportFallbackCommandLinkIndexPassCount: 1,
             reportFallbackCommandLinkVisitCount: SCALE,

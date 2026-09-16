@@ -1,4 +1,5 @@
-// deno-lint-ignore-file no-explicit-any
+import { Either } from '@shared/resilience/Either.ts';
+
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxControlAgentAssertionsCapability,
@@ -11,18 +12,19 @@ import type {
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestRecipe
 } from '../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     CONTROL_AGENT_MESSAGING_CAPABILITY,
     decodeControlAgentMessagingCapability
 } from './control-agent-messaging-capability.ts';
 
-const CONTROL_AGENT_CRDT_TRANSPORTS = [
+const CONTROL_AGENT_CRDT_TRANSPORTS: readonly RallarBlackBoxTestCrdtTransport[] = [
     'local-only',
     'ws',
     'rtc',
     'ws-then-rtc',
     'rtc-with-ws-fallback'
-] as const;
+];
 
 const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
     'equals',
@@ -33,9 +35,8 @@ const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
     'lte'
 ];
 
-export const RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] =
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS
-        .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
+const EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
 
 export interface DistributedAssertionFeatures {
     readonly absence: boolean;
@@ -44,8 +45,11 @@ export interface DistributedAssertionFeatures {
 }
 
 export interface ToControlAgentCapabilitiesInput {
+    /** Absent before the agent has loaded a test configuration. */
     readonly config: RallarBlackBoxTestConfig | undefined;
+    /** Absent when the agent's configuration names no provider mode. */
     readonly providerMode: string | undefined;
+    /** Absent when the agent's configuration names no API base URL. */
     readonly apiBaseUrl: string | undefined;
 }
 
@@ -73,45 +77,38 @@ export function toControlAgentCapabilities(
     };
 }
 
-export function parseControlAgentCapabilities(
-    value: any
-): RallarBlackBoxControlAgentCapabilities | undefined {
-    if (!isRecord(value)) {
-        return undefined;
+/**
+ * The capability block an agent advertises. An unreadable assertions block reads as absent, so the agent is
+ * gated as one that predates assertion advertisement; unrecognised CRDT transports are dropped.
+ */
+export function decodeControlAgentCapabilities(value: unknown): Either<string, RallarBlackBoxControlAgentCapabilities> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('capabilities must be a JSON object');
     }
-    const crdt = isRecord(value.crdt) ? value.crdt : undefined;
+    const crdt = value.crdt;
     if (
-        !crdt ||
+        !isJsonRecordValue(crdt) ||
         typeof crdt.supported !== 'boolean' ||
         !Array.isArray(crdt.transports) ||
         typeof crdt.apiBaseUrlConfigured !== 'boolean'
     ) {
-        return undefined;
+        return Either.ofLeft('capabilities.crdt must report supported, transports and apiBaseUrlConfigured');
     }
-    const messaging = decodeControlAgentMessagingCapability(value.messaging);
-    if (!messaging) {
-        return undefined;
-    }
-
-    const transports = crdt.transports.filter((transport): transport is RallarBlackBoxTestCrdtTransport =>
-        typeof transport === 'string' &&
-        CONTROL_AGENT_CRDT_TRANSPORTS
-            .includes(transport as typeof CONTROL_AGENT_CRDT_TRANSPORTS[number])
-    );
-    const assertions = parseAssertionsCapability(value.assertions);
-    return {
-        crdt: {
-            supported: crdt.supported,
-            transports,
-            runtimeSurface: optionalString(crdt.runtimeSurface),
-            apiBaseUrlConfigured: crdt.apiBaseUrlConfigured
-        },
+    const assertions = decodeAssertionsCapability(value.assertions).right;
+    const crdtCapability = {
+        supported: crdt.supported,
+        transports: crdt.transports.filter(isControlAgentCrdtTransport),
+        runtimeSurface: isNonEmptyText(crdt.runtimeSurface) ? crdt.runtimeSurface : undefined,
+        apiBaseUrlConfigured: crdt.apiBaseUrlConfigured
+    };
+    return decodeControlAgentMessagingCapability(value.messaging).mapRight((messaging) => ({
+        crdt: crdtCapability,
         messaging,
         ...(assertions ? { assertions } : {})
-    };
+    }));
 }
 
-export function collectDistributedAssertionFeatures(
+export function computeDistributedAssertionFeatures(
     recipes: readonly RallarBlackBoxTestRecipe[]
 ): DistributedAssertionFeatures {
     let absence = false;
@@ -131,10 +128,7 @@ export function collectDistributedAssertionFeatures(
         if (command.kind === 'parallel') {
             command.groups.forEach((group) => group.commands.forEach(visit));
         }
-        if (
-            command.kind === 'assert' &&
-            RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS.includes(command.operator)
-        ) {
+        if (command.kind === 'assert' && EXTENDED_ASSERT_OPERATORS.includes(command.operator)) {
             operators.add(command.operator);
         }
         if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
@@ -150,51 +144,34 @@ export function collectDistributedAssertionFeatures(
     };
 }
 
+/** Every required assertion feature the agent does not advertise; empty when the agent can run the recipes. */
 export function validateAgentAssertionCapability(
     features: DistributedAssertionFeatures,
     capabilities: RallarBlackBoxControlAgentCapabilities | undefined
-): string | undefined {
-    const missing: string[] = [];
+): readonly string[] {
     const assertions = capabilities?.assertions;
-    if (features.absence && assertions?.absence !== true) {
-        missing.push('absence waits');
-    }
-    if (features.untilLoop && assertions?.untilLoop !== true) {
-        missing.push('until loops');
-    }
     const advertisedOperators = assertions?.operators ?? [];
-    const missingOperators = features.operators
-        .filter((operator) => !advertisedOperators.includes(operator));
-    if (missingOperators.length > 0) {
-        missing.push(`assert operators: ${missingOperators.join(', ')}`);
-    }
-    if (missing.length === 0) {
-        return undefined;
-    }
+    const missingOperators = features.operators.filter((operator) => !advertisedOperators.includes(operator));
+    return [
+        ...(features.absence && assertions?.absence !== true ? ['absence waits'] : []),
+        ...(features.untilLoop && assertions?.untilLoop !== true ? ['until loops'] : []),
+        ...(missingOperators.length > 0 ? [`assert operators: ${missingOperators.join(', ')}`] : [])
+    ];
+}
+
+export function toMissingAssertionCapabilityReason(missing: readonly string[]): string {
     return `Agent does not advertise required assertion capabilities: ${missing.join('; ')}.`;
 }
 
-function parseAssertionsCapability(
-    value: any
-): RallarBlackBoxControlAgentAssertionsCapability | undefined {
-    if (!isRecord(value)) {
-        return undefined;
+function decodeAssertionsCapability(value: unknown): Either<string, RallarBlackBoxControlAgentAssertionsCapability> {
+    if (!isJsonRecordValue(value) || typeof value.absence !== 'boolean' || typeof value.untilLoop !== 'boolean') {
+        return Either.ofLeft('capabilities.assertions must report absence and untilLoop');
     }
-    if (typeof value.absence !== 'boolean' || typeof value.untilLoop !== 'boolean') {
-        return undefined;
-    }
-    const operators = Array.isArray(value.operators)
-        ? value.operators.filter((operator): operator is RallarBlackBoxTestAssertOperator =>
-            typeof operator === 'string' &&
-            RALLAR_BLACK_BOX_ASSERT_OPERATORS
-                .includes(operator as RallarBlackBoxTestAssertOperator)
-        )
-        : [];
-    return {
+    return Either.ofRight({
         absence: value.absence,
         untilLoop: value.untilLoop,
-        operators
-    };
+        operators: Array.isArray(value.operators) ? value.operators.filter(isAssertOperator) : []
+    });
 }
 
 function isCrdtCapableProvider(providerMode: string | undefined): boolean {
@@ -205,18 +182,22 @@ function isCrdtCapableProvider(providerMode: string | undefined): boolean {
 }
 
 function hasCrdtRuntimeHints(config: RallarBlackBoxTestConfig | undefined): boolean {
-    const rallar = isRecord(config?.rallar) ? config.rallar : {};
-    return Boolean(
+    const rallar = config?.rallar;
+    return isJsonRecordValue(rallar) && (
         rallar.crdt === true ||
-            typeof rallar.crdtTransport === 'string' ||
-            rallar.crdtRuntime === true
+        typeof rallar.crdtTransport === 'string' ||
+        rallar.crdtRuntime === true
     );
 }
 
-function optionalString(value: any): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+function isNonEmptyText(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
 }
 
-function isRecord(value: any): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+function isControlAgentCrdtTransport(value: unknown): value is RallarBlackBoxTestCrdtTransport {
+    return typeof value === 'string' && CONTROL_AGENT_CRDT_TRANSPORTS.some((transport) => transport === value);
+}
+
+function isAssertOperator(value: unknown): value is RallarBlackBoxTestAssertOperator {
+    return typeof value === 'string' && RALLAR_BLACK_BOX_ASSERT_OPERATORS.some((operator) => operator === value);
 }

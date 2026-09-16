@@ -8,7 +8,7 @@ import {
     type RallarBlackBoxDistributedParticipantResult,
     type RallarBlackBoxDistributedRunRollup
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { evaluateDistributedGroupAssertions } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import {
     toDistributedGroupAssertionParticipants,
     toDistributedGroupAssertionRecipeEvidence
@@ -73,7 +73,7 @@ export function toDistributedRunRollup(
                 result: run?.results.get(link.commandId)
             })
         );
-    const groupAssertions = evaluateDistributedGroupAssertions({
+    const groupAssertions = computeDistributedGroupAssertionResults({
         manifest: distributedRun.manifest,
         participants: toDistributedGroupAssertionParticipants(distributedRun.targetResolution),
         recipeResults: recipes,

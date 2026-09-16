@@ -8,38 +8,89 @@ import type {
 } from './distributed-run-observation/distributed-run-row-contracts.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from './distributed-run.ts';
 
-export type DistributedRunFailureEvidenceDestinationKind =
-    | 'agent'
-    | 'recipe'
-    | 'command'
-    | 'diagnostic'
-    | 'timeline'
-    | 'event'
-    | 'artifact';
-export type DistributedRunFailureEvidenceDestination = Readonly<{
-    kind: DistributedRunFailureEvidenceDestinationKind;
-    id: string;
-    label: string;
-    agentId?: string;
-    recipeId?: string;
-    commandId?: string;
-    diagnosticId?: string;
-    timelineId?: string;
-    eventId?: string;
-    artifactStatus?: DistributedRunArtifactValidationStatus;
-}>;
-export function distributedRunRecipeSelectionKey(
-    selection: RallarBlackBoxDistributedRunRecipeSelection
-): string | undefined {
-    return cleanRecipeSelectionPart(selection.recipeId) ??
-        cleanRecipeSelectionPart(selection.recipe?.recipeId) ??
-        cleanRecipeSelectionPart(selection.role);
+export type DistributedRunFailureEvidenceDestinationKind = DistributedRunFailureEvidenceDestination['kind'];
+
+export type DistributedRunFailureEvidenceDestination =
+    | DistributedRunAgentEvidenceDestination
+    | DistributedRunRecipeEvidenceDestination
+    | DistributedRunCommandEvidenceDestination
+    | DistributedRunDiagnosticEvidenceDestination
+    | DistributedRunTimelineEvidenceDestination
+    | DistributedRunEventEvidenceDestination
+    | DistributedRunArtifactEvidenceDestination;
+
+interface DistributedRunEvidenceDestinationFields {
+    readonly id: string;
+    readonly label: string;
 }
-export function deriveDistributedRunFailureEvidenceDestinations(
-    input: Readonly<{
-        failure: DistributedRunFailureRow;
-        monitor: DistributedRunMonitor;
-    }>
+
+export interface DistributedRunAgentEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'agent';
+    readonly agentId: string;
+}
+
+export interface DistributedRunRecipeEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'recipe';
+    readonly recipeId: string;
+}
+
+export interface DistributedRunCommandEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'command';
+    /** Absent when the failure names no agent. */
+    readonly agentId?: string;
+    /** Absent when the failure names no recipe. */
+    readonly recipeId?: string;
+    readonly commandId: string;
+}
+
+export interface DistributedRunDiagnosticEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'diagnostic';
+    /** Absent when the diagnostic names no agent. */
+    readonly agentId?: string;
+    /** Absent when the diagnostic names no command. */
+    readonly commandId?: string;
+    readonly diagnosticId: string;
+}
+
+export interface DistributedRunTimelineEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'timeline';
+    /** Absent when the timeline item names no agent. */
+    readonly agentId?: string;
+    /** Absent when the timeline item names no recipe. */
+    readonly recipeId?: string;
+    /** Absent when the timeline item names no command. */
+    readonly commandId?: string;
+    readonly timelineId: string;
+}
+
+export interface DistributedRunEventEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'event';
+    /** Absent when the event names no agent. */
+    readonly agentId?: string;
+    /** Absent when the event names no command. */
+    readonly commandId?: string;
+    readonly eventId: string;
+}
+
+export interface DistributedRunArtifactEvidenceDestination extends DistributedRunEvidenceDestinationFields {
+    readonly kind: 'artifact';
+    readonly artifactStatus: DistributedRunArtifactValidationStatus;
+}
+
+export interface ComputeDistributedRunFailureEvidenceDestinationsInput {
+    readonly failure: DistributedRunFailureRow;
+    readonly monitor: DistributedRunMonitor;
+}
+
+/** The recipe key a selection contributes to command links, progress rows and group assertion sources. */
+export function resolveDistributedRunRecipeSelectionKey(
+    selection: RallarBlackBoxDistributedRunRecipeSelection
+): string {
+    return selection.recipeId.trim();
+}
+
+export function computeDistributedRunFailureEvidenceDestinations(
+    input: ComputeDistributedRunFailureEvidenceDestinationsInput
 ): readonly DistributedRunFailureEvidenceDestination[] {
     const destinations: DistributedRunFailureEvidenceDestination[] = [];
     const seen = new Set<string>();
@@ -51,28 +102,28 @@ export function deriveDistributedRunFailureEvidenceDestinations(
         }
     };
     const matchingDrilldowns = input.monitor.compositeDrilldowns
-        .filter((drilldown) => compositeDrilldownMatchesFailure(drilldown, input.failure));
-    const directCommandIds = uniqueStrings([
+        .filter((drilldown) => isCompositeDrilldownMatchingFailure(drilldown, input.failure));
+    const directCommandIds = toUniqueStrings([
         input.failure.commandId,
         ...matchingDrilldowns.map((drilldown) => drilldown.commandId).sort()
     ]);
     const inferScopedDestinations = input.failure.kind === 'participant' ||
         input.failure.kind === 'recipe';
     const initiallyMatchingTimeline = input.monitor.timeline
-        .filter((item) => timelineMatchesFailure(item, input.failure, directCommandIds));
-    const commandIds = uniqueStrings([
+        .filter((item) => isTimelineMatchingFailure(item, input.failure, directCommandIds));
+    const commandIds = toUniqueStrings([
         ...directCommandIds,
         ...(inferScopedDestinations
             ? initiallyMatchingTimeline.map((item) => item.commandId).sort()
             : [])
     ]);
     const matchingTimeline = input.monitor.timeline
-        .filter((item) => timelineMatchesFailure(item, input.failure, commandIds));
-    const agentIds = uniqueStrings([
+        .filter((item) => isTimelineMatchingFailure(item, input.failure, commandIds));
+    const agentIds = toUniqueStrings([
         input.failure.agentId,
         ...(inferScopedDestinations ? matchingTimeline.map((item) => item.agentId).sort() : [])
     ]);
-    const recipeIds = uniqueStrings([
+    const recipeIds = toUniqueStrings([
         input.failure.recipeId,
         ...(inferScopedDestinations ? matchingTimeline.map((item) => item.recipeId).sort() : [])
     ]);
@@ -149,12 +200,12 @@ export function deriveDistributedRunFailureEvidenceDestinations(
     input.monitor.events
         .filter((event) => event.kind !== 'diagnostic')
         .filter((event) =>
-            eventMatchesFailure(
+            isEventMatchingFailure({
                 event,
-                input.failure,
+                failure: input.failure,
                 commandIds,
                 recipeCommandIds
-            )
+            })
         )
         .forEach((event) =>
             add({
@@ -176,7 +227,7 @@ export function deriveDistributedRunFailureEvidenceDestinations(
     }
     return destinations;
 }
-function compositeDrilldownMatchesFailure(
+function isCompositeDrilldownMatchingFailure(
     drilldown: DistributedRunCompositeDrilldown,
     failure: DistributedRunFailureRow
 ): boolean {
@@ -193,7 +244,7 @@ function compositeDrilldownMatchesFailure(
         drilldown.rows.some((row) => row.commandId === failure.commandId);
 }
 
-function timelineMatchesFailure(
+function isTimelineMatchingFailure(
     item: DistributedRunTimelineItem,
     failure: DistributedRunFailureRow,
     commandIds: readonly string[]
@@ -224,12 +275,14 @@ function isDirectFailureTimeline(
         item.commandId === failure.commandId;
 }
 
-function eventMatchesFailure(
-    event: DistributedRunEventRow,
-    failure: DistributedRunFailureRow,
-    commandIds: readonly string[],
-    recipeCommandIds: ReadonlySet<string>
-): boolean {
+interface EventFailureMatchInput {
+    readonly event: DistributedRunEventRow;
+    readonly failure: DistributedRunFailureRow;
+    readonly commandIds: readonly string[];
+    readonly recipeCommandIds: ReadonlySet<string>;
+}
+
+function isEventMatchingFailure({ event, failure, commandIds, recipeCommandIds }: EventFailureMatchInput): boolean {
     if (commandIds.length > 0) {
         return event.commandId !== undefined && commandIds.includes(event.commandId);
     }
@@ -242,12 +295,6 @@ function eventMatchesFailure(
     return failure.kind === 'run';
 }
 
-function uniqueStrings(values: readonly (string | undefined)[]): readonly string[] {
+function toUniqueStrings(values: readonly (string | undefined)[]): readonly string[] {
     return [...new Set(values.filter((value): value is string => value !== undefined))];
-}
-
-function cleanRecipeSelectionPart(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0
-        ? value.trim()
-        : undefined;
 }

@@ -6,8 +6,8 @@ import {
     type RallarBlackBoxDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
-    collectDistributedAssertionFeatures,
-    parseControlAgentCapabilities,
+    computeDistributedAssertionFeatures,
+    decodeControlAgentCapabilities,
     toControlAgentCapabilities,
     validateAgentAssertionCapability
 } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
@@ -128,14 +128,14 @@ function agentWith(
 
 describe('rallar-bb-test assertion capability gate', () => {
     it('collects absence, until, and extended operator usage from inline recipes', () => {
-        const features = collectDistributedAssertionFeatures([NEW_FEATURE_RECIPE]);
+        const features = computeDistributedAssertionFeatures([NEW_FEATURE_RECIPE]);
         expect(features).toEqual({
             absence: true,
             untilLoop: true,
             operators: ['gt']
         });
 
-        expect(collectDistributedAssertionFeatures([BASELINE_RECIPE])).toEqual({
+        expect(computeDistributedAssertionFeatures([BASELINE_RECIPE])).toEqual({
             absence: false,
             untilLoop: false,
             operators: []
@@ -207,20 +207,22 @@ describe('rallar-bb-test assertion capability gate', () => {
         });
         expect(advertised.assertions?.operators).toContain('matchesShapeComplete');
 
-        const parsed = parseControlAgentCapabilities(
+        const decoded = decodeControlAgentCapabilities(
             JSON.parse(JSON.stringify(advertised))
         );
-        expect(parsed?.assertions).toEqual(advertised.assertions);
-        expect(parsed?.crdt?.supported).toBe(true);
+        expect(decoded.right?.assertions).toEqual(advertised.assertions);
+        expect(decoded.right?.crdt.supported).toBe(true);
 
-        const legacyParsed = parseControlAgentCapabilities({
-            crdt: { supported: true },
+        const legacyDecoded = decodeControlAgentCapabilities({
+            crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
             messaging: FULL_MESSAGING_CAPABILITY
         });
-        expect(legacyParsed?.assertions).toBeUndefined();
+        expect(legacyDecoded.right?.assertions).toBeUndefined();
         expect(validateAgentAssertionCapability(
-            collectDistributedAssertionFeatures([NEW_FEATURE_RECIPE]),
-            legacyParsed
-        )).toContain('does not advertise required assertion capabilities');
+            computeDistributedAssertionFeatures([NEW_FEATURE_RECIPE]),
+            legacyDecoded.right
+        )).toEqual(['absence waits', 'until loops', 'assert operators: gt']);
+        expect(decodeControlAgentCapabilities({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY }).left)
+            .toBe('capabilities.crdt must report supported, transports and apiBaseUrlConfigured');
     });
 });

@@ -1,6 +1,7 @@
 import type { ControlAgentSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import {
+    toMissingAssertionCapabilityReason,
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from '../distributed/control-agent-capabilities.ts';
@@ -130,12 +131,15 @@ function toUnmetCapabilityStatus(
         );
     }
 
-    const unmetAssertionReason = validateAgentAssertionCapability(
+    const missingAssertionCapabilities = validateAgentAssertionCapability(
         input.requiredAssertionFeatures,
         input.identity?.capabilities
     );
-    return unmetAssertionReason
-        ? createBlockedTargetStatus('missing-assertion-capability', unmetAssertionReason)
+    return missingAssertionCapabilities.length > 0
+        ? createBlockedTargetStatus(
+            'missing-assertion-capability',
+            toMissingAssertionCapabilityReason(missingAssertionCapabilities)
+        )
         : undefined;
 }
 

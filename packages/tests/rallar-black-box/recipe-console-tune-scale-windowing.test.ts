@@ -19,7 +19,7 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { inventoryDistributedRunTuningKnobs } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { createRecipeConsoleTuneScaleFixture } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
@@ -337,7 +337,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('indexes and reaches a late long-bidi pointer among 24,002 editable knobs', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,
             decisions: undefined
@@ -384,7 +384,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('keeps an open queried knob page stable across equivalent re-inventory', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,
             decisions: undefined
@@ -431,7 +431,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('fails the knob picker closed when duplicate pointer keys reach the UI', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture({ commandCount: 4 });
-        const original = inventoryDistributedRunTuningKnobs(
+        const original = computeDistributedRunTuningInventory(
             fixture.manifest
         ).knobs[0]!;
         const source = {
@@ -469,7 +469,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('keeps blocked evidence explicit and browseable within 100 mounted rows', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture({ commandCount: 24 });
-        const knobs = inventoryDistributedRunTuningKnobs(fixture.manifest).knobs
+        const knobs = computeDistributedRunTuningInventory(fixture.manifest).knobs
             .slice(0, 240)
             .map((knob) => ({
                 ...knob,

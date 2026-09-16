@@ -12,7 +12,7 @@ import type {
 } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import {
-    inventoryDistributedRunTuningKnobs,
+    computeDistributedRunTuningInventory,
     type DistributedRunTuningInventory
 } from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -137,7 +137,7 @@ export function deriveTuneSourceModel(
     const analysis = artifactCurrent ? option?.artifactEvidence?.analysis : undefined;
     const performance = evidence?.performance;
     const inventory = manifest
-        ? inventoryDistributedRunTuningKnobs(manifest)
+        ? computeDistributedRunTuningInventory(manifest)
         : undefined;
     const decisions = inventory
         ? deriveDistributedRunTuningDecisions({

@@ -40,12 +40,14 @@ export function createRecipeConsoleTuneScaleFixture(
     );
     const positions = scalePositions(commandCount);
     const commands = Array.from({ length: commandCount }, (_, ordinal) => streamCommand(ordinal, positions.longBidi));
+
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
         recipeId: 'recipe-console-tune-scale-streams',
         name: 'Recipe Console Tune deterministic scale streams',
         commands
     };
+
     const manifest: RallarBlackBoxDistributedRunManifest = {
         schemaVersion: 1,
         distributedRunId: 'recipe-console-tune-scale-distributed-run',
@@ -86,6 +88,7 @@ export function createRecipeConsoleTuneScaleFixture(
         groupAssertions: [],
         metadata: {}
     };
+
     const expectedKnobs = GLOBAL_TUNING_KNOB_COUNT +
         commandCount * RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND;
     return {

@@ -1,5 +1,6 @@
 import {
-    collectDistributedAssertionFeatures,
+    computeDistributedAssertionFeatures,
+    toMissingAssertionCapabilityReason,
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
@@ -255,9 +256,6 @@ export interface RallarBlackBoxGroupControlAgentMatchSummary {
     readonly agentsWithoutIdentity: number;
 }
 
-/** Author-supplied variables and metadata: JSON objects the manifest carries as recorded. */
-export type RallarBlackBoxDistributedRunVariables = RallarBlackBoxTestRecord;
-
 export interface RallarBlackBoxDistributedRunRecipeSelection {
     readonly recipeId: string;
     /** Absent when the selection references a catalog recipe the agent loads by recipeId. */
@@ -266,7 +264,7 @@ export interface RallarBlackBoxDistributedRunRecipeSelection {
     readonly role?: string;
     /** Absent when the selection names no catalog profile. */
     readonly profile?: string;
-    readonly variables: RallarBlackBoxDistributedRunVariables;
+    readonly variables: RallarBlackBoxTestRecord;
     readonly secretRefs: readonly string[];
     readonly required: boolean;
 }
@@ -277,7 +275,7 @@ export interface RallarBlackBoxDistributedRoleAssignment {
     /** Empty when the agent runs every recipe selection for its role. */
     readonly recipeIds: readonly string[];
     readonly required: boolean;
-    readonly variables: RallarBlackBoxDistributedRunVariables;
+    readonly variables: RallarBlackBoxTestRecord;
 }
 
 /** A role an agent holds after target resolution; authored assignments pass through with their recipe scope. */
@@ -288,7 +286,7 @@ export interface RallarBlackBoxDistributedResolvedRoleAssignment {
     /** Absent when the role came from targetPolicy.roles or a role pattern instead of an authored assignment. */
     readonly recipeIds?: readonly string[];
     /** Absent when the role came from targetPolicy.roles or a role pattern instead of an authored assignment. */
-    readonly variables?: RallarBlackBoxDistributedRunVariables;
+    readonly variables?: RallarBlackBoxTestRecord;
 }
 
 export interface RallarBlackBoxDistributedRoleAssignmentPolicy {
@@ -361,7 +359,7 @@ export interface RallarBlackBoxDistributedRunManifestFields {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[];
     readonly targetPolicy: RallarBlackBoxDistributedTargetPolicy;
-    readonly variables: RallarBlackBoxDistributedRunVariables;
+    readonly variables: RallarBlackBoxTestRecord;
     readonly secretRefs: readonly string[];
     readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
     /** Absent when roles come from targetPolicy.roles or roleAssignments instead of a pattern. */
@@ -370,7 +368,7 @@ export interface RallarBlackBoxDistributedRunManifestFields {
     readonly barrier: RallarBlackBoxDistributedBarrierPolicy;
     readonly artifactPolicy: RallarBlackBoxDistributedArtifactPolicy;
     readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
-    readonly metadata: RallarBlackBoxDistributedRunVariables;
+    readonly metadata: RallarBlackBoxTestRecord;
 }
 
 export interface RallarBlackBoxDistributedUnscheduledRunManifest extends RallarBlackBoxDistributedRunManifestFields {
@@ -525,9 +523,9 @@ export function resolveGroupMemberControlAgentMatches(
     const matches: RallarBlackBoxGroupControlAgentMatch[] = [];
 
     for (const member of input.members) {
-        const candidates = input.agents.filter((agent) => agentMatchesMemberInGroup(agent, member, input.group));
+        const candidates = input.agents.filter((agent) => isAgentMatchingMemberInGroup(agent, member, input.group));
         const activeCandidates = candidates.filter((agent) =>
-            agent.connected && !agentIsStale(agent, input.nowEpochMs, input.staleAfterMs)
+            agent.connected && !isAgentStale(agent, input.nowEpochMs, input.staleAfterMs)
         );
 
         if (activeCandidates.length === 1) {
@@ -556,7 +554,7 @@ export function resolveGroupMemberControlAgentMatches(
             continue;
         }
 
-        if (candidates.some((agent) => agent.connected && agentIsStale(agent, input.nowEpochMs, input.staleAfterMs))) {
+        if (candidates.some((agent) => agent.connected && isAgentStale(agent, input.nowEpochMs, input.staleAfterMs))) {
             candidates.forEach((agent) => consumedAgentIds.add(agent.agentId));
             matches.push({
                 status: 'stale-agent',
@@ -596,7 +594,7 @@ export function resolveGroupMemberControlAgentMatches(
 
         if (
             !agent.identity ||
-            !cleanString(agent.identity.principalId ?? agent.identity.clientId ?? agent.identity.username)
+            !toTrimmedText(agent.identity.principalId ?? agent.identity.clientId ?? agent.identity.username)
         ) {
             matches.push({
                 status: 'agent-without-identity',
@@ -608,7 +606,7 @@ export function resolveGroupMemberControlAgentMatches(
             continue;
         }
 
-        if (identityMatchesGroup(agent.identity, input.group)) {
+        if (isIdentityInGroup(agent.identity, input.group)) {
             matches.push({
                 status: 'agent-without-group-member',
                 targetable: false,
@@ -677,14 +675,14 @@ export function resolveDistributedRunTargets(
     const blockers: RallarBlackBoxDistributedTargetBlocker[] = [];
     const targetableAgentIds: string[] = [];
     const targetableById = new Set<string>();
-    const assertionFeatures = collectDistributedAssertionFeatures(
+    const assertionFeatures = computeDistributedAssertionFeatures(
         input.manifest.recipes
             .map((selection) => selection.recipe)
             .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined)
     );
 
     for (const agent of input.agents) {
-        const blocker = distributedTargetBlocker({
+        const blocker = resolveDistributedTargetBlocker({
             agent,
             group: input.manifest.group,
             nowEpochMs,
@@ -699,17 +697,17 @@ export function resolveDistributedRunTargets(
         targetableById.add(agent.agentId);
     }
 
-    const selected = distributedSelectedAgentIds({
+    const selected = resolveDistributedSelectedAgentIds({
         policy: input.manifest.targetPolicy,
         targetableAgentIds,
         targetableById,
         roleAssignments: input.manifest.roleAssignments
     });
-    const roleAssignments = distributedRoleAssignments({
+    const roleAssignments = resolveDistributedRoleAssignments({
         manifest: input.manifest,
         targetAgentIds: selected
     });
-    const roleCounts = countBy(roleAssignments.map((assignment) => assignment.role));
+    const roleCounts = computeSortedCounts(roleAssignments.map((assignment) => assignment.role));
     const selectedAgentSet = new Set(selected);
     const selectedAgents = input.agents.filter((agent) => selectedAgentSet.has(agent.agentId));
     const expected = input.manifest.targetPolicy.expectedParticipantCount;
@@ -737,8 +735,10 @@ export function resolveDistributedRunTargets(
                 .filter((blocker) => blocker.status === 'missing-assertion-capability').length,
             agentsWithoutIdentity: blockers.filter((blocker) => blocker.status === 'agent-without-identity').length,
             roleCounts,
-            regions: countBy(selectedAgents.map((agent) => agent.identity?.region).filter(isString)),
-            providers: countBy(selectedAgents.map((agent) => agent.identity?.provider).filter(isString))
+            regions: computeSortedCounts(selectedAgents.map((agent) => agent.identity?.region).filter(isNonEmptyText)),
+            providers: computeSortedCounts(
+                selectedAgents.map((agent) => agent.identity?.provider).filter(isNonEmptyText)
+            )
         }
     };
 }
@@ -747,16 +747,16 @@ function validateManifestIdentity(
     manifest: RallarBlackBoxDistributedRunManifest
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     return [
-        ...requireNonEmptyString(manifest.distributedRunId, '$.distributedRunId'),
-        ...requireNonEmptyString(manifest.controlRunId, '$.controlRunId'),
-        ...requireNonEmptyString(manifest.group.applicationId, '$.group.applicationId'),
-        ...requireNonEmptyString(manifest.group.workspaceId, '$.group.workspaceId'),
-        ...requireNonEmptyString(manifest.group.groupId, '$.group.groupId'),
+        ...validateNonEmptyText(manifest.distributedRunId, '$.distributedRunId'),
+        ...validateNonEmptyText(manifest.controlRunId, '$.controlRunId'),
+        ...validateNonEmptyText(manifest.group.applicationId, '$.group.applicationId'),
+        ...validateNonEmptyText(manifest.group.workspaceId, '$.group.workspaceId'),
+        ...validateNonEmptyText(manifest.group.groupId, '$.group.groupId'),
         ...(manifest.recipes.length === 0
             ? [{ path: '$.recipes', message: 'At least one recipe selection is required.' }]
             : []),
         ...manifest.recipes.flatMap((recipe, index) =>
-            requireNonEmptyString(recipe.recipeId, `$.recipes[${index}].recipeId`)
+            validateNonEmptyText(recipe.recipeId, `$.recipes[${index}].recipeId`)
         )
     ];
 }
@@ -875,7 +875,7 @@ function validateTimeouts(
     return errors;
 }
 
-interface DistributedTargetBlockerInput {
+interface ResolveDistributedTargetBlockerInput {
     readonly agent: RallarBlackBoxControlAgentCandidate;
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly nowEpochMs: number;
@@ -883,8 +883,8 @@ interface DistributedTargetBlockerInput {
     readonly assertionFeatures: DistributedAssertionFeatures;
 }
 
-function distributedTargetBlocker(
-    input: DistributedTargetBlockerInput
+function resolveDistributedTargetBlocker(
+    input: ResolveDistributedTargetBlockerInput
 ): RallarBlackBoxDistributedTargetBlocker | undefined {
     const agent = input.agent;
     if (!agent.identity) {
@@ -894,7 +894,7 @@ function distributedTargetBlocker(
             reason: 'Control agent has not reported Rallar identity metadata.'
         };
     }
-    if (!identityMatchesGroup(agent.identity, input.group)) {
+    if (!isIdentityInGroup(agent.identity, input.group)) {
         return {
             agentId: agent.agentId,
             status: 'different-group',
@@ -910,7 +910,7 @@ function distributedTargetBlocker(
             identity: agent.identity
         };
     }
-    if (agentIsStale(agent, input.nowEpochMs, input.staleAfterMs)) {
+    if (isAgentStale(agent, input.nowEpochMs, input.staleAfterMs)) {
         return {
             agentId: agent.agentId,
             status: 'stale-agent',
@@ -918,22 +918,22 @@ function distributedTargetBlocker(
             identity: agent.identity
         };
     }
-    const unmetAssertionReason = validateAgentAssertionCapability(
+    const missingAssertionCapabilities = validateAgentAssertionCapability(
         input.assertionFeatures,
         agent.identity.capabilities
     );
-    if (unmetAssertionReason) {
+    if (missingAssertionCapabilities.length > 0) {
         return {
             agentId: agent.agentId,
             status: 'missing-assertion-capability',
-            reason: unmetAssertionReason,
+            reason: toMissingAssertionCapabilityReason(missingAssertionCapabilities),
             identity: agent.identity
         };
     }
     return undefined;
 }
 
-function distributedSelectedAgentIds(
+function resolveDistributedSelectedAgentIds(
     input: Readonly<{
         policy: RallarBlackBoxDistributedTargetPolicy;
         targetableAgentIds: readonly string[];
@@ -958,7 +958,7 @@ function distributedSelectedAgentIds(
     ]);
 }
 
-function distributedRoleAssignments(
+function resolveDistributedRoleAssignments(
     input: Readonly<{
         manifest: RallarBlackBoxDistributedRunManifest;
         targetAgentIds: readonly string[];
@@ -991,10 +991,10 @@ function distributedRoleAssignments(
         return [];
     }
 
-    return roleAssignmentsForPattern(rolePolicy.pattern, input.targetAgentIds);
+    return toResolvedRoleAssignmentsForPattern(rolePolicy.pattern, input.targetAgentIds);
 }
 
-function roleAssignmentsForPattern(
+function toResolvedRoleAssignmentsForPattern(
     pattern: RallarBlackBoxDistributedRolePattern,
     agentIds: readonly string[]
 ): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
@@ -1020,7 +1020,7 @@ function roleAssignmentsForPattern(
     ];
 }
 
-function countBy(values: readonly string[]): Readonly<Record<string, number>> {
+function computeSortedCounts(values: readonly string[]): Readonly<Record<string, number>> {
     const counts: Record<string, number> = {};
     for (const value of values) {
         counts[value] = (counts[value] ?? 0) + 1;
@@ -1030,17 +1030,17 @@ function countBy(values: readonly string[]): Readonly<Record<string, number>> {
     );
 }
 
-function isString(value: string | undefined): value is string {
+function isNonEmptyText(value: string | undefined): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
-function agentMatchesMemberInGroup(
+function isAgentMatchingMemberInGroup(
     agent: RallarBlackBoxControlAgentCandidate,
     member: RallarBlackBoxGroupMemberCandidate,
     group: RallarBlackBoxDistributedGroupRef
 ): boolean {
     const identity = agent.identity;
-    if (!identityMatchesGroup(identity, group)) {
+    if (!isIdentityInGroup(identity, group)) {
         return false;
     }
 
@@ -1048,20 +1048,20 @@ function agentMatchesMemberInGroup(
         [
             member.principalId,
             member.username
-        ].map(cleanString).filter((value): value is string => Boolean(value))
+        ].map(toTrimmedText).filter((value): value is string => Boolean(value))
     );
     const identityIds = [
         identity.principalId,
         identity.clientId,
         identity.username
-    ].map(cleanString).filter((value): value is string => Boolean(value));
+    ].map(toTrimmedText).filter((value): value is string => Boolean(value));
 
     if (!identityIds.some((id) => memberIds.has(id))) {
         return false;
     }
 
     const memberSessionIds = new Set(
-        member.sessionIds.map(cleanString).filter((value): value is string => Boolean(value))
+        member.sessionIds.map(toTrimmedText).filter((value): value is string => Boolean(value))
     );
     if (memberSessionIds.size === 0) {
         return true;
@@ -1070,7 +1070,7 @@ function agentMatchesMemberInGroup(
     return Boolean(identity.sessionId && memberSessionIds.has(identity.sessionId));
 }
 
-function identityMatchesGroup(
+function isIdentityInGroup(
     identity: RallarBlackBoxControlAgentIdentity | undefined,
     group: RallarBlackBoxDistributedGroupRef
 ): identity is RallarBlackBoxControlAgentIdentity {
@@ -1083,7 +1083,7 @@ function identityMatchesGroup(
         identity.groupId === group.groupId;
 }
 
-function agentIsStale(
+function isAgentStale(
     agent: RallarBlackBoxControlAgentCandidate,
     nowEpochMs: number,
     staleAfterMs: number
@@ -1092,14 +1092,14 @@ function agentIsStale(
     return typeof lastSeen === 'number' && nowEpochMs - lastSeen > staleAfterMs;
 }
 
-function requireNonEmptyString(
+function validateNonEmptyText(
     value: string,
     path: string
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    return cleanString(value) ? [] : [{ path, message: 'A non-empty string is required.' }];
+    return toTrimmedText(value) ? [] : [{ path, message: 'A non-empty string is required.' }];
 }
 
-function cleanString(value: string | undefined): string | undefined {
+function toTrimmedText(value: string | undefined): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value.trim()
         : undefined;

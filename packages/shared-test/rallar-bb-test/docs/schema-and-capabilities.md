@@ -113,7 +113,7 @@ The capabilities are the source for UI help, catalog filtering, and future
 distributed recipe preflight checks.
 
 A control agent's own registration carries a second, separate capability
-document. `parseControlAgentCapabilities` requires a `messaging` block beside
+document. `decodeControlAgentCapabilities` requires a `messaging` block beside
 `crdt`, and rejects the registration outright when it is absent or malformed:
 
 ```json

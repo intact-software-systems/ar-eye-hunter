@@ -1,7 +1,7 @@
 import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../control-snapshots.ts';
 import {
-    distributedRunMonitorAgentEventsForProgress,
-    distributedRunMonitorAgentLinksForProgress,
+    getDistributedRunMonitorAgentEvents,
+    getDistributedRunMonitorAgentLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
 import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
@@ -26,8 +26,8 @@ export function computeDistributedRunAgentProgress(
     }>
 ): readonly DistributedRunAgentProgressRow[] {
     return input.index.agentIds.map((agentId) => {
-        const links = distributedRunMonitorAgentLinksForProgress(input.index, agentId);
-        const linkedEvents = distributedRunMonitorAgentEventsForProgress(
+        const links = getDistributedRunMonitorAgentLinks(input.index, agentId);
+        const linkedEvents = getDistributedRunMonitorAgentEvents(
             input.index,
             input.eventsByAgentId,
             agentId

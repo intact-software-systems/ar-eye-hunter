@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { inventoryDistributedRunTuningKnobs } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     createRecipeConsoleTuneScaleFixture,
@@ -25,7 +25,7 @@ describe('Recipe Console Tune scale fixture', () => {
         const fixture = createRecipeConsoleTuneScaleFixture();
         const second = createRecipeConsoleTuneScaleFixture();
         const validation = validateDistributedRunManifest(fixture.manifest);
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
 
         expect(RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT).toBe(2_000);
         expect(RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND).toBe(12);
@@ -56,7 +56,7 @@ describe('Recipe Console Tune scale fixture', () => {
 
     it('scales the exact knob formula for a smaller deterministic recipe', () => {
         const fixture = createRecipeConsoleTuneScaleFixture({ commandCount: 8 });
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
 
         expect(fixture.counts).toEqual({
             commands: 8,

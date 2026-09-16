@@ -45,18 +45,18 @@ const BOUNDED_DURATION: DistributedRunTuningKnobConstraint = {
     maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
 };
 
-export function inventoryDistributedRunTuningKnobs(
+export function computeDistributedRunTuningInventory(
     manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningInventory {
     const knobs: DistributedRunTuningKnob[] = [
-        numericKnob({
+        toTuningKnob({
             name: 'ackTimeoutMs',
             tokens: ['ackTimeoutMs'],
             scope: 'manifest',
             value: manifest.ackTimeoutMs,
             constraint: POSITIVE_INTEGER
         }),
-        barrierTimeoutKnob(manifest)
+        toBarrierTimeoutTuningKnob(manifest)
     ];
     const limitations: DistributedRunTuningInventoryLimitation[] = [];
     let visitedCommands = 0;
@@ -127,8 +127,15 @@ export function inventoryDistributedRunTuningKnobs(
             const tokens = [...parentTokens, index];
             if (command.kind === 'loop') {
                 knobs.push(
-                    commandKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
-                    commandKnob('intervalMs', command.intervalMs, NON_NEGATIVE_INTEGER, tokens, command, context)
+                    toCommandTuningKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
+                    toCommandTuningKnob(
+                        'intervalMs',
+                        command.intervalMs,
+                        NON_NEGATIVE_INTEGER,
+                        tokens,
+                        command,
+                        context
+                    )
                 );
                 walk(command.commands, [...tokens, 'commands'], context, depth + 1);
             }
@@ -155,7 +162,7 @@ export function inventoryDistributedRunTuningKnobs(
                 }
             }
             else if (command.kind === 'rtc.stream') {
-                knobs.push(...streamCommandKnobs(command, tokens, context));
+                knobs.push(...toStreamCommandTuningKnobs(command, tokens, context));
             }
         }
     };
@@ -202,25 +209,25 @@ export function inventoryDistributedRunTuningKnobs(
     return { knobs, limitations };
 }
 
-function streamCommandKnobs(
+function toStreamCommandTuningKnobs(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream'; }>,
     tokens: readonly (string | number)[],
     context: CommandContext
 ): readonly DistributedRunTuningKnob[] {
     const rateShadowed = command.intervalMs !== undefined;
     const rows = [
-        commandKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
-        commandKnob('intervalMs', command.intervalMs, POSITIVE_INTEGER, tokens, command, context),
-        commandKnob('rateHz', command.rateHz, POSITIVE_RATE, tokens, command, context, {
+        toCommandTuningKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
+        toCommandTuningKnob('intervalMs', command.intervalMs, POSITIVE_INTEGER, tokens, command, context),
+        toCommandTuningKnob('rateHz', command.rateHz, POSITIVE_RATE, tokens, command, context, {
             blocked: rateShadowed,
             reason: rateShadowed
                 ? 'intervalMs takes precedence over rateHz for RTC stream scheduling.'
                 : undefined
         }),
-        commandKnob('maxInFlight', command.maxInFlight, POSITIVE_INTEGER, tokens, command, context)
+        toCommandTuningKnob('maxInFlight', command.maxInFlight, POSITIVE_INTEGER, tokens, command, context)
     ];
     for (const threshold of DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES) {
-        rows.push(numericKnob({
+        rows.push(toTuningKnob({
             name: `thresholds.${threshold}`,
             tokens: [...tokens, 'thresholds', threshold],
             scope: 'stream-threshold',
@@ -236,7 +243,7 @@ function streamCommandKnobs(
     return rows;
 }
 
-function commandKnob(
+function toCommandTuningKnob(
     name: Extract<DistributedRunTuningKnobName, 'durationMs' | 'intervalMs' | 'rateHz' | 'maxInFlight'>,
     value: number | undefined,
     constraint: DistributedRunTuningKnobConstraint,
@@ -245,7 +252,7 @@ function commandKnob(
     context: CommandContext,
     options: Readonly<{ blocked?: boolean; reason?: string; }> = {}
 ): DistributedRunTuningKnob {
-    return numericKnob({
+    return toTuningKnob({
         name,
         tokens: [...tokens, name],
         scope: 'command',
@@ -258,12 +265,12 @@ function commandKnob(
     });
 }
 
-function barrierTimeoutKnob(
+function toBarrierTimeoutTuningKnob(
     manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningKnob {
     const barrier = manifest.barrier;
     const enabled = barrier.enabled;
-    return numericKnob({
+    return toTuningKnob({
         name: 'barrier.timeoutMs',
         tokens: ['barrier', 'timeoutMs'],
         scope: 'manifest',
@@ -274,7 +281,7 @@ function barrierTimeoutKnob(
     });
 }
 
-function numericKnob(
+function toTuningKnob(
     input: Readonly<{
         name: DistributedRunTuningKnobName;
         tokens: readonly (string | number)[];
@@ -289,7 +296,7 @@ function numericKnob(
 ): DistributedRunTuningKnob {
     return {
         name: input.name,
-        pointer: distributedRunTuningJsonPointer(input.tokens),
+        pointer: toDistributedRunTuningJsonPointer(input.tokens),
         scope: input.scope,
         currentValue: input.value,
         availability: input.blocked
@@ -307,7 +314,7 @@ function numericKnob(
     };
 }
 
-export function distributedRunTuningJsonPointer(
+export function toDistributedRunTuningJsonPointer(
     tokens: readonly (string | number)[]
 ): string {
     return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');

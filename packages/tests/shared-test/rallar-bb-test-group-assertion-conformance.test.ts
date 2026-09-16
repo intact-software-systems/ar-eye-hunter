@@ -14,7 +14,7 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/group-assertion-conformance.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-assertions-aggregates.ts';
-import { evaluateDistributedGroupAssertions } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import { sameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 describe('rallar-bb-test group assertion conformance', () => {
@@ -136,7 +136,7 @@ describe('rallar-bb-test group assertion conformance', () => {
             }],
             metadata: {}
         };
-        const pending = evaluateDistributedGroupAssertions({
+        const pending = computeDistributedGroupAssertionResults({
             manifest,
             participants: [{ agentId: 'agent-a', roles: [] }],
             recipeResults: [{
@@ -148,7 +148,7 @@ describe('rallar-bb-test group assertion conformance', () => {
         });
         expect(pending).toBeUndefined();
 
-        const noAssertions = evaluateDistributedGroupAssertions({
+        const noAssertions = computeDistributedGroupAssertionResults({
             manifest: { ...manifest, groupAssertions: [] },
             participants: [{ agentId: 'agent-a', roles: [] }],
             recipeResults: [{

@@ -1,6 +1,6 @@
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import {
-    distributedRunMonitorReadinessStageLinks,
+    getDistributedRunMonitorReadinessStageLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
 import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
@@ -13,7 +13,7 @@ export function computeDistributedRunReadiness(
     }>
 ): readonly DistributedRunReadinessRow[] {
     return input.index.membership.targetAgentIds.map((agentId) => {
-        const stageLinks = distributedRunMonitorReadinessStageLinks(
+        const stageLinks = getDistributedRunMonitorReadinessStageLinks(
             input.index,
             agentId
         );
