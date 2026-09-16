@@ -58,7 +58,7 @@ function computeReceiverDeliveryFailure(
 ): DistributedRunFailureAnalysis | undefined {
     const failedResult = results.find((result) => {
         const text = result.deliveryFailureTexts.join(' ').toLowerCase();
-        return recordsFailedResult(result) &&
+        return isFailedResult(result) &&
             (text.includes('stats.counters.messages') || (text.includes('receiver') && text.includes('delivery')));
     });
     if (!failedResult) {
@@ -102,7 +102,7 @@ function computeFleetSignatureFailure(
         verificationCommand: resolveVerificationCommand(minimalFix),
         affectedAgents: signature.affectedAgents,
         affectedRegions: signature.affectedRegions,
-        commandId: signature.commandId ?? results.find(recordsFailedResult)?.commandId,
+        commandId: signature.commandId ?? results.find(isFailedResult)?.commandId,
         recipeId: signature.recipeId,
         evidenceFile: 'fleet-report.json'
     };
@@ -111,7 +111,7 @@ function computeFleetSignatureFailure(
 function computeFailedResultFailure(
     results: readonly DistributedRunResultEvidence[]
 ): DistributedRunFailureAnalysis | undefined {
-    const failedResult = results.find(recordsFailedResult);
+    const failedResult = results.find(isFailedResult);
     if (!failedResult) {
         return undefined;
     }
@@ -232,6 +232,6 @@ function computeRunStateFailure(distributedRun: ControlDistributedRunSnapshot): 
     };
 }
 
-function recordsFailedResult(result: DistributedRunResultEvidence): boolean {
+function isFailedResult(result: DistributedRunResultEvidence): boolean {
     return result.status?.toUpperCase() === 'FAILURE' || result.ok === false;
 }

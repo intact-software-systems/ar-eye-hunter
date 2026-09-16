@@ -27,7 +27,7 @@ export function pushStreamSampleGroup<Group extends VersionedStreamSampleGroup>(
     let position = heap.entries.length - 1;
     while (position > 0) {
         const parent = Math.floor((position - 1) / 2);
-        if (compareHeapEntries(heap.entries[parent], entry) <= 0) {
+        if (computeHeapEntryOrder(heap.entries[parent], entry) <= 0) {
             break;
         }
         heap.entries[position] = heap.entries[parent];
@@ -68,10 +68,10 @@ function removeOldestHeapEntry<Group extends VersionedStreamSampleGroup>(heap: S
             break;
         }
         const child = right < heap.entries.length &&
-                compareHeapEntries(heap.entries[right], heap.entries[left]) < 0
+                computeHeapEntryOrder(heap.entries[right], heap.entries[left]) < 0
             ? right
             : left;
-        if (compareHeapEntries(replacement, heap.entries[child]) <= 0) {
+        if (computeHeapEntryOrder(replacement, heap.entries[child]) <= 0) {
             break;
         }
         heap.entries[position] = heap.entries[child];
@@ -80,7 +80,7 @@ function removeOldestHeapEntry<Group extends VersionedStreamSampleGroup>(heap: S
     heap.entries[position] = replacement;
 }
 
-function compareHeapEntries<Group extends VersionedStreamSampleGroup>(
+function computeHeapEntryOrder<Group extends VersionedStreamSampleGroup>(
     left: StreamSampleGroupHeapEntry<Group>,
     right: StreamSampleGroupHeapEntry<Group>
 ): number {

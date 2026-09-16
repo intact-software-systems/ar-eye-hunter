@@ -28,18 +28,18 @@ export function computeStreamTiming(samples: readonly StreamTimingSample[]): Dis
     if (samples.length === 0 || !samples.every(hasCompleteStreamTimingEvidence)) {
         return undefined;
     }
-    const attemptedFrames = sumStreamCounter(samples, 'attemptedFrames');
-    const completedFrames = sumStreamCounter(samples, 'completedFrames');
+    const attemptedFrames = computeStreamCounterSum(samples, 'attemptedFrames');
+    const completedFrames = computeStreamCounterSum(samples, 'completedFrames');
     return {
         streamCount: samples.length,
-        plannedFrames: sumStreamCounter(samples, 'plannedFrames'),
-        scheduledFrames: sumStreamCounter(samples, 'scheduledFrames'),
+        plannedFrames: computeStreamCounterSum(samples, 'plannedFrames'),
+        scheduledFrames: computeStreamCounterSum(samples, 'scheduledFrames'),
         attemptedFrames,
         completedFrames,
-        failedFrames: sumStreamCounter(samples, 'failedFrames'),
-        droppedFrames: sumStreamCounter(samples, 'droppedFrames'),
+        failedFrames: computeStreamCounterSum(samples, 'failedFrames'),
+        droppedFrames: computeStreamCounterSum(samples, 'droppedFrames'),
         inFlightLimitDropCount: samples.reduce((sum, sample) => sum + computeStreamInFlightLimitDropCount(sample), 0),
-        backpressureCount: sumStreamCounter(samples, 'backpressureCount'),
+        backpressureCount: computeStreamCounterSum(samples, 'backpressureCount'),
         sendSuccessRatio: attemptedFrames > 0 ? toRoundedMetric(completedFrames / attemptedFrames) : undefined,
         requestedRateHz: computeDefinedAverage(samples.map((sample) => sample.summary.requestedRateHz)),
         achievedScheduleHz: computeDefinedAverage(samples.map((sample) => sample.summary.achievedScheduleHz)),
@@ -60,7 +60,7 @@ function hasCompleteStreamTimingEvidence(sample: StreamTimingSample): boolean {
         summary.droppedFrames !== undefined;
 }
 
-function sumStreamCounter(samples: readonly StreamTimingSample[], counter: StreamFrameCounter): number {
+function computeStreamCounterSum(samples: readonly StreamTimingSample[], counter: StreamFrameCounter): number {
     return samples.reduce((sum, sample) => sum + (sample.summary[counter] ?? 0), 0);
 }
 
@@ -117,8 +117,8 @@ function computeSlowestStreamAgents(
             return {
                 agentId,
                 streamCount: agentSamples.length,
-                plannedFrames: sumStreamCounter(agentSamples, 'plannedFrames'),
-                completedFrames: sumStreamCounter(agentSamples, 'completedFrames'),
+                plannedFrames: computeStreamCounterSum(agentSamples, 'plannedFrames'),
+                completedFrames: computeStreamCounterSum(agentSamples, 'completedFrames'),
                 averageMs: computeAverage(durations),
                 p95Ms: computePercentile(durations, 0.95),
                 p99Ms: computePercentile(durations, 0.99),

@@ -51,9 +51,9 @@ export function computeDistributedRunPerformance(
         agentCount: fleetReport?.agents ?? agents.length,
         passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
         reconnectCount: agents.reduce((sum, agent) => sum + agent.reconnectCount, 0),
-        diagnosticCount: countEventSeverity(events, 'warning') + countEventSeverity(events, 'error'),
-        warningDiagnosticCount: countEventSeverity(events, 'warning'),
-        errorDiagnosticCount: countEventSeverity(events, 'error'),
+        diagnosticCount: computeEventSeverityCount(events, 'warning') + computeEventSeverityCount(events, 'error'),
+        warningDiagnosticCount: computeEventSeverityCount(events, 'warning'),
+        errorDiagnosticCount: computeEventSeverityCount(events, 'error'),
         exportedEventCount: events.length,
         agentReportedEventCount: agents.reduce((sum, agent) => sum + agent.receivedEventCount, 0),
         failedAgentCount: fleetReport?.failedAgents ?? distributedRun.rollup.summary.failedParticipants,
@@ -70,6 +70,6 @@ export function computeDistributedRunPerformance(
     };
 }
 
-function countEventSeverity(events: readonly DistributedRunEventEvidence[], severity: string): number {
+function computeEventSeverityCount(events: readonly DistributedRunEventEvidence[], severity: string): number {
     return events.filter((event) => event.severity === severity).length;
 }

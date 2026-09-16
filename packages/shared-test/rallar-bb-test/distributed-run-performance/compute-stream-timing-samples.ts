@@ -65,6 +65,12 @@ interface IndexedStreamSampleGroup {
 
 type IndexedStreamSampleGroupHeap = StreamSampleGroupHeap<IndexedStreamSampleGroup>;
 
+interface StreamSampleGroupResolution {
+    /** Absent when no oldest candidate group is the same stream execution. */
+    readonly group: IndexedStreamSampleGroup | undefined;
+    readonly checkedGroupCount: number;
+}
+
 interface StreamSampleFingerprintIndexes {
     readonly identityless: IndexedStreamSampleGroupHeap;
     readonly identityBearing: IndexedStreamSampleGroupHeap;
@@ -137,33 +143,47 @@ function toStreamTimingSampleCandidates(sources: StreamTimingSampleSources): rea
 }
 
 function upsertBestStreamSample(index: StreamSampleIndex, candidate: StreamTimingSampleCandidate): void {
-    const prepared = createPreparedStreamSampleCandidate(candidate, index.work);
+    const prepared = toPreparedStreamSampleCandidate(candidate);
+    index.work.candidateCount += 1;
+    index.work.baseKeyLookupCount += 1;
+    index.work.fingerprintComputationCount += 1;
     const bucket = index.buckets.get(prepared.baseKey) ?? createStreamSampleBaseBucket();
     index.buckets.set(prepared.baseKey, bucket);
-    let currentGroup = resolveEquivalentStreamSampleGroup(bucket, prepared, index.work);
-    const canonicalKey = currentGroup ? undefined : toStreamSampleKey(prepared);
-    if (!currentGroup && canonicalKey) {
+    const candidateHeaps = toCandidateHeaps(bucket, prepared);
+    removeStaleCandidateHeapEntries(candidateHeaps, index.work);
+    const resolution = resolveEquivalentStreamSampleGroup(candidateHeaps, prepared);
+    index.work.equivalenceCheckCount += resolution.checkedGroupCount;
+    let currentGroup = resolution.group;
+    if (!currentGroup) {
         index.work.indexLookupCount += 1;
-        currentGroup = index.groupsByCanonicalKey.get(canonicalKey);
+        currentGroup = index.groupsByCanonicalKey.get(toStreamSampleKey(prepared));
     }
     if (!currentGroup) {
-        const group: IndexedStreamSampleGroup = {
-            canonicalKey: canonicalKey ?? toStreamSampleKey(prepared),
-            insertionIndex: candidate.index,
-            version: 0,
-            prepared
-        };
-        index.groups.push(group);
-        index.groupsByCanonicalKey.set(group.canonicalKey, group);
-        registerStreamSampleGroup(bucket, group, index.work);
+        insertStreamSampleGroup(index, bucket, prepared);
         return;
     }
-    if (compareStreamSampleCandidates(candidate, currentGroup.prepared.candidate) > 0) {
+    if (computeStreamSampleCandidateOrder(candidate, currentGroup.prepared.candidate) > 0) {
         currentGroup.version += 1;
         currentGroup.prepared = prepared;
         index.work.replacementCount += 1;
         registerStreamSampleGroup(bucket, currentGroup, index.work);
     }
+}
+
+function insertStreamSampleGroup(
+    index: StreamSampleIndex,
+    bucket: StreamSampleBaseBucket,
+    prepared: PreparedStreamTimingSampleCandidate
+): void {
+    const group: IndexedStreamSampleGroup = {
+        canonicalKey: toStreamSampleKey(prepared),
+        insertionIndex: prepared.candidate.index,
+        version: 0,
+        prepared
+    };
+    index.groups.push(group);
+    index.groupsByCanonicalKey.set(group.canonicalKey, group);
+    registerStreamSampleGroup(bucket, group, index.work);
 }
 
 function createStreamSampleIndex(): StreamSampleIndex {
@@ -201,13 +221,7 @@ function createStreamSampleFingerprintIndexes(): StreamSampleFingerprintIndexes 
     };
 }
 
-function createPreparedStreamSampleCandidate(
-    candidate: StreamTimingSampleCandidate,
-    work: StreamSampleIndexWork
-): PreparedStreamTimingSampleCandidate {
-    work.candidateCount += 1;
-    work.baseKeyLookupCount += 1;
-    work.fingerprintComputationCount += 1;
+function toPreparedStreamSampleCandidate(candidate: StreamTimingSampleCandidate): PreparedStreamTimingSampleCandidate {
     return {
         candidate,
         baseKey: toStreamSampleBaseKey(candidate.sample),
@@ -259,25 +273,33 @@ function pushIndexedStreamSampleGroup(
     }
 }
 
-function resolveEquivalentStreamSampleGroup(
-    bucket: StreamSampleBaseBucket,
-    prepared: PreparedStreamTimingSampleCandidate,
+/** Every candidate heap counts as one index lookup, whether or not the bucket holds it. */
+function removeStaleCandidateHeapEntries(
+    heaps: readonly (IndexedStreamSampleGroupHeap | undefined)[],
     work: StreamSampleIndexWork
-): IndexedStreamSampleGroup | undefined {
-    const possibleGroups = new Set<IndexedStreamSampleGroup>();
-    for (const heap of toCandidateHeaps(bucket, prepared)) {
+): void {
+    for (const heap of heaps) {
         work.indexLookupCount += 1;
         if (heap !== undefined) {
             work.indexMaintenanceCount += removeStaleStreamSampleGroupEntries(heap);
-            const group = getOldestStreamSampleGroup(heap);
-            if (group) {
-                possibleGroups.add(group);
-            }
+        }
+    }
+}
+
+/** The earliest oldest group of the candidate heaps that is the same stream execution; the heaps hold no stale top entry. */
+function resolveEquivalentStreamSampleGroup(
+    heaps: readonly (IndexedStreamSampleGroupHeap | undefined)[],
+    prepared: PreparedStreamTimingSampleCandidate
+): StreamSampleGroupResolution {
+    const oldestGroups = new Set<IndexedStreamSampleGroup>();
+    for (const heap of heaps) {
+        const group = heap === undefined ? undefined : getOldestStreamSampleGroup(heap);
+        if (group) {
+            oldestGroups.add(group);
         }
     }
     let earliest: IndexedStreamSampleGroup | undefined;
-    for (const group of possibleGroups) {
-        work.equivalenceCheckCount += 1;
+    for (const group of oldestGroups) {
         const crossSource = group.prepared.candidate.sourcePriority !== prepared.candidate.sourcePriority;
         if (
             isSameStreamExecution(group.prepared, prepared, crossSource) &&
@@ -286,7 +308,7 @@ function resolveEquivalentStreamSampleGroup(
             earliest = group;
         }
     }
-    return earliest;
+    return { group: earliest, checkedGroupCount: oldestGroups.size };
 }
 
 /** Each heap holds the oldest group a candidate may be the same execution as; absent heaps still count a lookup. */
@@ -311,7 +333,10 @@ function toCandidateHeaps(
     return [...identityHeaps, fingerprintIndexes?.nestedIdentity, ...otherSourceHeaps];
 }
 
-function compareStreamSampleCandidates(left: StreamTimingSampleCandidate, right: StreamTimingSampleCandidate): number {
+function computeStreamSampleCandidateOrder(
+    left: StreamTimingSampleCandidate,
+    right: StreamTimingSampleCandidate
+): number {
     const terminalPriority = Number(left.sample.completeness === 'terminal') -
         Number(right.sample.completeness === 'terminal');
     return terminalPriority ||
