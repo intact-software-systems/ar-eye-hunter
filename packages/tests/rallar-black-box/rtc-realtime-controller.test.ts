@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -20,13 +21,19 @@ interface RecordedRuntimeEvent {
     readonly event: RallarBlackBoxTestRuntimeEventInput;
     readonly lastAction: string | undefined;
 }
+interface RealtimeMessageFixture {
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly data: RallarBlackBoxTestRecord;
+    readonly receivedAtEpochMs: number;
+}
 interface RealtimeListener {
     readonly laneId: string;
-    handler(message: unknown): void;
+    handler(message: RealtimeMessageFixture): void;
 }
 interface RtcMessageListener {
-    readonly selector: unknown;
-    handler(message: unknown): void;
+    readonly selector: RallarBlackBoxTestRecord;
+    handler(message: RallarBlackBoxTestRecord): void;
 }
 
 const loadFacade = vi.hoisted(() => vi.fn());
@@ -67,67 +74,67 @@ describe('RTC realtime controller preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
     let view: RtcRealtimeViewModel;
-    let currentRoom: unknown;
+    let currentRoom: RallarBlackBoxTestRecord | undefined;
     let realtimeSendFailure: Error | undefined;
     const realtimeListeners = new Set<RealtimeListener>();
     const rtcMessageListeners = new Set<RtcMessageListener>();
     const facadeCalls = {
-        configured: [] as unknown[],
-        defaults: [] as unknown[],
-        starts: [] as unknown[],
-        joins: [] as unknown[],
-        realtimeSends: [] as unknown[],
-        rtcSends: [] as unknown[],
-        laneWaits: [] as unknown[],
-        healthReads: [] as unknown[]
+        configured: [] as RallarBlackBoxTestRecord[],
+        defaults: [] as RallarBlackBoxTestRecord[],
+        starts: [] as RallarBlackBoxTestRecord[],
+        joins: [] as RallarBlackBoxTestRecord[],
+        realtimeSends: [] as RallarBlackBoxTestRecord[],
+        rtcSends: [] as RallarBlackBoxTestRecord[],
+        laneWaits: [] as RallarBlackBoxTestRecord[],
+        healthReads: [] as RallarBlackBoxTestRecord[]
     };
     const facade = {
-        configure: (options: unknown) => facadeCalls.configured.push(options),
-        setDefaults: (defaults: unknown) => facadeCalls.defaults.push(defaults),
-        start: async (options: unknown) => {
+        configure: (options: RallarBlackBoxTestRecord) => facadeCalls.configured.push(options),
+        setDefaults: (defaults: RallarBlackBoxTestRecord) => facadeCalls.defaults.push(defaults),
+        start: async (options: RallarBlackBoxTestRecord) => {
             facadeCalls.starts.push(options);
             return { session: authSession, connected: true };
         },
         rooms: {
             current: () => currentRoom,
-            join: async (groupId: string, options: unknown) => {
+            join: async (groupId: string, options: RallarBlackBoxTestRecord) => {
                 facadeCalls.joins.push({ groupId, options });
                 return { groupId };
             }
         },
         realtime: {
-            onJson: (laneId: string, handler: (message: unknown) => void) => {
+            onJson: (laneId: string, handler: (message: RealtimeMessageFixture) => void) => {
                 const listener = { laneId, handler };
                 realtimeListeners.add(listener);
                 return () => realtimeListeners.delete(listener);
             },
-            sendJson: async (send: unknown) => {
+            sendJson: async (send: RallarBlackBoxTestRecord) => {
                 facadeCalls.realtimeSends.push(send);
                 if (realtimeSendFailure) {
                     throw realtimeSendFailure;
                 }
                 return [{ peerId: 'peer-a', laneId: 'lane-a', result: { status: 'sent' } }];
             },
-            health: (options: unknown) => {
+            health: (options: RallarBlackBoxTestRecord) => {
                 facadeCalls.healthReads.push(options);
                 return [{ peerId: 'peer-a', laneId: 'lane-a', state: 'open' }];
             }
         },
         messages: {
             rtc: {
-                onMessage: (selector: unknown, handler: (message: unknown) => void) => {
+                onMessage: (selector: RallarBlackBoxTestRecord, handler: (message: RallarBlackBoxTestRecord) => void) => {
                     const listener = { selector, handler };
                     rtcMessageListeners.add(listener);
                     return () => rtcMessageListeners.delete(listener);
                 },
-                send: async (send: unknown) => {
+                send: async (send: RallarBlackBoxTestRecord) => {
                     facadeCalls.rtcSends.push(send);
                     return { msgId: 'msg-1' };
                 }
             }
         },
         rtc: {
-            waitForRoomLane: async (ref: unknown, laneId: string, options: unknown) => {
+            waitForRoomLane: async (ref: RallarBlackBoxTestRecord, laneId: string, options: RallarBlackBoxTestRecord) => {
                 facadeCalls.laneWaits.push({ ref, laneId, options });
                 return { ready: true };
             }
@@ -161,12 +168,12 @@ describe('RTC realtime controller preservation', () => {
         });
     }
 
-    function recordedPhases(): readonly unknown[] {
+    function recordedPhases(): readonly string[] {
         return runtimeEvents.map(({ event, lastAction }) => {
-            const payload = event.payload as Record<string, unknown>;
+            const payload = event.payload as RallarBlackBoxTestRecord;
             return event.topic === 'rallar.direct.rtc_realtime.phase'
-                ? [payload.phase, payload.status]
-                : [event.topic, lastAction];
+                ? `${String(payload.phase)}:${String(payload.status)}`
+                : `${event.topic} | ${lastAction}`;
         });
     }
 
@@ -292,10 +299,10 @@ describe('RTC realtime controller preservation', () => {
             },
             peerIds: ['peer-a', 'peer-b'],
             phases: [
-                ...[['load-facade', 'ok'], ['configure', 'ok'], ['start', 'ok'], ['join', 'ok'], ['send-realtime-json', 'ok']],
-                ['rallar.direct.realtime.send_realtime_json.completed', 'Send realtime JSON completed'],
-                ...[['load-facade', 'ok'], ['configure', 'ok'], ['start', 'ok'], ['join', 'ok'], ['send-rtc-message', 'ok']],
-                ['rallar.direct.realtime.send_rtc_message.completed', 'Send RTC message completed']
+                ...['load-facade:ok', 'configure:ok', 'start:ok', 'join:ok', 'send-realtime-json:ok'],
+                'rallar.direct.realtime.send_realtime_json.completed | Send realtime JSON completed',
+                ...['load-facade:ok', 'configure:ok', 'start:ok', 'join:ok', 'send-rtc-message:ok'],
+                'rallar.direct.realtime.send_rtc_message.completed | Send RTC message completed'
             ]
         });
         expect(runtimeEvents.map(({ event }) => [event.transport, event.actor, event.connection])).toEqual(
@@ -315,7 +322,7 @@ describe('RTC realtime controller preservation', () => {
         await render();
         await act(async () => view.sendRealtime());
         const join = runtimeEvents
-            .map(({ event }) => event.payload as Record<string, unknown>)
+            .map(({ event }) => event.payload as RallarBlackBoxTestRecord)
             .find((payload) => payload.phase === 'join');
 
         expect({
@@ -371,7 +378,7 @@ describe('RTC realtime controller preservation', () => {
         await render();
         await act(async () => view.sendRealtime());
         const failedPhase = runtimeEvents
-            .map(({ event }) => event.payload as Record<string, unknown>)
+            .map(({ event }) => event.payload as RallarBlackBoxTestRecord)
             .find((payload) => payload.phase === 'send-realtime-json');
 
         expect({

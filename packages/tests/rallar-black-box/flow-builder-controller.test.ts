@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { act, createElement, StrictMode, useLayoutEffect } from 'react';
@@ -80,7 +81,7 @@ describe('flow builder controller preservation', () => {
         );
     }
 
-    function globalVariables(values: CommandCenterGlobalValues, templateIndex: number): Record<string, unknown> {
+    function globalVariables(values: CommandCenterGlobalValues, templateIndex: number): RallarBlackBoxTestRecord {
         return {
             ...FLOW_BUILDER_TEMPLATES[templateIndex].flow.variables,
             apiBaseUrl: values.apiBaseUrl,
