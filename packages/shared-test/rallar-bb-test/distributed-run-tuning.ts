@@ -125,10 +125,6 @@ export function computeDistributedRunTuningInventory(
     return { knobs: walk.knobs, limitations: walk.limitations };
 }
 
-export function toDistributedRunTuningJsonPointer(tokens: TuningTokens): string {
-    return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
-}
-
 /**
  * Tolerates malformed recipe selections and command trees and stops at the shared composite bounds, so an
  * inventory never throws on a manifest that has not passed validation and never walks an unbounded tree.
@@ -373,7 +369,7 @@ function toCommandSettingKnob(input: ToCommandSettingKnobInput): DistributedRunT
 function toManifestTuningKnob(input: ToManifestTuningKnobInput): DistributedRunTuningKnob {
     return {
         name: input.name,
-        pointer: toDistributedRunTuningJsonPointer(input.tokens),
+        pointer: toTuningJsonPointer(input.tokens),
         scope: 'manifest',
         currentValue: input.value,
         availability: toKnobAvailability(input.blocked, input.value),
@@ -386,7 +382,7 @@ function toManifestTuningKnob(input: ToManifestTuningKnobInput): DistributedRunT
 function toCommandTuningKnob(input: ToCommandTuningKnobInput): DistributedRunTuningKnob {
     return {
         name: input.name,
-        pointer: toDistributedRunTuningJsonPointer(input.tokens),
+        pointer: toTuningJsonPointer(input.tokens),
         scope: input.scope,
         currentValue: input.value,
         availability: toKnobAvailability(input.blocked, input.value),
@@ -405,4 +401,8 @@ function toKnobAvailability(
     value: number | undefined
 ): DistributedRunTuningKnob['availability'] {
     return blocked ? 'blocked' : value === undefined ? 'unset' : 'configured';
+}
+
+function toTuningJsonPointer(tokens: TuningTokens): string {
+    return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
 }

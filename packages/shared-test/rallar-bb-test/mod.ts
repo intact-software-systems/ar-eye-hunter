@@ -115,7 +115,6 @@ export type {
     RallarBlackBoxGroupAssertionAggregate
 } from './distributed/group-assertions.ts';
 export * from './distributed/resolve-distributed-run-targets.ts';
-export * from './distributed/resolve-group-member-control-agent-matches.ts';
 export {
     createRallarBlackBoxEnsureGroupRequestId,
     type RallarBlackBoxLiveRecipeOptions

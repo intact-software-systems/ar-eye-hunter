@@ -11,7 +11,6 @@ import {
     computeDistributedRunTuningInventory,
     distributedRecipePreflight,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    toDistributedRunTuningJsonPointer,
     validateDistributedRunManifest,
     validateJsonSchema,
     validateRallarBlackBoxTestCommand
@@ -268,12 +267,6 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             targetPolicy: manifest.targetPolicy,
             ackTimeoutMs: 12_000
         });
-    });
-
-    it('escapes dynamic RFC 6901 pointer tokens for later candidate composition', () => {
-        expect(toDistributedRunTuningJsonPointer(['recipes', 0, 'recipe~/id'])).toBe(
-            '/recipes/0/recipe~0~1id'
-        );
     });
 
     it('inventories recursive tuning knobs by structural JSON Pointer in stable order', () => {

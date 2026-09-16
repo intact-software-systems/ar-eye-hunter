@@ -4,8 +4,7 @@
 contract for distributed recipe execution. It is intentionally a contract only:
 it does not open sockets or run browser automation. Its behavior lives beside
 it: `distributed-run-validation.ts` decodes and validates manifests,
-`distributed/resolve-group-member-control-agent-matches.ts` and
-`distributed/resolve-distributed-run-targets.ts` resolve target agents, and
+`distributed/resolve-distributed-run-targets.ts` resolves target agents, and
 `distributed/distributed-run-rollup.ts` rolls up run results. The control server now uses
 this contract to create distributed-run resources and to enqueue ordinary
 `rallar-bb-test` commands to browser agents.
@@ -231,23 +230,6 @@ heartbeat:
 - `browserLabel` and `sessionLabel`
 - `updatedAtEpochMs`
 
-`resolveGroupMemberControlAgentMatches(...)` compares observed Rallar group
-members with connected control agents for the current group. The result can
-explain:
-
-- `matched`: exactly one fresh connected agent maps to the group member
-- `unmatched-group-member`: a group member has no matching control agent
-- `offline-agent`: the matching control agent is disconnected
-- `stale-agent`: the matching control agent heartbeat is too old
-- `duplicate-session`: more than one fresh connected agent maps to the same
-  group member/session
-- `agent-without-group-member`: an agent reports the current group but the group
-  member was not observed
-- `agent-without-identity`: an agent has not reported enough Rallar identity
-  metadata
-
-Only `matched` rows are targetable by default.
-
 The operator target-row projection uses a normalized duplicate identity key of
 `applicationId`, `workspaceId`, `groupId`, the first reported
 `principalId`/`clientId`/`username`, and `sessionId`. String parts are trimmed
@@ -257,18 +239,7 @@ session into independently targetable agents. Stale, offline, wrong-group, and
 incomplete-identity rows keep their more specific evidence status and do not
 make an otherwise unique fresh session look duplicated.
 
-`resolveDistributedTargetAgentIds(...)` applies the manifest target policy to
-the match result:
-
-- `all-online-group-members`: every targetable matched agent
-- `selected-agents`: selected IDs that are still targetable
-- `role-map`: role-map IDs that are still targetable
-
-The helper deliberately filters out stale, offline, unmatched, and duplicate
-agents so the UI/control server can show the operator why a browser is not safe
-to run.
-
-`resolveDistributedRunTargets(...)` is the richer resolver used by the control
+`resolveDistributedRunTargets(...)` is the resolver used by the control
 server and operator SPA. It returns `targetResolution` with:
 
 - resolved `targetAgentIds`

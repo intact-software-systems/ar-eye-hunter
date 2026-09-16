@@ -224,11 +224,9 @@ Results:
 - The control server stores the latest identity on agent snapshots and preserves it through snapshot persistence/restore.
 - The control-server OpenAPI document now exposes `ControlAgentIdentity` on agent snapshots and heartbeat envelopes.
 - Run Manager agent rows now carry identity metadata and show a compact identity summary when available.
-- Added shared target-resolution helpers:
-  - `resolveGroupMemberControlAgentMatches(...)`
-  - `resolveDistributedTargetAgentIds(...)`
-- The matcher explains matched, unmatched, offline, stale, duplicate-session, agent-without-member, and
-  agent-without-identity cases.
+- Added shared target-resolution helpers `resolveGroupMemberControlAgentMatches(...)` and
+  `resolveDistributedTargetAgentIds(...)`; no consumer adopted them and both were later removed in favour of
+  `resolveDistributedRunTargets(...)`.
 - Added tests for control-client identity registration, control-server identity storage, Run Manager identity summaries,
   group-member matching, and target-policy filtering.
 

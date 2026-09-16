@@ -8,9 +8,7 @@
         "blob": "3a5c191349434fbde2cc953cb8c5823981dd9969"
       },
       "targets": [
-        "packages/shared-test/rallar-bb-test/distributed/control-agent-candidate.ts",
-        "packages/shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts",
-        "packages/shared-test/rallar-bb-test/distributed/resolve-group-member-control-agent-matches.ts"
+        "packages/shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts"
       ]
     },
     {

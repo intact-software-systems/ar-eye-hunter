@@ -1,27 +1,20 @@
 import { toRolesForPattern } from '../distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 import type {
     RallarBlackBoxControlAgentCandidate,
+    RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedResolvedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetBlocker,
-    RallarBlackBoxDistributedTargetPolicy,
     RallarBlackBoxDistributedTargetResolution,
     RallarBlackBoxDistributedTargetResolutionSummary
 } from '../distributed-run.ts';
-import { isControlAgentIdentityInGroup, isControlAgentStale } from './control-agent-candidate.ts';
 import {
     computeDistributedAssertionFeatures,
     toMissingAssertionCapabilityReason,
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './control-agent-capabilities.ts';
-import type { RallarBlackBoxGroupControlAgentMatchResult } from './resolve-group-member-control-agent-matches.ts';
-
-export interface ResolveDistributedTargetAgentIdsInput {
-    readonly matchResult: RallarBlackBoxGroupControlAgentMatchResult;
-    readonly targetPolicy: RallarBlackBoxDistributedTargetPolicy;
-}
 
 export interface ResolveDistributedRunTargetsInput {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
@@ -44,20 +37,6 @@ interface ComputeTargetResolutionSummaryInput {
     readonly targetAgentIds: readonly string[];
     readonly roleAssignments: readonly RallarBlackBoxDistributedResolvedRoleAssignment[];
     readonly blockers: readonly RallarBlackBoxDistributedTargetBlocker[];
-}
-
-export function resolveDistributedTargetAgentIds(input: ResolveDistributedTargetAgentIdsInput): readonly string[] {
-    const targetable = new Set(input.matchResult.targetableAgentIds);
-    const unique = (values: readonly string[]) => [...new Set(values)].filter((value) => targetable.has(value));
-
-    switch (input.targetPolicy.mode) {
-        case 'all-online-group-members':
-            return input.matchResult.targetableAgentIds;
-        case 'selected-agents':
-            return unique(input.targetPolicy.agentIds);
-        case 'role-map':
-            return unique(Object.values(input.targetPolicy.roles).flat());
-    }
 }
 
 export function resolveDistributedRunTargets(
@@ -126,7 +105,7 @@ function resolveDistributedTargetBlocker(
     if (!input.agent.connected) {
         return { agentId, status: 'offline-agent', reason: 'Control agent is offline.', identity };
     }
-    if (isControlAgentStale(input.agent, input.nowEpochMs, input.staleAfterMs)) {
+    if (isControlAgentStale(input)) {
         return { agentId, status: 'stale-agent', reason: 'Control agent heartbeat is stale.', identity };
     }
     const missingAssertionCapabilities = validateAgentAssertionCapability(
@@ -234,4 +213,19 @@ function computeSortedCounts(values: readonly string[]): Readonly<Record<string,
 
 function toNonEmptyTexts(values: readonly (string | undefined)[]): readonly string[] {
     return values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+}
+
+function isControlAgentIdentityInGroup(
+    identity: RallarBlackBoxControlAgentIdentity,
+    group: RallarBlackBoxDistributedGroupRef
+): boolean {
+    return identity.applicationId === group.applicationId &&
+        identity.workspaceId === group.workspaceId &&
+        identity.groupId === group.groupId;
+}
+
+function isControlAgentStale(input: ResolveDistributedTargetBlockerInput): boolean {
+    const { agent } = input;
+    const lastSeen = agent.lastHeartbeatAtEpochMs ?? agent.lastSeenAtEpochMs ?? agent.identity?.updatedAtEpochMs;
+    return lastSeen !== undefined && input.nowEpochMs - lastSeen > input.staleAfterMs;
 }
