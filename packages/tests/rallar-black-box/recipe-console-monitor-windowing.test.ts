@@ -282,9 +282,6 @@ describe('Recipe Console Monitor explicit windows', () => {
             commandId: `command-${index}`
         }));
         const onInspect = vi.fn();
-        const onNavigate = vi.fn();
-        const onRefresh = vi.fn();
-        const onDestructiveAction = vi.fn();
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(MonitorFailureLedger, {
@@ -307,9 +304,7 @@ describe('Recipe Console Monitor explicit windows', () => {
         expect(selected?.textContent).toContain(exactLateId);
         expect(selected?.querySelector('bdi[data-exact-identifier]')?.getAttribute('dir'))
             .toBe('ltr');
-        expect([onInspect, onNavigate, onRefresh, onDestructiveAction].map(
-            (callback) => callback.mock.calls.length
-        )).toEqual([0, 0, 0, 0]);
+        expect(onInspect).not.toHaveBeenCalled();
         expect(failures.map((row) => row.message)).toEqual(
             Array.from({ length: 121 }, (_, index) => `Failure ${index}`)
         );

@@ -1049,9 +1049,11 @@ describe('distributed run monitor strict diagnostic decoding', () => {
         const [row] = monitor.runtimeDiagnostics;
 
         expect(row?.laneId).toBe('rtc-realtime');
-        expect(Object.keys(row ?? {})).not.toEqual(
-            expect.arrayContaining(['expectedLaneId', 'observedLaneId', 'accepted'])
-        );
-        expect(row?.summary).not.toContain('lane');
+        const rowKeys = Object.keys(row ?? {});
+        expect(rowKeys).not.toContain('expectedLaneId');
+        expect(rowKeys).not.toContain('observedLaneId');
+        expect(rowKeys).not.toContain('accepted');
+        // The removed summary segment rendered as "lane <expected> -> <observed>".
+        expect(row?.summary).not.toMatch(/lane \S+ -> /);
     });
 });
