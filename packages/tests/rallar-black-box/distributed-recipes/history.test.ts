@@ -78,9 +78,7 @@ describe('distributed recipes history', () => {
                             transport: 'realtime',
                             groupId: 'bb-group',
                             peerId: 'agent-b',
-                            expectedChannelLabel: 'rtc-realtime',
-                            observedChannelLabel: 'rtc-data-channel',
-                            accepted: false,
+                            laneId: 'rtc-data-channel',
                             source: 'browser-rallar-runtime'
                         }
                     }
@@ -105,9 +103,7 @@ describe('distributed recipes history', () => {
         ]);
         expect(monitor.runtimeDiagnostics[0]).toMatchObject({
             diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
-            expectedLaneId: 'rtc-realtime',
-            observedLaneId: 'rtc-data-channel',
-            accepted: false,
+            laneId: 'rtc-data-channel',
             peerId: 'agent-b'
         });
         expect(monitor.runtimeDiagnostics[1]).toMatchObject({

@@ -332,9 +332,6 @@ export type DistributedRunRuntimeDiagnosticRow = Readonly<{
     groupId?: string;
     roomId?: string;
     laneId?: string;
-    expectedLaneId?: string;
-    observedLaneId?: string;
-    accepted?: boolean;
     peerId?: string;
     remotePeerId?: string;
     senderId?: string;
@@ -3293,12 +3290,11 @@ function distributedRunRuntimeDiagnostic(
     index: number
 ): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> | undefined {
     const runtimeEvent = asRecord(event.payload);
-    const normalizedPayload = normalizedRuntimeDiagnosticPayload(event.payload);
-    if (!normalizedPayload && event.kind !== 'diagnostic') {
+    const payload = normalizedRuntimeDiagnosticPayload(event.payload);
+    if (!payload) {
         return undefined;
     }
 
-    const payload = normalizedPayload ?? runtimeEvent;
     const data = asRecord(payload.data);
     const topic = firstString(
         payload.topic,
@@ -3309,10 +3305,6 @@ function distributedRunRuntimeDiagnostic(
     ) ?? 'runtime.diagnostic';
     const diagnosticTypeId = firstString(payload.diagnosticTypeId, topic) ?? topic;
     const transport = diagnosticTransport(firstString(payload.transport, runtimeEvent.transport));
-    if (!normalizedPayload && !looksLikeTransportDiagnostic(topic, transport, payload)) {
-        return undefined;
-    }
-
     const severity = diagnosticSeverity(firstString(payload.severity, runtimeEvent.severity), event.kind);
     const message = firstString(
         payload.message,
@@ -3323,26 +3315,6 @@ function distributedRunRuntimeDiagnostic(
         eventSummary(event)
     ) ?? topic;
     const payloadSummary = safePayloadSummary(payload.data ?? payload.payload ?? runtimeEvent.payload ?? event.payload);
-    const expectedLaneId = firstString(
-        payload.expectedLaneId,
-        payload.expectedLane,
-        payload.expectedChannel,
-        payload.expectedChannelLabel,
-        data.expectedLaneId,
-        data.expectedChannel,
-        data.expectedChannelLabel
-    );
-    const observedLaneId = firstString(
-        payload.observedLaneId,
-        payload.observedLane,
-        payload.observedChannel,
-        payload.observedChannelLabel,
-        payload.actualChannel,
-        data.observedLaneId,
-        data.observedChannel,
-        data.observedChannelLabel,
-        data.actualChannel
-    );
 
     return {
         eventId: event.eventId ?? `${event.agentId}-${event.commandId ?? 'diagnostic'}-${index}`,
@@ -3361,8 +3333,6 @@ function distributedRunRuntimeDiagnostic(
             topicId: firstString(payload.topicId, data.topicId),
             contextId: firstString(payload.contextId, data.contextId),
             resourceId: firstString(payload.resourceId, data.resourceId),
-            expectedLaneId,
-            observedLaneId,
             payloadSummary
         }),
         payloadSummary,
@@ -3371,9 +3341,6 @@ function distributedRunRuntimeDiagnostic(
         groupId: firstString(payload.groupId, data.groupId),
         roomId: firstString(payload.roomId, data.roomId),
         laneId: firstString(payload.laneId, data.laneId),
-        expectedLaneId,
-        observedLaneId,
-        accepted: booleanOrUndefined(payload.accepted) ?? booleanOrUndefined(data.accepted),
         peerId: firstString(payload.peerId, data.peerId),
         remotePeerId: firstString(payload.remotePeerId, data.remotePeerId),
         senderId: firstString(payload.senderId, data.senderId),
@@ -4418,8 +4385,6 @@ function distributedRunMonitorEvidenceText(monitor: DistributedRunMonitor): stri
             diagnostic.groupId,
             diagnostic.roomId,
             diagnostic.laneId,
-            diagnostic.expectedLaneId,
-            diagnostic.observedLaneId,
             diagnostic.peerId,
             diagnostic.remotePeerId,
             diagnostic.senderId,
@@ -4586,34 +4551,7 @@ function normalizedRuntimeDiagnosticPayload(
 }
 
 function isRuntimeDiagnosticPayload(value: Record<string, unknown>): boolean {
-    return value.diagnosticSchemaVersion === 1 ||
-        typeof value.diagnosticTypeId === 'string';
-}
-
-function looksLikeTransportDiagnostic(
-    topic: string,
-    transport: RallarBlackBoxTestTransport | undefined,
-    payload: Record<string, unknown>
-): boolean {
-    const data = asRecord(payload.data);
-    const text = [
-        topic,
-        payload.diagnosticTypeId,
-        payload.message,
-        payload.reason,
-        data.message,
-        data.reason
-    ].filter(Boolean).join(' ').toLowerCase();
-    return transport === 'ws' ||
-        transport === 'messages.ws' ||
-        transport === 'realtime' ||
-        transport === 'messages.rtc' ||
-        text.includes('websocket') ||
-        text.includes('ws ') ||
-        text.includes('unhandled ws') ||
-        text.includes('rtc') ||
-        text.includes('data channel') ||
-        text.includes('data-channel');
+    return value.diagnosticSchemaVersion === 1;
 }
 
 function diagnosticSeverity(
@@ -4657,8 +4595,6 @@ function diagnosticSummary(
         topicId?: string;
         contextId?: string;
         resourceId?: string;
-        expectedLaneId?: string;
-        observedLaneId?: string;
         payloadSummary: string;
     }>
 ): string {
@@ -4668,14 +4604,10 @@ function diagnosticSummary(
         input.contextId ? `context ${input.contextId}` : undefined,
         input.resourceId ? `resource ${input.resourceId}` : undefined
     ].filter(Boolean).join(' / ');
-    const lane = input.expectedLaneId || input.observedLaneId
-        ? `lane ${input.expectedLaneId ?? '-'} -> ${input.observedLaneId ?? '-'}`
-        : undefined;
     return [
         input.transport,
         input.message,
         selector,
-        lane,
         input.payloadSummary
     ].filter((value): value is string => Boolean(value && value.length > 0)).join(' - ');
 }
@@ -4803,10 +4735,6 @@ function firstString(...values: readonly unknown[]): string | undefined {
 
 function numberOrUndefined(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function booleanOrUndefined(value: unknown): boolean | undefined {
-    return typeof value === 'boolean' ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

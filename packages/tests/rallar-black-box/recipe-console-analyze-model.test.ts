@@ -104,6 +104,7 @@ function coreFiles(
                 atEpochMs: 320,
                 eventId: 'rtc-no-route',
                 payload: {
+                    diagnosticSchemaVersion: 1,
                     topic: 'rtc.route',
                     diagnosticTypeId: 'rallar.browser.rtc.no_route',
                     severity: 'error',

@@ -928,3 +928,130 @@ describe('distributed recipes monitor', () => {
         ]));
     });
 });
+
+describe('distributed run monitor strict diagnostic decoding', () => {
+    const linkedDiagnosticMonitor = (
+        payload: ControlRunSnapshot['events'][number]['payload']
+    ): ReturnType<typeof deriveDistributedRunMonitor> =>
+        deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: {
+                ...distributedControlRun,
+                events: [
+                    ...distributedControlRun.events,
+                    {
+                        kind: 'diagnostic',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-a',
+                        commandId: 'start-a',
+                        eventId: 'strict-decoding-candidate',
+                        atEpochMs: 1_900,
+                        payload
+                    }
+                ]
+            }
+        });
+
+    it('decodes canonical version-1 diagnostics in both the nested and the direct envelope placement', () => {
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: {
+                ...distributedControlRun,
+                events: [
+                    ...distributedControlRun.events,
+                    {
+                        kind: 'diagnostic',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-a',
+                        commandId: 'start-a',
+                        eventId: 'diagnostic-direct',
+                        atEpochMs: 1_900,
+                        payload: {
+                            diagnosticSchemaVersion: 1,
+                            diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+                            topic: 'rallar.browser.rtc.data_channel_mismatch',
+                            severity: 'warning',
+                            transport: 'realtime',
+                            message: 'Direct placement diagnostic.',
+                            laneId: 'rtc-realtime'
+                        }
+                    },
+                    {
+                        kind: 'diagnostic',
+                        protocolVersion: 1,
+                        runId: 'run-1',
+                        agentId: 'agent-b',
+                        commandId: 'start-b',
+                        eventId: 'diagnostic-nested',
+                        atEpochMs: 1_950,
+                        payload: {
+                            topic: 'rallar.browser.ws.unhandled_message',
+                            payload: {
+                                diagnosticSchemaVersion: 1,
+                                diagnosticTypeId: 'rallar.browser.ws.unhandled_message',
+                                topic: 'rallar.browser.ws.unhandled_message',
+                                severity: 'warning',
+                                transport: 'ws',
+                                message: 'Nested placement diagnostic.',
+                                laneId: 'ws-lane'
+                            }
+                        }
+                    }
+                ]
+            }
+        });
+
+        expect(monitor.runtimeDiagnostics.map((row) => [row.eventId, row.transport, row.laneId])).toEqual([
+            ['diagnostic-direct', 'realtime', 'rtc-realtime'],
+            ['diagnostic-nested', 'ws', 'ws-lane']
+        ]);
+    });
+
+    it('ignores a linked diagnostic that names a diagnostic type without the canonical schema version', () => {
+        const monitor = linkedDiagnosticMonitor({
+            diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+            topic: 'rallar.browser.rtc.data_channel_mismatch',
+            severity: 'warning',
+            transport: 'realtime',
+            message: 'Unversioned diagnostic payload.'
+        });
+
+        expect(monitor.runtimeDiagnostics).toEqual([]);
+        expect(monitor.diagnosticCounts.total).toBe(0);
+    });
+
+    it('ignores a linked event whose only diagnostic evidence is transport or message text', () => {
+        const monitor = linkedDiagnosticMonitor({
+            topic: 'recipe.progress',
+            transport: 'ws',
+            message: 'Unhandled ws data-channel text without a diagnostic contract.'
+        });
+
+        expect(monitor.runtimeDiagnostics).toEqual([]);
+        expect(monitor.diagnosticCounts.total).toBe(0);
+    });
+
+    it('projects no expected lane, observed lane, or accepted row field', () => {
+        const monitor = linkedDiagnosticMonitor({
+            diagnosticSchemaVersion: 1,
+            diagnosticTypeId: 'rallar.browser.rtc.data_channel_mismatch',
+            topic: 'rallar.browser.rtc.data_channel_mismatch',
+            severity: 'warning',
+            transport: 'realtime',
+            message: 'Received data channel for different data channel name.',
+            laneId: 'rtc-realtime',
+            expectedChannelLabel: 'rtc-realtime',
+            observedChannelLabel: 'rtc-data-channel',
+            accepted: false
+        });
+        const [row] = monitor.runtimeDiagnostics;
+
+        expect(row?.laneId).toBe('rtc-realtime');
+        expect(Object.keys(row ?? {})).not.toEqual(
+            expect.arrayContaining(['expectedLaneId', 'observedLaneId', 'accepted'])
+        );
+        expect(row?.summary).not.toContain('lane');
+    });
+});

@@ -149,6 +149,7 @@ function evidenceFiles(): DistributedRunArtifactFiles {
                     atEpochMs: 320,
                     eventId: 'rtc-no-route',
                     payload: {
+                        diagnosticSchemaVersion: 1,
                         topic: 'rtc.route',
                         diagnosticTypeId: 'rallar.browser.rtc.no_route',
                         severity: 'error',
@@ -519,6 +520,7 @@ describe('distributed artifact evidence index', () => {
             eventId: `bounded-${index}`,
             payload: index === 11
                 ? {
+                    diagnosticSchemaVersion: 1,
                     topic: 'latest.diagnostic',
                     diagnosticTypeId: 'latest-actionable-diagnostic',
                     severity: 'error',

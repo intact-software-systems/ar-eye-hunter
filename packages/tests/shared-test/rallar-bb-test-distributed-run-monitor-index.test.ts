@@ -9,14 +9,17 @@ import {
 } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 const SCALE = 5_000;
-// Captured from the pre-index implementation before Task 6A production edits.
-const PRE_INDEX_MONITOR_SHA256 = 'fa00d7b1056a20a68e99c154285eeb444dd517e08c25986eb499dbbe2624162f';
-const PRE_INDEX_REPORT_SHA256 = '863b2130b109c34ef474a3f306623bfe4c0cd3e9209fe350e25639cccf41d415';
-const PRE_INDEX_VERDICT_SHA256 = 'd52788b32fb4dfbada1c092580c8546de9faab055eb728c7f4a3f0fc32ed35b5';
-const PRE_MEMBERSHIP_INDEX_MONITOR_SHA256 = '3d35dc6ea97ca5f97f53b9a1d4cca53be3be4486cfe77c4937f50ad6758cb14d';
+// Whole-object ratchets, originally captured from the pre-index implementation before Task 6A and
+// recaptured when strict version-1 diagnostic decoding removed the expectedLaneId, observedLaneId,
+// and accepted diagnostic row fields. The report embeds correlated diagnostic rows and the verdict
+// embeds their summaries, so all four digests moved with that row contract.
+const SCALE_MONITOR_SHA256 = 'c518d6afd9c618b1d437d297edf122e3d9b489266676ca61a00e00ed0e89f22d';
+const SCALE_REPORT_SHA256 = '56eb604376089569ba84f9b54d271756b16ed0d46df0854b1f51c4d08a1852bb';
+const SCALE_VERDICT_SHA256 = '7543e629a454ed1e871d15547998a359a1761cc878dd85b88a2325f86661119c';
+const SCALE_MEMBERSHIP_MONITOR_SHA256 = '22adefedec7e3b9131c975bd691e80799cb5bccc779264d57775770db755cb35';
 
 describe('distributed run monitor indexed derivation', () => {
-    it('preserves the complete pre-index monitor, report, and verdict observables at 5,000 scale', () => {
+    it('preserves the complete monitor, report, and verdict observables at 5,000 scale', () => {
         const input = adversarialScaleInput();
         const monitor = deriveDistributedRunMonitor(input);
         const report = deriveDistributedRunAnalysisReport({
@@ -35,9 +38,9 @@ describe('distributed run monitor indexed derivation', () => {
             refreshedAtEpochMs: 90_000
         });
 
-        expect(sha256(monitor)).toBe(PRE_INDEX_MONITOR_SHA256);
-        expect(sha256(report)).toBe(PRE_INDEX_REPORT_SHA256);
-        expect(sha256(verdict)).toBe(PRE_INDEX_VERDICT_SHA256);
+        expect(sha256(monitor)).toBe(SCALE_MONITOR_SHA256);
+        expect(sha256(report)).toBe(SCALE_REPORT_SHA256);
+        expect(sha256(verdict)).toBe(SCALE_VERDICT_SHA256);
         expect(distributedRunMonitorDerivationWorkForTest(report)).toEqual({
             monitorDerivationCount: 1,
             reportDerivationCount: 1,
@@ -126,7 +129,7 @@ describe('distributed run monitor indexed derivation', () => {
         });
         const work = distributedRunMonitorDerivationWorkForTest(monitor);
 
-        expect(sha256(monitor)).toBe(PRE_MEMBERSHIP_INDEX_MONITOR_SHA256);
+        expect(sha256(monitor)).toBe(SCALE_MEMBERSHIP_MONITOR_SHA256);
         expect(work).toEqual({
             monitorDerivationCount: 1,
             reportDerivationCount: 0,
@@ -1279,8 +1282,7 @@ function adversarialScaleInput(): Readonly<{
                         message: `Diagnostic ${index}`,
                         data: {
                             ...(payloadLinked ? { distributedRunId } : {}),
-                            expectedLaneId: `lane:${index % 7}`,
-                            observedLaneId: `lane|${index % 11}`
+                            laneId: `lane:${index % 7}`
                         }
                     }
                     : {
