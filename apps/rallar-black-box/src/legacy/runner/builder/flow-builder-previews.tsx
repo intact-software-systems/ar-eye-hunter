@@ -16,7 +16,7 @@ import type { FlowBuilderControllerModel } from './use-flow-builder-controller.t
 interface FlowBuilderPreviewsProps {
     readonly model: FlowBuilderControllerModel;
     readonly state: RallarBlackBoxTestState;
-    /** Absent while the browser is signed out; step expectations then redact no session secret. */
+    /** Absent while the browser is signed out; the step expect and extract previews then redact no session token. */
     readonly authSession: AuthSession | undefined;
     onSelectCommand(commandId: string): void;
 }

@@ -38,6 +38,10 @@ import type { RoomsClientsStateBodies } from './to-rooms-clients-rows.ts';
 export namespace RoomsClientsActions {
     export interface Input {
         readonly bootstrap: RallarBlackBoxBootstrapConfig;
+        /**
+         * Absent while the browser is signed out: authenticated preset requests then fail to build, and direct room
+         * actions act as the bootstrap actor.
+         */
         readonly authSession: AuthSession | undefined;
         readonly globalValues: CommandCenterGlobalValues;
         onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
@@ -63,6 +67,7 @@ export namespace RoomsClientsActions {
 
     export interface RefreshOutcome {
         readonly completed: number;
+        /** Absent while every refresh step so far succeeded. */
         readonly failedResponse: RallarServerRestResponse | undefined;
     }
 }

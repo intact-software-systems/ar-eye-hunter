@@ -59,21 +59,21 @@ export function resolveWebSocketUrlTemplate(
 export function defaultWebSocketTypeId(): string {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.typeId ?? 'room.manual.message'
+            .typeId ?? 'room.manual.message'
     );
 }
 
 export function defaultWebSocketTopicId(): string {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.topicId ?? defaultWebSocketTypeId()
+            .topicId ?? defaultWebSocketTypeId()
     );
 }
 
 export function defaultWebSocketScope(): WebSocketCommandCenterValues['wsScope'] {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.wsScope ?? 'room'
+            .wsScope ?? 'room'
     );
 }
 

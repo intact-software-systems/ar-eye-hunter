@@ -112,13 +112,11 @@ export class WebSocketCommandCenterActions {
         const preset = WEBSOCKET_PAYLOAD_PRESETS.find(
             (entry) => entry.presetId === presetId
         );
-        if (preset?.values) {
+        if (preset) {
             this.input.setValues((current) => ({
                 ...current,
                 ...preset.values,
-                contextId: preset.values?.contextId ??
-                    current.groupId ??
-                    current.contextId
+                contextId: preset.values.contextId ?? current.groupId
             }));
         }
         const text = webSocketPayloadPresetText(presetId);

@@ -14,7 +14,9 @@ export namespace FlowBuilderActions {
     export interface Input {
         readonly globalValues: CommandCenterGlobalValues;
         readonly flowResult: Either<string, FlowBuilderDefinition>;
+        /** Absent while the flow or variables text does not translate into a recipe; `parseError` then says why. */
         readonly recipe: RallarBlackBoxTestRecipe | undefined;
+        /** Absent while the flow and variables text translate into `recipe`. */
         readonly parseError: string | undefined;
         readonly sequence: number;
         readonly setTemplateId: React.Dispatch<React.SetStateAction<string>>;
@@ -65,7 +67,7 @@ export class FlowBuilderActions {
         const { recipe, sequence } = this.input;
         this.input.setLocalError(undefined);
         if (!recipe) {
-            this.input.setLocalError(this.input.parseError ?? 'No flow recipe is available.');
+            this.input.setLocalError(this.input.parseError);
             return;
         }
         const commandId = `flow-builder-run-${sequence}`;

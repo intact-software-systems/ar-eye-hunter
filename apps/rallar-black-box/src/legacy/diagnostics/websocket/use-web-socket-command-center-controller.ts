@@ -114,7 +114,7 @@ function createWebSocketCommandCenterValues(
         typeId: defaultWebSocketTypeId(),
         topicId: defaultWebSocketTopicId(),
         contextId: webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID)
-            .values?.contextId ?? defaultContext.contextId,
+            .values.contextId ?? defaultContext.contextId,
         resourceId: '',
         wsUrl: defaultWebSocketApiUrl(defaultContext.apiBaseUrl),
         protocols: '',

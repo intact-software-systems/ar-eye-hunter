@@ -38,14 +38,21 @@ export interface FlowBuilderControllerModel {
     readonly variablesText: string;
     setVariablesText(value: string): void;
     setVariablesEdited(value: boolean): void;
+    /** Absent while the flow text does not decode. */
     readonly flow: FlowBuilderDefinition | undefined;
+    /** Absent while the flow or variables text does not translate into a recipe; `parseError` then says why. */
     readonly recipe: RallarBlackBoxTestRecipe | undefined;
+    /** Absent while the flow or variables text does not translate, like `recipe`. */
     readonly runnerScenario: FlowBuilderRunnerScenario | undefined;
+    /** Absent while the flow and variables text translate into `recipe`. */
     readonly parseError: string | undefined;
     readonly recipeText: string;
     readonly runnerText: string;
+    /** Absent while there is no `recipe` to validate. */
     readonly recipeValidation: SchemaAuthoringValidation | undefined;
+    /** Absent while there is no `runnerScenario` to validate. */
     readonly runnerValidation: SchemaAuthoringValidation | undefined;
+    /** Absent while no action failure is shown. */
     readonly localError: string | undefined;
     selectTemplate(templateId: string): void;
     addStep(kind: FlowBuilderStepKind): void;
@@ -64,18 +71,24 @@ interface FlowBuilderDrafts {
     readonly setVariablesEdited: React.Dispatch<React.SetStateAction<boolean>>;
     readonly sequence: number;
     readonly setSequence: React.Dispatch<React.SetStateAction<number>>;
+    /** Absent while no action failure is shown. */
     readonly localError: string | undefined;
     readonly setLocalError: React.Dispatch<React.SetStateAction<string | undefined>>;
 }
 
 interface FlowBuilderPreview {
     readonly flowResult: Either<string, FlowBuilderDefinition>;
+    /** Absent while the flow or variables text does not translate into a recipe; `parseError` then says why. */
     readonly recipe: RallarBlackBoxTestRecipe | undefined;
+    /** Absent while the flow or variables text does not translate, like `recipe`. */
     readonly runnerScenario: FlowBuilderRunnerScenario | undefined;
+    /** Absent while the flow and variables text translate into `recipe`. */
     readonly parseError: string | undefined;
     readonly recipeText: string;
     readonly runnerText: string;
+    /** Absent while there is no `recipe` to validate. */
     readonly recipeValidation: SchemaAuthoringValidation | undefined;
+    /** Absent while there is no `runnerScenario` to validate. */
     readonly runnerValidation: SchemaAuthoringValidation | undefined;
 }
 
