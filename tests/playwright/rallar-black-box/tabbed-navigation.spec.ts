@@ -674,7 +674,7 @@ test('does not poll control runs while direct Rallar tabs are active', async ({ 
 });
 
 test('keeps Quick Test group stable after create subscribe and send', async ({ page }) => {
-    await page.addInitScript(() => {
+    await page.addInitScript(({ groupSnapshot, sentLifecycle }) => {
         const session = {
             clientId: 'alice-client',
             accessToken: 'secret-token-value',
@@ -708,16 +708,20 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         ? input.groupId
                         : 'generated-server-group-id';
                     return {
+                        ...groupSnapshot,
                         group: {
+                            ...groupSnapshot.group,
                             groupId,
-                            displayName: input.displayName
+                            displayName: typeof input.displayName === 'string' ? input.displayName : undefined
                         }
                     };
                 },
                 join: async (groupId: string) => {
                     (window as any).__quickJoinInputs.push(groupId);
                     return {
+                        ...groupSnapshot,
                         group: {
+                            ...groupSnapshot.group,
                             groupId,
                             displayName: groupId
                         }
@@ -732,9 +736,11 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                     send: async (input: Record<string, unknown>) => {
                         (window as any).__quickSendInputs.push(input);
                         return {
-                            status: 'sent',
-                            transport: 'ws',
-                            input
+                            msgId: sentLifecycle.msgId,
+                            typeId: sentLifecycle.typeId,
+                            lifecycle: () => sentLifecycle,
+                            onEvent: () => () => undefined,
+                            wait: async () => ({ status: 'settled', lifecycle: sentLifecycle })
                         };
                     },
                     onMessage: () => () => undefined
@@ -751,6 +757,20 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                 health: () => ({ connected: true })
             }
         };
+    }, {
+        groupSnapshot: createGroupSnapshotFixture({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'rallar',
+            sessionIds: ['alice-session']
+        }),
+        sentLifecycle: createInitialALDeliveryLifecycle({
+            msgId: 'quick-test-ws-message',
+            typeId: 'room.quick-test.ws.send',
+            ackMode: 'none',
+            expiresAtMs: Date.now() + 60_000,
+            submittedAtMs: Date.now()
+        })
     });
 
     await page.goto(
@@ -1698,7 +1718,15 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 rooms: {
                     current: () => undefined,
                     list: () => [],
-                    create: async (input: unknown) => input,
+                    create: async (input: Record<string, unknown>) => ({
+                        ...joinedGroupSnapshot,
+                        group: {
+                            ...joinedGroupSnapshot.group,
+                            groupId: typeof input.groupId === 'string'
+                                ? input.groupId
+                                : joinedGroupSnapshot.group.groupId
+                        }
+                    }),
                     join: async (groupId: string) => ({
                         ...joinedGroupSnapshot,
                         group: { ...joinedGroupSnapshot.group, groupId }
