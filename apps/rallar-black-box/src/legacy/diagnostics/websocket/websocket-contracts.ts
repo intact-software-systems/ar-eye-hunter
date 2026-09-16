@@ -2,6 +2,7 @@ import type {
     RallarBlackBoxTestEventKind,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
@@ -19,7 +20,7 @@ export type WebSocketPayloadPreset = Readonly<{
     presetId: string;
     label: string;
     description: string;
-    payload: unknown;
+    payload: RallarMessagePayload;
     values?: Partial<Pick<WebSocketCommandCenterValues, 'wsScope' | 'typeId' | 'topicId' | 'contextId'>>;
 }>;
 

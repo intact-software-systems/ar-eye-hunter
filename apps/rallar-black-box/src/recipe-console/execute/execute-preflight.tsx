@@ -17,18 +17,7 @@ interface ExecutePreflightDetailsProps {
 
 export function ExecutePreflight({ entry }: ExecutePreflightProps) {
     if (!entry) {
-        return (
-            <section
-                aria-labelledby="execute-preflight-heading"
-                className={styles.preflight}
-                data-execute-preflight
-            >
-                <header className={styles.header}>
-                    <h2 id="execute-preflight-heading">Preflight</h2>
-                </header>
-                <p className={styles.empty}>Select an available repository recipe to inspect preflight facts.</p>
-            </section>
-        );
+        return <ExecutePreflightEmpty />;
     }
 
     const { preflight, schema } = entry;
@@ -60,6 +49,21 @@ export function ExecutePreflight({ entry }: ExecutePreflightProps) {
                 <Fact label="Maximum depth" value={String(preflight.maxDepth)} />
             </dl>
             <ExecutePreflightDetails entry={entry} contextKey={contextKey} />
+        </section>
+    );
+}
+
+function ExecutePreflightEmpty() {
+    return (
+        <section
+            aria-labelledby="execute-preflight-heading"
+            className={styles.preflight}
+            data-execute-preflight
+        >
+            <header className={styles.header}>
+                <h2 id="execute-preflight-heading">Preflight</h2>
+            </header>
+            <p className={styles.empty}>Select an available repository recipe to inspect preflight facts.</p>
         </section>
     );
 }
