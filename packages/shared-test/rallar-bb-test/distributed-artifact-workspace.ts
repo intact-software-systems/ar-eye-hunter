@@ -133,7 +133,7 @@ export function computeDistributedArtifactWorkspace(
         ],
         analysis: derived?.analysis,
         snapshots: derived?.snapshots,
-        bundle: derived?.snapshots.artifactBundle
+        bundle: derived?.snapshots?.artifactBundle
     } satisfies DistributedArtifactWorkspace;
     return { parsed, workspace, monitor: derived?.monitor, report: derived?.report, telemetry: toTelemetry(analysis) };
 }

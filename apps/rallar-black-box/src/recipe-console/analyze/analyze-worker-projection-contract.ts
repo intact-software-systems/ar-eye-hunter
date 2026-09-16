@@ -52,7 +52,7 @@ export interface AnalyzeWorkerAnalysisProjection {
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
     /** Absent when the run passed or the projection is minimal. */
     readonly failure?: DistributedRunFailureAnalysis;
-    /** Absent when the projection is minimal. */
+    /** Absent when the analysis omits performance for an unavailable control run or the projection is minimal. */
     readonly performance?: DistributedRunPerformanceAnalysis;
     /** Absent when the analysis records no target resolution or the projection is minimal. */
     readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
@@ -60,7 +60,7 @@ export interface AnalyzeWorkerAnalysisProjection {
     readonly summaryMarkdown: string;
     /** Absent when the run passed or the projection is minimal. */
     readonly fixProposalMarkdown?: string;
-    /** Absent when the projection is minimal. */
+    /** Absent with the performance section. */
     readonly performanceMarkdown?: string;
 }
 

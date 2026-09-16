@@ -374,9 +374,11 @@ describe('Recipe Console Analyze artifact model', () => {
 
         expect(rejection).toMatchObject({ code: 'unusable-distributed-artifact' });
         expect(rejection?.workspace.issues).toContainEqual(expect.objectContaining({
-            code: 'analysis-failed',
+            code: 'missing-core',
             fileName: 'control-run.json'
         }));
+        expect(rejection?.workspace.snapshots).toBeUndefined();
+        expect(rejection?.workspace.analysis).not.toHaveProperty('performance');
     });
 
     it('retains usable analysis when an optional evidence file is malformed', () => {

@@ -51,7 +51,7 @@ export function ImportedDistributedArtifactAnalysisPanel({
                     value={formatPercent(analysis.summary.passRate)}
                     tone={analysis.summary.passRate >= 1 ? 'good' : 'warn'}
                 />
-                <Metric label="Agents" value={String(analysis.summary.agents)} />
+                <Metric label="Agents" value={String(analysis.summary.agents ?? 'unknown')} />
                 <Metric
                     label="Warnings"
                     value={String(analysis.parseWarnings.length)}

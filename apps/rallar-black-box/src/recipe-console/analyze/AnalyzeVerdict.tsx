@@ -83,7 +83,7 @@ export function AnalyzeVerdict({
                 : (
                     <dl className={styles.answers}>
                         <Answer label="Run" value={analysis.distributedRunId} />
-                        <Answer label="Agents" value={String(analysis.summary.agents)} />
+                        <Answer label="Agents" value={String(analysis.summary.agents ?? 'unknown')} />
                         <Answer label="Pass rate" value={`${Math.round(analysis.summary.passRate * 100)}%`} />
                         <Answer label="Warnings" value={String(model.workspace.issues.length)} />
                     </dl>

@@ -296,15 +296,14 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
 
         expect(missing.support).toBe('incomplete');
         expect(inventoryStatus(missing, 'control-run.json')).toBe('missing-core');
-        expect(missing.analysis).toBeUndefined();
+        expect(missing.analysis?.parseWarnings).toContainEqual({
+            fileName: 'control-run.json',
+            message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
+        });
+        expect(missing.analysis).not.toHaveProperty('performance');
         expect(missing.snapshots).toBeUndefined();
         expect(missing.bundle).toBeUndefined();
-        expect(missing.issues).toContainEqual({
-            code: 'analysis-failed',
-            severity: 'error',
-            fileName: 'control-run.json',
-            message: 'Unable to analyze distributed-run artifacts: control-run.json is required and must not be empty.'
-        });
+        expect(missing.issues.map((issue) => issue.code)).not.toContain('analysis-failed');
         expect(malformed.support).toBe('incompatible');
         expect(inventoryStatus(malformed, 'distributed-run.json')).toBe('malformed');
         expect(malformed.analysis).toBeUndefined();

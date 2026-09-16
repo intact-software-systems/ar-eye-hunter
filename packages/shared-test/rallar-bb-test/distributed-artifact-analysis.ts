@@ -218,7 +218,8 @@ export interface DistributedRunAnalysisGroup {
 }
 
 export interface DistributedRunAnalysisSummary {
-    readonly agents: number;
+    /** Absent when neither fleet-report.json nor a usable control-run.json records the run's agents. */
+    readonly agents?: number;
     readonly passRate: number;
     readonly failureGroups: number;
     readonly blockingFailures: number;
@@ -240,12 +241,14 @@ export interface DistributedRunAnalysisSections {
     readonly group?: DistributedRunAnalysisGroup;
     readonly summary: DistributedRunAnalysisSummary;
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    readonly performance: DistributedRunPerformanceAnalysis;
+    /** Absent when control-run.json is missing or malformed; a parse warning names the file and the summary says so. */
+    readonly performance?: DistributedRunPerformanceAnalysis;
     /** Absent when neither target-resolution.json nor the run snapshot records target resolution. */
     readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
     readonly spa: DistributedRunSpaAnalysis;
     readonly summaryMarkdown: string;
-    readonly performanceMarkdown: string;
+    /** Absent with the performance section. */
+    readonly performanceMarkdown?: string;
 }
 
 export interface DistributedRunPassedAnalysis extends DistributedRunAnalysisSections {
@@ -304,9 +307,17 @@ export interface DistributedRunArtifactPipelineAnalysisInput {
     readonly artifactSchemaVersion?: number;
 }
 
+export interface DistributedRunContentSnapshotsInput {
+    readonly parsed: ParsedDistributedArtifactPipeline;
+    readonly content: DistributedRunBundleContent;
+    readonly generatedAtEpochMs: number;
+    readonly artifactSchemaVersion: number;
+}
+
 export interface DistributedRunArtifactPipelineAnalysisResult {
     readonly analysis: DistributedRunAnalysis;
-    readonly snapshots: DistributedRunArtifactSnapshots;
+    /** Absent when control-run.json is missing or malformed; the analysis warnings say why. */
+    readonly snapshots?: DistributedRunArtifactSnapshots;
     readonly monitor: DistributedRunMonitor;
     readonly report: DistributedRunAnalysisReport;
     readonly telemetry: DistributedRunAnalysisDerivationTelemetry;
@@ -343,7 +354,8 @@ export function computeDistributedRunArtifactPipelineAnalysis(
     input: DistributedRunArtifactPipelineAnalysisInput
 ): DistributedRunArtifactPipelineAnalysisResult {
     const { parsed, content, generatedAtEpochMs } = input;
-    const { distributedRun, controlRun } = content.snapshots;
+    const { distributedRun } = content;
+    const controlRun = content.controlRun.status === 'recorded' ? content.controlRun.snapshot : undefined;
     const artifactSchemaVersion = input.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed);
     const bundle = toPipelineArtifactBundle({
         parsed,
@@ -364,6 +376,7 @@ export function computeDistributedRunArtifactPipelineAnalysis(
         generatedAtEpochMs,
         artifactSchemaVersion,
         parseWarnings: [
+            ...(content.controlRun.status === 'unavailable' ? [content.controlRun.reason] : []),
             ...content.parseWarnings.map((warning) => ({ ...warning })),
             ...(bundle.left ? [bundle.left] : [])
         ],
@@ -371,7 +384,7 @@ export function computeDistributedRunArtifactPipelineAnalysis(
     });
     return {
         analysis: toDistributedRunAnalysis(facts),
-        snapshots: { distributedRun, controlRun, ...(artifactBundle === undefined ? {} : { artifactBundle }) },
+        ...(controlRun === undefined ? {} : { snapshots: toArtifactSnapshots(content, bundle).right }),
         monitor,
         report,
         telemetry: { monitorDerivationCount: 1, reportDerivationCount: 1 }
@@ -389,7 +402,7 @@ export function toDistributedArtifactBundle(
         (content) =>
             toPipelineArtifactBundle({
                 parsed,
-                distributedRunId: content.snapshots.distributedRun.distributedRunId,
+                distributedRunId: content.distributedRun.distributedRunId,
                 generatedAtEpochMs,
                 artifactSchemaVersion: artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
             })
@@ -402,17 +415,45 @@ export function toDistributedArtifactSnapshots(
     artifactSchemaVersion?: number
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
     const parsed = parseDistributedArtifactPipeline(files, { projection: 'literal-loose-files' });
-    return toDistributedRunBundleContent(parsed).mapRight((content) => {
-        const bundle = toPipelineArtifactBundle({
+    return toDistributedRunBundleContent(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) =>
+            toDistributedRunContentSnapshots({
+                parsed,
+                content,
+                generatedAtEpochMs,
+                artifactSchemaVersion: artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
+            })
+    );
+}
+
+/** Snapshots need the control run; the artifact bundle rides along when the files form one. */
+export function toDistributedRunContentSnapshots(
+    input: DistributedRunContentSnapshotsInput
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
+    const { parsed, content } = input;
+    return toArtifactSnapshots(
+        content,
+        toPipelineArtifactBundle({
             parsed,
-            distributedRunId: content.snapshots.distributedRun.distributedRunId,
-            generatedAtEpochMs,
-            artifactSchemaVersion: artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
-        });
-        return {
-            ...content.snapshots,
-            ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right })
-        };
+            distributedRunId: content.distributedRun.distributedRunId,
+            generatedAtEpochMs: input.generatedAtEpochMs,
+            artifactSchemaVersion: input.artifactSchemaVersion
+        })
+    );
+}
+
+function toArtifactSnapshots(
+    content: DistributedRunBundleContent,
+    bundle: Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle>
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
+    if (content.controlRun.status === 'unavailable') {
+        return Either.ofLeft(content.controlRun.reason);
+    }
+    return Either.ofRight({
+        distributedRun: content.distributedRun,
+        controlRun: content.controlRun.snapshot,
+        ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right })
     });
 }
 
@@ -426,15 +467,17 @@ interface DistributedRunAnalysisFactsInput {
 
 function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsInput): DistributedRunAnalysisFacts {
     const { content, spa } = input;
-    const { distributedRun } = content.snapshots;
-    const { fleetReport } = content;
+    const { distributedRun, fleetReport } = content;
     const ok = fleetReport?.ok ?? distributedRun.rollup.ok;
-    const performance = computeDistributedRunPerformance({
-        ...content.snapshots,
-        fleetReport,
-        results: content.results,
-        events: content.events
-    });
+    const performance = content.controlRun.status === 'recorded'
+        ? computeDistributedRunPerformance({
+            distributedRun,
+            controlRun: content.controlRun.snapshot,
+            fleetReport,
+            results: content.results,
+            events: content.events
+        })
+        : undefined;
     const identity = {
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion,
@@ -442,12 +485,13 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         controlRunId: distributedRun.controlRunId,
         status: distributedRun.state
     };
+    const agents = fleetReport?.agents ?? performance?.agentCount;
     const overview = {
         // distributed-run.json decoding checks the manifest only as an object, so its group is decoded here.
         group: resolveAnalysisGroup(decodeAnalysisGroup(distributedRun.manifest.group), fleetReport),
         summary: {
-            agents: fleetReport?.agents ?? performance.agentCount,
-            passRate: fleetReport?.passRate ?? performance.passRate,
+            ...(agents === undefined ? {} : { agents }),
+            passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
             failureGroups: fleetReport?.failureGroups ?? (ok ? 0 : 1),
             blockingFailures: distributedRun.rollup.summary.blockingFailures
         },
@@ -455,7 +499,7 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
     };
     const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
     const evidence = {
-        performance,
+        ...(performance === undefined ? {} : { performance }),
         targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
         spa
     };
@@ -509,13 +553,15 @@ function toCountsByName(counts: Readonly<Record<string, number>>): Readonly<Reco
 
 function toDistributedRunAnalysis(facts: DistributedRunAnalysisFacts): DistributedRunAnalysis {
     const summaryMarkdown = toDistributedRunSummaryMarkdown(facts);
-    const performanceMarkdown = toDistributedRunPerformanceMarkdown(facts.distributedRunId, facts.performance);
+    const performanceMarkdown = facts.performance === undefined
+        ? {}
+        : { performanceMarkdown: toDistributedRunPerformanceMarkdown(facts.distributedRunId, facts.performance) };
     return facts.ok
-        ? { ...facts, summaryMarkdown, performanceMarkdown }
+        ? { ...facts, summaryMarkdown, ...performanceMarkdown }
         : {
             ...facts,
             summaryMarkdown,
             fixProposalMarkdown: toDistributedRunFixProposalMarkdown(facts),
-            performanceMarkdown
+            ...performanceMarkdown
         };
 }

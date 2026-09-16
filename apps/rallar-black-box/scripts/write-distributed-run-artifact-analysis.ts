@@ -57,7 +57,7 @@ async function writeAnalysisFiles(outDir: string, artifactAnalysis: DistributedR
     if (!analysis.ok) {
         await writeFile(join(outDir, 'fix-proposal.md'), analysis.fixProposalMarkdown);
     }
-    if (artifactAnalysis.variant === 'distributed-run') {
+    if (artifactAnalysis.variant === 'distributed-run' && artifactAnalysis.analysis.performanceMarkdown !== undefined) {
         await writeFile(join(outDir, 'performance.md'), artifactAnalysis.analysis.performanceMarkdown);
     }
 }

@@ -277,15 +277,24 @@ warnings in `analysis/analysis.json` and `analysis/summary.md`. A missing
 `manifest.json` is a warning too: the analysis still runs, but no artifact
 bundle is formed.
 
-`distributed-run.json` and `control-run.json` must match the control server's
-snapshot contracts. When either is missing, empty, not JSON, or missing a field
-the control server always writes (for example `createdAtEpochMs` or a rollup
-counter), the analyzer prints the rejection naming the file and the field,
-writes no analysis files, and exits with status 1. The one exception is the
-failed control request folder described above. When `control-run.json` holds no
-results or events, `results.jsonl` and `events.jsonl` rows that name their agent,
-command and outcome stand in for them; the analysis never invents command links
-or placeholder identities from those rows.
+`distributed-run.json` must match the control server's snapshot contract. When
+it is missing, empty, not JSON, or missing a field the control server always
+writes (for example `createdAtEpochMs` or a rollup counter), the analyzer prints
+the rejection naming the file and the field, writes no analysis files, and exits
+with status 1. The one exception is the failed control request folder described
+above.
+
+The runner exports `control-run.json` only when it has a control run id and its
+GET succeeds, so the analyzer treats that file as optional evidence. When it is
+missing or does not match the control run snapshot contract, the analysis still
+runs: a parse warning names the file, `analysis/summary.md` says that performance
+was not analyzed, and `analysis.json` omits `performance` (and, without a fleet
+report, the agent count). No `performance.md` is written.
+
+When `control-run.json` holds no results or events, `results.jsonl` and
+`events.jsonl` rows that name their agent, command and outcome stand in for
+them; the analysis never invents command links or placeholder identities from
+those rows.
 
 ## Success Handling
 

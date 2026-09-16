@@ -224,21 +224,21 @@ describe('distributed run artifact command timing', () => {
 
         expect(analysis.ok).toBe(true);
         expect(analysis.status).toBe('passed');
-        expect(analysis.performance.runDurationMs).toBe(6_000);
-        expect(analysis.performance.agentCount).toBe(3);
-        expect(analysis.performance.commandTiming.minMs).toBe(350);
-        expect(analysis.performance.commandTiming.averageMs).toBe(1_125);
-        expect(analysis.performance.commandTiming.p50Ms).toBe(350);
-        expect(analysis.performance.commandTiming.p95Ms).toBe(1_900);
-        expect(analysis.performance.commandTiming.p99Ms).toBe(1_900);
-        expect(analysis.performance.commandTiming.spreadRatio).toBe(5.43);
-        expect(analysis.performance.commandTiming.outlierCount).toBe(1);
-        expect(analysis.performance.exportedEventCount).toBe(1);
-        expect(analysis.performance.agentReportedEventCount).toBe(15);
-        expect(analysis.performance.diagnosticCount).toBe(0);
-        expect(analysis.performance.warningDiagnosticCount).toBe(0);
-        expect(analysis.performance.errorDiagnosticCount).toBe(0);
-        expect(analysis.performance.slowestAgents[0]).toMatchObject({
+        expect(analysis.performance?.runDurationMs).toBe(6_000);
+        expect(analysis.performance?.agentCount).toBe(3);
+        expect(analysis.performance?.commandTiming.minMs).toBe(350);
+        expect(analysis.performance?.commandTiming.averageMs).toBe(1_125);
+        expect(analysis.performance?.commandTiming.p50Ms).toBe(350);
+        expect(analysis.performance?.commandTiming.p95Ms).toBe(1_900);
+        expect(analysis.performance?.commandTiming.p99Ms).toBe(1_900);
+        expect(analysis.performance?.commandTiming.spreadRatio).toBe(5.43);
+        expect(analysis.performance?.commandTiming.outlierCount).toBe(1);
+        expect(analysis.performance?.exportedEventCount).toBe(1);
+        expect(analysis.performance?.agentReportedEventCount).toBe(15);
+        expect(analysis.performance?.diagnosticCount).toBe(0);
+        expect(analysis.performance?.warningDiagnosticCount).toBe(0);
+        expect(analysis.performance?.errorDiagnosticCount).toBe(0);
+        expect(analysis.performance?.slowestAgents[0]).toMatchObject({
             agentId: 'controller-01',
             commandCount: 2,
             maxMs: 1_900
@@ -254,13 +254,13 @@ describe('distributed run artifact command timing', () => {
             'fleet-report.json': JSON.stringify({ summary: { missing: 2, stale: 1, flaky: 0 } })
         }));
 
-        expect(withoutFleetReport.performance.missingAgentCount).toBeUndefined();
-        expect(withoutFleetReport.performance.staleAgentCount).toBeUndefined();
-        expect(withoutFleetReport.performance.flakyAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performance?.missingAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performance?.staleAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performance?.flakyAgentCount).toBeUndefined();
         expect(withoutFleetReport.performanceMarkdown).toContain('Missing agents: unknown');
         expect(withoutFleetReport.performanceMarkdown).toContain('Stale agents: unknown');
         expect(withoutFleetReport.performanceMarkdown).toContain('Flaky agents: unknown');
-        expect(withoutFleetReport.performance.commandTiming).toEqual({ count: 0, outlierCount: 0 });
+        expect(withoutFleetReport.performance?.commandTiming).toEqual({ count: 0, outlierCount: 0 });
         expect(withFleetReport.performance).toMatchObject({
             missingAgentCount: 2,
             staleAgentCount: 1,
@@ -277,10 +277,10 @@ describe('distributed run artifact command timing', () => {
             'fleet-report.json': JSON.stringify({ timing: { commands: { count: 2, p50Ms: 60, p95Ms: 70 } } })
         }));
 
-        expect(withoutCount.performance.commandTiming).toEqual({ p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
+        expect(withoutCount.performance?.commandTiming).toEqual({ p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
         expect(withoutCount.performanceMarkdown).toContain('Command timing: count=unknown,');
         expect(withoutCount.performanceMarkdown).toContain('outliers=unknown');
-        expect(withCount.performance.commandTiming).toEqual({ count: 2, p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
+        expect(withCount.performance?.commandTiming).toEqual({ count: 2, p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
     });
 
     it('keeps command timing metrics on one linked distributed-command sample set', () => {
@@ -356,7 +356,7 @@ describe('distributed run artifact command timing', () => {
             }
         }));
 
-        expect(analysis.performance.commandTiming).toMatchObject({
+        expect(analysis.performance?.commandTiming).toMatchObject({
             count: 2,
             minMs: 500,
             p50Ms: 500,
@@ -367,13 +367,13 @@ describe('distributed run artifact command timing', () => {
             spreadRatio: 2,
             outlierCount: 1
         });
-        expect(analysis.performance.commandTiming.p99Ms).toBeLessThanOrEqual(
-            analysis.performance.commandTiming.maxMs ?? 0
+        expect(analysis.performance?.commandTiming.p99Ms).toBeLessThanOrEqual(
+            analysis.performance?.commandTiming.maxMs ?? 0
         );
-        expect(analysis.performance.commandTiming.outlierCount).toBeLessThanOrEqual(
-            analysis.performance.commandTiming.count ?? 0
+        expect(analysis.performance?.commandTiming.outlierCount).toBeLessThanOrEqual(
+            analysis.performance?.commandTiming.count ?? 0
         );
-        expect(analysis.performance.slowestAgents).toEqual([
+        expect(analysis.performance?.slowestAgents).toEqual([
             {
                 agentId: 'controller-01',
                 commandCount: 2,
@@ -437,7 +437,7 @@ describe('distributed run artifact command timing', () => {
             })
         }));
 
-        expect(analysis.performance.commandTiming).toMatchObject({
+        expect(analysis.performance?.commandTiming).toMatchObject({
             count: 3,
             minMs: 20,
             p50Ms: 40,
@@ -445,7 +445,7 @@ describe('distributed run artifact command timing', () => {
             p99Ms: 400,
             maxMs: 400
         });
-        expect(analysis.performance.slowestAgents[0]).toMatchObject({
+        expect(analysis.performance?.slowestAgents[0]).toMatchObject({
             agentId: 'agent-b',
             commandCount: 2,
             maxMs: 400,

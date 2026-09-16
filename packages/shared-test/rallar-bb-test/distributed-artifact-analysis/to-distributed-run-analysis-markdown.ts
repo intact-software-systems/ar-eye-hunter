@@ -18,7 +18,7 @@ export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysis
         `Result: ${analysis.ok ? 'passed' : 'failed'}`,
         analysis.controlRunId ? `Control run: ${analysis.controlRunId}` : undefined,
         analysis.group?.groupId ? `Group: ${analysis.group.groupId}` : undefined,
-        `Agents: ${analysis.summary.agents}`,
+        `Agents: ${analysis.summary.agents ?? 'unknown'}`,
         targetResolution
             ? `Targets: ${targetResolution.selected}/${
                 targetResolution.expectedParticipantCount ?? 'unspecified'
@@ -28,6 +28,9 @@ export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysis
         `Pass rate: ${toPercent(analysis.summary.passRate)}`,
         `Failure groups: ${analysis.summary.failureGroups}`,
         `Artifact warnings: ${analysis.parseWarnings.length}`,
+        analysis.performance === undefined
+            ? 'Performance: not analyzed, because it needs the control run snapshot that control-run.json records.'
+            : undefined,
         analysis.ok ? undefined : `First focus: ${analysis.failure.title}`,
         ''
     ]);

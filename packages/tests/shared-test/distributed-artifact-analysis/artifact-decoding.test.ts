@@ -193,7 +193,7 @@ describe('distributed run artifact decoding', () => {
             affectedAgents: ['agent-a'],
             evidenceFile: 'results.jsonl'
         });
-        expect(analysis.performance.errorDiagnosticCount).toBe(1);
+        expect(analysis.performance?.errorDiagnosticCount).toBe(1);
         expect(snapshots?.distributedRun.commandLinks).toEqual([]);
         expect(snapshots?.controlRun.results).toEqual([{
             kind: 'result',
@@ -270,7 +270,6 @@ describe('distributed run artifact decoding', () => {
             state: 'passed',
             agentIds: ['agent-a']
         });
-        const controlRun = createControlRunSnapshot({ runId: 'run-decoded', agents: [{ agentId: 'agent-a' }] });
         const { createdAtEpochMs: _createdAtEpochMs, ...runWithoutCreatedAt } = distributedRun;
         const { blockingFailures: _blockingFailures, ...partialSummary } = distributedRun.rollup.summary;
         const cases = [
@@ -307,35 +306,6 @@ describe('distributed run artifact decoding', () => {
                     fileName: 'distributed-run.json',
                     message: 'distributed-run.json is not a distributed run snapshot: rollup.summary.blockingFailures must be a finite number.'
                 }
-            },
-            {
-                name: 'control run recorded as null',
-                files: { 'control-run.json': 'null' },
-                expected: {
-                    fileName: 'control-run.json',
-                    message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
-                }
-            },
-            {
-                name: 'control run command that is not a control command',
-                files: { 'control-run.json': JSON.stringify({ ...controlRun, commands: [{}] }) },
-                expected: {
-                    fileName: 'control-run.json',
-                    message: 'control-run.json is not a control run snapshot: commands[0].envelope must be a JSON object.'
-                }
-            },
-            {
-                name: 'control run agent without its counters',
-                files: {
-                    'control-run.json': JSON.stringify({
-                        ...controlRun,
-                        agents: [{ runId: 'run-decoded', agentId: 'agent-a', connected: true }]
-                    })
-                },
-                expected: {
-                    fileName: 'control-run.json',
-                    message: 'control-run.json is not a control run snapshot: agents[0].connectionSequence must be a finite number.'
-                }
             }
         ];
 
@@ -345,6 +315,42 @@ describe('distributed run artifact decoding', () => {
                 generatedAtEpochMs: GENERATED_AT_EPOCH_MS
             });
             expect(analyzed.left, decodeCase.name).toEqual(decodeCase.expected);
+        }
+    });
+
+    it('warns about a control-run.json that is not a control run snapshot and omits what needs the control run', () => {
+        const controlRun = createControlRunSnapshot({ runId: 'run-decoded', agents: [{ agentId: 'agent-a' }] });
+        const cases = [
+            {
+                name: 'control run recorded as null',
+                controlRunText: 'null',
+                message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
+            },
+            {
+                name: 'control run command that is not a control command',
+                controlRunText: JSON.stringify({ ...controlRun, commands: [{}] }),
+                message: 'control-run.json is not a control run snapshot: commands[0].envelope must be a JSON object.'
+            },
+            {
+                name: 'control run agent without its counters',
+                controlRunText: JSON.stringify({
+                    ...controlRun,
+                    agents: [{ runId: 'run-decoded', agentId: 'agent-a', connected: true }]
+                }),
+                message: 'control-run.json is not a control run snapshot: agents[0].connectionSequence must be a finite number.'
+            }
+        ];
+
+        for (const decodeCase of cases) {
+            const files = passedRunFiles({ 'control-run.json': decodeCase.controlRunText });
+            const analysis = analyzedRun(files);
+            const expectedWarning = { fileName: 'control-run.json', message: decodeCase.message };
+
+            expect(analysis.parseWarnings, decodeCase.name).toEqual([expectedWarning]);
+            expect(analysis, decodeCase.name).not.toHaveProperty('performance');
+            expect(analysis.summaryMarkdown, decodeCase.name).toContain('Agents: unknown');
+            expect(toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).left, decodeCase.name)
+                .toEqual(expectedWarning);
         }
     });
 
@@ -362,10 +368,10 @@ describe('distributed run artifact decoding', () => {
             'fleet-report.json',
             'events.jsonl'
         ]);
-        expect(analysis.performance.diagnosticCount).toBe(0);
-        expect(analysis.performance.warningDiagnosticCount).toBe(0);
-        expect(analysis.performance.errorDiagnosticCount).toBe(0);
-        expect(analysis.performance.agentReportedEventCount).toBe(7);
+        expect(analysis.performance?.diagnosticCount).toBe(0);
+        expect(analysis.performance?.warningDiagnosticCount).toBe(0);
+        expect(analysis.performance?.errorDiagnosticCount).toBe(0);
+        expect(analysis.performance?.agentReportedEventCount).toBe(7);
         expect(analysis.summaryMarkdown).toContain('Artifact warnings: 2');
     });
 
@@ -382,7 +388,7 @@ describe('distributed run artifact decoding', () => {
             lineNumber: 2,
             message: 'events.jsonl:2 is not a JSON object.'
         }]);
-        expect(analysis.performance.exportedEventCount).toBe(1);
+        expect(analysis.performance?.exportedEventCount).toBe(1);
     });
 
     it('builds a browser-safe v1 bundle from the snapshot files, manifest and JSONL evidence', () => {

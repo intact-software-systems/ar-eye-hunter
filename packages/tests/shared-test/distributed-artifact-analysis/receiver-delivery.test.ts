@@ -155,7 +155,7 @@ describe('distributed run artifact receiver delivery', () => {
             }
         }));
 
-        expect(analysis.performance.receiverDelivery).toMatchObject({
+        expect(analysis.performance?.receiverDelivery).toMatchObject({
             sampleCount: 3,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
@@ -168,7 +168,7 @@ describe('distributed run artifact receiver delivery', () => {
             medianDeliveryRatio: 0.97,
             p95DeliveryRatio: 1
         });
-        expect(analysis.performance.receiverDelivery?.lowestAgents).toEqual([
+        expect(analysis.performance?.receiverDelivery?.lowestAgents).toEqual([
             {
                 agentId: 'controller-03',
                 receivedMessages: 560,
@@ -235,7 +235,7 @@ describe('distributed run artifact receiver delivery', () => {
             }
         }));
 
-        expect(analysis.performance.receiverDelivery).toBeUndefined();
+        expect(analysis.performance?.receiverDelivery).toBeUndefined();
         expect(analysis.performanceMarkdown).not.toContain('Receiver delivery:');
     });
 

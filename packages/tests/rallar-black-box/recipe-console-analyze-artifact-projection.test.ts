@@ -301,6 +301,9 @@ describe('Recipe Console Analyze artifact projection', () => {
             artifactSchemaVersion: fixture.artifactSchemaVersion
         });
         const performance = base.analysis.performance;
+        if (performance === undefined) {
+            throw new Error('The scale fixture carries a control run, so its analysis measures performance.');
+        }
         const model = {
             ...base,
             analysis: {

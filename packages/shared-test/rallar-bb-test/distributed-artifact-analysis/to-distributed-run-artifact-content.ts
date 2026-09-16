@@ -1,10 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { ControlRunSnapshot } from '../control-snapshots.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../control-snapshots.ts';
 import type {
     DistributedRunArtifactParseWarning,
-    DistributedRunArtifactRejection,
-    DistributedRunSnapshots
+    DistributedRunArtifactRejection
 } from '../distributed-artifact-analysis.ts';
 import {
     distributedArtifactPipelineFile,
@@ -72,8 +71,10 @@ export interface ControlPostFailureJsonBody {
 
 export interface DistributedRunBundleContent {
     readonly variant: 'distributed-run';
+    /** The optional evidence readings' warnings; an unavailable control run carries its own reason. */
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    readonly snapshots: DistributedRunSnapshots;
+    readonly distributedRun: ControlDistributedRunSnapshot;
+    readonly controlRun: DistributedRunControlRunReading;
     /** Absent when fleet-report.json is missing, empty, not valid JSON or not a JSON object. */
     readonly fleetReport?: DistributedRunFleetReportEvidence;
     /** Absent when failures.json lists no failures. */
@@ -96,11 +97,23 @@ export interface DistributedRunControlRequestFailureContent {
     readonly manifestDistributedRunId?: string;
 }
 
+/**
+ * control-run.json is optional evidence: the Hetzner runner exports it only when it has a control run id
+ * and can fetch the run, so a missing or malformed file leaves the control run unavailable.
+ */
+export type DistributedRunControlRunReading =
+    | Readonly<{ status: 'recorded'; snapshot: ControlRunSnapshot; }>
+    | Readonly<{ status: 'unavailable'; reason: DistributedRunArtifactParseWarning; }>;
+
 export type DistributedRunArtifactContent =
     | DistributedRunBundleContent
     | DistributedRunControlRequestFailureContent;
 
 const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json';
+
+const DISTRIBUTED_RUN_FILE = { fileName: 'distributed-run.json', contractName: 'a distributed run snapshot' } as const;
+
+const CONTROL_RUN_FILE = { fileName: 'control-run.json', contractName: 'a control run snapshot' } as const;
 
 const CONTROL_POST_REQUEST_FILE = {
     fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME,
@@ -153,37 +166,53 @@ export function toDistributedRunBundleContent(
 function toBundleContent(
     parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
-    return toSnapshots(parsed).mapRight((snapshots) => {
-        const recorded = toOptionalControlPostFailure(parsed);
-        const fleetReport = toOptionalJsonFileEvidence(
-            parsed,
-            'fleet-report.json',
-            decodeDistributedRunFleetReportEvidence
-        );
-        const bundledFailure = toOptionalJsonFileEvidence(parsed, 'failures.json', decodeBundledFailure);
-        const targetResolution = toOptionalJsonFileValue(
-            parsed,
-            { fileName: 'target-resolution.json', contractName: 'a target resolution' },
-            decodeRecordedTargetResolution
-        );
-        const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
-        const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
+    return toRequiredJsonFileValue(parsed, DISTRIBUTED_RUN_FILE, decodeControlDistributedRunSnapshot)
+        .mapRight((distributedRun) => {
+            const recorded = toOptionalControlPostFailure(parsed);
+            const fleetReport = toOptionalJsonFileEvidence(
+                parsed,
+                'fleet-report.json',
+                decodeDistributedRunFleetReportEvidence
+            );
+            const bundledFailure = toOptionalJsonFileEvidence(parsed, 'failures.json', decodeBundledFailure);
+            const targetResolution = toOptionalJsonFileValue(
+                parsed,
+                { fileName: 'target-resolution.json', contractName: 'a target resolution' },
+                decodeRecordedTargetResolution
+            );
+            const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
+            const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
+            return {
+                variant: 'distributed-run',
+                parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events]
+                    .flatMap((reading) => reading.warnings),
+                distributedRun,
+                controlRun: toControlRunReading(parsed),
+                ...(fleetReport.value === undefined ? {} : { fleetReport: fleetReport.value }),
+                ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
+                ...targetResolution.value,
+                ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
+                results: results.value,
+                events: events.value
+            };
+        });
+}
+
+function toControlRunReading(parsed: ParsedDistributedArtifactPipeline): DistributedRunControlRunReading {
+    const file = distributedArtifactPipelineFile(parsed, CONTROL_RUN_FILE.fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
         return {
-            variant: 'distributed-run',
-            parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events]
-                .flatMap((reading) => reading.warnings),
-            snapshots: {
-                distributedRun: snapshots.distributedRun,
-                controlRun: toControlRunWithJsonlEnvelopes(parsed, snapshots.controlRun)
-            },
-            ...(fleetReport.value === undefined ? {} : { fleetReport: fleetReport.value }),
-            ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
-            ...targetResolution.value,
-            ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
-            results: results.value,
-            events: events.value
+            status: 'unavailable',
+            reason: {
+                fileName: CONTROL_RUN_FILE.fileName,
+                message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
+            }
         };
-    });
+    }
+    return toRequiredJsonFileValue(parsed, CONTROL_RUN_FILE, decodeControlRunSnapshot).fold(
+        (reason): DistributedRunControlRunReading => ({ status: 'unavailable', reason }),
+        (snapshot) => ({ status: 'recorded', snapshot: toControlRunWithJsonlEnvelopes(parsed, snapshot) })
+    );
 }
 
 /**
@@ -209,24 +238,6 @@ function toControlRunWithJsonlEnvelopes(
             ? controlRun.events
             : toRowValues('events.jsonl').flatMap((row) => decodeJsonlControlEventEnvelope(row, controlRun.runId) ?? [])
     };
-}
-
-function toSnapshots(
-    parsed: ParsedDistributedArtifactPipeline
-): Either<DistributedRunArtifactRejection, DistributedRunSnapshots> {
-    return toRequiredJsonFileValue(
-        parsed,
-        { fileName: 'distributed-run.json', contractName: 'a distributed run snapshot' },
-        decodeControlDistributedRunSnapshot
-    ).flatMap(
-        (rejection) => Either.ofLeft(rejection),
-        (distributedRun) =>
-            toRequiredJsonFileValue(
-                parsed,
-                { fileName: 'control-run.json', contractName: 'a control run snapshot' },
-                decodeControlRunSnapshot
-            ).mapRight((controlRun) => ({ distributedRun, controlRun }))
-    );
 }
 
 /** The runner summary and manifest are optional evidence of the run that was never created. */

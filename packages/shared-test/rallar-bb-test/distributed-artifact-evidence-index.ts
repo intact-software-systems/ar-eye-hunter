@@ -1,10 +1,12 @@
-import type { Either } from '@shared/resilience/Either.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import {
     computeDistributedRunArtifactPipelineAnalysis,
+    toDistributedRunContentSnapshots,
     type DistributedRunArtifactRejection
 } from './distributed-artifact-analysis.ts';
 import { toDistributedRunBundleContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
+import { resolveArtifactSchemaVersion } from './distributed-artifact-analysis/to-pipeline-artifact-bundle.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
@@ -37,29 +39,33 @@ export function deriveDistributedArtifactEvidence(
     const parsed = parseDistributedArtifactPipeline(input.files, {
         projection: 'literal-loose-files'
     });
-    return toDistributedRunBundleContent(parsed).mapRight((content) => {
-        const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
-            parsed,
-            content,
-            generatedAtEpochMs
-        });
-        return deriveDistributedArtifactEvidenceIndex({
-            analysis: analysisResult.analysis,
-            snapshots: analysisResult.snapshots,
-            monitor: analysisResult.monitor,
-            parsedControlRun: distributedArtifactPipelineJsonRecord(
-                parsed,
-                'control-run.json'
-            ),
-            sourceFileNames: Object.keys(parsed.projectedFiles).filter(
-                (fileName) => parsed.projectedFiles[fileName] !== undefined
-            ),
-            sourceFiles: parsed.projectedFiles,
-            indexLimit: input.indexLimit,
-            summaryLimit: input.summaryLimit,
-            payloadSummaryLimit: input.payloadSummaryLimit
-        });
-    });
+    const artifactSchemaVersion = resolveArtifactSchemaVersion(parsed);
+    return toDistributedRunBundleContent(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) =>
+            toDistributedRunContentSnapshots({ parsed, content, generatedAtEpochMs, artifactSchemaVersion })
+                .mapRight((snapshots) => {
+                    const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
+                        parsed,
+                        content,
+                        generatedAtEpochMs,
+                        artifactSchemaVersion
+                    });
+                    return deriveDistributedArtifactEvidenceIndex({
+                        analysis: analysisResult.analysis,
+                        snapshots,
+                        monitor: analysisResult.monitor,
+                        parsedControlRun: distributedArtifactPipelineJsonRecord(parsed, 'control-run.json'),
+                        sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+                            (fileName) => parsed.projectedFiles[fileName] !== undefined
+                        ),
+                        sourceFiles: parsed.projectedFiles,
+                        indexLimit: input.indexLimit,
+                        summaryLimit: input.summaryLimit,
+                        payloadSummaryLimit: input.payloadSummaryLimit
+                    });
+                })
+    );
 }
 
 export function deriveDistributedArtifactEvidenceIndex(

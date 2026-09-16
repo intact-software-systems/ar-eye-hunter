@@ -31,7 +31,7 @@ export function projectAnalyzeAnalysis(
         ok: analysis.ok,
         ...(analysis.group ? { group: projectGroup(analysis.group) } : {}),
         summary: {
-            agents: finiteNumber(analysis.summary.agents),
+            ...(analysis.summary.agents === undefined ? {} : { agents: finiteNumber(analysis.summary.agents) }),
             passRate: finiteNumber(analysis.summary.passRate),
             failureGroups: finiteNumber(analysis.summary.failureGroups),
             blockingFailures: finiteNumber(analysis.summary.blockingFailures)
@@ -46,14 +46,18 @@ export function projectAnalyzeAnalysis(
             })
         ),
         ...(analysis.ok ? {} : { failure: projectFailure(analysis.failure) }),
-        performance: projectAnalyzePerformance(analysis.performance),
+        ...(analysis.performance === undefined
+            ? {}
+            : { performance: projectAnalyzePerformance(analysis.performance) }),
         ...(analysis.targetResolution
             ? { targetResolution: projectTargetResolution(analysis.targetResolution) }
             : {}),
         spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) },
         summaryMarkdown: boundedText(analysis.summaryMarkdown),
         ...(analysis.ok ? {} : { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }),
-        performanceMarkdown: boundedText(analysis.performanceMarkdown)
+        ...(analysis.performanceMarkdown === undefined
+            ? {}
+            : { performanceMarkdown: boundedText(analysis.performanceMarkdown) })
     };
 }
 
