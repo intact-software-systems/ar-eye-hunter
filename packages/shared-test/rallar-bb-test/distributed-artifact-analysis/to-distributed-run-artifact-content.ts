@@ -80,6 +80,12 @@ export type DistributedRunArtifactContent =
 
 const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json';
 
+/** A value read from the artifact files together with the warnings reading it raised. */
+interface ArtifactFileReading<Value> {
+    readonly value: Value;
+    readonly warnings: readonly DistributedRunArtifactParseWarning[];
+}
+
 /**
  * A folder without distributed-run.json is analyzable only when the runner recorded the failed
  * control request that prevented the run from existing.
@@ -87,20 +93,20 @@ const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json'
 export function toDistributedRunArtifactContent(
     parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
-    const parseWarnings: DistributedRunArtifactParseWarning[] = [];
-    return toRecordedControlPostFailure({ parsed, warnings: parseWarnings }).flatMap(
+    return toRecordedControlPostFailure(parsed).flatMap(
         (rejection) => Either.ofLeft(rejection),
-        ({ controlPostFailure }): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> => {
+        (recorded): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> => {
             if (distributedArtifactPipelineFile(parsed, 'distributed-run.json').status !== 'missing') {
-                return toBundleContent({ parsed, warnings: parseWarnings }, controlPostFailure);
+                return toBundleContent(parsed, recorded);
             }
+            const controlPostFailure = recorded.value;
             return controlPostFailure === undefined
                 ? Either.ofLeft({
                     fileName: 'distributed-run.json',
                     message:
                         'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
                 })
-                : toControlRequestFailureContent(parsed, controlPostFailure, parseWarnings);
+                : toControlRequestFailureContent(parsed, { value: controlPostFailure, warnings: recorded.warnings });
         }
     );
 }
@@ -121,46 +127,38 @@ export function toDistributedRunBundleContent(
     );
 }
 
-interface RecordedControlPostFailure {
-    /** Absent when the runner recorded no failed control request. */
-    readonly controlPostFailure?: ControlPostFailureArtifact;
-}
-
-/** The parsed artifact files and the warnings their optional files add while they are read. */
-interface ArtifactFileReading {
-    readonly parsed: ParsedDistributedArtifactPipeline;
-    readonly warnings: DistributedRunArtifactParseWarning[];
-}
-
 function toBundleContent(
-    reading: ArtifactFileReading,
-    controlPostFailure: ControlPostFailureArtifact | undefined
+    parsed: ParsedDistributedArtifactPipeline,
+    recorded: ArtifactFileReading<ControlPostFailureArtifact | undefined>
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
-    return toSnapshots(reading.parsed).mapRight((snapshots) => {
+    return toSnapshots(parsed).mapRight((snapshots) => {
         const fleetReport = toOptionalJsonFileEvidence(
-            reading,
+            parsed,
             'fleet-report.json',
             decodeDistributedRunFleetReportEvidence
         );
-        const bundledFailure = toOptionalJsonFileEvidence(reading, 'failures.json', decodeBundledFailure);
+        const bundledFailure = toOptionalJsonFileEvidence(parsed, 'failures.json', decodeBundledFailure);
         const targetResolution = toOptionalJsonFileEvidence(
-            reading,
+            parsed,
             'target-resolution.json',
             decodeTargetResolutionAnalysis
         );
+        const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
+        const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
         return {
             variant: 'distributed-run',
-            parseWarnings: reading.warnings,
+            parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events]
+                .flatMap((reading) => reading.warnings),
             snapshots: {
                 distributedRun: snapshots.distributedRun,
-                controlRun: toControlRunWithJsonlEnvelopes(reading.parsed, snapshots.controlRun)
+                controlRun: toControlRunWithJsonlEnvelopes(parsed, snapshots.controlRun)
             },
-            fleetReport,
-            ...(bundledFailure === undefined ? {} : { bundledFailure }),
-            ...(targetResolution === undefined ? {} : { targetResolution }),
-            ...(controlPostFailure === undefined ? {} : { controlPostFailure }),
-            results: toJsonlEvidence(reading, 'results.jsonl', decodeDistributedRunResultEvidence),
-            events: toJsonlEvidence(reading, 'events.jsonl', decodeDistributedRunEventEvidence)
+            fleetReport: fleetReport.value,
+            ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
+            ...(targetResolution.value === undefined ? {} : { targetResolution: targetResolution.value }),
+            ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
+            results: results.value,
+            events: events.value
         };
     });
 }
@@ -210,13 +208,12 @@ function toSnapshots(
 
 function toControlRequestFailureContent(
     parsed: ParsedDistributedArtifactPipeline,
-    controlPostFailure: ControlPostFailureArtifact,
-    parseWarnings: readonly DistributedRunArtifactParseWarning[]
+    recorded: ArtifactFileReading<ControlPostFailureArtifact>
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
     const content = {
         variant: 'control-request-failure' as const,
-        parseWarnings,
-        controlPostFailure
+        parseWarnings: recorded.warnings,
+        controlPostFailure: recorded.value
     };
     if (distributedArtifactPipelineFile(parsed, 'runner-summary.json').status === 'missing') {
         return Either.ofRight(content);
@@ -229,37 +226,49 @@ function toControlRequestFailureContent(
 }
 
 function toRecordedControlPostFailure(
-    reading: ArtifactFileReading
-): Either<DistributedRunArtifactRejection, RecordedControlPostFailure> {
-    if (distributedArtifactPipelineFile(reading.parsed, CONTROL_POST_ERROR_METADATA_FILE_NAME).status === 'missing') {
-        return Either.ofRight({});
+    parsed: ParsedDistributedArtifactPipeline
+): Either<DistributedRunArtifactRejection, ArtifactFileReading<ControlPostFailureArtifact | undefined>> {
+    if (distributedArtifactPipelineFile(parsed, CONTROL_POST_ERROR_METADATA_FILE_NAME).status === 'missing') {
+        return Either.ofRight({ value: undefined, warnings: [] });
     }
     return toRequiredJsonFileValue(
-        reading.parsed,
+        parsed,
         { fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME, contractName: 'a control request record' },
         decodeControlPostRequest
-    ).mapRight((request) => ({ controlPostFailure: toControlPostFailure(reading, request) }));
+    ).mapRight((request) => toControlPostFailure(parsed, request));
 }
 
 function toControlPostFailure(
-    reading: ArtifactFileReading,
+    parsed: ParsedDistributedArtifactPipeline,
     request: DistributedRunControlPostRequest
-): ControlPostFailureArtifact {
+): ArtifactFileReading<ControlPostFailureArtifact> {
     const responseFile = request.responseFile;
     if (responseFile === undefined) {
-        return { request };
+        return { value: { request }, warnings: [] };
     }
-    const text = reading.parsed.projectedFiles[responseFile];
+    const text = parsed.projectedFiles[responseFile];
     if (text === undefined) {
-        reading.warnings.push({
-            fileName: responseFile,
-            message:
-                `${responseFile} is named by ${CONTROL_POST_ERROR_METADATA_FILE_NAME} but is not among the artifact files.`
-        });
-        return { request };
+        return {
+            value: { request },
+            warnings: [{
+                fileName: responseFile,
+                message:
+                    `${responseFile} is named by ${CONTROL_POST_ERROR_METADATA_FILE_NAME} but is not among the artifact files.`
+            }]
+        };
     }
-    const message = toOptionalJsonFileEvidence(reading, responseFile, decodeControlResponseMessage);
-    return { request, response: { fileName: responseFile, text, ...(message === undefined ? {} : { message }) } };
+    const message = toOptionalJsonFileEvidence(parsed, responseFile, decodeControlResponseMessage);
+    return {
+        value: {
+            request,
+            response: {
+                fileName: responseFile,
+                text,
+                ...(message.value === undefined ? {} : { message: message.value })
+            }
+        },
+        warnings: message.warnings
+    };
 }
 
 interface RequiredJsonFile {
@@ -291,39 +300,38 @@ function toRequiredJsonFileValue<Decoded>(
 
 /** A missing, empty or malformed optional file reads as an empty JSON object; malformed ones add a warning. */
 function toOptionalJsonFileEvidence<Evidence>(
-    reading: ArtifactFileReading,
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     decodeFile: (value: unknown) => Evidence
-): Evidence {
-    const file = distributedArtifactPipelineFile(reading.parsed, fileName);
+): ArtifactFileReading<Evidence> {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
     if (file.format === 'json' && file.status === 'parsed') {
-        return decodeFile(file.value);
+        return { value: decodeFile(file.value), warnings: [] };
     }
-    if (file.status !== 'missing' && file.status !== 'empty') {
-        reading.warnings.push({
-            fileName,
-            message: `${fileName} is not valid JSON: ${toJsonErrorDetail(fileName, file.message)}`
-        });
-    }
-    return decodeFile({});
+    const warnings = file.status === 'missing' || file.status === 'empty'
+        ? []
+        : [{ fileName, message: `${fileName} is not valid JSON: ${toJsonErrorDetail(fileName, file.message)}` }];
+    return { value: decodeFile({}), warnings };
 }
 
 function toJsonlEvidence<Evidence>(
-    reading: ArtifactFileReading,
+    parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
     decodeRow: (value: unknown) => Evidence
-): readonly Evidence[] {
-    return distributedArtifactPipelineJsonlRows(reading.parsed, fileName).flatMap((row) => {
-        if (row.status === 'parsed') {
-            return [decodeRow(row.value)];
-        }
-        reading.warnings.push({
-            fileName,
-            lineNumber: row.lineNumber,
-            message: row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`
-        });
-        return [];
-    });
+): ArtifactFileReading<readonly Evidence[]> {
+    const rows = distributedArtifactPipelineJsonlRows(parsed, fileName);
+    return {
+        value: rows.flatMap((row) => row.status === 'parsed' ? [decodeRow(row.value)] : []),
+        warnings: rows.flatMap((row) =>
+            row.status === 'parsed'
+                ? []
+                : [{
+                    fileName,
+                    lineNumber: row.lineNumber,
+                    message: row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`
+                }]
+        )
+    };
 }
 
 function decodeControlResponseMessage(value: unknown): string | undefined {
