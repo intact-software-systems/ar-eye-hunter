@@ -95,8 +95,7 @@ export function decodeDistributedRunResultEvidence(value: unknown): DistributedR
  * error payloads are read here as recorded.
  */
 export function toControlResultEvidence(envelope: ControlResultEnvelope): DistributedRunResultEvidence {
-    const payload: unknown = envelope.result;
-    const error: unknown = envelope.error;
+    const { result: payload, error } = envelope;
     const payloadRecord = isJsonRecordValue(payload) ? payload : undefined;
     const errorRecord = isJsonRecordValue(error) ? error : undefined;
     const stats = decodeStatsSummary(payload) ?? decodeStatsSummary(error);
@@ -115,7 +114,7 @@ export function toControlResultEvidence(envelope: ControlResultEnvelope): Distri
         receiverDeliverySpec: decodeReceiverDeliverySpec(payloadRecord?.metadata) ?? stats?.receiverDeliverySpec,
         durationMs: decodeNumber(payloadRecord?.durationMs) ??
             decodeElapsedMs(payloadRecord?.startedAtEpochMs, payloadRecord?.endedAtEpochMs),
-        nestedResults: decodePayloadNestedResults(payloadRecord)
+        nestedResults: decodePayloadNestedResults(payload)
     };
 }
 
@@ -200,15 +199,16 @@ function decodeNestedResults(value: unknown): readonly DistributedRunResultEvide
     const resultValue = isJsonRecordValue(value.value) ? value.value : undefined;
     return [
         ...decodeRecordItems(actual?.results, decodeDistributedRunResultEvidence),
-        ...decodePayloadNestedResults(isJsonRecordValue(value.result) ? value.result : undefined),
+        ...decodePayloadNestedResults(value.result),
         ...decodeRecordItems(resultValue?.results, decodeDistributedRunResultEvidence)
     ];
 }
 
-function decodePayloadNestedResults(
-    payload: Readonly<Record<string, unknown>> | undefined
-): readonly DistributedRunResultEvidence[] {
-    const payloadValue = isJsonRecordValue(payload?.value) ? payload.value : undefined;
-    return [payload?.results, payloadValue?.results]
+function decodePayloadNestedResults(value: unknown): readonly DistributedRunResultEvidence[] {
+    if (!isJsonRecordValue(value)) {
+        return [];
+    }
+    const payloadValue = isJsonRecordValue(value.value) ? value.value : undefined;
+    return [value.results, payloadValue?.results]
         .flatMap((results) => decodeRecordItems(results, decodeDistributedRunResultEvidence));
 }
