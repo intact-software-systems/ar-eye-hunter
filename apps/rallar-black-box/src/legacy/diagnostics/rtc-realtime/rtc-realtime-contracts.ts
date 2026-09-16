@@ -2,86 +2,76 @@ import type { CommandCenterActionFeedback } from '../shared/action-feedback.ts';
 
 export type RtcRealtimeTransport = 'realtime' | 'messages.rtc';
 
-export type RtcRealtimeReceivedRow = Readonly<{
-    rowId: string;
-    atEpochMs: number;
-    transport: RtcRealtimeTransport;
-    peerId: string;
-    laneId: string;
-    roomId: string;
-    typeId: string;
-    topicId: string;
-    contextId: string;
-    payload?: unknown;
-    raw?: unknown;
-}>;
+export interface RtcRealtimeReceivedRow {
+    readonly rowId: string;
+    readonly atEpochMs: number;
+    readonly transport: RtcRealtimeTransport;
+    readonly peerId: string;
+    readonly laneId: string;
+    readonly roomId: string;
+    readonly typeId: string;
+    readonly topicId: string;
+    readonly contextId: string;
+    readonly payload: unknown;
+    readonly raw: unknown;
+}
 
-export type RtcRealtimeSubscriptionRow = Readonly<{
-    subscriptionId: string;
-    transport: RtcRealtimeTransport;
-    label: string;
-    laneId: string;
-    groupId: string;
-    subscribedAtEpochMs: number;
+export interface RtcRealtimeSubscriptionRow {
+    readonly subscriptionId: string;
+    readonly transport: RtcRealtimeTransport;
+    readonly label: string;
+    readonly laneId: string;
+    readonly groupId: string;
+    readonly subscribedAtEpochMs: number;
     unsubscribe(): void;
-}>;
+}
 
-export type RtcRealtimeViewModel = Readonly<{
-    transport: RtcRealtimeTransport;
-    setTransport(value: RtcRealtimeTransport): void;
-    laneId: string;
+export interface RtcRealtimeFormValues {
+    readonly transport: RtcRealtimeTransport;
+    readonly laneId: string;
+    readonly peerIdsText: string;
+    readonly typeId: string;
+    readonly topicId: string;
+    readonly contextId: string;
+    readonly payloadText: string;
+    readonly minSnapshotVersion: string;
+    readonly reliability: 'best-effort' | 'at-least-once';
+    readonly ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
+    readonly ownership: 'shared' | 'exclusive';
+    readonly timeoutMs: number;
+}
+
+export interface RtcRealtimeFormSetters {
+    setTransport(value: RtcRealtimeFormValues['transport']): void;
     setLaneId(value: string): void;
-    peerIdsText: string;
     setPeerIdsText(value: string): void;
-    typeId: string;
     setTypeId(value: string): void;
-    topicId: string;
     setTopicId(value: string): void;
-    contextId: string;
     setContextId(value: string): void;
-    payloadText: string;
     setPayloadText(value: string): void;
-    minSnapshotVersion: string;
     setMinSnapshotVersion(value: string): void;
-    reliability: 'best-effort' | 'at-least-once';
-    setReliability(value: 'best-effort' | 'at-least-once'): void;
-    ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
-    setAck(
-        value: 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader'
-    ): void;
-    ownership: 'shared' | 'exclusive';
-    setOwnership(value: 'shared' | 'exclusive'): void;
-    timeoutMs: number;
+    setReliability(value: RtcRealtimeFormValues['reliability']): void;
+    setAck(value: RtcRealtimeFormValues['ack']): void;
+    setOwnership(value: RtcRealtimeFormValues['ownership']): void;
     setTimeoutMs(value: number): void;
-    busyAction?: string;
-    localError?: string;
-    actionFeedback: CommandCenterActionFeedback;
-    result: unknown;
-    received: readonly Readonly<{
-        rowId: string;
-        atEpochMs: number;
-        transport: RtcRealtimeTransport;
-        peerId: string;
-        laneId: string;
-        roomId: string;
-        typeId: string;
-        topicId: string;
-        contextId: string;
-        payload?: unknown;
-    }>[];
-    health: unknown;
-    subscriptions: readonly Readonly<{
-        transport: RtcRealtimeTransport;
-        label: string;
-        laneId: string;
-        groupId: string;
-        subscribedAtEpochMs: number;
-    }>[];
-    providerMode: 'simulated' | 'browser-rallar';
-    realBackendReady: boolean;
-    activeGroupId: string;
-    peerIds: readonly string[];
-    canRun: boolean;
+}
+
+export interface RtcRealtimeActivity {
+    readonly busyAction: string | undefined;
+    readonly localError: string | undefined;
+    readonly actionFeedback: CommandCenterActionFeedback;
+    readonly result: unknown;
+    readonly received: readonly RtcRealtimeReceivedRow[];
+    readonly health: unknown;
+    readonly subscriptions: readonly RtcRealtimeSubscriptionRow[];
+    readonly providerMode: 'simulated' | 'browser-rallar';
+    readonly realBackendReady: boolean;
+    readonly activeGroupId: string;
+    readonly peerIds: readonly string[];
+    readonly canRun: boolean;
+}
+
+export interface RtcRealtimeOperations {
     subscribeRealtime(): Promise<void>;
     subscribeRtcMessages(): Promise<void>;
     clearSubscriptions(): void;
@@ -90,20 +80,7 @@ export type RtcRealtimeViewModel = Readonly<{
     waitForRoomLane(): Promise<void>;
     refreshHealth(): Promise<void>;
     copyRecipe(): void;
-}>;
+}
 
-export type RtcRealtimeFormValues = Pick<
-    RtcRealtimeViewModel,
-    | 'transport'
-    | 'laneId'
-    | 'peerIdsText'
-    | 'typeId'
-    | 'topicId'
-    | 'contextId'
-    | 'payloadText'
-    | 'minSnapshotVersion'
-    | 'reliability'
-    | 'ack'
-    | 'ownership'
-    | 'timeoutMs'
->;
+export interface RtcRealtimeViewModel
+    extends RtcRealtimeFormValues, RtcRealtimeFormSetters, RtcRealtimeActivity, RtcRealtimeOperations {}

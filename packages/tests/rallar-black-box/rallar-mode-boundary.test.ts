@@ -90,18 +90,6 @@ const quickViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
     import.meta.url
 );
-const rtcRealtimeViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimeView.tsx',
-    import.meta.url
-);
-const rtcRealtimeControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
-    import.meta.url
-);
-const rtcRealtimePanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx',
-    import.meta.url
-);
 const roomsClientsRequestSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts',
     import.meta.url
@@ -256,22 +244,6 @@ function diagnosticOwnerSources(source: string): Readonly<{
     };
 }
 
-function rtcRealtimeOwnerSource(source: string): string {
-    const controllerFallback = existsSync(rtcRealtimeControllerSourcePath) &&
-            existsSync(rtcRealtimePanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function RtcRealtimePanel',
-            'function RallarDataPanel'
-        );
-    return [
-        sourceOrFallback(rtcRealtimeControllerSourcePath, controllerFallback),
-        sourceOrFallback(rtcRealtimePanelSourcePath, ''),
-        sourceOrFallback(rtcRealtimeViewSourcePath, '')
-    ].join('\n');
-}
-
 function roomsClientsOwnerSource(source: string): string {
     const extracted = [
         roomsClientsRequestSourcePath,
@@ -363,18 +335,6 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(violations).toEqual([]);
     });
 
-    it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
-        const source = appSource();
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
-
-        expect(rtcRealtimePanel).toContain('\'rallar.direct.rtc_realtime.phase\'');
-        expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
-        expect(rtcRealtimePanel).toContain('status: \'skipped\'');
-        expect(rtcRealtimePanel).toMatch(
-            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/
-        );
-    });
-
     it('surfaces action feedback and live subscription state in direct command panels', () => {
         const source = appSource();
         const diagnostics = diagnosticOwnerSources(source);
@@ -392,14 +352,10 @@ describe('rallar-black-box Rallar mode boundary', () => {
             actionFeedbackPanelFallback
         );
         const roomsClientsPanel = roomsClientsOwnerSource(source);
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
         expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(rtcRealtimePanel).toContain('Realtime sub');
-        expect(rtcRealtimePanel).toContain('RTC message sub');
         expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
     });
 

@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts",
+        "blob": "e37763007c97026495695b3e8503cb64467c42a8"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-facade-session.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/to-rtc-realtime-recipe.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/to-rtc-realtime-send-inputs.ts"
+      ]
+    }
+  ]
+}

@@ -9,10 +9,10 @@ import { act, createElement, StrictMode, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../apps/rallar-black-box/src/client-defaults.ts';
+import type { RtcRealtimeViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-contracts.ts';
 import { RtcRealtimePanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx';
 import {
     useRtcRealtimeController,
-    type RtcRealtimeControllerModel,
     type UseRtcRealtimeControllerInput
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts';
 
@@ -57,7 +57,7 @@ const input: UseRtcRealtimeControllerInput = {
 };
 const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-a' };
 
-function RtcRealtimeHarness(props: { input: UseRtcRealtimeControllerInput; capture(view: RtcRealtimeControllerModel): void; }) {
+function RtcRealtimeHarness(props: { input: UseRtcRealtimeControllerInput; capture(view: RtcRealtimeViewModel): void; }) {
     const view = useRtcRealtimeController(props.input);
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
@@ -66,7 +66,7 @@ function RtcRealtimeHarness(props: { input: UseRtcRealtimeControllerInput; captu
 describe('RTC realtime controller preservation', () => {
     let root: Root;
     let container: HTMLDivElement;
-    let view: RtcRealtimeControllerModel;
+    let view: RtcRealtimeViewModel;
     let currentRoom: unknown;
     let realtimeSendFailure: Error | undefined;
     const realtimeListeners = new Set<RealtimeListener>();

@@ -10,10 +10,8 @@ import {
     useRoomsClientsController,
     type RoomsClientsControllerModel
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts';
-import {
-    useRtcRealtimeController,
-    type RtcRealtimeControllerModel
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts';
+import type { RtcRealtimeViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-contracts.ts';
+import { useRtcRealtimeController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts';
 
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: { recordRuntimeEvent: () => {} },
@@ -37,7 +35,7 @@ const input = {
     }
 };
 
-function RtcRealtimeHarness(props: { globalValues?: typeof input.globalValues; capture(view: RtcRealtimeControllerModel): void; }) {
+function RtcRealtimeHarness(props: { globalValues?: typeof input.globalValues; capture(view: RtcRealtimeViewModel): void; }) {
     const view = useRtcRealtimeController({ ...input, globalValues: props.globalValues ?? input.globalValues });
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
@@ -66,7 +64,7 @@ describe('legacy diagnostic recipe copies', () => {
         'copies the direct RTC realtime export for %s as a strict version-1 recipe carrying the configured send',
         async (transport) => {
             const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-            let rtcRealtime: RtcRealtimeControllerModel | undefined;
+            let rtcRealtime: RtcRealtimeViewModel | undefined;
             await act(async () =>
                 root.render(createElement(RtcRealtimeHarness, {
                     capture: (view) => {
@@ -133,7 +131,7 @@ describe('legacy diagnostic recipe copies', () => {
 
     it('omits the room from the RTC realtime export when no group is active so the recipe still validates', async () => {
         const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-        let rtcRealtime: RtcRealtimeControllerModel | undefined;
+        let rtcRealtime: RtcRealtimeViewModel | undefined;
         await act(async () =>
             root.render(createElement(RtcRealtimeHarness, {
                 globalValues: { ...input.globalValues, roomId: '' },
