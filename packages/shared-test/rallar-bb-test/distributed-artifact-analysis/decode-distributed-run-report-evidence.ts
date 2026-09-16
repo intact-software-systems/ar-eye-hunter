@@ -1,12 +1,8 @@
-import type {
-    DistributedRunAnalysisGroup,
-    DistributedRunTargetResolutionAnalysis
-} from '../distributed-artifact-analysis.ts';
+import type { DistributedRunAnalysisGroup } from '../distributed-artifact-analysis.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     decodeBoolean,
     decodeNumber,
-    decodeNumberRecord,
     decodeText,
     decodeTexts
 } from './decode-artifact-json-values.ts';
@@ -74,19 +70,9 @@ export function decodeDistributedRunFleetReportEvidence(value: unknown): Distrib
         flakyAgents: decodeNumber(summary?.flaky),
         commandTiming: decodeDistributedRunTimingRecord(timing?.commands),
         runP50Ms: decodeNumber(runTiming?.p50Ms),
-        group: decodeAnalysisGroupRecord(value.group),
+        group: decodeAnalysisGroup(value.group),
         firstFailureSignature: signatures.length === 0 ? undefined : decodeFleetFailureSignature(signatures[0])
     };
-}
-
-/** The run group comes from the manifest, or from the fleet report only when the manifest names none. */
-export function decodeAnalysisGroup(
-    manifestGroup: unknown,
-    fleetReport: DistributedRunFleetReportEvidence
-): DistributedRunAnalysisGroup | undefined {
-    return manifestGroup === undefined || manifestGroup === null
-        ? fleetReport.group
-        : decodeAnalysisGroupRecord(manifestGroup);
 }
 
 /** Absent when failures.json lists no failures. */
@@ -106,33 +92,7 @@ export function decodeBundledFailure(value: unknown): DistributedRunBundledFailu
 }
 
 /** Absent when the value is not a JSON object with any field. */
-export function decodeTargetResolutionAnalysis(value: unknown): DistributedRunTargetResolutionAnalysis | undefined {
-    if (!isJsonRecordValue(value) || Object.keys(value).length === 0) {
-        return undefined;
-    }
-    const summary = isJsonRecordValue(value.summary) ? value.summary : undefined;
-    const blockers = Array.isArray(value.blockers) ? value.blockers : [];
-    const targetAgentIds = decodeTexts(value.targetAgentIds);
-    return {
-        selected: decodeNumber(summary?.selected) ?? targetAgentIds.length,
-        expectedParticipantCount: decodeNumber(summary?.expectedParticipantCount),
-        missingExpectedParticipants: decodeNumber(summary?.missingExpectedParticipants) ?? 0,
-        blockers: blockers.length,
-        staleAgents: decodeNumber(summary?.staleAgents) ?? 0,
-        offlineAgents: decodeNumber(summary?.offlineAgents) ?? 0,
-        wrongGroupAgents: decodeNumber(summary?.wrongGroupAgents) ?? 0,
-        agentsWithoutIdentity: decodeNumber(summary?.agentsWithoutIdentity) ?? 0,
-        roleCounts: decodeNumberRecord(summary?.roleCounts),
-        regions: decodeNumberRecord(summary?.regions),
-        providers: decodeNumberRecord(summary?.providers),
-        targetAgentIds,
-        blockingAgentIds: blockers.flatMap((blocker) =>
-            isJsonRecordValue(blocker) ? decodeText(blocker.agentId) ?? [] : []
-        )
-    };
-}
-
-function decodeAnalysisGroupRecord(value: unknown): DistributedRunAnalysisGroup | undefined {
+export function decodeAnalysisGroup(value: unknown): DistributedRunAnalysisGroup | undefined {
     if (!isJsonRecordValue(value) || Object.keys(value).length === 0) {
         return undefined;
     }

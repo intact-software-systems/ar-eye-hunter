@@ -26,18 +26,6 @@ export function decodeTexts(value: unknown): readonly string[] {
     return Array.isArray(value) ? value.filter(isNonEmptyText) : [];
 }
 
-/** The finite-number entries of a JSON object, ordered by key, or none when the value is not an object. */
-export function decodeNumberRecord(value: unknown): Readonly<Record<string, number>> {
-    if (!isJsonRecordValue(value)) {
-        return {};
-    }
-    return Object.fromEntries(
-        Object.entries(value)
-            .filter((entry): entry is [string, number] => isFiniteNumber(entry[1]))
-            .sort(([left], [right]) => left.localeCompare(right))
-    );
-}
-
 /** An array's items, each item that is not a JSON object read as an empty object; none when the value is not an array. */
 export function decodeRecordItems<Item>(
     value: unknown,

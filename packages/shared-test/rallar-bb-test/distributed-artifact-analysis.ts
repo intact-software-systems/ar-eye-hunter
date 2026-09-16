@@ -10,7 +10,7 @@ import { computeDistributedRunFailure } from './distributed-artifact-analysis/co
 import type { DistributedRunControlPostRequest } from './distributed-artifact-analysis/decode-control-post-request.ts';
 import {
     decodeAnalysisGroup,
-    decodeTargetResolutionAnalysis
+    type DistributedRunFleetReportEvidence
 } from './distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import type { DistributedRunRunnerSummary } from './distributed-artifact-analysis/decode-distributed-run-runner-summary.ts';
 import {
@@ -39,6 +39,7 @@ import { deriveRunVerdictView, type RunVerdictView } from './distributed-run-ana
 import { deriveDistributedRunMonitor, type DistributedRunMonitor } from './distributed-run-monitor.ts';
 import { validateDistributedRunArtifactFromParsed } from './distributed-run-observation/validate-distributed-run-artifact.ts';
 import { computeDistributedRunPerformance } from './distributed-run-performance/compute-distributed-run-performance.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from './distributed-run.ts';
 
 export type DistributedRunArtifactFiles = Readonly<Record<string, string | undefined>>;
 
@@ -456,7 +457,8 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         status: distributedRun.state
     };
     const overview = {
-        group: decodeAnalysisGroup(distributedRun.manifest.group, fleetReport),
+        // distributed-run.json decoding checks the manifest only as an object, so its group is decoded here.
+        group: resolveAnalysisGroup(decodeAnalysisGroup(distributedRun.manifest.group), fleetReport),
         summary: {
             agents: fleetReport.agents ?? performance.agentCount,
             passRate: fleetReport.passRate ?? performance.passRate,
@@ -465,12 +467,46 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         },
         parseWarnings: input.parseWarnings
     };
+    const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
     const evidence = {
         performance,
-        targetResolution: content.targetResolution ?? decodeTargetResolutionAnalysis(distributedRun.targetResolution),
+        targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
         spa
     };
     return { ...identity, ok, ...overview, failure, ...evidence };
+}
+
+/** The manifest group wins; the fleet report group stands in only when the manifest names none. */
+function resolveAnalysisGroup(
+    manifestGroup: DistributedRunAnalysisGroup | undefined,
+    fleetReport: DistributedRunFleetReportEvidence
+): DistributedRunAnalysisGroup | undefined {
+    return manifestGroup ?? fleetReport.group;
+}
+
+function toTargetResolutionAnalysis(
+    resolution: RallarBlackBoxDistributedTargetResolution
+): DistributedRunTargetResolutionAnalysis {
+    const { summary } = resolution;
+    return {
+        selected: summary.selected,
+        expectedParticipantCount: summary.expectedParticipantCount,
+        missingExpectedParticipants: summary.missingExpectedParticipants,
+        blockers: resolution.blockers.length,
+        staleAgents: summary.staleAgents,
+        offlineAgents: summary.offlineAgents,
+        wrongGroupAgents: summary.wrongGroupAgents,
+        agentsWithoutIdentity: summary.agentsWithoutIdentity,
+        roleCounts: toCountsByName(summary.roleCounts),
+        regions: toCountsByName(summary.regions),
+        providers: toCountsByName(summary.providers),
+        targetAgentIds: resolution.targetAgentIds,
+        blockingAgentIds: resolution.blockers.map((blocker) => blocker.agentId)
+    };
+}
+
+function toCountsByName(counts: Readonly<Record<string, number>>): Readonly<Record<string, number>> {
+    return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
 }
 
 function toDistributedRunAnalysis(facts: DistributedRunAnalysisFacts): DistributedRunAnalysis {

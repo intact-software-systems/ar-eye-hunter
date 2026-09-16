@@ -1,3 +1,4 @@
+import type { ControlEventEnvelope } from '../control-protocol.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { decodeText } from './decode-artifact-json-values.ts';
 import {
@@ -32,15 +33,6 @@ export function decodeDistributedRunEventEvidence(value: unknown): DistributedRu
     const eventValue = isJsonRecordValue(value.value) ? value.value : undefined;
     const payloadData = isJsonRecordValue(payload?.data) ? payload.data : undefined;
     const valueData = isJsonRecordValue(eventValue?.data) ? eventValue.data : undefined;
-    let streamSummary: DistributedRunStreamSummary | undefined;
-    let streamSummaryText: string | undefined;
-    for (const candidate of [payloadData, payload?.payload, valueData, eventValue?.payload, payload, eventValue]) {
-        streamSummary = decodeDistributedRunStreamSummary(candidate);
-        if (streamSummary !== undefined) {
-            streamSummaryText = JSON.stringify(candidate);
-            break;
-        }
-    }
     return {
         agentId: decodeText(value.agentId),
         commandId: decodeText(value.commandId),
@@ -49,7 +41,39 @@ export function decodeDistributedRunEventEvidence(value: unknown): DistributedRu
             decodeText(payloadData?.topic) ?? decodeText(valueData?.topic),
         severity: decodeText(eventValue?.severity) ?? decodeText(payload?.severity) ?? decodeText(value.severity),
         message: decodeText(eventValue?.message) ?? decodeText(payload?.message) ?? decodeText(value.message),
-        streamSummary,
-        streamSummaryText
+        ...decodeFirstStreamSummary([
+            payloadData,
+            payload?.payload,
+            valueData,
+            eventValue?.payload,
+            payload,
+            eventValue
+        ])
     };
+}
+
+/** The control protocol decoder checks an event envelope's identity only, so its payload is read here as recorded. */
+export function toControlEventEvidence(envelope: ControlEventEnvelope): DistributedRunEventEvidence {
+    const payload = isJsonRecordValue(envelope.payload) ? envelope.payload : undefined;
+    const payloadData = isJsonRecordValue(payload?.data) ? payload.data : undefined;
+    return {
+        agentId: envelope.agentId,
+        commandId: envelope.commandId,
+        topic: decodeText(payload?.topic) ?? decodeText(payloadData?.topic),
+        severity: decodeText(payload?.severity),
+        message: decodeText(payload?.message),
+        ...decodeFirstStreamSummary([payloadData, payload?.payload, payload])
+    };
+}
+
+type EventStreamSummaryEvidence = Pick<DistributedRunEventEvidence, 'streamSummary' | 'streamSummaryText'>;
+
+function decodeFirstStreamSummary(candidates: readonly unknown[]): EventStreamSummaryEvidence {
+    for (const candidate of candidates) {
+        const streamSummary = decodeDistributedRunStreamSummary(candidate);
+        if (streamSummary !== undefined) {
+            return { streamSummary, streamSummaryText: JSON.stringify(candidate) };
+        }
+    }
+    return {};
 }

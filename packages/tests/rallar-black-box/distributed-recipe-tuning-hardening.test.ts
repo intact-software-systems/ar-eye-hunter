@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeDistributedRunEventEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
+import { toControlEventEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
 import { decodeDistributedRunFleetReportEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import { decodeDistributedRunResultEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
 import { computeDistributedRunPerformance } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
@@ -191,7 +191,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             ...snapshots,
             fleetReport: decodeDistributedRunFleetReportEvidence({}),
             results: [decodeDistributedRunResultEvidence(result)],
-            events: snapshots.controlRun.events.map(decodeDistributedRunEventEvidence)
+            events: snapshots.controlRun.events.map(toControlEventEvidence)
         });
 
         expect(performance).toEqual(analyzedPerformance(artifactFiles));

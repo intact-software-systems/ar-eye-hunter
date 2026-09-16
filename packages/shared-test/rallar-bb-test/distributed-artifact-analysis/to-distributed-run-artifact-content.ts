@@ -4,17 +4,20 @@ import type { ControlRunSnapshot } from '../control-snapshots.ts';
 import type {
     DistributedRunArtifactParseWarning,
     DistributedRunArtifactRejection,
-    DistributedRunSnapshots,
-    DistributedRunTargetResolutionAnalysis
+    DistributedRunSnapshots
 } from '../distributed-artifact-analysis.ts';
 import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonlRows,
     type ParsedDistributedArtifactPipeline
 } from '../distributed-artifact-pipeline.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { decodeText } from './decode-artifact-json-values.ts';
-import { decodeControlDistributedRunSnapshot } from './decode-control-distributed-run-snapshot.ts';
+import {
+    decodeControlDistributedRunSnapshot,
+    decodeTargetResolution
+} from './decode-control-distributed-run-snapshot.ts';
 import { decodeControlPostRequest, type DistributedRunControlPostRequest } from './decode-control-post-request.ts';
 import { decodeControlRunSnapshot } from './decode-control-run-snapshot.ts';
 import {
@@ -24,7 +27,6 @@ import {
 import {
     decodeBundledFailure,
     decodeDistributedRunFleetReportEvidence,
-    decodeTargetResolutionAnalysis,
     type DistributedRunBundledFailure,
     type DistributedRunFleetReportEvidence
 } from './decode-distributed-run-report-evidence.ts';
@@ -58,8 +60,8 @@ export interface DistributedRunBundleContent {
     readonly fleetReport: DistributedRunFleetReportEvidence;
     /** Absent when failures.json lists no failures. */
     readonly bundledFailure?: DistributedRunBundledFailure;
-    /** Absent when target-resolution.json records nothing. */
-    readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
+    /** Absent when target-resolution.json is missing, records null, or is not a target resolution; a warning says which. */
+    readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
     /** Absent when the runner recorded no failed control request. */
     readonly controlPostFailure?: ControlPostFailureArtifact;
     readonly results: readonly DistributedRunResultEvidence[];
@@ -79,6 +81,11 @@ export type DistributedRunArtifactContent =
     | DistributedRunControlRequestFailureContent;
 
 const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json';
+
+interface RecordedTargetResolution {
+    /** Absent when target-resolution.json records null. */
+    readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
+}
 
 /** A value read from the artifact files together with the warnings reading it raised. */
 interface ArtifactFileReading<Value> {
@@ -138,10 +145,10 @@ function toBundleContent(
             decodeDistributedRunFleetReportEvidence
         );
         const bundledFailure = toOptionalJsonFileEvidence(parsed, 'failures.json', decodeBundledFailure);
-        const targetResolution = toOptionalJsonFileEvidence(
+        const targetResolution = toOptionalJsonFileValue(
             parsed,
-            'target-resolution.json',
-            decodeTargetResolutionAnalysis
+            { fileName: 'target-resolution.json', contractName: 'a target resolution' },
+            decodeRecordedTargetResolution
         );
         const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
         const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
@@ -155,7 +162,7 @@ function toBundleContent(
             },
             fleetReport: fleetReport.value,
             ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
-            ...(targetResolution.value === undefined ? {} : { targetResolution: targetResolution.value }),
+            ...targetResolution.value,
             ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
             results: results.value,
             events: events.value
@@ -271,17 +278,17 @@ function toControlPostFailure(
     };
 }
 
-interface RequiredJsonFile {
+interface ContractJsonFile {
     readonly fileName: string;
     readonly contractName: string;
 }
 
 function toRequiredJsonFileValue<Decoded>(
     parsed: ParsedDistributedArtifactPipeline,
-    required: RequiredJsonFile,
+    contractFile: ContractJsonFile,
     decodeFile: (value: unknown) => Either<string, Decoded>
 ): Either<DistributedRunArtifactRejection, Decoded> {
-    const { fileName, contractName } = required;
+    const { fileName, contractName } = contractFile;
     const file = distributedArtifactPipelineFile(parsed, fileName);
     if (file.status === 'missing' || file.status === 'empty') {
         return Either.ofLeft({ fileName, message: `${fileName} is required and must not be empty.` });
@@ -296,6 +303,22 @@ function toRequiredJsonFileValue<Decoded>(
         fileName,
         message: `${fileName} is not ${contractName}: ${issue.endsWith('.') ? issue : `${issue}.`}`
     }));
+}
+
+/** A missing or empty optional file is absent; one that is not valid JSON or not the contract is absent with a warning. */
+function toOptionalJsonFileValue<Decoded>(
+    parsed: ParsedDistributedArtifactPipeline,
+    contractFile: ContractJsonFile,
+    decodeFile: (value: unknown) => Either<string, Decoded>
+): ArtifactFileReading<Decoded | undefined> {
+    const file = distributedArtifactPipelineFile(parsed, contractFile.fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
+        return { value: undefined, warnings: [] };
+    }
+    return toRequiredJsonFileValue(parsed, contractFile, decodeFile).fold(
+        (rejection): ArtifactFileReading<Decoded | undefined> => ({ value: undefined, warnings: [rejection] }),
+        (value) => ({ value, warnings: [] })
+    );
 }
 
 /** A missing, empty or malformed optional file reads as an empty JSON object; malformed ones add a warning. */
@@ -332,6 +355,13 @@ function toJsonlEvidence<Evidence>(
                 }]
         )
     };
+}
+
+/** The control server writes null to target-resolution.json for a run it resolved no targets for. */
+function decodeRecordedTargetResolution(value: unknown): Either<string, RecordedTargetResolution> {
+    return value === null
+        ? Either.ofRight({})
+        : decodeTargetResolution(value).mapRight((targetResolution) => ({ targetResolution }));
 }
 
 function decodeControlResponseMessage(value: unknown): string | undefined {

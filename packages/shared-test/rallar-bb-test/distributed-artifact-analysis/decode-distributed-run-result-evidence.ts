@@ -1,3 +1,4 @@
+import type { ControlResultEnvelope } from '../control-protocol.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     decodeBoolean,
@@ -88,6 +89,35 @@ export function decodeDistributedRunResultEvidence(value: unknown): DistributedR
     };
 }
 
+/**
+ * The control protocol decoder checks a result envelope's identity and outcome only, so its result and
+ * error payloads are read here as recorded.
+ */
+export function toControlResultEvidence(envelope: ControlResultEnvelope): DistributedRunResultEvidence {
+    const payload: unknown = envelope.result;
+    const error: unknown = envelope.error;
+    const payloadRecord = isJsonRecordValue(payload) ? payload : undefined;
+    const errorRecord = isJsonRecordValue(error) ? error : undefined;
+    const stats = decodeStatsSummary(payload) ?? decodeStatsSummary(error);
+    return {
+        agentId: envelope.agentId,
+        commandId: envelope.commandId,
+        executionIdentity: envelope.commandId,
+        ok: envelope.ok,
+        failureCode: decodeText(errorRecord?.code),
+        failureMessage: decodeText(errorRecord?.message),
+        streamFailureTexts: [errorRecord?.code, errorRecord?.message].flatMap((text) => decodeText(text) ?? []),
+        deliveryFailureTexts: decodeDeliveryFailureTexts(error),
+        streamSummary: decodeNestedStreamSummary(payload) ?? decodeNestedStreamSummary(error),
+        stats,
+        payloadCommandId: decodeText(payloadRecord?.commandId),
+        receiverDeliverySpec: decodeReceiverDeliverySpec(payloadRecord?.metadata) ?? stats?.receiverDeliverySpec,
+        durationMs: decodeNumber(payloadRecord?.durationMs) ??
+            decodeElapsedMs(payloadRecord?.startedAtEpochMs, payloadRecord?.endedAtEpochMs),
+        nestedResults: decodePayloadNestedResults(payloadRecord)
+    };
+}
+
 function decodeResultCommandId(value: unknown): string | undefined {
     if (!isJsonRecordValue(value)) {
         return undefined;
@@ -166,9 +196,18 @@ function decodeNestedResults(value: unknown): readonly DistributedRunResultEvide
         return [];
     }
     const actual = isJsonRecordValue(value.actual) ? value.actual : undefined;
-    const payload = isJsonRecordValue(value.result) ? value.result : undefined;
-    const payloadValue = isJsonRecordValue(payload?.value) ? payload.value : undefined;
     const resultValue = isJsonRecordValue(value.value) ? value.value : undefined;
-    return [actual?.results, payload?.results, payloadValue?.results, resultValue?.results]
+    return [
+        ...decodeRecordItems(actual?.results, decodeDistributedRunResultEvidence),
+        ...decodePayloadNestedResults(isJsonRecordValue(value.result) ? value.result : undefined),
+        ...decodeRecordItems(resultValue?.results, decodeDistributedRunResultEvidence)
+    ];
+}
+
+function decodePayloadNestedResults(
+    payload: Readonly<Record<string, unknown>> | undefined
+): readonly DistributedRunResultEvidence[] {
+    const payloadValue = isJsonRecordValue(payload?.value) ? payload.value : undefined;
+    return [payload?.results, payloadValue?.results]
         .flatMap((results) => decodeRecordItems(results, decodeDistributedRunResultEvidence));
 }

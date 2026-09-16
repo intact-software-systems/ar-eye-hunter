@@ -8,9 +8,11 @@ import {
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from '../../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
     createControlRunSnapshot,
     createDistributedRunSnapshot,
+    FIXTURE_GROUP,
     toDistributedRunArtifactFiles
 } from './distributed-artifact-files-fixture.ts';
 
@@ -42,54 +44,96 @@ function passedRunFiles(files: DistributedRunArtifactFiles = {}): DistributedRun
     });
 }
 
+const WORLD_FLEET_TARGET_RESOLUTION: RallarBlackBoxDistributedTargetResolution = {
+    group: FIXTURE_GROUP,
+    resolvedAtEpochMs: 5,
+    staleAfterMs: 30_000,
+    targetPolicyMode: 'selected-agents',
+    targetAgentIds: ['agent-01', 'agent-02'],
+    roleAssignments: [
+        { agentId: 'agent-01', role: 'sender', required: true },
+        { agentId: 'agent-02', role: 'receiver', required: true }
+    ],
+    blockers: [
+        { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }
+    ],
+    summary: {
+        agents: 3,
+        targetable: 2,
+        selected: 2,
+        expectedParticipantCount: 3,
+        missingExpectedParticipants: 1,
+        staleAgents: 1,
+        offlineAgents: 0,
+        wrongGroupAgents: 0,
+        agentsWithoutIdentity: 0,
+        roleCounts: { sender: 1, receiver: 1 },
+        regions: { 'eu-north': 2 },
+        providers: { hetzner: 2 }
+    }
+};
+
+function worldFleetFiles(files: DistributedRunArtifactFiles): DistributedRunArtifactFiles {
+    return toDistributedRunArtifactFiles({
+        distributedRun: createDistributedRunSnapshot({
+            distributedRunId: 'dist-world-fleet',
+            controlRunId: 'run-world-fleet',
+            state: 'failed',
+            agentIds: ['agent-01', 'agent-02']
+        }),
+        controlRun: createControlRunSnapshot({ runId: 'run-world-fleet' }),
+        files
+    });
+}
+
 describe('distributed run artifact decoding', () => {
     it('includes target-resolution evidence in analysis summaries', () => {
-        const files = toDistributedRunArtifactFiles({
-            distributedRun: createDistributedRunSnapshot({
-                distributedRunId: 'dist-world-fleet',
-                controlRunId: 'run-world-fleet',
-                state: 'failed',
-                agentIds: ['agent-01', 'agent-02']
-            }),
-            controlRun: createControlRunSnapshot({ runId: 'run-world-fleet' }),
-            files: {
-                'target-resolution.json': JSON.stringify({
-                    targetAgentIds: ['agent-01', 'agent-02'],
-                    roleAssignments: [
-                        { agentId: 'agent-01', role: 'sender', required: true },
-                        { agentId: 'agent-02', role: 'receiver', required: true }
-                    ],
-                    blockers: [
-                        { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }
-                    ],
-                    summary: {
-                        selected: 2,
-                        expectedParticipantCount: 3,
-                        missingExpectedParticipants: 1,
-                        staleAgents: 1,
-                        offlineAgents: 0,
-                        wrongGroupAgents: 0,
-                        agentsWithoutIdentity: 0,
-                        roleCounts: { receiver: 1, sender: 1 },
-                        regions: { 'eu-north': 2 },
-                        providers: { hetzner: 2 }
-                    }
-                })
-            }
-        });
+        const analysis = analyzedRun(worldFleetFiles({
+            'target-resolution.json': JSON.stringify(WORLD_FLEET_TARGET_RESOLUTION)
+        }));
 
-        const analysis = analyzedRun(files);
-
-        expect(analysis.targetResolution).toMatchObject({
+        expect(analysis.parseWarnings).toEqual([]);
+        expect(analysis.targetResolution).toEqual({
             selected: 2,
             expectedParticipantCount: 3,
             missingExpectedParticipants: 1,
             blockers: 1,
-            blockingAgentIds: ['agent-03'],
-            roleCounts: { receiver: 1, sender: 1 }
+            staleAgents: 1,
+            offlineAgents: 0,
+            wrongGroupAgents: 0,
+            agentsWithoutIdentity: 0,
+            roleCounts: { receiver: 1, sender: 1 },
+            regions: { 'eu-north': 2 },
+            providers: { hetzner: 2 },
+            targetAgentIds: ['agent-01', 'agent-02'],
+            blockingAgentIds: ['agent-03']
         });
         expect(analysis.summaryMarkdown).toContain('Targets: 2/3 resolved');
         expect(analysis.summaryMarkdown).toContain('Target blockers: 1');
+    });
+
+    it('warns about a target-resolution.json that omits a counter instead of counting it as zero', () => {
+        const { staleAgents: _staleAgents, ...summaryWithoutStaleAgents } = WORLD_FLEET_TARGET_RESOLUTION.summary;
+        const analysis = analyzedRun(worldFleetFiles({
+            'target-resolution.json': JSON.stringify({
+                ...WORLD_FLEET_TARGET_RESOLUTION,
+                summary: summaryWithoutStaleAgents
+            })
+        }));
+
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'target-resolution.json',
+            message: 'target-resolution.json is not a target resolution: targetResolution.summary.staleAgents must be a finite number.'
+        }]);
+        expect(analysis.targetResolution).toBeUndefined();
+        expect(analysis.summaryMarkdown).not.toContain('Targets:');
+    });
+
+    it('reads a target-resolution.json that records null as no target resolution', () => {
+        const analysis = analyzedRun(worldFleetFiles({ 'target-resolution.json': 'null' }));
+
+        expect(analysis.parseWarnings).toEqual([]);
+        expect(analysis.targetResolution).toBeUndefined();
     });
 
     it('promotes JSONL rows that name their agent, command and outcome without inventing envelopes or command links', () => {

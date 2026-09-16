@@ -34,7 +34,8 @@ export function decodeReceiverDeliverySpec(metadata: unknown): ReceiverDeliveryS
 
 /**
  * The receiver delivery bounds the manifest recipes set per command id, including commands nested in
- * composite commands and their groups. The manifest's inner structure is read leniently.
+ * composite commands and their groups. distributed-run.json decoding checks the manifest only as an
+ * object, so its recipes are read leniently here.
  */
 export function decodeReceiverDeliverySpecsByCommandId(manifest: unknown): ReadonlyMap<string, ReceiverDeliverySpec> {
     if (!isJsonRecordValue(manifest) || !Array.isArray(manifest.recipes)) {

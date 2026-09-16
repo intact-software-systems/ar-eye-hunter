@@ -1,7 +1,6 @@
 import type { DistributedRunPerformanceAnalysis, DistributedRunSnapshots } from '../distributed-artifact-analysis.ts';
-import { decodeElapsedMs } from '../distributed-artifact-analysis/decode-artifact-json-values.ts';
 import {
-    decodeDistributedRunEventEvidence,
+    toControlEventEvidence,
     type DistributedRunEventEvidence
 } from '../distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
 import {
@@ -9,14 +8,14 @@ import {
     type DistributedRunFleetReportEvidence
 } from '../distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import {
-    decodeDistributedRunResultEvidence,
+    toControlResultEvidence,
     type DistributedRunResultEvidence
 } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
 import { computeCommandTimingSamples, computeSlowestAgents } from './compute-command-timing.ts';
 import { computeReceiverDelivery } from './compute-receiver-delivery.ts';
 import { computeStreamTimingSamples } from './compute-stream-timing-samples.ts';
 import { computeStreamTiming } from './compute-stream-timing.ts';
-import { computeTimingSummary } from './compute-timing-summary.ts';
+import { computeElapsedMs, computeTimingSummary } from './compute-timing-summary.ts';
 
 export interface DistributedRunPerformanceInput extends DistributedRunSnapshots {
     readonly fleetReport: DistributedRunFleetReportEvidence;
@@ -33,7 +32,7 @@ export function computeDistributedRunSnapshotPerformance(
         ...snapshots,
         fleetReport: decodeDistributedRunFleetReportEvidence({}),
         results: [],
-        events: snapshots.controlRun.events.map(decodeDistributedRunEventEvidence)
+        events: snapshots.controlRun.events.map(toControlEventEvidence)
     });
 }
 
@@ -41,7 +40,7 @@ export function computeDistributedRunPerformance(
     input: DistributedRunPerformanceInput
 ): DistributedRunPerformanceAnalysis {
     const { distributedRun, controlRun, fleetReport, events } = input;
-    const controlResults = controlRun.results.map(decodeDistributedRunResultEvidence);
+    const controlResults = controlRun.results.map(toControlResultEvidence);
     const commandTimingSamples = computeCommandTimingSamples({
         distributedRun,
         commands: controlRun.commands,
@@ -50,7 +49,7 @@ export function computeDistributedRunPerformance(
     const streamSamples = computeStreamTimingSamples({ controlResults, jsonlResults: input.results, events }).samples;
     const { agents } = controlRun;
     return {
-        runDurationMs: decodeElapsedMs(distributedRun.startedAtEpochMs, distributedRun.completedAtEpochMs) ??
+        runDurationMs: computeElapsedMs(distributedRun.startedAtEpochMs, distributedRun.completedAtEpochMs) ??
             fleetReport.runP50Ms,
         agentCount: fleetReport.agents ?? agents.length,
         passRate: fleetReport.passRate ?? (distributedRun.rollup.ok ? 1 : 0),

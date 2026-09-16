@@ -89,6 +89,13 @@ export function computeMaxNumber(values: readonly (number | undefined)[]): numbe
     return max;
 }
 
+/** Absent unless both times are known and the end is not before the start. */
+export function computeElapsedMs(startEpochMs: number | undefined, endEpochMs: number | undefined): number | undefined {
+    return startEpochMs !== undefined && endEpochMs !== undefined && endEpochMs >= startEpochMs
+        ? endEpochMs - startEpochMs
+        : undefined;
+}
+
 export function toRoundedMetric(value: number): number {
     return Math.round(value * 100) / 100;
 }

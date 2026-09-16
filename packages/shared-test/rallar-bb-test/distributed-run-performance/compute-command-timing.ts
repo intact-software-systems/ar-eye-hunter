@@ -1,11 +1,12 @@
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../control-snapshots.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlQueuedCommandSnapshot
+} from '../control-snapshots.ts';
 import type { DistributedRunSlowestAgent } from '../distributed-artifact-analysis.ts';
-import { decodeElapsedMs, decodeText } from '../distributed-artifact-analysis/decode-artifact-json-values.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
-import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import { computeAverage, computeMaxNumber } from './compute-timing-summary.ts';
+import { computeAverage, computeElapsedMs, computeMaxNumber } from './compute-timing-summary.ts';
 
-/** One command's duration; the command and agent are absent when the record does not name them. */
+/** One command's duration; the command and agent are absent when the result or envelope does not name them. */
 export interface CommandTimingSample {
     readonly commandId?: string;
     readonly agentId?: string;
@@ -14,7 +15,7 @@ export interface CommandTimingSample {
 
 export interface CommandTimingSources {
     readonly distributedRun: ControlDistributedRunSnapshot;
-    readonly commands: ControlRunSnapshot['commands'];
+    readonly commands: readonly ControlQueuedCommandSnapshot[];
     readonly controlResults: readonly DistributedRunResultEvidence[];
 }
 
@@ -29,7 +30,7 @@ export function computeCommandTimingSamples(sources: CommandTimingSources): read
     const isSampled = (commandId: string | undefined) =>
         linkedCommandIds.size === 0 || (commandId !== undefined && linkedCommandIds.has(commandId));
     const commandSamples = sources.commands.flatMap((command) => {
-        const sample = decodeCommandTimingSample(command);
+        const sample = toCommandTimingSample(command);
         return sample !== undefined && isSampled(sample.commandId) ? [sample] : [];
     });
     const sampledCommandIds = new Set(commandSamples.flatMap((sample) => sample.commandId ?? []));
@@ -76,20 +77,12 @@ export function computeSlowestAgents(samples: readonly CommandTimingSample[]): r
         .slice(0, SLOWEST_AGENT_LIMIT);
 }
 
-/** Absent when the record times neither dispatch nor queueing to completion. */
-function decodeCommandTimingSample(command: unknown): CommandTimingSample | undefined {
-    if (!isJsonRecordValue(command)) {
-        return undefined;
-    }
-    const envelope = isJsonRecordValue(command.envelope) ? command.envelope : undefined;
-    const durationMs = decodeElapsedMs(command.dispatchedAtEpochMs, command.completedAtEpochMs) ??
-        decodeElapsedMs(command.queuedAtEpochMs, command.completedAtEpochMs);
+/** Absent when the command times neither dispatch nor queueing to completion. */
+function toCommandTimingSample(command: ControlQueuedCommandSnapshot): CommandTimingSample | undefined {
+    const durationMs = computeElapsedMs(command.dispatchedAtEpochMs, command.completedAtEpochMs) ??
+        computeElapsedMs(command.queuedAtEpochMs, command.completedAtEpochMs);
     if (durationMs === undefined) {
         return undefined;
     }
-    return {
-        commandId: decodeText(envelope?.commandId) ?? decodeText(command.commandId),
-        agentId: decodeText(envelope?.agentId) ?? decodeText(command.agentId),
-        durationMs
-    };
+    return { commandId: command.envelope.commandId, agentId: command.envelope.agentId, durationMs };
 }

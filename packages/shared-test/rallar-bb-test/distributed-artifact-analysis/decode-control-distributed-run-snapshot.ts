@@ -175,6 +175,42 @@ export function decodeControlDistributedRunSnapshot(
     } as ControlDistributedRunSnapshot);
 }
 
+/** The target resolution a distributed run snapshot carries and target-resolution.json records. */
+export function decodeTargetResolution(value: unknown): Either<string, RallarBlackBoxDistributedTargetResolution> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('targetResolution must be a JSON object');
+    }
+    const group = value.group;
+    const issue = toFirstDecodeIssue([
+        [
+            isJsonRecordValue(group) &&
+            isNonEmptyText(group.applicationId) &&
+            isNonEmptyText(group.workspaceId) &&
+            isNonEmptyText(group.groupId),
+            'targetResolution.group must name applicationId, workspaceId and groupId'
+        ],
+        [isFiniteNumber(value.resolvedAtEpochMs), 'targetResolution.resolvedAtEpochMs must be a finite number'],
+        [isFiniteNumber(value.staleAfterMs), 'targetResolution.staleAfterMs must be a finite number'],
+        [
+            isOneOf(value.targetPolicyMode, RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES),
+            'targetResolution.targetPolicyMode must be a target policy mode'
+        ],
+        [isTextArray(value.targetAgentIds), 'targetResolution.targetAgentIds must be an array of strings'],
+        ...decodeTargetResolutionSummaryChecks(value.summary)
+    ]);
+    if (issue !== undefined) {
+        return Either.ofLeft(issue);
+    }
+    const blockers = decodeArrayItems(value.blockers, 'targetResolution.blockers', decodeTargetBlocker);
+    const entryIssue = [
+        decodeArrayItems(value.roleAssignments, 'targetResolution.roleAssignments', decodeRoleAssignment),
+        blockers
+    ].find((decoded) => decoded.left !== undefined)?.left;
+    return entryIssue === undefined
+        ? Either.ofRight({ ...value, blockers: blockers.right } as RallarBlackBoxDistributedTargetResolution)
+        : Either.ofLeft(entryIssue);
+}
+
 function decodeCommandLink(
     value: unknown,
     path: string
@@ -311,37 +347,7 @@ function decodeOptionalTargetResolution(
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft('targetResolution must be a JSON object when present');
     }
-    const group = value.group;
-    const issue = toFirstDecodeIssue([
-        [
-            isJsonRecordValue(group) &&
-            isNonEmptyText(group.applicationId) &&
-            isNonEmptyText(group.workspaceId) &&
-            isNonEmptyText(group.groupId),
-            'targetResolution.group must name applicationId, workspaceId and groupId'
-        ],
-        [isFiniteNumber(value.resolvedAtEpochMs), 'targetResolution.resolvedAtEpochMs must be a finite number'],
-        [isFiniteNumber(value.staleAfterMs), 'targetResolution.staleAfterMs must be a finite number'],
-        [
-            isOneOf(value.targetPolicyMode, RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES),
-            'targetResolution.targetPolicyMode must be a target policy mode'
-        ],
-        [isTextArray(value.targetAgentIds), 'targetResolution.targetAgentIds must be an array of strings'],
-        ...decodeTargetResolutionSummaryChecks(value.summary)
-    ]);
-    if (issue !== undefined) {
-        return Either.ofLeft(issue);
-    }
-    const blockers = decodeArrayItems(value.blockers, 'targetResolution.blockers', decodeTargetBlocker);
-    const entryIssue = [
-        decodeArrayItems(value.roleAssignments, 'targetResolution.roleAssignments', decodeRoleAssignment),
-        blockers
-    ].find((decoded) => decoded.left !== undefined)?.left;
-    return entryIssue === undefined
-        ? Either.ofRight({
-            targetResolution: { ...value, blockers: blockers.right } as RallarBlackBoxDistributedTargetResolution
-        })
-        : Either.ofLeft(entryIssue);
+    return decodeTargetResolution(value).mapRight((targetResolution) => ({ targetResolution }));
 }
 
 function decodeTargetResolutionSummaryChecks(summary: unknown): readonly (readonly [boolean, string])[] {
