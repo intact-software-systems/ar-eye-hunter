@@ -8,6 +8,7 @@
         "blob": "e42739a3da1bcea5bf6f76e2771b0fdf3233eee4"
       },
       "targets": [
+        "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-file-reading.ts",
         "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts",
         "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-control-request-failure.ts",
         "packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-distributed-run-failure.ts",
