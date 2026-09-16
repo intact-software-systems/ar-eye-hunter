@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/manual-workbench.ts",
+        "blob": "3ef2040dd30367767cdb9898872169acb2394c58"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/manual-workbench/manual-command-fields.ts",
+        "apps/rallar-black-box/src/manual-workbench/manual-rtc-probe-commands.ts",
+        "apps/rallar-black-box/src/manual-workbench/manual-workbench-commands.ts"
+      ]
+    }
+  ]
+}

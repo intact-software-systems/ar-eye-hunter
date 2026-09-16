@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
-import { manualSendCommand } from '../../../manual-workbench.ts';
 import {
-    manualRecipeSnippet,
-    manualRtcNegativeRecipeSnippet,
     parseManualPayload,
+    toManualRecipeText,
     type ManualActionHistoryEntry,
     type ManualWorkbenchValues
 } from '../../../manual-workbench.ts';
+import { toManualRtcNegativeRecipeText } from '../../../manual-workbench/manual-rtc-probe-commands.ts';
+import { toManualSendCommand } from '../../../manual-workbench/manual-workbench-commands.ts';
 import { validateSchemaAuthoringText, validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
 
 interface ManualWorkbenchRecipeInput {
@@ -19,11 +19,11 @@ export function useManualWorkbenchRecipes({ values, payloadText, sequence, histo
     return useMemo(() => {
         const payloadResult = parseManualPayload(payloadText);
         const previewCommands = payloadResult.ok
-            ? [manualSendCommand(values, payloadResult.value, sequence)]
+            ? [toManualSendCommand(values, payloadResult.value, sequence)]
             : [];
-        const recipeText = manualRecipeSnippet(history);
+        const recipeText = toManualRecipeText(history);
         const negativeRecipeText = payloadResult.ok
-            ? manualRtcNegativeRecipeSnippet(values, payloadResult.value)
+            ? toManualRtcNegativeRecipeText(values, payloadResult.value)
             : payloadResult.error;
         return {
             payloadResult,

@@ -1,15 +1,17 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import {
-    buildManualWorkbenchCommands,
-    manualRtcDeliveryMatrixCommands,
-    manualRtcNackProbeCommands,
     parseManualPayload,
     type ManualActionHistoryEntry,
     type ManualWorkbenchAction,
     type ManualWorkbenchTransport,
     type ManualWorkbenchValues
 } from '../../../manual-workbench.ts';
+import {
+    toManualRtcDeliveryMatrixCommands,
+    toManualRtcNackProbeCommands
+} from '../../../manual-workbench/manual-rtc-probe-commands.ts';
+import { toManualWorkbenchCommands } from '../../../manual-workbench/manual-workbench-commands.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
@@ -102,7 +104,7 @@ export class ManualWorkbenchActions {
 
         const label = actionLabel(action);
         const startSequence = this.input.sequence;
-        const commands = buildManualWorkbenchCommands({
+        const commands = toManualWorkbenchCommands({
             action: action,
             values: this.input.values,
             payload: this.input.payloadResult.ok ? this.input.payloadResult.value : null,
@@ -126,7 +128,7 @@ export class ManualWorkbenchActions {
 
         const label = `RTC ${transport} delivery matrix`;
         const startSequence = this.input.sequence;
-        const commands = manualRtcDeliveryMatrixCommands({
+        const commands = toManualRtcDeliveryMatrixCommands({
             values: this.input.values,
             payload: this.input.payloadResult.value,
             sequence: startSequence,
@@ -149,7 +151,7 @@ export class ManualWorkbenchActions {
         const startSequence = this.input.sequence;
         await this.runManualCommandSet(
             'RTC not-yet-in-sync probe',
-            manualRtcNackProbeCommands(
+            toManualRtcNackProbeCommands(
                 this.input.values,
                 this.input.payloadResult.value,
                 startSequence
@@ -167,14 +169,14 @@ export class ManualWorkbenchActions {
             }
             return Promise.resolve();
         }
-        const realtime = manualRtcDeliveryMatrixCommands({
+        const realtime = toManualRtcDeliveryMatrixCommands({
             values: this.input.values,
             payload: this.input.payloadResult.value,
             sequence: 1,
             transport: 'realtime',
             requestId: this.input.createRequestId()
         });
-        const messages = manualRtcDeliveryMatrixCommands({
+        const messages = toManualRtcDeliveryMatrixCommands({
             values: this.input.values,
             payload: this.input.payloadResult.value,
             sequence: realtime.length + 2,

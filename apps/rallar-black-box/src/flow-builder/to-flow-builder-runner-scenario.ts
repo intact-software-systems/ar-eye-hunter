@@ -3,6 +3,27 @@ import type { FlowBuilderStep } from '../flow-builder.ts';
 import { computeFlowBuilderVariables } from './flow-builder-variables.ts';
 import { toFlowBuilderRecipe, type FlowBuilderRecipeInput } from './to-flow-builder-recipe.ts';
 
+export interface FlowBuilderRunnerScenario {
+    readonly variables: Readonly<Record<string, FlowBuilderRunnerVariable>>;
+    readonly connections: typeof FLOW_BUILDER_RUNNER_CONNECTIONS;
+    readonly steps: readonly FlowBuilderRunnerStep[];
+}
+
+export interface FlowBuilderRunnerVariable {
+    readonly default: unknown;
+    readonly secret?: true;
+}
+
+export interface FlowBuilderRunnerStep {
+    readonly name: string;
+    readonly expect: FlowBuilderStep['expect'];
+    readonly type: string;
+    readonly connection?: string;
+    readonly request: object;
+}
+
+type FlowBuilderRunnerStepBase = Pick<FlowBuilderRunnerStep, 'name' | 'expect'>;
+
 const FLOW_BUILDER_RUNNER_CONNECTIONS = {
     api: {
         type: 'http',
@@ -33,16 +54,16 @@ const FLOW_BUILDER_RUNNER_CONNECTIONS = {
     }
 };
 
-export function toFlowBuilderRunnerScenario(input: FlowBuilderRecipeInput): Record<string, unknown> {
+export function toFlowBuilderRunnerScenario(input: FlowBuilderRecipeInput): FlowBuilderRunnerScenario {
     const recipe = toFlowBuilderRecipe(input);
     return {
-        variables: toRunnerVariables(computeFlowBuilderVariables(input.flow, input.overrides)),
+        variables: toRunnerVariables(input),
         connections: FLOW_BUILDER_RUNNER_CONNECTIONS,
         steps: input.flow.steps.flatMap((step) =>
             step.enabled === false
                 ? []
                 : recipe.commands
-                    .filter((command) => toRecord(command.metadata?.flow).stepId === step.stepId)
+                    .filter((command) => decodeRecord(command.metadata?.flow).stepId === step.stepId)
                     .map((command) => toRunnerStepForCommand(step, command))
         )
     };
@@ -56,9 +77,9 @@ function isSecretLike(name: string): boolean {
         lower.includes('secret');
 }
 
-function toRunnerVariables(variables: Readonly<Record<string, unknown>>): Record<string, unknown> {
+function toRunnerVariables(input: FlowBuilderRecipeInput): Readonly<Record<string, FlowBuilderRunnerVariable>> {
     return Object.fromEntries(
-        Object.entries(variables).map(([key, value]) => [
+        Object.entries(computeFlowBuilderVariables(input.flow, input.overrides)).map(([key, value]) => [
             key,
             isSecretLike(key)
                 ? { default: value, secret: true }
@@ -70,7 +91,7 @@ function toRunnerVariables(variables: Readonly<Record<string, unknown>>): Record
 function toRunnerStepForCommand(
     step: FlowBuilderStep,
     command: RallarBlackBoxTestCommand
-): Record<string, unknown> {
+): FlowBuilderRunnerStep {
     const base = { name: command.commandId ?? step.stepId, expect: step.expect };
     switch (command.kind) {
         case 'rtc.connect':
@@ -95,8 +116,8 @@ function toRunnerStepForCommand(
 function toRunnerCheckStep(
     step: FlowBuilderStep,
     command: Extract<RallarBlackBoxTestCommand, { kind: 'health' | 'wait' | 'assert'; }>,
-    base: Readonly<Record<string, unknown>>
-): Record<string, unknown> {
+    base: FlowBuilderRunnerStepBase
+): FlowBuilderRunnerStep {
     switch (command.kind) {
         case 'health':
             return {
@@ -104,7 +125,7 @@ function toRunnerCheckStep(
                 type: step.kind === 'wait' ? 'wait' : 'health',
                 request: {
                     timeoutMs: command.timeoutMs,
-                    delayMs: toRecord(command.metadata).localDelayMs
+                    delayMs: decodeRecord(command.metadata).localDelayMs
                 }
             };
         case 'wait':
@@ -132,7 +153,7 @@ function toRunnerCheckStep(
 
 function toRunnerRtcConnectRequest(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>
-): Readonly<Record<string, unknown>> {
+): FlowBuilderRunnerStep['request'] {
     return {
         actor: command.actor,
         roomId: command.roomId,
@@ -149,7 +170,7 @@ function toRunnerRtcConnectRequest(
 
 function toRunnerRtcSendRequest(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>
-): Readonly<Record<string, unknown>> {
+): FlowBuilderRunnerStep['request'] {
     return {
         send: command.send,
         expect: command.expect,
@@ -165,7 +186,7 @@ function toRunnerRtcSendRequest(
 
 function toRunnerRtcStreamRequest(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream'; }>
-): Readonly<Record<string, unknown>> {
+): FlowBuilderRunnerStep['request'] {
     return {
         actor: command.actor,
         roomId: command.roomId,
@@ -192,8 +213,8 @@ function toRunnerRtcStreamRequest(
 
 function toRunnerWebSocketStep(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'ws.open' | 'ws.send' | 'ws.close'; }>,
-    base: Readonly<Record<string, unknown>>
-): Record<string, unknown> {
+    base: FlowBuilderRunnerStepBase
+): FlowBuilderRunnerStep {
     switch (command.kind) {
         case 'ws.open':
             return {
@@ -232,8 +253,8 @@ function toRunnerWebSocketStep(
 
 function toRunnerRtcStep(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' | 'rtc.send' | 'rtc.stream'; }>,
-    base: Readonly<Record<string, unknown>>
-): Record<string, unknown> {
+    base: FlowBuilderRunnerStepBase
+): FlowBuilderRunnerStep {
     const request = command.kind === 'rtc.connect'
         ? toRunnerRtcConnectRequest(command)
         : command.kind === 'rtc.send'
@@ -242,7 +263,7 @@ function toRunnerRtcStep(
     return { ...base, type: command.kind, connection: command.connection ?? 'flowRtc', request };
 }
 
-function toRecord(value: unknown): Readonly<Record<string, unknown>> {
+function decodeRecord(value: unknown): Readonly<Record<string, unknown>> {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value as Record<string, unknown>
         : {};

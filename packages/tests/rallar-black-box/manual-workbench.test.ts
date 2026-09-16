@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildManualWorkbenchCommands,
     DEFAULT_MANUAL_WORKBENCH_VALUES,
     deriveManualReceivedMessages,
-    manualRecipeSnippet,
-    manualRtcDeliveryMatrixCommands,
-    manualRtcNegativeRecipeSnippet,
     parseManualPayload,
+    toManualRecipeText,
     type ManualActionHistoryEntry
 } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import {
+    toManualRtcDeliveryMatrixCommands,
+    toManualRtcNegativeRecipeText
+} from '../../../apps/rallar-black-box/src/manual-workbench/manual-rtc-probe-commands.ts';
+import { toManualWorkbenchCommands } from '../../../apps/rallar-black-box/src/manual-workbench/manual-workbench-commands.ts';
 import type { RallarBlackBoxTestEvent } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 describe('rallar-black-box manual workbench helpers', () => {
     it('builds direct realtime sends with explicit peer targets', () => {
-        const [command] = buildManualWorkbenchCommands({
+        const [command] = toManualWorkbenchCommands({
             action: 'send',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -50,7 +52,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds messages.rtc multicast sends with next hop targets', () => {
-        const [command] = buildManualWorkbenchCommands({
+        const [command] = toManualWorkbenchCommands({
             action: 'send',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -92,14 +94,14 @@ describe('rallar-black-box manual workbench helpers', () => {
             minSnapshotVersion: 42,
             transport: 'messages.rtc' as const
         };
-        const commands = buildManualWorkbenchCommands({
+        const commands = toManualWorkbenchCommands({
             action: 'join',
             values: values,
             payload: {},
             sequence: 20,
             requestId: crypto.randomUUID()
         });
-        const [send] = buildManualWorkbenchCommands({
+        const [send] = toManualWorkbenchCommands({
             action: 'send',
             values: values,
             payload: { text: 'hello' },
@@ -153,7 +155,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('wraps WebSocket broadcast sends with group delivery metadata', () => {
-        const [command] = buildManualWorkbenchCommands({
+        const [command] = toManualWorkbenchCommands({
             action: 'send',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -181,7 +183,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds join as configure plus transport connection command', () => {
-        const commands = buildManualWorkbenchCommands({
+        const commands = toManualWorkbenchCommands({
             action: 'join',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -213,7 +215,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds real RTC join as configure, group create, and connect', () => {
-        const commands = buildManualWorkbenchCommands({
+        const commands = toManualWorkbenchCommands({
             action: 'join',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -248,7 +250,7 @@ describe('rallar-black-box manual workbench helpers', () => {
             commandId: 'manual-rtc-connect-22',
             roomId: 'room-from-manual'
         });
-        const repeatedAction = buildManualWorkbenchCommands({
+        const repeatedAction = toManualWorkbenchCommands({
             action: 'join',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -265,7 +267,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('builds RTC delivery matrix commands for direct, multicast, and broadcast', () => {
-        const commands = manualRtcDeliveryMatrixCommands({
+        const commands = toManualRtcDeliveryMatrixCommands({
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
                 transport: 'realtime',
@@ -319,7 +321,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('generates RTC negative recipe entries for NACK and delivery failures', () => {
-        const recipe = JSON.parse(manualRtcNegativeRecipeSnippet({
+        const recipe = JSON.parse(toManualRtcNegativeRecipeText({
             ...DEFAULT_MANUAL_WORKBENCH_VALUES,
             transport: 'messages.rtc'
         }, { text: 'negative' })) as {
@@ -347,7 +349,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('carries browser-rallar auth defaults into manual configure commands', () => {
-        const [command] = buildManualWorkbenchCommands({
+        const [command] = toManualWorkbenchCommands({
             action: 'configure',
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -443,7 +445,7 @@ describe('rallar-black-box manual workbench helpers', () => {
             ]
         };
 
-        const exported = JSON.parse(manualRecipeSnippet([entry]));
+        const exported = JSON.parse(toManualRecipeText([entry]));
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, exported)).toEqual({ ok: true, errors: [] });
         expect(exported).toMatchObject({
             recipeId: 'manual-workbench-recipe',

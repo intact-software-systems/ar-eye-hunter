@@ -1,5 +1,6 @@
 import type { FlowBuilderDefinition, FlowBuilderTemplate } from '../flow-builder.ts';
-import { DEFAULT_MANUAL_WORKBENCH_VALUES, manualRtcDeliveryMatrixCommands } from '../manual-workbench.ts';
+import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../manual-workbench.ts';
+import { toManualRtcDeliveryMatrixCommands } from '../manual-workbench/manual-rtc-probe-commands.ts';
 import { toFlowBuilderText } from './flow-builder-definition-text.ts';
 import { toCreateGroupCommand } from './flow-builder-steps.ts';
 
@@ -272,7 +273,7 @@ const RTC_MATRIX_FLOW: FlowBuilderDefinition = {
             stepId: 'realtime-matrix',
             label: 'Realtime matrix',
             kind: 'rtc.send',
-            commands: manualRtcDeliveryMatrixCommands({
+            commands: toManualRtcDeliveryMatrixCommands({
                 values: RTC_MATRIX_MANUAL_VALUES,
                 payload: '{{payload}}',
                 sequence: 1,
@@ -284,7 +285,7 @@ const RTC_MATRIX_FLOW: FlowBuilderDefinition = {
             stepId: 'messages-matrix',
             label: 'Messages RTC matrix',
             kind: 'rtc.send',
-            commands: manualRtcDeliveryMatrixCommands({
+            commands: toManualRtcDeliveryMatrixCommands({
                 values: RTC_MATRIX_MANUAL_VALUES,
                 payload: '{{payload}}',
                 sequence: 20,

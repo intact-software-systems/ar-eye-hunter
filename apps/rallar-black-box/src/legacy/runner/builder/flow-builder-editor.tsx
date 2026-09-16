@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { FlowBuilderStepKind } from '../../../flow-builder.ts';
 import { FLOW_BUILDER_TEMPLATES } from '../../../flow-builder/flow-builder-templates.ts';
+import type { FlowBuilderRunnerScenario } from '../../../flow-builder/to-flow-builder-runner-scenario.ts';
 import { FLOW_STEP_BUTTONS } from './flow-builder-support.ts';
 
 type FlowBuilderEditorProps = Readonly<{
@@ -13,7 +14,7 @@ type FlowBuilderEditorProps = Readonly<{
     copyText(text: string): void;
     recipeText: string;
     runnerText: string;
-    runnerScenario?: Readonly<Record<string, unknown>>;
+    runnerScenario?: FlowBuilderRunnerScenario;
     addStep(kind: FlowBuilderStepKind): void;
     variablesText: string;
     setVariablesEdited(value: boolean): void;

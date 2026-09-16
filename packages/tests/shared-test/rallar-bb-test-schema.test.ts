@@ -6,7 +6,7 @@ import { controlOpenApiSpec } from '../../../apps/rallar-black-box-control-serve
 import { FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-templates.ts';
 import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
 import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
-import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { toManualRecipeText, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
@@ -200,7 +200,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             commandIds: ['manual-health-1'],
             commands: [{ kind: 'health', commandId: 'manual-health-1' }]
         };
-        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, JSON.parse(manualRecipeSnippet([manualEntry])));
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, JSON.parse(toManualRecipeText([manualEntry])));
 
         for (const preset of RUN_MANAGER_COMMAND_PRESETS) {
             expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, preset.command);

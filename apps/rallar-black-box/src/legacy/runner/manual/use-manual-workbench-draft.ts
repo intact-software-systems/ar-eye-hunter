@@ -11,38 +11,19 @@ import {
 } from '../../../ui-persistence.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
-import { manualValuesFromState } from './manual-workbench-defaults.ts';
+import { toManualWorkbenchValues } from './manual-workbench-defaults.ts';
 
 import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 export function useManualWorkbenchDraft(options: ManualRallarWorkbenchOptions) {
     const { state, authSession } = options;
     const defaultDraft = useManualDefaultDraft(options);
-    const defaultValues = defaultDraft.values;
-    const [initialDraft] = useState(() => {
-        const stored = readManualWorkbenchDraft(
-            browserUiStorage(),
-            defaultDraft
-        );
-        return {
-            draft: stored ?? defaultDraft,
-            restored: Boolean(stored)
-        };
-    });
-    const [values, setValues] = useState<ManualWorkbenchValues>(
-        () => initialDraft.draft.values
-    );
-    const [valuesEdited, setValuesEdited] = useState(initialDraft.restored);
-    const [payloadPresetId, setPayloadPresetId] = useState(
-        initialDraft.draft.payloadPresetId
-    );
-    const [payloadText, setPayloadText] = useState(
-        () => initialDraft.draft.payloadText
-    );
+    const draft = useRestoredManualDraft(defaultDraft);
+    const { values, setValues, valuesEdited, setValuesEdited, payloadPresetId, payloadText } = draft;
     useEffect(() => {
         if (!valuesEdited) {
-            setValues(defaultValues);
+            setValues(defaultDraft.values);
         }
-    }, [defaultValues, valuesEdited]);
+    }, [defaultDraft.values, valuesEdited]);
     useManualAuthenticatedValues({ ...options, setValues });
     useManualGlobalValues({ ...options, setValues });
     useManualDraftPersistence({ state, authSession, values, payloadPresetId, payloadText });
@@ -58,20 +39,58 @@ export function useManualWorkbenchDraft(options: ManualRallarWorkbenchOptions) {
     };
 
     const selectPreset = (presetId: string): void => {
-        setPayloadPresetId(presetId);
+        draft.setPayloadPresetId(presetId);
         const preset = MANUAL_PAYLOAD_PRESETS.find(
             (entry) => entry.presetId === presetId
         );
         if (preset) {
-            setPayloadText(JSON.stringify(preset.payload, null, 2));
+            draft.setPayloadText(JSON.stringify(preset.payload, null, 2));
         }
     };
 
-    return { values, payloadPresetId, payloadText, setPayloadPresetId, setPayloadText, updateValue, selectPreset };
+    return {
+        values,
+        payloadPresetId,
+        payloadText,
+        setPayloadPresetId: draft.setPayloadPresetId,
+        setPayloadText: draft.setPayloadText,
+        updateValue,
+        selectPreset
+    };
+}
+interface RestoredManualDraft extends ManualWorkbenchDraft {
+    readonly setValues: React.Dispatch<React.SetStateAction<ManualWorkbenchValues>>;
+    readonly valuesEdited: boolean;
+    readonly setValuesEdited: React.Dispatch<React.SetStateAction<boolean>>;
+    readonly setPayloadPresetId: React.Dispatch<React.SetStateAction<string>>;
+    readonly setPayloadText: React.Dispatch<React.SetStateAction<string>>;
+}
+function useRestoredManualDraft(defaultDraft: ManualWorkbenchDraft): RestoredManualDraft {
+    const [initialDraft] = useState(() => {
+        const stored = readManualWorkbenchDraft(browserUiStorage(), defaultDraft);
+        return {
+            draft: stored ?? defaultDraft,
+            restored: Boolean(stored)
+        };
+    });
+    const [values, setValues] = useState<ManualWorkbenchValues>(() => initialDraft.draft.values);
+    const [valuesEdited, setValuesEdited] = useState(initialDraft.restored);
+    const [payloadPresetId, setPayloadPresetId] = useState(initialDraft.draft.payloadPresetId);
+    const [payloadText, setPayloadText] = useState(() => initialDraft.draft.payloadText);
+    return {
+        values,
+        setValues,
+        valuesEdited,
+        setValuesEdited,
+        payloadPresetId,
+        setPayloadPresetId,
+        payloadText,
+        setPayloadText
+    };
 }
 function useManualDefaultDraft({ state, bootstrap, authSession, globalValues }: ManualRallarWorkbenchOptions) {
     const defaultValues = useMemo(
-        () => manualValuesFromState(state, bootstrap, authSession, globalValues),
+        () => toManualWorkbenchValues({ state, bootstrap, authSession, globalValues }),
         [
             authSession,
             bootstrap,

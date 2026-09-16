@@ -183,8 +183,8 @@ describe('rallar-black-box flow builder helpers', () => {
                 }
             }
         });
-        expect((scenario.steps as Array<{ type: string; }>).map((step) => step.type)).toContain('rtc.send');
-        expect((scenario.steps as Array<{ type: string; }>).map((step) => step.type)).toContain('ws.open');
+        expect(scenario.steps.map((step) => step.type)).toContain('rtc.send');
+        expect(scenario.steps.map((step) => step.type)).toContain('ws.open');
     });
 
     it('parses editable flow JSON and appends step templates', () => {
