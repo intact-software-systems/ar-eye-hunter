@@ -2289,6 +2289,81 @@ moved or changed test.
         "requiredConstraint": "The retry after a rejection issues a second request with the request id of the first attempt.",
         "failureRationale": "The caller sees the same rejection and session either way; only the two recorded requests show that the retry kept its idempotency key."
       }
+    },
+    {
+      "id": "recipe-console-artifact-bytes-off-main-thread",
+      "domain": "Recipe Console artifact export transfer",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Exporting run artifact bytes hands the response body to the caller as bytes and never parses the success body as text on the main thread. Executable assertion: \"returns bounded artifact response bytes without parsing the success body on the main thread\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts#returns bounded artifact response bytes without parsing the success body on the main thread",
+      "coverageRelation": "The test executes exportRunArtifactBytes against a response whose text reader throws; the returned bytes are the transfer the analyze worker decodes off the main thread.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Control API artifact response text reader",
+        "observableEffect": "No call to the response text reader while the bytes are returned.",
+        "requiredConstraint": "A successful artifact export must read the body only as bytes.",
+        "failureRationale": "The returned bytes are identical when the body is also parsed as text, so only the absent text call shows the main thread skipped a multi-megabyte parse."
+      }
+    },
+    {
+      "id": "recipe-console-artifact-oversize-before-body",
+      "domain": "Recipe Console artifact export transfer",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An artifact response that declares a length over the transfer limit is rejected before its body is read. Executable assertion: \"rejects an oversized declared raw artifact response before reading its body\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts#rejects an oversized declared raw artifact response before reading its body",
+      "coverageRelation": "The test executes exportRunArtifactBytes against a response declaring 65 MiB; the protocol rejection and the unread body are the transfer-limit contract the Monitor and Analyze workspaces rely on.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Control API artifact response byte reader",
+        "observableEffect": "No call to the response byte reader when the declared length exceeds the limit.",
+        "requiredConstraint": "The transfer limit is enforced from the declared length before any body bytes are buffered.",
+        "failureRationale": "The rejection message is the same whether or not the body was buffered first; only the absent byte-reader call shows the oversized body never entered memory."
+      }
+    },
+    {
+      "id": "recipe-console-monitor-derives-once",
+      "domain": "Recipe Console monitor derivation",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "One coherent monitor snapshot derives the shared monitor and its analysis report exactly once, and the report reuses that monitor. Executable assertion: \"projects complete current truth and derives bounded monitor/report/verdict once\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts#projects complete current truth and derives bounded monitor/report/verdict once",
+      "coverageRelation": "The test reconciles a live snapshot and derives the workspace model; the spied shared derivations and the report's derivation work are the reuse contract that keeps large runs responsive.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Shared distributed run monitor and analysis report derivation",
+        "observableEffect": "One monitor derivation and one report derivation per coherent snapshot.",
+        "requiredConstraint": "The workspace model must not re-derive the monitor or the report for the same snapshot.",
+        "failureRationale": "A second derivation yields an equal model, so only the call counts show the workspace did not repeat a derivation that scales with every command, result and event."
+      }
+    },
+    {
+      "id": "recipe-console-tune-validates-once",
+      "domain": "Recipe Console tune run catalog",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Building the tune run catalog validates each selected control manifest and the retained facade manifest once, and deriving the workspace source reuses those validations. Executable assertion: \"validates two selected control manifests and one retained facade exactly once\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-tune-facade-authority.test.ts#validates two selected control manifests and one retained facade exactly once",
+      "coverageRelation": "The test builds the catalog and derives the workspace source from it; the spied manifest validation and the catalog work counts are the reuse contract between catalog and source model.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Shared distributed run manifest validation",
+        "observableEffect": "Three manifest validations after building the catalog, and still three after deriving the source model.",
+        "requiredConstraint": "Deriving the source model must reuse the catalog's validations instead of validating again.",
+        "failureRationale": "Repeated validation produces the same catalog and source, so only the call count shows schema validation of large manifests was not repeated."
+      }
+    },
+    {
+      "id": "recipe-console-single-poll-timer",
+      "domain": "Recipe Console control polling",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Recipe Console owns one control poll timer across its views and clears it when it unmounts. Executable assertion: \"owns one poll timer across views and clears it when Recipe Console unmounts\".",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-control.spec.ts#owns one poll timer across views and clears it when Recipe Console unmounts",
+      "coverageRelation": "The browser test drives view changes and unmount in the real application; the instrumented timer registry is the only view of the scheduling port the control connection owns.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser timer scheduling used by the control connection poll",
+        "observableEffect": "One active poll timer while mounted across views, and none after unmount.",
+        "requiredConstraint": "Switching views must not start a second poll loop, and unmount must clear the loop.",
+        "failureRationale": "Rendered control state looks the same with duplicate or leaked poll loops; only the active timer registry shows the extra control-server traffic and the leak."
+      }
     }
   ],
   "entries": [
@@ -5184,6 +5259,83 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "Both attempts must reach the consume port for the recorded request ids to show that the retry reused one idempotency key.",
       "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#reuses the request ID after a rejected consume response"
+    },
+    {
+      "id": "test-structure-coupling-bc36af60755443e2",
+      "path": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-artifact-bytes-off-main-thread",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent text-reader call is the only witness that the success body was not parsed on the main thread.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts#returns bounded artifact response bytes without parsing the success body on the main thread"
+    },
+    {
+      "id": "test-structure-coupling-dfba052fa9aef8b5",
+      "path": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-artifact-oversize-before-body",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent byte-reader call is the only witness that the declared oversize was rejected before the body was buffered.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-api.test.ts#rejects an oversized declared raw artifact response before reading its body"
+    },
+    {
+      "id": "test-structure-coupling-21ddfa56d2936820",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-monitor-derives-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single monitor derivation call shows the snapshot's monitor was derived once rather than per projection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts#projects complete current truth and derives bounded monitor/report/verdict once"
+    },
+    {
+      "id": "test-structure-coupling-117d6babbcf4dc73",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-monitor-derives-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single report derivation call shows the report was derived once and, with the next assertion, from the same monitor.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts#projects complete current truth and derives bounded monitor/report/verdict once"
+    },
+    {
+      "id": "test-structure-coupling-67402626a48f5c2b",
+      "path": "packages/tests/rallar-black-box/recipe-console-tune-facade-authority.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-tune-validates-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Three validation calls after building the catalog show each selected manifest and the retained facade were validated once.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-tune-facade-authority.test.ts#validates two selected control manifests and one retained facade exactly once"
+    },
+    {
+      "id": "test-structure-coupling-09b5088d5dc1c6ea",
+      "path": "packages/tests/rallar-black-box/recipe-console-tune-facade-authority.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-tune-validates-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "An unchanged count after deriving the source model shows the source model reused the catalog's validations.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-tune-facade-authority.test.ts#validates two selected control manifests and one retained facade exactly once"
+    },
+    {
+      "id": "test-structure-coupling-35b58397e8dffb2c",
+      "path": "tests/playwright/rallar-black-box/recipe-console-control.spec.ts",
+      "kind": "platform-scheduling-or-history-probe",
+      "contract": "recipe-console-single-poll-timer",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The instrumented setTimeout and clearTimeout registry is the only witness of how many poll timers are active before and after unmount.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-control.spec.ts#owns one poll timer across views and clears it when Recipe Console unmounts"
     }
   ]
 }
