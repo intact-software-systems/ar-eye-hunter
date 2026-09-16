@@ -90,22 +90,6 @@ const quickViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
     import.meta.url
 );
-const roomsClientsRequestSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts',
-    import.meta.url
-);
-const roomsClientsControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts',
-    import.meta.url
-);
-const roomsClientsViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsView.tsx',
-    import.meta.url
-);
-const roomsClientsPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx',
-    import.meta.url
-);
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -244,28 +228,6 @@ function diagnosticOwnerSources(source: string): Readonly<{
     };
 }
 
-function roomsClientsOwnerSource(source: string): string {
-    const extracted = [
-        roomsClientsRequestSourcePath,
-        roomsClientsControllerSourcePath,
-        roomsClientsViewSourcePath,
-        roomsClientsPanelSourcePath
-    ].every((path) => existsSync(path));
-    const fallback = extracted
-        ? ''
-        : sourceBetween(
-            source,
-            'function RoomsClientsPanel',
-            'function RallarServerRequestFeedbackPanel'
-        );
-    return [
-        sourceOrFallback(roomsClientsRequestSourcePath, fallback),
-        sourceOrFallback(roomsClientsControllerSourcePath, ''),
-        sourceOrFallback(roomsClientsViewSourcePath, ''),
-        sourceOrFallback(roomsClientsPanelSourcePath, '')
-    ].join('\n');
-}
-
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map((tab) => tab.id)).not.toEqual(
@@ -351,11 +313,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
             actionFeedbackPanelSourcePath,
             actionFeedbackPanelFallback
         );
-        const roomsClientsPanel = roomsClientsOwnerSource(source);
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
-        expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
         expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
     });
 

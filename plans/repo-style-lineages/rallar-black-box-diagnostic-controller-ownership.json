@@ -62,6 +62,27 @@
       "targets": [
         "apps/rallar-black-box/src/legacy/diagnostics/shared/to-rest-action-log-entry.ts"
       ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts",
+        "blob": "ff4714bc207876b6927556534e3ce1331b796e63"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/to-rooms-clients-rows.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts",
+        "blob": "eaf80ad2a0c99a31f2eb9035e659a6288226bf5c"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/to-rooms-clients-preset-request-input.ts"
+      ]
     }
   ]
 }

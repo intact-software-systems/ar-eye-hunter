@@ -1,3 +1,7 @@
+import type { RallarServerWorkbenchVariables } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import type { CommandCenterActionFeedback } from '../shared/action-feedback.ts';
+import type { CommandCenterRestActionLog } from '../shared/to-rest-action-log-entry.ts';
+
 export type RoomsClientsActionId =
     | 'refresh-state'
     | 'list-groups'
@@ -17,48 +21,52 @@ export type RoomsClientsActionId =
     | 'client-events'
     | 'client-events-page';
 
-export type RoomsClientsAction = Readonly<{
-    actionId: RoomsClientsActionId;
-    label: string;
-    presetId?: string;
-    query?: Readonly<Record<string, unknown>>;
-}>;
+export interface RoomsClientsAction {
+    readonly actionId: RoomsClientsActionId;
+    readonly label: string;
+    /** Absent for an action that composes other actions instead of sending one preset. */
+    readonly presetId?: string;
+    /** Absent for a preset sent without query parameters. */
+    readonly query?: Readonly<Record<string, number | string>>;
+}
 
-export type RoomsClientsActionCategory = Readonly<{
-    categoryId: 'groups' | 'clients';
-    title: string;
-    description: string;
-    actions: readonly RoomsClientsAction[];
-}>;
+export interface RoomsClientsActionCategory {
+    readonly categoryId: 'groups' | 'clients';
+    readonly title: string;
+    readonly description: string;
+    readonly actions: readonly RoomsClientsAction[];
+}
 
-export type RoomStateRow = Readonly<{
-    rowId: string;
-    groupId: string;
-    displayName: string;
-    status: string;
-    members: number;
-    online: number;
-    sessions: readonly string[];
-    createdAtEpochMs?: number;
-    updatedAtEpochMs?: number;
-    activeAtEpochMs?: number;
-    mutatedAtEpochMs?: number;
-    snapshotVersion?: number;
-}>;
+/** A group snapshot row; each time and version is absent when the snapshot does not carry it. */
+export interface RoomStateRow {
+    readonly rowId: string;
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly status: string;
+    readonly members: number;
+    readonly online: number;
+    readonly sessions: readonly string[];
+    readonly createdAtEpochMs?: number;
+    readonly updatedAtEpochMs?: number;
+    readonly activeAtEpochMs?: number;
+    readonly mutatedAtEpochMs?: number;
+    readonly snapshotVersion?: number;
+}
 
-export type ClientStateRow = Readonly<{
-    rowId: string;
-    principalId: string;
-    username: string;
-    status: string;
-    online: string;
-    sessions: readonly string[];
-    createdAtEpochMs?: number;
-    updatedAtEpochMs?: number;
-    activeAtEpochMs?: number;
-    mutatedAtEpochMs?: number;
-    snapshotVersion?: number;
-}>;
+/** A client snapshot row; each time and version is absent when the snapshot does not carry it. */
+export interface ClientStateRow {
+    readonly rowId: string;
+    readonly principalId: string;
+    readonly username: string;
+    readonly status: string;
+    readonly online: string;
+    readonly sessions: readonly string[];
+    readonly createdAtEpochMs?: number;
+    readonly updatedAtEpochMs?: number;
+    readonly activeAtEpochMs?: number;
+    readonly mutatedAtEpochMs?: number;
+    readonly snapshotVersion?: number;
+}
 
 export type GroupSortId =
     | 'active-desc'
@@ -78,18 +86,75 @@ export type ClientSortId =
     | 'name-asc'
     | 'status-asc';
 
-export type StateEventRow = Readonly<{
-    rowId: string;
-    eventType: string;
-    subject: string;
-    snapshotVersion: string;
-    atEpochMs?: number;
-}>;
+export interface StateEventRow {
+    readonly rowId: string;
+    readonly eventType: string;
+    readonly subject: string;
+    readonly snapshotVersion: string;
+    /** Absent for an event without an occurrence time. */
+    readonly atEpochMs?: number;
+}
 
-export const GROUP_SORT_OPTIONS: readonly Readonly<{
-    value: GroupSortId;
-    label: string;
-}>[] = [
+export type RoomsClientsDirectAction = 'refresh' | 'create' | 'join' | 'leave';
+
+export interface RoomsClientsDraftModel {
+    readonly apiBaseUrl: string;
+    setApiBaseUrl(value: string): void;
+    readonly variables: RallarServerWorkbenchVariables;
+    updateVariable<K extends keyof RallarServerWorkbenchVariables>(
+        key: K,
+        value: RallarServerWorkbenchVariables[K]
+    ): void;
+    readonly timeoutMs: number;
+    setTimeoutMs(value: number): void;
+    readonly onlyGroupsWithMembers: boolean;
+    setOnlyGroupsWithMembers(value: boolean): void;
+    readonly onlyOnlineClients: boolean;
+    setOnlyOnlineClients(value: boolean): void;
+    readonly groupSort: GroupSortId;
+    setGroupSort(value: GroupSortId): void;
+    readonly clientSort: ClientSortId;
+    setClientSort(value: ClientSortId): void;
+    readonly expectedOtherClient: string;
+    setExpectedOtherClient(value: string): void;
+}
+
+export interface RoomsClientsActivity {
+    readonly busyAction: string | undefined;
+    readonly localError: string | undefined;
+    readonly actionFeedback: CommandCenterActionFeedback;
+    readonly actions: readonly CommandCenterRestActionLog[];
+}
+
+export interface RoomsClientsRows {
+    readonly groupRows: readonly RoomStateRow[];
+    readonly clientRows: readonly ClientStateRow[];
+    readonly visibleGroupRows: readonly RoomStateRow[];
+    readonly visibleClientRows: readonly ClientStateRow[];
+    readonly sortedGroupRows: readonly RoomStateRow[];
+    readonly sortedClientRows: readonly ClientStateRow[];
+    readonly stateEvents: readonly StateEventRow[];
+    readonly expectedClients: readonly string[];
+    readonly observedClients: readonly string[];
+    readonly missingClients: readonly string[];
+    readonly currentSessionInGroup: boolean;
+    readonly currentClientOnline: boolean;
+    readonly expectedOtherClientVisible: boolean;
+}
+
+export interface RoomsClientsOperations {
+    runPresetAction(action: RoomsClientsAction): Promise<void>;
+    refreshState(): Promise<void>;
+    runDirectRoomsAction(action: RoomsClientsDirectAction): Promise<void>;
+    copyStateRecipe(): void;
+}
+
+export interface RoomsClientsSortOption<T extends GroupSortId | ClientSortId> {
+    readonly value: T;
+    readonly label: string;
+}
+
+export const GROUP_SORT_OPTIONS: readonly RoomsClientsSortOption<GroupSortId>[] = [
     { value: 'active-desc', label: 'Recently active' },
     { value: 'mutated-desc', label: 'Mutated newest' },
     { value: 'created-desc', label: 'Created newest' },
@@ -99,10 +164,7 @@ export const GROUP_SORT_OPTIONS: readonly Readonly<{
     { value: 'status-asc', label: 'Status' }
 ];
 
-export const CLIENT_SORT_OPTIONS: readonly Readonly<{
-    value: ClientSortId;
-    label: string;
-}>[] = [
+export const CLIENT_SORT_OPTIONS: readonly RoomsClientsSortOption<ClientSortId>[] = [
     { value: 'online-active-desc', label: 'Online first' },
     { value: 'active-desc', label: 'Recently active' },
     { value: 'mutated-desc', label: 'Mutated newest' },

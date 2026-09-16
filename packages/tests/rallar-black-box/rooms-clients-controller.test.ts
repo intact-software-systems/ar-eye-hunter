@@ -16,6 +16,7 @@ import {
     type RoomsClientsAction,
     type RoomsClientsActionId
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-contracts.ts';
+import { RoomsClientsPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx';
 import {
     useRoomsClientsController,
     type RoomsClientsControllerModel,
@@ -457,6 +458,30 @@ describe('rooms and clients controller preservation', () => {
                 message: 'Direct room actions require provider=browser-rallar.'
             },
             events: []
+        });
+    });
+
+    it('shows the refresh outcome in the rendered panel feedback', async () => {
+        await act(async () =>
+            root.render(createElement(RoomsClientsPanel, {
+                state,
+                bootstrap: resolveRallarBlackBoxBootstrapConfig('?provider=browser-rallar', {}, ''),
+                authSession,
+                globalValues
+            }))
+        );
+        const feedback = () => container.querySelector('[aria-live="polite"]')?.textContent ?? '';
+        const before = feedback().includes('No action run yet');
+        const refresh = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Refresh state');
+        await act(async () => refresh?.click());
+        for (let attempt = 0; attempt < 20 && !feedback().includes('5 state requests completed.'); attempt += 1) {
+            await act(async () => await new Promise((resolve) => setTimeout(resolve, 0)));
+        }
+
+        expect({ before, after: feedback().includes('5 state requests completed.'), requests: requests.length }).toEqual({
+            before: true,
+            after: true,
+            requests: 5
         });
     });
 
