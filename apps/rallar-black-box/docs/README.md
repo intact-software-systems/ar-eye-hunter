@@ -333,9 +333,15 @@ actual shell execution to explicit local tooling or the control server.
   header injection, response parsing, redaction, cURL export, black-box command
   export, collection templates, variable substitution, assertions, extraction,
   and collection recipe export for the Rallar Server tab.
-- `src/flow-builder.ts`: flow templates, variable substitution, SPA recipe
-  export, runner scenario export, and flow-step insertion for the Flow Builder
-  tab.
+- `src/flow-builder/`: the Flow Builder tab owners. `flow-builder-contracts.ts`
+  holds the authored flow and template contracts, `flow-builder-templates.ts`
+  the templates, `flow-builder-steps.ts` flow-step insertion,
+  `flow-builder-variables.ts` variable substitution,
+  `decode-flow-builder-definition-text.ts` and `to-flow-builder-text.ts` the
+  flow JSON codec, `to-flow-builder-recipe.ts` SPA recipe export, and
+  `to-flow-builder-runner-scenario.ts` runner scenario export.
+  `src/legacy/runner/builder/` composes them into the tab controller, its
+  actions, and its views.
 - `src/control-run-manager.ts`: typed control-server snapshot loading, run/agent
   row derivation, bulk enqueue, reset/delete, artifact export loading,
   JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
@@ -366,8 +372,13 @@ actual shell execution to explicit local tooling or the control server.
 - `src/control-client.ts`: browser WebSocket control client.
 - `packages/shared-test/rallar-bb-test/control-protocol.ts`: protocol envelopes
   and command validation consumed by the app and control server.
-- `src/manual-workbench.ts`: manual UI command builders and received-message
-  derivation.
+- `src/manual-workbench.ts`: Manual Rallar values, payload presets, payload
+  decoding, recipe text, and received-message derivation.
+  `src/manual-workbench/` owns the command builders
+  (`manual-workbench-commands.ts`, `manual-command-fields.ts`) and the RTC
+  delivery-matrix and not-yet-in-sync probes (`manual-rtc-probe-commands.ts`);
+  `src/legacy/runner/manual/` composes them into the workbench hooks, actions,
+  and views.
 - `src/rtc-diagnostics.ts`: event-derived RTC diagnostics.
 - `src/topology-graph.ts`: graphology topology derivation used by the Sigma
   view.
