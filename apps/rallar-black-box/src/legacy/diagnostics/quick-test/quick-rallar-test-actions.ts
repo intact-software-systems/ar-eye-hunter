@@ -5,7 +5,6 @@ import type {
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as React from 'react';
-import { copyTextToClipboard } from '../../../copy-text-to-clipboard.ts';
 import {
     createDirectRallarRuntimeEvent,
     runDirectRallarGroupCreate,
@@ -20,6 +19,7 @@ import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade
 import { recordValue } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { stringValue } from '../../shared/string-value.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import type {
     QuickRallarReceivedMessageRow,
@@ -59,12 +59,12 @@ export namespace QuickRallarTestActions {
         } | { readonly ok: false; readonly error: string; };
         readonly lifetime: DiagnosticControllerLifecycle;
     }
-    export interface Operation {
+    export interface Operation<TResult extends DirectRallarOperationResult> {
         readonly busyLabel: string;
-        readonly action: () => Promise<DirectRallarOperationResult>;
+        readonly action: () => Promise<TResult>;
         readonly completedAction: string;
         readonly failedAction: string;
-        readonly onCompleted?: (result: DirectRallarOperationResult) => void;
+        readonly onCompleted?: (result: TResult) => void;
     }
 }
 export class QuickRallarTestActions {
@@ -138,8 +138,8 @@ export class QuickRallarTestActions {
             this.input.setLocalError(result.error?.message ?? failedAction);
         }
     };
-    public readonly runOperation = async (
-        { busyLabel, action, completedAction, failedAction, onCompleted }: QuickRallarTestActions.Operation
+    public readonly runOperation = async <TResult extends DirectRallarOperationResult>(
+        { busyLabel, action, completedAction, failedAction, onCompleted }: QuickRallarTestActions.Operation<TResult>
     ): Promise<void> => {
         const signal = this.input.lifetime.signal;
         if (signal.aborted) {
@@ -207,8 +207,7 @@ export class QuickRallarTestActions {
             }
         );
     public readonly subscribeWs = async (): Promise<void> => {
-        const signal = this.input.lifetime.signal;
-        if (signal.aborted) {
+        if (this.input.lifetime.signal.aborted) {
             return;
         }
         if (!this.input.activeTypeId) {
@@ -219,52 +218,31 @@ export class QuickRallarTestActions {
             this.input.setLocalError('WS subscribe requires a group.');
             return;
         }
-        this.input.setBusyAction('Subscribe WS');
-        this.input.setLocalError(undefined);
         this.input.subscriptionRef.current?.unsubscribe();
         this.input.setSubscription(undefined);
         const context = this.operationContext();
-        const selector = {
-            typeId: this.input.activeTypeId,
-            ...(this.input.activeTopicId ? { topicId: this.input.activeTopicId } : {})
-        };
-        try {
-            const result = await runDirectRallarWsSubscribe(
-                {
+        await this.runOperation({
+            busyLabel: 'Subscribe WS',
+            action: () =>
+                runDirectRallarWsSubscribe({
                     context: context,
-                    selector: selector,
+                    selector: {
+                        typeId: this.input.activeTypeId,
+                        ...(this.input.activeTopicId ? { topicId: this.input.activeTopicId } : {})
+                    },
                     handler: (message) => this.receiveMessage(context, message),
                     loadFacade: loadBrowserRallarFacade,
-                    signal: signal,
+                    signal: this.input.lifetime.signal,
                     subscriptions: this.input.lifetime.subscriptions
+                }),
+            completedAction: 'Quick Test WS subscribed',
+            failedAction: 'Quick Test WS subscribe failed',
+            onCompleted: (result) => {
+                if (result.unsubscribe) {
+                    this.publishSubscription(result.unsubscribe);
                 }
-            );
-            if (signal.aborted) {
-                return;
             }
-            this.recordDirectResult(
-                result,
-                'Quick Test WS subscribed',
-                'Quick Test WS subscribe failed'
-            );
-            if (result.status === 'completed' && result.unsubscribe) {
-                this.publishSubscription(result.unsubscribe);
-            }
-        }
-        catch (error) {
-            if (signal.aborted) {
-                return;
-            }
-            this.input.setLocalError(
-                error instanceof Error ? error.message : String(error)
-            );
-        }
-        finally {
-            if (signal.aborted) {
-                return;
-            }
-            this.input.setBusyAction(undefined);
-        }
+        });
     };
     public readonly unsubscribeWs = (): void => {
         this.input.subscriptionRef.current?.unsubscribe();
@@ -406,13 +384,13 @@ export class QuickRallarTestActions {
 
     private async copyText(text: string): Promise<void> {
         const signal = this.input.lifetime.signal;
-        if (!(!signal.aborted)) {
+        if (signal.aborted) {
             return;
         }
         this.input.setLocalError(undefined);
-        const error = await copyTextToClipboard(text);
-        if (!signal.aborted && error) {
-            this.input.setLocalError(error);
+        const written = await writeTextToClipboard(text);
+        if (!signal.aborted) {
+            written.foldLeft(this.input.setLocalError);
         }
     }
 

@@ -1,6 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import { copyTextToClipboard } from '../../../copy-text-to-clipboard.ts';
 import {
     buildManualWorkbenchCommands,
     manualRtcDeliveryMatrixCommands,
@@ -13,6 +12,7 @@ import {
 } from '../../../manual-workbench.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import { actionLabel } from './manual-workbench-defaults.ts';
 
 import type * as React from 'react';
@@ -201,9 +201,9 @@ export class ManualWorkbenchActions {
             return;
         }
         this.input.setLocalError(undefined);
-        const error = await copyTextToClipboard(text);
-        if (this.input.lifetime.active && error) {
-            this.input.setLocalError(error);
+        const written = await writeTextToClipboard(text);
+        if (this.input.lifetime.active) {
+            written.foldLeft(this.input.setLocalError);
         }
     }
 }
