@@ -16,6 +16,7 @@ import {
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import type { WebSocketRecordedEvent } from './observe-raw-web-socket.ts';
+import { toWebSocketCommandCenterRecipeText } from './to-web-socket-command-center-recipe-text.ts';
 import type {
     UseWebSocketCommandCenterControllerInput,
     WebSocketCommandCenterValues,
@@ -24,7 +25,6 @@ import type {
     WebSocketSubscriptionState
 } from './websocket-contracts.ts';
 import { WEBSOCKET_PAYLOAD_PRESETS, webSocketPayloadPresetText } from './websocket-presets.ts';
-import { webSocketCommandCenterRecipe } from './websocket-recipes.ts';
 
 export namespace WebSocketCommandCenterActions {
     export interface Input extends UseWebSocketCommandCenterControllerInput {
@@ -257,7 +257,7 @@ export class WebSocketCommandCenterActions {
             return;
         }
         void navigator.clipboard?.writeText(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values: this.input.values,
                 payload: this.input.payloadResult.value,
                 bootstrap: this.input.bootstrap,

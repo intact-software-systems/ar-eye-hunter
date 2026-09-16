@@ -1,5 +1,7 @@
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { describe, expect, it } from 'vitest';
+import { toWebSocketCommandCenterRecipeText } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/to-web-socket-command-center-recipe-text.ts';
 import type { WebSocketCommandCenterValues, WebSocketDiagnostic } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
 import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
 import {
@@ -8,7 +10,6 @@ import {
     webSocketPayloadPresetById,
     webSocketPayloadPresetText
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts';
-import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts';
 import {
     defaultWebSocketApiUrl,
     defaultWebSocketScope,
@@ -211,15 +212,16 @@ describe('WebSocket command-center presets and routing', () => {
     it('normalizes untyped payloads while preserving typed routing overrides through copied recipes', () => {
         const recipeFor = (
             nextValues: WebSocketCommandCenterValues,
-            payload: unknown
+            payload: RallarMessagePayload
         ): Record<string, unknown> => {
             const recipe = JSON.parse(
-                webSocketCommandCenterRecipe({
+                toWebSocketCommandCenterRecipeText({
                     values: nextValues,
                     payload,
                     bootstrap,
                     providerMode: 'real',
-                    sequence: 1
+                    sequence: 1,
+                    includeRtcParity: false
                 })
             ) as { commands: readonly Record<string, unknown>[]; };
             return recipe.commands.find((command) => command.kind === 'ws.send') ?? {};
@@ -356,12 +358,13 @@ describe('WebSocket command-center presets and routing', () => {
 describe('WebSocket command-center copied recipes', () => {
     it('builds configure/open/send/close commands without changing backend contracts', () => {
         const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values: { ...values, closeCode: Number.NaN },
                 bootstrap,
                 providerMode: 'browser-rallar',
                 authSession,
                 sequence: 7,
+                includeRtcParity: false,
                 payload: {
                     deliveryMode: 'broadcast',
                     text: 'hello from rallar-black-box'
@@ -434,7 +437,7 @@ describe('WebSocket command-center copied recipes', () => {
 
     it.each([false, true])('copies a strict version-1 recipe with RTC parity %s', (includeRtcParity) => {
         const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values,
                 payload: { text: 'strict' },
                 bootstrap,
@@ -451,7 +454,7 @@ describe('WebSocket command-center copied recipes', () => {
 
     it('keeps copied recipe command order, parity commands, and secret redaction exact', () => {
         const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values,
                 payload: { accessToken: 'access-secret', text: 'parity' },
                 bootstrap: { ...bootstrap, rallarPassword: 'password-secret' },
