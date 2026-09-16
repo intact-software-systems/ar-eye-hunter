@@ -712,7 +712,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         group: {
                             ...groupSnapshot.group,
                             groupId,
-                            displayName: typeof input.displayName === 'string' ? input.displayName : undefined
+                            displayName: typeof input.displayName === 'string' ? input.displayName : groupId
                         }
                     };
                 },
@@ -740,7 +740,8 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                             typeId: sentLifecycle.typeId,
                             lifecycle: () => sentLifecycle,
                             onEvent: () => () => undefined,
-                            wait: async () => ({ status: 'settled', lifecycle: sentLifecycle })
+                            wait: async () => ({ status: 'settled', lifecycle: sentLifecycle }),
+                            cancel: () => undefined
                         };
                     },
                     onMessage: () => () => undefined
@@ -1751,7 +1752,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                                 typeId: sentLifecycle.typeId,
                                 lifecycle: () => sentLifecycle,
                                 onEvent: () => () => undefined,
-                                wait: async () => ({ status: 'settled', lifecycle: sentLifecycle })
+                                wait: async () => ({ status: 'settled', lifecycle: sentLifecycle }),
+                                cancel: () => undefined
                             };
                         },
                         onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
