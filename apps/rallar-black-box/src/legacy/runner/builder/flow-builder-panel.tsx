@@ -1,6 +1,6 @@
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
-import { FlowBuilderEditor } from './FlowBuilderEditor.tsx';
+import { FlowBuilderEditor } from './flow-builder-editor.tsx';
 import { FlowBuilderPreviews } from './FlowBuilderPreviews.tsx';
 import { useFlowBuilderController, type UseFlowBuilderControllerInput } from './use-flow-builder-controller.ts';
 

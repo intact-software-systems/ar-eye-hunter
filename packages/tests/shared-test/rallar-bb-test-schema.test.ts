@@ -3,7 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { controlOpenApiSpec } from '../../../apps/rallar-black-box-control-server/src/routes/swagger-routes.ts';
-import { buildFlowBuilderRecipe, buildFlowBuilderRunnerScenario, FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder.ts';
+import { FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-templates.ts';
+import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
+import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
 import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
@@ -187,9 +189,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));
         }
 
-        const flow = FLOW_BUILDER_TEMPLATES[0].flow;
-        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, buildFlowBuilderRecipe(flow));
-        expectValid(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, buildFlowBuilderRunnerScenario(flow));
+        const flowRecipeInput = { flow: FLOW_BUILDER_TEMPLATES[0].flow, overrides: {}, createRequestId: () => 'schema-request' };
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toFlowBuilderRecipe(flowRecipeInput));
+        expectValid(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, toFlowBuilderRunnerScenario(flowRecipeInput));
 
         const manualEntry: ManualActionHistoryEntry = {
             actionId: 'action-1',

@@ -24,7 +24,7 @@ const RunnerFleetPanel = lazy(() =>
     }))
 );
 const FlowBuilderPanel = lazy(() =>
-    import('../../runner/builder/FlowBuilderPanel.tsx').then((module) => ({
+    import('../../runner/builder/flow-builder-panel.tsx').then((module) => ({
         default: module.FlowBuilderPanel
     }))
 );

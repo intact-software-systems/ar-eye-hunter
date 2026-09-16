@@ -119,7 +119,7 @@ const LAZY_TARGETS = [
     ['runner.recipes', 'RunnerRecipesPanel'],
     ['runner.runs', 'RunnerRunsPanel'],
     ['runner.fleet', 'RunnerFleetPanel'],
-    ['runner.builder', 'FlowBuilderPanel'],
+    ['runner.builder', 'flow-builder-panel'],
     ['legacy.distributed-recipes', 'DistributedRecipesPanel'],
     ['legacy.run-manager', 'RunManagerPanel'],
     ['legacy.shared-test-catalog', 'SharedTestPanel'],

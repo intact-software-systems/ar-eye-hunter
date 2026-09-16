@@ -15,7 +15,7 @@ import { Header } from './LegacyRunHeader.tsx';
 import { DiagnosticEvidenceTabPanels } from './tabs/DiagnosticEvidenceTabPanels.tsx';
 import { DirectConnectionTabPanels } from './tabs/direct-connection-tab-panels.tsx';
 import { DirectResourceTabPanels } from './tabs/DirectResourceTabPanels.tsx';
-import { RunnerWorkspaceTabPanels } from './tabs/RunnerWorkspaceTabPanels.tsx';
+import { RunnerWorkspaceTabPanels } from './tabs/runner-workspace-tab-panels.tsx';
 
 export function LegacyAppShell({
     runtime,

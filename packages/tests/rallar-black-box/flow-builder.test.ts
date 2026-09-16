@@ -4,17 +4,17 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parseFlowBuilderDefinition } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-definition-text.ts';
+import { appendFlowBuilderStep } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-steps.ts';
 import {
-    addFlowBuilderStep,
-    applyFlowBuilderVariables,
-    buildFlowBuilderRecipe,
-    buildFlowBuilderRunnerScenario,
     FLOW_BUILDER_TEMPLATES,
-    parseFlowBuilderDefinition,
-    templateFlowBuilderText
-} from '../../../apps/rallar-black-box/src/flow-builder.ts';
+    toTemplateFlowBuilderText
+} from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-templates.ts';
+import { toSubstitutedFlowBuilderValue } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-variables.ts';
+import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
+import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
+import { FlowBuilderPanel } from '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-panel.tsx';
 import { flowBuilderVariablesFromGlobalValues } from '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts';
-import { FlowBuilderPanel } from '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx';
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -57,7 +57,7 @@ describe('rallar-black-box flow builder helpers', () => {
     });
 
     it('substitutes string and structured variables without consuming auth placeholders', () => {
-        const substituted = applyFlowBuilderVariables({
+        const substituted = toSubstitutedFlowBuilderValue({
             path: '/api/state/apps/{{applicationId}}/workspaces/${workspaceId}/groups/{groupId}',
             payload: '{{payload}}',
             authUrl: '{auth.sessionId}'
@@ -81,13 +81,19 @@ describe('rallar-black-box flow builder helpers', () => {
 
     it('builds a SPA recipe from the default flow template', () => {
         const flow = FLOW_BUILDER_TEMPLATES[0].flow;
-        const recipe = buildFlowBuilderRecipe(flow, {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'group-1',
-            payload: {
-                text: 'hello flow'
-            }
+        let requestCount = 0;
+        const createRequestId = () => `request-${++requestCount}`;
+        const recipe = toFlowBuilderRecipe({
+            flow,
+            overrides: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'group-1',
+                payload: {
+                    text: 'hello flow'
+                }
+            },
+            createRequestId
         });
 
         expect(recipe.recipeId).toBe('flow-auth-rest-ws-rtc');
@@ -106,9 +112,7 @@ describe('rallar-black-box flow builder helpers', () => {
         expect(recipe.commands[2]).toMatchObject({
             kind: 'http.request',
             request: {
-                path: expect.stringMatching(
-                    /^\/api\/state\/apps\/app-1\/workspaces\/workspace-1\/groups\/requests\/[^/]+$/
-                )
+                path: '/api/state/apps/app-1/workspaces/workspace-1/groups/requests/request-2'
             }
         });
         expect(recipe.commands[2]).not.toMatchObject({
@@ -118,14 +122,18 @@ describe('rallar-black-box flow builder helpers', () => {
                 }
             }
         });
-        const replayRecipe = buildFlowBuilderRecipe(flow, {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'group-1'
+        const replayRecipe = toFlowBuilderRecipe({
+            flow,
+            overrides: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'group-1'
+            },
+            createRequestId
         });
-        expect(replayRecipe.commands[2]).not.toMatchObject({
+        expect(replayRecipe.commands[2]).toMatchObject({
             request: {
-                path: (recipe.commands[2] as { request?: { path?: string; }; }).request?.path
+                path: '/api/state/apps/app-1/workspaces/workspace-1/groups/requests/request-4'
             }
         });
         expect(recipe.commands[6]).toMatchObject({
@@ -142,14 +150,18 @@ describe('rallar-black-box flow builder helpers', () => {
     });
 
     it.each(FLOW_BUILDER_TEMPLATES)('exports canonical v1 from $templateId', ({ flow }) => {
-        const recipe = buildFlowBuilderRecipe(flow);
+        const recipe = toFlowBuilderRecipe({ flow, overrides: {}, createRequestId: () => 'template-request' });
         expect.soft(recipe.schemaVersion).toBe(1);
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe)).toEqual({ ok: true, errors: [] });
     });
 
     it('exports a runner-style scenario with variables, connections, and steps', () => {
-        const scenario = buildFlowBuilderRunnerScenario(FLOW_BUILDER_TEMPLATES[0].flow, {
-            password: 'secret-password'
+        const scenario = toFlowBuilderRunnerScenario({
+            flow: FLOW_BUILDER_TEMPLATES[0].flow,
+            overrides: {
+                password: 'secret-password'
+            },
+            createRequestId: () => 'scenario-request'
         });
 
         expect(scenario).toMatchObject({
@@ -176,19 +188,19 @@ describe('rallar-black-box flow builder helpers', () => {
     });
 
     it('parses editable flow JSON and appends step templates', () => {
-        const parsed = parseFlowBuilderDefinition(templateFlowBuilderText('auth-rest-ws-rtc'));
+        const parsed = parseFlowBuilderDefinition(toTemplateFlowBuilderText('auth-rest-ws-rtc'));
         expect(parsed.ok).toBe(true);
         if (!parsed.ok) {
             return;
         }
 
-        const next = addFlowBuilderStep(parsed.flow, 'rtc.send');
+        const next = appendFlowBuilderStep(parsed.flow, 'rtc.send');
         expect(next.steps.at(-1)).toMatchObject({
             kind: 'rtc.send',
             label: 'Send RTC'
         });
 
-        const withLogin = addFlowBuilderStep(parsed.flow, 'auth.login');
+        const withLogin = appendFlowBuilderStep(parsed.flow, 'auth.login');
         const loginCommand = withLogin.steps.at(-1)?.commands?.[0];
         expect(loginCommand).toMatchObject({
             kind: 'http.request',
@@ -236,7 +248,7 @@ describe('rallar-black-box flow builder helpers', () => {
         await renderPanel(false);
 
         expect(textarea('Flow JSON').value).toBe(
-            templateFlowBuilderText(FLOW_BUILDER_TEMPLATES[0].templateId)
+            toTemplateFlowBuilderText(FLOW_BUILDER_TEMPLATES[0].templateId)
         );
         expect(JSON.parse(textarea('Variables JSON').value)).toEqual(
             flowBuilderVariablesFromGlobalValues(

@@ -1,16 +1,12 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
-import {
-    addFlowBuilderStep,
-    buildFlowBuilderRecipe,
-    buildFlowBuilderRunnerScenario,
-    FLOW_BUILDER_TEMPLATES,
-    flowBuilderText,
-    parseFlowBuilderDefinition,
-    templateFlowBuilderText,
-    type FlowBuilderStepKind
-} from '../../../flow-builder.ts';
+import type { FlowBuilderStepKind } from '../../../flow-builder.ts';
+import { parseFlowBuilderDefinition, toFlowBuilderText } from '../../../flow-builder/flow-builder-definition-text.ts';
+import { appendFlowBuilderStep } from '../../../flow-builder/flow-builder-steps.ts';
+import { FLOW_BUILDER_TEMPLATES, toTemplateFlowBuilderText } from '../../../flow-builder/flow-builder-templates.ts';
+import { toFlowBuilderRecipe } from '../../../flow-builder/to-flow-builder-recipe.ts';
+import { toFlowBuilderRunnerScenario } from '../../../flow-builder/to-flow-builder-runner-scenario.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
@@ -33,7 +29,7 @@ export function useFlowBuilderController({
     const [templateId, setTemplateId] = useState(
         FLOW_BUILDER_TEMPLATES[0].templateId
     );
-    const [flowText, setFlowText] = useState(() => templateFlowBuilderText(templateId));
+    const [flowText, setFlowText] = useState(() => toTemplateFlowBuilderText(templateId));
     const [variablesText, setVariablesText] = useState(() =>
         JSON.stringify(
             flowBuilderVariablesFromGlobalValues(
@@ -60,20 +56,22 @@ export function useFlowBuilderController({
             return undefined;
         }
 
-        return buildFlowBuilderRecipe(
-            flowResult.flow,
-            variablesResult.variables
-        );
+        return toFlowBuilderRecipe({
+            flow: flowResult.flow,
+            overrides: variablesResult.variables,
+            createRequestId: () => crypto.randomUUID()
+        });
     }, [flowResult, variablesResult]);
     const runnerScenario = useMemo(() => {
         if (!flowResult.ok || !variablesResult.ok) {
             return undefined;
         }
 
-        return buildFlowBuilderRunnerScenario(
-            flowResult.flow,
-            variablesResult.variables
-        );
+        return toFlowBuilderRunnerScenario({
+            flow: flowResult.flow,
+            overrides: variablesResult.variables,
+            createRequestId: () => crypto.randomUUID()
+        });
     }, [flowResult, variablesResult]);
     const parseError = !flowResult.ok
         ? flowResult.error
@@ -106,7 +104,7 @@ export function useFlowBuilderController({
             (entry) => entry.templateId === nextTemplateId
         ) ?? FLOW_BUILDER_TEMPLATES[0];
         setTemplateId(template.templateId);
-        setFlowText(flowBuilderText(template.flow));
+        setFlowText(toFlowBuilderText(template.flow));
         setVariablesText(
             JSON.stringify(
                 flowBuilderVariablesFromGlobalValues(
@@ -156,7 +154,7 @@ export function useFlowBuilderController({
             return;
         }
 
-        setFlowText(flowBuilderText(addFlowBuilderStep(flowResult.flow, kind)));
+        setFlowText(toFlowBuilderText(appendFlowBuilderStep(flowResult.flow, kind)));
     };
 
     const normalizeFlowJson = (): void => {
@@ -165,7 +163,7 @@ export function useFlowBuilderController({
             return;
         }
 
-        setFlowText(flowBuilderText(flowResult.flow));
+        setFlowText(toFlowBuilderText(flowResult.flow));
         setLocalError(undefined);
     };
 

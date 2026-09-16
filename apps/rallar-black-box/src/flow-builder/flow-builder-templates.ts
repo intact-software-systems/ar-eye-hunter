@@ -1,6 +1,6 @@
 import type { FlowBuilderDefinition, FlowBuilderTemplate } from '../flow-builder.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES, manualRtcDeliveryMatrixCommands } from '../manual-workbench.ts';
-import { flowBuilderText } from './flow-builder-recipe.ts';
+import { toFlowBuilderText } from './flow-builder-definition-text.ts';
 import { toCreateGroupCommand } from './flow-builder-steps.ts';
 
 const DEFAULT_FLOW_VARIABLES = {
@@ -310,8 +310,8 @@ export const FLOW_BUILDER_TEMPLATES: readonly FlowBuilderTemplate[] = [
     }
 ];
 
-export function templateFlowBuilderText(templateId: string): string {
+export function toTemplateFlowBuilderText(templateId: string): string {
     const template = FLOW_BUILDER_TEMPLATES.find((entry) => entry.templateId === templateId) ??
         FLOW_BUILDER_TEMPLATES[0];
-    return flowBuilderText(template.flow);
+    return toFlowBuilderText(template.flow);
 }

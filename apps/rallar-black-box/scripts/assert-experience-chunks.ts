@@ -18,7 +18,7 @@ const legacySafeDynamicEntrySources = {
     RunnerRecipesPanel: '/legacy/runner/recipes/RunnerRecipesPanel.tsx',
     RunnerRunsPanel: '/legacy/runner/runs/RunnerRunsPanel.tsx',
     RunnerFleetPanel: '/legacy/runner/fleet/RunnerFleetPanel.tsx',
-    FlowBuilderPanel: '/legacy/runner/builder/FlowBuilderPanel.tsx',
+    FlowBuilderPanel: '/legacy/runner/builder/flow-builder-panel.tsx',
     DistributedRecipesPanel: '/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx',
     RunManagerPanel: '/legacy/runner/run-manager/RunManagerPanel.tsx',
     SharedTestPanel: '/legacy/runner/shared-test/SharedTestPanel.tsx',

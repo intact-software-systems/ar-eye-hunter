@@ -1,6 +1,52 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderDefinition, FlowBuilderStep } from '../flow-builder.ts';
-import { buildFlowBuilderRecipe, flowBuilderVariables, toRecord } from './flow-builder-recipe.ts';
+import type { FlowBuilderStep } from '../flow-builder.ts';
+import { computeFlowBuilderVariables } from './flow-builder-variables.ts';
+import { toFlowBuilderRecipe, type FlowBuilderRecipeInput } from './to-flow-builder-recipe.ts';
+
+const FLOW_BUILDER_RUNNER_CONNECTIONS = {
+    api: {
+        type: 'http',
+        baseUrl: '{apiBaseUrl}',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        timeoutMs: '{timeoutMs}'
+    },
+    flowWs: {
+        type: 'ws',
+        timeoutMs: '{timeoutMs}'
+    },
+    flowRtc: {
+        type: 'rtc',
+        provider: 'rallar-browser',
+        actor: '{actor}',
+        roomId: '{groupId}',
+        roomRef: {
+            applicationId: '{applicationId}',
+            workspaceId: '{workspaceId}',
+            groupId: '{groupId}'
+        },
+        rallar: {
+            apiBaseUrl: '{apiBaseUrl}',
+            transport: 'realtime'
+        }
+    }
+};
+
+export function toFlowBuilderRunnerScenario(input: FlowBuilderRecipeInput): Record<string, unknown> {
+    const recipe = toFlowBuilderRecipe(input);
+    return {
+        variables: toRunnerVariables(computeFlowBuilderVariables(input.flow, input.overrides)),
+        connections: FLOW_BUILDER_RUNNER_CONNECTIONS,
+        steps: input.flow.steps.flatMap((step) =>
+            step.enabled === false
+                ? []
+                : recipe.commands
+                    .filter((command) => toRecord(command.metadata?.flow).stepId === step.stepId)
+                    .map((command) => toRunnerStepForCommand(step, command))
+        )
+    };
+}
 
 function isSecretLike(name: string): boolean {
     const lower = name.toLowerCase();
@@ -36,12 +82,22 @@ function toRunnerStepForCommand(
         case 'ws.close':
             return toRunnerWebSocketStep(command, base);
         case 'http.request':
-            return {
-                ...base,
-                type: 'http',
-                connection: 'api',
-                request: command.request
-            };
+            return { ...base, type: 'http', connection: 'api', request: command.request };
+        case 'health':
+        case 'wait':
+        case 'assert':
+            return toRunnerCheckStep(step, command, base);
+        default:
+            return { ...base, type: command.kind, request: command };
+    }
+}
+
+function toRunnerCheckStep(
+    step: FlowBuilderStep,
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'health' | 'wait' | 'assert'; }>,
+    base: Readonly<Record<string, unknown>>
+): Record<string, unknown> {
+    switch (command.kind) {
         case 'health':
             return {
                 ...base,
@@ -71,63 +127,7 @@ function toRunnerStepForCommand(
                     expected: command.expected
                 }
             };
-        default:
-            return {
-                ...base,
-                type: command.kind,
-                request: command
-            };
     }
-}
-
-export function buildFlowBuilderRunnerScenario(
-    flow: FlowBuilderDefinition,
-    overrides: Readonly<Record<string, unknown>> = {}
-): Record<string, unknown> {
-    const variables = flowBuilderVariables(flow, overrides);
-    const recipe = buildFlowBuilderRecipe(flow, overrides);
-    return {
-        variables: toRunnerVariables(variables),
-        connections: {
-            api: {
-                type: 'http',
-                baseUrl: '{apiBaseUrl}',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeoutMs: '{timeoutMs}'
-            },
-            flowWs: {
-                type: 'ws',
-                timeoutMs: '{timeoutMs}'
-            },
-            flowRtc: {
-                type: 'rtc',
-                provider: 'rallar-browser',
-                actor: '{actor}',
-                roomId: '{groupId}',
-                roomRef: {
-                    applicationId: '{applicationId}',
-                    workspaceId: '{workspaceId}',
-                    groupId: '{groupId}'
-                },
-                rallar: {
-                    apiBaseUrl: '{apiBaseUrl}',
-                    transport: 'realtime'
-                }
-            }
-        },
-        steps: flow.steps.flatMap((step) =>
-            step.enabled === false
-                ? []
-                : recipe.commands
-                    .filter((command) =>
-                        toRecord(command.metadata).flow &&
-                        toRecord(toRecord(command.metadata).flow).stepId === step.stepId
-                    )
-                    .map((command) => toRunnerStepForCommand(step, command))
-        )
-    };
 }
 
 function toRunnerRtcConnectRequest(
@@ -240,4 +240,10 @@ function toRunnerRtcStep(
         ? toRunnerRtcSendRequest(command)
         : toRunnerRtcStreamRequest(command);
     return { ...base, type: command.kind, connection: command.connection ?? 'flowRtc', request };
+}
+
+function toRecord(value: unknown): Readonly<Record<string, unknown>> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
 }

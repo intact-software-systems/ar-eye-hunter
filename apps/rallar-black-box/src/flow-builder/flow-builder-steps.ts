@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderStep, FlowBuilderStepKind } from '../flow-builder.ts';
+import type { FlowBuilderDefinition, FlowBuilderStep, FlowBuilderStepKind } from '../flow-builder.ts';
 
 export function toCreateGroupCommand(commandId: string): RallarBlackBoxTestCommand {
     return {
@@ -31,7 +31,20 @@ export function toCreateGroupCommand(commandId: string): RallarBlackBoxTestComma
     };
 }
 
-export function toNewStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderStep {
+export function appendFlowBuilderStep(
+    flow: FlowBuilderDefinition,
+    kind: FlowBuilderStepKind
+): FlowBuilderDefinition {
+    return {
+        ...flow,
+        steps: [
+            ...flow.steps,
+            toNewFlowBuilderStep(kind, flow.steps.length)
+        ]
+    };
+}
+
+function toNewFlowBuilderStep(kind: FlowBuilderStepKind, index: number): FlowBuilderStep {
     const suffix = String(index + 1).padStart(2, '0');
     switch (kind) {
         case 'auth.login':

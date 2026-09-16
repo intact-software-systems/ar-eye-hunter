@@ -37,7 +37,7 @@ const runnerRunsPanelSourcePath = new URL(
     import.meta.url
 );
 const flowBuilderPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-panel.tsx',
     import.meta.url
 );
 const runnerFleetControlsSourcePath = new URL(

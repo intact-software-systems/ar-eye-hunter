@@ -7,7 +7,7 @@ const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/app.tsx';
 const legacyExperienceSourcePath = 'apps/rallar-black-box/src/legacy/shell/legacy-experience.tsx';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
-const runnerWorkspaceTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/RunnerWorkspaceTabPanels.tsx';
+const runnerWorkspaceTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/runner-workspace-tab-panels.tsx';
 const runnerAdvancedSourcePath = 'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
 const directConnectionTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx';
 
@@ -29,7 +29,7 @@ const LEGACY_ROUTES = [
     ],
     [
         runnerWorkspaceTabsSourcePath,
-        '../../runner/builder/FlowBuilderPanel.tsx',
+        '../../runner/builder/flow-builder-panel.tsx',
         'FlowBuilderPanel'
     ],
     [
