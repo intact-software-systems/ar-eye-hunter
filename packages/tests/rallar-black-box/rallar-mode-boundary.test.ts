@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
-const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
+const appSourcePath = new URL('../../../apps/rallar-black-box/src/app.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
 const legacyExperienceSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
+    '../../../apps/rallar-black-box/src/legacy/shell/legacy-experience.tsx',
     import.meta.url
 );
 const legacyRunHeaderSourcePath = new URL(
@@ -85,7 +85,7 @@ const quickControllerSourcePath = new URL(
     import.meta.url
 );
 const quickPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-test-panel.tsx',
     import.meta.url
 );
 const quickViewSourcePath = new URL(
@@ -117,11 +117,11 @@ const webSocketViewSourcePath = new URL(
     import.meta.url
 );
 const webSocketControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-web-socket-command-center-controller.ts',
     import.meta.url
 );
 const webSocketPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/web-socket-command-center-panel.tsx',
     import.meta.url
 );
 const mediaConsolePanelSourcePath = new URL(

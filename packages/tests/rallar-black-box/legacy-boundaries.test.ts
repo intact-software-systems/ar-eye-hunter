@@ -4,12 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { analyzeSourceFile, buildRelativeTypeScriptGraph, findDependencyCycles, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
-const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
-const legacyExperienceSourcePath = 'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
+const appSourcePath = 'apps/rallar-black-box/src/app.tsx';
+const legacyExperienceSourcePath = 'apps/rallar-black-box/src/legacy/shell/legacy-experience.tsx';
 const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
 const runnerWorkspaceTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/RunnerWorkspaceTabPanels.tsx';
 const runnerAdvancedSourcePath = 'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
-const directConnectionTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx';
+const directConnectionTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx';
 
 const LEGACY_ROUTES = [
     [

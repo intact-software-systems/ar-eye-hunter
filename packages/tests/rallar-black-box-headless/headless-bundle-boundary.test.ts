@@ -37,7 +37,7 @@ describe('rallar-black-box-headless bundle boundary', () => {
                 'node_modules/react-dom',
                 'node_modules/sigma',
                 'node_modules/graphology',
-                'apps/rallar-black-box/src/App.tsx',
+                'apps/rallar-black-box/src/app.tsx',
                 'apps/rallar-black-box/src/control-run-manager.ts',
                 'apps/rallar-black-box/src/distributed-recipes.ts',
                 'apps/rallar-black-box/src/rtc-diagnostics.ts',

@@ -25,7 +25,7 @@ import {
     useRtcDiagnosticsController,
     type RtcDiagnosticsControllerModel
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/use-rtc-diagnostics-controller.ts';
-import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts';
+import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-web-socket-command-center-controller.ts';
 import type { WebSocketCommandCenterViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-view-contracts.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
 import { createMessageDelivery } from '../shared-web/messages/test-message-delivery.ts';

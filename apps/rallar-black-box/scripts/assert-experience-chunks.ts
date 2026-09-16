@@ -153,12 +153,12 @@ export function readExperienceChunkGraph(
     );
     const [recipeConsole] = findEntry(
         manifest,
-        (chunk) => chunk.src?.endsWith('/recipe-console/app/RecipeConsoleApp.tsx') === true,
+        (chunk) => chunk.src?.endsWith('/recipe-console/app/recipe-console-app.tsx') === true,
         'Vite manifest must expose RecipeConsoleApp as a dynamic entry.'
     );
     const [legacy] = findEntry(
         manifest,
-        (chunk) => chunk.src?.endsWith('/legacy/shell/LegacyExperience.tsx') === true,
+        (chunk) => chunk.src?.endsWith('/legacy/shell/legacy-experience.tsx') === true,
         'Vite manifest must expose LegacyExperience as a dynamic entry.'
     );
     const [retention] = findEntry(

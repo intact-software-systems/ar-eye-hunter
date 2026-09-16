@@ -3,8 +3,8 @@ import '../design/tokens.css';
 import '../design/reset.css';
 import { ControlConnectionProvider } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleControlBootstrap } from '../control/ControlConnectionProvider.tsx';
+import { RecipeConsoleWorkspace } from './recipe-console-workspace.tsx';
 import { RecipeConsolePreferencesController } from './RecipeConsolePreferencesController.tsx';
-import { RecipeConsoleWorkspace } from './RecipeConsoleWorkspace.tsx';
 
 export type RecipeConsoleAppProps = Readonly<{
     authSession?: AuthSession;

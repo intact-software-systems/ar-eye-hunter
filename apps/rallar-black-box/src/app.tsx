@@ -17,7 +17,7 @@ import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
 import { rallarBlackBoxRuntimeStore, useRallarBlackBoxRuntimeStore } from './runtime-store.ts';
 
-// Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
+// Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `app.tsx`.
 
 const initialRecipeConsoleControlCredentialPolicy = (() => {
     const credentialPolicy = captureInitialRecipeConsoleControlCredentialPolicy();
@@ -27,9 +27,9 @@ const initialRecipeConsoleControlCredentialPolicy = (() => {
 
 const RecipeConsoleApp = lazy(() => {
     scrubCurrentRecipeConsoleUrlBeforeLoad();
-    return import('./recipe-console/app/RecipeConsoleApp.tsx');
+    return import('./recipe-console/app/recipe-console-app.tsx');
 });
-const LegacyExperience = lazy(() => import('./legacy/shell/LegacyExperience.tsx'));
+const LegacyExperience = lazy(() => import('./legacy/shell/legacy-experience.tsx'));
 
 export default function App() {
     const runtime = useRallarBlackBoxRuntimeStore();

@@ -1,4 +1,4 @@
-import { useWebSocketCommandCenterController } from './use-websocket-command-center-controller.ts';
+import { useWebSocketCommandCenterController } from './use-web-socket-command-center-controller.ts';
 import type { UseWebSocketCommandCenterControllerInput } from './websocket-contracts.ts';
 import { WebSocketCommandCenterView } from './WebSocketCommandCenterView.tsx';
 

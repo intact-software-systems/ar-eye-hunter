@@ -3,7 +3,7 @@ import { AnalyzeWorkspace } from '../analyze/AnalyzeWorkspace.tsx';
 import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
 import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspace.ts';
-import { ExecuteWorkspace } from '../execute/ExecuteWorkspace.tsx';
+import { ExecuteWorkspace } from '../execute/execute-workspace.tsx';
 import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
 import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
 import type { RecipeConsoleView } from '../routing/url-state-contract.ts';

@@ -58,7 +58,7 @@ test('keeps one lazy experience mounted without loading the other experience', a
         '.recipe-console',
         { authenticated: true }
     );
-    expect(recipeScripts.some((url) => url.includes('LegacyExperience')))
+    expect(recipeScripts.some((url) => url.includes('legacy-experience')))
         .toBe(false);
 
     for (
@@ -68,7 +68,7 @@ test('keeps one lazy experience mounted without loading the other experience', a
         ]
     ) {
         const legacyScripts = await coldEntry(browser, legacyUrl, '.app-shell');
-        expect(legacyScripts.some((url) => url.includes('RecipeConsoleApp')))
+        expect(legacyScripts.some((url) => url.includes('recipe-console-app')))
             .toBe(false);
     }
 });
@@ -97,7 +97,7 @@ test('scrubs an explicit Recipe Console URL even while the login gate delays laz
     expect(url.href).not.toContain('nested-secret');
     expect(url.href).not.toContain('fragment-secret');
     await expect(page.locator('.recipe-console')).toHaveCount(0);
-    expect(experienceResources.some((url) => url.includes('RecipeConsoleApp')))
+    expect(experienceResources.some((url) => url.includes('recipe-console-app')))
         .toBe(false);
 });
 
@@ -208,9 +208,9 @@ test('proves each production experience static closure without fixture or peer r
         '.recipe-console',
         { baseUrl: productionBaseUrl }
     );
-    expect(recipeResources.some((url) => /\/assets\/RecipeConsoleApp-[^/]+\.js$/.test(url))).toBe(true);
-    expect(recipeResources.some((url) => /\/assets\/RecipeConsoleApp-[^/]+\.css$/.test(url))).toBe(true);
-    expect(recipeResources.some((url) => url.includes('LegacyExperience'))).toBe(false);
+    expect(recipeResources.some((url) => /\/assets\/recipe-console-app-[^/]+\.js$/.test(url))).toBe(true);
+    expect(recipeResources.some((url) => /\/assets\/recipe-console-app-[^/]+\.css$/.test(url))).toBe(true);
+    expect(recipeResources.some((url) => url.includes('legacy-experience'))).toBe(false);
     expect(recipeResources.some((url) => url.includes('recipe-console-css-isolation'))).toBe(false);
 
     const legacyResources = await coldEntry(
@@ -219,9 +219,9 @@ test('proves each production experience static closure without fixture or peer r
         '.app-shell',
         { baseUrl: productionBaseUrl }
     );
-    expect(legacyResources.some((url) => /\/assets\/LegacyExperience-[^/]+\.js$/.test(url))).toBe(true);
-    expect(legacyResources.some((url) => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
-    expect(legacyResources.some((url) => url.includes('RecipeConsoleApp'))).toBe(false);
+    expect(legacyResources.some((url) => /\/assets\/legacy-experience-[^/]+\.js$/.test(url))).toBe(true);
+    expect(legacyResources.some((url) => /\/assets\/legacy-experience-[^/]+\.css$/.test(url))).toBe(true);
+    expect(legacyResources.some((url) => url.includes('recipe-console-app'))).toBe(false);
     expect(legacyResources.some((url) => url.includes('recipe-console-css-isolation'))).toBe(false);
 });
 
@@ -246,7 +246,7 @@ test('loads the production Fleet chunk only for the Fleet route', async ({ brows
     );
     expect(fleetResources.some((url) => /\/assets\/FleetWorkspace-[^/]+\.js$/.test(url))).toBe(true);
     expect(fleetResources.some((url) => /\/assets\/FleetWorkspace-[^/]+\.css$/.test(url))).toBe(true);
-    expect(fleetResources.some((url) => url.includes('LegacyExperience')))
+    expect(fleetResources.some((url) => url.includes('legacy-experience')))
         .toBe(false);
 });
 
@@ -381,7 +381,7 @@ for (
         const context = await browser.newContext();
         const page = await context.newPage();
         let hrefAtLazyRequest: string | undefined;
-        await page.route('**/*RecipeConsoleApp*', async (route) => {
+        await page.route('**/*recipe-console-app*', async (route) => {
             if (
                 hrefAtLazyRequest === undefined &&
                 route.request().resourceType() === 'script'
