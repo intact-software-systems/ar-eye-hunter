@@ -6,9 +6,9 @@ import {
 } from '../distributed-run-monitor-index.ts';
 import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
 import {
-    average,
-    isFiniteDurationMs,
-    maxFiniteNumber
+    computeAverage,
+    computeMaxFiniteNumber,
+    isFiniteDurationMs
 } from './distributed-run-latency-summary.ts';
 import type {
     DistributedRunAgentProgressRow,
@@ -19,7 +19,7 @@ import type {
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
-export function distributedRunAgentProgress(
+export function computeDistributedRunAgentProgress(
     input: Readonly<{
         index: DistributedRunMonitorIndex;
         eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
@@ -33,7 +33,7 @@ export function distributedRunAgentProgress(
             agentId
         );
         const totals = toAgentLinkTotals({ index: input.index, links: links.all });
-        const lastActivityAtEpochMs = maxFiniteNumber([
+        const lastActivityAtEpochMs = computeMaxFiniteNumber([
             totals.lastActivityAtEpochMs,
             ...linkedEvents.map((event) => {
                 input.index.work.agentEventProjectionVisitCount += 1;
@@ -58,7 +58,7 @@ export function distributedRunAgentProgress(
             failedCommandCount: totals.failedCommandCount,
             resultCount: totals.resultCount,
             eventCount: linkedEvents.length,
-            averageLatencyMs: average(totals.latencies),
+            averageLatencyMs: computeAverage(totals.latencies),
             lastActivityAtEpochMs
         };
     });
@@ -97,7 +97,7 @@ function toAgentLinkTotals(
         input.index.work.agentLinkProjectionVisitCount += 1;
         const command = input.index.commandsById.get(link.commandId);
         const result = input.index.resultsByCommandId.get(link.commandId);
-        lastActivityAtEpochMs = maxFiniteNumber([
+        lastActivityAtEpochMs = computeMaxFiniteNumber([
             lastActivityAtEpochMs,
             link.queuedAtEpochMs,
             command?.dispatchedAtEpochMs,

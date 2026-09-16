@@ -6,7 +6,7 @@ import {
     decodeParallelResultValue,
     decodeWaitResultValue
 } from './decode-composite-result-values.ts';
-import { decodeFirstNonBlankText, summarizeDistributedRunPayload } from './distributed-run-payload-summary.ts';
+import { decodeFirstNonBlankText, toDistributedRunPayloadSummary } from './distributed-run-payload-summary.ts';
 import { toCompositeValueSummary } from './to-composite-result-detail.ts';
 
 export function toCompositeResultSummary(
@@ -87,7 +87,7 @@ function toAssertResultSummary(result: RallarBlackBoxTestResult): string | undef
     return [
         value.passed ? 'passed' : 'failed',
         `${value.source} ${value.operator}`,
-        value.expected !== undefined ? `expected ${summarizeDistributedRunPayload(value.expected)}` : undefined
+        value.expected !== undefined ? `expected ${toDistributedRunPayloadSummary(value.expected)}` : undefined
     ].filter(Boolean).join(' - ');
 }
 
@@ -100,7 +100,7 @@ function toWaitMatchSummary(value: unknown): string | undefined {
         decodeFirstNonBlankText(match.transport),
         decodeFirstNonBlankText(match.severity),
         decodeFirstNonBlankText(match.payloadPath),
-        match.equals !== undefined ? `equals ${summarizeDistributedRunPayload(match.equals)}` : undefined,
+        match.equals !== undefined ? `equals ${toDistributedRunPayloadSummary(match.equals)}` : undefined,
         decodeFirstNonBlankText(match.contains) ? `contains ${decodeFirstNonBlankText(match.contains)}` : undefined,
         typeof match.exists === 'boolean' ? `exists ${match.exists}` : undefined
     ].filter(Boolean).join(', ') || undefined;

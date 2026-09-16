@@ -1,9 +1,9 @@
 import type { DistributedRunFailureRow } from '../distributed-run-observation/distributed-run-row-contracts.ts';
-import { compactStrings } from './compact-strings.ts';
 import type {
     DistributedFailureExplanation,
     FirstDistributedRunPhaseForCommand
 } from './distributed-failure-explanation-contracts.ts';
+import { toCompactStrings } from './to-compact-strings.ts';
 
 export function toDistributedFailureExplanation(
     failure: DistributedRunFailureRow,
@@ -11,7 +11,7 @@ export function toDistributedFailureExplanation(
 ): DistributedFailureExplanation {
     const code = failure.code ?? '';
     const text = `${code} ${failure.message}`.toLowerCase();
-    const evidence = compactStrings([
+    const evidence = toCompactStrings([
         failure.key,
         failure.code,
         failure.agentId,

@@ -1,7 +1,7 @@
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedFailureExplanation } from '../distributed-run-analysis/distributed-failure-explanation-contracts.ts';
 import { toDistributedFailureExplanation } from '../distributed-run-analysis/to-distributed-failure-explanation.ts';
-import { distributedRunRecordedFailures } from '../distributed-run-observation/distributed-run-failure-rows.ts';
+import { toDistributedRunRecordedFailures } from '../distributed-run-observation/distributed-run-failure-rows.ts';
 import { isPayloadRecord } from '../distributed-run-observation/distributed-run-payload-summary.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from '../distributed-run.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
@@ -47,7 +47,7 @@ export function projectDistributedRunHistoryLabels(
             label: profile ? `${recipeId} · ${profile}` : recipeId
         };
     });
-    const failures = distributedRunRecordedFailures(run).map((failure) => {
+    const failures = toDistributedRunRecordedFailures(run).map((failure) => {
         const code = toOptionalHistoryLabel(failure.code);
         const message = toOptionalHistoryLabel(failure.message) ?? 'Recorded failure';
         const category = toDistributedFailureExplanation({

@@ -14,7 +14,7 @@ import type {
  * The walker binds the child depth before it calls a branch, so branch modules
  * never repeat the composite depth policy.
  */
-export type AnalyzeChildCommand = (
+export type ToChildCommandAnalysis = (
     command: RallarBlackBoxTestCommand,
     path: string
 ) => DistributedRecipeCommandAnalysis;
@@ -22,10 +22,10 @@ export type AnalyzeChildCommand = (
 export function toLoopCommandBranch(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'loop'; }>,
     path: string,
-    analyzeChildCommand: AnalyzeChildCommand
+    toChildCommandAnalysis: ToChildCommandAnalysis
 ): DistributedRecipeCommandBranch {
     const childAnalyses = command.commands.map((child, index) =>
-        analyzeChildCommand(child, `${path}.commands[${index}]`)
+        toChildCommandAnalysis(child, `${path}.commands[${index}]`)
     );
     const estimate = computeLoopIterationEstimate(command);
     const childEffectiveCommandCount = childAnalyses.reduce(
@@ -69,11 +69,11 @@ export function toLoopCommandBranch(
 export function toParallelCommandBranch(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'parallel'; }>,
     path: string,
-    analyzeChildCommand: AnalyzeChildCommand
+    toChildCommandAnalysis: ToChildCommandAnalysis
 ): DistributedRecipeCommandBranch {
     const childAnalyses = command.groups.flatMap((group, groupIndex) =>
         group.commands.map((child, commandIndex) =>
-            analyzeChildCommand(child, `${path}.groups[${groupIndex}].commands[${commandIndex}]`)
+            toChildCommandAnalysis(child, `${path}.groups[${groupIndex}].commands[${commandIndex}]`)
         )
     );
     const effectiveCommandCount = childAnalyses.reduce(
@@ -116,7 +116,7 @@ export function toParallelCommandBranch(
 export function toNestedRecipeCommandBranch(
     command: Extract<RallarBlackBoxTestCommand, { kind: 'recipe.load' | 'recipe.run'; }>,
     path: string,
-    analyzeChildCommand: AnalyzeChildCommand
+    toChildCommandAnalysis: ToChildCommandAnalysis
 ): DistributedRecipeCommandBranch {
     const nestedRecipe = command.recipe;
     if (!nestedRecipe) {
@@ -127,7 +127,7 @@ export function toNestedRecipeCommandBranch(
     }
 
     const childAnalyses = nestedRecipe.commands.map((child, index) =>
-        analyzeChildCommand(child, `${path}.recipe.commands[${index}]`)
+        toChildCommandAnalysis(child, `${path}.recipe.commands[${index}]`)
     );
     const runsNestedCommands = command.kind === 'recipe.run';
     return {

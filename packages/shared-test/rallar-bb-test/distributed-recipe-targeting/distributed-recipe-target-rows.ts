@@ -6,7 +6,7 @@ import {
 } from '../distributed-recipe-preflight/distributed-recipe-command-preview.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../distributed-run.ts';
 import { collectDistributedAssertionFeatures } from '../distributed/control-agent-capabilities.ts';
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
+import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import type {
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRecipe
@@ -31,12 +31,12 @@ export function distributedRecipeTargetRows(
     const staleAfterMs = input.staleAfterMs ?? 30_000;
     const agents = [...(input.run?.agents ?? [])]
         .sort((left, right) => left.agentId.localeCompare(right.agentId));
-    const requiredCommandKinds = uniqueSortedValues([
+    const requiredCommandKinds = toUniqueSortedValues([
         ...(input.requiredCommandKinds ?? []),
         ...(input.requiredRecipes ?? []).flatMap(distributedRecipeCommandKinds)
     ]);
     const requiresCrdtRuntime = hasCrdtCommandKind(requiredCommandKinds);
-    const requiredCrdtTransports = uniqueSortedValues(
+    const requiredCrdtTransports = toUniqueSortedValues(
         (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports)
     );
     const requiredAssertionFeatures = collectDistributedAssertionFeatures(
@@ -53,7 +53,7 @@ export function distributedRecipeTargetRows(
             requiredAssertionFeatures
         })
     );
-    return markDuplicateSessionTargets(rows, agents);
+    return toDuplicateSessionTargetRows(rows, agents);
 }
 
 export function distributedRecipeTargetIdentityKey(
@@ -109,7 +109,7 @@ function toNormalizedIdentityPart(value: string | undefined): string | undefined
  * Duplicate-session marking runs after status selection, so only fresh group targets
  * can be demoted.
  */
-function markDuplicateSessionTargets(
+function toDuplicateSessionTargetRows(
     rows: readonly DistributedRecipeTargetRow[],
     agents: readonly ControlAgentSnapshot[]
 ): readonly DistributedRecipeTargetRow[] {

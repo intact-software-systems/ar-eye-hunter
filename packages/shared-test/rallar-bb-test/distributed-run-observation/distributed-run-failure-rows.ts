@@ -4,12 +4,12 @@ import type { DistributedRunFailureRow } from './distributed-run-row-contracts.t
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
-export function distributedRunFailures(
+export function toDistributedRunFailureRows(
     distributedRun: ControlDistributedRunSnapshot,
     results: readonly ControlResultSnapshot[],
     commands: ReadonlyMap<string, ControlCommandSnapshot>
 ): readonly DistributedRunFailureRow[] {
-    const rows = [...distributedRunRecordedFailures(distributedRun)];
+    const rows = [...toDistributedRunRecordedFailures(distributedRun)];
     results
         .filter((result) => !result.ok)
         .forEach((result) => {
@@ -31,7 +31,7 @@ export function distributedRunFailures(
     return rows.sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
 }
 
-export function distributedRunRecordedFailures(
+export function toDistributedRunRecordedFailures(
     distributedRun: ControlDistributedRunSnapshot
 ): DistributedRunFailureRow[] {
     const rows: DistributedRunFailureRow[] = [];
@@ -59,7 +59,7 @@ export function distributedRunRecordedFailures(
     return rows;
 }
 
-export function firstDistributedFailure(
+export function resolveFirstDistributedFailure(
     failures: readonly DistributedRunFailureRow[]
 ): DistributedRunFailureRow | undefined {
     return [...failures]

@@ -2,7 +2,6 @@ import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../contr
 import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
 import { distributedRecipeStateTone } from './distributed-recipe-state-tone.ts';
 import type {
-    DistributedRunArtifactValidation,
     DistributedRunEventRow,
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow,
@@ -16,7 +15,7 @@ type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 /** A timeline item whose time is still unknown; the projection drops those. */
 type TimedTimelineItem = Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; };
 
-export function distributedRunTimeline(
+export function toDistributedRunTimeline(
     input: Readonly<{
         distributedRun: ControlDistributedRunSnapshot;
         index: DistributedRunMonitorIndex;
@@ -25,32 +24,28 @@ export function distributedRunTimeline(
         events: readonly DistributedRunEventRow[];
         runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
         failures: readonly DistributedRunFailureRow[];
-        artifact: DistributedRunArtifactValidation;
     }>
 ): readonly DistributedRunTimelineItem[] {
-    const items: DistributedRunTimelineItem[] = [];
-    addTimedItems(items, toLifecycleItems(input.distributedRun));
-    input.index.commandLinks.forEach((link) => {
+    const commandLinkItems = input.index.commandLinks.flatMap((link) => {
         input.index.work.timelineCommandLinkProjectionVisitCount += 1;
-        addTimedItems(items, toCommandLinkItems(link, input.commands.get(link.commandId)));
+        return toCommandLinkItems(link, input.commands.get(link.commandId));
     });
-    addTimedItems(items, input.results.map(toResultItem));
-    addTimedItems(items, input.failures.map(toFailureItem));
-    addTimedItems(items, input.events.map(toEventItem));
-    addTimedItems(items, input.runtimeDiagnostics.map(toDiagnosticItem));
+    const candidates: readonly TimedTimelineItem[] = [
+        ...toLifecycleItems(input.distributedRun),
+        ...commandLinkItems,
+        ...input.results.map(toResultItem),
+        ...input.failures.map(toFailureItem),
+        ...input.events.map(toEventItem),
+        ...input.runtimeDiagnostics.map(toDiagnosticItem)
+    ];
 
-    return items.sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id));
+    return candidates
+        .filter(isTimedTimelineItem)
+        .sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id));
 }
 
-function addTimedItems(
-    items: DistributedRunTimelineItem[],
-    candidates: readonly TimedTimelineItem[]
-): void {
-    for (const candidate of candidates) {
-        if (candidate.atEpochMs !== undefined) {
-            items.push(candidate as DistributedRunTimelineItem);
-        }
-    }
+function isTimedTimelineItem(candidate: TimedTimelineItem): candidate is DistributedRunTimelineItem {
+    return candidate.atEpochMs !== undefined;
 }
 
 function toLifecycleItems(
@@ -113,33 +108,41 @@ function toCommandLinkItems(
     link: DistributedRunMonitorIndex['commandLinks'][number],
     command: ControlCommandSnapshot | undefined
 ): readonly TimedTimelineItem[] {
-    const toItem = (
-        id: string,
-        atEpochMs: number | undefined,
-        label: string,
-        tone: string
-    ): TimedTimelineItem => ({
-        id,
-        atEpochMs,
+    return [
+        toCommandLinkItem({ link, command, stage: 'queued', atEpochMs: link.queuedAtEpochMs, tone: 'muted' }),
+        toCommandLinkItem({
+            link,
+            command,
+            stage: 'dispatched',
+            atEpochMs: command?.dispatchedAtEpochMs,
+            tone: 'active'
+        }),
+        toCommandLinkItem({ link, command, stage: 'completed', atEpochMs: command?.completedAtEpochMs, tone: 'good' })
+    ];
+}
+
+interface CommandLinkItemInput {
+    readonly link: DistributedRunMonitorIndex['commandLinks'][number];
+    readonly command: ControlCommandSnapshot | undefined;
+    readonly stage: 'queued' | 'dispatched' | 'completed';
+    readonly atEpochMs: number | undefined;
+    readonly tone: string;
+}
+
+function toCommandLinkItem(input: CommandLinkItemInput): TimedTimelineItem {
+    const { link } = input;
+    return {
+        id: `${input.stage}-${link.commandId}`,
+        atEpochMs: input.atEpochMs,
         kind: 'command',
-        label,
-        detail: command?.envelope.command.kind,
-        tone,
+        label: `${link.phase} ${input.stage}`,
+        detail: input.command?.envelope.command.kind,
+        tone: input.tone,
         agentId: link.agentId,
         recipeId: link.recipeId,
         commandId: link.commandId,
         phase: link.phase
-    });
-    return [
-        toItem(`queued-${link.commandId}`, link.queuedAtEpochMs, `${link.phase} queued`, 'muted'),
-        toItem(
-            `dispatched-${link.commandId}`,
-            command?.dispatchedAtEpochMs,
-            `${link.phase} dispatched`,
-            'active'
-        ),
-        toItem(`completed-${link.commandId}`, command?.completedAtEpochMs, `${link.phase} completed`, 'good')
-    ];
+    };
 }
 
 function toResultItem(result: ControlResultSnapshot): TimedTimelineItem {

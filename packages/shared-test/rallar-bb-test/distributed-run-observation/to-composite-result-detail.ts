@@ -1,7 +1,7 @@
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import { decodeAssertResultValue, decodeWaitResultValue } from './decode-composite-result-values.ts';
-import { decodeFirstNonBlankText, summarizeDistributedRunPayload } from './distributed-run-payload-summary.ts';
+import { decodeFirstNonBlankText, toDistributedRunPayloadSummary } from './distributed-run-payload-summary.ts';
 
 export function toCompositeResultDetail(
     result: RallarBlackBoxTestResult,
@@ -16,7 +16,7 @@ export function toCompositeResultDetail(
         const value = decodeAssertResultValue(result.value);
         if (value) {
             return [
-                `actual ${summarizeDistributedRunPayload(value.actual)}`,
+                `actual ${toDistributedRunPayloadSummary(value.actual)}`,
                 `exists ${value.exists}`
             ].join(' - ');
         }
@@ -25,7 +25,7 @@ export function toCompositeResultDetail(
     if (result.kind === 'wait') {
         const value = decodeWaitResultValue(result.value);
         if (value?.event) {
-            return `event ${summarizeDistributedRunPayload(value.event)}`;
+            return `event ${toDistributedRunPayloadSummary(value.event)}`;
         }
     }
 
@@ -40,7 +40,7 @@ export function toCompositeValueSummary(value: unknown): string | undefined {
     if (value === undefined) {
         return undefined;
     }
-    const summary = summarizeDistributedRunPayload(value);
+    const summary = toDistributedRunPayloadSummary(value);
     return summary.length > 0 ? summary : undefined;
 }
 
@@ -54,5 +54,5 @@ export function toCompositeErrorSummary(error: unknown): string | undefined {
     if (code || message) {
         return [code, message].filter(Boolean).join(': ');
     }
-    return summarizeDistributedRunPayload(error);
+    return toDistributedRunPayloadSummary(error);
 }

@@ -1,6 +1,6 @@
 import type { DistributedRunLatencySummary } from './distributed-run-row-contracts.ts';
 
-export function summarizeDistributedRunLatencies(values: readonly number[]): DistributedRunLatencySummary {
+export function computeDistributedRunLatencySummary(values: readonly number[]): DistributedRunLatencySummary {
     if (values.length === 0) {
         return { count: 0 };
     }
@@ -8,21 +8,21 @@ export function summarizeDistributedRunLatencies(values: readonly number[]): Dis
     return {
         count: sorted.length,
         minMs: sorted[0],
-        p50Ms: percentile(sorted, 0.5),
-        p95Ms: percentile(sorted, 0.95),
+        p50Ms: computePercentile(sorted, 0.5),
+        p95Ms: computePercentile(sorted, 0.95),
         maxMs: sorted[sorted.length - 1],
-        averageMs: average(sorted)
+        averageMs: computeAverage(sorted)
     };
 }
 
-export function average(values: readonly number[]): number | undefined {
+export function computeAverage(values: readonly number[]): number | undefined {
     if (values.length === 0) {
         return undefined;
     }
     return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function percentile(sortedValues: readonly number[], quantile: number): number | undefined {
+function computePercentile(sortedValues: readonly number[], quantile: number): number | undefined {
     if (sortedValues.length === 0) {
         return undefined;
     }
@@ -33,7 +33,7 @@ function percentile(sortedValues: readonly number[], quantile: number): number |
     return sortedValues[index];
 }
 
-export function maxFiniteNumber(values: readonly (number | undefined)[]): number | undefined {
+export function computeMaxFiniteNumber(values: readonly (number | undefined)[]): number | undefined {
     let max: number | undefined;
     for (const value of values) {
         if (isFiniteDurationMs(value) && (max === undefined || value > max)) {
@@ -43,7 +43,7 @@ export function maxFiniteNumber(values: readonly (number | undefined)[]): number
     return max;
 }
 
-export function durationBetween(start: number | undefined, end: number | undefined): number | undefined {
+export function computeDurationBetween(start: number | undefined, end: number | undefined): number | undefined {
     return start !== undefined && end !== undefined && end >= start
         ? end - start
         : undefined;

@@ -1,8 +1,8 @@
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunMonitor } from '../distributed-run-monitor.ts';
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
-import { compactStrings } from './compact-strings.ts';
+import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import type { DistributedRunAnalysisReport } from './distributed-run-analysis-report.ts';
+import { toCompactStrings } from './to-compact-strings.ts';
 
 export function toRunVerdictWarnings(
     monitor: DistributedRunMonitor,
@@ -31,7 +31,7 @@ export function toRunVerdictWarnings(
             }.`]
             : [])
     ];
-    return uniqueSortedValues(warnings);
+    return toUniqueSortedValues(warnings);
 }
 
 export function toRunVerdictSuccessSignals(
@@ -50,7 +50,7 @@ export function toRunVerdictSuccessSignals(
             ? 'No failed command results in the loaded snapshot.'
             : undefined
     ];
-    return compactStrings(signals);
+    return toCompactStrings(signals);
 }
 
 export function toRunVerdictSummary(

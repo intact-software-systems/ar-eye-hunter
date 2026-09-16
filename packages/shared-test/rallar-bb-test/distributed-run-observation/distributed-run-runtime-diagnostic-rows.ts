@@ -11,8 +11,8 @@ import type {
 import { decodeFiniteNumber, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
     decodeFirstNonBlankText,
-    summarizeDistributedRunPayload,
     toDistributedRunEventSummary,
+    toDistributedRunPayloadSummary,
     toDistributedRunPayloadTopic
 } from './distributed-run-payload-summary.ts';
 import type {
@@ -22,16 +22,16 @@ import type {
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
-export function distributedRunRuntimeDiagnostics(
+export function toDistributedRunRuntimeDiagnosticRows(
     events: readonly ControlEventSnapshot[]
 ): readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[] {
     return events
-        .map((event, index) => distributedRunRuntimeDiagnostic(event, index))
+        .map((event, index) => toDistributedRunRuntimeDiagnosticRow(event, index))
         .filter((row): row is Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> => row !== undefined)
         .sort((left, right) => left.atEpochMs - right.atEpochMs || left.eventId.localeCompare(right.eventId));
 }
 
-function distributedRunRuntimeDiagnostic(
+function toDistributedRunRuntimeDiagnosticRow(
     event: ControlEventSnapshot,
     index: number
 ): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> | undefined {
@@ -60,7 +60,7 @@ function distributedRunRuntimeDiagnostic(
         data.reason,
         toDistributedRunEventSummary(event)
     ) ?? topic;
-    const payloadSummary = summarizeDistributedRunPayload(
+    const payloadSummary = toDistributedRunPayloadSummary(
         payload.data ?? payload.payload ?? runtimeEvent.payload ?? event.payload
     );
 
@@ -111,7 +111,7 @@ function toDiagnosticContextFields(
     };
 }
 
-export function correlateDistributedRunRuntimeDiagnostics(
+export function toCorrelatedDistributedRunRuntimeDiagnostics(
     diagnostics: readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[],
     failureIndex: DistributedRunMonitorFailureIndex
 ): readonly DistributedRunRuntimeDiagnosticRow[] {
@@ -124,7 +124,7 @@ export function correlateDistributedRunRuntimeDiagnostics(
     }));
 }
 
-export function distributedRunRuntimeDiagnosticCounts(
+export function computeDistributedRunRuntimeDiagnosticCounts(
     diagnostics: readonly DistributedRunRuntimeDiagnosticRow[]
 ): DistributedRunRuntimeDiagnosticCounts {
     return {

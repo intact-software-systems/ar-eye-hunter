@@ -1,22 +1,22 @@
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import type { DistributedRunMonitor } from '../distributed-run-monitor.ts';
 import type { DistributedRunFailureRow } from '../distributed-run-observation/distributed-run-row-contracts.ts';
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
 import type {
     DistributedFailureExplanation,
     FirstDistributedRunPhaseForCommand
 } from './distributed-failure-explanation-contracts.ts';
+import { toCompactStrings } from './to-compact-strings.ts';
 import { toDistributedFailureExplanation } from './to-distributed-failure-explanation.ts';
 
-export interface DistributedFailureExplanationsInput {
+export interface ToDistributedFailureExplanationsInput {
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly monitor: DistributedRunMonitor;
     readonly firstFailure: DistributedRunFailureRow | undefined;
     readonly firstPhaseForCommand: FirstDistributedRunPhaseForCommand;
 }
 
-export function distributedFailureExplanations(
-    input: DistributedFailureExplanationsInput
+export function toDistributedFailureExplanations(
+    input: ToDistributedFailureExplanationsInput
 ): readonly DistributedFailureExplanation[] {
     const { distributedRun, monitor, firstFailure, firstPhaseForCommand } = input;
     const explanations: DistributedFailureExplanation[] = [];
@@ -58,7 +58,7 @@ export function distributedFailureExplanations(
         });
     }
 
-    return uniqueDistributedFailureExplanations(explanations);
+    return toUniqueDistributedFailureExplanations(explanations);
 }
 
 /** The three highest-signal diagnostics become their own next actions. */
@@ -82,7 +82,7 @@ function toDiagnosticExplanations(
                 : diagnostic.transport === 'realtime' || diagnostic.transport === 'messages.rtc'
                 ? 'Inspect RTC peer, lane, group, and topic evidence; mismatched lane or peer metadata usually means agents joined different realtime contexts.'
                 : 'Inspect the correlated diagnostic payload and the command result that emitted it.',
-            evidence: compactStrings([
+            evidence: toCompactStrings([
                 diagnostic.eventId,
                 diagnostic.commandId,
                 diagnostic.agentId,
@@ -92,7 +92,7 @@ function toDiagnosticExplanations(
     });
 }
 
-function uniqueDistributedFailureExplanations(
+function toUniqueDistributedFailureExplanations(
     explanations: readonly DistributedFailureExplanation[]
 ): readonly DistributedFailureExplanation[] {
     const seen = new Set<string>();
@@ -104,10 +104,6 @@ function uniqueDistributedFailureExplanations(
         seen.add(key);
         return true;
     });
-}
-
-export function compactStrings(values: readonly (string | undefined)[]): readonly string[] {
-    return uniqueSortedValues(values.filter((value): value is string => Boolean(value && value.length > 0)));
 }
 
 function isDistributedAnalysisTerminal(state: string): boolean {

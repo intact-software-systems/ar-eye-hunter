@@ -5,7 +5,7 @@ import type {
 } from '../control-snapshots.ts';
 import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
 import type { DistributedRunArtifactValidationStatus } from '../distributed-run-observation/distributed-run-row-contracts.ts';
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
+import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import type { RallarBlackBoxTestSeverity } from '../rallar-black-box-test-contracts.ts';
 import { toDistributedRunMonitorEvidenceText } from './to-distributed-run-monitor-evidence-text.ts';
 
@@ -113,20 +113,20 @@ function toWarningRegressionObservations(
             .filter((value) => monitorEvidenceText.includes(value)),
         artifactMessageEvidence: expectedMessageEvidence
             .filter((value) => artifactEvidenceText.includes(value)),
-        diagnosticTypeIds: uniqueSortedValues(
+        diagnosticTypeIds: toUniqueSortedValues(
             monitor.runtimeDiagnostics.map((row) => row.diagnosticTypeId)
         ),
-        warningDiagnosticTypeIds: uniqueSortedValues(
+        warningDiagnosticTypeIds: toUniqueSortedValues(
             monitor.runtimeDiagnostics
                 .filter((row) => row.severity === 'warning')
                 .map((row) => row.diagnosticTypeId)
         ),
-        highSeverityDiagnosticTypeIds: uniqueSortedValues(
+        highSeverityDiagnosticTypeIds: toUniqueSortedValues(
             monitor.runtimeDiagnostics
                 .filter((row) => input.failOnDiagnosticSeverities.includes(row.severity))
                 .map((row) => row.diagnosticTypeId)
         ),
-        compositeRecipeIds: uniqueSortedValues(
+        compositeRecipeIds: toUniqueSortedValues(
             monitor.compositeDrilldowns
                 .map((row) => row.recipeId ?? row.commandId)
                 .filter((value): value is string => Boolean(value))

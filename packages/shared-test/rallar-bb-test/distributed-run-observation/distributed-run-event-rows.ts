@@ -3,15 +3,15 @@ import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-inde
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
     decodeFirstNonBlankText,
-    summarizeDistributedRunPayload,
     toDistributedRunEventSummary,
+    toDistributedRunPayloadSummary,
     toDistributedRunPayloadTopic
 } from './distributed-run-payload-summary.ts';
 import type { DistributedRunEventRow } from './distributed-run-row-contracts.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
-export function distributedRunEvents(
+export function toDistributedRunEventRows(
     events: readonly ControlEventSnapshot[]
 ): readonly DistributedRunEventRow[] {
     return [...events]
@@ -24,11 +24,11 @@ export function distributedRunEvents(
             commandId: event.commandId,
             topic: toDistributedRunPayloadTopic(event.payload),
             summary: toDistributedRunEventSummary(event),
-            payloadSummary: distributedRunEventPayloadSummary(event.payload)
+            payloadSummary: toDistributedRunEventPayloadSummary(event.payload)
         }));
 }
 
-export function distributedRunEventsByAgent(
+export function toDistributedRunEventsByAgent(
     events: readonly DistributedRunEventRow[],
     index: DistributedRunMonitorIndex
 ): ReadonlyMap<string, readonly DistributedRunEventRow[]> {
@@ -44,7 +44,7 @@ export function distributedRunEventsByAgent(
     return eventsByAgentId;
 }
 
-function distributedRunEventPayloadSummary(payload: unknown): string {
+function toDistributedRunEventPayloadSummary(payload: unknown): string {
     const event = decodeRecord(payload);
     const nestedPayload = decodeRecord(event.payload);
     const nestedData = decodeRecord(nestedPayload.data ?? event.data);

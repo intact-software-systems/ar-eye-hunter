@@ -6,22 +6,23 @@ import type {
 import {
     createDistributedRunMonitorFailureIndex,
     createDistributedRunMonitorIndex,
-    recordDistributedRunMonitorDerivation
+    recordDistributedRunMonitorDerivation,
+    type DistributedRunMonitorIndex
 } from './distributed-run-monitor-index.ts';
-import { distributedRunAgentProgress } from './distributed-run-observation/distributed-run-agent-progress.ts';
+import { computeDistributedRunAgentProgress } from './distributed-run-observation/compute-distributed-run-agent-progress.ts';
+import { computeDistributedRunReadiness } from './distributed-run-observation/compute-distributed-run-readiness.ts';
+import { computeDistributedRunRecipeProgress } from './distributed-run-observation/compute-distributed-run-recipe-progress.ts';
 import {
-    distributedRunCompositeCounts,
-    distributedRunCompositeDrilldowns,
-    distributedRunCompositeFailures
+    computeDistributedRunCompositeCounts,
+    toDistributedRunCompositeDrilldowns,
+    toDistributedRunCompositeFailures
 } from './distributed-run-observation/distributed-run-composite-drilldowns.ts';
 import {
-    distributedRunEvents,
-    distributedRunEventsByAgent
+    toDistributedRunEventRows,
+    toDistributedRunEventsByAgent
 } from './distributed-run-observation/distributed-run-event-rows.ts';
-import { distributedRunFailures } from './distributed-run-observation/distributed-run-failure-rows.ts';
-import { summarizeDistributedRunLatencies } from './distributed-run-observation/distributed-run-latency-summary.ts';
-import { distributedRunReadiness } from './distributed-run-observation/distributed-run-readiness.ts';
-import { distributedRunRecipeProgress } from './distributed-run-observation/distributed-run-recipe-progress.ts';
+import { toDistributedRunFailureRows } from './distributed-run-observation/distributed-run-failure-rows.ts';
+import { computeDistributedRunLatencySummary } from './distributed-run-observation/distributed-run-latency-summary.ts';
 import type {
     DistributedRunAgentProgressRow,
     DistributedRunArtifactValidation,
@@ -37,11 +38,11 @@ import type {
     DistributedRunTimelineItem
 } from './distributed-run-observation/distributed-run-row-contracts.ts';
 import {
-    correlateDistributedRunRuntimeDiagnostics,
-    distributedRunRuntimeDiagnosticCounts,
-    distributedRunRuntimeDiagnostics
+    computeDistributedRunRuntimeDiagnosticCounts,
+    toCorrelatedDistributedRunRuntimeDiagnostics,
+    toDistributedRunRuntimeDiagnosticRows
 } from './distributed-run-observation/distributed-run-runtime-diagnostic-rows.ts';
-import { distributedRunTimeline } from './distributed-run-observation/distributed-run-timeline.ts';
+import { toDistributedRunTimeline } from './distributed-run-observation/to-distributed-run-timeline.ts';
 import { validateDistributedRunArtifact } from './distributed-run-observation/validate-distributed-run-artifact.ts';
 
 export type DistributedRunMonitor = Readonly<{
@@ -85,16 +86,16 @@ export function deriveDistributedRunMonitor(
     }>
 ): DistributedRunMonitor {
     const index = createDistributedRunMonitorIndex(input);
-    const linkedEvents = distributedRunEvents(index.linkedControlEvents);
-    const eventsByAgentId = distributedRunEventsByAgent(linkedEvents, index);
-    const compositeDrilldowns = distributedRunCompositeDrilldowns(
+    const linkedEvents = toDistributedRunEventRows(index.linkedControlEvents);
+    const eventsByAgentId = toDistributedRunEventsByAgent(linkedEvents, index);
+    const compositeDrilldowns = toDistributedRunCompositeDrilldowns(
         index.linkedResults,
         index.commandsById,
         index.linksByCommandId
     );
     const failures = toMonitorFailures(input.distributedRun, index, compositeDrilldowns);
-    const runtimeDiagnostics = correlateDistributedRunRuntimeDiagnostics(
-        distributedRunRuntimeDiagnostics(index.linkedControlEvents),
+    const runtimeDiagnostics = toCorrelatedDistributedRunRuntimeDiagnostics(
+        toDistributedRunRuntimeDiagnosticRows(index.linkedControlEvents),
         createDistributedRunMonitorFailureIndex(failures, index)
     );
     const artifact = input.artifactValidation ??
@@ -105,23 +106,22 @@ export function deriveDistributedRunMonitor(
         state: input.distributedRun.state,
         commandCounts: index.commandCounts,
         resultCounts: index.resultCounts,
-        compositeCounts: distributedRunCompositeCounts(compositeDrilldowns),
-        diagnosticCounts: distributedRunRuntimeDiagnosticCounts(runtimeDiagnostics),
-        latency: summarizeDistributedRunLatencies(index.latencies),
+        compositeCounts: computeDistributedRunCompositeCounts(compositeDrilldowns),
+        diagnosticCounts: computeDistributedRunRuntimeDiagnosticCounts(runtimeDiagnostics),
+        latency: computeDistributedRunLatencySummary(index.latencies),
         artifact,
-        timeline: distributedRunTimeline({
+        timeline: toDistributedRunTimeline({
             distributedRun: input.distributedRun,
             index,
             commands: index.commandsById,
             results: index.linkedResults,
             events: linkedEvents,
             runtimeDiagnostics,
-            failures,
-            artifact
+            failures
         }),
-        agentProgress: distributedRunAgentProgress({ index, eventsByAgentId }),
-        recipeProgress: distributedRunRecipeProgress({ index }),
-        readiness: distributedRunReadiness({ index }),
+        agentProgress: computeDistributedRunAgentProgress({ index, eventsByAgentId }),
+        recipeProgress: computeDistributedRunRecipeProgress({ index }),
+        readiness: computeDistributedRunReadiness({ index }),
         failures,
         events: linkedEvents,
         runtimeDiagnostics,
@@ -134,11 +134,11 @@ export function deriveDistributedRunMonitor(
 /** Recorded rollup failures and composite child failures share one newest-first order. */
 function toMonitorFailures(
     distributedRun: ControlDistributedRunSnapshot,
-    index: ReturnType<typeof createDistributedRunMonitorIndex>,
+    index: DistributedRunMonitorIndex,
     compositeDrilldowns: readonly DistributedRunCompositeDrilldown[]
 ): readonly DistributedRunFailureRow[] {
     return [
-        ...distributedRunFailures(distributedRun, index.linkedResults, index.commandsById),
-        ...distributedRunCompositeFailures(compositeDrilldowns)
+        ...toDistributedRunFailureRows(distributedRun, index.linkedResults, index.commandsById),
+        ...toDistributedRunCompositeFailures(compositeDrilldowns)
     ].sort((left, right) => (right.atEpochMs ?? 0) - (left.atEpochMs ?? 0));
 }

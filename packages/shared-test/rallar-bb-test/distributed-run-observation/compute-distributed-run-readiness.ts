@@ -4,10 +4,10 @@ import {
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
 import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
-import { durationBetween } from './distributed-run-latency-summary.ts';
+import { computeDurationBetween } from './distributed-run-latency-summary.ts';
 import type { DistributedRunReadinessRow } from './distributed-run-row-contracts.ts';
 
-export function distributedRunReadiness(
+export function computeDistributedRunReadiness(
     input: Readonly<{
         index: DistributedRunMonitorIndex;
     }>
@@ -46,7 +46,7 @@ export function distributedRunReadiness(
         const result = input.index.resultsByCommandId.get(representative.commandId);
         const command = input.index.commandsById.get(representative.commandId);
         const latencyMs = result?.result?.durationMs ??
-            durationBetween(representative.queuedAtEpochMs, command?.completedAtEpochMs);
+            computeDurationBetween(representative.queuedAtEpochMs, command?.completedAtEpochMs);
 
         return {
             agentId,

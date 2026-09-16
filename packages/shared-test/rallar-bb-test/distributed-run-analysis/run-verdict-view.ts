@@ -67,7 +67,7 @@ export function deriveRunVerdictView(
         return toNoRunVerdictView(input.refreshedAtEpochMs);
     }
 
-    const { monitor, report } = resolveVerdictEvidence({
+    const { monitor, report } = computeVerdictEvidence({
         ...input,
         distributedRun: input.distributedRun
     });
@@ -78,9 +78,8 @@ export function deriveRunVerdictView(
     const firstAction = report.nextActions[0];
     const warningSignals = toRunVerdictWarnings(monitor, report);
     const successSignals = toRunVerdictSuccessSignals(monitor, report);
-    const baseVerdict = toRunVerdictKind(input.distributedRun, report);
+    const verdict = toRunVerdictKind(input.distributedRun, report);
     const hasWarnings = warningSignals.length > 0;
-    const verdict = baseVerdict === 'passed' && hasWarnings ? 'passed' : baseVerdict;
 
     return {
         verdict,
@@ -106,7 +105,7 @@ export function deriveRunVerdictView(
             monitor,
             report,
             warningSignalCount: warningSignals.length,
-            includeLinkedEvidence: baseVerdict === 'failed'
+            includeLinkedEvidence: verdict === 'failed'
         }),
         successSignals,
         warningSignals,
@@ -123,7 +122,7 @@ interface RunVerdictEvidence {
  * A supplied monitor is not silently adopted by a separately supplied report; the
  * report keeps deriving from its own distributed-run input in that case.
  */
-function resolveVerdictEvidence(
+function computeVerdictEvidence(
     input: Readonly<{
         distributedRun: ControlDistributedRunSnapshot;
         monitor?: DistributedRunMonitor;

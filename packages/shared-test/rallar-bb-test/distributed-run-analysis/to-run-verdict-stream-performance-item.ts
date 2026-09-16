@@ -1,7 +1,7 @@
 import type { DistributedRunMonitor } from '../distributed-run-monitor.ts';
-import { compactStrings } from './compact-strings.ts';
 import type { DistributedRunAnalysisReport } from './distributed-run-analysis-report.ts';
 import type { RunCausalTrailItem } from './run-verdict-causal-trail.ts';
+import { toCompactStrings } from './to-compact-strings.ts';
 import { isRtcStreamPerformanceFailureText } from './to-distributed-failure-explanation.ts';
 
 export function toRunVerdictStreamPerformanceItem(
@@ -42,7 +42,7 @@ export function toRunVerdictStreamPerformanceItem(
         recipeId: input.firstFailure.recipeId,
         commandId: streamCommandId,
         atEpochMs: input.firstFailure.atEpochMs,
-        evidence: compactStrings([
+        evidence: toCompactStrings([
             streamCommandId,
             streamAgentId,
             input.firstFailure.code,

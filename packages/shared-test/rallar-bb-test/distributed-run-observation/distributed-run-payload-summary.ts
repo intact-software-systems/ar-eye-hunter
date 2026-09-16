@@ -2,7 +2,7 @@ import type { ControlRunSnapshot } from '../control-snapshots.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
-export function summarizeDistributedRunPayload(value: unknown): string {
+export function toDistributedRunPayloadSummary(value: unknown): string {
     if (value === undefined) {
         return '';
     }
@@ -39,7 +39,7 @@ export function toDistributedRunEventSummary(event: ControlEventSnapshot): strin
             return direct;
         }
     }
-    return summarizeDistributedRunPayload(payload);
+    return toDistributedRunPayloadSummary(payload);
 }
 
 export function decodeFirstNonBlankText(...values: readonly unknown[]): string | undefined {
@@ -54,7 +54,7 @@ export function isPayloadRecord(value: unknown): value is Record<string, unknown
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function payloadReferencesDistributedRun(payload: unknown, distributedRunId: string): boolean {
+export function hasDistributedRunReference(payload: unknown, distributedRunId: string): boolean {
     if (!payload || !distributedRunId) {
         return false;
     }

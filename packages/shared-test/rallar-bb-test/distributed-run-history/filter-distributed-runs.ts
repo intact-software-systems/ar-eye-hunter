@@ -1,6 +1,6 @@
 import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
 import { toDistributedFailureExplanation } from '../distributed-run-analysis/to-distributed-failure-explanation.ts';
-import { distributedRunRecordedFailures } from '../distributed-run-observation/distributed-run-failure-rows.ts';
+import { toDistributedRunRecordedFailures } from '../distributed-run-observation/distributed-run-failure-rows.ts';
 import {
     toDistributedRunHistoryManifest,
     toHistoryManifestText
@@ -37,7 +37,7 @@ export function filterDistributedRuns(
     };
 
     return [...runs]
-        .filter((run) => matchesDistributedRunFilter(run, normalized))
+        .filter((run) => isDistributedRunInFilter(run, normalized))
         .sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
 }
 
@@ -53,7 +53,7 @@ interface NormalizedDistributedRunFilter {
     readonly failureCategory: string;
 }
 
-function matchesDistributedRunFilter(
+function isDistributedRunInFilter(
     run: ControlDistributedRunSnapshot,
     normalized: NormalizedDistributedRunFilter
 ): boolean {
@@ -96,12 +96,12 @@ function matchesDistributedRunFilter(
     if (filter.toEpochMs !== undefined && run.createdAtEpochMs > filter.toEpochMs) {
         return false;
     }
-    if (failureType && !matchesDistributedRunFailureType(run, failureType)) {
+    if (failureType && !hasDistributedRunFailureType(run, failureType)) {
         return false;
     }
     if (
         failureCategory &&
-        !matchesDistributedRunFailureCategory(run, failureCategory)
+        !hasDistributedRunFailureCategory(run, failureCategory)
     ) {
         return false;
     }
@@ -111,7 +111,7 @@ function matchesDistributedRunFilter(
     return toDistributedRunSearchText(run).includes(query);
 }
 
-function matchesDistributedRunFailureType(
+function hasDistributedRunFailureType(
     run: ControlDistributedRunSnapshot,
     failureType: string
 ): boolean {
@@ -127,11 +127,11 @@ function matchesDistributedRunFailureType(
     return failures.includes(failureType);
 }
 
-function matchesDistributedRunFailureCategory(
+function hasDistributedRunFailureCategory(
     run: ControlDistributedRunSnapshot,
     category: string
 ): boolean {
-    const failures = distributedRunRecordedFailures(run);
+    const failures = toDistributedRunRecordedFailures(run);
     if (category === 'any') {
         return failures.length > 0;
     }

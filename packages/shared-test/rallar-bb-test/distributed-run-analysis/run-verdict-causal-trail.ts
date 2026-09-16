@@ -3,9 +3,9 @@ import type {
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow
 } from '../distributed-run-observation/distributed-run-row-contracts.ts';
-import { compactStrings } from './compact-strings.ts';
 import type { DistributedRunAnalysisReport } from './distributed-run-analysis-report.ts';
 import type { RunVerdictTone } from './run-verdict-view.ts';
+import { toCompactStrings } from './to-compact-strings.ts';
 import { toRunVerdictStreamPerformanceItem } from './to-run-verdict-stream-performance-item.ts';
 
 export type RunCausalTrailItem = Readonly<{
@@ -126,7 +126,7 @@ function toFailureCategoryItem(
         recipeId: firstFailure.recipeId,
         commandId: firstFailure.commandId,
         atEpochMs: firstFailure.atEpochMs,
-        evidence: compactStrings([firstFailure.key, firstFailure.code])
+        evidence: toCompactStrings([firstFailure.key, firstFailure.code])
     };
 }
 
@@ -147,7 +147,7 @@ function toCommandResultItem(firstFailure: FirstFailure): RunCausalTrailItem {
         recipeId: firstFailure.recipeId,
         commandId: firstFailure.commandId,
         atEpochMs: firstFailure.atEpochMs,
-        evidence: compactStrings([
+        evidence: toCompactStrings([
             firstFailure.commandId,
             firstFailure.agentId,
             firstFailure.recipeId

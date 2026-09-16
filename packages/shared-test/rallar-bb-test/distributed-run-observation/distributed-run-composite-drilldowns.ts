@@ -16,13 +16,13 @@ import type {
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
-export function distributedRunCompositeDrilldowns(
+export function toDistributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
     commands: ReadonlyMap<string, ControlCommandSnapshot>,
     linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>
 ): readonly DistributedRunCompositeDrilldown[] {
     return results.flatMap((result) => {
-        const roots = distributedRunCompositeRoots(result.result);
+        const roots = toDistributedRunCompositeRoots(result.result);
         if (roots.length === 0) {
             return [];
         }
@@ -48,7 +48,7 @@ export function distributedRunCompositeDrilldowns(
             key: `${result.agentId}:${result.commandId}`,
             commandId: result.commandId,
             agentId: result.agentId,
-            recipeId: link?.recipeId ?? commandRecipeId(command),
+            recipeId: link?.recipeId ?? resolveCommandRecipeId(command),
             role: link?.role,
             phase: link?.phase,
             commandKind: command?.envelope.command.kind ?? result.result?.kind,
@@ -69,7 +69,7 @@ export function distributedRunCompositeDrilldowns(
     });
 }
 
-export function distributedRunCompositeCounts(
+export function computeDistributedRunCompositeCounts(
     drilldowns: readonly DistributedRunCompositeDrilldown[]
 ): DistributedRunCompositeCounts {
     return {
@@ -82,7 +82,7 @@ export function distributedRunCompositeCounts(
     };
 }
 
-export function distributedRunCompositeFailures(
+export function toDistributedRunCompositeFailures(
     drilldowns: readonly DistributedRunCompositeDrilldown[]
 ): readonly DistributedRunFailureRow[] {
     return drilldowns.flatMap((drilldown): DistributedRunFailureRow[] => {
@@ -103,22 +103,22 @@ export function distributedRunCompositeFailures(
     });
 }
 
-function distributedRunCompositeRoots(
+function toDistributedRunCompositeRoots(
     result: RallarBlackBoxTestResult | undefined
 ): readonly RallarBlackBoxTestResult[] {
     if (!result) {
         return [];
     }
 
-    const recipeResults = recipeRunChildResults(result);
+    const recipeResults = toRecipeRunChildResults(result);
     if (recipeResults.length > 0) {
-        return recipeResults.some(compositeMonitorRelevantResult) ? recipeResults : [];
+        return recipeResults.some(isCompositeMonitorRelevantResult) ? recipeResults : [];
     }
 
-    return compositeMonitorRelevantResult(result) ? [result] : [];
+    return isCompositeMonitorRelevantResult(result) ? [result] : [];
 }
 
-function compositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boolean {
+function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boolean {
     if (
         result.kind === 'loop' ||
         result.kind === 'parallel' ||
@@ -127,10 +127,10 @@ function compositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boole
     ) {
         return true;
     }
-    return recipeRunChildResults(result).some(compositeMonitorRelevantResult);
+    return toRecipeRunChildResults(result).some(isCompositeMonitorRelevantResult);
 }
 
-function recipeRunChildResults(result: RallarBlackBoxTestResult): readonly RallarBlackBoxTestResult[] {
+function toRecipeRunChildResults(result: RallarBlackBoxTestResult): readonly RallarBlackBoxTestResult[] {
     if (result.kind !== 'recipe.run') {
         return [];
     }
@@ -151,7 +151,7 @@ function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTest
         isFiniteDurationMs(candidate.durationMs);
 }
 
-export function commandRecipeId(command: ControlCommandSnapshot | undefined): string | undefined {
+export function resolveCommandRecipeId(command: ControlCommandSnapshot | undefined): string | undefined {
     if (!command) {
         return undefined;
     }

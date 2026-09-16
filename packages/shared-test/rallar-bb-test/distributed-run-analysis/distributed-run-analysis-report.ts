@@ -5,14 +5,15 @@ import type {
     ControlRunSnapshot,
     ControlSnapshotBounds
 } from '../control-snapshots.ts';
-import { distributedRunDuration } from '../distributed-run-history/distributed-run-duration.ts';
+import { computeDistributedRunDuration } from '../distributed-run-history/compute-distributed-run-duration.ts';
 import {
     distributedRunMonitorAnalysisReuseFor,
     distributedRunMonitorFirstPhaseForCommand,
-    recordDistributedRunAnalysisReportDerivation
+    recordDistributedRunAnalysisReportDerivation,
+    type DistributedRunMonitorAnalysisReuse
 } from '../distributed-run-monitor-index.ts';
 import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
-import { firstDistributedFailure } from '../distributed-run-observation/distributed-run-failure-rows.ts';
+import { resolveFirstDistributedFailure } from '../distributed-run-observation/distributed-run-failure-rows.ts';
 import type {
     DistributedRunArtifactValidationStatus,
     DistributedRunFailureRow,
@@ -24,7 +25,7 @@ import type {
     DistributedFailureExplanation,
     FirstDistributedRunPhaseForCommand
 } from './distributed-failure-explanation-contracts.ts';
-import { distributedFailureExplanations } from './distributed-failure-explanations.ts';
+import { toDistributedFailureExplanations } from './distributed-failure-explanations.ts';
 import { toDistributedFailureCategory } from './to-distributed-failure-explanation.ts';
 
 export type DistributedRunAnalysisReport = Readonly<{
@@ -103,8 +104,8 @@ export function deriveDistributedRunAnalysisReport(
         commandLinks: input.distributedRun.commandLinks,
         reportWork
     });
-    const firstFailure = firstDistributedFailure(monitor.failures);
-    const explanations = distributedFailureExplanations({
+    const firstFailure = resolveFirstDistributedFailure(monitor.failures);
+    const explanations = toDistributedFailureExplanations({
         distributedRun: input.distributedRun,
         monitor,
         firstFailure,
@@ -166,7 +167,7 @@ function toReportSummary(
     return {
         state: distributedRun.state,
         ok: distributedRun.rollup.ok,
-        durationMs: distributedRunDuration(distributedRun),
+        durationMs: computeDistributedRunDuration(distributedRun),
         targetCount: distributedRun.targetAgentIds.length,
         commandCount: monitor.commandCounts.total,
         completedCommandCount: monitor.commandCounts.completed,
@@ -199,12 +200,12 @@ function toReportFirstFailure(
     };
 }
 
-type ReportWork = {
+interface ReportWork {
     reportCommandLinkLookupCount: number;
     reportFallbackCommandLinkIndexPassCount: number;
     reportFallbackCommandLinkVisitCount: number;
     reportFallbackCommandPhaseLookupCount: number;
-};
+}
 
 function createReportWork(): ReportWork {
     return {
@@ -221,7 +222,7 @@ function createReportWork(): ReportWork {
  */
 function createReportFirstPhaseLookup(
     input: Readonly<{
-        analysisReuse: ReturnType<typeof distributedRunMonitorAnalysisReuseFor>;
+        analysisReuse: DistributedRunMonitorAnalysisReuse | undefined;
         commandLinks: readonly ControlDistributedRunCommandLink[];
         reportWork: ReportWork;
     }>

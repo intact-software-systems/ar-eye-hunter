@@ -1,11 +1,11 @@
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
+import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestCommand
 } from '../rallar-black-box-test-contracts.ts';
 import {
     computeEffectiveFrameCount,
-    decodeFirstPositiveIntegerFrom
+    resolveFirstPositiveInteger
 } from './distributed-recipe-command-preview.ts';
 import {
     COMPOSITE_CHILD_REQUIREMENTS_LABEL,
@@ -48,16 +48,16 @@ export function toDistributedRecipeCommandAnalysis(
     return {
         effectiveCommandCount: branch.effectiveCommandCount,
         effectiveFrameCount: computeEffectiveFrameCount(command) ??
-            decodeFirstPositiveIntegerFrom(childAnalyses, (analysis) => analysis.effectiveFrameCount),
+            resolveFirstPositiveInteger(childAnalyses, (analysis) => analysis.effectiveFrameCount),
         maxDepth: childAnalyses.reduce(
             (maxDepth, analysis) => Math.max(maxDepth, analysis.maxDepth),
             depth + 1
         ),
-        commandKinds: uniqueSortedValues([
+        commandKinds: toUniqueSortedValues([
             command.kind,
             ...childAnalyses.flatMap((analysis) => analysis.commandKinds)
         ]),
-        liveServiceRequirements: uniqueSortedValues([
+        liveServiceRequirements: toUniqueSortedValues([
             ...toDirectLiveServiceRequirements(command),
             ...childAnalyses.flatMap((analysis) => analysis.liveServiceRequirements)
         ]),
@@ -69,11 +69,11 @@ export function toDistributedRecipeCommandAnalysis(
         waits: [...branch.waits, ...childAnalyses.flatMap((analysis) => analysis.waits)],
         asserts: [...branch.asserts, ...childAnalyses.flatMap((analysis) => analysis.asserts)],
         tree: [row, ...childAnalyses.flatMap((analysis) => analysis.tree)],
-        warnings: uniqueSortedValues([
+        warnings: toUniqueSortedValues([
             ...branch.warnings,
             ...childAnalyses.flatMap((analysis) => analysis.warnings)
         ]),
-        errors: uniqueSortedValues([
+        errors: toUniqueSortedValues([
             ...toDepthErrors(path, depth),
             ...branch.errors,
             ...childAnalyses.flatMap((analysis) => analysis.errors)
@@ -86,17 +86,17 @@ function toCommandBranch(
     path: string,
     depth: number
 ): DistributedRecipeCommandBranch {
-    const analyzeChildCommand = (child: RallarBlackBoxTestCommand, childPath: string) =>
+    const toChildCommandAnalysis = (child: RallarBlackBoxTestCommand, childPath: string) =>
         toDistributedRecipeCommandAnalysis(child, childPath, depth + 1);
 
     switch (command.kind) {
         case 'loop':
-            return toLoopCommandBranch(command, path, analyzeChildCommand);
+            return toLoopCommandBranch(command, path, toChildCommandAnalysis);
         case 'parallel':
-            return toParallelCommandBranch(command, path, analyzeChildCommand);
+            return toParallelCommandBranch(command, path, toChildCommandAnalysis);
         case 'recipe.load':
         case 'recipe.run':
-            return toNestedRecipeCommandBranch(command, path, analyzeChildCommand);
+            return toNestedRecipeCommandBranch(command, path, toChildCommandAnalysis);
         case 'wait':
             return toWaitCommandBranch(command, path);
         case 'assert':

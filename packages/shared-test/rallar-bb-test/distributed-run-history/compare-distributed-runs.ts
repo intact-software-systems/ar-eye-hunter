@@ -1,8 +1,8 @@
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../control-snapshots.ts';
-import { distributedRunEvents } from '../distributed-run-observation/distributed-run-event-rows.ts';
-import { payloadReferencesDistributedRun } from '../distributed-run-observation/distributed-run-payload-summary.ts';
+import { toDistributedRunEventRows } from '../distributed-run-observation/distributed-run-event-rows.ts';
+import { hasDistributedRunReference } from '../distributed-run-observation/distributed-run-payload-summary.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from '../distributed-run.ts';
-import { distributedRunDuration } from './distributed-run-duration.ts';
+import { computeDistributedRunDuration } from './compute-distributed-run-duration.ts';
 import { toDistributedRunFailureSignatures } from './filter-distributed-runs.ts';
 import { toDistributedRunRecipeSelectionId } from './to-distributed-run-recipe-selection-id.ts';
 
@@ -94,8 +94,8 @@ function toTimingDelta(
     left: ControlDistributedRunSnapshot,
     right: ControlDistributedRunSnapshot
 ): DistributedRunCompareSummary['timingDelta'] {
-    const leftDurationMs = distributedRunDuration(left);
-    const rightDurationMs = distributedRunDuration(right);
+    const leftDurationMs = computeDistributedRunDuration(left);
+    const rightDurationMs = computeDistributedRunDuration(right);
     return {
         leftDurationMs,
         rightDurationMs,
@@ -140,9 +140,9 @@ function toDistributedRunReceivedMessageSignatures(
     );
     const events = (controlRun?.events ?? []).filter((event) =>
         (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
-        payloadReferencesDistributedRun(event.payload, distributedRun.distributedRunId)
+        hasDistributedRunReference(event.payload, distributedRun.distributedRunId)
     );
-    return distributedRunEvents(events)
+    return toDistributedRunEventRows(events)
         .filter((event) => {
             const text = `${event.kind} ${event.topic ?? ''} ${event.summary}`.toLowerCase();
             return text.includes('message') || text.includes('received') || text.includes('payload');

@@ -1,3 +1,4 @@
+import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import {
     distributedRunMonitorRecipeLinks,
     type DistributedRunMonitorIndex
@@ -6,10 +7,10 @@ import {
     distributedRunMonitorExpectedTargetMultiplicity,
     distributedRunMonitorRecipeTargetCount
 } from '../distributed-run-monitor-membership-index.ts';
-import { average, isFiniteDurationMs } from './distributed-run-latency-summary.ts';
+import { computeAverage, isFiniteDurationMs } from './distributed-run-latency-summary.ts';
 import type { DistributedRunRecipeProgressRow } from './distributed-run-row-contracts.ts';
 
-export function distributedRunRecipeProgress(
+export function computeDistributedRunRecipeProgress(
     input: Readonly<{
         index: DistributedRunMonitorIndex;
     }>
@@ -45,7 +46,7 @@ export function distributedRunRecipeProgress(
             passedCount: totals.passedCount,
             failedCount: totals.failedCount,
             missingCount,
-            averageLatencyMs: average(totals.latencies)
+            averageLatencyMs: computeAverage(totals.latencies)
         };
     });
 }
@@ -61,7 +62,7 @@ type RecipeLinkTotals = Readonly<{
 
 function toRecipeLinkTotals(
     index: DistributedRunMonitorIndex,
-    progressLinks: ReturnType<typeof distributedRunMonitorRecipeLinks>
+    progressLinks: readonly ControlDistributedRunCommandLink[]
 ): RecipeLinkTotals {
     const targetAgentsWithLinks = new Set<string>();
     const latencies: number[] = [];

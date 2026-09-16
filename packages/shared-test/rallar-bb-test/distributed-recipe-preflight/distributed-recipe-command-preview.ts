@@ -1,4 +1,4 @@
-import { uniqueSortedValues } from '../distributed/unique-sorted-values.ts';
+import { toUniqueSortedValues } from '../distributed/to-unique-sorted-values.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
@@ -30,7 +30,7 @@ export function distributedRecipeCommandPreview(
         toDistributedRecipeCommandKinds(command).includes('rtc.stream')
     );
     const effectiveFrameCount = computeRecipeMetadataFrameCount(recipe) ??
-        decodeFirstPositiveIntegerFrom(recipe.commands, computeEffectiveFrameCount);
+        resolveFirstPositiveInteger(recipe.commands, computeEffectiveFrameCount);
     const labelParts = [
         `${manifestCommandCount} manifest command${manifestCommandCount === 1 ? '' : 's'}`
     ];
@@ -52,19 +52,19 @@ export function distributedRecipeCommandPreview(
 export function distributedRecipeCommandKinds(
     recipe: RallarBlackBoxTestRecipe
 ): readonly RallarBlackBoxTestCommandKind[] {
-    return uniqueSortedValues(recipe.commands.flatMap(toDistributedRecipeCommandKinds));
+    return toUniqueSortedValues(recipe.commands.flatMap(toDistributedRecipeCommandKinds));
 }
 
 export function distributedRecipeCrdtTransports(
     recipe: RallarBlackBoxTestRecipe
 ): readonly RallarBlackBoxTestCrdtTransport[] {
-    return uniqueSortedValues(recipe.commands.flatMap(toCrdtTransports));
+    return toUniqueSortedValues(recipe.commands.flatMap(toCrdtTransports));
 }
 
 export function toDistributedRecipeCommandKinds(
     command: RallarBlackBoxTestCommand
 ): readonly RallarBlackBoxTestCommandKind[] {
-    return uniqueSortedValues([command.kind, ...toNestedCommandKinds(command)]);
+    return toUniqueSortedValues([command.kind, ...toNestedCommandKinds(command)]);
 }
 
 export function hasCrdtCommandKind(
@@ -111,7 +111,7 @@ export function computeEffectiveFrameCount(command: RallarBlackBoxTestCommand): 
     }
 
     if (command.kind === 'loop') {
-        return decodeFirstPositiveIntegerFrom(command.commands, computeEffectiveFrameCount);
+        return resolveFirstPositiveInteger(command.commands, computeEffectiveFrameCount);
     }
 
     return undefined;
@@ -128,7 +128,7 @@ function decodeFirstPositiveInteger(...values: readonly unknown[]): number | und
     return values.find((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0);
 }
 
-export function decodeFirstPositiveIntegerFrom<Value>(
+export function resolveFirstPositiveInteger<Value>(
     values: Iterable<Value>,
     select: (value: Value) => number | undefined
 ): number | undefined {
