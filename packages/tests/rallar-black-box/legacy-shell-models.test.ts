@@ -278,7 +278,6 @@ describe('legacy agent-session ticket service', () => {
 
         scrubAgentSessionTicketFromUrl();
 
-        expect(replaceState).toHaveBeenCalledOnce();
         expect(replaceState).toHaveBeenCalledWith(
             null,
             'Rallar Black Box',

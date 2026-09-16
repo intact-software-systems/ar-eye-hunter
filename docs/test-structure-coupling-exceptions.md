@@ -2259,6 +2259,36 @@ moved or changed test.
         "requiredConstraint": "An equal-row refresh raises no toggle call.",
         "failureRationale": "An equal-row refresh that re-toggled would produce an identical list while silently changing which agents the next run targets."
       }
+    },
+    {
+      "id": "legacy-agent-session-ticket-consume-dedupe",
+      "domain": "Legacy agent-session ticket consumption",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Concurrent consumes of one agent-session ticket share a single in-flight request, and a consume after settlement issues a new request to its own API base. Executable assertion: \"deduplicates an in-flight consume and clears the cache after settlement\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#deduplicates an in-flight consume and clears the cache after settlement",
+      "coverageRelation": "The test starts two consumes of the same ticket before the first settles, then consumes again at another API base; the ticket consume HTTP port is where the one-time ticket is spent.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Agent-session ticket consume HTTP port",
+        "observableEffect": "One consume request while the first is in flight, and a second request to the new API base only after settlement.",
+        "requiredConstraint": "A duplicate consume of an in-flight ticket reuses the pending request; a consume after settlement issues a new request.",
+        "failureRationale": "Both callers receive the same session either way, but a second in-flight request would spend a one-time ticket twice and fail the agent bootstrap on a real server."
+      }
+    },
+    {
+      "id": "legacy-agent-session-ticket-consume-retry-identity",
+      "domain": "Legacy agent-session ticket consumption",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A consume retried after a rejected response reuses the request id of the rejected attempt. Executable assertion: \"reuses the request ID after a rejected consume response\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#reuses the request ID after a rejected consume response",
+      "coverageRelation": "The test rejects the first consume and resolves the second; the request ids recorded at the ticket consume HTTP port are the idempotency keys the server deduplicates on.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Agent-session ticket consume HTTP port",
+        "observableEffect": "Two consume requests that carry one request id.",
+        "requiredConstraint": "The retry after a rejection issues a second request with the request id of the first attempt.",
+        "failureRationale": "The caller sees the same rejection and session either way; only the two recorded requests show that the retry kept its idempotency key."
+      }
     }
   ],
   "entries": [
@@ -5110,6 +5140,50 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent toggle call is the only witness that an equal-row resolution refresh left the selected targets alone.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps late resolution evidence browseable across equal-row refreshed resolutions"
+    },
+    {
+      "id": "test-structure-coupling-dab0ce1b761d4522",
+      "path": "packages/tests/rallar-black-box/legacy-shell-models.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "legacy-agent-session-ticket-consume-dedupe",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single recorded request while the duplicate consume is pending is the only witness that the one-time ticket was spent once.",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#deduplicates an in-flight consume and clears the cache after settlement"
+    },
+    {
+      "id": "test-structure-coupling-877d74c2a30e2cf0",
+      "path": "packages/tests/rallar-black-box/legacy-shell-models.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "legacy-agent-session-ticket-consume-dedupe",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The second recorded request after settlement proves the in-flight cache cleared instead of returning the settled consume again.",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#deduplicates an in-flight consume and clears the cache after settlement"
+    },
+    {
+      "id": "test-structure-coupling-8657bc752452053f",
+      "path": "packages/tests/rallar-black-box/legacy-shell-models.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "legacy-agent-session-ticket-consume-dedupe",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The post-settlement request must address the new API base; the resolved session is identical for either base.",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#deduplicates an in-flight consume and clears the cache after settlement"
+    },
+    {
+      "id": "test-structure-coupling-c9b8103d8663d2c1",
+      "path": "packages/tests/rallar-black-box/legacy-shell-models.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "legacy-agent-session-ticket-consume-retry-identity",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Both attempts must reach the consume port for the recorded request ids to show that the retry reused one idempotency key.",
+      "semanticCoverage": "packages/tests/rallar-black-box/legacy-shell-models.test.ts#reuses the request ID after a rejected consume response"
     }
   ]
 }
