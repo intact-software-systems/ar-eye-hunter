@@ -37,8 +37,8 @@ const input = {
     }
 };
 
-function RtcRealtimeHarness(props: { capture(view: RtcRealtimeControllerModel): void; }) {
-    const view = useRtcRealtimeController(input);
+function RtcRealtimeHarness(props: { globalValues?: typeof input.globalValues; capture(view: RtcRealtimeControllerModel): void; }) {
+    const view = useRtcRealtimeController({ ...input, globalValues: props.globalValues ?? input.globalValues });
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
 }
@@ -62,11 +62,81 @@ describe('legacy diagnostic recipe copies', () => {
         vi.restoreAllMocks();
     });
 
-    it('copies the direct RTC realtime export as a strict version-1 recipe envelope with its requirements in metadata', async () => {
+    it.each(['realtime', 'messages.rtc'] as const)(
+        'copies the direct RTC realtime export for %s as a strict version-1 recipe carrying the configured send',
+        async (transport) => {
+            const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+            let rtcRealtime: RtcRealtimeControllerModel | undefined;
+            await act(async () =>
+                root.render(createElement(RtcRealtimeHarness, {
+                    capture: (view) => {
+                        rtcRealtime = view;
+                    }
+                }))
+            );
+            await act(async () => {
+                rtcRealtime?.setTransport(transport);
+                rtcRealtime?.setLaneId('lane-a');
+                rtcRealtime?.setPeerIdsText('peer-a, peer-b');
+                rtcRealtime?.setTypeId('room.custom.message');
+                rtcRealtime?.setTopicId('room.custom');
+                rtcRealtime?.setContextId('context-a');
+                rtcRealtime?.setPayloadText('{"text":"hello"}');
+                rtcRealtime?.setMinSnapshotVersion('7');
+                rtcRealtime?.setReliability('at-least-once');
+                rtcRealtime?.setAck('receiver');
+                rtcRealtime?.setOwnership('exclusive');
+                rtcRealtime?.setTimeoutMs(2_500);
+            });
+            rtcRealtime?.copyRecipe();
+            const recipe = JSON.parse(clipboard.mock.calls.at(-1)?.[0] ?? 'null');
+            const roomRef = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room-a' };
+            const send = transport === 'realtime'
+                ? { data: { text: 'hello' }, laneId: 'lane-a', roomId: 'room-a', roomRef, peerIds: ['peer-a', 'peer-b'], openTimeoutMs: 2_500 }
+                : {
+                    roomId: 'room-a',
+                    roomRef,
+                    typeId: 'room.custom.message',
+                    topicId: 'room.custom',
+                    contextId: 'context-a',
+                    payload: { text: 'hello' },
+                    minSnapshotVersion: 7,
+                    reliability: 'at-least-once',
+                    ack: 'receiver',
+                    ownership: 'exclusive',
+                    nextHopPeerIds: ['peer-a', 'peer-b'],
+                    overlayId: 'room-a'
+                };
+
+            expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
+            expect(recipe).toEqual({
+                schemaVersion: 1,
+                recipeId: 'rallar-direct-rtc-realtime-export',
+                name: 'Direct RTC/Realtimes export from Rallar Black Box',
+                metadata: {
+                    requirements: ['provider=browser-rallar', 'logged-in browser session', 'joined group with RTC signaling available']
+                },
+                commands: [
+                    {
+                        kind: 'rtc.connect',
+                        commandId: 'rtc-realtime-connect',
+                        roomId: 'room-a',
+                        transport,
+                        timeoutMs: 2_500,
+                        rallar: { applicationId: 'app', workspaceId: 'workspace', roomRef }
+                    },
+                    { kind: 'rtc.send', commandId: 'rtc-realtime-send', transport, timeoutMs: 2_500, send }
+                ]
+            });
+        }
+    );
+
+    it('omits the room from the RTC realtime export when no group is active so the recipe still validates', async () => {
         const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
         let rtcRealtime: RtcRealtimeControllerModel | undefined;
         await act(async () =>
             root.render(createElement(RtcRealtimeHarness, {
+                globalValues: { ...input.globalValues, roomId: '' },
                 capture: (view) => {
                     rtcRealtime = view;
                 }
@@ -75,14 +145,14 @@ describe('legacy diagnostic recipe copies', () => {
         rtcRealtime?.copyRecipe();
         const recipe = JSON.parse(clipboard.mock.calls.at(-1)?.[0] ?? 'null');
 
-        expect(recipe).toMatchObject({
-            schemaVersion: 1,
-            metadata: { requirements: expect.arrayContaining(['provider=browser-rallar', 'logged-in browser session']) }
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
+        expect(recipe.commands[0]).toEqual({
+            kind: 'rtc.connect',
+            commandId: 'rtc-realtime-connect',
+            transport: 'realtime',
+            timeoutMs: expect.any(Number),
+            rallar: { applicationId: 'app', workspaceId: 'workspace' }
         });
-        const validation = validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe });
-        // The rtc.send in this export has carried roomId and rallar since before strict v1 and no command schema accepts them;
-        // this case proves only the version-1 recipe envelope.
-        expect(validation.ok ? [] : validation.messages.filter((message) => !message.startsWith('recipe.load.recipe.commands['))).toEqual([]);
     });
 
     it('copies the rooms and clients state recipe as a strict version-1 recipe', async () => {

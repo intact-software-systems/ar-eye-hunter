@@ -20,10 +20,13 @@ import {
     type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import type {
+    RtcRealtimeFormValues,
     RtcRealtimeReceivedRow,
     RtcRealtimeSubscriptionRow,
     RtcRealtimeTransport
 } from './rtc-realtime-contracts.ts';
+import { toRtcRealtimeRecipe } from './to-rtc-realtime-recipe.ts';
+import { toRtcRealtimeSendInputs } from './to-rtc-realtime-send-inputs.ts';
 
 export type UseRtcRealtimeControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -80,6 +83,20 @@ export function useRtcRealtimeController({
     const activeGroupId = globalValues.roomId.trim();
     const peerIds = splitCsvValues(peerIdsText);
     const canRun = realBackendReady && Boolean(authSession) && !busyAction;
+    const form: RtcRealtimeFormValues = {
+        transport,
+        laneId,
+        peerIdsText,
+        typeId,
+        topicId,
+        contextId,
+        payloadText,
+        minSnapshotVersion,
+        reliability,
+        ack,
+        ownership,
+        timeoutMs
+    };
 
     useEffect(() => {
         setContextId((current) =>
@@ -448,20 +465,7 @@ export function useRtcRealtimeController({
             return await withFacade(
                 'send-realtime-json',
                 async (facade) =>
-                    await facade.realtime.sendJson({
-                        data: payload,
-                        laneId,
-                        roomId: activeGroupId,
-                        roomRef: activeGroupId
-                            ? {
-                                applicationId: globalValues.applicationId,
-                                workspaceId: globalValues.workspaceId,
-                                groupId: activeGroupId
-                            }
-                            : undefined,
-                        peerIds: peerIds.length > 0 ? peerIds : undefined,
-                        openTimeoutMs: timeoutMs
-                    })
+                    await facade.realtime.sendJson(toRtcRealtimeSendInputs({ form, globalValues, payload }).realtime)
             );
         });
 
@@ -471,28 +475,7 @@ export function useRtcRealtimeController({
             return await withFacade(
                 'send-rtc-message',
                 async (facade) =>
-                    await facade.messages.rtc.send({
-                        roomId: activeGroupId,
-                        roomRef: activeGroupId
-                            ? {
-                                applicationId: globalValues.applicationId,
-                                workspaceId: globalValues.workspaceId,
-                                groupId: activeGroupId
-                            }
-                            : undefined,
-                        typeId,
-                        topicId,
-                        contextId: contextId || activeGroupId || typeId,
-                        payload,
-                        minSnapshotVersion: minSnapshotVersion.trim()
-                            ? Number(minSnapshotVersion)
-                            : undefined,
-                        reliability,
-                        ack,
-                        ownership,
-                        nextHopPeerIds: peerIds.length > 0 ? peerIds : undefined,
-                        overlayId: activeGroupId || undefined
-                    })
+                    await facade.messages.rtc.send(toRtcRealtimeSendInputs({ form, globalValues, payload }).messagesRtc)
             );
         });
 
@@ -536,56 +519,9 @@ export function useRtcRealtimeController({
                 return {};
             }
         })();
+        const sendInputs = toRtcRealtimeSendInputs({ form, globalValues, payload });
         void navigator.clipboard?.writeText(
-            redactedJson(
-                {
-                    schemaVersion: 1,
-                    recipeId: 'rallar-direct-rtc-realtime-export',
-                    name: 'Direct RTC/Realtimes export from Rallar Black Box',
-                    metadata: {
-                        requirements: [
-                            'provider=browser-rallar',
-                            'logged-in browser session',
-                            'joined group with RTC signaling available'
-                        ]
-                    },
-                    commands: [
-                        {
-                            kind: 'rtc.connect',
-                            commandId: 'rtc-realtime-connect',
-                            roomId: activeGroupId,
-                            transport,
-                            timeoutMs,
-                            rallar: {
-                                applicationId: globalValues.applicationId,
-                                workspaceId: globalValues.workspaceId,
-                                roomRef: {
-                                    applicationId: globalValues.applicationId,
-                                    workspaceId: globalValues.workspaceId,
-                                    groupId: activeGroupId
-                                }
-                            }
-                        },
-                        {
-                            kind: 'rtc.send',
-                            commandId: 'rtc-realtime-send',
-                            roomId: activeGroupId,
-                            transport,
-                            send: payload,
-                            targetClient: peerIds[0],
-                            rallar: {
-                                typeId,
-                                topicId,
-                                contextId,
-                                laneId
-                            },
-                            timeoutMs
-                        }
-                    ]
-                },
-                state,
-                authSession
-            )
+            redactedJson(toRtcRealtimeRecipe({ form, globalValues, sendInputs }), state, authSession)
         );
     };
     return {

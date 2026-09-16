@@ -91,3 +91,19 @@ export type RtcRealtimeViewModel = Readonly<{
     refreshHealth(): Promise<void>;
     copyRecipe(): void;
 }>;
+
+export type RtcRealtimeFormValues = Pick<
+    RtcRealtimeViewModel,
+    | 'transport'
+    | 'laneId'
+    | 'peerIdsText'
+    | 'typeId'
+    | 'topicId'
+    | 'contextId'
+    | 'payloadText'
+    | 'minSnapshotVersion'
+    | 'reliability'
+    | 'ack'
+    | 'ownership'
+    | 'timeoutMs'
+>;
