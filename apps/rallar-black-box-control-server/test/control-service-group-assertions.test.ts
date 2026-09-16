@@ -2,9 +2,11 @@ import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-b
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
-    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedGroupAssertion
+} from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
 import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assert } from '@std/assert';

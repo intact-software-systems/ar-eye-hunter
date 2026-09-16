@@ -92,102 +92,30 @@ export function resolveDistributedRunRecipeSelectionKey(
 export function computeDistributedRunFailureEvidenceDestinations(
     input: ComputeDistributedRunFailureEvidenceDestinationsInput
 ): readonly DistributedRunFailureEvidenceDestination[] {
-    const destinations: DistributedRunFailureEvidenceDestination[] = [];
-    const seen = new Set<string>();
-    const add = (destination: DistributedRunFailureEvidenceDestination): void => {
-        const key = `${destination.kind}:${destination.id}`;
-        if (!seen.has(key)) {
-            seen.add(key);
-            destinations.push(destination);
-        }
-    };
-    const matchingDrilldowns = input.monitor.compositeDrilldowns
-        .filter((drilldown) => isCompositeDrilldownMatchingFailure(drilldown, input.failure));
-    const directCommandIds = toUniqueStrings([
-        input.failure.commandId,
-        ...matchingDrilldowns.map((drilldown) => drilldown.commandId).sort()
-    ]);
-    const inferScopedDestinations = input.failure.kind === 'participant' ||
-        input.failure.kind === 'recipe';
-    const initiallyMatchingTimeline = input.monitor.timeline
-        .filter((item) => isTimelineMatchingFailure(item, input.failure, directCommandIds));
-    const commandIds = toUniqueStrings([
-        ...directCommandIds,
-        ...(inferScopedDestinations
-            ? initiallyMatchingTimeline.map((item) => item.commandId).sort()
-            : [])
-    ]);
-    const matchingTimeline = input.monitor.timeline
-        .filter((item) => isTimelineMatchingFailure(item, input.failure, commandIds));
-    const agentIds = toUniqueStrings([
-        input.failure.agentId,
-        ...(inferScopedDestinations ? matchingTimeline.map((item) => item.agentId).sort() : [])
-    ]);
-    const recipeIds = toUniqueStrings([
-        input.failure.recipeId,
-        ...(inferScopedDestinations ? matchingTimeline.map((item) => item.recipeId).sort() : [])
-    ]);
-    agentIds.forEach((agentId) =>
-        add({
+    const scope = computeFailureEvidenceScope(input);
+    const destinations: readonly DistributedRunFailureEvidenceDestination[] = [
+        ...scope.agentIds.map((agentId): DistributedRunAgentEvidenceDestination => ({
             kind: 'agent',
             id: agentId,
             label: `Agent ${agentId}`,
             agentId
-        })
-    );
-    recipeIds.forEach((recipeId) =>
-        add({
+        })),
+        ...scope.recipeIds.map((recipeId): DistributedRunRecipeEvidenceDestination => ({
             kind: 'recipe',
             id: recipeId,
             label: `Recipe ${recipeId}`,
             recipeId
-        })
-    );
-    commandIds.forEach((commandId) =>
-        add({
+        })),
+        ...scope.commandIds.map((commandId): DistributedRunCommandEvidenceDestination => ({
             kind: 'command',
             id: commandId,
             label: `Command ${commandId}`,
             agentId: input.failure.agentId,
             recipeId: input.failure.recipeId,
             commandId
-        })
-    );
-    const recipeCommandIds = new Set(
-        input.monitor.timeline
-            .filter((item) => item.recipeId === input.failure.recipeId)
-            .map((item) => item.commandId)
-            .filter((commandId): commandId is string => commandId !== undefined)
-    );
-    input.monitor.runtimeDiagnostics
-        .filter((diagnostic) => {
-            if (!diagnostic.correlatedFailureKeys.includes(input.failure.key)) {
-                return false;
-            }
-            if (input.failure.kind === 'run') {
-                return input.failure.key === input.monitor.distributedRunId;
-            }
-            if (input.failure.kind === 'participant') {
-                return diagnostic.agentId === input.failure.agentId;
-            }
-            if (input.failure.kind === 'recipe') {
-                return diagnostic.commandId !== undefined && recipeCommandIds.has(diagnostic.commandId);
-            }
-            return diagnostic.commandId !== undefined && commandIds.includes(diagnostic.commandId) &&
-                (!input.failure.agentId || diagnostic.agentId === input.failure.agentId);
-        })
-        .forEach((diagnostic) =>
-            add({
-                kind: 'diagnostic',
-                id: diagnostic.eventId,
-                label: `${diagnostic.transport ?? 'Runtime'} diagnostic · ${diagnostic.diagnosticTypeId}`,
-                agentId: diagnostic.agentId,
-                commandId: diagnostic.commandId,
-                diagnosticId: diagnostic.eventId
-            })
-        );
-    matchingTimeline.forEach((item) =>
-        add({
+        })),
+        ...toDiagnosticDestinations(input, scope),
+        ...scope.matchingTimeline.map((item): DistributedRunTimelineEvidenceDestination => ({
             kind: 'timeline',
             id: item.id,
             label: item.label,
@@ -195,38 +123,147 @@ export function computeDistributedRunFailureEvidenceDestinations(
             recipeId: item.recipeId,
             commandId: item.commandId,
             timelineId: item.id
+        })),
+        ...toEventDestinations(input, scope),
+        ...toArtifactDestinations(input.monitor)
+    ];
+    return toUniqueDestinations(destinations);
+}
+
+interface FailureEvidenceScope {
+    readonly commandIds: readonly string[];
+    readonly agentIds: readonly string[];
+    readonly recipeIds: readonly string[];
+    readonly matchingTimeline: readonly DistributedRunTimelineItem[];
+    readonly recipeCommandIds: ReadonlySet<string>;
+}
+
+/**
+ * The ids a failure names directly, widened for participant and recipe failures by the command, agent and recipe
+ * ids of the timeline items those failures cover.
+ */
+function computeFailureEvidenceScope(
+    input: ComputeDistributedRunFailureEvidenceDestinationsInput
+): FailureEvidenceScope {
+    const { failure, monitor } = input;
+    const directCommandIds = toUniqueStrings([
+        failure.commandId,
+        ...monitor.compositeDrilldowns
+            .filter((drilldown) => isCompositeDrilldownMatchingFailure(drilldown, failure))
+            .map((drilldown) => drilldown.commandId)
+            .sort()
+    ]);
+    const infersScope = failure.kind === 'participant' || failure.kind === 'recipe';
+    const commandIds = toUniqueStrings([
+        ...directCommandIds,
+        ...(infersScope
+            ? monitor.timeline
+                .filter((item) => isTimelineMatchingFailure(item, failure, directCommandIds))
+                .map((item) => item.commandId)
+                .sort()
+            : [])
+    ]);
+    const matchingTimeline = monitor.timeline.filter((item) => isTimelineMatchingFailure(item, failure, commandIds));
+    return {
+        commandIds,
+        agentIds: toUniqueStrings([
+            failure.agentId,
+            ...(infersScope ? matchingTimeline.map((item) => item.agentId).sort() : [])
+        ]),
+        recipeIds: toUniqueStrings([
+            failure.recipeId,
+            ...(infersScope ? matchingTimeline.map((item) => item.recipeId).sort() : [])
+        ]),
+        matchingTimeline,
+        recipeCommandIds: new Set(
+            monitor.timeline
+                .filter((item) => item.recipeId === failure.recipeId)
+                .flatMap((item) => item.commandId === undefined ? [] : [item.commandId])
+        )
+    };
+}
+
+function toDiagnosticDestinations(
+    input: ComputeDistributedRunFailureEvidenceDestinationsInput,
+    scope: FailureEvidenceScope
+): readonly DistributedRunDiagnosticEvidenceDestination[] {
+    const { failure, monitor } = input;
+    return monitor.runtimeDiagnostics
+        .filter((diagnostic) => {
+            if (!diagnostic.correlatedFailureKeys.includes(failure.key)) {
+                return false;
+            }
+            if (failure.kind === 'run') {
+                return failure.key === monitor.distributedRunId;
+            }
+            if (failure.kind === 'participant') {
+                return diagnostic.agentId === failure.agentId;
+            }
+            if (failure.kind === 'recipe') {
+                return diagnostic.commandId !== undefined && scope.recipeCommandIds.has(diagnostic.commandId);
+            }
+            return diagnostic.commandId !== undefined && scope.commandIds.includes(diagnostic.commandId) &&
+                (!failure.agentId || diagnostic.agentId === failure.agentId);
         })
-    );
-    input.monitor.events
-        .filter((event) => event.kind !== 'diagnostic')
+        .map((diagnostic) => ({
+            kind: 'diagnostic',
+            id: diagnostic.eventId,
+            label: `${diagnostic.transport ?? 'Runtime'} diagnostic · ${diagnostic.diagnosticTypeId}`,
+            agentId: diagnostic.agentId,
+            commandId: diagnostic.commandId,
+            diagnosticId: diagnostic.eventId
+        }));
+}
+
+function toEventDestinations(
+    input: ComputeDistributedRunFailureEvidenceDestinationsInput,
+    scope: FailureEvidenceScope
+): readonly DistributedRunEventEvidenceDestination[] {
+    return input.monitor.events
         .filter((event) =>
+            event.kind !== 'diagnostic' &&
             isEventMatchingFailure({
                 event,
                 failure: input.failure,
-                commandIds,
-                recipeCommandIds
+                commandIds: scope.commandIds,
+                recipeCommandIds: scope.recipeCommandIds
             })
         )
-        .forEach((event) =>
-            add({
-                kind: 'event',
-                id: event.eventId,
-                label: event.summary,
-                agentId: event.agentId,
-                commandId: event.commandId,
-                eventId: event.eventId
-            })
-        );
-    if (input.monitor.artifact.status === 'valid') {
-        add({
-            kind: 'artifact',
-            id: input.monitor.artifact.status,
-            label: 'Valid distributed artifact',
-            artifactStatus: input.monitor.artifact.status
-        });
-    }
-    return destinations;
+        .map((event) => ({
+            kind: 'event',
+            id: event.eventId,
+            label: event.summary,
+            agentId: event.agentId,
+            commandId: event.commandId,
+            eventId: event.eventId
+        }));
 }
+
+function toArtifactDestinations(monitor: DistributedRunMonitor): readonly DistributedRunArtifactEvidenceDestination[] {
+    return monitor.artifact.status === 'valid'
+        ? [{
+            kind: 'artifact',
+            id: monitor.artifact.status,
+            label: 'Valid distributed artifact',
+            artifactStatus: monitor.artifact.status
+        }]
+        : [];
+}
+
+function toUniqueDestinations(
+    destinations: readonly DistributedRunFailureEvidenceDestination[]
+): readonly DistributedRunFailureEvidenceDestination[] {
+    const seen = new Set<string>();
+    return destinations.filter((destination) => {
+        const key = `${destination.kind}:${destination.id}`;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+}
+
 function isCompositeDrilldownMatchingFailure(
     drilldown: DistributedRunCompositeDrilldown,
     failure: DistributedRunFailureRow

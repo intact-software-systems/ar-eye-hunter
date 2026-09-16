@@ -9,10 +9,10 @@ import {
 import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest
+import type {
+    RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';

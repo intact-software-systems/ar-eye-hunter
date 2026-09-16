@@ -1,7 +1,7 @@
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
-    RallarBlackBoxDistributedGroupAssertion,
-    RallarBlackBoxDistributedGroupRef
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+    RallarBlackBoxDistributedGroupAssertion
+} from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe

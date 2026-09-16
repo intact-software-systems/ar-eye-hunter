@@ -7,7 +7,7 @@ import type {
     ControlRunSnapshotBounds,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { rollupDistributedRunResult } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 import { toControlCommandFingerprint } from './control-command-queue-policy.ts';

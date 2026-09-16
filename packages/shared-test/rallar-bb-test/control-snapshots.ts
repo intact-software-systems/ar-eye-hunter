@@ -7,10 +7,10 @@ import type {
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
     RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
+import type { RallarBlackBoxDistributedRunRollup } from './distributed/distributed-run-rollup.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetAggregateReport,

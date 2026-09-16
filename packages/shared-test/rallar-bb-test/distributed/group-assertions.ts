@@ -1,8 +1,6 @@
 import { isRallarBlackBoxAssertOperator } from '../assert/assert-value-operators.ts';
-import type {
-    RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunValidationIssue
-} from '../distributed-run.ts';
+import type { RallarBlackBoxDistributedRunValidationIssue } from '../distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '../distributed-run.ts';
 import type {
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCommand,

@@ -5,13 +5,13 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import {
-    computeDistributedRunTuningInventory,
-    type DistributedRunTuningInventory
+    computeDistributedRunTuningInventory
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { DistributedRunTuningInventory } from '../../shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export function tuningManifest(input: Readonly<{

@@ -20,7 +20,7 @@ import {
     tuningDecisionIssue as decisionIssue,
     tuningInventoryIssues as inventoryIssues
 } from './distributed-run-tuning-decision-types.ts';
-import type { DistributedRunTuningInventory } from './distributed-run-tuning.ts';
+import type { DistributedRunTuningInventory } from './distributed-run-tuning-types.ts';
 
 export type {
     DistributedRunTuningDecisionIssue,

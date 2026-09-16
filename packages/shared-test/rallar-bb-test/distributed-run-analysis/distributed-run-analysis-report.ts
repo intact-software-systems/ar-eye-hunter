@@ -11,7 +11,7 @@ import {
     getDistributedRunMonitorFirstPhase,
     setDistributedRunAnalysisReportDerivation,
     type DistributedRunMonitorAnalysisReuse
-} from '../distributed-run-monitor-index.ts';
+} from '../distributed-run-monitor-derivation-work.ts';
 import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
 import { resolveFirstDistributedFailure } from '../distributed-run-observation/distributed-run-failure-rows.ts';
 import type {

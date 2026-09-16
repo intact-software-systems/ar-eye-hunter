@@ -2,7 +2,11 @@
 
 `packages/shared-test/rallar-bb-test/distributed-run.ts` defines the shared
 contract for distributed recipe execution. It is intentionally a contract only:
-it does not open sockets or run browser automation. The control server now uses
+it does not open sockets or run browser automation. Its behavior lives beside
+it: `distributed-run-validation.ts` decodes and validates manifests,
+`distributed/resolve-group-member-control-agent-matches.ts` and
+`distributed/resolve-distributed-run-targets.ts` resolve target agents, and
+`distributed/distributed-run-rollup.ts` rolls up run results. The control server now uses
 this contract to create distributed-run resources and to enqueue ordinary
 `rallar-bb-test` commands to browser agents.
 

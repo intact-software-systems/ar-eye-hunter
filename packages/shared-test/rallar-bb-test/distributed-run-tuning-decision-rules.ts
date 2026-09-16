@@ -10,7 +10,7 @@ import type {
     DistributedRunTuningInventory,
     DistributedRunTuningKnob,
     DistributedRunTuningKnobName
-} from './distributed-run-tuning.ts';
+} from './distributed-run-tuning-types.ts';
 
 export function readinessEvidence(analysis: DistributedRunTuningAnalysisEvidence): string[] {
     const target = analysis.targetResolution;

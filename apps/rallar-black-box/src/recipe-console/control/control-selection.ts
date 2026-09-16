@@ -1,8 +1,6 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import {
-    isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedGroupRef
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,

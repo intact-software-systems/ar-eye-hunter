@@ -1,5 +1,5 @@
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from './control-service-state.ts';
 

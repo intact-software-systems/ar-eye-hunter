@@ -1,5 +1,5 @@
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     selectRallarBlackBoxCommandHistory,

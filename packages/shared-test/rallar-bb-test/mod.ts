@@ -103,10 +103,19 @@ export * from './distributed-run-observation/validate-distributed-run-artifact.t
 export * from './distributed-run-performance/compute-distributed-run-snapshot-performance.ts';
 export * from './distributed-run-tuning-candidate.ts';
 export * from './distributed-run-tuning-decisions.ts';
+export * from './distributed-run-tuning-types.ts';
 export * from './distributed-run-tuning.ts';
 export * from './distributed-run-validation.ts';
 export * from './distributed-run.ts';
 export * from './distributed/control-agent-capabilities.ts';
+export * from './distributed/distributed-run-rollup.ts';
+export type {
+    RallarBlackBoxDistributedGroupAssertion,
+    RallarBlackBoxDistributedGroupAssertionResult,
+    RallarBlackBoxGroupAssertionAggregate
+} from './distributed/group-assertions.ts';
+export * from './distributed/resolve-distributed-run-targets.ts';
+export * from './distributed/resolve-group-member-control-agent-matches.ts';
 export {
     createRallarBlackBoxEnsureGroupRequestId,
     type RallarBlackBoxLiveRecipeOptions

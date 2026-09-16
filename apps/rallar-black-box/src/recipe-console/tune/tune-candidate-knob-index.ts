@@ -1,4 +1,4 @@
-import type { DistributedRunTuningKnob } from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import type { DistributedRunTuningKnob } from '@shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
 import type { SearchableListboxOption } from '../ui/searchable-listbox-model.ts';
 import type { TuneSourceModel } from './tune-source-model.ts';
 

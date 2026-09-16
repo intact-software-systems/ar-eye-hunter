@@ -3,7 +3,7 @@ import type { RallarBlackBoxRuntimeDiagnosticPayload } from '../diagnostics.ts';
 import {
     computeDistributedRunCorrelatedFailureKeys,
     type DistributedRunMonitorFailureIndex
-} from '../distributed-run-monitor-index.ts';
+} from '../distributed-run-monitor-failure-index.ts';
 import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport

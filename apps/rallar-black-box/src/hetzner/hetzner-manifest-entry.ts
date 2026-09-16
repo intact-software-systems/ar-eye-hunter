@@ -5,10 +5,12 @@ import {
 } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import type { DistributedRecipeRolePattern } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 import type {
-    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedGroupAssertion
+} from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',

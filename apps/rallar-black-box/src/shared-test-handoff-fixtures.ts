@@ -17,15 +17,17 @@ export {
     validateBlackBoxRunnerScenarioRecipe as validateRallarBlackBoxSharedTestRunnerScenario
 } from '@shared-test/black-box-runner/schema.ts';
 
+export { validateDistributedRunManifestContract } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+export {
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 export {
     isDistributedRunTerminalState,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
-    RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
-    RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
-    rollupDistributedRunResult,
-    validateDistributedRunManifestContract
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+    rollupDistributedRunResult
+} from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 
 export {
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,

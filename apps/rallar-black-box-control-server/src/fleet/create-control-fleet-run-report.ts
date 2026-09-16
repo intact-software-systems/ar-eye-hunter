@@ -3,7 +3,7 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import {
     RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION,
     type ControlFleetAgentLabel,

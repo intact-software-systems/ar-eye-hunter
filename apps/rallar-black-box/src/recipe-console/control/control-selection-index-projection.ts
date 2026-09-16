@@ -5,7 +5,7 @@ import {
     rebindDistributedRunsFromSelectionIndex,
     type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,

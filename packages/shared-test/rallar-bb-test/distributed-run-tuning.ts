@@ -6,17 +6,72 @@ import {
     type DistributedRunTuningKnobConstraint,
     type DistributedRunTuningKnobName
 } from './distributed-run-tuning-types.ts';
-import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunRecipeSelection
+} from './distributed-run.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    type RallarBlackBoxTestCommand
+    type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestLoopCommand,
+    type RallarBlackBoxTestParallelCommand,
+    type RallarBlackBoxTestRtcStreamCommand
 } from './rallar-black-box-test-contracts.ts';
-export * from './distributed-run-tuning-types.ts';
 
-type CommandContext = Readonly<{
-    recipeIndex: number;
-    recipeId?: string;
-}>;
+type TuningTokens = readonly (string | number)[];
+
+type TunableCommand = RallarBlackBoxTestLoopCommand | RallarBlackBoxTestRtcStreamCommand;
+
+interface TuningCommandContext {
+    readonly recipeIndex: number;
+    /** Absent before the recipe selection is read, or when the selection names no recipe id. */
+    readonly recipeId?: string;
+}
+
+interface TuningCommandScope {
+    readonly tokens: TuningTokens;
+    readonly context: TuningCommandContext;
+    readonly depth: number;
+}
+
+interface TuningCommandList extends TuningCommandScope {
+    /** Absent when a malformed command or parallel group carries no command list. */
+    readonly commands: readonly RallarBlackBoxTestCommand[] | undefined;
+}
+
+interface TuningCommandTarget {
+    readonly tokens: TuningTokens;
+    readonly command: TunableCommand;
+    readonly context: TuningCommandContext;
+}
+
+interface ToCommandSettingKnobInput extends TuningCommandTarget {
+    readonly name: Extract<DistributedRunTuningKnobName, 'durationMs' | 'intervalMs' | 'maxInFlight'>;
+    /** Absent when the command leaves the setting unset. */
+    readonly value: number | undefined;
+    readonly constraint: DistributedRunTuningKnobConstraint;
+}
+
+interface ToManifestTuningKnobInput {
+    readonly name: Extract<DistributedRunTuningKnobName, 'ackTimeoutMs' | 'barrier.timeoutMs'>;
+    readonly tokens: TuningTokens;
+    /** Absent when the manifest leaves the setting unset. */
+    readonly value: number | undefined;
+    readonly blocked: boolean;
+    /** Absent when nothing qualifies the knob's availability. */
+    readonly reason: string | undefined;
+}
+
+interface ToCommandTuningKnobInput extends TuningCommandTarget {
+    readonly name: DistributedRunTuningKnobName;
+    readonly scope: Exclude<DistributedRunTuningKnob['scope'], 'manifest'>;
+    /** Absent when the command leaves the setting unset. */
+    readonly value: number | undefined;
+    readonly constraint: DistributedRunTuningKnobConstraint;
+    readonly blocked: boolean;
+    /** Absent when nothing qualifies the knob's availability. */
+    readonly reason: string | undefined;
+}
 
 const POSITIVE_INTEGER: DistributedRunTuningKnobConstraint = {
     type: 'integer',
@@ -44,146 +99,79 @@ const BOUNDED_DURATION: DistributedRunTuningKnobConstraint = {
     minimum: 1,
     maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
 };
+const MAX_EXPANDED_COMMANDS = RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands;
 
 export function computeDistributedRunTuningInventory(
     manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningInventory {
-    const knobs: DistributedRunTuningKnob[] = [
-        toTuningKnob({
+    const barrier = manifest.barrier;
+    const walk = new TuningInventoryWalk([
+        toManifestTuningKnob({
             name: 'ackTimeoutMs',
             tokens: ['ackTimeoutMs'],
-            scope: 'manifest',
             value: manifest.ackTimeoutMs,
-            constraint: POSITIVE_INTEGER
+            blocked: false,
+            reason: undefined
         }),
-        toBarrierTimeoutTuningKnob(manifest)
-    ];
-    const limitations: DistributedRunTuningInventoryLimitation[] = [];
-    let visitedCommands = 0;
-    let visitedStructures = 0;
-    let limitReported = false;
-    let stopped = false;
+        toManifestTuningKnob({
+            name: 'barrier.timeoutMs',
+            tokens: ['barrier', 'timeoutMs'],
+            value: barrier.enabled ? barrier.timeoutMs : undefined,
+            blocked: !barrier.enabled,
+            reason: barrier.enabled ? undefined : 'The distributed barrier is missing or disabled.'
+        })
+    ]);
+    walk.addRecipes(manifest.recipes);
+    return { knobs: walk.knobs, limitations: walk.limitations };
+}
 
-    const limit = (context: CommandContext): void => {
-        stopped = true;
-        if (limitReported) {
-            return;
-        }
-        limitReported = true;
-        limitations.push({
-            code: 'command-limit-exceeded',
-            message:
-                `Tuning inventory stopped at the shared ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands}-command limit.`,
-            ...context
-        });
-    };
+export function toDistributedRunTuningJsonPointer(tokens: TuningTokens): string {
+    return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
+}
 
-    const malformed = (message: string, context: CommandContext): void => {
-        limitations.push({ code: 'malformed-command', message, ...context });
-    };
+/**
+ * Tolerates malformed recipe selections and command trees and stops at the shared composite bounds, so an
+ * inventory never throws on a manifest that has not passed validation and never walks an unbounded tree.
+ */
+class TuningInventoryWalk {
+    readonly knobs: DistributedRunTuningKnob[];
+    readonly limitations: DistributedRunTuningInventoryLimitation[] = [];
+    private visitedCommands = 0;
+    private visitedStructures = 0;
+    private limitReported = false;
+    private stopped = false;
 
-    const claimStructure = (context: CommandContext): boolean => {
-        if (visitedStructures >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands) {
-            limit(context);
-            return false;
-        }
-        visitedStructures += 1;
-        return true;
-    };
+    constructor(manifestKnobs: readonly DistributedRunTuningKnob[]) {
+        this.knobs = [...manifestKnobs];
+    }
 
-    const walk = (
-        commands: unknown,
-        parentTokens: readonly (string | number)[],
-        context: CommandContext,
-        depth = 0
-    ): void => {
-        if (stopped) {
-            return;
-        }
-        if (depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
-            limitations.push({
-                code: 'depth-limit-exceeded',
-                message:
-                    `Tuning inventory stopped this branch at the shared composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
-                ...context
+    addRecipes(recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[]): void {
+        if (!Array.isArray(recipes)) {
+            this.reportMalformed('Tuning inventory skipped manifest.recipes because it is not an array.', {
+                recipeIndex: 0
             });
             return;
         }
-        if (!Array.isArray(commands)) {
-            malformed('Tuning inventory skipped a command list that is not an array.', context);
-            return;
+        for (let recipeIndex = 0; recipeIndex < recipes.length && !this.stopped; recipeIndex += 1) {
+            if (!this.claimStructure({ recipeIndex })) {
+                break;
+            }
+            this.addRecipe(recipes[recipeIndex], recipeIndex, recipeIndex < recipes.length - 1);
         }
-        for (let index = 0; index < commands.length; index += 1) {
-            if (visitedCommands >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands) {
-                limit(context);
-                return;
-            }
-            visitedCommands += 1;
-            const command = commands[index] as RallarBlackBoxTestCommand | null;
-            if (!command || typeof command !== 'object' || typeof command.kind !== 'string') {
-                malformed('Tuning inventory skipped a malformed command.', context);
-                continue;
-            }
-            const tokens = [...parentTokens, index];
-            if (command.kind === 'loop') {
-                knobs.push(
-                    toCommandTuningKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
-                    toCommandTuningKnob(
-                        'intervalMs',
-                        command.intervalMs,
-                        NON_NEGATIVE_INTEGER,
-                        tokens,
-                        command,
-                        context
-                    )
-                );
-                walk(command.commands, [...tokens, 'commands'], context, depth + 1);
-            }
-            else if (command.kind === 'parallel') {
-                if (!Array.isArray(command.groups)) {
-                    malformed('Tuning inventory skipped parallel.groups because it is not an array.', context);
-                    continue;
-                }
-                for (let groupIndex = 0; groupIndex < command.groups.length && !stopped; groupIndex += 1) {
-                    if (
-                        visitedCommands >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands ||
-                        !claimStructure(context)
-                    ) {
-                        limit(context);
-                        break;
-                    }
-                    const group = command.groups[groupIndex] as { commands?: unknown; } | null;
-                    walk(group?.commands, [...tokens, 'groups', groupIndex, 'commands'], context, depth + 1);
-                }
-            }
-            else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
-                if (command.recipe) {
-                    walk(command.recipe.commands, [...tokens, 'recipe', 'commands'], context, depth + 1);
-                }
-            }
-            else if (command.kind === 'rtc.stream') {
-                knobs.push(...toStreamCommandTuningKnobs(command, tokens, context));
-            }
-        }
-    };
-
-    if (!Array.isArray(manifest.recipes)) {
-        malformed('Tuning inventory skipped manifest.recipes because it is not an array.', { recipeIndex: 0 });
-        return { knobs, limitations };
     }
-    for (let recipeIndex = 0; recipeIndex < manifest.recipes.length && !stopped; recipeIndex += 1) {
-        const baseContext = { recipeIndex };
-        if (!claimStructure(baseContext)) {
-            break;
-        }
-        const selection = manifest.recipes[recipeIndex] as typeof manifest.recipes[number] | null;
+
+    private addRecipe(
+        selection: RallarBlackBoxDistributedRunRecipeSelection | null,
+        recipeIndex: number,
+        hasLaterRecipes: boolean
+    ): void {
         if (!selection || typeof selection !== 'object') {
-            malformed('Tuning inventory skipped a malformed recipe selection.', baseContext);
-            continue;
+            this.reportMalformed('Tuning inventory skipped a malformed recipe selection.', { recipeIndex });
+            return;
         }
         const recipeId = selection.recipe?.recipeId ?? selection.recipeId;
         if (!selection.recipe) {
-            limitations.push({
+            this.limitations.push({
                 code: 'reference-only-recipe',
                 recipeIndex,
                 recipeId,
@@ -191,131 +179,230 @@ export function computeDistributedRunTuningInventory(
                     recipeId ?? recipeIndex + 1
                 } is reference-only; no authoritative inline knobs are available.`
             });
-            continue;
+            return;
         }
-        walk(
-            selection.recipe.commands,
-            ['recipes', recipeIndex, 'recipe', 'commands'],
-            { recipeIndex, recipeId }
-        );
-        if (
-            !stopped &&
-            visitedCommands >= RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands &&
-            recipeIndex < manifest.recipes.length - 1
-        ) {
-            limit({ recipeIndex, recipeId });
+        const context = { recipeIndex, recipeId };
+        this.addCommands({
+            commands: selection.recipe.commands,
+            tokens: ['recipes', recipeIndex, 'recipe', 'commands'],
+            context,
+            depth: 0
+        });
+        if (!this.stopped && this.visitedCommands >= MAX_EXPANDED_COMMANDS && hasLaterRecipes) {
+            this.reportCommandLimit(context);
         }
     }
-    return { knobs, limitations };
+
+    private addCommands(list: TuningCommandList): void {
+        if (this.stopped) {
+            return;
+        }
+        if (list.depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
+            this.limitations.push({
+                code: 'depth-limit-exceeded',
+                message:
+                    `Tuning inventory stopped this branch at the shared composite depth ${RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth}.`,
+                ...list.context
+            });
+            return;
+        }
+        const commands = list.commands;
+        if (!Array.isArray(commands)) {
+            this.reportMalformed('Tuning inventory skipped a command list that is not an array.', list.context);
+            return;
+        }
+        const nested = { context: list.context, depth: list.depth + 1 };
+        for (let index = 0; index < commands.length; index += 1) {
+            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS) {
+                this.reportCommandLimit(list.context);
+                return;
+            }
+            this.visitedCommands += 1;
+            this.addCommand(commands[index], { ...nested, tokens: [...list.tokens, index] });
+        }
+    }
+
+    private addCommand(command: RallarBlackBoxTestCommand | null | undefined, scope: TuningCommandScope): void {
+        if (!command || typeof command !== 'object' || typeof command.kind !== 'string') {
+            this.reportMalformed('Tuning inventory skipped a malformed command.', scope.context);
+            return;
+        }
+        if (command.kind === 'loop') {
+            const target = { tokens: scope.tokens, command, context: scope.context };
+            this.knobs.push(
+                toCommandSettingKnob({
+                    ...target,
+                    name: 'durationMs',
+                    value: command.durationMs,
+                    constraint: BOUNDED_DURATION
+                }),
+                toCommandSettingKnob({
+                    ...target,
+                    name: 'intervalMs',
+                    value: command.intervalMs,
+                    constraint: NON_NEGATIVE_INTEGER
+                })
+            );
+            this.addCommands({ ...scope, commands: command.commands, tokens: [...scope.tokens, 'commands'] });
+        }
+        else if (command.kind === 'parallel') {
+            this.addParallelGroups(command, scope);
+        }
+        else if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
+            if (command.recipe) {
+                this.addCommands({
+                    ...scope,
+                    commands: command.recipe.commands,
+                    tokens: [...scope.tokens, 'recipe', 'commands']
+                });
+            }
+        }
+        else if (command.kind === 'rtc.stream') {
+            this.knobs.push(...toStreamCommandTuningKnobs({ tokens: scope.tokens, command, context: scope.context }));
+        }
+    }
+
+    private addParallelGroups(command: RallarBlackBoxTestParallelCommand, scope: TuningCommandScope): void {
+        if (!Array.isArray(command.groups)) {
+            this.reportMalformed('Tuning inventory skipped parallel.groups because it is not an array.', scope.context);
+            return;
+        }
+        for (let groupIndex = 0; groupIndex < command.groups.length && !this.stopped; groupIndex += 1) {
+            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS || !this.claimStructure(scope.context)) {
+                this.reportCommandLimit(scope.context);
+                break;
+            }
+            const group: { readonly commands?: readonly RallarBlackBoxTestCommand[]; } | null =
+                command.groups[groupIndex];
+            this.addCommands({
+                ...scope,
+                commands: group?.commands,
+                tokens: [...scope.tokens, 'groups', groupIndex, 'commands']
+            });
+        }
+    }
+
+    private claimStructure(context: TuningCommandContext): boolean {
+        if (this.visitedStructures >= MAX_EXPANDED_COMMANDS) {
+            this.reportCommandLimit(context);
+            return false;
+        }
+        this.visitedStructures += 1;
+        return true;
+    }
+
+    private reportCommandLimit(context: TuningCommandContext): void {
+        this.stopped = true;
+        if (this.limitReported) {
+            return;
+        }
+        this.limitReported = true;
+        this.limitations.push({
+            code: 'command-limit-exceeded',
+            message: `Tuning inventory stopped at the shared ${MAX_EXPANDED_COMMANDS}-command limit.`,
+            ...context
+        });
+    }
+
+    private reportMalformed(message: string, context: TuningCommandContext): void {
+        this.limitations.push({ code: 'malformed-command', message, ...context });
+    }
 }
 
 function toStreamCommandTuningKnobs(
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.stream'; }>,
-    tokens: readonly (string | number)[],
-    context: CommandContext
+    target: TuningCommandTarget & Readonly<{ command: RallarBlackBoxTestRtcStreamCommand; }>
 ): readonly DistributedRunTuningKnob[] {
+    const { command } = target;
     const rateShadowed = command.intervalMs !== undefined;
-    const rows = [
-        toCommandTuningKnob('durationMs', command.durationMs, BOUNDED_DURATION, tokens, command, context),
-        toCommandTuningKnob('intervalMs', command.intervalMs, POSITIVE_INTEGER, tokens, command, context),
-        toCommandTuningKnob('rateHz', command.rateHz, POSITIVE_RATE, tokens, command, context, {
-            blocked: rateShadowed,
-            reason: rateShadowed
-                ? 'intervalMs takes precedence over rateHz for RTC stream scheduling.'
-                : undefined
+    return [
+        toCommandSettingKnob({
+            ...target,
+            name: 'durationMs',
+            value: command.durationMs,
+            constraint: BOUNDED_DURATION
         }),
-        toCommandTuningKnob('maxInFlight', command.maxInFlight, POSITIVE_INTEGER, tokens, command, context)
+        toCommandSettingKnob({
+            ...target,
+            name: 'intervalMs',
+            value: command.intervalMs,
+            constraint: POSITIVE_INTEGER
+        }),
+        toCommandTuningKnob({
+            ...target,
+            name: 'rateHz',
+            scope: 'command',
+            tokens: [...target.tokens, 'rateHz'],
+            value: command.rateHz,
+            constraint: POSITIVE_RATE,
+            blocked: rateShadowed,
+            reason: rateShadowed ? 'intervalMs takes precedence over rateHz for RTC stream scheduling.' : undefined
+        }),
+        toCommandSettingKnob({
+            ...target,
+            name: 'maxInFlight',
+            value: command.maxInFlight,
+            constraint: POSITIVE_INTEGER
+        }),
+        ...DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES.map((threshold) =>
+            toCommandTuningKnob({
+                ...target,
+                name: `thresholds.${threshold}`,
+                scope: 'stream-threshold',
+                tokens: [...target.tokens, 'thresholds', threshold],
+                value: command.thresholds?.[threshold],
+                constraint: threshold === 'minSendSuccessRatio' ? RATIO : NON_NEGATIVE_NUMBER,
+                blocked: false,
+                reason: command.thresholds === undefined
+                    ? 'The optional thresholds object is not configured.'
+                    : undefined
+            })
+        )
     ];
-    for (const threshold of DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES) {
-        rows.push(toTuningKnob({
-            name: `thresholds.${threshold}`,
-            tokens: [...tokens, 'thresholds', threshold],
-            scope: 'stream-threshold',
-            value: command.thresholds?.[threshold],
-            constraint: threshold === 'minSendSuccessRatio' ? RATIO : NON_NEGATIVE_NUMBER,
-            command,
-            context,
-            reason: command.thresholds === undefined
-                ? 'The optional thresholds object is not configured.'
-                : undefined
-        }));
-    }
-    return rows;
 }
 
-function toCommandTuningKnob(
-    name: Extract<DistributedRunTuningKnobName, 'durationMs' | 'intervalMs' | 'rateHz' | 'maxInFlight'>,
-    value: number | undefined,
-    constraint: DistributedRunTuningKnobConstraint,
-    tokens: readonly (string | number)[],
-    command: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream'; }>,
-    context: CommandContext,
-    options: Readonly<{ blocked?: boolean; reason?: string; }> = {}
-): DistributedRunTuningKnob {
-    return toTuningKnob({
-        name,
-        tokens: [...tokens, name],
+function toCommandSettingKnob(input: ToCommandSettingKnobInput): DistributedRunTuningKnob {
+    return toCommandTuningKnob({
+        ...input,
         scope: 'command',
-        value,
-        constraint,
-        command,
-        context,
-        blocked: options.blocked,
-        reason: options.reason
+        tokens: [...input.tokens, input.name],
+        blocked: false,
+        reason: undefined
     });
 }
 
-function toBarrierTimeoutTuningKnob(
-    manifest: RallarBlackBoxDistributedRunManifest
-): DistributedRunTuningKnob {
-    const barrier = manifest.barrier;
-    const enabled = barrier.enabled;
-    return toTuningKnob({
-        name: 'barrier.timeoutMs',
-        tokens: ['barrier', 'timeoutMs'],
+function toManifestTuningKnob(input: ToManifestTuningKnobInput): DistributedRunTuningKnob {
+    return {
+        name: input.name,
+        pointer: toDistributedRunTuningJsonPointer(input.tokens),
         scope: 'manifest',
-        value: barrier.enabled ? barrier.timeoutMs : undefined,
+        currentValue: input.value,
+        availability: toKnobAvailability(input.blocked, input.value),
+        effective: !input.blocked,
         constraint: POSITIVE_INTEGER,
-        blocked: !enabled,
-        reason: enabled ? undefined : 'The distributed barrier is missing or disabled.'
-    });
+        reason: input.reason
+    };
 }
 
-function toTuningKnob(
-    input: Readonly<{
-        name: DistributedRunTuningKnobName;
-        tokens: readonly (string | number)[];
-        scope: DistributedRunTuningKnob['scope'];
-        value?: number;
-        constraint: DistributedRunTuningKnobConstraint;
-        command?: Extract<RallarBlackBoxTestCommand, { kind: 'loop' | 'rtc.stream'; }>;
-        context?: CommandContext;
-        blocked?: boolean;
-        reason?: string;
-    }>
-): DistributedRunTuningKnob {
+function toCommandTuningKnob(input: ToCommandTuningKnobInput): DistributedRunTuningKnob {
     return {
         name: input.name,
         pointer: toDistributedRunTuningJsonPointer(input.tokens),
         scope: input.scope,
         currentValue: input.value,
-        availability: input.blocked
-            ? 'blocked'
-            : input.value === undefined
-            ? 'unset'
-            : 'configured',
-        effective: input.blocked !== true,
+        availability: toKnobAvailability(input.blocked, input.value),
+        effective: !input.blocked,
         constraint: input.constraint,
-        recipeIndex: input.context?.recipeIndex,
-        recipeId: input.context?.recipeId,
-        commandId: input.command?.commandId,
-        commandKind: input.command?.kind,
+        recipeIndex: input.context.recipeIndex,
+        recipeId: input.context.recipeId,
+        commandId: input.command.commandId,
+        commandKind: input.command.kind,
         reason: input.reason
     };
 }
 
-export function toDistributedRunTuningJsonPointer(
-    tokens: readonly (string | number)[]
-): string {
-    return tokens.map((token) => `/${String(token).replaceAll('~', '~0').replaceAll('/', '~1')}`).join('');
+function toKnobAvailability(
+    blocked: boolean,
+    value: number | undefined
+): DistributedRunTuningKnob['availability'] {
+    return blocked ? 'blocked' : value === undefined ? 'unset' : 'configured';
 }

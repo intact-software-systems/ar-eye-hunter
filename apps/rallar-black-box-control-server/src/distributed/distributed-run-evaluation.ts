@@ -3,11 +3,11 @@ import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunCommandPhase
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedParticipantResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     rollupDistributedRunResult,
-    type RallarBlackBoxDistributedParticipantResult,
     type RallarBlackBoxDistributedRunRollup
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+} from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import {
     toDistributedGroupAssertionParticipants,

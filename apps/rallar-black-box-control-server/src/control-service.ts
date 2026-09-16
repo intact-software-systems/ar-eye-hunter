@@ -22,13 +22,17 @@ import type {
     ControlRunToken,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetResolution
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     isDistributedRunTerminalState,
-    resolveDistributedRunTargets,
-    type RallarBlackBoxDistributedRunManifest,
-    type RallarBlackBoxDistributedRunRollup,
-    type RallarBlackBoxDistributedTargetResolution
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+    type RallarBlackBoxDistributedRunRollup
+} from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import {
+    resolveDistributedRunTargets
+} from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 import type {
     ControlFleetReportBundle,
     ControlFleetReportsResponse,

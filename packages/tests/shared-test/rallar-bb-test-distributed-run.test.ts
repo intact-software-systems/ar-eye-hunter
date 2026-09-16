@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
-    isDistributedRunTerminalState,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
-    resolveDistributedRunTargets,
-    resolveDistributedTargetAgentIds,
-    resolveGroupMemberControlAgentMatches,
-    rollupDistributedRunResult,
-    validateDistributedRunManifestContract,
     type RallarBlackBoxControlAgentCandidate,
     type RallarBlackBoxDistributedRunManifest,
     type RallarBlackBoxDistributedRunManifestFields
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    isDistributedRunTerminalState,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
+    rollupDistributedRunResult
+} from '../../shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import {
+    resolveDistributedRunTargets,
+    resolveDistributedTargetAgentIds
+} from '../../shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
+import {
+    resolveGroupMemberControlAgentMatches
+} from '../../shared-test/rallar-bb-test/distributed/resolve-group-member-control-agent-matches.ts';
 import {
     decodeDistributedRunManifest,
     toDistributedRunManifestValidationText,

@@ -3,11 +3,11 @@ import {
     distributedRecipeMatches,
     type DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import {
-    isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedGroupRef,
-    type RallarBlackBoxDistributedRunState
+import type {
+    RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRunState
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export const DEFAULT_EXECUTE_RECIPE_ID = 'rtc-realtime-stability';

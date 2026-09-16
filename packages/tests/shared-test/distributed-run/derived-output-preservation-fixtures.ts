@@ -8,9 +8,11 @@ import type {
 import type {
     RallarBlackBoxControlAgentCandidate,
     RallarBlackBoxControlAgentCapabilities,
-    RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxGroupMemberCandidate
+    RallarBlackBoxDistributedRunManifest
 } from '../../../shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxGroupMemberCandidate
+} from '../../../shared-test/rallar-bb-test/distributed/resolve-group-member-control-agent-matches.ts';
 
 export const PRESERVATION_NOW_EPOCH_MS = 1_900_000_000_000;
 export const PRESERVATION_STALE_AFTER_MS = 30_000;

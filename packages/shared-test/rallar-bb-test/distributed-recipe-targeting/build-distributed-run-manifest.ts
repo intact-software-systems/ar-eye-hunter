@@ -1,7 +1,6 @@
 import type { DistributedRecipeCatalogItem } from '../distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
-    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
@@ -9,6 +8,7 @@ import type {
     RallarBlackBoxDistributedTargetPolicy,
     RallarBlackBoxDistributedUnscheduledRunManifest
 } from '../distributed-run.ts';
+import type { RallarBlackBoxDistributedGroupAssertion } from '../distributed/group-assertions.ts';
 import {
     DistributedRecipeRolePattern,
     toOrderedTargetRoleAssignmentPolicy,

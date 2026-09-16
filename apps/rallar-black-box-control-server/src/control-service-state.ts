@@ -11,10 +11,12 @@ import type {
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRunRollup
+} from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 
 export interface ControlCommandState {
     envelope: ControlCommandEnvelope;

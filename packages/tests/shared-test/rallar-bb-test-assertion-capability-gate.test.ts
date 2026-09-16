@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import {
-    resolveDistributedRunTargets,
-    type RallarBlackBoxControlAgentCandidate,
-    type RallarBlackBoxControlAgentCapabilities,
-    type RallarBlackBoxDistributedRunManifest
+import type {
+    RallarBlackBoxControlAgentCandidate,
+    RallarBlackBoxControlAgentCapabilities,
+    RallarBlackBoxDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
     computeDistributedAssertionFeatures,
@@ -11,6 +10,9 @@ import {
     toControlAgentCapabilities,
     validateAgentAssertionCapability
 } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
+import {
+    resolveDistributedRunTargets
+} from '../../shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {

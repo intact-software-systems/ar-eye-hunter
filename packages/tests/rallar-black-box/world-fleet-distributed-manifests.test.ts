@@ -5,10 +5,10 @@ import {
     WORLD_FLEET_DISTRIBUTED_MANIFEST_DIAGNOSTIC_ORDER,
     WORLD_FLEET_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/world-fleet-distributed-manifests.ts';
-import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest
+import type {
+    RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 

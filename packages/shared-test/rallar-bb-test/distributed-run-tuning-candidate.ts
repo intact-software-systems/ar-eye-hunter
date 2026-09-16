@@ -7,7 +7,8 @@ import {
     tuningPreflightIssuePointer,
     tuningSchemaPathToPointer
 } from './distributed-run-tuning-paths.ts';
-import { computeDistributedRunTuningInventory, type DistributedRunTuningKnob } from './distributed-run-tuning.ts';
+import type { DistributedRunTuningKnob } from './distributed-run-tuning-types.ts';
+import { computeDistributedRunTuningInventory } from './distributed-run-tuning.ts';
 import { validateDistributedRunManifest } from './distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';

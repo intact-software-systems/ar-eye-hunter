@@ -1,9 +1,9 @@
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
-    RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+} from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult

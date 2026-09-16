@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { computeDistributedRunFailureEvidenceDestinations } from '../../../shared-test/rallar-bb-test/distributed-run-evidence.ts';
 import {
-    createDistributedRunMonitorFailureIndex,
-    createDistributedRunMonitorIndex
-} from '../../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
+    createDistributedRunMonitorFailureIndex
+} from '../../../shared-test/rallar-bb-test/distributed-run-monitor-failure-index.ts';
+import { createDistributedRunMonitorIndex } from '../../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import { computeDistributedRunTuningInventory } from '../../../shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { decodeDistributedRunManifest } from '../../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     resolveDistributedRunTargets,
-    resolveDistributedTargetAgentIds,
+    resolveDistributedTargetAgentIds
+} from '../../../shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
+import {
     resolveGroupMemberControlAgentMatches
-} from '../../../shared-test/rallar-bb-test/distributed-run.ts';
+} from '../../../shared-test/rallar-bb-test/distributed/resolve-group-member-control-agent-matches.ts';
 import { createRecipeConsoleTuneScaleFixture } from '../../../shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 import {
     createMonitorPreservationInput,

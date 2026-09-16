@@ -3,12 +3,9 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
 } from './control-snapshots.ts';
-import {
-    createDistributedRunMonitorFailureIndex,
-    createDistributedRunMonitorIndex,
-    setDistributedRunMonitorDerivation,
-    type DistributedRunMonitorIndex
-} from './distributed-run-monitor-index.ts';
+import { setDistributedRunMonitorDerivation } from './distributed-run-monitor-derivation-work.ts';
+import { createDistributedRunMonitorFailureIndex } from './distributed-run-monitor-failure-index.ts';
+import { createDistributedRunMonitorIndex, type DistributedRunMonitorIndex } from './distributed-run-monitor-index.ts';
 import { computeDistributedRunAgentProgress } from './distributed-run-observation/compute-distributed-run-agent-progress.ts';
 import { computeDistributedRunReadiness } from './distributed-run-observation/compute-distributed-run-readiness.ts';
 import { computeDistributedRunRecipeProgress } from './distributed-run-observation/compute-distributed-run-recipe-progress.ts';

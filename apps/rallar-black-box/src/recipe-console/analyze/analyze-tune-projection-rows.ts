@@ -47,9 +47,7 @@ export function projectTuningLimitation(
     return {
         code: limitation.code,
         message: boundedText(limitation.message, MAX_SUMMARY_BYTES),
-        ...(limitation.recipeIndex !== undefined
-            ? { recipeIndex: finiteNumber(limitation.recipeIndex) }
-            : {}),
+        recipeIndex: finiteNumber(limitation.recipeIndex),
         ...(limitation.recipeId
             ? { recipeId: projectOpaqueIdentifier(limitation.recipeId) }
             : {})
