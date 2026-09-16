@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../shared-test/rallar-bb-test/control-snapshots.ts';
 import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-test/distributed-run-analysis/distributed-run-analysis-report.ts';
 import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
+import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     getDistributedRunMonitorDerivationWork
-} from '../../shared-test/rallar-bb-test/distributed-run-monitor-derivation-work.ts';
-import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 
 const SCALE = 5_000;
 // Whole-object ratchets, originally captured from the pre-index implementation before Task 6A and

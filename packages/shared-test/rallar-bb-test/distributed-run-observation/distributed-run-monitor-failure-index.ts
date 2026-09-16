@@ -1,9 +1,9 @@
+import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
 import type { MutableDistributedRunMonitorDerivationWork } from './distributed-run-monitor-derivation-work.ts';
-import type { DistributedRunMonitorIndex } from './distributed-run-monitor-index.ts';
 import type {
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow
-} from './distributed-run-observation/distributed-run-row-contracts.ts';
+} from './distributed-run-row-contracts.ts';
 
 const DIAGNOSTIC_FAILURE_CORRELATION_WINDOW_MS = 15_000;
 

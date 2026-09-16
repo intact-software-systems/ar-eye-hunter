@@ -6,14 +6,14 @@ import type {
     ControlSnapshotBounds
 } from '../control-snapshots.ts';
 import { computeDistributedRunDuration } from '../distributed-run-history/compute-distributed-run-duration.ts';
+import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
+import { resolveFirstDistributedFailure } from '../distributed-run-observation/distributed-run-failure-rows.ts';
 import {
     getDistributedRunMonitorAnalysisReuse,
     getDistributedRunMonitorFirstPhase,
     setDistributedRunAnalysisReportDerivation,
     type DistributedRunMonitorAnalysisReuse
-} from '../distributed-run-monitor-derivation-work.ts';
-import { deriveDistributedRunMonitor, type DistributedRunMonitor } from '../distributed-run-monitor.ts';
-import { resolveFirstDistributedFailure } from '../distributed-run-observation/distributed-run-failure-rows.ts';
+} from '../distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 import type {
     DistributedRunArtifactValidationStatus,
     DistributedRunFailureRow,

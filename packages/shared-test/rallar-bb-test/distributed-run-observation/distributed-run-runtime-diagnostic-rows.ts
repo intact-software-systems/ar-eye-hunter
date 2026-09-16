@@ -1,14 +1,14 @@
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxRuntimeDiagnosticPayload } from '../diagnostics.ts';
-import {
-    computeDistributedRunCorrelatedFailureKeys,
-    type DistributedRunMonitorFailureIndex
-} from '../distributed-run-monitor-failure-index.ts';
 import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport
 } from '../rallar-black-box-test-contracts.ts';
 import { decodeFiniteNumber, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import {
+    computeDistributedRunCorrelatedFailureKeys,
+    type DistributedRunMonitorFailureIndex
+} from './distributed-run-monitor-failure-index.ts';
 import {
     decodeFirstNonBlankText,
     toDistributedRunEventSummary,

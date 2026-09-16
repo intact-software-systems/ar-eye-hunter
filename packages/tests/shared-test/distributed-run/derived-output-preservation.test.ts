@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeDistributedRunFailureEvidenceDestinations } from '../../../shared-test/rallar-bb-test/distributed-run-evidence.ts';
-import {
-    createDistributedRunMonitorFailureIndex
-} from '../../../shared-test/rallar-bb-test/distributed-run-monitor-failure-index.ts';
 import { createDistributedRunMonitorIndex } from '../../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    createDistributedRunMonitorFailureIndex
+} from '../../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-failure-index.ts';
 import { computeDistributedRunTuningInventory } from '../../../shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { decodeDistributedRunManifest } from '../../../shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {

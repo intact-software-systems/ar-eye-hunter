@@ -11,13 +11,13 @@ import type {
 } from './control-snapshots.ts';
 import { payloadReferencesDistributedRun } from './distributed-artifact-evidence-utils.ts';
 import {
-    createEmptyDistributedRunMonitorDerivationWork,
-    type MutableDistributedRunMonitorDerivationWork
-} from './distributed-run-monitor-derivation-work.ts';
-import {
     createDistributedRunMonitorMembershipIndex,
     type DistributedRunMonitorMembershipIndex
 } from './distributed-run-monitor-membership-index.ts';
+import {
+    createEmptyDistributedRunMonitorDerivationWork,
+    type MutableDistributedRunMonitorDerivationWork
+} from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 
 export interface DistributedRunMonitorAgentLinks {
     readonly all: readonly ControlDistributedRunCommandLink[];

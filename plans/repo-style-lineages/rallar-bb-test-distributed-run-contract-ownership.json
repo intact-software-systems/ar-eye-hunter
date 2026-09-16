@@ -20,8 +20,8 @@
         "blob": "c32911b130f31a56e9ffc45c07a298ac96490e2d"
       },
       "targets": [
-        "packages/shared-test/rallar-bb-test/distributed-run-monitor-derivation-work.ts",
-        "packages/shared-test/rallar-bb-test/distributed-run-monitor-failure-index.ts"
+        "packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-derivation-work.ts",
+        "packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-failure-index.ts"
       ]
     }
   ]

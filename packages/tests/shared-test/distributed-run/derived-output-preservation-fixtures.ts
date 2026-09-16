@@ -21,6 +21,8 @@ const MANIFEST_ROOT = new URL('../../../../apps/rallar-black-box/manifests/', im
 const MONITOR_AGENT_COUNT = 240;
 const MONITOR_RECIPE_IDS = ['recipe:a|b', 'recipe:a:b', 'מתכון-界'];
 
+type PreservationJsonValue = object | string | number | boolean | null | undefined;
+
 export interface CommittedManifest {
     readonly path: string;
     readonly manifest: RallarBlackBoxDistributedRunManifest;
@@ -139,14 +141,17 @@ export function createMonitorPreservationInput(): MonitorPreservationInput {
     };
 }
 
-export function toPreservationDigest(value: unknown): string {
-    const text = JSON.stringify(value, (_key, item: unknown) =>
-        item instanceof Map
-            ? { entries: [...item.entries()] }
-            : item instanceof Set
-            ? { values: [...item.values()] }
-            : item);
+export function toPreservationDigest(value: object): string {
+    const text = JSON.stringify(value, toPreservationJsonValue);
     return `${createHash('sha256').update(text).digest('hex')}:${text.length}`;
+}
+
+function toPreservationJsonValue(_key: string, item: PreservationJsonValue): PreservationJsonValue {
+    return item instanceof Map
+        ? { entries: [...item.entries()] }
+        : item instanceof Set
+        ? { values: [...item.values()] }
+        : item;
 }
 
 function toAgentCandidate(

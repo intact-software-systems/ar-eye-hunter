@@ -39,10 +39,10 @@ import {
     setMonitorCancelArm,
     setMonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
-import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createControlSnapshotSelectionIndex } from '../../shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import {
     getDistributedRunMonitorDerivationWork
-} from '../../shared-test/rallar-bb-test/distributed-run-monitor-derivation-work.ts';
+} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',

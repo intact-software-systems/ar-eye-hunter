@@ -1,5 +1,5 @@
-import type { ControlDistributedRunCommandPhase, ControlDistributedRunSnapshot } from './control-snapshots.ts';
-import type { DistributedRunMonitorIndex } from './distributed-run-monitor-index.ts';
+import type { ControlDistributedRunCommandPhase, ControlDistributedRunSnapshot } from '../control-snapshots.ts';
+import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
 
 export interface DistributedRunMonitorDerivationWork {
     readonly monitorDerivationCount: number;
