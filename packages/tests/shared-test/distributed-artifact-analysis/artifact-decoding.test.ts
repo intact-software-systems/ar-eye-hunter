@@ -4,13 +4,13 @@ import {
     computeDistributedRunArtifactAnalysis,
     toDistributedArtifactBundle,
     toDistributedArtifactSnapshots,
-    type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles,
-    type DistributedRunFailedAnalysis
+    type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../../../shared-test/rallar-bb-test/distributed-run.ts';
 import {
+    computeDistributedRunAnalysis,
+    computeFailedDistributedRunAnalysis,
     createControlRunSnapshot,
     createDistributedRunSnapshot,
     FIXTURE_GROUP,
@@ -18,22 +18,6 @@ import {
 } from './distributed-artifact-files-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = 123;
-
-function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
-    if (analyzed.right?.variant !== 'distributed-run') {
-        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
-    }
-    return analyzed.right.analysis;
-}
-
-function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
-    const analysis = analyzedRun(files);
-    if (analysis.ok) {
-        throw new Error('Expected a failed distributed run analysis.');
-    }
-    return analysis;
-}
 
 function passedRunFiles(files: DistributedRunArtifactFiles = {}): DistributedRunArtifactFiles {
     return toDistributedRunArtifactFiles({
@@ -97,9 +81,12 @@ function worldFleetFiles(files: DistributedRunArtifactFiles): DistributedRunArti
 
 describe('distributed run artifact decoding', () => {
     it('includes target-resolution evidence in analysis summaries', () => {
-        const analysis = analyzedRun(worldFleetFiles({
-            'target-resolution.json': JSON.stringify(WORLD_FLEET_TARGET_RESOLUTION)
-        }));
+        const analysis = computeDistributedRunAnalysis(
+            worldFleetFiles({
+                'target-resolution.json': JSON.stringify(WORLD_FLEET_TARGET_RESOLUTION)
+            }),
+            GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.parseWarnings).toEqual([]);
         expect(analysis.targetResolution).toEqual({
@@ -123,12 +110,15 @@ describe('distributed run artifact decoding', () => {
 
     it('warns about a target-resolution.json that omits a counter instead of counting it as zero', () => {
         const { staleAgents: _staleAgents, ...summaryWithoutStaleAgents } = WORLD_FLEET_TARGET_RESOLUTION.summary;
-        const analysis = analyzedRun(worldFleetFiles({
-            'target-resolution.json': JSON.stringify({
-                ...WORLD_FLEET_TARGET_RESOLUTION,
-                summary: summaryWithoutStaleAgents
-            })
-        }));
+        const analysis = computeDistributedRunAnalysis(
+            worldFleetFiles({
+                'target-resolution.json': JSON.stringify({
+                    ...WORLD_FLEET_TARGET_RESOLUTION,
+                    summary: summaryWithoutStaleAgents
+                })
+            }),
+            GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.parseWarnings).toEqual([{
             fileName: 'target-resolution.json',
@@ -139,7 +129,7 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('reads a target-resolution.json that records null as no target resolution', () => {
-        const analysis = analyzedRun(worldFleetFiles({ 'target-resolution.json': 'null' }));
+        const analysis = computeDistributedRunAnalysis(worldFleetFiles({ 'target-resolution.json': 'null' }), GENERATED_AT_EPOCH_MS);
 
         expect(analysis.parseWarnings).toEqual([]);
         expect(analysis.targetResolution).toBeUndefined();
@@ -185,7 +175,7 @@ describe('distributed run artifact decoding', () => {
             }
         });
 
-        const analysis = failedRun(files);
+        const analysis = computeFailedDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS);
         const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
 
         expect(analysis.failure).toMatchObject({
@@ -247,7 +237,7 @@ describe('distributed run artifact decoding', () => {
             }
         });
 
-        const analysis = analyzedRun(files);
+        const analysis = computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS);
         const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
 
         expect(analysis.parseWarnings).toEqual([
@@ -408,7 +398,7 @@ describe('distributed run artifact decoding', () => {
 
         for (const decodeCase of cases) {
             const files = passedRunFiles({ 'control-run.json': decodeCase.controlRunText });
-            const analysis = analyzedRun(files);
+            const analysis = computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS);
             const expectedWarning = { fileName: 'control-run.json', message: decodeCase.message };
 
             expect(analysis.parseWarnings, decodeCase.name).toEqual([expectedWarning]);
@@ -420,19 +410,22 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('keeps optional artifact parse errors visible without hiding the run verdict', () => {
-        const analysis = analyzedRun(passedRunFiles({
-            'fleet-report.json': '{',
-            'events.jsonl': [
-                JSON.stringify({
-                    kind: 'runtime',
-                    status: 'event',
-                    agentId: 'agent-a',
-                    atEpochMs: 20,
-                    value: { severity: 'info', message: 'loaded' }
-                }),
-                '{not-json'
-            ].join('\n')
-        }));
+        const analysis = computeDistributedRunAnalysis(
+            passedRunFiles({
+                'fleet-report.json': '{',
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'runtime',
+                        status: 'event',
+                        agentId: 'agent-a',
+                        atEpochMs: 20,
+                        value: { severity: 'info', message: 'loaded' }
+                    }),
+                    '{not-json'
+                ].join('\n')
+            }),
+            GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.ok).toBe(true);
         expect(analysis.parseWarnings.map((warning) => warning.fileName)).toEqual([
@@ -447,18 +440,21 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('skips JSONL rows that are not JSON objects with a warning instead of counting them as evidence', () => {
-        const analysis = analyzedRun(passedRunFiles({
-            'events.jsonl': [
-                JSON.stringify({
-                    kind: 'runtime',
-                    status: 'event',
-                    agentId: 'agent-a',
-                    atEpochMs: 20,
-                    value: { severity: 'info', message: 'loaded' }
-                }),
-                '42'
-            ].join('\n')
-        }));
+        const analysis = computeDistributedRunAnalysis(
+            passedRunFiles({
+                'events.jsonl': [
+                    JSON.stringify({
+                        kind: 'runtime',
+                        status: 'event',
+                        agentId: 'agent-a',
+                        atEpochMs: 20,
+                        value: { severity: 'info', message: 'loaded' }
+                    }),
+                    '42'
+                ].join('\n')
+            }),
+            GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.parseWarnings).toEqual([{
             fileName: 'events.jsonl',
@@ -515,7 +511,7 @@ describe('distributed run artifact decoding', () => {
     it('reports a missing manifest.json as an analysis warning instead of bundling the run snapshot as the manifest', () => {
         const { 'manifest.json': _manifest, ...filesWithoutManifest } = passedRunFiles();
         const bundle = toDistributedArtifactBundle(filesWithoutManifest, 456);
-        const analysis = analyzedRun(filesWithoutManifest);
+        const analysis = computeDistributedRunAnalysis(filesWithoutManifest, GENERATED_AT_EPOCH_MS);
 
         expect(bundle.left).toEqual({
             fileName: 'manifest.json',

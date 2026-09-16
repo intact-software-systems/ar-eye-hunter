@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    computeDistributedRunArtifactAnalysis,
     toDistributedArtifactSnapshots,
-    type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactSnapshots
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -19,6 +17,7 @@ import {
     searchDistributedArtifactEvidence
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
 import { computeDistributedArtifactWorkspace, distributedArtifactPipelineJsonRecord } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedRunAnalysis } from '../shared-test/distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
 const TIMEOUT_STACK = [
@@ -238,14 +237,6 @@ function evidenceIndex(input: DeriveDistributedArtifactEvidenceInput): Distribut
     return derived.right;
 }
 
-function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
-    if (analyzed.right?.variant !== 'distributed-run') {
-        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
-    }
-    return analyzed.right.analysis;
-}
-
 function decodedSnapshots(files: DistributedRunArtifactFiles): DistributedRunArtifactSnapshots {
     const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS);
     if (snapshots.right === undefined) {
@@ -265,7 +256,7 @@ describe('distributed artifact evidence index', () => {
             payloadSummaryLimit: 32
         });
         const fromPrecomputed = deriveDistributedArtifactEvidenceIndex({
-            analysis: analyzedRun(files),
+            analysis: computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS),
             snapshots: decodedSnapshots(files),
             sourceFileNames: Object.keys(files),
             indexLimit: 4,
@@ -742,7 +733,7 @@ describe('distributed artifact evidence search', () => {
 
     it('searches every affected agent and treats passed as an alias of ok', () => {
         const files = evidenceFiles();
-        const analysis = analyzedRun(files);
+        const analysis = computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS);
         if (analysis.ok) {
             throw new Error('Expected deterministic failure.');
         }

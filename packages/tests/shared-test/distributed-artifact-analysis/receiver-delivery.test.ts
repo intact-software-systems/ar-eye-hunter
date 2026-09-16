@@ -1,35 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    computeDistributedRunArtifactAnalysis,
-    type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles,
-    type DistributedRunFailedAnalysis
-} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
+    ANALYSIS_GENERATED_AT_EPOCH_MS,
+    computeDistributedRunAnalysis,
+    computeFailedDistributedRunAnalysis,
     createControlRunSnapshot,
     createDistributedRunManifest,
     createDistributedRunSnapshot,
     toDistributedRunArtifactFiles
 } from './distributed-artifact-files-fixture.ts';
-
-function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: 123 });
-    if (analyzed.right?.variant !== 'distributed-run') {
-        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
-    }
-    return analyzed.right.analysis;
-}
-
-function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
-    const analysis = analyzedRun(files);
-    if (analysis.ok) {
-        throw new Error('Expected a failed distributed run analysis.');
-    }
-    return analysis;
-}
 
 describe('distributed run artifact receiver delivery', () => {
     it('derives receiver delivery performance from final receiver stats and ignores interim snapshots', () => {
@@ -56,104 +37,107 @@ describe('distributed run artifact receiver delivery', () => {
             }
         };
         const agentIds = ['controller-02', 'controller-03', 'controller-04'];
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
-            distributedRun: createDistributedRunSnapshot({
-                distributedRunId: 'dist-receiver-delivery',
-                controlRunId: 'run-receiver-delivery',
-                state: 'passed',
-                agentIds,
-                startedAtEpochMs: 1_000,
-                completedAtEpochMs: 34_000,
-                manifest: createDistributedRunManifest({
+        const analysis = computeDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
                     distributedRunId: 'dist-receiver-delivery',
                     controlRunId: 'run-receiver-delivery',
+                    state: 'passed',
                     agentIds,
-                    recipes: [{
-                        recipeId: 'rtc-messages-principal-multicast-receiver',
-                        recipe: {
-                            schemaVersion: 1,
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 34_000,
+                    manifest: createDistributedRunManifest({
+                        distributedRunId: 'dist-receiver-delivery',
+                        controlRunId: 'run-receiver-delivery',
+                        agentIds,
+                        recipes: [{
                             recipeId: 'rtc-messages-principal-multicast-receiver',
-                            commands: [receiverInterimStatsCommand, receiverStatsCommand]
-                        },
-                        role: 'receiver',
-                        required: true
-                    }]
-                })
-            }),
-            controlRun: createControlRunSnapshot({
-                runId: 'run-receiver-delivery',
-                agents: [
-                    { agentId: 'controller-02', receivedEventCount: 610 },
-                    { agentId: 'controller-03', receivedEventCount: 570 },
-                    { agentId: 'controller-04', receivedEventCount: 625 }
-                ]
-            }),
-            files: {
-                'results.jsonl': [
-                    JSON.stringify({
-                        agentId: 'controller-02',
-                        commandId: 'receiver-interim-a',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-stats',
-                            counters: { messages: 10 }
-                        }
-                    }),
-                    JSON.stringify({
-                        agentId: 'controller-02',
-                        commandId: 'receiver-stats-a',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-final-stats',
-                            counters: { messages: 580 }
-                        }
-                    }),
-                    JSON.stringify({
-                        agentId: 'controller-03',
-                        commandId: 'receiver-interim-b',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-stats',
-                            counters: { messages: 20 }
-                        }
-                    }),
-                    JSON.stringify({
-                        agentId: 'controller-03',
-                        commandId: 'receiver-stats-b',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-final-stats',
-                            counters: { messages: 560 }
-                        }
-                    }),
-                    JSON.stringify({
-                        agentId: 'controller-04',
-                        commandId: 'receiver-interim-c',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-stats',
-                            counters: { messages: 30 }
-                        }
-                    }),
-                    JSON.stringify({
-                        agentId: 'controller-04',
-                        commandId: 'receiver-stats-c',
-                        action: 'stats',
-                        ok: true,
-                        result: {
-                            commandId: 'rtc-messages-principal-receiver-final-stats',
-                            counters: { messages: 600 }
-                        }
+                            recipe: {
+                                schemaVersion: 1,
+                                recipeId: 'rtc-messages-principal-multicast-receiver',
+                                commands: [receiverInterimStatsCommand, receiverStatsCommand]
+                            },
+                            role: 'receiver',
+                            required: true
+                        }]
                     })
-                ].join('\n'),
-                'events.jsonl': ''
-            }
-        }));
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-receiver-delivery',
+                    agents: [
+                        { agentId: 'controller-02', receivedEventCount: 610 },
+                        { agentId: 'controller-03', receivedEventCount: 570 },
+                        { agentId: 'controller-04', receivedEventCount: 625 }
+                    ]
+                }),
+                files: {
+                    'results.jsonl': [
+                        JSON.stringify({
+                            agentId: 'controller-02',
+                            commandId: 'receiver-interim-a',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-stats',
+                                counters: { messages: 10 }
+                            }
+                        }),
+                        JSON.stringify({
+                            agentId: 'controller-02',
+                            commandId: 'receiver-stats-a',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-final-stats',
+                                counters: { messages: 580 }
+                            }
+                        }),
+                        JSON.stringify({
+                            agentId: 'controller-03',
+                            commandId: 'receiver-interim-b',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-stats',
+                                counters: { messages: 20 }
+                            }
+                        }),
+                        JSON.stringify({
+                            agentId: 'controller-03',
+                            commandId: 'receiver-stats-b',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-final-stats',
+                                counters: { messages: 560 }
+                            }
+                        }),
+                        JSON.stringify({
+                            agentId: 'controller-04',
+                            commandId: 'receiver-interim-c',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-stats',
+                                counters: { messages: 30 }
+                            }
+                        }),
+                        JSON.stringify({
+                            agentId: 'controller-04',
+                            commandId: 'receiver-stats-c',
+                            action: 'stats',
+                            ok: true,
+                            result: {
+                                commandId: 'rtc-messages-principal-receiver-final-stats',
+                                counters: { messages: 600 }
+                            }
+                        })
+                    ].join('\n'),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.performance?.receiverDelivery).toMatchObject({
             sampleCount: 3,
@@ -201,93 +185,99 @@ describe('distributed run artifact receiver delivery', () => {
             rateHz: 5,
             minReceiveRatio: 0.9
         });
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
-            distributedRun: createDistributedRunSnapshot({
-                distributedRunId: 'dist-all-peer-settle-only',
-                controlRunId: 'run-all-peer-settle-only',
-                state: 'cancelled',
-                agentIds: ['controller-01'],
-                startedAtEpochMs: 1_000,
-                completedAtEpochMs: 8_000,
-                manifest: createDistributedRunManifest({
+        const analysis = computeDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
                     distributedRunId: 'dist-all-peer-settle-only',
                     controlRunId: 'run-all-peer-settle-only',
+                    state: 'cancelled',
                     agentIds: ['controller-01'],
-                    recipes: [{ recipeId: recipe.recipeId, recipe, required: true }]
-                })
-            }),
-            controlRun: createControlRunSnapshot({
-                runId: 'run-all-peer-settle-only',
-                agents: [{ agentId: 'controller-01' }]
-            }),
-            files: {
-                'results.jsonl': JSON.stringify({
-                    agentId: 'controller-01',
-                    commandId: 'settle-stats-a',
-                    action: 'stats',
-                    ok: true,
-                    result: {
-                        commandId: 'rtc-messages-all-peer-settle-stats',
-                        counters: { messages: 0 }
-                    }
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 8_000,
+                    manifest: createDistributedRunManifest({
+                        distributedRunId: 'dist-all-peer-settle-only',
+                        controlRunId: 'run-all-peer-settle-only',
+                        agentIds: ['controller-01'],
+                        recipes: [{ recipeId: recipe.recipeId, recipe, required: true }]
+                    })
                 }),
-                'events.jsonl': ''
-            }
-        }));
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-all-peer-settle-only',
+                    agents: [{ agentId: 'controller-01' }]
+                }),
+                files: {
+                    'results.jsonl': JSON.stringify({
+                        agentId: 'controller-01',
+                        commandId: 'settle-stats-a',
+                        action: 'stats',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-messages-all-peer-settle-stats',
+                            counters: { messages: 0 }
+                        }
+                    }),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.performance?.receiverDelivery).toBeUndefined();
         expect(analysis.performanceMarkdown).not.toContain('Receiver delivery:');
     });
 
     it('classifies receiver delivery threshold assertions as delivery failures', () => {
-        const analysis = failedRun(toDistributedRunArtifactFiles({
-            distributedRun: createDistributedRunSnapshot({
-                distributedRunId: 'dist-receiver-delivery-failed',
-                controlRunId: 'run-receiver-delivery-failed',
-                state: 'failed',
-                agentIds: ['controller-03'],
-                startedAtEpochMs: 1_000,
-                completedAtEpochMs: 34_000
-            }),
-            controlRun: createControlRunSnapshot({
-                runId: 'run-receiver-delivery-failed',
-                agents: [{ agentId: 'controller-03', receivedEventCount: 570 }]
-            }),
-            files: {
-                'fleet-report.json': JSON.stringify({
+        const analysis = computeFailedDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
                     distributedRunId: 'dist-receiver-delivery-failed',
-                    ok: false,
-                    summary: {
-                        agents: 1,
-                        passRate: 0,
-                        failureGroups: 1
-                    },
-                    failureSignatures: [{
-                        category: 'command',
-                        title: 'Command result failed',
-                        normalizedMessage: 'Assert failed for stats.counters.messages.',
-                        likelyCause: 'A command assertion failed.',
-                        affectedAgents: ['controller-03'],
-                        commandId: 'receiver-delivery-threshold'
-                    }]
+                    controlRunId: 'run-receiver-delivery-failed',
+                    state: 'failed',
+                    agentIds: ['controller-03'],
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 34_000
                 }),
-                'results.jsonl': JSON.stringify({
-                    agentId: 'controller-03',
-                    commandId: 'receiver-delivery-threshold',
-                    action: 'assert',
-                    status: 'FAILURE',
-                    ok: false,
-                    actual: {
-                        code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
-                        message: 'Assert failed for stats.counters.messages.',
-                        source: 'stats.counters.messages',
-                        actual: 560,
-                        expected: 570
-                    }
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-receiver-delivery-failed',
+                    agents: [{ agentId: 'controller-03', receivedEventCount: 570 }]
                 }),
-                'events.jsonl': ''
-            }
-        }));
+                files: {
+                    'fleet-report.json': JSON.stringify({
+                        distributedRunId: 'dist-receiver-delivery-failed',
+                        ok: false,
+                        summary: {
+                            agents: 1,
+                            passRate: 0,
+                            failureGroups: 1
+                        },
+                        failureSignatures: [{
+                            category: 'command',
+                            title: 'Command result failed',
+                            normalizedMessage: 'Assert failed for stats.counters.messages.',
+                            likelyCause: 'A command assertion failed.',
+                            affectedAgents: ['controller-03'],
+                            commandId: 'receiver-delivery-threshold'
+                        }]
+                    }),
+                    'results.jsonl': JSON.stringify({
+                        agentId: 'controller-03',
+                        commandId: 'receiver-delivery-threshold',
+                        action: 'assert',
+                        status: 'FAILURE',
+                        ok: false,
+                        actual: {
+                            code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
+                            message: 'Assert failed for stats.counters.messages.',
+                            source: 'stats.counters.messages',
+                            actual: 560,
+                            expected: 570
+                        }
+                    }),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
 
         expect(analysis.failure).toMatchObject({
             category: 'receiver-delivery',

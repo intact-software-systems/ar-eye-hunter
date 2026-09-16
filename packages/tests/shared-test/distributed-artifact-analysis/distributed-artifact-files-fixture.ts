@@ -9,7 +9,12 @@ import type {
     ControlQueuedCommandSnapshot,
     ControlRunSnapshot
 } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
-import type { DistributedRunArtifactFiles } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    computeDistributedRunArtifactAnalysis,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
@@ -26,6 +31,9 @@ import type {
     RallarBlackBoxTestError,
     RallarBlackBoxTestRecipe
 } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+/** The generation time the analysis suites pass when the time itself is not under test. */
+export const ANALYSIS_GENERATED_AT_EPOCH_MS = 123;
 
 export const FIXTURE_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -102,6 +110,30 @@ export interface DistributedRunArtifactFilesFixtureInput {
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly controlRun: ControlRunSnapshot;
     readonly files?: DistributedRunArtifactFiles;
+}
+
+/** The analysis of files a case built as a distributed run; any other outcome throws and fails the case. */
+export function computeDistributedRunAnalysis(
+    files: DistributedRunArtifactFiles,
+    generatedAtEpochMs: number
+): DistributedRunAnalysis {
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
+
+/** The analysis of files a case built as a failed distributed run; any other outcome throws and fails the case. */
+export function computeFailedDistributedRunAnalysis(
+    files: DistributedRunArtifactFiles,
+    generatedAtEpochMs: number
+): DistributedRunFailedAnalysis {
+    const analysis = computeDistributedRunAnalysis(files, generatedAtEpochMs);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
 }
 
 export function createDistributedRunManifest(

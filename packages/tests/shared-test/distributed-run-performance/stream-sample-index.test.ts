@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ControlResultEnvelope } from '../../../shared-test/rallar-bb-test/control-protocol.ts';
+import type { DistributedRunStreamTiming } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     decodeDistributedRunResultEvidence,
     toControlResultEvidence
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
-import { computeStreamTimingSamples } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-stream-timing-samples.ts';
+import {
+    computeStreamTimingSamples,
+    type StreamSampleIndexTelemetry
+} from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-stream-timing-samples.ts';
 import { computeStreamTiming } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-stream-timing.ts';
 
 interface StreamSummaryRow {
@@ -90,7 +94,12 @@ function nestedStreamResult(outerIdentity: string, nestedIdentity: string, summa
     };
 }
 
-function computeStreamCandidates(sources: StreamCandidateSources) {
+interface StreamCandidateSelection {
+    readonly streamTiming: DistributedRunStreamTiming | undefined;
+    readonly telemetry: StreamSampleIndexTelemetry;
+}
+
+function computeStreamCandidates(sources: StreamCandidateSources): StreamCandidateSelection {
     const selection = computeStreamTimingSamples({
         controlResults: (sources.controlResults ?? []).map(toControlResultEvidence),
         jsonlResults: (sources.artifactResults ?? []).flatMap((row) => decodeDistributedRunResultEvidence(row) ?? []),
