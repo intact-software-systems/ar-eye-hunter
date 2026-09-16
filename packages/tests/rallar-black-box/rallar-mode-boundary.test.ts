@@ -102,26 +102,6 @@ const rtcRealtimePanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx',
     import.meta.url
 );
-const webSocketSupportSourcePaths = [
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/to-web-socket-command-center-recipe-text.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts'
-].map((path) => new URL(path, import.meta.url));
-const webSocketViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/web-socket-command-center-view.tsx',
-    import.meta.url
-);
-const webSocketControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-web-socket-command-center-controller.ts',
-    import.meta.url
-);
-const webSocketPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/web-socket-command-center-panel.tsx',
-    import.meta.url
-);
 const roomsClientsRequestSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts',
     import.meta.url
@@ -292,29 +272,6 @@ function rtcRealtimeOwnerSource(source: string): string {
     ].join('\n');
 }
 
-function webSocketCommandCenterOwnerSource(source: string): string {
-    const controllerFallback = existsSync(webSocketControllerSourcePath) &&
-            existsSync(webSocketPanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function WebSocketCommandCenterPanel',
-            existsSync(rtcRealtimeControllerSourcePath) &&
-                existsSync(rtcRealtimePanelSourcePath)
-                ? 'function RallarDataPanel'
-                : 'function RtcRealtimePanel'
-        );
-    return [
-        sourceOrFallback(
-            webSocketControllerSourcePath,
-            controllerFallback
-        ),
-        sourceOrFallback(webSocketPanelSourcePath, ''),
-        ...webSocketSupportSourcePaths.map((path) => sourceOrFallback(path, '')),
-        sourceOrFallback(webSocketViewSourcePath, '')
-    ].join('\n');
-}
-
 function roomsClientsOwnerSource(source: string): string {
     const extracted = [
         roomsClientsRequestSourcePath,
@@ -435,14 +392,11 @@ describe('rallar-black-box Rallar mode boundary', () => {
             actionFeedbackPanelFallback
         );
         const roomsClientsPanel = roomsClientsOwnerSource(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
         const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
         expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('WS subscribed');
         expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
         expect(rtcRealtimePanel).toContain('Realtime sub');
         expect(rtcRealtimePanel).toContain('RTC message sub');

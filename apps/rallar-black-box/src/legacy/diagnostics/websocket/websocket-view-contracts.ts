@@ -1,3 +1,6 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
 import type { CommandCenterActionFeedback } from '../shared/action-feedback.ts';
 import type {
     WebSocketCommandCenterValues,
@@ -51,3 +54,11 @@ export type WebSocketCommandCenterViewModel = Readonly<{
     copyRecipe(includeRtcParity: boolean): Promise<void>;
     openMissingTicket(): Promise<void>;
 }>;
+
+export interface WebSocketCommandCenterViewProps {
+    readonly state: RallarBlackBoxTestState;
+    readonly authSession: AuthSession | undefined;
+    readonly browserStatus: RallarBrowserStatusSummary;
+    readonly busy: boolean;
+    readonly model: WebSocketCommandCenterViewModel;
+}
