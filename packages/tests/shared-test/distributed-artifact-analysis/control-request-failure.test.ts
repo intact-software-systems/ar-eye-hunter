@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    analyzeDistributedRunArtifactFiles,
+    computeDistributedRunArtifactAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunControlRequestFailureAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -15,7 +15,7 @@ import {
 const GENERATED_AT_EPOCH_MS = 123;
 
 function controlRequestFailure(files: DistributedRunArtifactFiles): DistributedRunControlRequestFailureAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
     if (analyzed.right?.variant !== 'control-request-failure') {
         throw new Error(`Expected a control request failure analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
@@ -118,7 +118,7 @@ describe('distributed run artifact control request failures', () => {
     });
 
     it('keeps a failed start request as the failure focus of a distributed run analysis', () => {
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files: toDistributedRunArtifactFiles({
                 distributedRun: createDistributedRunSnapshot({
                     distributedRunId: 'dist-post-start-failure',
@@ -156,7 +156,7 @@ describe('distributed run artifact control request failures', () => {
     });
 
     it('rejects a control request record that omits a field the runner always writes', () => {
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files: failedCreateFiles({
                 'control-post-error-metadata.json': JSON.stringify({
                     phase: 'create',

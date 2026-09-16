@@ -332,17 +332,17 @@ const CONTROL_POST_ERROR_FILE_NAMES = [
     'control-post-request-error.json'
 ] as const;
 
-export function analyzeDistributedRunArtifactFiles(
+export function computeDistributedRunArtifactAnalysis(
     input: DistributedRunAnalysisInput
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactAnalysis> {
     const parsed = parseDistributedArtifactPipeline(input.files, {
         projection: 'literal-loose-files'
     });
-    return parseDistributedRunArtifactPipeline(parsed).mapRight((content): DistributedRunArtifactAnalysis =>
+    return toDistributedRunArtifactContent(parsed).mapRight((content): DistributedRunArtifactAnalysis =>
         content.variant === 'distributed-run'
             ? {
                 variant: 'distributed-run',
-                analysis: deriveDistributedRunArtifactPipelineAnalysis({
+                analysis: computeDistributedRunArtifactPipelineAnalysis({
                     parsed,
                     content,
                     generatedAtEpochMs: input.generatedAtEpochMs,
@@ -356,13 +356,7 @@ export function analyzeDistributedRunArtifactFiles(
     );
 }
 
-export function analyzeDistributedRunArtifactPipeline(
-    input: DistributedRunArtifactPipelineAnalysisInput
-): DistributedRunAnalysis {
-    return deriveDistributedRunArtifactPipelineAnalysis(input).analysis;
-}
-
-export function deriveDistributedRunArtifactPipelineAnalysis(
+export function computeDistributedRunArtifactPipelineAnalysis(
     input: DistributedRunArtifactPipelineAnalysisInput
 ): DistributedRunArtifactPipelineAnalysisResult {
     const { parsed, content, generatedAtEpochMs } = input;
@@ -400,7 +394,7 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
     const status = distributedRun.state;
     const ok = booleanValue(fleetReport.ok) ?? distributedRun.rollup.ok;
     const group = groupFromArtifacts(distributedRun, fleetReport);
-    const performance = deriveDistributedRunSnapshotPerformance({
+    const performance = computeDistributedRunSnapshotPerformance({
         distributedRun,
         controlRun,
         fleetReport,
@@ -464,7 +458,7 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
     };
 }
 
-export function distributedArtifactBundleFromFiles(
+export function toDistributedArtifactBundle(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs: number,
     artifactSchemaVersion?: number
@@ -484,7 +478,7 @@ export function distributedArtifactBundleFromFiles(
     );
 }
 
-export function distributedArtifactSnapshotsFromFiles(
+export function toDistributedArtifactSnapshots(
     files: DistributedRunArtifactFiles,
     generatedAtEpochMs: number,
     artifactSchemaVersion?: number
@@ -863,7 +857,7 @@ function deriveFailure(
     };
 }
 
-export function deriveDistributedRunSnapshotPerformance(
+export function computeDistributedRunSnapshotPerformance(
     input: DistributedRunSnapshotPerformanceInput
 ): DistributedRunPerformanceAnalysis {
     return derivePerformance(
@@ -1407,7 +1401,7 @@ export type DistributedRunArtifactContent =
  * A folder without distributed-run.json is analyzable only when the runner recorded the failed
  * control request that prevented the run from existing.
  */
-export function parseDistributedRunArtifactPipeline(
+export function toDistributedRunArtifactContent(
     parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
     const parseWarnings: DistributedRunArtifactParseWarning[] = [];
@@ -1471,7 +1465,7 @@ function withJsonlControlEnvelopes(
 function parseDistributedRunBundleContent(
     parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunBundleContent> {
-    return parseDistributedRunArtifactPipeline(parsed).flatMap(
+    return toDistributedRunArtifactContent(parsed).flatMap(
         (rejection) => Either.ofLeft(rejection),
         (content) =>
             content.variant === 'distributed-run'

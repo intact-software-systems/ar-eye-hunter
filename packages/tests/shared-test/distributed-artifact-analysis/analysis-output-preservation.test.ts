@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
-    analyzeDistributedRunArtifactFiles,
-    deriveDistributedRunSnapshotPerformance,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    computeDistributedRunSnapshotPerformance,
+    toDistributedArtifactBundle,
+    toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createDistributedArtifactWorkspace } from '../../../shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
@@ -262,20 +262,20 @@ function createFailedCreateRequestFiles(): DistributedRunArtifactFiles {
 const PRESERVED_OUTPUTS: readonly PreservedOutput[] = [
     {
         name: 'failed run analysis with command, diagnostic and failure evidence',
-        derive: () => analyzeDistributedRunArtifactFiles({ files: createFailedRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS }).right,
+        derive: () => computeDistributedRunArtifactAnalysis({ files: createFailedRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS }).right,
         sha256: '80e14d6cd408e61d52af605306eb3e316b785ecd54cce015ebcb403c91b9ef66',
         bytes: 7_282
     },
     {
         name: 'passed stream run analysis',
-        derive: () => analyzeDistributedRunArtifactFiles({ files: createPassedStreamRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS }).right,
+        derive: () => computeDistributedRunArtifactAnalysis({ files: createPassedStreamRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS }).right,
         sha256: 'c8adbd8e7f94910fa0c595dfe66209247799aa38d0b807bbc63d805584a2b3e5',
         bytes: 4_850
     },
     {
         name: 'group assertion failure analysis',
         derive: () =>
-            analyzeDistributedRunArtifactFiles({ files: createGroupAssertionRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS })
+            computeDistributedRunArtifactAnalysis({ files: createGroupAssertionRunFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS })
                 .right,
         sha256: '45d3fe3b0b6c3c35ede1c395833f817fa50e6fc0111362fe33f9ecf6466a3b2b',
         bytes: 6_743
@@ -283,22 +283,22 @@ const PRESERVED_OUTPUTS: readonly PreservedOutput[] = [
     {
         name: 'failed create request analysis',
         derive: () =>
-            analyzeDistributedRunArtifactFiles({ files: createFailedCreateRequestFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS })
+            computeDistributedRunArtifactAnalysis({ files: createFailedCreateRequestFiles(), generatedAtEpochMs: GENERATED_AT_EPOCH_MS })
                 .right,
         sha256: '2ac57c4ab4bf2ce5001b38ec42553558ac08c7f1ce87d8603bd915cb9af8fbff',
         bytes: 1_898
     },
     {
         name: 'stream run bundle',
-        derive: () => distributedArtifactBundleFromFiles(createPassedStreamRunFiles(), GENERATED_AT_EPOCH_MS).right,
+        derive: () => toDistributedArtifactBundle(createPassedStreamRunFiles(), GENERATED_AT_EPOCH_MS).right,
         sha256: '2a2fe82f894e3da781415d6e11974af84ccba332ed658a8ead70d12214f64c80',
         bytes: 4_925
     },
     {
         name: 'stream run snapshot performance',
         derive: () => {
-            const snapshots = distributedArtifactSnapshotsFromFiles(createPassedStreamRunFiles(), GENERATED_AT_EPOCH_MS).right;
-            return snapshots === undefined ? undefined : deriveDistributedRunSnapshotPerformance({
+            const snapshots = toDistributedArtifactSnapshots(createPassedStreamRunFiles(), GENERATED_AT_EPOCH_MS).right;
+            return snapshots === undefined ? undefined : computeDistributedRunSnapshotPerformance({
                 distributedRun: snapshots.distributedRun,
                 controlRun: snapshots.controlRun
             });

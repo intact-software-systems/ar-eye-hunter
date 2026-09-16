@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    analyzeDistributedRunArtifactFiles,
+    computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -12,7 +12,7 @@ import {
 } from './distributed-artifact-files-fixture.ts';
 
 function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: 123 });
     if (analyzed.right?.variant !== 'distributed-run') {
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }

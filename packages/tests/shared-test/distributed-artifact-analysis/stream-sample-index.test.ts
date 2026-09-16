@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ControlResultEnvelope } from '../../../shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
-import { deriveDistributedRunSnapshotPerformance, type StreamSampleIndexTelemetry } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    computeDistributedRunSnapshotPerformance,
+    type StreamSampleIndexTelemetry
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 
 function completeStreamSummary(
     completedFrames = 1,
@@ -78,7 +81,7 @@ function deriveStreamCandidatePerformance(
         onStreamSampleIndexTelemetry?: (telemetry: StreamSampleIndexTelemetry) => void;
     }>
 ) {
-    return deriveDistributedRunSnapshotPerformance({
+    return computeDistributedRunSnapshotPerformance({
         distributedRun: {
             distributedRunId: 'dist-stream-equivalence',
             controlRunId: 'run-stream-equivalence',

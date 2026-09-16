@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    analyzeDistributedRunArtifactFiles,
-    deriveDistributedRunSnapshotPerformance,
+    computeDistributedRunArtifactAnalysis,
+    computeDistributedRunSnapshotPerformance,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -17,7 +17,7 @@ import {
 } from './distributed-artifact-files-fixture.ts';
 
 function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: 123 });
     if (analyzed.right?.variant !== 'distributed-run') {
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
@@ -54,7 +54,7 @@ describe('distributed run artifact command timing', () => {
                 }
             }
         }));
-        const performance = deriveDistributedRunSnapshotPerformance({
+        const performance = computeDistributedRunSnapshotPerformance({
             distributedRun: {
                 distributedRunId: 'dist-large-performance',
                 controlRunId: 'run-large-performance',

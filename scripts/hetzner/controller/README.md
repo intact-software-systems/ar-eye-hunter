@@ -791,7 +791,7 @@ It copies a checked-in distributed manifest to the VM, optionally runs
 `08-rollout-controller.sh`, starts headless browsers with
 `09-start-headless-workers.sh`, runs `14-run-distributed-recipe.sh`, copies
 artifacts back to GitHub, runs
-`apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts`, and
+`apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts`, and
 uploads both raw artifacts and analysis.
 
 Use `manifest_path` for the repo-relative distributed manifest file. Leave

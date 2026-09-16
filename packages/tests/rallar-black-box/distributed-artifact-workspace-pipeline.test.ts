@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    analyzeDistributedRunArtifactPipeline,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
-    parseDistributedRunArtifactPipeline
+    computeDistributedRunArtifactAnalysis,
+    computeDistributedRunArtifactPipelineAnalysis,
+    toDistributedArtifactBundle,
+    toDistributedArtifactSnapshots,
+    toDistributedRunArtifactContent
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     declaredDistributedArtifactSchemaVersion,
@@ -15,13 +15,13 @@ import { projectDistributedArtifactEnvelope } from '../../../packages/shared-tes
 import { distributedArtifactIdentityIssues } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-identity.ts';
 import { parseDistributedArtifactPipeline } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-pipeline.ts';
 import * as monitorModule from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { createDistributedArtifactWorkspace, deriveDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactWorkspace, createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 describe('distributed artifact workspace parsed integration', () => {
     it('derives one workspace from one source pass and one parse per document or JSONL row', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 12, resultCount: 6 });
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: fixture.files,
             generatedAtEpochMs: fixture.generatedAtEpochMs,
             artifactSchemaVersion: fixture.artifactSchemaVersion
@@ -74,8 +74,8 @@ describe('distributed artifact workspace parsed integration', () => {
             generatedAtEpochMs: fixture.generatedAtEpochMs,
             artifactSchemaVersion: fixture.artifactSchemaVersion
         };
-        const loose = deriveDistributedArtifactWorkspace(input);
-        const envelope = deriveDistributedArtifactWorkspace({
+        const loose = computeDistributedArtifactWorkspace(input);
+        const envelope = computeDistributedArtifactWorkspace({
             files: {
                 'scale-envelope.json': JSON.stringify({
                     artifactSchemaVersion: fixture.artifactSchemaVersion,
@@ -100,7 +100,7 @@ describe('distributed artifact workspace parsed integration', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
         const invalidJson = '{not-json';
         const invalidRow = 'not-json';
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: {
                 ...fixture.files,
                 'failures.json': invalidJson,
@@ -132,7 +132,7 @@ describe('distributed artifact workspace parsed integration', () => {
     it('parses a metadata-selected dynamic control response once and focuses the run analysis on it', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
         const responseFile = 'control-response';
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: {
                 ...fixture.files,
                 'control-post-error-metadata.json': JSON.stringify({
@@ -172,7 +172,7 @@ describe('distributed artifact workspace parsed integration', () => {
     });
 
     it('reports a failed control request record as a workspace issue instead of a distributed run analysis', () => {
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: {
                 'manifest.json': createRecipeConsoleScaleFixture({ eventCount: 3, resultCount: 3 }).files['manifest.json'],
                 'control-post-create-error.json': JSON.stringify({ message: 'target policy rejected' }),
@@ -203,7 +203,7 @@ describe('distributed artifact workspace parsed integration', () => {
 
     it('reports a missing generation time instead of reading the clock', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 3, resultCount: 3 });
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: { ...fixture.files, 'metadata.json': undefined }
         });
 
@@ -218,7 +218,7 @@ describe('distributed artifact workspace parsed integration', () => {
 
     it('leaves the bundle unformed and says so when a v1 import lacks manifest.json', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files: {
                 ...fixture.files,
                 'manifest.json': undefined,
@@ -246,7 +246,7 @@ describe('distributed artifact workspace parsed integration', () => {
             });
         try {
             expect(() =>
-                deriveDistributedArtifactWorkspace({
+                computeDistributedArtifactWorkspace({
                     files: fixture.files,
                     generatedAtEpochMs: fixture.generatedAtEpochMs,
                     artifactSchemaVersion: fixture.artifactSchemaVersion
@@ -273,10 +273,10 @@ describe('distributed artifact workspace parsed integration', () => {
             fileName: 'distributed-run.json',
             message: 'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
         };
-        expect(analyzeDistributedRunArtifactFiles({ files: envelopeFiles, generatedAtEpochMs: 1 }).left)
+        expect(computeDistributedRunArtifactAnalysis({ files: envelopeFiles, generatedAtEpochMs: 1 }).left)
             .toEqual(missingRun);
-        expect(distributedArtifactSnapshotsFromFiles(envelopeFiles, 1).left).toEqual(missingRun);
-        expect(distributedArtifactBundleFromFiles(envelopeFiles, 1).left).toEqual(missingRun);
+        expect(toDistributedArtifactSnapshots(envelopeFiles, 1).left).toEqual(missingRun);
+        expect(toDistributedArtifactBundle(envelopeFiles, 1).left).toEqual(missingRun);
         expect(identifyDistributedArtifactFamily(envelopeFiles)).toBe('unknown');
         expect(declaredDistributedArtifactSchemaVersion(envelopeFiles)).toBeUndefined();
         expect(distributedArtifactGeneratedAt(envelopeFiles)).toBeUndefined();
@@ -285,7 +285,7 @@ describe('distributed artifact workspace parsed integration', () => {
             source: 'bundle-envelope',
             distributedRunId: 'recipe-console-scale-distributed-run'
         });
-        expect(deriveDistributedArtifactWorkspace({ files: envelopeFiles }).workspace)
+        expect(computeDistributedArtifactWorkspace({ files: envelopeFiles }).workspace)
             .toMatchObject({ source: 'bundle-envelope', support: 'supported' });
     });
 
@@ -296,15 +296,15 @@ describe('distributed artifact workspace parsed integration', () => {
             ...fixture.files,
             'failures.json': invalidJson
         });
-        const content = parseDistributedRunArtifactPipeline(parsed).right;
+        const content = toDistributedRunArtifactContent(parsed).right;
         if (content?.variant !== 'distributed-run') {
             throw new Error('Expected distributed run content.');
         }
-        const first = analyzeDistributedRunArtifactPipeline({
+        const first = computeDistributedRunArtifactPipelineAnalysis({
             parsed,
             content,
             generatedAtEpochMs: fixture.generatedAtEpochMs
-        });
+        }).analysis;
         const callerWarning = {
             fileName: 'caller',
             message: 'caller mutation must not leak'
@@ -313,11 +313,11 @@ describe('distributed artifact workspace parsed integration', () => {
         const originalMessage = content.parseWarnings[0]?.message;
         (first.parseWarnings[0] as { message: string; }).message = 'caller object mutation must not leak';
 
-        const second = analyzeDistributedRunArtifactPipeline({
+        const second = computeDistributedRunArtifactPipelineAnalysis({
             parsed,
             content,
             generatedAtEpochMs: fixture.generatedAtEpochMs
-        });
+        }).analysis;
 
         expect(second.parseWarnings).not.toContainEqual(callerWarning);
         expect(content.parseWarnings).not.toContainEqual(callerWarning);

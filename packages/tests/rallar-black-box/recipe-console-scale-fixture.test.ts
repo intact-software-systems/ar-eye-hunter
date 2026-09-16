@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeDistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunArtifactAnalysis } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
@@ -121,7 +121,7 @@ describe('Recipe Console deterministic scale fixture', () => {
             artifactSchemaVersion: fixture.artifactSchemaVersion,
             generatedAtEpochMs: fixture.generatedAtEpochMs
         });
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = computeDistributedRunArtifactAnalysis({
             files: fixture.files,
             artifactSchemaVersion: fixture.artifactSchemaVersion,
             generatedAtEpochMs: fixture.generatedAtEpochMs

@@ -1,8 +1,8 @@
 import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    toDistributedArtifactBundle,
+    toDistributedArtifactSnapshots,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactRejection,
@@ -26,19 +26,19 @@ export async function readDistributedArtifactFiles(
         fileContents[file.name] = await file.text();
     }));
     const artifactFiles: DistributedRunArtifactFiles = fileContents;
-    return analyzeDistributedRunArtifactFiles({
+    return computeDistributedRunArtifactAnalysis({
         files: artifactFiles,
         generatedAtEpochMs
     }).flatMap(
         (rejection) => Either.ofLeft(rejection),
         (artifactAnalysis) =>
             artifactAnalysis.variant === 'distributed-run'
-                ? distributedArtifactSnapshotsFromFiles(artifactFiles, generatedAtEpochMs)
+                ? toDistributedArtifactSnapshots(artifactFiles, generatedAtEpochMs)
                     .mapRight((snapshots) => ({
                         artifactFiles,
                         analysis: artifactAnalysis.analysis,
                         snapshots,
-                        artifactBundle: distributedArtifactBundleFromFiles(artifactFiles, generatedAtEpochMs).right
+                        artifactBundle: toDistributedArtifactBundle(artifactFiles, generatedAtEpochMs).right
                     }))
                 : Either.ofLeft({
                     fileName: 'distributed-run.json',

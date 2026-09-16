@@ -1,8 +1,8 @@
 import { Either } from '@shared/resilience/Either.ts';
 
 import {
-    deriveDistributedRunArtifactPipelineAnalysis,
-    parseDistributedRunArtifactPipeline,
+    computeDistributedRunArtifactPipelineAnalysis,
+    toDistributedRunArtifactContent,
     type DistributedRunArtifactRejection
 } from './distributed-artifact-analysis.ts';
 import {
@@ -37,7 +37,7 @@ export function deriveDistributedArtifactEvidence(
     const parsed = parseDistributedArtifactPipeline(input.files, {
         projection: 'literal-loose-files'
     });
-    return parseDistributedRunArtifactPipeline(parsed).flatMap(
+    return toDistributedRunArtifactContent(parsed).flatMap(
         (rejection) => Either.ofLeft(rejection),
         (content) => {
             if (content.variant === 'control-request-failure') {
@@ -47,7 +47,7 @@ export function deriveDistributedArtifactEvidence(
                         `distributed-run.json is required: the artifacts record a failed control ${content.controlPostFailure.request.phase} request instead of a distributed run.`
                 });
             }
-            const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
+            const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
                 parsed,
                 content,
                 generatedAtEpochMs

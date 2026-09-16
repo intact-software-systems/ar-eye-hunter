@@ -8,7 +8,7 @@ import {
 } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import { distributedArtifactSnapshotsFromFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest
@@ -732,7 +732,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'events.jsonl': controlRun.events.map((event) => JSON.stringify(event)).join('\n')
         };
 
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 6_000);
+        const snapshots = toDistributedArtifactSnapshots(files, 6_000);
         expect(snapshots.left).toBeUndefined();
         const monitor = snapshots.right && deriveDistributedRunMonitor({
             distributedRun: snapshots.right.distributedRun,

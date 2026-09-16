@@ -6,7 +6,7 @@ import type {
     DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { deriveDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
 import {
@@ -168,7 +168,7 @@ export function buildTuneRunCatalog(
             work.performanceDerivations += 1;
         }
         const performance = controlRun && derivesPerformance
-            ? deriveDistributedRunSnapshotPerformance({ distributedRun, controlRun })
+            ? computeDistributedRunSnapshotPerformance({ distributedRun, controlRun })
             : undefined;
         const controlEvidence: TuneRunEvidence = {
             distributedRun,

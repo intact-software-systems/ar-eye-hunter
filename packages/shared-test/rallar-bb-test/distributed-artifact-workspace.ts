@@ -1,6 +1,6 @@
 import {
-    deriveDistributedRunArtifactPipelineAnalysis,
-    parseDistributedRunArtifactPipeline,
+    computeDistributedRunArtifactPipelineAnalysis,
+    toDistributedRunArtifactContent,
     type DistributedRunArtifactPipelineAnalysisResult
 } from './distributed-artifact-analysis.ts';
 import {
@@ -41,7 +41,7 @@ export type {
 export function createDistributedArtifactWorkspace(
     input: DistributedArtifactWorkspaceInput
 ): DistributedArtifactWorkspace {
-    return deriveDistributedArtifactWorkspace(input).workspace;
+    return computeDistributedArtifactWorkspace(input).workspace;
 }
 
 export type DistributedArtifactWorkspaceDerivationTelemetry = Readonly<{
@@ -60,7 +60,7 @@ export type DerivedDistributedArtifactWorkspace = Readonly<{
     telemetry: DistributedArtifactWorkspaceDerivationTelemetry;
 }>;
 
-export function deriveDistributedArtifactWorkspace(
+export function computeDistributedArtifactWorkspace(
     input: DistributedArtifactWorkspaceInput
 ): DerivedDistributedArtifactWorkspace {
     const parsed = parseDistributedArtifactPipeline(input.files);
@@ -179,7 +179,7 @@ export function deriveDistributedArtifactWorkspace(
             });
         }
         else {
-            const content = parseDistributedRunArtifactPipeline(parsed);
+            const content = toDistributedRunArtifactContent(parsed);
             telemetry.parsedArtifactPassCount += 1;
             if (content.left !== undefined) {
                 support = support === 'incomplete' ? 'incomplete' : 'incompatible';
@@ -201,7 +201,7 @@ export function deriveDistributedArtifactWorkspace(
                 });
             }
             else if (content.right?.variant === 'distributed-run') {
-                derived = deriveDistributedRunArtifactPipelineAnalysis({
+                derived = computeDistributedRunArtifactPipelineAnalysis({
                     parsed,
                     content: content.right,
                     generatedAtEpochMs,

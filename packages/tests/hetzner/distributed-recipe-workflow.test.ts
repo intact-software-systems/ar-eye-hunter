@@ -7,7 +7,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
-import { analyzeDistributedRunArtifactDirectory } from '../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
+import { writeDistributedRunArtifactAnalysis } from '../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
@@ -2760,7 +2760,7 @@ describe('Hetzner distributed recipe workflow', () => {
             readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8')
         ).rejects.toMatchObject({ code: 'ENOENT' });
 
-        const analyzed = await analyzeDistributedRunArtifactDirectory({
+        const analyzed = await writeDistributedRunArtifactAnalysis({
             artifactDir,
             outDir: path.join(artifactDir, 'analysis'),
             generatedAtEpochMs: 1_700_000_000_000

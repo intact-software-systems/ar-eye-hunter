@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    toDistributedArtifactBundle,
+    toDistributedArtifactSnapshots,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -17,7 +17,7 @@ import {
 const GENERATED_AT_EPOCH_MS = 123;
 
 function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
     if (analyzed.right?.variant !== 'distributed-run') {
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
@@ -133,7 +133,7 @@ describe('distributed run artifact decoding', () => {
         });
 
         const analysis = analyzedRun(files);
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, GENERATED_AT_EPOCH_MS).right;
+        const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
 
         expect(analysis.failure).toMatchObject({
             commandId: 'send-rtc',
@@ -155,7 +155,7 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('rejects artifacts that hold neither a distributed run snapshot nor a failed control request record', () => {
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files: {
                 'runner-summary.json': JSON.stringify({
                     distributedRunId: 'dist-missing',
@@ -176,7 +176,7 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('rejects an empty distributed-run.json instead of rebuilding the run from the runner summary and manifest', () => {
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files: {
                 ...passedRunFiles(),
                 'distributed-run.json': '',
@@ -198,7 +198,7 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('rejects malformed required JSON artifacts with a useful error', () => {
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files: {
                 ...passedRunFiles(),
                 'distributed-run.json': '{'
@@ -287,7 +287,7 @@ describe('distributed run artifact decoding', () => {
         ];
 
         for (const decodeCase of cases) {
-            const analyzed = analyzeDistributedRunArtifactFiles({
+            const analyzed = computeDistributedRunArtifactAnalysis({
                 files: { ...passedRunFiles(), ...decodeCase.files },
                 generatedAtEpochMs: GENERATED_AT_EPOCH_MS
             });
@@ -318,8 +318,8 @@ describe('distributed run artifact decoding', () => {
 
     it('builds a browser-safe v1 bundle from the snapshot files, manifest and JSONL evidence', () => {
         const files = passedRunFiles({ 'events.jsonl': '', 'results.jsonl': '' });
-        const bundle = distributedArtifactBundleFromFiles(files, 456).right;
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 456).right;
+        const bundle = toDistributedArtifactBundle(files, 456).right;
+        const snapshots = toDistributedArtifactSnapshots(files, 456).right;
         const monitor = snapshots && deriveDistributedRunMonitor({
             distributedRun: snapshots.distributedRun,
             controlRun: snapshots.controlRun,
@@ -341,7 +341,7 @@ describe('distributed run artifact decoding', () => {
     });
 
     it('keeps full v2 imported artifact bundles marked as v2', () => {
-        const bundle = distributedArtifactBundleFromFiles(
+        const bundle = toDistributedArtifactBundle(
             passedRunFiles({
                 'report.json': '{}',
                 'events.jsonl': '',
@@ -362,7 +362,7 @@ describe('distributed run artifact decoding', () => {
 
     it('reports a missing manifest.json as an analysis warning instead of bundling the run snapshot as the manifest', () => {
         const { 'manifest.json': _manifest, ...filesWithoutManifest } = passedRunFiles();
-        const bundle = distributedArtifactBundleFromFiles(filesWithoutManifest, 456);
+        const bundle = toDistributedArtifactBundle(filesWithoutManifest, 456);
         const analysis = analyzedRun(filesWithoutManifest);
 
         expect(bundle.left).toEqual({

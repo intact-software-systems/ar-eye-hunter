@@ -3,14 +3,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
-    analyzeDistributedRunArtifactFiles,
+    computeDistributedRunArtifactAnalysis,
     type DistributedRunArtifactAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactRejection
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-export interface AnalyzeDistributedRunArtifactDirectoryInput {
+export interface WriteDistributedRunArtifactAnalysisInput {
     readonly artifactDir: string;
     readonly outDir: string;
     readonly generatedAtEpochMs: number;
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
         process.exitCode = 1;
         return;
     }
-    const analyzed = await analyzeDistributedRunArtifactDirectory({
+    const analyzed = await writeDistributedRunArtifactAnalysis({
         artifactDir,
         outDir: args['out-dir'] ?? join(artifactDir, 'analysis'),
         generatedAtEpochMs: Date.now()
@@ -35,11 +35,11 @@ async function main(): Promise<void> {
     }
 }
 
-export async function analyzeDistributedRunArtifactDirectory(
-    input: AnalyzeDistributedRunArtifactDirectoryInput
+export async function writeDistributedRunArtifactAnalysis(
+    input: WriteDistributedRunArtifactAnalysisInput
 ): Promise<Either<DistributedRunArtifactRejection, DistributedRunArtifactAnalysis>> {
     const files = await readArtifactFiles(input.artifactDir);
-    const analyzed = analyzeDistributedRunArtifactFiles({
+    const analyzed = computeDistributedRunArtifactAnalysis({
         files,
         generatedAtEpochMs: input.generatedAtEpochMs
     });

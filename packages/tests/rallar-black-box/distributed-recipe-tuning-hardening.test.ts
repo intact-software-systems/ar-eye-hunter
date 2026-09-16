@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    deriveDistributedRunSnapshotPerformance,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    computeDistributedRunSnapshotPerformance,
     inventoryDistributedRunTuningKnobs,
+    toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles,
     type DistributedRunPerformanceAnalysis,
     type RallarBlackBoxDistributedRunManifest
@@ -101,7 +101,7 @@ function distributedRun(overrides: object = {}) {
 function analyzedPerformance(
     artifactFiles: DistributedRunArtifactFiles
 ): DistributedRunPerformanceAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({
+    const analyzed = computeDistributedRunArtifactAnalysis({
         files: artifactFiles,
         generatedAtEpochMs: 2_000
     }).right;
@@ -120,12 +120,12 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 distributedRun({ distributedRunId: 42, controlRunId: null })
             ]
         ) {
-            expect(distributedArtifactSnapshotsFromFiles(files(input), 2_000).left).toEqual({
+            expect(toDistributedArtifactSnapshots(files(input), 2_000).left).toEqual({
                 fileName: 'distributed-run.json',
                 message: 'distributed-run.json is not a distributed run snapshot: distributedRunId must be a non-empty string.'
             });
         }
-        const outer = distributedArtifactSnapshotsFromFiles(
+        const outer = toDistributedArtifactSnapshots(
             files(distributedRun({
                 distributedRunId: 'outer-distributed',
                 controlRunId: 'outer-control'
@@ -180,11 +180,11 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             }),
             [result]
         );
-        const snapshots = distributedArtifactSnapshotsFromFiles(artifactFiles, 2_000).right;
+        const snapshots = toDistributedArtifactSnapshots(artifactFiles, 2_000).right;
         if (!snapshots) {
             throw new Error('Expected decoded snapshots.');
         }
-        const performance = deriveDistributedRunSnapshotPerformance({
+        const performance = computeDistributedRunSnapshotPerformance({
             ...snapshots,
             artifactResults: [result]
         });

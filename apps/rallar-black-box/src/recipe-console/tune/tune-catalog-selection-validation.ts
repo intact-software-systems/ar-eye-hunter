@@ -1,4 +1,4 @@
-import { deriveDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { distributedRunManifestContractIssues } from './tune-run-catalog-safety.ts';
 import type { TuneQuarantinedRun, TuneRunCatalog, TuneRunOption } from './tune-run-catalog.ts';
 
@@ -112,7 +112,7 @@ function selectionValidation(
             option.performance === undefined &&
             option.pairStatus === 'paired' && controlRun !== undefined;
         const performance = derivesPerformance
-            ? deriveDistributedRunSnapshotPerformance({
+            ? computeDistributedRunSnapshotPerformance({
                 distributedRun: option.distributedRun,
                 controlRun
             })

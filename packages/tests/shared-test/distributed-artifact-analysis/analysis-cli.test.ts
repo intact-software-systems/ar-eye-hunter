@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { analyzeDistributedRunArtifactDirectory } from '../../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
+import { writeDistributedRunArtifactAnalysis } from '../../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
 import type {
     DistributedRunAnalysis,
     DistributedRunArtifactFiles,
@@ -59,7 +59,7 @@ describe('distributed run artifact analysis CLI', () => {
         );
         const outDir = path.join(artifactDir, 'analysis');
 
-        const analyzed = await analyzeDistributedRunArtifactDirectory({
+        const analyzed = await writeDistributedRunArtifactAnalysis({
             artifactDir,
             outDir,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
@@ -133,7 +133,7 @@ describe('distributed run artifact analysis CLI', () => {
         );
         const outDir = path.join(artifactDir, 'analysis');
 
-        await analyzeDistributedRunArtifactDirectory({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+        await writeDistributedRunArtifactAnalysis({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
         const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
         expect(analysis.performance?.diagnosticCount).toBe(1);
@@ -183,7 +183,7 @@ describe('distributed run artifact analysis CLI', () => {
         );
         const outDir = path.join(artifactDir, 'analysis');
 
-        await analyzeDistributedRunArtifactDirectory({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+        await writeDistributedRunArtifactAnalysis({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
         const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
         expect(analysis.failure?.category).toBe('group-assertion');
@@ -216,7 +216,7 @@ describe('distributed run artifact analysis CLI', () => {
         });
         const outDir = path.join(artifactDir, 'analysis');
 
-        const analyzed = await analyzeDistributedRunArtifactDirectory({
+        const analyzed = await writeDistributedRunArtifactAnalysis({
             artifactDir,
             outDir,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
@@ -240,7 +240,7 @@ describe('distributed run artifact analysis CLI', () => {
         });
         const outDir = path.join(artifactDir, 'analysis');
 
-        const analyzed = await analyzeDistributedRunArtifactDirectory({
+        const analyzed = await writeDistributedRunArtifactAnalysis({
             artifactDir,
             outDir,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS

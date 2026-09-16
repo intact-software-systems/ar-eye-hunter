@@ -1,7 +1,7 @@
 import {
     composeDistributedArtifactIssueMarkdown,
+    computeDistributedArtifactWorkspace,
     deriveDistributedArtifactEvidenceIndex,
-    deriveDistributedArtifactWorkspace,
     distributedArtifactPipelineJsonRecord,
     type DeriveDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceIndex,
@@ -134,7 +134,7 @@ export function deriveAnalyzeArtifactModel(
 export function prepareAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput
 ): PreparedAnalyzeArtifactModel {
-    const derived = deriveDistributedArtifactWorkspace({
+    const derived = computeDistributedArtifactWorkspace({
         files: input.files,
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion

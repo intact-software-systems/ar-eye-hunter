@@ -7,7 +7,7 @@ import {
     type AssertionOutcomeParityRow
 } from '../../shared-test/rallar-bb-test/conformance/assertion-outcome-parity.ts';
 import {
-    analyzeDistributedRunArtifactFiles,
+    computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -66,7 +66,7 @@ function failingRunFiles(code: string, message: string): DistributedRunArtifactF
 }
 
 function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: 123 });
     if (analyzed.right?.variant !== 'distributed-run') {
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }

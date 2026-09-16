@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactBundleFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    toDistributedArtifactBundle,
     type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
@@ -139,7 +139,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     it('recognizes the authoritative server v2 bundle without linked JSONL files', () => {
         const files = serverV2Files();
         const workspace = createWorkspace({ files, generatedAtEpochMs: 4_242 });
-        const bundle = distributedArtifactBundleFromFiles(files, 4_242).right;
+        const bundle = toDistributedArtifactBundle(files, 4_242).right;
 
         expect(bundle?.artifactSchemaVersion).toBe(2);
         expect(workspace).toMatchObject({
@@ -202,12 +202,12 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             'failures.json': undefined,
             'metadata.json': undefined
         });
-        const analyzed = analyzeDistributedRunArtifactFiles({
+        const analyzed = computeDistributedRunArtifactAnalysis({
             files,
             generatedAtEpochMs: 6_161,
             artifactSchemaVersion: 2
         }).right;
-        const bundle = distributedArtifactBundleFromFiles(files, 6_161, 2).right;
+        const bundle = toDistributedArtifactBundle(files, 6_161, 2).right;
 
         expect(analyzed?.variant === 'distributed-run' && analyzed.analysis.artifactSchemaVersion).toBe(2);
         expect(bundle?.artifactSchemaVersion).toBe(2);

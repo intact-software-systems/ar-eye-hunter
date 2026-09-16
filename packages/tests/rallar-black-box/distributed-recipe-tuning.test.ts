@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import {
+    computeDistributedRunSnapshotPerformance,
     createDistributedArtifactWorkspace,
-    deriveDistributedRunSnapshotPerformance,
     distributedRecipePreflight,
     distributedRunTuningJsonPointer,
     inventoryDistributedRunTuningKnobs,
@@ -172,13 +172,13 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
 describe('distributed recipe tuning Task 2 contracts', () => {
     it('exposes snapshot performance without inventing absent evidence', () => {
         const files = artifactFiles(tuningManifest());
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 4_242).right;
-        const expected = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 4_242 }).right?.analysis;
+        const snapshots = toDistributedArtifactSnapshots(files, 4_242).right;
+        const expected = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: 4_242 }).right?.analysis;
         if (!snapshots || expected?.ok !== true) {
             throw new Error('Expected decoded tuning artifacts.');
         }
 
-        const performance = deriveDistributedRunSnapshotPerformance({
+        const performance = computeDistributedRunSnapshotPerformance({
             distributedRun: snapshots.distributedRun,
             controlRun: snapshots.controlRun
         });
@@ -233,7 +233,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         distributedRun.manifest.distributedRunId = 'stale-distributed-id';
         distributedRun.manifest.controlRunId = 'stale-control-id';
 
-        const snapshots = distributedArtifactSnapshotsFromFiles({
+        const snapshots = toDistributedArtifactSnapshots({
             ...files,
             'distributed-run.json': JSON.stringify(distributedRun)
         }, 4_242).right;

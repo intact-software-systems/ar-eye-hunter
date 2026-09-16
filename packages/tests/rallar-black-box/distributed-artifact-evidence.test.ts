@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactSnapshotsFromFiles,
+    computeDistributedRunArtifactAnalysis,
+    toDistributedArtifactSnapshots,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
     type DistributedRunArtifactSnapshots
@@ -18,7 +18,7 @@ import {
     deriveDistributedArtifactEvidenceIndex,
     searchDistributedArtifactEvidence
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
-import { deriveDistributedArtifactWorkspace, distributedArtifactPipelineJsonRecord } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactWorkspace, distributedArtifactPipelineJsonRecord } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
 const TIMEOUT_STACK = [
@@ -239,7 +239,7 @@ function evidenceIndex(input: DeriveDistributedArtifactEvidenceInput): Distribut
 }
 
 function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
-    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
     if (analyzed.right?.variant !== 'distributed-run') {
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
@@ -247,7 +247,7 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
 }
 
 function decodedSnapshots(files: DistributedRunArtifactFiles): DistributedRunArtifactSnapshots {
-    const snapshots = distributedArtifactSnapshotsFromFiles(files, GENERATED_AT_EPOCH_MS);
+    const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS);
     if (snapshots.right === undefined) {
         throw new Error(`Expected decoded snapshots, got ${JSON.stringify(snapshots.left)}`);
     }
@@ -284,7 +284,7 @@ describe('distributed artifact evidence index', () => {
 
     it('reuses a precomputed monitor and parsed control provenance without JSON reparsing', () => {
         const files = evidenceFiles();
-        const derived = deriveDistributedArtifactWorkspace({
+        const derived = computeDistributedArtifactWorkspace({
             files,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
