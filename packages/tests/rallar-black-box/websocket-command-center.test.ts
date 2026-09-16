@@ -220,6 +220,7 @@ describe('WebSocket command-center presets and routing', () => {
                     payload,
                     bootstrap,
                     providerMode: 'real',
+                    authSession: undefined,
                     sequence: 1,
                     includeRtcParity: false
                 })

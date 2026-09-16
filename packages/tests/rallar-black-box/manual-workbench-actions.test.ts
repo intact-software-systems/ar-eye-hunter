@@ -22,7 +22,15 @@ describe('manual workbench public copy actions', () => {
     const copied: string[] = [];
 
     function Harness() {
-        model = useManualRallarWorkbench({ state, bootstrap, onSelectCommand: () => undefined });
+        model = useManualRallarWorkbench({
+            state,
+            bootstrap,
+            authSession: undefined,
+            globalValues: undefined,
+            globalValuesEdited: undefined,
+            onSelectCommand: () => undefined,
+            onGlobalValueChange: undefined
+        });
         return null;
     }
 

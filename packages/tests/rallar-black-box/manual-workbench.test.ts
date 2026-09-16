@@ -383,9 +383,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('validates payload JSON before command execution', () => {
-        expect(decodeManualPayloadText('{"ok":true}').fold((error) => ({ error }), (value) => ({ value }))).toEqual({
-            value: { ok: true }
-        });
+        expect(decodeManualPayloadText('{"ok":true}').foldRight((value) => value)).toEqual({ ok: true });
         expect(decodeManualPayloadText('{').fold((error) => typeof error, () => 'decoded')).toBe('string');
     });
 
