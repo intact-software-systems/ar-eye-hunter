@@ -115,7 +115,10 @@ export class AuthCommandCenterActions implements AuthCommandCenterOperations {
         };
         return this.sendProbe(probe, (response) => {
             this.appendAction(toRestActionLogEntry(label, response, this.input.nowMs()));
-            toCreatedTicket(response, this.input.nowMs()).foldRight(this.input.setTicket);
+            const ticket = toCreatedTicket(response, this.input.nowMs());
+            if (ticket) {
+                this.input.setTicket(ticket);
+            }
         });
     };
 
@@ -242,11 +245,11 @@ function toAuthProbeRequest(apiBaseUrl: string, probe: AuthCommandCenterActions.
     };
 }
 
-/** A response without a complete ticket keeps the current one; its status already shows in the action log. */
+/** Absent when the response carries no complete ticket; the current ticket stays and the logged status shows why. */
 function toCreatedTicket(
     response: RallarServerRestResponse,
     issuedAtEpochMs: number
-): Either<string, AuthCommandCenterTicket> {
+): AuthCommandCenterTicket | undefined {
     const body = recordValue(response.bodyJson);
     if (
         response.ok &&
@@ -254,12 +257,12 @@ function toCreatedTicket(
         typeof body.sessionId === 'string' &&
         typeof body.expiresAtEpochMs === 'number'
     ) {
-        return Either.ofRight({
+        return {
             ticket: body.ticket,
             sessionId: body.sessionId,
             expiresAtEpochMs: body.expiresAtEpochMs,
             issuedAtEpochMs
-        });
+        };
     }
-    return Either.ofLeft(`WS ticket request returned ${response.status}`);
+    return undefined;
 }

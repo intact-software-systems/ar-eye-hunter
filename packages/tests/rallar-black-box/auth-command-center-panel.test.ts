@@ -233,6 +233,30 @@ describe('auth command-center panel preservation', () => {
         });
     });
 
+    it('keeps the current ticket and shows no error when a created-ticket response carries no complete ticket', async () => {
+        await render();
+        await click('Create WS ticket');
+        const created = definition('Ticket expires');
+        vi.stubGlobal(
+            'fetch',
+            async () =>
+                new Response(JSON.stringify({ sessionId: 'session' }), { status: 200, statusText: 'OK', headers: { 'content-type': 'application/json' } })
+        );
+        await click('Create WS ticket');
+
+        expect({
+            kept: definition('Ticket expires') === created,
+            ticket: definition('WS ticket'),
+            error: container.querySelector('.workbench-error')?.textContent,
+            rows: actionRows()
+        }).toEqual({
+            kept: true,
+            ticket: 'redacted',
+            error: undefined,
+            rows: ['Create WS ticket 200', 'Create WS ticket 200']
+        });
+    });
+
     it('shows a request that cannot be built as a local error without sending it', async () => {
         await render();
         const apiBaseUrl = [...container.querySelectorAll('label')]
