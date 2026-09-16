@@ -818,7 +818,10 @@ those failures.
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,
 the missing distributed artifact is expected; use the operation report rather
-than requesting an analyzer rerun.
+than requesting an analyzer rerun. When the control server rejected the create
+request, `analysis/summary.md` and `analysis/fix-proposal.md` still describe
+that failed request (method, path, HTTP and curl status, and the error body)
+from `control-post-error-metadata.json`.
 
 Already-running global-fleet agents use a separate no-spawn flow. Do not use
 the Hetzner lifecycle workflow when the browsers are already running around the

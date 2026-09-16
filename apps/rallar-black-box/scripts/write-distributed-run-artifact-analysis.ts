@@ -17,7 +17,7 @@ export interface WriteDistributedRunArtifactAnalysisInput {
 }
 
 async function main(): Promise<void> {
-    const args = parseArgs(process.argv.slice(2));
+    const args = toCommandLineOptions(process.argv.slice(2));
     const artifactDir = args['artifact-dir'];
     if (!artifactDir) {
         console.error('Missing required --artifact-dir <path>.');
@@ -75,7 +75,7 @@ async function readArtifactFiles(artifactDir: string): Promise<DistributedRunArt
     return files;
 }
 
-function parseArgs(args: readonly string[]): Record<string, string | undefined> {
+function toCommandLineOptions(args: readonly string[]): Record<string, string | undefined> {
     const parsed: Record<string, string | undefined> = {};
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];

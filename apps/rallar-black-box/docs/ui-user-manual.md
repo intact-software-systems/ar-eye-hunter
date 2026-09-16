@@ -136,6 +136,12 @@ run bundle or load one from Control. Analyze keeps the synthesized first
 actionable failure as the main verdict and preserves **Inspect evidence** for
 that failure.
 
+Analyze needs `distributed-run.json` and `control-run.json` that match the
+control server's snapshot contracts. When either is missing or incomplete,
+Analyze rejects the import as unusable instead of showing an invented run;
+optional files may be missing. A Hetzner folder from a rejected create request
+holds no distributed run; read its `analysis/fix-proposal.md` instead.
+
 When the correlated failed command result contains structured error data, use
 this denser path:
 

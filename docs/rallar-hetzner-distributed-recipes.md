@@ -247,6 +247,15 @@ analysis/fix-proposal.md      # failed runs
 analysis/performance.md       # passed runs
 ```
 
+When the control server rejects the create request, the runner never gets a
+distributed run: the folder holds `control-post-create-error.json` (the response
+body, when there was one), `control-post-error-metadata.json` (method, path,
+HTTP and curl status, exit code), `runner-summary.json` and `manifest.json`, and
+no `distributed-run.json`. The analyzer recognises that folder as a control
+request failure and writes `analysis/analysis.json`, `analysis/summary.md` and
+`analysis/fix-proposal.md` naming the failed request, its status and the error
+body. It writes no `performance.md`, because no run exists to measure.
+
 ## Failure Handling
 
 The recipe step is allowed to fail while the workflow continues long enough to
@@ -264,8 +273,19 @@ The proposal reports the likely cause, affected agents or regions, first useful
 evidence, minimal fix area, and a focused verification command.
 
 Malformed optional artifacts and malformed JSONL rows are reported as parse
-warnings in `analysis/analysis.json` and `analysis/summary.md`. A malformed
-`distributed-run.json` remains a hard analysis error.
+warnings in `analysis/analysis.json` and `analysis/summary.md`. A missing
+`manifest.json` is a warning too: the analysis still runs, but no artifact
+bundle is formed.
+
+`distributed-run.json` and `control-run.json` must match the control server's
+snapshot contracts. When either is missing, empty, not JSON, or missing a field
+the control server always writes (for example `createdAtEpochMs` or a rollup
+counter), the analyzer prints the rejection naming the file and the field,
+writes no analysis files, and exits with status 1. The one exception is the
+failed control request folder described above. When `control-run.json` holds no
+results or events, `results.jsonl` and `events.jsonl` rows that name their agent,
+command and outcome stand in for them; the analysis never invents command links
+or placeholder identities from those rows.
 
 ## Success Handling
 
@@ -292,7 +312,9 @@ commands, so stream frame metrics are the primary performance baseline.
 
 Download the raw distributed artifact from GitHub Actions and import its JSON
 and JSONL files in the `rallar-black-box` Runs panel with `Import CI artifact`.
-The SPA uses the same analysis core as the CLI, then shows the verdict,
+The SPA uses the same analysis core as the CLI and rejects the same
+non-conforming folders; a failed control request folder has no run to import,
+so read its `analysis/fix-proposal.md` instead. For a valid run it shows the verdict,
 likely cause, next action, minimal fix area, evidence file, warnings, and
 performance baseline beside the live distributed run monitor. Imported stream
 runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure,

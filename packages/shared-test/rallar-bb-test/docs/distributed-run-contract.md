@@ -341,6 +341,39 @@ inside ordinary command results. Consumers should use
 runtime-specific child arrays directly. The path contract is documented in
 `packages/shared-test/rallar-bb-test/docs/composite-result-contract.md`.
 
+## Artifact Analysis
+
+`computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs })` in
+`distributed-artifact-analysis.ts` analyzes a distributed-run artifact folder
+and returns an `Either`: a `DistributedRunArtifactRejection` (the file and why
+it cannot be analyzed) or a `DistributedRunArtifactAnalysis`. The caller reads
+the clock and passes `generatedAtEpochMs`; the analysis never does.
+
+- `distributed-run.json` and `control-run.json` are decoded strictly against
+  `ControlDistributedRunSnapshot` and `ControlRunSnapshot`. A missing, empty,
+  malformed or non-conforming file is a rejection; no identity, timestamp,
+  start mode or command link is filled in.
+- A folder with `control-post-error-metadata.json` and no
+  `distributed-run.json` is the `control-request-failure` variant: the failed
+  request, its status and response body, a failure analysis and a fix proposal,
+  with no snapshot, performance or monitor sections. Any other folder without
+  `distributed-run.json` is rejected.
+- Optional evidence (`fleet-report.json`, `failures.json`,
+  `target-resolution.json`, `results.jsonl`, `events.jsonl`) is read leniently
+  into typed evidence rows; malformed files and rows become parse warnings.
+  JSONL rows stand in for control-run results or events only when
+  `control-run.json` holds none.
+- `toDistributedArtifactBundle` and `toDistributedArtifactSnapshots` return the
+  same rejections, and `computeDistributedArtifactWorkspace` reports them as
+  workspace issues (`analysis-failed`, `control-request-failure`,
+  `missing-generation-time`).
+
+Capability owners live in `distributed-artifact-analysis/` (content decoding,
+evidence row decoders, failure resolution, markdown) and
+`distributed-run-performance/` (command timing, the stream sample index, stream
+timing and receiver delivery; `computeDistributedRunSnapshotPerformance` for
+snapshot-only callers).
+
 ## JSON Schema
 
 `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` is exported from
