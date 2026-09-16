@@ -22,8 +22,9 @@ import type { CommandCenterGlobalValues } from '../../shell/global-context-model
 export interface ManualWorkbenchValuesInput {
     readonly state: RallarBlackBoxTestState;
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    /** Absent while the browser is signed out; the values then come from the configuration and bootstrap. */
     readonly authSession: AuthSession | undefined;
-    readonly globalValues: CommandCenterGlobalValues | undefined;
+    readonly globalValues: CommandCenterGlobalValues;
 }
 
 export function toManualWorkbenchValues(input: ManualWorkbenchValuesInput): ManualWorkbenchValues {
@@ -70,17 +71,13 @@ function toManualTargetValues(
     const configRallar = recordValue(config?.rallar);
     return {
         environment: config?.environment ?? bootstrap.environment,
-        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        applicationId: globalValues?.applicationId ??
-            stringValue(config?.defaults?.applicationId ?? configRallar.applicationId) ??
-            DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
-        workspaceId: globalValues?.workspaceId ??
-            stringValue(config?.defaults?.workspaceId ?? configRallar.workspaceId) ??
-            DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
-        actor: globalValues?.clientId || authSession?.clientId || authSession?.username || config?.actor ||
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        actor: globalValues.clientId || authSession?.clientId || authSession?.username || config?.actor ||
             bootstrap.actor,
-        sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
+        sessionId: globalValues.sessionId,
+        groupId: globalValues.roomId,
         scopeText: decodeJsonText(config?.defaults?.scope ?? configRallar.scope) ??
             DEFAULT_MANUAL_WORKBENCH_VALUES.scopeText,
         roomRefText: decodeJsonText(config?.defaults?.roomRef ?? configRallar.roomRef) ??

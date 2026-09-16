@@ -6,19 +6,22 @@ import { formatTime } from '../../shared/time-format.ts';
 import { toManualActionLabel } from './to-manual-action-label.ts';
 import type { ManualRallarWorkbenchModel } from './use-manual-rallar-workbench.ts';
 
+export interface ManualRallarExecutionPanelProps {
+    readonly state: RallarBlackBoxTestState;
+    /** Absent while the browser is signed out; redaction then has no session secrets to hide. */
+    readonly authSession: AuthSession | undefined;
+    readonly busy: boolean;
+    onSelectCommand(commandId: string): void;
+    readonly model: ManualRallarWorkbenchModel;
+}
+
 export function ManualRallarExecutionPanel({
     state,
     authSession,
     busy,
     onSelectCommand,
     model
-}: {
-    state: RallarBlackBoxTestState;
-    authSession?: AuthSession;
-    busy: boolean;
-    onSelectCommand(commandId: string): void;
-    model: ManualRallarWorkbenchModel;
-}) {
+}: ManualRallarExecutionPanelProps) {
     const {
         values,
         events,

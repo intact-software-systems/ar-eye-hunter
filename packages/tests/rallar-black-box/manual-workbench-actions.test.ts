@@ -6,6 +6,7 @@ import {
     useManualRallarWorkbench,
     type ManualRallarWorkbenchModel
 } from '../../../apps/rallar-black-box/src/legacy/runner/manual/use-manual-rallar-workbench.ts';
+import { commandCenterGlobalValuesFromState } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
@@ -26,10 +27,10 @@ describe('manual workbench public copy actions', () => {
             state,
             bootstrap,
             authSession: undefined,
-            globalValues: undefined,
-            globalValuesEdited: undefined,
+            globalValues: commandCenterGlobalValuesFromState(state, bootstrap),
+            globalValuesEdited: false,
             onSelectCommand: () => undefined,
-            onGlobalValueChange: undefined
+            onGlobalValueChange: () => undefined
         });
         return null;
     }

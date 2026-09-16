@@ -97,9 +97,8 @@ export class ManualWorkbenchActions {
         const selectedGroupId = this.input.values.groupId.trim();
         if (
             selectedGroupId &&
-            this.input.onGlobalValueChange &&
             ['configure', 'join', 'connect', 'send'].includes(action) &&
-            this.input.globalValues?.roomId !== selectedGroupId
+            this.input.globalValues.roomId !== selectedGroupId
         ) {
             this.input.onGlobalValueChange('roomId', selectedGroupId);
         }

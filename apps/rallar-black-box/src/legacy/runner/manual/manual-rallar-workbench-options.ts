@@ -6,14 +6,11 @@ import type { CommandCenterGlobalValues } from '../../shell/global-context-model
 export interface ManualRallarWorkbenchOptions {
     readonly state: RallarBlackBoxTestState;
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    /** Absent while the browser is signed out; the workbench then keeps its configured identity. */
     readonly authSession: AuthSession | undefined;
-    readonly globalValues: CommandCenterGlobalValues | undefined;
-    readonly globalValuesEdited: boolean | undefined;
+    readonly globalValues: CommandCenterGlobalValues;
+    /** True once the operator edited the shared context, which then overrides the workbench targets. */
+    readonly globalValuesEdited: boolean;
     onSelectCommand(commandId: string): void;
-    readonly onGlobalValueChange: CommandCenterGlobalValueChange | undefined;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(key: K, value: CommandCenterGlobalValues[K]): void;
 }
-
-type CommandCenterGlobalValueChange = <K extends keyof CommandCenterGlobalValues>(
-    key: K,
-    value: CommandCenterGlobalValues[K]
-) => void;

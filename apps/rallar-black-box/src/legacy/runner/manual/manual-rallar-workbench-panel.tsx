@@ -1,12 +1,13 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
-import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { ManualRallarExecutionPanel } from './manual-rallar-execution-panel.tsx';
 import { ManualRallarInputsPanel } from './manual-rallar-inputs-panel.tsx';
+import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 import { useManualRallarWorkbench } from './use-manual-rallar-workbench.ts';
+
+export interface ManualRallarWorkbenchPanelProps extends ManualRallarWorkbenchOptions {
+    readonly busy: boolean;
+}
 
 export function ManualRallarWorkbenchPanel({
     state,
@@ -17,19 +18,7 @@ export function ManualRallarWorkbenchPanel({
     busy,
     onSelectCommand,
     onGlobalValueChange
-}: {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    globalValuesEdited?: boolean;
-    busy: boolean;
-    onSelectCommand(commandId: string): void;
-    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
-}) {
+}: ManualRallarWorkbenchPanelProps) {
     const model = useManualRallarWorkbench({
         state,
         bootstrap,

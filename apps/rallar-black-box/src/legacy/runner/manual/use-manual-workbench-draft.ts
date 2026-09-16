@@ -94,12 +94,12 @@ function useManualDefaultDraft({ state, bootstrap, authSession, globalValues }: 
         [
             authSession,
             bootstrap,
-            globalValues?.apiBaseUrl,
-            globalValues?.applicationId,
-            globalValues?.clientId,
-            globalValues?.roomId,
-            globalValues?.sessionId,
-            globalValues?.workspaceId,
+            globalValues.apiBaseUrl,
+            globalValues.applicationId,
+            globalValues.clientId,
+            globalValues.roomId,
+            globalValues.sessionId,
+            globalValues.workspaceId,
             state.currentConfig
         ]
     );
@@ -127,10 +127,10 @@ function useManualAuthenticatedValues({ authSession, globalValues, setValues }: 
         }
 
         setValues((current) => {
-            const clientId = globalValues?.clientId ||
+            const clientId = globalValues.clientId ||
                 authSession.clientId ||
                 authSession.username;
-            const sessionId = globalValues?.sessionId || authSession.sessionId;
+            const sessionId = globalValues.sessionId || authSession.sessionId;
             const nextValues = {
                 ...current,
                 actor: clientId,
@@ -150,13 +150,13 @@ function useManualAuthenticatedValues({ authSession, globalValues, setValues }: 
         authSession?.clientId,
         authSession?.sessionId,
         authSession?.username,
-        globalValues?.clientId,
-        globalValues?.sessionId
+        globalValues.clientId,
+        globalValues.sessionId
     ]);
 }
 function useManualGlobalValues({ globalValues, globalValuesEdited, setValues }: ManualValueSynchronization): void {
     useEffect(() => {
-        if (!globalValues || !globalValuesEdited) {
+        if (!globalValuesEdited) {
             return;
         }
 
@@ -181,12 +181,12 @@ function useManualGlobalValues({ globalValues, globalValuesEdited, setValues }: 
                 : nextValues;
         });
     }, [
-        globalValues?.apiBaseUrl,
-        globalValues?.applicationId,
-        globalValues?.clientId,
-        globalValues?.roomId,
-        globalValues?.sessionId,
-        globalValues?.workspaceId,
+        globalValues.apiBaseUrl,
+        globalValues.applicationId,
+        globalValues.clientId,
+        globalValues.roomId,
+        globalValues.sessionId,
+        globalValues.workspaceId,
         globalValuesEdited
     ]);
 }

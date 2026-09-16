@@ -1,13 +1,13 @@
-import type {
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
+import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { CommandHistoryPanel } from '../advanced/CommandHistoryPanel.tsx';
-import { ManualRallarWorkbenchPanel } from './manual-rallar-workbench-panel.tsx';
+import { ManualRallarWorkbenchPanel, type ManualRallarWorkbenchPanelProps } from './manual-rallar-workbench-panel.tsx';
 import { ReceivedDataInboxPanel } from './received-data-inbox-panel.tsx';
+
+export interface ManualRallarSectionProps extends ManualRallarWorkbenchPanelProps {
+    readonly history: readonly RallarBlackBoxTestResult[];
+    /** Absent until the operator selects a command in the history. */
+    readonly selectedCommandId: string | undefined;
+}
 
 export function ManualRallarSection({
     state,
@@ -20,21 +20,7 @@ export function ManualRallarSection({
     selectedCommandId,
     onSelectCommand,
     onGlobalValueChange
-}: {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    globalValuesEdited?: boolean;
-    busy: boolean;
-    history: readonly RallarBlackBoxTestResult[];
-    selectedCommandId?: string;
-    onSelectCommand(commandId: string): void;
-    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
-}) {
+}: ManualRallarSectionProps) {
     return (
         <>
             <ManualRallarWorkbenchPanel
