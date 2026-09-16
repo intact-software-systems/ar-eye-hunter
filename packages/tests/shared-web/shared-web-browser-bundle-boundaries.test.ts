@@ -38,12 +38,13 @@ const esbuildBin = path.join(
 
 const budgetedEntries: readonly BundleBoundary[] = [
     {
-        // S1 lifecycle handles and the shared session observation owner measure 210.6572265625 KiB.
-        // The maintainer-approved next whole-KiB ceiling is 211.
+        // S1 lifecycle handles, the shared session observation owner and the admission facts the
+        // evidence records measure 211.0244140625 KiB. The maintainer-approved next whole-KiB
+        // ceiling is 212.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.boundary.min.js',
-        brotliBudgetKiB: 211
+        brotliBudgetKiB: 212
     },
     {
         label: 'browser/rallar-core.ts',
