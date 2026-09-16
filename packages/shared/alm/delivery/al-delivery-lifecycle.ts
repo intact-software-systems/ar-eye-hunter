@@ -48,6 +48,9 @@ export type ALDeliveryAttemptOutcome =
     | 'superseded'
     | 'unroutable';
 
+/** Why a carrier admission found no route: no peer at all, or the sender's own rate limit or open circuit. */
+export type ALDeliveryUnroutableReason = 'no-route' | 'rate-limited' | 'circuit-open';
+
 export type ALDeliveryAdmissionVerdict =
     | Readonly<{ kind: 'admitted'; durable: boolean; queuedAttempts: number; }>
     | Readonly<{ kind: 'duplicate'; }>
@@ -61,7 +64,7 @@ export type ALDeliveryAdmissionVerdict =
     }>
     | Readonly<{
         kind: 'unroutable';
-        reason: 'no-route' | 'rate-limited' | 'circuit-open';
+        reason: ALDeliveryUnroutableReason;
         detail: string;
     }>
     | Readonly<{ kind: 'superseded'; detail: string; }>
@@ -137,12 +140,16 @@ export interface ALDeliveryAttempt {
     readonly outcome: ALDeliveryAttemptOutcome | undefined;
     readonly submissionAttempted: boolean;
     readonly detail: string | undefined;
+    /** Undefined on a carrier attempt: only an `unroutable` admission row states a reason. */
+    readonly unroutableReason: ALDeliveryUnroutableReason | undefined;
 }
 
 export interface ALDeliveryEvidence {
     readonly submittedAtMs: number;
     /** Undefined until an `admitted` or `duplicate` verdict. */
     readonly admittedAtMs: number | undefined;
+    /** Undefined until an `admitted` verdict: a duplicate states nothing about the durability of the original. */
+    readonly admittedDurable: boolean | undefined;
     readonly attempts: readonly ALDeliveryAttempt[];
     readonly confirmedHopPeerIds: readonly string[];
     readonly unconfirmedHopPeerIds: readonly string[];
@@ -192,6 +199,7 @@ export function createInitialALDeliveryLifecycle(
         evidence: {
             submittedAtMs: input.submittedAtMs,
             admittedAtMs: undefined,
+            admittedDurable: undefined,
             attempts: [],
             confirmedHopPeerIds: [],
             unconfirmedHopPeerIds: [],

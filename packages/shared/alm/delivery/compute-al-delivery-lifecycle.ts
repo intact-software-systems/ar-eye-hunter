@@ -5,7 +5,8 @@ import {
     type ALDeliveryEvidence,
     type ALDeliveryLifecycle,
     type ALDeliverySettlement,
-    type ALDeliveryState
+    type ALDeliveryState,
+    type ALDeliveryUnroutableReason
 } from './al-delivery-lifecycle.ts';
 
 type ALDeliveryAdmissionSettlement = Extract<ALDeliverySettlement, Readonly<{ kind: 'admission'; }>>;
@@ -89,13 +90,17 @@ function toAdmissionLifecycle(
     const verdict = settlement.verdict;
     switch (verdict.kind) {
         case 'admitted':
-            return toAdmittedLifecycle(
-                previous,
-                verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
-                settlement.atMs
-            );
+            return toAdmittedLifecycle(previous, {
+                state: verdict.queuedAttempts > 0 ? 'queued' : 'accepted',
+                atMs: settlement.atMs,
+                durable: verdict.durable
+            });
         case 'duplicate':
-            return toAdmittedLifecycle(previous, 'accepted', settlement.atMs);
+            return toAdmittedLifecycle(previous, {
+                state: 'accepted',
+                atMs: settlement.atMs,
+                durable: previous.evidence.admittedDurable
+            });
         case 'pending':
             return { ...previous };
         case 'deferred':
@@ -106,7 +111,8 @@ function toAdmissionLifecycle(
             return toUnroutableAdmissionLifecycle(previous, {
                 carrier: settlement.carrier,
                 atMs: settlement.atMs,
-                detail: verdict.detail
+                detail: verdict.detail,
+                reason: verdict.reason
             });
         case 'superseded':
         case 'expired':
@@ -142,18 +148,29 @@ function toReasonedLifecycle(
     return { ...previous, state, evidence: { ...previous.evidence, reason } };
 }
 
+interface AdmittedAdmission {
+    readonly state: ALDeliveryState;
+    readonly atMs: number;
+    /** Undefined for a duplicate, which states nothing about the durability of the original admission. */
+    readonly durable: boolean | undefined;
+}
+
 function toAdmittedLifecycle(
     previous: ALDeliveryLifecycle,
-    state: ALDeliveryState,
-    atMs: number
+    admission: AdmittedAdmission
 ): ALDeliveryLifecycle {
-    return { ...previous, state, evidence: { ...previous.evidence, admittedAtMs: atMs } };
+    return {
+        ...previous,
+        state: admission.state,
+        evidence: { ...previous.evidence, admittedAtMs: admission.atMs, admittedDurable: admission.durable }
+    };
 }
 
 interface UnroutableAdmission {
     readonly carrier: ALDeliveryCarrier;
     readonly atMs: number;
     readonly detail: string;
+    readonly reason: ALDeliveryUnroutableReason;
 }
 
 /** The reducer's own synthetic attempt row for a carrier admission that never reached the transport. */
@@ -168,7 +185,8 @@ function toUnroutableAdmissionLifecycle(
         settledAtMs: admission.atMs,
         outcome: 'unroutable',
         submissionAttempted: false,
-        detail: admission.detail
+        detail: admission.detail,
+        unroutableReason: admission.reason
     };
     return {
         ...previous,
@@ -190,7 +208,8 @@ function toStartedAttemptLifecycle(
         settledAtMs: undefined,
         outcome: undefined,
         submissionAttempted: false,
-        detail: undefined
+        detail: undefined,
+        unroutableReason: undefined
     };
     return {
         ...previous,
@@ -253,7 +272,8 @@ function toSettledAttempt(
         settledAtMs: settlement.atMs,
         outcome: settlement.outcome,
         submissionAttempted: settlement.submissionAttempted,
-        detail: settlement.detail
+        detail: settlement.detail,
+        unroutableReason: existing?.unroutableReason
     };
 }
 

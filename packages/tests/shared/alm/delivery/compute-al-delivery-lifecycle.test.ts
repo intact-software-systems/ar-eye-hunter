@@ -44,6 +44,23 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
             expectSameIdentity(next, previous);
         });
 
+        it.each([true, false])('admitted verdict records durable=%s', (durable) => {
+            const previous = createLifecycle(ackMode);
+            const next = computeALDeliveryLifecycle(
+                previous,
+                toAdmissionSettlement(previous.msgId, { kind: 'admitted', durable, queuedAttempts: 1 })
+            );
+
+            expect(next.evidence.admittedDurable).toBe(durable);
+        });
+
+        it.each([{}])('duplicate verdict states no durability of its own', () => {
+            const previous = createLifecycle(ackMode);
+            const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous.msgId, { kind: 'duplicate' }));
+
+            expect(next.evidence.admittedDurable).toBeUndefined();
+        });
+
         it.each([{}])('duplicate verdict moves to accepted and records admittedAtMs', () => {
             const previous = createLifecycle(ackMode);
             const next = computeALDeliveryLifecycle(previous, toAdmissionSettlement(previous.msgId, { kind: 'duplicate' }));
@@ -103,9 +120,37 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
                     settledAtMs: AT_MS,
                     outcome: 'unroutable',
                     submissionAttempted: false,
-                    detail: 'no rtc peers'
+                    detail: 'no rtc peers',
+                    unroutableReason: 'no-route'
                 }
             ]);
+        });
+
+        it.each([
+            { reason: 'rate-limited' as const },
+            { reason: 'circuit-open' as const },
+            { reason: 'no-route' as const }
+        ])('unroutable verdict records its $reason reason on the admission attempt', ({ reason }) => {
+            const previous = createLifecycle(ackMode);
+            const next = computeALDeliveryLifecycle(
+                previous,
+                toAdmissionSettlement(previous.msgId, { kind: 'unroutable', reason, detail: `${reason}-detail` })
+            );
+
+            expect(next.evidence.attempts.map((attempt) => attempt.unroutableReason)).toEqual([reason]);
+        });
+
+        it.each([{}])('a carrier attempt states no unroutable reason of its own', () => {
+            const previous = createLifecycle(ackMode);
+            const next = computeALDeliveryLifecycle(previous, {
+                kind: 'attempt-started',
+                msgId: previous.msgId,
+                carrier: 'rtc',
+                atMs: AT_MS,
+                attemptId: 'attempt-1'
+            });
+
+            expect(next.evidence.attempts.map((attempt) => attempt.unroutableReason)).toEqual([undefined]);
         });
 
         it.each([
