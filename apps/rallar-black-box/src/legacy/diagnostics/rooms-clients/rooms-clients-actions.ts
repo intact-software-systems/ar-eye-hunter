@@ -53,6 +53,7 @@ export namespace RoomsClientsActions {
         readonly setActions: React.Dispatch<React.SetStateAction<readonly CommandCenterRestActionLog[]>>;
         readonly setBodies: React.Dispatch<React.SetStateAction<RoomsClientsStateBodies>>;
         sendRequest(request: RallarServerRestRequestInput): Promise<Either<string, RallarServerRestResponse>>;
+        nowMs(): number;
     }
 
     export interface ActionAttempt {
@@ -216,7 +217,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
     private startAttempt(label: string): RoomsClientsActions.ActionAttempt {
         this.input.setBusyAction(label);
         this.input.setLocalError(undefined);
-        return { label, startedAtEpochMs: Date.now() };
+        return { label, startedAtEpochMs: this.input.nowMs() };
     }
 
     private toPresetRequest(action: RoomsClientsAction): Either<string, RallarServerRestRequestInput> {
@@ -258,7 +259,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
                     completed: outcome.completed + 1,
                     failedResponse: outcome.failedResponse ?? (response.ok ? undefined : response)
                 };
-                this.appendAction(toRestActionLogEntry(action.label, response));
+                this.appendAction(toRestActionLogEntry(action.label, response, this.input.nowMs()));
                 this.input.setActionFeedback(
                     toResponseFeedback(
                         { label, attempt, response },
@@ -294,7 +295,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
         attempt: RoomsClientsActions.ActionAttempt,
         response: RallarServerRestResponse
     ): void {
-        this.appendAction(toRestActionLogEntry(action.label, response));
+        this.appendAction(toRestActionLogEntry(action.label, response, this.input.nowMs()));
         this.input.setActionFeedback(
             toResponseFeedback(
                 { label: action.label, attempt, response },
@@ -357,7 +358,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
     private recordDirectCompleted(completed: DirectRoomCompletion): void {
         const { attempt, action, context, body } = completed;
         this.appendAction({
-            ...toDirectActionLogBase(attempt, action),
+            ...toDirectActionLogBase(attempt, action, this.input.nowMs()),
             ok: true,
             status: 200,
             statusText: 'OK',
@@ -388,7 +389,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
     ): void {
         this.input.setLocalError(message);
         this.appendAction({
-            ...toDirectActionLogBase(attempt, action),
+            ...toDirectActionLogBase(attempt, action, this.input.nowMs()),
             ok: false,
             status: 0,
             statusText: message,
@@ -470,9 +471,9 @@ function toResponseFeedback(
 
 function toDirectActionLogBase(
     attempt: RoomsClientsActions.ActionAttempt,
-    action: RoomsClientsDirectAction
+    action: RoomsClientsDirectAction,
+    nowMs: number
 ): Pick<CommandCenterRestActionLog, 'actionId' | 'label' | 'atEpochMs' | 'durationMs'> {
-    const nowMs = Date.now();
     return {
         actionId: `direct-room-${action}-${nowMs}`,
         label: attempt.label,

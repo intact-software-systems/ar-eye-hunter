@@ -198,7 +198,7 @@ export function AuthCommandCenterPanel({
                 fetch
             });
             sent.fold(setLocalError, (response) => {
-                appendAction(toRestActionLogEntry('Create WS ticket', response));
+                appendAction(toRestActionLogEntry('Create WS ticket', response, Date.now()));
                 const body = recordValue(response.bodyJson);
                 if (
                     response.ok &&
@@ -239,7 +239,7 @@ export function AuthCommandCenterPanel({
             });
             sent.fold(
                 setLocalError,
-                (response) => appendAction(toRestActionLogEntry('Missing auth WS ticket', response))
+                (response) => appendAction(toRestActionLogEntry('Missing auth WS ticket', response, Date.now()))
             );
         });
     };
@@ -272,7 +272,7 @@ export function AuthCommandCenterPanel({
             });
             sent.fold(
                 setLocalError,
-                (response) => appendAction(toRestActionLogEntry('Expired auth WS ticket', response))
+                (response) => appendAction(toRestActionLogEntry('Expired auth WS ticket', response, Date.now()))
             );
         });
     };
@@ -300,7 +300,10 @@ export function AuthCommandCenterPanel({
                 requestId,
                 fetch
             });
-            sent.fold(setLocalError, (response) => appendAction(toRestActionLogEntry('Bad credentials', response)));
+            sent.fold(
+                setLocalError,
+                (response) => appendAction(toRestActionLogEntry('Bad credentials', response, Date.now()))
+            );
         });
     };
 

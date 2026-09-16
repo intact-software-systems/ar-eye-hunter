@@ -65,6 +65,13 @@ export namespace WebSocketCommandCenterActions {
         readonly failedWaitStatus: string | undefined;
         run(startedAtEpochMs: number): Promise<void> | void;
     }
+    export interface Failure {
+        readonly label: string;
+        readonly target: string;
+        readonly failedWaitStatus: string | undefined;
+        readonly startedAtEpochMs: number;
+        readonly message: string;
+    }
 }
 export class WebSocketCommandCenterActions {
     private readonly input: WebSocketCommandCenterActions.Input;
@@ -188,19 +195,23 @@ export class WebSocketCommandCenterActions {
                 return;
             }
             const message = error instanceof Error ? error.message : String(error);
-            this.input.setLocalError(message);
-            if (attempt.failedWaitStatus !== undefined) {
-                this.input.setWaitStatus(attempt.failedWaitStatus);
-            }
-            this.input.setActionFeedback(
-                completedActionFeedback({ label, startedAtEpochMs, target, ok: false, statusText: 'error', message })
-            );
+            this.failAction({ label, target, failedWaitStatus: attempt.failedWaitStatus, startedAtEpochMs, message });
         }
         finally {
             if (!signal?.aborted) {
                 this.input.setBusyAction(undefined);
             }
         }
+    };
+    public readonly failAction = (failure: WebSocketCommandCenterActions.Failure): void => {
+        const { label, target, failedWaitStatus, startedAtEpochMs, message } = failure;
+        this.input.setLocalError(message);
+        if (failedWaitStatus !== undefined) {
+            this.input.setWaitStatus(failedWaitStatus);
+        }
+        this.input.setActionFeedback(
+            completedActionFeedback({ label, startedAtEpochMs, target, ok: false, statusText: 'error', message })
+        );
     };
     public readonly rejectAction = (label: string, statusText: string, message: string): void => {
         this.input.setLocalError(message);

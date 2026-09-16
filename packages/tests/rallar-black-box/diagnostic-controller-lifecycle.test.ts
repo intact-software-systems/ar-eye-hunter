@@ -2,6 +2,7 @@ import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/c
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { isJsonRecordValue, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { AuthCommandCenterTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts';
 // @vitest-environment happy-dom
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
@@ -640,7 +641,7 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         vi.stubGlobal('WebSocket', DiagnosticSocket);
         DiagnosticSocket.instances.length = 0;
         const ticket = Promise.withResolvers<AuthCommandCenterTicket>();
-        ticketRequest.mockReturnValue(ticket.promise);
+        ticketRequest.mockReturnValue(ticket.promise.then((created) => Either.ofRight(created)));
         const opening = Promise.withResolvers<void>();
         await act(async () =>
             root.render(createElement(WebSocketHarness, {

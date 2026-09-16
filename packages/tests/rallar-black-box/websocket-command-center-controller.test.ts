@@ -2,6 +2,7 @@
 import { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestRuntimeEventInput, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -170,7 +171,7 @@ describe('WebSocket command-center controller actions', () => {
             closed: [[1000, 'operator']],
             status: 'close requested'
         });
-        ticketRequest.mockResolvedValue(createTicket());
+        ticketRequest.mockResolvedValue(Either.ofRight(createTicket()));
         await act(async () => websocket.reconnect());
         expect(RecordingSocket.instances.map((socket) => socket.url)).toEqual([
             expect.stringContaining('/api/ws/session'),
@@ -179,7 +180,7 @@ describe('WebSocket command-center controller actions', () => {
     });
 
     it('creates a WebSocket ticket and records it without the ticket secret', async () => {
-        ticketRequest.mockResolvedValue(createTicket());
+        ticketRequest.mockResolvedValue(Either.ofRight(createTicket()));
         await render();
         await act(async () => websocket.createTicket());
         expect({

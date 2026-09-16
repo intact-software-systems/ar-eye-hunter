@@ -10,10 +10,12 @@ export interface WebSocketTicketRequest {
     readonly authSession: AuthSession | undefined;
     readonly requestId: string;
     readonly timeoutMs: number;
+    nowMs(): number;
 }
 
-/** Rejects with the request, response or ticket failure so the raw-socket action records it. */
-export async function requestWebSocketTicket(input: WebSocketTicketRequest): Promise<AuthCommandCenterTicket> {
+export async function requestWebSocketTicket(
+    input: WebSocketTicketRequest
+): Promise<Either<string, AuthCommandCenterTicket>> {
     const sent = await sendRallarServerMutationRequest({
         request: {
             apiBaseUrl: input.apiBaseUrl,
@@ -31,13 +33,16 @@ export async function requestWebSocketTicket(input: WebSocketTicketRequest): Pro
         requestId: input.requestId,
         fetch
     });
-    return sent.flatMap((error) => Either.ofLeft<string, AuthCommandCenterTicket>(error), toWebSocketTicket).fold(
-        (error) => Promise.reject(new Error(error)),
-        (ticket) => Promise.resolve(ticket)
+    return sent.flatMap(
+        (error) => Either.ofLeft(error),
+        (response) => toWebSocketTicket(response, input.nowMs())
     );
 }
 
-function toWebSocketTicket(response: RallarServerRestResponse): Either<string, AuthCommandCenterTicket> {
+function toWebSocketTicket(
+    response: RallarServerRestResponse,
+    issuedAtEpochMs: number
+): Either<string, AuthCommandCenterTicket> {
     const body = recordValue(response.bodyJson);
     if (
         response.ok &&
@@ -49,7 +54,7 @@ function toWebSocketTicket(response: RallarServerRestResponse): Either<string, A
             ticket: body.ticket,
             sessionId: body.sessionId,
             expiresAtEpochMs: body.expiresAtEpochMs,
-            issuedAtEpochMs: Date.now()
+            issuedAtEpochMs
         });
     }
     return Either.ofLeft(response.error?.message ?? `WS ticket request returned ${response.status}`);

@@ -14,11 +14,15 @@ export interface CommandCenterRestActionLog {
     readonly bodyJson?: unknown;
 }
 
-export function toRestActionLogEntry(label: string, response: RallarServerRestResponse): CommandCenterRestActionLog {
+export function toRestActionLogEntry(
+    label: string,
+    response: RallarServerRestResponse,
+    atEpochMs: number
+): CommandCenterRestActionLog {
     return {
-        actionId: `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
+        actionId: `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${atEpochMs}`,
         label,
-        atEpochMs: Date.now(),
+        atEpochMs,
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,

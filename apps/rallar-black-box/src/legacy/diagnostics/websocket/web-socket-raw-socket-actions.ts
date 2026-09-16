@@ -1,3 +1,4 @@
+import type { Either } from '@shared/resilience/Either.ts';
 import { formatTime } from '../../shared/time-format.ts';
 import { completedActionFeedback, runningActionFeedback } from '../shared/action-feedback.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
@@ -8,7 +9,10 @@ import { resolveWebSocketUrlTemplate } from './websocket-routing.ts';
 
 export namespace WebSocketRawSocketActions {
     export interface Input extends WebSocketCommandCenterActions.Input {
-        readonly commandCenter: Pick<WebSocketCommandCenterActions, 'runAction' | 'recordWebSocketEvent'>;
+        readonly commandCenter: Pick<
+            WebSocketCommandCenterActions,
+            'runAction' | 'failAction' | 'recordWebSocketEvent'
+        >;
     }
     export interface OpenRequest {
         readonly url: string;
@@ -56,16 +60,28 @@ export class WebSocketRawSocketActions {
             return Promise.resolve();
         }
         const requestId = this.input.createRequestId();
+        const label = 'Create WS ticket';
+        const target = '/api/auth/ws-ticket';
         return this.input.commandCenter.runAction({
-            label: 'Create WS ticket',
-            target: '/api/auth/ws-ticket',
+            label,
+            target,
             runningMessage: 'Requesting a WebSocket ticket.',
             signal,
             failedWaitStatus: undefined,
             run: async (startedAtEpochMs) => {
-                const nextTicket = await this.requestWsTicket(requestId, signal);
+                const requested = await this.requestWsTicket(requestId, signal);
                 if (!signal.aborted) {
-                    this.publishCreatedTicket(nextTicket, startedAtEpochMs);
+                    requested.fold(
+                        (message) =>
+                            this.input.commandCenter.failAction({
+                                label,
+                                target,
+                                failedWaitStatus: undefined,
+                                startedAtEpochMs,
+                                message
+                            }),
+                        (nextTicket) => this.publishCreatedTicket(nextTicket, startedAtEpochMs)
+                    );
                 }
             }
         });
@@ -90,27 +106,51 @@ export class WebSocketRawSocketActions {
         });
     }
 
-    private async requestWsTicket(requestId: string, signal: AbortSignal): Promise<AuthCommandCenterTicket> {
-        const nextTicket = await requestWebSocketTicket({
+    private async requestWsTicket(
+        requestId: string,
+        signal: AbortSignal
+    ): Promise<Either<string, AuthCommandCenterTicket>> {
+        const requested = await requestWebSocketTicket({
             apiBaseUrl: this.input.values.apiBaseUrl,
             authSession: this.input.authSession,
             requestId,
-            timeoutMs: this.input.values.timeoutMs
+            timeoutMs: this.input.values.timeoutMs,
+            nowMs: this.input.nowMs
         });
         if (!signal.aborted) {
-            this.input.setTicket(nextTicket);
+            requested.foldRight(this.input.setTicket);
         }
-        return nextTicket;
+        return requested;
     }
 
     private async openRawSocket(attempt: WebSocketRawSocketActions.OpenAttempt): Promise<void> {
-        const { ticketRequestId, url, label, signal } = attempt;
-        const nextTicket = ticketRequestId === undefined
-            ? undefined
-            : await this.requestWsTicket(ticketRequestId, signal);
+        const { ticketRequestId, url, label, startedAtEpochMs, signal } = attempt;
+        if (ticketRequestId === undefined) {
+            this.openResolvedRawSocket(attempt, undefined);
+            return;
+        }
+        const requested = await this.requestWsTicket(ticketRequestId, signal);
         if (signal.aborted) {
             return;
         }
+        requested.fold(
+            (message) =>
+                this.input.commandCenter.failAction({
+                    label,
+                    target: url,
+                    failedWaitStatus: 'raw ws open failed',
+                    startedAtEpochMs,
+                    message
+                }),
+            (nextTicket) => this.openResolvedRawSocket(attempt, nextTicket)
+        );
+    }
+
+    private openResolvedRawSocket(
+        attempt: WebSocketRawSocketActions.OpenAttempt,
+        nextTicket: AuthCommandCenterTicket | undefined
+    ): void {
+        const { url, label } = attempt;
         const resolvedUrl = resolveWebSocketUrlTemplate(
             url,
             this.input.values.apiBaseUrl,

@@ -62,7 +62,8 @@ export function useRoomsClientsController(input: UseRoomsClientsControllerInput)
         ...controls,
         authSession: input.authSession,
         globalValues: input.globalValues,
-        sendRequest: (request) => sendRallarServerRestRequest({ request, fetch })
+        sendRequest: (request) => sendRallarServerRestRequest({ request, fetch }),
+        nowMs: Date.now
     });
     return {
         ...draft,
