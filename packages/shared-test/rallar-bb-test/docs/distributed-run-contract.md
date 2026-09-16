@@ -354,15 +354,22 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   malformed or non-conforming file is a rejection; no identity, timestamp,
   start mode or command link is filled in.
 - A folder with `control-post-error-metadata.json` and no
-  `distributed-run.json` is the `control-request-failure` variant: the failed
-  request, its status and response body, a failure analysis and a fix proposal,
-  with no snapshot, performance or monitor sections. Any other folder without
-  `distributed-run.json` is rejected.
-- Optional evidence (`fleet-report.json`, `failures.json`,
-  `target-resolution.json`, `results.jsonl`, `events.jsonl`) is read leniently
-  into typed evidence rows; malformed files and rows become parse warnings.
-  JSONL rows stand in for control-run results or events only when
-  `control-run.json` holds none.
+  `distributed-run.json` is the `control-request-failure` variant: the run id
+  from `runner-summary.json` or `manifest.json`, the failed request, its status,
+  what the artifacts hold of its response body (none, a JSON body, a body that
+  is not JSON, or a named file that is missing), a failure analysis and a fix
+  proposal, with no snapshot, performance or monitor sections. `summary.md` and
+  `fix-proposal.md` quote a bounded excerpt of a recorded body. Any other folder
+  without `distributed-run.json` is rejected.
+- `target-resolution.json` is decoded with the snapshot's target resolution
+  decoder: `null` means no resolution and a non-conforming record is a parse
+  warning. The other optional evidence (`fleet-report.json`, `failures.json`,
+  `results.jsonl`, `events.jsonl`) is read leniently into typed evidence rows;
+  malformed files and rows that are not JSON objects become parse warnings.
+  A fact the artifacts do not record stays absent — without a fleet report the
+  missing, stale and flaky agent counts are unknown, not zero. JSONL rows stand
+  in for control-run results or events only when `control-run.json` holds
+  none.
 - `toDistributedArtifactBundle` and `toDistributedArtifactSnapshots` return the
   same rejections, and `computeDistributedArtifactWorkspace` reports them as
   workspace issues (`analysis-failed`, `control-request-failure`,

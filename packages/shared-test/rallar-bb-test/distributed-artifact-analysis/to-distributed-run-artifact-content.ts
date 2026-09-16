@@ -9,6 +9,7 @@ import type {
 import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonlRows,
+    distributedArtifactPipelineJsonValue,
     type ParsedDistributedArtifactPipeline
 } from '../distributed-artifact-pipeline.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
@@ -42,14 +43,24 @@ import { decodeJsonlControlEventEnvelope, decodeJsonlControlResultEnvelope } fro
 
 export interface ControlPostFailureArtifact {
     readonly request: DistributedRunControlPostRequest;
-    /** Absent when the failed request returned no response body or the body file is missing. */
-    readonly response?: ControlPostFailureResponse;
+    readonly response: ControlPostFailureResponse;
 }
 
-export interface ControlPostFailureResponse {
+/**
+ * What the artifacts hold of a failed request's response body. The runner keeps whatever body the
+ * control server or a proxy returned, so a recorded body need not be JSON.
+ */
+export type ControlPostFailureResponse =
+    | Readonly<{ kind: 'none'; }>
+    | Readonly<{ kind: 'missing-file'; fileName: string; }>
+    | ControlPostFailureJsonBody
+    | Readonly<{ kind: 'text'; fileName: string; text: string; }>;
+
+export interface ControlPostFailureJsonBody {
+    readonly kind: 'json';
     readonly fileName: string;
     readonly text: string;
-    /** Absent when the body is not a JSON object with any field. */
+    /** Absent when the body is not a JSON object naming an error message. */
     readonly message?: string;
 }
 
@@ -75,6 +86,8 @@ export interface DistributedRunControlRequestFailureContent {
     readonly controlPostFailure: ControlPostFailureArtifact;
     /** Absent when the runner stopped before it wrote runner-summary.json. */
     readonly runnerSummary?: DistributedRunRunnerSummary;
+    /** Absent when manifest.json is missing, not valid JSON or names no distributed run. */
+    readonly manifestDistributedRunId?: string;
 }
 
 export type DistributedRunArtifactContent =
@@ -218,10 +231,14 @@ function toControlRequestFailureContent(
     parsed: ParsedDistributedArtifactPipeline,
     recorded: ArtifactFileReading<ControlPostFailureArtifact>
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
+    const manifestDistributedRunId = decodeManifestDistributedRunId(
+        distributedArtifactPipelineJsonValue(parsed, 'manifest.json')
+    );
     const content = {
         variant: 'control-request-failure' as const,
         parseWarnings: recorded.warnings,
-        controlPostFailure: recorded.value
+        controlPostFailure: recorded.value,
+        ...(manifestDistributedRunId === undefined ? {} : { manifestDistributedRunId })
     };
     if (distributedArtifactPipelineFile(parsed, 'runner-summary.json').status === 'missing') {
         return Either.ofRight(content);
@@ -252,12 +269,12 @@ function toControlPostFailure(
 ): ArtifactFileReading<ControlPostFailureArtifact> {
     const responseFile = request.responseFile;
     if (responseFile === undefined) {
-        return { value: { request }, warnings: [] };
+        return { value: { request, response: { kind: 'none' } }, warnings: [] };
     }
     const text = parsed.projectedFiles[responseFile];
     if (text === undefined) {
         return {
-            value: { request },
+            value: { request, response: { kind: 'missing-file', fileName: responseFile } },
             warnings: [{
                 fileName: responseFile,
                 message:
@@ -265,18 +282,20 @@ function toControlPostFailure(
             }]
         };
     }
-    const message = toOptionalJsonFileEvidence(parsed, responseFile, decodeControlResponseMessage);
-    return {
-        value: {
-            request,
-            response: {
-                fileName: responseFile,
-                text,
-                ...(message.value === undefined ? {} : { message: message.value })
-            }
-        },
-        warnings: message.warnings
-    };
+    return { value: { request, response: toControlPostFailureResponseBody(parsed, responseFile, text) }, warnings: [] };
+}
+
+function toControlPostFailureResponseBody(
+    parsed: ParsedDistributedArtifactPipeline,
+    fileName: string,
+    text: string
+): ControlPostFailureResponse {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.format !== 'json' || file.status !== 'parsed') {
+        return { kind: 'text', fileName, text };
+    }
+    const message = decodeControlResponseMessage(file.value);
+    return { kind: 'json', fileName, text, ...(message === undefined ? {} : { message }) };
 }
 
 interface ContractJsonFile {
@@ -380,13 +399,19 @@ function decodeRecordedTargetResolution(value: unknown): Either<string, Recorded
         : decodeTargetResolution(value).mapRight((targetResolution) => ({ targetResolution }));
 }
 
+/** Absent unless the body is a JSON object naming an error message. */
 function decodeControlResponseMessage(value: unknown): string | undefined {
-    if (!isJsonRecordValue(value) || Object.keys(value).length === 0) {
+    if (!isJsonRecordValue(value)) {
         return undefined;
     }
     const error = isJsonRecordValue(value.error) ? value.error : undefined;
     return decodeText(value.message) ?? decodeText(error?.message) ?? decodeText(value.error) ??
-        decodeText(value.detail) ?? decodeText(value.title) ?? 'Control API request failed.';
+        decodeText(value.detail) ?? decodeText(value.title);
+}
+
+/** A run that was never created has no decoded manifest; only the run id the runner validated is read. */
+function decodeManifestDistributedRunId(value: unknown): string | undefined {
+    return isJsonRecordValue(value) ? decodeText(value.distributedRunId) : undefined;
 }
 
 function toJsonErrorDetail(fileName: string, message: string | undefined): string {

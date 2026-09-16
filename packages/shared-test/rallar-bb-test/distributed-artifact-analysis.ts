@@ -289,11 +289,13 @@ export interface DistributedRunArtifactSnapshots extends DistributedRunSnapshots
 /** The analysis of artifacts that record a failed control request instead of a distributed run. */
 export interface DistributedRunControlRequestFailureAnalysis {
     readonly generatedAtEpochMs: number;
+    /** Absent when neither runner-summary.json nor manifest.json names the run. */
+    readonly distributedRunId?: string;
     /** Absent when the runner stopped before it wrote runner-summary.json. */
     readonly runnerSummary?: DistributedRunRunnerSummary;
     readonly ok: false;
     readonly request: DistributedRunControlPostRequest;
-    /** Absent when the failed request returned no response body. */
+    /** Absent when the runner recorded no response body or the artifacts do not hold its file. */
     readonly responseBody?: string;
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
     readonly failure: DistributedRunFailureAnalysis;

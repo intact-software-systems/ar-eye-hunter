@@ -14,12 +14,27 @@ import {
 
 const GENERATED_AT_EPOCH_MS = 123;
 
+const BAD_GATEWAY_BODY = '<html><head><title>502 Bad Gateway</title></head><body>upstream unavailable</body></html>';
+
 function controlRequestFailure(files: DistributedRunArtifactFiles): DistributedRunControlRequestFailureAnalysis {
     const analyzed = computeDistributedRunArtifactAnalysis({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
     if (analyzed.right?.variant !== 'control-request-failure') {
         throw new Error(`Expected a control request failure analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
     return analyzed.right.analysis;
+}
+
+function failedCreateRecord(httpStatus: string | null, responseFile: string | null): string {
+    return JSON.stringify({
+        phase: 'create',
+        method: 'POST',
+        path: '/distributed-runs',
+        httpStatus,
+        curlStatus: 0,
+        exitStatus: 22,
+        responseFile,
+        atEpochSeconds: 1_700_000_000
+    });
 }
 
 function failedCreateFiles(files: DistributedRunArtifactFiles): DistributedRunArtifactFiles {
@@ -90,7 +105,83 @@ describe('distributed run artifact control request failures', () => {
         expect(analysis.summaryMarkdown).toContain('# Control Request Failure: dist-post-failure');
         expect(analysis.summaryMarkdown).toContain('Request: POST /distributed-runs (create)');
         expect(analysis.summaryMarkdown).toContain('Error: target policy rejected');
+        expect(analysis.summaryMarkdown).toContain(
+            'Response body excerpt:\n\n```text\n{"error":"bad manifest","message":"target policy rejected"}\n```'
+        );
         expect(analysis.fixProposalMarkdown).toContain('Evidence: control-post-create-error.json');
+    });
+
+    it('tells a response body that is not JSON apart from a missing one and shows its excerpt', () => {
+        const analysis = controlRequestFailure(failedCreateFiles({
+            'control-post-create-error.json': BAD_GATEWAY_BODY,
+            'control-post-error-metadata.json': failedCreateRecord('502', 'control-post-create-error.json')
+        }));
+
+        expect(analysis.responseBody).toBe(BAD_GATEWAY_BODY);
+        expect(analysis.parseWarnings).toEqual([]);
+        expect(analysis.failure.likelyCause).toBe(
+            'Control API request failed with a response body that is not JSON (HTTP 502, curl 0, exit 22).'
+        );
+        for (const markdown of [analysis.summaryMarkdown, analysis.fixProposalMarkdown]) {
+            expect(markdown).not.toContain('without a response body');
+            expect(markdown).toContain(`Response body excerpt:\n\n\`\`\`text\n${BAD_GATEWAY_BODY}\n\`\`\``);
+        }
+        expect(analysis.summaryMarkdown).toContain('Response body: control-post-create-error.json');
+    });
+
+    it('bounds the response body excerpt and keeps a fence the body cannot close', () => {
+        const body = `\`\`\`\n${'x'.repeat(4_996)}`;
+        const analysis = controlRequestFailure(failedCreateFiles({
+            'control-post-create-error.json': body,
+            'control-post-error-metadata.json': failedCreateRecord('500', 'control-post-create-error.json')
+        }));
+
+        expect(analysis.summaryMarkdown).toContain(
+            `Response body excerpt (first 500 of 5000 characters):\n\n\`\`\`\`text\n${body.slice(0, 500)}\n\`\`\`\``
+        );
+        expect(analysis.summaryMarkdown).not.toContain(body.slice(0, 501));
+        expect(analysis.fixProposalMarkdown).toContain('Response body excerpt (first 500 of 5000 characters):');
+    });
+
+    it('does not invent an error message for a JSON response body that names none', () => {
+        const analysis = controlRequestFailure(failedCreateFiles({
+            'control-post-create-error.json': JSON.stringify({ status: 'rejected' }),
+            'control-post-error-metadata.json': failedCreateRecord('400', 'control-post-create-error.json')
+        }));
+
+        expect(analysis.failure.likelyCause).toBe(
+            'Control API request failed; its JSON response body names no error message (HTTP 400, curl 0, exit 22).'
+        );
+        expect(analysis.summaryMarkdown).toContain('Response body excerpt:\n\n```text\n{"status":"rejected"}\n```');
+    });
+
+    it('reports a recorded response body whose file the artifacts do not hold', () => {
+        const analysis = controlRequestFailure(failedCreateFiles({
+            'control-post-error-metadata.json': failedCreateRecord('400', 'control-post-create-error.json')
+        }));
+
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'control-post-create-error.json',
+            message: 'control-post-create-error.json is named by control-post-error-metadata.json but is not among the artifact files.'
+        }]);
+        expect(analysis.failure.likelyCause).toBe(
+            'Control API request failed; its response body control-post-create-error.json is not among the artifact files (HTTP 400, curl 0, exit 22).'
+        );
+        expect(analysis.summaryMarkdown).toContain(
+            'Response body: control-post-create-error.json (not among the artifact files)'
+        );
+    });
+
+    it('names the run from manifest.json when the runner stopped before writing its summary', () => {
+        const { 'runner-summary.json': _runnerSummary, ...filesWithoutRunnerSummary } = failedCreateFiles({
+            'control-post-error-metadata.json': failedCreateRecord(null, null)
+        });
+        const analysis = controlRequestFailure(filesWithoutRunnerSummary);
+
+        expect(analysis.runnerSummary).toBeUndefined();
+        expect(analysis.distributedRunId).toBe('dist-post-failure');
+        expect(analysis.summaryMarkdown).toContain('# Control Request Failure: dist-post-failure');
+        expect(analysis.fixProposalMarkdown).toContain('# Fix Proposal: dist-post-failure');
     });
 
     it('uses the request record as evidence when the failed create returned no response body', () => {
