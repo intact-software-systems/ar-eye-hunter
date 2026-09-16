@@ -19,6 +19,7 @@ import {
     resolveWebSocketUrlTemplate,
     webSocketRoutePreview
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
+import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
     RallarBlackBoxTestEvent,
@@ -166,46 +167,33 @@ describe('WebSocket command-center presets and routing', () => {
         ).toBe('ws://localhost:8080//');
     });
 
-    it('preserves context precedence and the all-scope empty-context fallback', () => {
-        expect(
-            defaultWebSocketValuesFromContext(
-                {
-                    apiBaseUrl: 'https://global.example',
-                    applicationId: 'global-app',
-                    workspaceId: 'global-workspace',
-                    clientId: 'global-client',
-                    sessionId: 'global-session',
-                    roomId: 'global-room'
-                },
-                {
-                    apiBaseUrl: 'https://config.example',
-                    roomId: 'config-room',
-                    rallar: {
-                        applicationId: 'config-app',
-                        workspaceId: 'config-workspace'
-                    }
-                },
-                bootstrap
-            )
-        ).toEqual({
+    it('takes the scope from the global values and a blank global room from the configured or bootstrap room, else the all context', () => {
+        const globalValues: CommandCenterGlobalValues = {
             apiBaseUrl: 'https://global.example',
             applicationId: 'global-app',
             workspaceId: 'global-workspace',
-            groupId: 'global-room',
-            contextId: 'global-room'
-        });
+            clientId: 'global-client',
+            sessionId: 'global-session',
+            roomId: 'global-room'
+        };
+        const config = {
+            apiBaseUrl: 'https://config.example',
+            roomId: 'config-room',
+            rallar: { applicationId: 'config-app', workspaceId: 'config-workspace' }
+        };
+        const blankGlobalRoom = { ...globalValues, roomId: ' ' };
+        const scope = { apiBaseUrl: 'https://global.example', applicationId: 'global-app', workspaceId: 'global-workspace' };
 
-        expect(
-            defaultWebSocketValuesFromContext(
-                undefined,
-                { apiBaseUrl: '', roomId: '', rallar: {} },
-                { ...bootstrap, roomId: '' }
-            )
-        ).toMatchObject({
-            applicationId: 'rallar-black-box',
-            workspaceId: 'default',
-            groupId: '',
-            contextId: 'all'
+        expect({
+            globalRoom: defaultWebSocketValuesFromContext(globalValues, config, bootstrap),
+            configuredRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, config, bootstrap),
+            bootstrapRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, { ...config, roomId: '' }, bootstrap),
+            noRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, { ...config, roomId: '' }, { ...bootstrap, roomId: '' })
+        }).toEqual({
+            globalRoom: { ...scope, groupId: 'global-room', contextId: 'global-room' },
+            configuredRoom: { ...scope, groupId: 'config-room', contextId: 'config-room' },
+            bootstrapRoom: { ...scope, groupId: 'bootstrap-room', contextId: 'bootstrap-room' },
+            noRoom: { ...scope, groupId: '', contextId: 'all' }
         });
     });
 

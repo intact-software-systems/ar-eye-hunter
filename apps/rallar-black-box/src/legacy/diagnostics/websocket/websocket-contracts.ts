@@ -11,8 +11,9 @@ import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-stat
 export interface UseWebSocketCommandCenterControllerInput {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
+    /** Absent while the browser is signed out; the actions that need a session then report a sign-in failure. */
     authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
+    globalValues: CommandCenterGlobalValues;
     browserStatus: RallarBrowserStatusSummary;
 }
 

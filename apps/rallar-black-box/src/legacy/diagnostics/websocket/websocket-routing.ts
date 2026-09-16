@@ -78,23 +78,17 @@ export function defaultWebSocketScope(): WebSocketCommandCenterValues['wsScope']
 }
 
 export function defaultWebSocketValuesFromContext(
-    globalValues: CommandCenterGlobalValues | undefined,
+    globalValues: CommandCenterGlobalValues,
     config: RallarBlackBoxTestConfig | undefined,
     bootstrap: RallarBlackBoxBootstrapConfig
 ): Pick<WebSocketCommandCenterValues, 'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId' | 'contextId'> {
-    const groupId = stringValue(globalValues?.roomId) ??
+    const groupId = stringValue(globalValues.roomId) ??
         stringValue(config?.roomId) ??
         bootstrap.roomId;
     return {
-        apiBaseUrl: globalValues?.apiBaseUrl ??
-            config?.apiBaseUrl ??
-            bootstrap.apiBaseUrl,
-        applicationId: globalValues?.applicationId ??
-            stringValue(config?.rallar?.applicationId) ??
-            'rallar-black-box',
-        workspaceId: globalValues?.workspaceId ??
-            stringValue(config?.rallar?.workspaceId) ??
-            'default',
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
         groupId,
         contextId: groupId || 'all'
     };
