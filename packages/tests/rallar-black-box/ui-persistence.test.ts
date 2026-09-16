@@ -84,7 +84,7 @@ describe('rallar-black-box UI persistence', () => {
             },
             payloadPresetId: 'custom',
             payloadText: '{"kind":"ping"}'
-        });
+        }, []);
 
         const restored = readManualWorkbenchDraft(storage, {
             values: {

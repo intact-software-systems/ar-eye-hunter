@@ -136,7 +136,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
         : fallback;
 }
 
-function sanitizeJsonEditorText(text: string, secretValues: readonly string[] = []): string {
+function sanitizeJsonEditorText(text: string, secretValues: readonly string[]): string {
     const trimmed = text.trim();
     if (!trimmed) {
         return '';
@@ -198,7 +198,7 @@ export function writeStoredSelectedCommandId(
 
 export function sanitizeManualWorkbenchDraft(
     draft: ManualWorkbenchDraft,
-    secretValues: readonly string[] = []
+    secretValues: readonly string[]
 ): ManualWorkbenchDraft {
     const { rallarPassword: _rallarPassword, ...valuesWithoutPassword } = draft.values;
     return {
@@ -280,14 +280,14 @@ export function readManualWorkbenchDraft(
 export function writeManualWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: ManualWorkbenchDraft,
-    secretValues: readonly string[] = []
+    secretValues: readonly string[]
 ): void {
     writeJson(storage, UI_STORAGE_KEYS.manualDraft, sanitizeManualWorkbenchDraft(draft, secretValues));
 }
 
 export function sanitizeRallarServerWorkbenchDraft(
     draft: RallarServerWorkbenchDraft,
-    secretValues: readonly string[] = []
+    secretValues: readonly string[]
 ): RallarServerWorkbenchDraft {
     return {
         ...draft,
@@ -331,7 +331,7 @@ export function readRallarServerWorkbenchDraft(
 export function writeRallarServerWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: RallarServerWorkbenchDraft,
-    secretValues: readonly string[] = []
+    secretValues: readonly string[]
 ): void {
     writeJson(
         storage,
@@ -365,7 +365,7 @@ export function readRallarServerRestCollectionDraft(
 export function writeRallarServerRestCollectionDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: RallarServerRestCollectionDraft,
-    secretValues: readonly string[] = []
+    secretValues: readonly string[]
 ): void {
     writeJson(
         storage,
