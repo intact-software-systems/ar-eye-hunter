@@ -1,5 +1,5 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';

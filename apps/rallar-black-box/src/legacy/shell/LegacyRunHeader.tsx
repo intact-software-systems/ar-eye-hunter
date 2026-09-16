@@ -1,10 +1,10 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     selectRallarBlackBoxActiveCommand,
     selectRallarBlackBoxCurrentConfig,
     selectRallarBlackBoxFirstFailure,
     selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';

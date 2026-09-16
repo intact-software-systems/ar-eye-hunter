@@ -2,7 +2,10 @@ import type {
     RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { toHetznerRoomProofCommands } from './hetzner-room-proof-commands.ts';
 
 const CONTROL_TOPIC = 'black-box.group-assertions.control';

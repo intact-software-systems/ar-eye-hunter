@@ -3,7 +3,10 @@ import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunState
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommandKind, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommandKind,
+    RallarBlackBoxTestRecipe
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type {
     ControlDistributedRunCommandPhase,
     ControlDistributedRunSnapshot,

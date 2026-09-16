@@ -6,7 +6,11 @@ import {
     deriveRtcPerformanceView,
     rtcConnectStageIdForEvent
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function event(
     eventId: string,

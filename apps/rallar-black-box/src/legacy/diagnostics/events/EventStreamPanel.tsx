@@ -1,9 +1,9 @@
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { readEventFilters, writeEventFilters } from '../../../ui-persistence.ts';
 import { FilterSelect } from '../../shared/FilterSelect.tsx';

@@ -1,9 +1,9 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { formatDuration, formatTime } from '../../shared/time-format.ts';
