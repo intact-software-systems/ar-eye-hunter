@@ -4,7 +4,7 @@ import type {
 } from '../control-snapshots.ts';
 import type { DistributedRunSlowestAgent } from '../distributed-artifact-analysis.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
-import { computeAverage, computeElapsedMs, computeMaxNumber } from './compute-timing-summary.ts';
+import { computeElapsedMs, toRoundedMetric } from './compute-timing-summary.ts';
 
 /** One command's duration; the command and agent are absent when the result or envelope does not name them. */
 export interface CommandTimingSample {
@@ -17,6 +17,12 @@ export interface CommandTimingSources {
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly commands: readonly ControlQueuedCommandSnapshot[];
     readonly controlResults: readonly DistributedRunResultEvidence[];
+}
+
+interface AgentCommandTiming {
+    commandCount: number;
+    totalMs: number;
+    maxMs: number;
 }
 
 const SLOWEST_AGENT_LIMIT = 5;
@@ -49,29 +55,35 @@ export function computeCommandTimingSamples(sources: CommandTimingSources): read
 }
 
 export function computeSlowestAgents(samples: readonly CommandTimingSample[]): readonly DistributedRunSlowestAgent[] {
-    const durationsByAgent = new Map<string, number[]>();
+    const timingByAgent = new Map<string, AgentCommandTiming>();
     for (const sample of samples) {
         if (!sample.agentId) {
             continue;
         }
-        const durations = durationsByAgent.get(sample.agentId);
-        if (durations) {
-            durations.push(sample.durationMs);
+        const timing = timingByAgent.get(sample.agentId);
+        if (timing) {
+            timing.commandCount += 1;
+            timing.totalMs += sample.durationMs;
+            timing.maxMs = Math.max(timing.maxMs, sample.durationMs);
         }
         else {
-            durationsByAgent.set(sample.agentId, [sample.durationMs]);
+            timingByAgent.set(sample.agentId, {
+                commandCount: 1,
+                totalMs: sample.durationMs,
+                maxMs: sample.durationMs
+            });
         }
     }
-    return [...durationsByAgent.entries()]
-        .map(([agentId, durations]) => ({
+    return [...timingByAgent.entries()]
+        .map(([agentId, timing]) => ({
             agentId,
-            commandCount: durations.length,
-            averageMs: computeAverage(durations),
-            maxMs: computeMaxNumber(durations)
+            commandCount: timing.commandCount,
+            averageMs: toRoundedMetric(timing.totalMs / timing.commandCount),
+            maxMs: timing.maxMs
         }))
         .sort((left, right) =>
-            (right.maxMs ?? 0) - (left.maxMs ?? 0) ||
-            (right.averageMs ?? 0) - (left.averageMs ?? 0) ||
+            right.maxMs - left.maxMs ||
+            right.averageMs - left.averageMs ||
             left.agentId.localeCompare(right.agentId)
         )
         .slice(0, SLOWEST_AGENT_LIMIT);

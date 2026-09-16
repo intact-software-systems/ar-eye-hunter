@@ -5,7 +5,8 @@ import {
     toDistributedArtifactBundle,
     toDistributedArtifactSnapshots,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../../../shared-test/rallar-bb-test/distributed-run.ts';
@@ -24,6 +25,14 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
     return analyzed.right.analysis;
+}
+
+function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
+    const analysis = analyzedRun(files);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
 }
 
 function passedRunFiles(files: DistributedRunArtifactFiles = {}): DistributedRunArtifactFiles {
@@ -176,7 +185,7 @@ describe('distributed run artifact decoding', () => {
             }
         });
 
-        const analysis = analyzedRun(files);
+        const analysis = failedRun(files);
         const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS).right;
 
         expect(analysis.failure).toMatchObject({
@@ -184,7 +193,7 @@ describe('distributed run artifact decoding', () => {
             affectedAgents: ['agent-a'],
             evidenceFile: 'results.jsonl'
         });
-        expect(analysis.performance?.errorDiagnosticCount).toBe(1);
+        expect(analysis.performance.errorDiagnosticCount).toBe(1);
         expect(snapshots?.distributedRun.commandLinks).toEqual([]);
         expect(snapshots?.controlRun.results).toEqual([{
             kind: 'result',
@@ -353,10 +362,10 @@ describe('distributed run artifact decoding', () => {
             'fleet-report.json',
             'events.jsonl'
         ]);
-        expect(analysis.performance?.diagnosticCount).toBe(0);
-        expect(analysis.performance?.warningDiagnosticCount).toBe(0);
-        expect(analysis.performance?.errorDiagnosticCount).toBe(0);
-        expect(analysis.performance?.agentReportedEventCount).toBe(7);
+        expect(analysis.performance.diagnosticCount).toBe(0);
+        expect(analysis.performance.warningDiagnosticCount).toBe(0);
+        expect(analysis.performance.errorDiagnosticCount).toBe(0);
+        expect(analysis.performance.agentReportedEventCount).toBe(7);
         expect(analysis.summaryMarkdown).toContain('Artifact warnings: 2');
     });
 
@@ -373,7 +382,7 @@ describe('distributed run artifact decoding', () => {
             lineNumber: 2,
             message: 'events.jsonl:2 is not a JSON object.'
         }]);
-        expect(analysis.performance?.exportedEventCount).toBe(1);
+        expect(analysis.performance.exportedEventCount).toBe(1);
     });
 
     it('builds a browser-safe v1 bundle from the snapshot files, manifest and JSONL evidence', () => {
@@ -430,6 +439,6 @@ describe('distributed run artifact decoding', () => {
             message: 'manifest.json is required to form a distributed-run artifact bundle.'
         });
         expect(analysis.parseWarnings).toEqual([bundle.left]);
-        expect(analysis.spa?.verdict).toBeDefined();
+        expect(analysis.spa.verdict).toBeDefined();
     });
 });

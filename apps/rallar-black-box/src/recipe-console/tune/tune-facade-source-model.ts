@@ -1,4 +1,3 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
@@ -27,9 +26,7 @@ export function deriveTuneSourceModelFromFacade(
     const complete = facade.tuningInventory.omittedKnobs === 0 &&
         facade.tuningInventory.omittedLimitations === 0;
     const decisions = deriveDistributedRunTuningDecisions({
-        analysis: facade.support === 'supported'
-            ? facade.analysis as DistributedRunAnalysis
-            : undefined,
+        analysis: facade.support === 'supported' ? facade.analysis : undefined,
         inventory,
         completeness: complete ? 'complete' : 'partial'
     });

@@ -98,10 +98,8 @@ export interface DistributedRunTimingSummary {
 export interface DistributedRunSlowestAgent {
     readonly agentId: string;
     readonly commandCount: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly averageMs?: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly maxMs?: number;
+    readonly averageMs: number;
+    readonly maxMs: number;
 }
 
 /** Each duration statistic is absent when the agent's streams record neither observations nor durations. */
@@ -158,14 +156,10 @@ export interface DistributedRunReceiverDelivery {
     readonly minExpectedInboundMessages?: number;
     /** Absent when no receiver's delivery bound sets a minimum receive ratio. */
     readonly minReceiveRatio?: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly minReceivedMessages?: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly medianReceivedMessages?: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly p95ReceivedMessages?: number;
-    /** The analysis always writes it; performance evidence assembled elsewhere may omit it. */
-    readonly maxReceivedMessages?: number;
+    readonly minReceivedMessages: number;
+    readonly medianReceivedMessages: number;
+    readonly p95ReceivedMessages: number;
+    readonly maxReceivedMessages: number;
     /** Absent when no receiver has a positive expected message count; so are the median and p95 ratios. */
     readonly minDeliveryRatio?: number;
     readonly medianDeliveryRatio?: number;
@@ -235,46 +229,41 @@ export interface DistributedRunSpaAnalysis {
     readonly verdict: RunVerdictView;
 }
 
-export interface DistributedRunAnalysis {
+/** The sections every distributed run analysis carries, whatever its verdict. */
+export interface DistributedRunAnalysisSections {
     readonly generatedAtEpochMs: number;
-    /** The analysis always writes it; projections of the analysis for the Analyze view may omit it. */
-    readonly artifactSchemaVersion?: number;
+    readonly artifactSchemaVersion: number;
     readonly distributedRunId: string;
-    /** The analysis always writes it; projections of the analysis for the Analyze view may omit it. */
-    readonly controlRunId?: string;
+    readonly controlRunId: string;
     readonly status: string;
-    readonly ok: boolean;
     /** Absent when neither the manifest nor fleet-report.json names the run group. */
     readonly group?: DistributedRunAnalysisGroup;
     readonly summary: DistributedRunAnalysisSummary;
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    /** Absent when the run passed. */
-    readonly failure?: DistributedRunFailureAnalysis;
-    /** The analysis always writes it; projections of the analysis for the Analyze view may omit it. */
-    readonly performance?: DistributedRunPerformanceAnalysis;
+    readonly performance: DistributedRunPerformanceAnalysis;
     /** Absent when neither target-resolution.json nor the run snapshot records target resolution. */
     readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
-    /** The analysis always writes it; projections of the analysis for the Analyze view may omit it. */
-    readonly spa?: DistributedRunSpaAnalysis;
+    readonly spa: DistributedRunSpaAnalysis;
     readonly summaryMarkdown: string;
-    /** Absent when the run passed. */
-    readonly fixProposalMarkdown?: string;
-    /** The analysis always writes it; projections of the analysis for the Analyze view may omit it. */
-    readonly performanceMarkdown?: string;
+    readonly performanceMarkdown: string;
 }
 
-/** A run analysis before its markdown renderings. */
-export interface DistributedRunAnalysisFacts
-    extends
-        Omit<
-            DistributedRunAnalysis,
-            'performance' | 'spa' | 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'
-        > {
-    readonly artifactSchemaVersion: number;
-    readonly controlRunId: string;
-    readonly performance: DistributedRunPerformanceAnalysis;
-    readonly spa: DistributedRunSpaAnalysis;
+export interface DistributedRunPassedAnalysis extends DistributedRunAnalysisSections {
+    readonly ok: true;
 }
+
+export interface DistributedRunFailedAnalysis extends DistributedRunAnalysisSections {
+    readonly ok: false;
+    readonly failure: DistributedRunFailureAnalysis;
+    readonly fixProposalMarkdown: string;
+}
+
+export type DistributedRunAnalysis = DistributedRunPassedAnalysis | DistributedRunFailedAnalysis;
+
+/** A run analysis before its markdown renderings. */
+export type DistributedRunAnalysisFacts =
+    | Omit<DistributedRunPassedAnalysis, 'summaryMarkdown' | 'performanceMarkdown'>
+    | Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>;
 
 export interface DistributedRunSnapshots {
     readonly distributedRun: ControlDistributedRunSnapshot;
@@ -446,17 +435,6 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         results: content.results,
         events: content.events
     });
-    const failure = ok
-        ? undefined
-        : computeDistributedRunFailure({
-            distributedRun,
-            fleetReport,
-            bundledFailure: content.bundledFailure,
-            controlPostFailure: content.controlPostFailure,
-            results: content.results,
-            events: content.events,
-            spaReport: spa.report
-        });
     const identity = {
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion,
@@ -470,7 +448,7 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         summary: {
             agents: fleetReport?.agents ?? performance.agentCount,
             passRate: fleetReport?.passRate ?? performance.passRate,
-            failureGroups: fleetReport?.failureGroups ?? (failure ? 1 : 0),
+            failureGroups: fleetReport?.failureGroups ?? (ok ? 0 : 1),
             blockingFailures: distributedRun.rollup.summary.blockingFailures
         },
         parseWarnings: input.parseWarnings
@@ -481,6 +459,18 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
         spa
     };
+    if (ok) {
+        return { ...identity, ok, ...overview, ...evidence };
+    }
+    const failure = computeDistributedRunFailure({
+        distributedRun,
+        fleetReport,
+        bundledFailure: content.bundledFailure,
+        controlPostFailure: content.controlPostFailure,
+        results: content.results,
+        events: content.events,
+        spaReport: spa.report
+    });
     return { ...identity, ok, ...overview, failure, ...evidence };
 }
 
@@ -518,10 +508,14 @@ function toCountsByName(counts: Readonly<Record<string, number>>): Readonly<Reco
 }
 
 function toDistributedRunAnalysis(facts: DistributedRunAnalysisFacts): DistributedRunAnalysis {
-    return {
-        ...facts,
-        summaryMarkdown: toDistributedRunSummaryMarkdown(facts),
-        fixProposalMarkdown: facts.failure ? toDistributedRunFixProposalMarkdown(facts, facts.failure) : undefined,
-        performanceMarkdown: toDistributedRunPerformanceMarkdown(facts.distributedRunId, facts.performance)
-    };
+    const summaryMarkdown = toDistributedRunSummaryMarkdown(facts);
+    const performanceMarkdown = toDistributedRunPerformanceMarkdown(facts.distributedRunId, facts.performance);
+    return facts.ok
+        ? { ...facts, summaryMarkdown, performanceMarkdown }
+        : {
+            ...facts,
+            summaryMarkdown,
+            fixProposalMarkdown: toDistributedRunFixProposalMarkdown(facts),
+            performanceMarkdown
+        };
 }

@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     createControlRunSnapshot,
@@ -20,9 +21,17 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
     return analyzed.right.analysis;
 }
 
+function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
+    const analysis = analyzedRun(files);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
+}
+
 describe('distributed run artifact failure resolution', () => {
     it('creates a fix proposal from failed fleet signatures and command evidence', () => {
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-failed',
                 controlRunId: 'run-failed',
@@ -139,19 +148,19 @@ describe('distributed run artifact failure resolution', () => {
 
         expect(analysis.ok).toBe(false);
         expect(analysis.status).toBe('failed');
-        expect(analysis.failure?.category).toBe('diagnostic');
-        expect(analysis.failure?.affectedAgents).toEqual(['controller-02']);
-        expect(analysis.failure?.minimalFixArea).toBe('RTC/TURN');
-        expect(analysis.failure?.verificationCommand).toContain('live-rtc-3');
+        expect(analysis.failure.category).toBe('diagnostic');
+        expect(analysis.failure.affectedAgents).toEqual(['controller-02']);
+        expect(analysis.failure.minimalFixArea).toBe('RTC/TURN');
+        expect(analysis.failure.verificationCommand).toContain('live-rtc-3');
         expect(analysis.fixProposalMarkdown).toContain('RTC route failure');
         expect(analysis.fixProposalMarkdown).toContain('send-rtc');
         expect(analysis.summaryMarkdown).toContain('dist-failed');
-        expect(analysis.spa?.verdict.title).toBe('Outcome failed');
-        expect(analysis.spa?.report.nextActions[0]?.category).toBe('command');
+        expect(analysis.spa.verdict.title).toBe('Outcome failed');
+        expect(analysis.spa.report.nextActions[0]?.category).toBe('command');
     });
 
     it('falls back to distributed and control artifacts when fleet report is missing', () => {
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-no-fleet',
                 controlRunId: 'run-no-fleet',
@@ -188,14 +197,14 @@ describe('distributed run artifact failure resolution', () => {
 
         expect(analysis.ok).toBe(false);
         expect(analysis.status).toBe('timed-out');
-        expect(analysis.failure?.category).toBe('readiness');
-        expect(analysis.failure?.affectedAgents).toEqual(['controller-03']);
+        expect(analysis.failure.category).toBe('readiness');
+        expect(analysis.failure.affectedAgents).toEqual(['controller-03']);
         expect(analysis.fixProposalMarkdown).toContain('Agent did not ACK staging');
         expect(analysis.fixProposalMarkdown).toContain('controller-03');
     });
 
     it('uses payload diagnostic evidence when the fleet report fails a run whose rollup holds no failure evidence', () => {
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-payload-diagnostic',
                 controlRunId: 'run-payload-diagnostic',

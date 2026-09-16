@@ -141,8 +141,8 @@ describe('Recipe Console tuning decision safety', () => {
                 failure: failure('rtc-stream-performance', 'Stream latency failed.'),
                 performance: tuningPerformance({
                     slowestAgents: [
-                        { agentId: 'command-a', commandCount: 2, maxMs: 4_000 },
-                        { agentId: 'command-b', commandCount: 2, maxMs: 1_000 }
+                        { agentId: 'command-a', commandCount: 2, averageMs: 2_500, maxMs: 4_000 },
+                        { agentId: 'command-b', commandCount: 2, averageMs: 1_000, maxMs: 1_000 }
                     ],
                     stream: {
                         slowestAgents: [

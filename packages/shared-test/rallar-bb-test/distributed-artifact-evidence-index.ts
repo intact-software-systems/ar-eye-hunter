@@ -121,7 +121,7 @@ export function projectDistributedArtifactEvidenceIndex(
     );
     const primaryResultFailure = selectPrimaryDistributedArtifactResultFailure(
         source.entries,
-        input.analysis.failure?.commandId
+        input.analysis.ok ? undefined : input.analysis.failure.commandId
     );
     const bounded = retainActionableEvidence(
         source.entries,

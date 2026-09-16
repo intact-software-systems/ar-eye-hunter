@@ -249,8 +249,9 @@ describe('distributed artifact evidence catalog windows', () => {
         expect(catalogWork.maxRetainedRawSearchValueLength).toBeLessThanOrEqual(2_000);
         expect(catalog.entries.some((entry) => entry.id === catalog.primaryFailureId)).toBe(true);
         expect(catalog.entries.some((entry) => entry.id === catalog.latestDiagnosticId)).toBe(true);
+        const scaleAnalysis = inputForFixture(fixture).analysis;
         expect(catalog.entries.find((entry) => entry.kind === 'result' && entry.status === 'failed')).toMatchObject({
-            commandId: inputForFixture(fixture).analysis.failure?.commandId,
+            commandId: scaleAnalysis.ok ? undefined : scaleAnalysis.failure.commandId,
             failureDetails: {
                 code: 'SCALE_UPSTREAM_UNAVAILABLE',
                 message: expect.stringContaining('Expected HTTP 200')

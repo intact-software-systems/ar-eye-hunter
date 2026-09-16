@@ -1,4 +1,9 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/mod.ts';
+import type {
+    DistributedRunAnalysis,
+    DistributedRunAnalysisGroup,
+    DistributedRunFailureAnalysis,
+    DistributedRunTargetResolutionAnalysis
+} from '@shared-test/rallar-bb-test/mod.ts';
 import { projectAnalyzePerformance } from './analyze-performance-projection.ts';
 import {
     boundedText,
@@ -19,13 +24,9 @@ export function projectAnalyzeAnalysis(
 ): AnalyzeWorkerAnalysisProjection {
     return {
         generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        ...(analysis.artifactSchemaVersion !== undefined
-            ? { artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion) }
-            : {}),
+        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
         distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        ...(analysis.controlRunId
-            ? { controlRunId: projectAuthorityIdentifier(analysis.controlRunId) }
-            : {}),
+        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
         status: boundedText(analysis.status, MAX_METADATA_BYTES),
         ok: analysis.ok,
         ...(analysis.group ? { group: projectGroup(analysis.group) } : {}),
@@ -44,23 +45,15 @@ export function projectAnalyzeAnalysis(
                     : {})
             })
         ),
-        ...(analysis.failure ? { failure: projectFailure(analysis.failure) } : {}),
-        ...(analysis.performance
-            ? { performance: projectAnalyzePerformance(analysis.performance) }
-            : {}),
+        ...(analysis.ok ? {} : { failure: projectFailure(analysis.failure) }),
+        performance: projectAnalyzePerformance(analysis.performance),
         ...(analysis.targetResolution
             ? { targetResolution: projectTargetResolution(analysis.targetResolution) }
             : {}),
-        ...(analysis.spa
-            ? { spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) } }
-            : {}),
+        spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) },
         summaryMarkdown: boundedText(analysis.summaryMarkdown),
-        ...(analysis.fixProposalMarkdown
-            ? { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }
-            : {}),
-        ...(analysis.performanceMarkdown
-            ? { performanceMarkdown: boundedText(analysis.performanceMarkdown) }
-            : {})
+        ...(analysis.ok ? {} : { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }),
+        performanceMarkdown: boundedText(analysis.performanceMarkdown)
     };
 }
 
@@ -69,35 +62,27 @@ export function minimalAnalyzeAnalysis(
 ): AnalyzeWorkerAnalysisProjection {
     return {
         generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        ...(analysis.artifactSchemaVersion !== undefined
-            ? { artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion) }
-            : {}),
+        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
         distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        ...(analysis.controlRunId
-            ? { controlRunId: projectAuthorityIdentifier(analysis.controlRunId) }
-            : {}),
+        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
         status: boundedText(analysis.status, MAX_METADATA_BYTES),
         ok: analysis.ok,
         summary: { ...analysis.summary },
         parseWarnings: [],
-        ...(analysis.spa
-            ? {
-                spa: {
-                    verdict: {
-                        ...projectAnalyzeVerdict(analysis.spa.verdict),
-                        primaryEvidence: [],
-                        successSignals: [],
-                        warningSignals: [],
-                        causalTrail: []
-                    }
-                }
+        spa: {
+            verdict: {
+                ...projectAnalyzeVerdict(analysis.spa.verdict),
+                primaryEvidence: [],
+                successSignals: [],
+                warningSignals: [],
+                causalTrail: []
             }
-            : {}),
+        },
         summaryMarkdown: PROJECTION_OMISSION_MESSAGE
     };
 }
 
-function projectGroup(group: NonNullable<DistributedRunAnalysis['group']>) {
+function projectGroup(group: DistributedRunAnalysisGroup) {
     return {
         ...(group.applicationId
             ? { applicationId: boundedText(group.applicationId, MAX_METADATA_BYTES) }
@@ -111,9 +96,7 @@ function projectGroup(group: NonNullable<DistributedRunAnalysis['group']>) {
     };
 }
 
-function projectFailure(
-    failure: NonNullable<DistributedRunAnalysis['failure']>
-): NonNullable<AnalyzeWorkerAnalysisProjection['failure']> {
+function projectFailure(failure: DistributedRunFailureAnalysis): DistributedRunFailureAnalysis {
     return {
         category: boundedText(failure.category, MAX_METADATA_BYTES),
         title: boundedText(failure.title, MAX_SUMMARY_BYTES),
@@ -136,8 +119,8 @@ function projectFailure(
 }
 
 function projectTargetResolution(
-    target: NonNullable<DistributedRunAnalysis['targetResolution']>
-): NonNullable<AnalyzeWorkerAnalysisProjection['targetResolution']> {
+    target: DistributedRunTargetResolutionAnalysis
+): DistributedRunTargetResolutionAnalysis {
     return {
         selected: finiteNumber(target.selected),
         ...(target.expectedParticipantCount !== undefined

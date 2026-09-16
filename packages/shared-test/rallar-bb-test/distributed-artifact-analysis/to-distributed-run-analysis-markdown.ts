@@ -1,6 +1,6 @@
 import type {
     DistributedRunAnalysisFacts,
-    DistributedRunFailureAnalysis,
+    DistributedRunFailedAnalysis,
     DistributedRunLowestReceiver,
     DistributedRunPerformanceAnalysis,
     DistributedRunReceiverDelivery,
@@ -28,15 +28,15 @@ export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysis
         `Pass rate: ${toPercent(analysis.summary.passRate)}`,
         `Failure groups: ${analysis.summary.failureGroups}`,
         `Artifact warnings: ${analysis.parseWarnings.length}`,
-        analysis.failure ? `First focus: ${analysis.failure.title}` : undefined,
+        analysis.ok ? undefined : `First focus: ${analysis.failure.title}`,
         ''
     ]);
 }
 
 export function toDistributedRunFixProposalMarkdown(
-    analysis: DistributedRunAnalysisFacts,
-    failure: DistributedRunFailureAnalysis
+    analysis: Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>
 ): string {
+    const { failure } = analysis;
     return toMarkdown([
         `# Fix Proposal: ${analysis.distributedRunId}`,
         '',

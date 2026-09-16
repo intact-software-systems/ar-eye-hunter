@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     createControlRunSnapshot,
@@ -17,6 +18,14 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
     return analyzed.right.analysis;
+}
+
+function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
+    const analysis = analyzedRun(files);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
 }
 
 describe('distributed run artifact stream performance', () => {
@@ -105,7 +114,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 2,
             plannedFrames: 5,
             scheduledFrames: 5,
@@ -126,7 +135,7 @@ describe('distributed run artifact stream performance', () => {
                 outlierCount: 1
             }
         });
-        expect(analysis.performance?.streamTiming?.slowestAgents[0]).toMatchObject({
+        expect(analysis.performance.streamTiming?.slowestAgents[0]).toMatchObject({
             agentId: 'controller-02',
             streamCount: 1,
             completedFrames: 2,
@@ -174,7 +183,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming?.duration).toMatchObject({
+        expect(analysis.performance.streamTiming?.duration).toMatchObject({
             count: 3,
             minMs: 10,
             maxMs: 30
@@ -213,7 +222,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming?.duration).toEqual({
+        expect(analysis.performance.streamTiming?.duration).toEqual({
             p50Ms: 40,
             p95Ms: 50,
             maxMs: 50,
@@ -280,7 +289,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toBeUndefined();
+        expect(analysis.performance.streamTiming).toBeUndefined();
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {
@@ -353,7 +362,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 100,
             scheduledFrames: 100,
@@ -369,7 +378,7 @@ describe('distributed run artifact stream performance', () => {
     });
 
     it('uses stream progress evidence when timed-out runs have no failed result', () => {
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-stream-timeout',
                 controlRunId: 'run-stream-timeout',
@@ -548,7 +557,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 2,
             plannedFrames: 5,
             scheduledFrames: 5,
@@ -569,7 +578,7 @@ describe('distributed run artifact stream performance', () => {
                 outlierCount: 1
             }
         });
-        expect(analysis.performance?.streamTiming?.slowestAgents.map((agent) => agent.agentId)).toEqual([
+        expect(analysis.performance.streamTiming?.slowestAgents.map((agent) => agent.agentId)).toEqual([
             'controller-02',
             'controller-01'
         ]);
@@ -673,7 +682,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 2,
             plannedFrames: 5,
             scheduledFrames: 5,
@@ -689,7 +698,7 @@ describe('distributed run artifact stream performance', () => {
                 maxMs: 28
             }
         });
-        expect(analysis.performance?.streamTiming?.slowestAgents[0]).toMatchObject({
+        expect(analysis.performance.streamTiming?.slowestAgents[0]).toMatchObject({
             agentId: 'controller-01',
             streamCount: 2,
             completedFrames: 5,
@@ -767,7 +776,7 @@ describe('distributed run artifact stream performance', () => {
             }
         }));
 
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 100,
             scheduledFrames: 100,
@@ -816,7 +825,7 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-tolerated-stream-drops',
                 controlRunId: 'run-tolerated-stream-drops',
@@ -863,8 +872,8 @@ describe('distributed run artifact stream performance', () => {
             commandId: 'assert-post-stream-state',
             evidenceFile: 'results.jsonl'
         });
-        expect(analysis.failure?.likelyCause).toBe('Expected post-stream state to be visible.');
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.failure.likelyCause).toBe('Expected post-stream state to be visible.');
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 1,
             completedFrames: 48,
             droppedFrames: 2,
@@ -906,7 +915,7 @@ describe('distributed run artifact stream performance', () => {
                 }
             ]
         };
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-nested-stream-failed',
                 controlRunId: 'run-nested-stream-failed',
@@ -956,9 +965,9 @@ describe('distributed run artifact stream performance', () => {
             commandId: 'rtc-realtime-position-stream',
             evidenceFile: 'results.jsonl'
         });
-        expect(analysis.failure?.likelyCause).toContain('completed 90/100 frames');
-        expect(analysis.failure?.likelyCause).toContain('dropped 10');
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.failure.likelyCause).toContain('completed 90/100 frames');
+        expect(analysis.failure.likelyCause).toContain('dropped 10');
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 100,
             completedFrames: 90,
@@ -1031,7 +1040,7 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-rtc-stream-performance',
                 controlRunId: 'run-rtc-stream-performance',
@@ -1093,11 +1102,11 @@ describe('distributed run artifact stream performance', () => {
             affectedAgents: ['controller-02'],
             commandId: 'rtc-realtime-position-stream'
         });
-        expect(analysis.failure?.likelyCause).toContain('completed 79/100 frames');
-        expect(analysis.failure?.likelyCause).toContain('dropped 21');
-        expect(analysis.failure?.likelyCause).toContain('in-flight limit drops 2');
-        expect(analysis.failure?.likelyCause).toContain('max drift 7046ms');
-        expect(analysis.performance?.streamTiming).toMatchObject({
+        expect(analysis.failure.likelyCause).toContain('completed 79/100 frames');
+        expect(analysis.failure.likelyCause).toContain('dropped 21');
+        expect(analysis.failure.likelyCause).toContain('in-flight limit drops 2');
+        expect(analysis.failure.likelyCause).toContain('max drift 7046ms');
+        expect(analysis.performance.streamTiming).toMatchObject({
             streamCount: 2,
             plannedFrames: 200,
             completedFrames: 163,
@@ -1106,7 +1115,7 @@ describe('distributed run artifact stream performance', () => {
             maxStartDriftMs: 7_046,
             lateFrameCount: 178
         });
-        expect(analysis.performance?.streamTiming?.slowestAgents.map((agent) => agent.agentId)).toEqual([
+        expect(analysis.performance.streamTiming?.slowestAgents.map((agent) => agent.agentId)).toEqual([
             'controller-02',
             'controller-01'
         ]);

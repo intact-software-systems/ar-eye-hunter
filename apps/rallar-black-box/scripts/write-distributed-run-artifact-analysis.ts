@@ -54,10 +54,10 @@ async function writeAnalysisFiles(outDir: string, artifactAnalysis: DistributedR
     await mkdir(outDir, { recursive: true });
     await writeFile(join(outDir, 'analysis.json'), `${JSON.stringify(analysis, null, 2)}\n`);
     await writeFile(join(outDir, 'summary.md'), analysis.summaryMarkdown);
-    if (analysis.fixProposalMarkdown) {
+    if (!analysis.ok) {
         await writeFile(join(outDir, 'fix-proposal.md'), analysis.fixProposalMarkdown);
     }
-    if (artifactAnalysis.variant === 'distributed-run' && artifactAnalysis.analysis.performanceMarkdown) {
+    if (artifactAnalysis.variant === 'distributed-run') {
         await writeFile(join(outDir, 'performance.md'), artifactAnalysis.analysis.performanceMarkdown);
     }
 }

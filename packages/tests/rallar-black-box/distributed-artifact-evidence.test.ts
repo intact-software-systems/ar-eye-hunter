@@ -743,7 +743,7 @@ describe('distributed artifact evidence search', () => {
     it('searches every affected agent and treats passed as an alias of ok', () => {
         const files = evidenceFiles();
         const analysis = analyzedRun(files);
-        if (!analysis.failure) {
+        if (analysis.ok) {
             throw new Error('Expected deterministic failure.');
         }
         const index = deriveDistributedArtifactEvidenceIndex({

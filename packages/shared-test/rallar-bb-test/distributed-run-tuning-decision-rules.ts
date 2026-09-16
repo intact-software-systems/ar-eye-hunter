@@ -1,17 +1,18 @@
-import type { DistributedRunAnalysis, DistributedRunPerformanceAnalysis } from './distributed-artifact-analysis.ts';
+import type { DistributedRunPerformanceAnalysis } from './distributed-artifact-analysis.ts';
 import type {
     DistributedRunTuningDecisionIssue,
     DistributedRunTuningHint,
     DistributedRunTuningHintKind
 } from './distributed-run-tuning-decision-types.ts';
 import { tuningDecisionIssue as decisionIssue } from './distributed-run-tuning-decision-types.ts';
+import type { DistributedRunTuningAnalysisEvidence } from './distributed-run-tuning-decisions.ts';
 import type {
     DistributedRunTuningInventory,
     DistributedRunTuningKnob,
     DistributedRunTuningKnobName
 } from './distributed-run-tuning.ts';
 
-export function readinessEvidence(analysis: DistributedRunAnalysis): string[] {
+export function readinessEvidence(analysis: DistributedRunTuningAnalysisEvidence): string[] {
     const target = analysis.targetResolution;
     const evidence: string[] = [];
     if (!target) {
@@ -44,7 +45,7 @@ export function readinessEvidence(analysis: DistributedRunAnalysis): string[] {
 }
 
 export function timeoutHint(
-    analysis: DistributedRunAnalysis,
+    analysis: DistributedRunTuningAnalysisEvidence,
     inventory: DistributedRunTuningInventory,
     issues: DistributedRunTuningDecisionIssue[]
 ): DistributedRunTuningHint | undefined {
@@ -330,7 +331,7 @@ function createHint(input: DistributedRunTuningHint): DistributedRunTuningHint {
     return input;
 }
 
-function failureText(analysis: DistributedRunAnalysis): string {
+function failureText(analysis: DistributedRunTuningAnalysisEvidence): string {
     const row = analysis.failure;
     return row ? `${row.title} ${row.likelyCause} ${row.nextAction}` : '';
 }

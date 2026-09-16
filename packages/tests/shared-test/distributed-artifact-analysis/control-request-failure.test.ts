@@ -234,16 +234,17 @@ describe('distributed run artifact control request failures', () => {
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
 
-        expect(analyzed.right?.variant).toBe('distributed-run');
-        expect(analyzed.right?.analysis.failure).toMatchObject({
+        const analysis = analyzed.right?.analysis;
+        if (analyzed.right?.variant !== 'distributed-run' || analysis?.ok !== false) {
+            throw new Error(`Expected a failed distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+        }
+        expect(analysis.failure).toMatchObject({
             category: 'control-api',
             title: 'Control API start request failed.',
             evidenceFile: 'control-post-error-metadata.json'
         });
-        expect(analyzed.right?.analysis.failure?.likelyCause).toContain('curl 7');
-        expect(analyzed.right?.analysis.failure?.nextAction).toContain(
-            'POST /distributed-runs/dist-post-start-failure/start'
-        );
+        expect(analysis.failure.likelyCause).toContain('curl 7');
+        expect(analysis.failure.nextAction).toContain('POST /distributed-runs/dist-post-start-failure/start');
     });
 
     it('rejects a control request record that omits a field the runner always writes', () => {

@@ -21,7 +21,7 @@ export function composeDistributedArtifactIssueMarkdown(
             )
         ].join('\n'));
     }
-    if (input.analysis.fixProposalMarkdown) {
+    if (!input.analysis.ok) {
         sections.push(
             `## Fix proposal\n\n${withoutLeadingHeading(input.analysis.fixProposalMarkdown)}`
         );

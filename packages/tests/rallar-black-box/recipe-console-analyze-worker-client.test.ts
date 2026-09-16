@@ -718,12 +718,27 @@ function completeResponse(
             },
             analysis: {
                 generatedAtEpochMs: 1,
+                artifactSchemaVersion: 1,
                 distributedRunId: 'dist',
                 controlRunId: 'control',
                 status: 'passed',
                 ok: true,
                 summary: { agents: 1, passRate: 1, failureGroups: 0, blockingFailures: 0 },
                 parseWarnings: [],
+                spa: {
+                    verdict: {
+                        verdict: 'passed',
+                        tone: 'good',
+                        title: 'Outcome passed',
+                        summary: 'summary',
+                        artifactStatus: 'valid',
+                        artifactMessage: 'Artifact bundle is valid.',
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                },
                 summaryMarkdown: 'summary'
             },
             issueMarkdown: 'issue',

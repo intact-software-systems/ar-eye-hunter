@@ -6,6 +6,7 @@ import {
     type ReceiverDeliverySpec
 } from '../distributed-artifact-analysis/decode-receiver-delivery-spec.ts';
 import {
+    computeNearestRank,
     computeNumberExtrema,
     computePercentile,
     toRoundedMetric
@@ -33,18 +34,17 @@ export function computeReceiverDelivery(sources: ReceiverDeliverySources): Distr
     if (samples.length === 0) {
         return undefined;
     }
-    const receivedMessages = samples.map((sample) => sample.receivedMessages);
+    const sortedReceivedMessages = samples.map((sample) => sample.receivedMessages).sort((left, right) => left - right);
     const deliveryRatios = samples.flatMap((sample) => toDeliveryRatio(sample) ?? []);
-    const receivedMessageExtrema = computeNumberExtrema(receivedMessages);
     return {
         sampleCount: samples.length,
         expectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.expectedInboundMessages)),
         minExpectedInboundMessages: toFirstFiniteNumber(samples.map((sample) => sample.minExpectedInboundMessages)),
         minReceiveRatio: toFirstFiniteNumber(samples.map((sample) => sample.minReceiveRatio)),
-        minReceivedMessages: receivedMessageExtrema?.min,
-        medianReceivedMessages: computePercentile(receivedMessages, 0.5),
-        p95ReceivedMessages: computePercentile(receivedMessages, 0.95),
-        maxReceivedMessages: receivedMessageExtrema?.max,
+        minReceivedMessages: sortedReceivedMessages[0],
+        medianReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.5),
+        p95ReceivedMessages: computeNearestRank(sortedReceivedMessages, 0.95),
+        maxReceivedMessages: sortedReceivedMessages[sortedReceivedMessages.length - 1],
         minDeliveryRatio: computeNumberExtrema(deliveryRatios)?.min,
         medianDeliveryRatio: computePercentile(deliveryRatios, 0.5),
         p95DeliveryRatio: computePercentile(deliveryRatios, 0.95),

@@ -523,7 +523,7 @@ describe('Recipe Console Analyze artifact model', () => {
             }
         });
         expect(model.evidenceIndex.entries.find((entry) => entry.id === model.primaryResultFailure?.evidenceId)).toMatchObject({
-            commandId: model.analysis.failure?.commandId
+            commandId: model.analysis.ok ? undefined : model.analysis.failure.commandId
         });
     });
 
@@ -541,7 +541,7 @@ describe('Recipe Console Analyze artifact model', () => {
             label: 'Unmatched failure command',
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
-        if (!prepared.analysis.failure) {
+        if (prepared.analysis.ok) {
             throw new Error('Expected failure.');
         }
         const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
@@ -588,7 +588,7 @@ describe('Recipe Console Analyze artifact model', () => {
         expect(model.evidenceIndex.entries.find((entry) => entry.id === model.primaryResultFailure?.evidenceId)).toMatchObject({
             kind: 'result',
             status: 'failed',
-            commandId: model.analysis.failure?.commandId
+            commandId: model.analysis.ok ? undefined : model.analysis.failure.commandId
         });
     });
 

@@ -1,8 +1,9 @@
 import type {
-    DistributedRunAnalysis,
+    DistributedRunFailureAnalysis,
     DistributedRunPerformanceAnalysis,
     DistributedRunTargetResolutionAnalysis
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -77,34 +78,15 @@ export function tuningInventory(
 
 export function tuningAnalysis(input: Readonly<{
     ok?: boolean;
-    failure?: DistributedRunAnalysis['failure'];
+    failure?: DistributedRunFailureAnalysis;
     performance?: DistributedRunPerformanceAnalysis;
     targetResolution?: DistributedRunTargetResolutionAnalysis;
-}> = {}): DistributedRunAnalysis {
-    const ok = input.ok ?? false;
+}> = {}): DistributedRunTuningAnalysisEvidence {
     return {
-        generatedAtEpochMs: 10_000,
-        artifactSchemaVersion: 2,
-        distributedRunId: 'tune-run',
-        controlRunId: 'tune-control',
-        status: ok ? 'passed' : 'failed',
-        ok,
-        group: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'tune-group'
-        },
-        summary: {
-            agents: 2,
-            passRate: ok ? 1 : 0.5,
-            failureGroups: input.failure ? 1 : 0,
-            blockingFailures: input.failure ? 1 : 0
-        },
-        parseWarnings: [],
+        ok: input.ok ?? false,
         failure: input.failure,
         performance: input.performance,
-        targetResolution: input.targetResolution,
-        summaryMarkdown: ''
+        targetResolution: input.targetResolution
     };
 }
 
@@ -203,7 +185,7 @@ export function targetResolution(
 export function failure(
     category: string,
     title: string
-): NonNullable<DistributedRunAnalysis['failure']> {
+): DistributedRunFailureAnalysis {
     return {
         category,
         title,

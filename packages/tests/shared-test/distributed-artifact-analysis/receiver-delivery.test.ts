@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
 import type { RallarBlackBoxTestCommand } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -20,6 +21,14 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
         throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
     }
     return analyzed.right.analysis;
+}
+
+function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
+    const analysis = analyzedRun(files);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
 }
 
 describe('distributed run artifact receiver delivery', () => {
@@ -146,7 +155,7 @@ describe('distributed run artifact receiver delivery', () => {
             }
         }));
 
-        expect(analysis.performance?.receiverDelivery).toMatchObject({
+        expect(analysis.performance.receiverDelivery).toMatchObject({
             sampleCount: 3,
             expectedInboundMessages: 600,
             minExpectedInboundMessages: 570,
@@ -159,7 +168,7 @@ describe('distributed run artifact receiver delivery', () => {
             medianDeliveryRatio: 0.97,
             p95DeliveryRatio: 1
         });
-        expect(analysis.performance?.receiverDelivery?.lowestAgents).toEqual([
+        expect(analysis.performance.receiverDelivery?.lowestAgents).toEqual([
             {
                 agentId: 'controller-03',
                 receivedMessages: 560,
@@ -226,12 +235,12 @@ describe('distributed run artifact receiver delivery', () => {
             }
         }));
 
-        expect(analysis.performance?.receiverDelivery).toBeUndefined();
+        expect(analysis.performance.receiverDelivery).toBeUndefined();
         expect(analysis.performanceMarkdown).not.toContain('Receiver delivery:');
     });
 
     it('classifies receiver delivery threshold assertions as delivery failures', () => {
-        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+        const analysis = failedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-receiver-delivery-failed',
                 controlRunId: 'run-receiver-delivery-failed',

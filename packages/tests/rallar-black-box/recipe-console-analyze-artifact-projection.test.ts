@@ -50,8 +50,10 @@ describe('Recipe Console Analyze artifact projection', () => {
         const projection = projectAnalyzeArtifactModel(model);
 
         expect(projection.analysis.spa?.verdict).toEqual(model.analysis.spa?.verdict);
-        expect(projection.analysis.failure?.affectedAgents)
-            .toEqual(model.analysis.failure?.affectedAgents);
+        if (model.analysis.ok) {
+            throw new Error('Scale fixture must describe a failed run.');
+        }
+        expect(projection.analysis.failure?.affectedAgents).toEqual(model.analysis.failure.affectedAgents);
         expect(projection.analysis.targetResolution?.targetAgentIds)
             .toEqual(model.analysis.targetResolution?.targetAgentIds);
         expect(projection.analysis.spa).not.toHaveProperty('report');
@@ -299,9 +301,6 @@ describe('Recipe Console Analyze artifact projection', () => {
             artifactSchemaVersion: fixture.artifactSchemaVersion
         });
         const performance = base.analysis.performance;
-        if (!performance) {
-            throw new Error('Scale fixture must include performance.');
-        }
         const model = {
             ...base,
             analysis: {
@@ -309,7 +308,11 @@ describe('Recipe Console Analyze artifact projection', () => {
                 performance: {
                     ...performance,
                     receiverDelivery: {
-                        sampleCount: 2,
+                        sampleCount: 3,
+                        minReceivedMessages: 4,
+                        medianReceivedMessages: 8,
+                        p95ReceivedMessages: Number.MAX_VALUE,
+                        maxReceivedMessages: Number.MAX_VALUE,
                         lowestAgents: [
                             {
                                 agentId: 'measured-agent',

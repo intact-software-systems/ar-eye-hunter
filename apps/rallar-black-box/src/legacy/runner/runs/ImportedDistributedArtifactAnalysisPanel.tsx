@@ -17,7 +17,7 @@ export function ImportedDistributedArtifactAnalysisPanel({
     analysis: DistributedRunAnalysis;
     status?: DistributedArtifactImportStatus;
 }) {
-    const failure = analysis.failure;
+    const failure = analysis.ok ? undefined : analysis.failure;
     const performance = analysis.performance;
     const loadedRequiredCount = status?.requiredFiles.filter((file) => file.loaded).length ?? 0;
     const requiredFileCount = status?.requiredFiles.length ?? DISTRIBUTED_ARTIFACT_REQUIRED_FILES.length;

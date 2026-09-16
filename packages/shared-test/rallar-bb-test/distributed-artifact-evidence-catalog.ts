@@ -122,7 +122,7 @@ async function createDistributedArtifactEvidenceCatalog(
                 [primaryResultFailure?.entry, entry].filter(
                     (value): value is DistributedArtifactEvidenceEntry => value !== undefined
                 ),
-                input.analysis.failure?.commandId
+                input.analysis.ok ? undefined : input.analysis.failure.commandId
             );
             if (selectedResultFailure === entry) {
                 primaryResultFailure = candidate;

@@ -17,7 +17,7 @@ export function deriveAnalyzePrimaryResultFailure(
 ): AnalyzePrimaryResultFailure | undefined {
     const entry = selectPrimaryDistributedArtifactResultFailure(
         evidenceEntries,
-        analysis.failure?.commandId
+        analysis.ok ? undefined : analysis.failure.commandId
     );
     return entry?.failureDetails
         ? {

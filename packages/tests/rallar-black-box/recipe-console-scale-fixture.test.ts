@@ -152,7 +152,7 @@ describe('Recipe Console deterministic scale fixture', () => {
                 commandId: 'scale-command-000000'
             }
         });
-        expect(analysis?.failure?.nextAction.length).toBeGreaterThan(20);
+        expect(analysis?.ok === false ? analysis.failure.nextAction.length : 0).toBeGreaterThan(20);
         expect(fixture.files['results.jsonl']).toContain(fixture.needles.actionableFailure);
         expect(fixture.files['events.jsonl']).toContain(fixture.needles.actionableDiagnostic);
     });

@@ -349,6 +349,12 @@ and returns an `Either`: a `DistributedRunArtifactRejection` (the file and why
 it cannot be analyzed) or a `DistributedRunArtifactAnalysis`. The caller reads
 the clock and passes `generatedAtEpochMs`; the analysis never does.
 
+- A `DistributedRunAnalysis` is a `DistributedRunPassedAnalysis` (`ok: true`)
+  or a `DistributedRunFailedAnalysis` (`ok: false`, with its required `failure`
+  and `fixProposalMarkdown`). Every other section — schema version, control run
+  id, performance, the SPA report and verdict, and the performance markdown — is
+  always written; consumers that read a bounded projection (the Analyze view,
+  tuning decisions) declare their own narrower contract.
 - `distributed-run.json` and `control-run.json` are decoded strictly against
   `ControlDistributedRunSnapshot` and `ControlRunSnapshot`. A missing, empty,
   malformed or non-conforming file is a rejection; no identity, timestamp,

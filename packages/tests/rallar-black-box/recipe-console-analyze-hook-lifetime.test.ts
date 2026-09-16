@@ -962,6 +962,7 @@ function completeResponse(
             },
             analysis: {
                 generatedAtEpochMs: 1,
+                artifactSchemaVersion: 1,
                 distributedRunId,
                 controlRunId: 'control-a',
                 status: 'passed',
@@ -973,6 +974,20 @@ function completeResponse(
                     blockingFailures: 0
                 },
                 parseWarnings: [],
+                spa: {
+                    verdict: {
+                        verdict: 'passed',
+                        tone: 'good',
+                        title: 'Outcome passed',
+                        summary: 'summary',
+                        artifactStatus: 'valid',
+                        artifactMessage: 'Artifact bundle is valid.',
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                },
                 summaryMarkdown: 'summary'
             },
             issueMarkdown: 'issue',

@@ -9,7 +9,8 @@ import {
 import {
     computeDistributedRunArtifactAnalysis,
     type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles
+    type DistributedRunArtifactFiles,
+    type DistributedRunFailedAnalysis
 } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     createControlRunSnapshot,
@@ -73,6 +74,14 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
     return analyzed.right.analysis;
 }
 
+function failedRun(files: DistributedRunArtifactFiles): DistributedRunFailedAnalysis {
+    const analysis = analyzedRun(files);
+    if (analysis.ok) {
+        throw new Error('Expected a failed distributed run analysis.');
+    }
+    return analysis;
+}
+
 describe('rallar-bb-test assertion outcome parity', () => {
     it('agrees with the runner comparator verdicts on shared fixtures', () => {
         expectRowsHold(evaluateComparatorOutcomeParityRows());
@@ -91,27 +100,27 @@ describe('rallar-bb-test assertion outcome parity', () => {
     });
 
     it('names absence violations in analysis and fix proposals', () => {
-        const analysis = analyzedRun(failingRunFiles(
+        const analysis = failedRun(failingRunFiles(
             'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED',
             'Wait absence was violated: a runtime event matched before the window closed.'
         ));
 
         expect(analysis.status).toBe('failed');
-        expect(analysis.failure?.category).toBe('assertion-absence');
-        expect(analysis.failure?.minimalFixArea).toBe('absence wait window or leaked traffic source');
+        expect(analysis.failure.category).toBe('assertion-absence');
+        expect(analysis.failure.minimalFixArea).toBe('absence wait window or leaked traffic source');
         expect(analysis.fixProposalMarkdown).toContain('assertion-absence');
         expect(analysis.summaryMarkdown ?? '').not.toContain('RALLAR_CONTROL_ADMIN_TOKEN');
     });
 
     it('names until-loop exhaustion in analysis and fix proposals', () => {
-        const analysis = analyzedRun(failingRunFiles(
+        const analysis = failedRun(failingRunFiles(
             'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED',
             'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.'
         ));
 
         expect(analysis.status).toBe('failed');
-        expect(analysis.failure?.category).toBe('convergence-polling');
-        expect(analysis.failure?.minimalFixArea)
+        expect(analysis.failure.category).toBe('convergence-polling');
+        expect(analysis.failure.minimalFixArea)
             .toBe('convergence polling bounds or backend convergence');
         expect(analysis.fixProposalMarkdown).toContain('convergence-polling');
     });

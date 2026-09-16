@@ -1,4 +1,8 @@
-import type { DistributedRunAnalysis } from './distributed-artifact-analysis.ts';
+import type {
+    DistributedRunFailureAnalysis,
+    DistributedRunPerformanceAnalysis,
+    DistributedRunTargetResolutionAnalysis
+} from './distributed-artifact-analysis.ts';
 import {
     cadenceHint,
     isolatedAgentHint,
@@ -32,9 +36,23 @@ export {
     type DistributedRunTuningTimingMetric
 } from './distributed-run-tuning-performance-comparison.ts';
 
+/**
+ * The analysis evidence tuning decisions read. A distributed run analysis carries it, and so does the
+ * Analyze view's bounded projection of one.
+ */
+export interface DistributedRunTuningAnalysisEvidence {
+    readonly ok: boolean;
+    /** Absent when the run passed or a minimal projection omits it. */
+    readonly failure?: DistributedRunFailureAnalysis;
+    /** Absent when a minimal projection omits it. */
+    readonly performance?: DistributedRunPerformanceAnalysis;
+    /** Absent when the analysis records no target resolution or a minimal projection omits it. */
+    readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
+}
+
 export function deriveDistributedRunTuningDecisions(
     input: Readonly<{
-        analysis?: DistributedRunAnalysis;
+        analysis?: DistributedRunTuningAnalysisEvidence;
         inventory: DistributedRunTuningInventory;
         completeness?: 'complete' | 'partial';
     }>
@@ -110,9 +128,7 @@ export function deriveDistributedRunTuningDecisions(
     };
 }
 
-function hasTuningPerformanceEvidence(
-    performance: NonNullable<DistributedRunAnalysis['performance']>
-): boolean {
+function hasTuningPerformanceEvidence(performance: DistributedRunPerformanceAnalysis): boolean {
     return (performance.commandTiming.count !== undefined && performance.commandTiming.count > 0) ||
         (performance.streamTiming?.streamCount ?? 0) > 0;
 }

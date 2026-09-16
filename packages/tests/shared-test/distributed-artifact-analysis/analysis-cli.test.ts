@@ -7,7 +7,8 @@ import { writeDistributedRunArtifactAnalysis } from '../../../../apps/rallar-bla
 import type {
     DistributedRunAnalysis,
     DistributedRunArtifactFiles,
-    DistributedRunControlRequestFailureAnalysis
+    DistributedRunControlRequestFailureAnalysis,
+    DistributedRunFailedAnalysis
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     createControlRunSnapshot,
@@ -65,9 +66,18 @@ describe('distributed run artifact analysis CLI', () => {
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
 
-        const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
+        const analysis = await readAnalysisJson<DistributedRunFailedAnalysis>(outDir);
         expect(analyzed.right?.analysis).toEqual(analysis);
-        expect(analysis.failure?.minimalFixArea).toBe('headless agent readiness');
+        expect(analysis).toMatchObject({
+            artifactSchemaVersion: 1,
+            controlRunId: 'run-cli',
+            ok: false,
+            performance: expect.any(Object),
+            spa: { report: expect.any(Object), verdict: expect.any(Object) },
+            fixProposalMarkdown: expect.stringContaining('# Fix Proposal: dist-cli'),
+            performanceMarkdown: expect.stringContaining('# Performance: dist-cli')
+        });
+        expect(analysis.failure.minimalFixArea).toBe('headless agent readiness');
         expect(analysis.parseWarnings).toEqual([]);
         await expect(readFile(path.join(outDir, 'summary.md'), 'utf8')).resolves.toContain('dist-cli');
         await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain('Suggested verification');
@@ -136,11 +146,15 @@ describe('distributed run artifact analysis CLI', () => {
         await writeDistributedRunArtifactAnalysis({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
         const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
-        expect(analysis.performance?.diagnosticCount).toBe(1);
-        expect(analysis.performance?.warningDiagnosticCount).toBe(1);
-        expect(analysis.performance?.errorDiagnosticCount).toBe(0);
-        expect(analysis.performance?.commandTiming.p99Ms).toBe(400);
-        expect(analysis.performance?.commandTiming.outlierCount).toBe(1);
+        expect(analysis.ok).toBe(true);
+        expect(analysis).not.toHaveProperty('failure');
+        expect(analysis).not.toHaveProperty('fixProposalMarkdown');
+        await expect(access(path.join(outDir, 'fix-proposal.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(analysis.performance.diagnosticCount).toBe(1);
+        expect(analysis.performance.warningDiagnosticCount).toBe(1);
+        expect(analysis.performance.errorDiagnosticCount).toBe(0);
+        expect(analysis.performance.commandTiming.p99Ms).toBe(400);
+        expect(analysis.performance.commandTiming.outlierCount).toBe(1);
         const performance = await readFile(path.join(outDir, 'performance.md'), 'utf8');
         expect(performance).toContain('p99=400ms');
         expect(performance).toContain('Warning diagnostics: 1');
@@ -185,9 +199,9 @@ describe('distributed run artifact analysis CLI', () => {
 
         await writeDistributedRunArtifactAnalysis({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
-        const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
-        expect(analysis.failure?.category).toBe('group-assertion');
-        expect(analysis.failure?.minimalFixArea).toBe('group assertion contract or fleet evidence');
+        const analysis = await readAnalysisJson<DistributedRunFailedAnalysis>(outDir);
+        expect(analysis.failure.category).toBe('group-assertion');
+        expect(analysis.failure.minimalFixArea).toBe('group assertion contract or fleet evidence');
         await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain(
             'rallar-bb-test-group-assertion-conformance.test.ts'
         );

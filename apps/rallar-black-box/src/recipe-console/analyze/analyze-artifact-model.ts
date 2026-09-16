@@ -221,8 +221,7 @@ export function finalizeAnalyzeArtifactModel(
             index: evidenceIndex
         }),
         portableEnvelope: {
-            artifactSchemaVersion: workspace.artifactSchemaVersion ??
-                analysis.artifactSchemaVersion ?? 1,
+            artifactSchemaVersion: workspace.artifactSchemaVersion ?? analysis.artifactSchemaVersion,
             distributedRunId: analysis.distributedRunId,
             generatedAtEpochMs: analysis.generatedAtEpochMs,
             files: portableFiles

@@ -2766,7 +2766,7 @@ describe('Hetzner distributed recipe workflow', () => {
             generatedAtEpochMs: 1_700_000_000_000
         });
         expect(analyzed.right?.variant).toBe('control-request-failure');
-        expect(analyzed.right?.analysis.failure).toMatchObject({
+        expect(analyzed.right?.variant === 'control-request-failure' ? analyzed.right.analysis.failure : undefined).toMatchObject({
             category: 'control-api',
             title: 'Control API create request failed.',
             likelyCause: 'target policy rejected',

@@ -6,7 +6,12 @@ import type {
     DistributedArtifactWorkspaceIssue,
     DistributedArtifactWorkspaceSource,
     DistributedArtifactWorkspaceSupport,
-    DistributedRunAnalysis,
+    DistributedRunAnalysisGroup,
+    DistributedRunAnalysisSummary,
+    DistributedRunArtifactParseWarning,
+    DistributedRunFailureAnalysis,
+    DistributedRunPerformanceAnalysis,
+    DistributedRunTargetResolutionAnalysis,
     DistributedRunTuningInventoryLimitation,
     DistributedRunTuningKnob,
     RallarBlackBoxDistributedGroupRef,
@@ -30,11 +35,34 @@ export type AnalyzeArtifactWorkspaceProjection = Readonly<{
     issues: readonly DistributedArtifactWorkspaceIssue[];
 }>;
 
-export type AnalyzeWorkerAnalysisProjection = Readonly<
-    Omit<DistributedRunAnalysis, 'spa'> & {
-        spa?: Readonly<{ verdict: RunVerdictView; }>;
-    }
->;
+/**
+ * The distributed run analysis the Analyze worker hands the view, bounded for transfer. A minimal
+ * projection keeps the run identity, verdict and summary only.
+ */
+export interface AnalyzeWorkerAnalysisProjection {
+    readonly generatedAtEpochMs: number;
+    readonly artifactSchemaVersion: number;
+    readonly distributedRunId: string;
+    readonly controlRunId: string;
+    readonly status: string;
+    readonly ok: boolean;
+    /** Absent when the analysis names no run group or the projection is minimal. */
+    readonly group?: DistributedRunAnalysisGroup;
+    readonly summary: DistributedRunAnalysisSummary;
+    readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
+    /** Absent when the run passed or the projection is minimal. */
+    readonly failure?: DistributedRunFailureAnalysis;
+    /** Absent when the projection is minimal. */
+    readonly performance?: DistributedRunPerformanceAnalysis;
+    /** Absent when the analysis records no target resolution or the projection is minimal. */
+    readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
+    readonly spa: Readonly<{ verdict: RunVerdictView; }>;
+    readonly summaryMarkdown: string;
+    /** Absent when the run passed or the projection is minimal. */
+    readonly fixProposalMarkdown?: string;
+    /** Absent when the projection is minimal. */
+    readonly performanceMarkdown?: string;
+}
 
 export type AnalyzeArtifactProjection = Readonly<{
     distributedRunId: string;

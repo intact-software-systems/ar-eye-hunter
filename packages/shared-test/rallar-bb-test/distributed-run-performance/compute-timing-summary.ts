@@ -46,9 +46,13 @@ export function computePercentile(values: readonly number[], percentileValue: nu
     if (values.length === 0) {
         return undefined;
     }
-    const sorted = [...values].sort((left, right) => left - right);
-    const index = Math.min(sorted.length - 1, Math.ceil(percentileValue * sorted.length) - 1);
-    return sorted[index];
+    return computeNearestRank([...values].sort((left, right) => left - right), percentileValue);
+}
+
+/** The nearest-rank percentile of values already sorted ascending; the caller guarantees at least one value. */
+export function computeNearestRank(sortedValues: readonly number[], percentileValue: number): number {
+    const index = Math.min(sortedValues.length - 1, Math.ceil(percentileValue * sortedValues.length) - 1);
+    return sortedValues[index];
 }
 
 /** Absent for no values. */

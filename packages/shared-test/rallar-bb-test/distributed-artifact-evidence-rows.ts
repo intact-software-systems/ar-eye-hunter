@@ -55,10 +55,10 @@ function addAnalysisFailure(
     rows: DistributedArtifactEvidenceEntry[],
     input: Parameters<typeof distributedArtifactEvidenceRows>[0]
 ): void {
-    const failure = input.analysis.failure;
-    if (!failure) {
+    if (input.analysis.ok) {
         return;
     }
+    const { failure } = input.analysis;
     rows.push(bound(input, {
         id: stableEvidenceId(
             'failure',
