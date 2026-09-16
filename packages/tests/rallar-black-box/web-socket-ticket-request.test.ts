@@ -9,6 +9,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { requestWebSocketTicket } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/request-web-socket-ticket.ts';
 import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-web-socket-command-center-controller.ts';
 import type { UseWebSocketCommandCenterControllerInput } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
 import type { WebSocketCommandCenterViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-view-contracts.ts';
@@ -99,7 +100,7 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
             feedbackLabel: websocket.actionFeedback.label,
             feedbackMessage: websocket.actionFeedback.message,
             waitStatus: websocket.waitStatus,
-            ticketIssuedAt: websocket.ticket?.issuedAtEpochMs,
+            ticketExpiresAt: websocket.ticket?.expiresAtEpochMs,
             sockets: RecordingSocket.urls.length
         };
     }
@@ -130,7 +131,7 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
         vi.restoreAllMocks();
     });
 
-    it('stores a created ticket stamped when its response arrived', async () => {
+    it('stores a created ticket and reports its expiry', async () => {
         await render(input);
         await act(async () => websocket.createTicket());
 
@@ -141,9 +142,26 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
             feedbackLabel: 'Create WS ticket',
             feedbackMessage: expect.stringContaining('Ticket expires at'),
             waitStatus: 'idle',
-            ticketIssuedAt: 42_000,
+            ticketExpiresAt: 90_000,
             sockets: 0,
             events: ['rallar.direct.raw_ws.ticket.created']
+        });
+    });
+
+    it('stamps the ticket with the time its response arrived, read from the injected clock', async () => {
+        const requested = await requestWebSocketTicket({
+            apiBaseUrl: 'http://localhost',
+            authSession,
+            requestId: 'ticket-request-000001',
+            timeoutMs: 1_000,
+            nowMs: () => 7_000
+        });
+
+        expect(requested.foldRight((ticket) => ticket)).toEqual({
+            ticket: 'ticket-a',
+            sessionId: 'session',
+            expiresAtEpochMs: 90_000,
+            issuedAtEpochMs: 7_000
         });
     });
 
@@ -180,7 +198,7 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
                 feedbackLabel: 'Create WS ticket',
                 feedbackMessage: message,
                 waitStatus: 'idle',
-                ticketIssuedAt: undefined,
+                ticketExpiresAt: undefined,
                 sockets: 0
             },
             opened: {
@@ -189,7 +207,7 @@ describe('WebSocket ticket requests through the raw-socket actions', () => {
                 feedbackLabel: 'Open WebSocket',
                 feedbackMessage: message,
                 waitStatus: 'raw ws open failed',
-                ticketIssuedAt: undefined,
+                ticketExpiresAt: undefined,
                 sockets: 0
             }
         });
