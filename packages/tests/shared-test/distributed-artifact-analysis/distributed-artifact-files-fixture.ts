@@ -114,7 +114,9 @@ export function createDistributedRunManifest(
         group: FIXTURE_GROUP,
         recipes: input.recipes ?? [{ recipeId: HEALTH_RECIPE.recipeId, recipe: HEALTH_RECIPE }],
         targetPolicy: { mode: 'selected-agents', agentIds: [...input.agentIds] },
-        startMode: 'manual'
+        roleAssignments: [],
+        startMode: 'manual',
+        metadata: {}
     };
 }
 
