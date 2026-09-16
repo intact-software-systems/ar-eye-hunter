@@ -5,8 +5,10 @@ import { toAuthCommandCenterRecipeText } from '../../../apps/rallar-black-box/sr
 
 describe('auth command-center recipe mutation identity', () => {
     it('allocates distinct opaque path identities for each generated operator action', () => {
-        const recipe = readRecipe(toAuthCommandCenterRecipeText('visible-username'));
-        const repeated = readRecipe(toAuthCommandCenterRecipeText('visible-username'));
+        let issued = 0;
+        const createRequestId = () => `operator-request-${++issued}`;
+        const recipe = readRecipe(toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId }));
+        const repeated = readRecipe(toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId }));
 
         expect(recipe.commands.map((command) => command.request.path)).toEqual([
             expect.stringMatching(/^\/api\/auth\/login\/requests\/[^/]+$/),
@@ -31,7 +33,9 @@ describe('auth command-center recipe mutation identity', () => {
 
 describe('auth command-center recipe export', () => {
     it('copies a strict version-1 recipe', () => {
-        const recipe = JSON.parse(toAuthCommandCenterRecipeText('visible-username'));
+        const recipe = JSON.parse(
+            toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId: () => 'operator-request' })
+        );
 
         expect(recipe).toMatchObject({ schemaVersion: 1 });
         expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });

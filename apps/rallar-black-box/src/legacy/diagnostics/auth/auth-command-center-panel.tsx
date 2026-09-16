@@ -50,7 +50,10 @@ export function AuthCommandCenterPanel({
     const [localError, setLocalError] = useState<string | undefined>();
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
     const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
-    const recipeText = useMemo(() => toAuthCommandCenterRecipeText(username), [username]);
+    const recipeText = useMemo(
+        () => toAuthCommandCenterRecipeText({ username, createRequestId: () => crypto.randomUUID() }),
+        [username]
+    );
     const diagnosticsText = useMemo(
         () =>
             redactedJson(

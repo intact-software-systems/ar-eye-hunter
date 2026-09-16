@@ -16,7 +16,7 @@ export interface WebSocketCommandCenterRecipeInput {
     readonly payload: RallarMessagePayload;
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     readonly providerMode: string;
-    readonly authSession?: AuthSession;
+    readonly authSession: AuthSession | undefined;
     readonly sequence: number;
     readonly includeRtcParity: boolean;
 }
