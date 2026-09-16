@@ -224,14 +224,17 @@ describe('WebSocket command-center controller actions', () => {
     });
 
     it('copies a recipe only for a valid payload', async () => {
-        const clipboard = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+        const copied: string[] = [];
+        vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async (text) => {
+            copied.push(text);
+        });
         await render();
         await act(async () => websocket.updateValue('payloadText', '{ not json'));
         await act(async () => websocket.copyRecipe(false));
-        expect({ localError: websocket.localError !== undefined, copies: clipboard.mock.calls.length }).toEqual({ localError: true, copies: 0 });
+        expect({ localError: websocket.localError !== undefined, copied }).toEqual({ localError: true, copied: [] });
         await act(async () => websocket.updateValue('payloadText', '{"text":"copied"}'));
         await act(async () => websocket.copyRecipe(true));
-        expect(JSON.parse(clipboard.mock.calls.at(-1)?.[0] ?? 'null')).toMatchObject({
+        expect(JSON.parse(copied.at(-1) ?? 'null')).toMatchObject({
             schemaVersion: 1,
             recipeId: 'rallar-websocket-rtc-parity-command-center'
         });
