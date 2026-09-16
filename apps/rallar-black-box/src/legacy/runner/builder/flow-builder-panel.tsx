@@ -8,86 +8,29 @@ interface FlowBuilderPanelProps extends UseFlowBuilderControllerInput {
     readonly busy: boolean;
 }
 
-export function FlowBuilderPanel({
-    state,
-    authSession,
-    globalValues,
-    busy,
-    onSelectCommand
-}: FlowBuilderPanelProps) {
-    const {
-        templateId,
-        flowText,
-        setFlowText,
-        variablesText,
-        setVariablesText,
-        setVariablesEdited,
-        flow,
-        recipe,
-        runnerScenario,
-        parseError,
-        recipeText,
-        runnerText,
-        recipeValidation,
-        runnerValidation,
-        localError,
-        selectTemplate,
-        addStep,
-        normalizeFlowJson,
-        runFlow,
-        copyText
-    } = useFlowBuilderController({
-        state,
-        authSession,
-        globalValues,
-        onSelectCommand
-    });
+export function FlowBuilderPanel(props: FlowBuilderPanelProps) {
+    const { state, authSession, busy } = props;
+    const model = useFlowBuilderController(props);
+    const { parseError, localError, recipe } = model;
     return (
         <section className="panel flow-builder-panel">
             <div className="panel-heading">
                 <h2>Flow Builder</h2>
                 <span className={`pill ${parseError ? 'bad' : 'good'}`}>
-                    {parseError
-                        ? 'invalid'
-                        : `${recipe?.commands.length ?? 0} commands`}
+                    {parseError ? 'invalid' : `${recipe?.commands.length ?? 0} commands`}
                 </span>
             </div>
-            <FlowBuilderEditor
-                templateId={templateId}
-                selectTemplate={selectTemplate}
-                busy={busy}
-                normalizeFlowJson={normalizeFlowJson}
-                runFlow={runFlow}
-                recipe={recipe}
-                copyText={copyText}
-                recipeText={recipeText}
-                runnerText={runnerText}
-                runnerScenario={runnerScenario}
-                addStep={addStep}
-                variablesText={variablesText}
-                setVariablesEdited={setVariablesEdited}
-                setVariablesText={setVariablesText}
-                flowText={flowText}
-                setFlowText={setFlowText}
-            />
+            <FlowBuilderEditor model={model} busy={busy} />
             {(parseError || localError) && (
                 <div className="workbench-error" role="status">
-                    {redactRallarBlackBoxValue(
-                        localError ?? parseError,
-                        uiRedactionOptions(state, authSession)
-                    )}
+                    {redactRallarBlackBoxValue(localError ?? parseError, uiRedactionOptions(state, authSession))}
                 </div>
             )}
             <FlowBuilderPreviews
-                flow={flow}
-                recipe={recipe}
+                model={model}
                 state={state}
                 authSession={authSession}
-                onSelectCommand={onSelectCommand}
-                recipeText={recipeText}
-                recipeValidation={recipeValidation}
-                runnerText={runnerText}
-                runnerValidation={runnerValidation}
+                onSelectCommand={props.onSelectCommand}
             />
         </section>
     );

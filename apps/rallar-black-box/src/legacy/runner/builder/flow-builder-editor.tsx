@@ -1,25 +1,10 @@
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { FlowBuilderStepKind } from '../../../flow-builder/flow-builder-contracts.ts';
 import { FLOW_BUILDER_TEMPLATES } from '../../../flow-builder/flow-builder-templates.ts';
-import type { FlowBuilderRunnerScenario } from '../../../flow-builder/to-flow-builder-runner-scenario.ts';
+import type { FlowBuilderControllerModel } from './use-flow-builder-controller.ts';
 
 interface FlowBuilderEditorProps {
-    readonly templateId: string;
-    selectTemplate(value: string): void;
+    readonly model: FlowBuilderControllerModel;
     readonly busy: boolean;
-    normalizeFlowJson(): void;
-    runFlow(): Promise<void>;
-    readonly recipe: RallarBlackBoxTestRecipe | undefined;
-    copyText(text: string): Promise<void>;
-    readonly recipeText: string;
-    readonly runnerText: string;
-    readonly runnerScenario: FlowBuilderRunnerScenario | undefined;
-    addStep(kind: FlowBuilderStepKind): void;
-    readonly variablesText: string;
-    setVariablesEdited(value: boolean): void;
-    setVariablesText(value: string): void;
-    readonly flowText: string;
-    setFlowText(value: string): void;
 }
 
 const FLOW_STEP_BUTTONS: readonly FlowBuilderStepKind[] = [
@@ -33,104 +18,85 @@ const FLOW_STEP_BUTTONS: readonly FlowBuilderStepKind[] = [
     'cleanup'
 ];
 
-export function FlowBuilderEditor({
-    templateId,
-    selectTemplate,
-    busy,
-    normalizeFlowJson,
-    runFlow,
-    recipe,
-    copyText,
-    recipeText,
-    runnerText,
-    runnerScenario,
-    addStep,
-    variablesText,
-    setVariablesEdited,
-    setVariablesText,
-    flowText,
-    setFlowText
-}: FlowBuilderEditorProps) {
+export function FlowBuilderEditor({ model, busy }: FlowBuilderEditorProps) {
     return (
         <>
-            <div className="flow-builder-toolbar">
-                <label className="field">
-                    <span>Template</span>
-                    <select
-                        value={templateId}
-                        onChange={(event) => selectTemplate(event.target.value)}
-                        disabled={busy}
-                    >
-                        {FLOW_BUILDER_TEMPLATES.map((template) => (
-                            <option
-                                key={template.templateId}
-                                value={template.templateId}
-                            >
-                                {template.label}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <button type="button" onClick={normalizeFlowJson}>
-                    Normalize JSON
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void runFlow()}
-                    disabled={busy || !recipe}
-                >
-                    Run Flow
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void copyText(recipeText)}
-                    disabled={!recipe}
-                >
-                    Copy SPA Recipe
-                </button>
-                <button
-                    type="button"
-                    onClick={() => void copyText(runnerText)}
-                    disabled={!runnerScenario}
-                >
-                    Copy Runner Scenario
-                </button>
-            </div>
+            <FlowBuilderToolbar model={model} busy={busy} />
             <div className="flow-builder-add-grid" aria-label="Add flow step">
                 {FLOW_STEP_BUTTONS.map((kind) => (
                     <button
                         key={kind}
                         type="button"
-                        onClick={() => addStep(kind)}
+                        onClick={() => model.addStep(kind)}
                         disabled={busy}
                     >
                         Add {kind}
                     </button>
                 ))}
             </div>
-            <div className="flow-builder-editors">
-                <label className="json-editor">
-                    <span>Variables JSON</span>
-                    <textarea
-                        value={variablesText}
-                        onChange={(event) => {
-                            setVariablesEdited(true);
-                            setVariablesText(event.target.value);
-                        }}
-                        spellCheck={false}
-                        disabled={busy}
-                    />
-                </label>
-                <label className="json-editor">
-                    <span>Flow JSON</span>
-                    <textarea
-                        value={flowText}
-                        onChange={(event) => setFlowText(event.target.value)}
-                        spellCheck={false}
-                        disabled={busy}
-                    />
-                </label>
-            </div>
+            <FlowBuilderJsonEditors model={model} busy={busy} />
         </>
+    );
+}
+
+function FlowBuilderToolbar({ model, busy }: FlowBuilderEditorProps) {
+    const { recipe, runnerScenario, copyText } = model;
+    return (
+        <div className="flow-builder-toolbar">
+            <label className="field">
+                <span>Template</span>
+                <select
+                    value={model.templateId}
+                    onChange={(event) => model.selectTemplate(event.target.value)}
+                    disabled={busy}
+                >
+                    {FLOW_BUILDER_TEMPLATES.map((template) => (
+                        <option key={template.templateId} value={template.templateId}>
+                            {template.label}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            <button type="button" onClick={model.normalizeFlowJson}>
+                Normalize JSON
+            </button>
+            <button type="button" onClick={() => void model.runFlow()} disabled={busy || !recipe}>
+                Run Flow
+            </button>
+            <button type="button" onClick={() => void copyText(model.recipeText)} disabled={!recipe}>
+                Copy SPA Recipe
+            </button>
+            <button type="button" onClick={() => void copyText(model.runnerText)} disabled={!runnerScenario}>
+                Copy Runner Scenario
+            </button>
+        </div>
+    );
+}
+
+function FlowBuilderJsonEditors({ model, busy }: FlowBuilderEditorProps) {
+    return (
+        <div className="flow-builder-editors">
+            <label className="json-editor">
+                <span>Variables JSON</span>
+                <textarea
+                    value={model.variablesText}
+                    onChange={(event) => {
+                        model.setVariablesEdited(true);
+                        model.setVariablesText(event.target.value);
+                    }}
+                    spellCheck={false}
+                    disabled={busy}
+                />
+            </label>
+            <label className="json-editor">
+                <span>Flow JSON</span>
+                <textarea
+                    value={model.flowText}
+                    onChange={(event) => model.setFlowText(event.target.value)}
+                    spellCheck={false}
+                    disabled={busy}
+                />
+            </label>
+        </div>
     );
 }
