@@ -171,7 +171,23 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 groupId: 'group-a'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] }
+            targetPolicy: { mode: 'selected-agents', agentIds: [], includeOfflineExpectedAgents: false },
+            schemaVersion: 1,
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'waiting-for-ack',
         createdAtEpochMs: 1_000,

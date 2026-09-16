@@ -21,11 +21,11 @@ export function projectTuneFacadeManifestValidation(
     if (!facade.candidateManifest) {
         return bind(facade, { status: 'omitted', validationCount: 0 });
     }
-    const validation = validateDistributedRunManifest(facade.candidateManifest);
-    if (validation.ok) {
+    const issues = validateDistributedRunManifest(facade.candidateManifest);
+    if (issues.length === 0) {
         return bind(facade, { status: 'valid', validationCount: 1 });
     }
-    const first = validation.errors[0];
+    const first = issues[0];
     return bind(facade, {
         status: 'invalid',
         validationCount: 1,

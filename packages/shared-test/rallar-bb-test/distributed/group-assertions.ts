@@ -110,7 +110,7 @@ export type RallarBlackBoxDistributedGroupAssertionResult = Readonly<{
 export function validateDistributedGroupAssertions(
     manifest: RallarBlackBoxDistributedRunManifest
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    const groupAssertions = manifest.groupAssertions ?? [];
+    const groupAssertions = manifest.groupAssertions;
     const issues: RallarBlackBoxDistributedRunValidationIssue[] = [];
     const seenIds = new Set<string>();
     const recipeKeys = new Set(
@@ -225,9 +225,10 @@ function validateGroupAssertionScope(
         });
         return;
     }
+    const targetPolicy = input.manifest.targetPolicy;
     const declaredRoles = new Set([
-        ...(input.manifest.roleAssignments ?? []).map((assignment) => assignment.role),
-        ...Object.keys(input.manifest.targetPolicy.roles ?? {})
+        ...input.manifest.roleAssignments.map((assignment) => assignment.role),
+        ...Object.keys(targetPolicy.mode === 'role-map' ? targetPolicy.roles : {})
     ]);
     if (declaredRoles.has(role)) {
         return;

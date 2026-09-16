@@ -3,9 +3,11 @@ import {
     type ControlClientEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { BuildDistributedRunManifestStart } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
-    RallarBlackBoxDistributedRunManifest
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunManifestFields
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -148,7 +150,8 @@ export function toCommandResultEnvelope(
     };
 }
 export function toDistributedManifest(
-    overrides: Partial<RallarBlackBoxDistributedRunManifest> = {}
+    overrides: Partial<RallarBlackBoxDistributedRunManifestFields> = {},
+    start: BuildDistributedRunManifestStart = { startMode: 'manual' }
 ): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,
@@ -171,16 +174,33 @@ export function toDistributedManifest(
                             commandId: 'health-child'
                         }
                     ]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1', 'agent-2']
+            agentIds: ['agent-1', 'agent-2'],
+            includeOfflineExpectedAgents: false
         },
-        startMode: 'manual',
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
         ackTimeoutMs: 1_000,
-        ...overrides
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {},
+        ...overrides,
+        ...start
     };
 }
 export function toFleetIdentity(
@@ -228,7 +248,10 @@ export function toPrincipalWorldFleetManifest(
                     schemaVersion: 1,
                     recipeId: 'sender-recipe',
                     commands: [{ kind: 'health', commandId: 'sender-health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             },
             {
                 recipeId: 'receiver-recipe',
@@ -237,12 +260,16 @@ export function toPrincipalWorldFleetManifest(
                     schemaVersion: 1,
                     recipeId: 'receiver-recipe',
                     commands: [{ kind: 'health', commandId: 'receiver-health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount
+            expectedParticipantCount,
+            includeOfflineExpectedAgents: false
         },
         roleAssignmentPolicy: {
             mode: 'ordered-targets',

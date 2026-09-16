@@ -1,13 +1,9 @@
 import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    isJsonRecordValue,
-    validateJsonSchema
-} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+    decodeDistributedRunManifest,
+    toDistributedRunManifestValidationText
+} from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 const DEFAULT_CANCEL_REASON = 'Distributed run cancelled.';
@@ -16,19 +12,7 @@ export function decodeDistributedRunManifestRequest(
     body: unknown
 ): Either<string, RallarBlackBoxDistributedRunManifest> {
     const manifest = isJsonRecordValue(body) && 'manifest' in body ? body.manifest : body;
-    const schemaValidation = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
-    if (!schemaValidation.ok) {
-        return Either.ofLeft(formatJsonSchemaValidationErrors(schemaValidation.errors));
-    }
-
-    const schemaValidManifest = manifest as RallarBlackBoxDistributedRunManifest;
-    const contractValidation = validateDistributedRunManifestContract(schemaValidManifest);
-    if (!contractValidation.ok) {
-        return Either.ofLeft(
-            contractValidation.errors.map((error) => `${error.path}: ${error.message}`).join('\n')
-        );
-    }
-    return Either.ofRight(schemaValidManifest);
+    return decodeDistributedRunManifest(manifest).mapLeft(toDistributedRunManifestValidationText);
 }
 
 export function decodeDistributedRunCancelReason(body: unknown): string {

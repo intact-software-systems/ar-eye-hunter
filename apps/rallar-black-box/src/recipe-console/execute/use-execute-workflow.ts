@@ -182,7 +182,7 @@ export function useExecuteWorkflow(
         schemaValid: recipeSelection.selected?.schema.ok === true,
         preflightValid: recipeSelection.selected?.preflight.errors.length === 0,
         selectedTargetsSafe,
-        manifestValid: manifest?.validation.ok === true,
+        manifestValid: manifest?.validationIssues.length === 0,
         resolutionCurrent: currentResolution?.comparison.ok === true
     } as const;
     const idlePolicy = deriveExecuteActionPolicy({

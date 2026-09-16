@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeDistributedRunArtifactAnalysis } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
-import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
+import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     createRecipeConsoleScaleFixture,
     RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT,
@@ -43,8 +43,8 @@ describe('Recipe Console deterministic scale fixture', () => {
         ).toBe(true);
         expect(fixture.bytes).toEqual({
             byFile: {
-                'distributed-run.json': 463_471,
-                'manifest.json': 635,
+                'distributed-run.json': 463_855,
+                'manifest.json': 1_019,
                 'control-run.json': 443,
                 'report.json': 363,
                 'results.jsonl': 1_224_367,
@@ -52,7 +52,7 @@ describe('Recipe Console deterministic scale fixture', () => {
                 'failures.json': 334,
                 'metadata.json': 383
             },
-            total: 5_338_306
+            total: 5_339_074
         });
     });
 
@@ -113,7 +113,7 @@ describe('Recipe Console deterministic scale fixture', () => {
 
     it('is a supported distributed-run artifact with actionable failure and diagnostic evidence', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 12, resultCount: 6 });
-        const manifestValidation = validateDistributedRunManifest(
+        const manifestValidation = decodeDistributedRunManifest(
             JSON.parse(fixture.files['manifest.json'] ?? 'null')
         );
         const { workspace } = computeDistributedArtifactWorkspace({
@@ -126,10 +126,7 @@ describe('Recipe Console deterministic scale fixture', () => {
             generatedAtEpochMs: fixture.generatedAtEpochMs
         }).right?.analysis;
 
-        expect(
-            manifestValidation.ok,
-            JSON.stringify(manifestValidation.errors, null, 2)
-        ).toBe(true);
+        expect(manifestValidation.left).toBeUndefined();
         expect(workspace).toMatchObject({
             family: 'distributed-run',
             support: 'supported',

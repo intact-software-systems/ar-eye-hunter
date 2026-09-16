@@ -801,7 +801,23 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
     title: 'Rallar black-box distributed run manifest',
     description: 'Orchestration manifest for running one or more recipes across selected browser agents.',
     type: 'object',
-    required: ['distributedRunId', 'group', 'recipes', 'targetPolicy'],
+    required: [
+        'schemaVersion',
+        'distributedRunId',
+        'controlRunId',
+        'group',
+        'recipes',
+        'targetPolicy',
+        'variables',
+        'secretRefs',
+        'roleAssignments',
+        'ackTimeoutMs',
+        'barrier',
+        'startMode',
+        'artifactPolicy',
+        'groupAssertions',
+        'metadata'
+    ],
     properties: {
         schemaVersion: { const: 1 },
         distributedRunId: stringSchema,
@@ -822,6 +838,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             type: 'array',
             items: {
                 type: 'object',
+                required: ['recipeId', 'variables', 'secretRefs', 'required'],
                 properties: {
                     recipeId: stringSchema,
                     role: stringSchema,
@@ -836,7 +853,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         },
         targetPolicy: {
             type: 'object',
-            required: ['mode'],
+            required: ['mode', 'includeOfflineExpectedAgents'],
             properties: {
                 mode: {
                     type: 'string',
@@ -861,7 +878,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             type: 'array',
             items: {
                 type: 'object',
-                required: ['role', 'agentId'],
+                required: ['role', 'agentId', 'recipeIds', 'required', 'variables'],
                 properties: {
                     role: stringSchema,
                     agentId: stringSchema,
@@ -874,7 +891,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         },
         roleAssignmentPolicy: {
             type: 'object',
-            required: ['mode', 'pattern'],
+            required: ['mode', 'pattern', 'orderBy'],
             properties: {
                 mode: {
                     type: 'string',
@@ -894,6 +911,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         ackTimeoutMs: { type: 'integer', minimum: 1 },
         barrier: {
             type: 'object',
+            required: ['enabled'],
             properties: {
                 enabled: booleanSchema,
                 timeoutMs: { type: 'integer', minimum: 1 }
@@ -907,6 +925,13 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         startDeadlineEpochMs: integerSchema,
         artifactPolicy: {
             type: 'object',
+            required: [
+                'retainArtifacts',
+                'includeEventJsonl',
+                'includeResultJsonl',
+                'includeFailureBundle',
+                'includeDistributedMetadata'
+            ],
             properties: {
                 retainArtifacts: booleanSchema,
                 includeEventJsonl: booleanSchema,

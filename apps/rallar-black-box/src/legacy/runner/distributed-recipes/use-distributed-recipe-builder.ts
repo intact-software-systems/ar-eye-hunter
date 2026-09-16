@@ -187,16 +187,16 @@ export function useDistributedRecipeBuilder({
                     enabled: true,
                     timeoutMs: barrierTimeoutMs
                 }
-                : undefined,
-            startMode: startMode ?? 'manual',
-            startDeadlineEpochMs: startMode === 'scheduled'
-                ? Date.now() + Math.max(1, startDelayMs)
-                : undefined,
+                : { enabled: false },
+            ...(startMode === 'scheduled'
+                ? { startMode, startDeadlineEpochMs: Date.now() + Math.max(1, startDelayMs) }
+                : { startMode }),
             expectedParticipantCount: usesWorldFleetTargets
                 ? expectedParticipantCount
                 : effectiveSelectedAgentIds.length > 0
                 ? effectiveSelectedAgentIds.length
-                : undefined
+                : undefined,
+            groupAssertions: []
         });
     }, [
         ackTimeoutMs,

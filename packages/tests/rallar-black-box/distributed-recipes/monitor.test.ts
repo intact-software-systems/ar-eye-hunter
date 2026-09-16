@@ -27,7 +27,7 @@ describe('distributed recipes monitor', () => {
                 ...distributedRun,
                 manifest: {
                     ...distributedRun.manifest,
-                    roleAssignments: undefined,
+                    roleAssignments: [],
                     roleAssignmentPolicy: {
                         mode: 'ordered-targets',
                         pattern: 'one-sender-many-receivers',
@@ -553,7 +553,9 @@ describe('distributed recipes monitor', () => {
                     recipeId: 'composite-evidence',
                     recipe: compositeRecipe,
                     profile: 'composite',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }]
             },
             commandLinks: distributedRun.commandLinks.map((link) => ({

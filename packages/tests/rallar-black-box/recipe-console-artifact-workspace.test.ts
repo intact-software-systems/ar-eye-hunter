@@ -29,11 +29,24 @@ function serverV2Files(
             schemaVersion: 1,
             distributedRunId: 'distributed-import',
             controlRunId: 'control-import',
-            group: { groupId: 'ci-import' },
-            recipes: [],
-            targetPolicy: {},
+            group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-import' },
+            recipes: [{ recipeId: 'ci-import-recipe', variables: {}, secretRefs: [], required: true }],
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'], includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
             roleAssignments: [],
-            startMode: 'manual'
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'failed',

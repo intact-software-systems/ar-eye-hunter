@@ -242,9 +242,25 @@ describe('Recipe Console Fleet URL handoffs', () => {
                 },
                 targetPolicy: {
                     mode: 'selected-agents',
-                    agentIds: ['agent-a']
+                    agentIds: ['agent-a'],
+                    includeOfflineExpectedAgents: false
                 },
-                recipes: [{ recipeId: REPORT.recipeIds[0] }]
+                recipes: [{ recipeId: REPORT.recipeIds[0], variables: {}, secretRefs: [], required: true }],
+                variables: {},
+                secretRefs: [],
+                roleAssignments: [],
+                ackTimeoutMs: 30_000,
+                barrier: { enabled: false },
+                startMode: 'manual',
+                artifactPolicy: {
+                    retainArtifacts: true,
+                    includeEventJsonl: true,
+                    includeResultJsonl: true,
+                    includeFailureBundle: true,
+                    includeDistributedMetadata: true
+                },
+                groupAssertions: [],
+                metadata: {}
             },
             rollup: {
                 state: 'failed',

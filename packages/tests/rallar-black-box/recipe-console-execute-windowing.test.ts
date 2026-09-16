@@ -480,7 +480,7 @@ describe('Recipe Console Execute pressure windows', () => {
             path: `$.errors[${index}]`,
             message: index === 239 ? 'late manifest error 239' : `error ${index}`
         }));
-        const draft = { ...base, validation: { ...base.validation, ok: false as const, errors } };
+        const draft = { ...base, validationIssues: errors };
         await render(createElement(ExecuteManifestDisclosure, { draft }));
 
         expect(container.querySelector('[data-execute-manifest-body]')).toBeNull();
@@ -665,7 +665,8 @@ function resolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
     const blockers = Array.from({ length: count }, (_, index) => ({
         agentId: `blocked-${index}`,
         status: 'offline-agent' as const,
-        reason: `blocker ${index}`
+        reason: `blocker ${index}`,
+        identity: { principalId: `blocked-${index}` }
     }));
     const issues = Array.from({ length: count }, (_, index) => ({
         code: 'target-mismatch' as const,

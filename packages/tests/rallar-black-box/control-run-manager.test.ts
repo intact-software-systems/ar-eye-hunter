@@ -358,13 +358,32 @@ describe('rallar-black-box control run manager', () => {
                         schemaVersion: 1,
                         recipeId: 'health-only',
                         commands: [{ kind: 'health' }]
-                    }
+                    },
+                    variables: {},
+                    secretRefs: [],
+                    required: true
                 }
             ],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-a']
-            }
+                agentIds: ['agent-a'],
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         };
         const distributedRun = {
             distributedRunId: 'dist-1',
@@ -464,7 +483,8 @@ describe('rallar-black-box control run manager', () => {
                 ...distributedRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 1
+                    expectedParticipantCount: 1,
+                    includeOfflineExpectedAgents: false
                 },
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',
@@ -509,7 +529,8 @@ describe('rallar-black-box control run manager', () => {
                 ...distributedRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 1
+                    expectedParticipantCount: 1,
+                    includeOfflineExpectedAgents: false
                 },
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',

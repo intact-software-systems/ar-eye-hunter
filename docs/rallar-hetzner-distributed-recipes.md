@@ -77,7 +77,10 @@ staging without relying on SPA state. They default to
 `groupId=hetzner-headless-room`, matching the workflow defaults.
 
 The checked-in Hetzner manifests are generated from shared-test recipe builders
-and shared distributed-run manifest contracts. If a manifest fails validation in
+and shared distributed-run manifest contracts, and write every author setting
+explicitly (a disabled barrier is `{ "enabled": false }`, empty variables and
+assignments are `{}` and `[]`). Regenerate them instead of editing the JSON. If a
+manifest fails validation in
 remote browser agents, check `packages/shared-test/rallar-bb-test/schema.ts`,
 `control-protocol.ts`, and the generated manifest JSON together; these must
 agree before dispatching on `main`.

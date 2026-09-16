@@ -187,13 +187,28 @@ function distributedManifest(
         controlRunId,
         displayName: `Scale run ${distributedRunId}`,
         group: GROUP,
-        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE }],
+        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE, required: true, variables: {}, secretRefs: [] }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: agentIds.length,
-            agentIds
+            agentIds,
+            includeOfflineExpectedAgents: false
         },
-        startMode: 'manual'
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 

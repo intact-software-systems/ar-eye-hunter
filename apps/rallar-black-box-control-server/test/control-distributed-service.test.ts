@@ -281,12 +281,11 @@ Deno.test('control service coordinates distributed barrier before auto start', (
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        startMode: 'auto-after-ready',
         barrier: {
             enabled: true,
             timeoutMs: 1_000
         }
-    }));
+    }, { startMode: 'auto-after-ready' }));
 
     const staged = assertRight(service.stageDistributedRun('dist-1'));
     assertJsonEquals(staged.state, 'waiting-for-ack');
@@ -339,13 +338,11 @@ Deno.test('control service holds barrier-ready scheduled runs until start time',
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        startMode: 'scheduled',
-        startDeadlineEpochMs: 1_050,
         barrier: {
             enabled: true,
             timeoutMs: 1_000
         }
-    }));
+    }, { startMode: 'scheduled', startDeadlineEpochMs: 1_050 }));
 
     service.stageDistributedRun('dist-1');
     const agent1StageCommands = service.takeDispatchableCommands('run-1', 'agent-1');
@@ -466,7 +463,8 @@ Deno.test('control service cancels distributed runs and queues cancel commands',
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1']
+            agentIds: ['agent-1'],
+            includeOfflineExpectedAgents: false
         }
     }));
 
@@ -524,7 +522,8 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
 
     const created = assertRight(service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
-            mode: 'all-online-group-members'
+            mode: 'all-online-group-members',
+            includeOfflineExpectedAgents: false
         }
     })));
 
@@ -547,7 +546,10 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
                     schemaVersion: 1,
                     recipeId: 'sender-recipe',
                     commands: [{ kind: 'health', commandId: 'sender-health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             },
             {
                 recipeId: 'receiver-recipe',
@@ -556,7 +558,10 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
                     schemaVersion: 1,
                     recipeId: 'receiver-recipe',
                     commands: [{ kind: 'health', commandId: 'receiver-health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ],
         targetPolicy: {
@@ -565,19 +570,20 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
             roles: {
                 sender: ['agent-1'],
                 receiver: ['agent-2']
-            }
+            },
+            includeOfflineExpectedAgents: false
         },
         roleAssignments: [
-            { role: 'sender', agentId: 'agent-1', required: true },
-            { role: 'receiver', agentId: 'agent-2', required: true }
+            { role: 'sender', agentId: 'agent-1', required: true, variables: {}, recipeIds: [] },
+            { role: 'receiver', agentId: 'agent-2', required: true, variables: {}, recipeIds: [] }
         ]
     })));
 
     assertJsonEquals(created.targetAgentIds, ['agent-1', 'agent-2']);
     assertJsonEquals(created.targetResolution?.targetAgentIds, ['agent-1', 'agent-2']);
     assertJsonEquals(created.targetResolution?.roleAssignments, [
-        { role: 'sender', agentId: 'agent-1', required: true },
-        { role: 'receiver', agentId: 'agent-2', required: true }
+        { role: 'sender', agentId: 'agent-1', required: true, variables: {}, recipeIds: [] },
+        { role: 'receiver', agentId: 'agent-2', required: true, variables: {}, recipeIds: [] }
     ]);
     assertJsonEquals(created.targetResolution?.summary.selected, 2);
 
@@ -704,7 +710,8 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-1'],
-            expectedParticipantCount: 2
+            expectedParticipantCount: 2,
+            includeOfflineExpectedAgents: false
         }
     }));
     const mismatched = assertRight(service.stageDistributedRun('dist-1'));
@@ -719,7 +726,8 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
         distributedRunId: 'dist-timeout',
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1']
+            agentIds: ['agent-1'],
+            includeOfflineExpectedAgents: false
         },
         ackTimeoutMs: 10
     }));
@@ -746,9 +754,8 @@ Deno.test('control service defers a refused automatic start to a later refresh i
     }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        startMode: 'auto-after-ready',
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
-    }));
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'], includeOfflineExpectedAgents: false }
+    }, { startMode: 'auto-after-ready' }));
     service.stageDistributedRun('dist-1');
     const [stageCommand] = service.takeDispatchableCommands('run-1', 'agent-1');
 
@@ -772,7 +779,7 @@ Deno.test('control service returns lifecycle failures as values without changing
     const service = createRallarBlackBoxControlService(toControlServiceInput({ allowedCommandKinds: ['recipe.cancel'] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'], includeOfflineExpectedAgents: false }
     }));
 
     assertJsonEquals(service.stageDistributedRun('missing').left, {

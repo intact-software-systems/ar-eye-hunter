@@ -232,12 +232,27 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'http-failure', required: true }],
+            recipes: [{ recipeId: 'http-failure', required: true, variables: {}, secretRefs: [] }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-1']
+                agentIds: ['agent-1'],
+                includeOfflineExpectedAgents: false
             },
-            startMode: 'manual'
+            startMode: 'manual',
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'failed',
         createdAtEpochMs: 1_000,

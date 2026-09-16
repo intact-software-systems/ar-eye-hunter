@@ -23,8 +23,8 @@ export function ExecuteManifestDisclosure({ draft }: ExecuteManifestDisclosurePr
                     <small>Read-only control contract</small>
                 </span>
                 <StatusMark
-                    label={draft ? draft.validation.ok ? 'Valid' : 'Blocked' : 'Unavailable'}
-                    status={draft ? draft.validation.ok ? 'passed' : 'failed' : 'disabled'}
+                    label={draft ? draft.validationIssues.length === 0 ? 'Valid' : 'Blocked' : 'Unavailable'}
+                    status={draft ? draft.validationIssues.length === 0 ? 'passed' : 'failed' : 'disabled'}
                 />
             </summary>
             {open && draft ? <ExecuteManifestBody draft={draft} /> : null}

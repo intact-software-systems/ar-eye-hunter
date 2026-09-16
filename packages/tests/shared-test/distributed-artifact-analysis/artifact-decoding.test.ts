@@ -48,7 +48,7 @@ const WORLD_FLEET_TARGET_RESOLUTION: RallarBlackBoxDistributedTargetResolution =
         { agentId: 'agent-02', role: 'receiver', required: true }
     ],
     blockers: [
-        { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }
+        { agentId: 'agent-03', status: 'stale-agent', reason: 'stale', identity: { principalId: 'agent-03' } }
     ],
     summary: {
         agents: 3,

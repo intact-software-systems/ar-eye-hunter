@@ -256,7 +256,9 @@
       },
       "role": "sender",
       "profile": "rtc",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     },
     {
       "recipeId": "rtc-messages-principal-multicast-receiver",
@@ -480,7 +482,9 @@
       },
       "role": "receiver",
       "profile": "rtc",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
@@ -501,58 +505,81 @@
         "controller-10"
       ]
     },
-    "expectedParticipantCount": 10
+    "expectedParticipantCount": 10,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
   "roleAssignments": [
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-03",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-04",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-05",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-06",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-07",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-08",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-09",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-10",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     }
   ],
   "ackTimeoutMs": 30000,
@@ -568,6 +595,7 @@
     "includeResultJsonl": true,
     "includeFailureBundle": true
   },
+  "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",
     "rolePattern": "one-sender-many-receivers",

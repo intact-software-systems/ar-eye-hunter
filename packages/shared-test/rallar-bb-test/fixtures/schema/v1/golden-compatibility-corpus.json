@@ -695,7 +695,9 @@
             "metadata": {
               "source": "ai-generated-example"
             }
-          }
+          },
+          "variables": {},
+          "secretRefs": []
         }
       ],
       "targetPolicy": {
@@ -705,16 +707,25 @@
             "agent-alice"
           ]
         },
-        "expectedParticipantCount": 1
+        "expectedParticipantCount": 1,
+        "includeOfflineExpectedAgents": false
       },
+      "variables": {},
+      "secretRefs": [],
+      "roleAssignments": [],
       "ackTimeoutMs": 10000,
+      "barrier": {
+        "enabled": false
+      },
       "startMode": "manual",
       "artifactPolicy": {
         "retainArtifacts": true,
         "includeEventJsonl": true,
+        "includeResultJsonl": true,
         "includeFailureBundle": true,
         "includeDistributedMetadata": true
       },
+      "groupAssertions": [],
       "metadata": {
         "source": "golden-compatibility-corpus"
       }
@@ -758,12 +769,30 @@
             "metadata": {
               "source": "golden-compatibility-corpus"
             }
-          }
+          },
+          "variables": {},
+          "secretRefs": []
         }
       ],
       "targetPolicy": {
         "mode": "all-online-group-members",
-        "expectedParticipantCount": 2
+        "expectedParticipantCount": 2,
+        "includeOfflineExpectedAgents": false
+      },
+      "variables": {},
+      "secretRefs": [],
+      "roleAssignments": [],
+      "ackTimeoutMs": 30000,
+      "barrier": {
+        "enabled": false
+      },
+      "startMode": "manual",
+      "artifactPolicy": {
+        "retainArtifacts": true,
+        "includeEventJsonl": true,
+        "includeResultJsonl": true,
+        "includeFailureBundle": true,
+        "includeDistributedMetadata": true
       },
       "groupAssertions": [
         {

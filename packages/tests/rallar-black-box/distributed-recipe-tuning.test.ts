@@ -146,7 +146,7 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
         ackTimeoutMs: 12_000,
         barrier: { enabled: true, timeoutMs: 18_000 },
         variables: { payloadSize: 128 },
@@ -161,11 +161,29 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
                 schemaVersion: 1,
                 recipeId: 'recipe~/inline',
                 commands: tuningCommands()
-            }
+            },
+            variables: {},
+            secretRefs: [],
+            required: true
         }, {
             recipeId: 'reference-only~/recipe',
-            profile: 'remote-catalog'
-        }]
+            profile: 'remote-catalog',
+            variables: {},
+            secretRefs: [],
+            required: true
+        }],
+        secretRefs: [],
+        roleAssignments: [],
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -324,7 +342,10 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             ...manifest,
             recipes: [{
                 recipeId: 'bounded',
-                recipe: { schemaVersion: 1, recipeId: 'bounded', commands }
+                recipe: { schemaVersion: 1, recipeId: 'bounded', commands },
+                variables: {},
+                secretRefs: [],
+                required: true
             }]
         };
 
@@ -344,7 +365,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             return;
         }
 
-        expect(validateDistributedRunManifest(candidate).errors).toEqual([]);
+        expect(validateDistributedRunManifest(candidate)).toEqual([]);
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe).errors).toEqual([]);
         expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
         expect(distributedRecipePreflight(recipe).errors).toEqual([]);

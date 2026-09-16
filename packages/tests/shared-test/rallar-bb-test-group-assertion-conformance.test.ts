@@ -12,6 +12,7 @@ import {
     GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
     GROUP_ASSERTION_CONFORMANCE_RECIPE_ID
 } from '@shared-test/rallar-bb-test/conformance/group-assertion-conformance.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-assertions-aggregates.ts';
 import { evaluateDistributedGroupAssertions } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
 import { sameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
@@ -95,25 +96,45 @@ describe('rallar-bb-test group assertion conformance', () => {
     });
 
     it('does not evaluate until every dispatched recipe result completed', () => {
-        const manifest = {
-            schemaVersion: 1 as const,
+        const manifest: RallarBlackBoxDistributedRunManifest = {
+            schemaVersion: 1,
             distributedRunId: 'pending-run',
+            controlRunId: 'pending-run',
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: 'conformance-room'
             },
-            recipes: [{ recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID }],
-            targetPolicy: { mode: 'all-online-group-members' as const },
+            recipes: [{
+                recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+                variables: {},
+                secretRefs: [],
+                required: true
+            }],
+            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
             groupAssertions: [{
                 groupAssertionId: 'pending',
-                aggregate: 'allEqual' as const,
+                aggregate: 'allEqual',
                 source: {
                     recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
                     commandId: GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
                     path: 'observed'
                 }
-            }]
+            }],
+            metadata: {}
         };
         const pending = evaluateDistributedGroupAssertions({
             manifest,

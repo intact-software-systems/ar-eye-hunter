@@ -122,6 +122,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                     value: {
                                         schemaVersion: 1,
                                         distributedRunId: 'group-assertions-example',
+                                        controlRunId: 'group-assertions-example',
                                         group: {
                                             applicationId: 'rallar-server',
                                             workspaceId: 'default',
@@ -142,12 +143,21 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                     },
                                                     response: { acceptedStatusCodes: [200] }
                                                 }]
-                                            }
+                                            },
+                                            variables: {},
+                                            secretRefs: [],
+                                            required: true
                                         }],
                                         targetPolicy: {
                                             mode: 'all-online-group-members',
-                                            expectedParticipantCount: 2
+                                            expectedParticipantCount: 2,
+                                            includeOfflineExpectedAgents: false
                                         },
+                                        variables: {},
+                                        secretRefs: [],
+                                        roleAssignments: [],
+                                        ackTimeoutMs: 30_000,
+                                        barrier: { enabled: false },
                                         groupAssertions: [{
                                             groupAssertionId: 'members-converge',
                                             aggregate: 'allEqual',
@@ -157,7 +167,15 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                 path: 'body.memberCount'
                                             }
                                         }],
-                                        startMode: 'manual'
+                                        startMode: 'manual',
+                                        artifactPolicy: {
+                                            retainArtifacts: true,
+                                            includeEventJsonl: true,
+                                            includeResultJsonl: true,
+                                            includeFailureBundle: true,
+                                            includeDistributedMetadata: true
+                                        },
+                                        metadata: {}
                                     }
                                 }
                             }

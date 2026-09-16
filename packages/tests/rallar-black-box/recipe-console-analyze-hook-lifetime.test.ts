@@ -887,7 +887,22 @@ function distributedRun(
                 groupId: 'ci-analyze'
             },
             recipes: [],
-            targetPolicy: { mode: 'all-online-group-members' }
+            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: createPassedRollup()

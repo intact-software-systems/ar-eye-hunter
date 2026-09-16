@@ -59,7 +59,7 @@ describe('world fleet distributed manifest catalog', () => {
                 worldFleet: true,
                 noSpawn: true
             });
-            expect(entry.manifest.roleAssignments).toBeUndefined();
+            expect(entry.manifest.roleAssignments).toEqual([]);
 
             const schemaResult = validateJsonSchema(
                 RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
@@ -69,10 +69,7 @@ describe('world fleet distributed manifest catalog', () => {
                 schemaResult.ok,
                 schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)
             ).toBe(true);
-            expect(validateDistributedRunManifestContract(entry.manifest)).toEqual({
-                ok: true,
-                errors: []
-            });
+            expect(validateDistributedRunManifestContract(entry.manifest)).toEqual([]);
         }
     });
 

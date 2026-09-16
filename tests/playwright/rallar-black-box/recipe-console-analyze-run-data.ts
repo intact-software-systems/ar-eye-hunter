@@ -45,20 +45,37 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
                 name: 'Analyze RTC relay',
                 commands: [{ kind: 'health', commandId: ANALYZE_COMMAND_ID }]
             },
-            required: true
+            required: true,
+            variables: {},
+            secretRefs: []
         }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: [ANALYZE_AGENT_ID],
-            expectedParticipantCount: 1
+            expectedParticipantCount: 1,
+            includeOfflineExpectedAgents: false
         },
         roleAssignments: [{
             agentId: ANALYZE_AGENT_ID,
             role: 'receiver',
             recipeIds: [ANALYZE_RECIPE_ID],
-            required: true
+            required: true,
+            variables: {}
         }],
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        secretRefs: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 

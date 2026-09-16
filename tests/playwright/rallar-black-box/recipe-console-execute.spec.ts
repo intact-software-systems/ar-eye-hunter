@@ -121,7 +121,7 @@ function distributedRun(
         error?: ControlDistributedRunSnapshot['error'];
     }> = {}
 ): ControlDistributedRunSnapshot {
-    const targetAgentIds = [...(manifest.targetPolicy.agentIds ?? [])];
+    const targetAgentIds = [...selectedAgentIds(manifest)];
     const ready = ['ready', 'running', 'passed'].includes(state)
         ? targetAgentIds.length
         : 0;
@@ -155,9 +155,13 @@ function distributedRun(
     };
 }
 
+function selectedAgentIds(manifest: RallarBlackBoxDistributedRunManifest): readonly string[] {
+    return manifest.targetPolicy.mode === 'selected-agents' ? manifest.targetPolicy.agentIds : [];
+}
+
 function targetResolution(
     manifest: RallarBlackBoxDistributedRunManifest,
-    targetAgentIds = manifest.targetPolicy.agentIds ?? []
+    targetAgentIds = selectedAgentIds(manifest)
 ): RallarBlackBoxDistributedTargetResolution {
     return {
         group: manifest.group,
@@ -444,8 +448,7 @@ async function installLifecycleControl(
                             resolutionCalls,
                             body.manifest
                         ) ??
-                            body.manifest.targetPolicy.agentIds ??
-                            []
+                            selectedAgentIds(body.manifest)
                     )
                 );
             }
@@ -1024,16 +1027,32 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
             {
                 recipeId: catalogItem.recipe.recipeId,
                 recipe: catalogItem.recipe,
-                required: true
+                required: true,
+                variables: {},
+                secretRefs: []
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['execute-agent-a', 'execute-agent-b'],
-            expectedParticipantCount: 2
+            expectedParticipantCount: 2,
+            includeOfflineExpectedAgents: false
         },
         ackTimeoutMs: 15_000,
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
     const restored = distributedRun(manifest, 'ready', Date.now());
     await installLiveControl(context, {
@@ -1068,7 +1087,7 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
 test('refuses Stage when fresh target resolution drifts', async ({ context, page }) => {
     const mock = await installLifecycleControl(context, {
         resolutionTargetIds(call, manifest) {
-            const selected = manifest.targetPolicy.agentIds ?? [];
+            const selected = selectedAgentIds(manifest);
             return call === 3 ? selected.slice(0, 1) : selected;
         }
     });

@@ -81,7 +81,7 @@ export interface DistributedRunHistoryManifest {
     readonly group: Readonly<Record<string, unknown>>;
     readonly metadata: Readonly<Record<string, unknown>>;
     readonly recipes: readonly Readonly<{
-        selection: RallarBlackBoxDistributedRunRecipeSelection;
+        selection: Partial<RallarBlackBoxDistributedRunRecipeSelection>;
         index: number;
     }>[];
 }
@@ -94,7 +94,7 @@ export function toDistributedRunHistoryManifest(
         ? record.recipes.flatMap((selection, index) =>
             isPayloadRecord(selection)
                 ? [{
-                    selection: selection as RallarBlackBoxDistributedRunRecipeSelection,
+                    selection: selection as Partial<RallarBlackBoxDistributedRunRecipeSelection>,
                     index
                 }]
                 : []

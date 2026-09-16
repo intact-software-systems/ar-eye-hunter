@@ -34,6 +34,12 @@ Give the AI the schema, a short goal, and hard constraints.
 Useful constraints:
 
 - Output JSON only. No Markdown.
+- Write every distributed manifest author setting explicitly (`controlRunId`,
+  `variables`, `secretRefs`, `roleAssignments`, `ackTimeoutMs`, `barrier`,
+  `startMode`, `artifactPolicy`, `groupAssertions`, `metadata`, each recipe
+  selection's `variables`, `secretRefs`, and `required`, and
+  `targetPolicy.includeOfflineExpectedAgents`); the schema rejects a manifest
+  that omits one.
 - Use `schemaVersion: 1` on distributed manifests and every inline
   `rallar-bb-test` recipe.
 - Use stable, descriptive `distributedRunId`, `recipeId`, and `commandId`

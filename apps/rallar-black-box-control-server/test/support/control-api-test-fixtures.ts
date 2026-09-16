@@ -50,14 +50,31 @@ export function distributedManifest() {
                             commandId: 'api-health-command'
                         }
                     ]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-a']
+            agentIds: ['agent-a'],
+            includeOfflineExpectedAgents: false
         },
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 1_000,
+        barrier: { enabled: false },
         startMode: 'manual',
-        ackTimeoutMs: 1_000
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }

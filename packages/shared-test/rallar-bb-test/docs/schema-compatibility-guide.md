@@ -45,6 +45,7 @@ recipes.
 {
   "schemaVersion": 1,
   "distributedRunId": "compat-distributed-health-v1",
+  "controlRunId": "compat-distributed-health-v1",
   "displayName": "Compatibility health smoke",
   "group": {
     "applicationId": "rallar-server",
@@ -65,15 +66,31 @@ recipes.
             "commandId": "distributed-health-v1"
           }
         ]
-      }
+      },
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 1
+    "expectedParticipantCount": 1,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
+  "roleAssignments": [],
   "ackTimeoutMs": 5000,
-  "startMode": "manual"
+  "barrier": { "enabled": false },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true,
+    "includeDistributedMetadata": true
+  },
+  "groupAssertions": [],
+  "metadata": {}
 }
 ```
 
@@ -83,6 +100,7 @@ recipes.
 {
   "schemaVersion": 1,
   "distributedRunId": "compat-group-assertions-v1",
+  "controlRunId": "compat-group-assertions-v1",
   "displayName": "Compatibility group assertions",
   "group": {
     "applicationId": "rallar-server",
@@ -107,13 +125,19 @@ recipes.
             "response": { "acceptedStatusCodes": [200] }
           }
         ]
-      }
+      },
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 2
+    "expectedParticipantCount": 2,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
+  "roleAssignments": [],
   "groupAssertions": [
     {
       "groupAssertionId": "members-converge",
@@ -136,7 +160,16 @@ recipes.
     }
   ],
   "ackTimeoutMs": 5000,
-  "startMode": "manual"
+  "barrier": { "enabled": false },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true,
+    "includeDistributedMetadata": true
+  },
+  "metadata": {}
 }
 ```
 

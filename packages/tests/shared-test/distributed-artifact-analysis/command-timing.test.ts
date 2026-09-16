@@ -66,7 +66,23 @@ describe('distributed run artifact command timing', () => {
                     controlRunId: 'run-large-performance',
                     group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
                     recipes: [],
-                    targetPolicy: { mode: 'selected-agents', agentIds: ['agent-large'] }
+                    targetPolicy: { mode: 'selected-agents', agentIds: ['agent-large'], includeOfflineExpectedAgents: false },
+                    schemaVersion: 1,
+                    variables: {},
+                    secretRefs: [],
+                    roleAssignments: [],
+                    ackTimeoutMs: 30_000,
+                    barrier: { enabled: false },
+                    startMode: 'manual',
+                    artifactPolicy: {
+                        retainArtifacts: true,
+                        includeEventJsonl: true,
+                        includeResultJsonl: true,
+                        includeFailureBundle: true,
+                        includeDistributedMetadata: true
+                    },
+                    groupAssertions: [],
+                    metadata: {}
                 },
                 state: 'passed',
                 createdAtEpochMs: 0,

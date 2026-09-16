@@ -100,10 +100,10 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
                 enabled: true,
                 timeoutMs: 15_000
             }
-            : undefined,
+            : { enabled: false },
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
-        groupAssertions: input.groupAssertions
+        groupAssertions: input.groupAssertions ?? []
     });
 
     return {

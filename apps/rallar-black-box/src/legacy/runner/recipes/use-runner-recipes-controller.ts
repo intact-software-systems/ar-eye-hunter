@@ -547,8 +547,10 @@ export function useRunnerRecipesController({
                 targetPolicyMode: 'selected-agents',
                 rolePattern: 'all-agents',
                 ackTimeoutMs: 15_000,
+                barrier: { enabled: false },
                 startMode: 'manual',
-                expectedParticipantCount: agentIds.length
+                expectedParticipantCount: agentIds.length,
+                groupAssertions: []
             });
             const manifestError = validateDistributedRecipeManifest(manifest);
             if (manifestError) {

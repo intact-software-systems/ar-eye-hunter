@@ -19,7 +19,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
         ackTimeoutMs: 1_000,
         barrier: { enabled: true, timeoutMs: 2_000 },
         recipes: [{
@@ -41,8 +41,24 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     intervalMs: 50,
                     rateHz: 20
                 }]
-            }
-        }]
+            },
+            variables: {},
+            secretRefs: [],
+            required: true
+        }],
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -186,22 +202,20 @@ describe('distributed tuning candidate changes', () => {
         }
     });
 
-    it('blocks missing and disabled barrier parents instead of enabling them', () => {
-        for (const barrier of [undefined, { enabled: false, timeoutMs: 2_000 }]) {
-            const source = { ...manifest(), barrier };
-            const result = createDistributedRunTuningCandidate({
-                manifest: source,
-                changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }]
-            });
+    it('blocks a disabled barrier parent instead of enabling it', () => {
+        const source: RallarBlackBoxDistributedRunManifest = { ...manifest(), barrier: { enabled: false } };
+        const result = createDistributedRunTuningCandidate({
+            manifest: source,
+            changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }]
+        });
 
-            expect(result).toMatchObject({
-                ok: false,
-                errors: expect.arrayContaining([expect.objectContaining({
-                    code: 'blocked-knob',
-                    path: '/barrier/timeoutMs'
-                })])
-            });
-        }
+        expect(result).toMatchObject({
+            ok: false,
+            errors: expect.arrayContaining([expect.objectContaining({
+                code: 'blocked-knob',
+                path: '/barrier/timeoutMs'
+            })])
+        });
     });
 
     it('reports manifest, recipe, agent, and preflight validation failures', () => {

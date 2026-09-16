@@ -339,13 +339,19 @@
         ]
       },
       "profile": "rtc",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 50
+    "expectedParticipantCount": 50,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
+  "roleAssignments": [],
   "ackTimeoutMs": 30000,
   "barrier": {
     "enabled": true,
@@ -359,6 +365,7 @@
     "includeResultJsonl": true,
     "includeFailureBundle": true
   },
+  "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",
     "rolePattern": "all-agents",

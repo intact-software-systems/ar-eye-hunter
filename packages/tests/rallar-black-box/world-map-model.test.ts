@@ -383,7 +383,7 @@ describe('fleet world map model', () => {
             agentId,
             region,
             provider,
-            location: { latitude, longitude: latitude }
+            location: { latitude, longitude: latitude, precision: 'exact' }
         }, 'passed');
         const model = deriveFleetWorldMapModel({
             reports: [report([

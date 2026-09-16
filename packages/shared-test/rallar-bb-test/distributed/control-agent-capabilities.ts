@@ -80,7 +80,12 @@ export function parseControlAgentCapabilities(
         return undefined;
     }
     const crdt = isRecord(value.crdt) ? value.crdt : undefined;
-    if (!crdt || typeof crdt.supported !== 'boolean') {
+    if (
+        !crdt ||
+        typeof crdt.supported !== 'boolean' ||
+        !Array.isArray(crdt.transports) ||
+        typeof crdt.apiBaseUrlConfigured !== 'boolean'
+    ) {
         return undefined;
     }
     const messaging = decodeControlAgentMessagingCapability(value.messaging);
@@ -88,22 +93,18 @@ export function parseControlAgentCapabilities(
         return undefined;
     }
 
-    const transports = Array.isArray(crdt.transports)
-        ? crdt.transports.filter((transport): transport is RallarBlackBoxTestCrdtTransport =>
-            typeof transport === 'string' &&
-            CONTROL_AGENT_CRDT_TRANSPORTS
-                .includes(transport as typeof CONTROL_AGENT_CRDT_TRANSPORTS[number])
-        )
-        : undefined;
+    const transports = crdt.transports.filter((transport): transport is RallarBlackBoxTestCrdtTransport =>
+        typeof transport === 'string' &&
+        CONTROL_AGENT_CRDT_TRANSPORTS
+            .includes(transport as typeof CONTROL_AGENT_CRDT_TRANSPORTS[number])
+    );
     const assertions = parseAssertionsCapability(value.assertions);
     return {
         crdt: {
             supported: crdt.supported,
             transports,
             runtimeSurface: optionalString(crdt.runtimeSurface),
-            apiBaseUrlConfigured: typeof crdt.apiBaseUrlConfigured === 'boolean'
-                ? crdt.apiBaseUrlConfigured
-                : undefined
+            apiBaseUrlConfigured: crdt.apiBaseUrlConfigured
         },
         messaging,
         ...(assertions ? { assertions } : {})

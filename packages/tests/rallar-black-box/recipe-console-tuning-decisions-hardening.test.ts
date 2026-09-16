@@ -29,7 +29,7 @@ describe('Recipe Console tuning decision safety', () => {
         const inline = tuningManifest();
         const mixed = {
             ...inline,
-            recipes: [...inline.recipes, { recipeId: 'remote-reference' }]
+            recipes: [...inline.recipes, { recipeId: 'remote-reference', variables: {}, secretRefs: [], required: true }]
         };
         const truncated = tuningManifest({
             commands: [
@@ -95,13 +95,8 @@ describe('Recipe Console tuning decision safety', () => {
         expect(result.state).toBe('ready');
     });
 
-    it.each([
-        undefined,
-        { enabled: false, timeoutMs: 7_500 }
-    ])('keeps a missing or disabled barrier non-prescriptive %#', (barrier) => {
-        const manifest = barrier === undefined
-            ? { ...tuningManifest(), barrier: undefined }
-            : tuningManifest({ barrier });
+    it('keeps a disabled barrier non-prescriptive', () => {
+        const manifest = tuningManifest({ barrier: { enabled: false } });
         const result = deriveDistributedRunTuningDecisions({
             analysis: tuningAnalysis({
                 failure: failure('barrier', 'Distributed barrier timed out.'),

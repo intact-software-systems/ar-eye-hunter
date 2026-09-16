@@ -20,9 +20,27 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         },
         recipes: [{
             recipeId: 'tune-inline',
-            recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] }
+            recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] },
+            variables: {},
+            secretRefs: [],
+            required: true
         }],
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] }
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -359,7 +377,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                     schemaVersion: 1,
                     recipeId: 'wide',
                     commands: [{ kind: 'parallel', groups }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }]
         };
 
@@ -373,7 +394,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         const firstCommands = Array.from({ length: 2_000 }, () => ({ kind: 'health' as const }));
         const later: RallarBlackBoxDistributedRunManifest['recipes'][number] = {
             recipeId: 'later',
-            recipe: { schemaVersion: 1, recipeId: 'later', commands: [] }
+            recipe: { schemaVersion: 1, recipeId: 'later', commands: [] },
+            variables: {},
+            secretRefs: [],
+            required: true
         };
         Object.defineProperty(later, 'recipe', {
             get: () => {
@@ -384,13 +408,19 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             ...manifest(),
             recipes: [{
                 recipeId: 'first',
-                recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands }
+                recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands },
+                variables: {},
+                secretRefs: [],
+                required: true
             }, later]
         };
         expect(() => inventoryDistributedRunTuningKnobs(wideRecipes)).not.toThrow();
 
         const references = Array.from({ length: 2_100 }, (_, index) => ({
-            recipeId: `reference-${index}`
+            recipeId: `reference-${index}`,
+            variables: {},
+            secretRefs: [],
+            required: true
         }));
         Object.defineProperty(references, 2_000, {
             get: () => {

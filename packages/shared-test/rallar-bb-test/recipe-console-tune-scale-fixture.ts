@@ -59,16 +59,32 @@ export function createRecipeConsoleTuneScaleFixture(
         recipes: [{
             recipeId: recipe.recipeId,
             profile: 'scale',
-            recipe
+            recipe,
+            required: true,
+            variables: {},
+            secretRefs: []
         }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 1,
-            agentIds: ['recipe-console-tune-scale-agent']
+            agentIds: ['recipe-console-tune-scale-agent'],
+            includeOfflineExpectedAgents: false
         },
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
         ackTimeoutMs: 15_000,
         barrier: { enabled: true, timeoutMs: 20_000 },
-        startMode: 'manual'
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
     const expectedKnobs = GLOBAL_TUNING_KNOB_COUNT +
         commandCount * RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND;

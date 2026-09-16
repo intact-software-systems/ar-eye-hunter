@@ -91,15 +91,28 @@ function evidenceFiles(): DistributedRunArtifactFiles {
                 schemaVersion: 1,
                 distributedRunId: 'dist-evidence-search',
                 controlRunId: 'run-evidence-search',
-                recipes: [{ recipeId: 'rtc-stability', profile: 'browser' }],
+                recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, secretRefs: [], required: true }],
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
                     groupId: 'qa'
                 },
-                targetPolicy: { mode: 'explicit' },
+                targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+                variables: {},
+                secretRefs: [],
                 roleAssignments: [],
-                startMode: 'manual'
+                ackTimeoutMs: 30_000,
+                barrier: { enabled: false },
+                startMode: 'manual',
+                artifactPolicy: {
+                    retainArtifacts: true,
+                    includeEventJsonl: true,
+                    includeResultJsonl: true,
+                    includeFailureBundle: true,
+                    includeDistributedMetadata: true
+                },
+                groupAssertions: [],
+                metadata: {}
             }
         }),
         'control-run.json': JSON.stringify({

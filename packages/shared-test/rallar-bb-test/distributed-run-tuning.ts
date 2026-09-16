@@ -7,7 +7,10 @@ import {
     type DistributedRunTuningKnobName
 } from './distributed-run-tuning-types.ts';
 import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts';
-import { RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS, type RallarBlackBoxTestCommand } from './rallar-black-box-test-contracts.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
+    type RallarBlackBoxTestCommand
+} from './rallar-black-box-test-contracts.ts';
 export * from './distributed-run-tuning-types.ts';
 
 type CommandContext = Readonly<{
@@ -258,12 +261,13 @@ function commandKnob(
 function barrierTimeoutKnob(
     manifest: RallarBlackBoxDistributedRunManifest
 ): DistributedRunTuningKnob {
-    const enabled = manifest.barrier?.enabled === true;
+    const barrier = manifest.barrier;
+    const enabled = barrier.enabled;
     return numericKnob({
         name: 'barrier.timeoutMs',
         tokens: ['barrier', 'timeoutMs'],
         scope: 'manifest',
-        value: manifest.barrier?.timeoutMs,
+        value: barrier.enabled ? barrier.timeoutMs : undefined,
         constraint: POSITIVE_INTEGER,
         blocked: !enabled,
         reason: enabled ? undefined : 'The distributed barrier is missing or disabled.'

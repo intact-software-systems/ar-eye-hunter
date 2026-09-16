@@ -35,7 +35,7 @@ describe('Recipe Console Tune scale fixture', () => {
             expectedEditableKnobs: 24_002
         });
         expect(fixture.recipe.commands).toHaveLength(2_000);
-        expect(validation.ok, JSON.stringify(validation.errors, null, 2)).toBe(true);
+        expect(validation).toEqual([]);
         expect(inventory.limitations).toEqual([]);
         expect(inventory.knobs).toHaveLength(24_002);
         expect(new Set(inventory.knobs.map((knob) => knob.pointer)).size).toBe(24_002);
@@ -65,6 +65,6 @@ describe('Recipe Console Tune scale fixture', () => {
         });
         expect(inventory.knobs).toHaveLength(98);
         expect(inventory.limitations).toEqual([]);
-        expect(validateDistributedRunManifest(fixture.manifest).ok).toBe(true);
+        expect(validateDistributedRunManifest(fixture.manifest)).toEqual([]);
     });
 });

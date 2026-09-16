@@ -287,14 +287,15 @@ function toTuningManifestValidationErrors(
 ): readonly DistributedRunTuningCandidateError[] {
     const errors: DistributedRunTuningCandidateError[] = [];
     try {
-        const validation = validateDistributedRunManifest(manifest);
-        errors.push(...validation.errors.map((error) =>
-            toCandidateError(
-                'manifest-validation',
-                tuningSchemaPathToPointer(error.path),
-                error.message
+        errors.push(
+            ...validateDistributedRunManifest(manifest).map((error) =>
+                toCandidateError(
+                    'manifest-validation',
+                    tuningSchemaPathToPointer(error.path),
+                    error.message
+                )
             )
-        ));
+        );
     }
     catch (error) {
         errors.push(toCandidateError('manifest-validation', '/', toErrorMessage(error)));
@@ -302,7 +303,7 @@ function toTuningManifestValidationErrors(
     let selections: RallarBlackBoxDistributedRunManifest['recipes'];
     try {
         const value = manifest.recipes;
-        if (!Array.isArray(value) || !value.every(isJsonRecordValue)) {
+        if (!Array.isArray(value) || value.some((selection) => !isJsonRecordValue(selection))) {
             return errors;
         }
         selections = value;

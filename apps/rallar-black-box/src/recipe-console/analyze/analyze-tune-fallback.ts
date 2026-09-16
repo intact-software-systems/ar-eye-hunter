@@ -69,12 +69,14 @@ export function minimalTuneFacade(
                         )
                     }
                     : {}),
-                configuredAgentCount: manifest.targetPolicy.agentIds?.length ?? 0,
-                configuredRoleCount: Object.keys(
-                    manifest.targetPolicy.roles ?? {}
-                ).length
+                configuredAgentCount: manifest.targetPolicy.mode === 'selected-agents'
+                    ? manifest.targetPolicy.agentIds.length
+                    : 0,
+                configuredRoleCount: manifest.targetPolicy.mode === 'role-map'
+                    ? Object.keys(manifest.targetPolicy.roles).length
+                    : 0
             },
-            roleAssignmentCount: manifest.roleAssignments?.length ?? 0
+            roleAssignmentCount: manifest.roleAssignments.length
         },
         tuningInventory: {
             totalKnobs,

@@ -82,16 +82,16 @@ function haveTargetsPassedPhase(
 }
 
 function isBarrierEnabled(distributedRun: ControlDistributedRunState): boolean {
-    return distributedRun.manifest.barrier?.enabled === true;
+    return distributedRun.manifest.barrier.enabled;
 }
 
 function isAutoStartDue(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {
-    const { startMode, startDeadlineEpochMs } = distributedRun.manifest;
-    return startMode === 'auto-after-ready' ||
-        (startMode === 'scheduled' && startDeadlineEpochMs !== undefined && nowEpochMs >= startDeadlineEpochMs);
+    const manifest = distributedRun.manifest;
+    return manifest.startMode === 'auto-after-ready' ||
+        (manifest.startMode === 'scheduled' && nowEpochMs >= manifest.startDeadlineEpochMs);
 }
 
 function isScheduledStartPending(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {
-    const { startMode, startDeadlineEpochMs } = distributedRun.manifest;
-    return startMode === 'scheduled' && startDeadlineEpochMs !== undefined && nowEpochMs < startDeadlineEpochMs;
+    const manifest = distributedRun.manifest;
+    return manifest.startMode === 'scheduled' && nowEpochMs < manifest.startDeadlineEpochMs;
 }

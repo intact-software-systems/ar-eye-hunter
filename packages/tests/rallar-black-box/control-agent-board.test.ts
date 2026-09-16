@@ -61,7 +61,8 @@ function agent(
                             'rtc',
                             'ws-then-rtc',
                             'rtc-with-ws-fallback'
-                        ]
+                        ],
+                        apiBaseUrlConfigured: true
                     },
                     messaging: FULL_MESSAGING_CAPABILITY
                 }
@@ -125,17 +126,34 @@ function distributedRun(
             controlRunId,
             displayName: `Distributed ${state}`,
             group,
-            recipes: [{ recipeId: 'health-only', required: true }],
+            recipes: [{ recipeId: 'health-only', required: true, variables: {}, secretRefs: [] }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
-                expectedParticipantCount: targetAgentIds.length
+                expectedParticipantCount: targetAgentIds.length,
+                includeOfflineExpectedAgents: false
             },
             roleAssignments: targetAgentIds.map((agentId, index) => ({
                 agentId,
                 role: index === 0 ? 'sender' : 'receiver',
-                required: true
-            }))
+                required: true,
+                recipeIds: [],
+                variables: {}
+            })),
+            variables: {},
+            secretRefs: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: targetAgentIds.flatMap((agentId) => [
             {
@@ -573,7 +591,8 @@ describe('control agent board derivation', () => {
                 capabilities: {
                     crdt: {
                         supported: true,
-                        transports: ['ws']
+                        transports: ['ws'],
+                        apiBaseUrlConfigured: true
                     },
                     messaging: FULL_MESSAGING_CAPABILITY
                 }
@@ -648,9 +667,10 @@ describe('control agent board derivation', () => {
                 ...baseRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 2
+                    expectedParticipantCount: 2,
+                    includeOfflineExpectedAgents: false
                 },
-                roleAssignments: undefined,
+                roleAssignments: [],
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',
                     pattern: 'one-sender-many-receivers',

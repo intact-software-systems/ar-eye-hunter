@@ -1,9 +1,7 @@
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type {
-    RallarBlackBoxDistributedRecipeResult,
-    RallarBlackBoxDistributedRunError
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedRecipeResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestError } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 export interface ToDistributedRecipeResultInput {
@@ -46,7 +44,7 @@ export function toDistributedRecipeResult(
     };
 }
 
-export function toDistributedRunResultError(result: ControlResultEnvelope): RallarBlackBoxDistributedRunError {
+export function toDistributedRunResultError(result: ControlResultEnvelope): RallarBlackBoxTestError {
     return result.error ?? result.result?.error ?? {
         code: 'RALLAR_BB_DISTRIBUTED_COMMAND_FAILED',
         message: `Distributed command ${result.commandId} failed.`

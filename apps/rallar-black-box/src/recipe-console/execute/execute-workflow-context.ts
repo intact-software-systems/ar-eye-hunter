@@ -75,9 +75,10 @@ export function singleRunRecipe(
 export function authoritativeTargetIds(
     run: ControlDistributedRunSnapshot
 ): readonly string[] {
+    const targetPolicy = run.manifest.targetPolicy;
     return [
         ...new Set(
-            run.manifest.targetPolicy.agentIds ?? run.targetAgentIds
+            targetPolicy.mode === 'selected-agents' ? targetPolicy.agentIds : run.targetAgentIds
         )
     ].sort();
 }

@@ -256,7 +256,9 @@
       },
       "role": "sender",
       "profile": "rtc",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     },
     {
       "recipeId": "rtc-messages-principal-multicast-receiver",
@@ -480,7 +482,9 @@
       },
       "role": "receiver",
       "profile": "rtc",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
@@ -521,158 +525,221 @@
         "controller-30"
       ]
     },
-    "expectedParticipantCount": 30
+    "expectedParticipantCount": 30,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
   "roleAssignments": [
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-03",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-04",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-05",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-06",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-07",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-08",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-09",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-10",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-11",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-12",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-13",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-14",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-15",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-16",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-17",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-18",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-19",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-20",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-21",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-22",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-23",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-24",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-25",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-26",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-27",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-28",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-29",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-30",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     }
   ],
   "ackTimeoutMs": 30000,
@@ -688,6 +755,7 @@
     "includeResultJsonl": true,
     "includeFailureBundle": true
   },
+  "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",
     "rolePattern": "one-sender-many-receivers",

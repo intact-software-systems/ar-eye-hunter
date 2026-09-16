@@ -95,14 +95,15 @@ export function toDistributedRunRollup(
 export function isDistributedAckTimedOut(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {
     return (distributedRun.state === 'waiting-for-ack' || distributedRun.state === 'timed-out') &&
         distributedRun.stagedAtEpochMs !== undefined &&
-        distributedRun.manifest.ackTimeoutMs !== undefined &&
         nowEpochMs > distributedRun.stagedAtEpochMs + distributedRun.manifest.ackTimeoutMs;
 }
 
 export function isDistributedBarrierTimedOut(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {
+    const barrierTimeoutMs = toDistributedBarrierTimeoutMs(distributedRun);
     return (distributedRun.state === 'waiting-for-barrier' || distributedRun.state === 'timed-out') &&
         distributedRun.barrierStartedAtEpochMs !== undefined &&
-        nowEpochMs > distributedRun.barrierStartedAtEpochMs + toDistributedBarrierTimeoutMs(distributedRun);
+        barrierTimeoutMs !== undefined &&
+        nowEpochMs > distributedRun.barrierStartedAtEpochMs + barrierTimeoutMs;
 }
 
 function toDistributedParticipantResult(input: ParticipantEvaluationInput): RallarBlackBoxDistributedParticipantResult {

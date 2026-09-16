@@ -98,10 +98,7 @@ export function validateSchemaAuthoringValue(
     const errors: JsonSchemaValidationIssue[] = schemaResult.ok ? [] : [...schemaResult.errors];
 
     if (target === 'distributed-run-manifest' && schemaResult.ok) {
-        const contractResult = validateDistributedRunManifestContract(value as RallarBlackBoxDistributedRunManifest);
-        if (!contractResult.ok) {
-            errors.push(...contractResult.errors);
-        }
+        errors.push(...validateDistributedRunManifestContract(value as RallarBlackBoxDistributedRunManifest));
     }
 
     return validationFromErrors(target, true, errors, value);

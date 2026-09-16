@@ -120,15 +120,32 @@ function groupAssertionManifest(
                             request: { method: 'GET', path: '/api/health' }
                         }
                     ]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1', 'agent-2']
+            agentIds: ['agent-1', 'agent-2'],
+            includeOfflineExpectedAgents: false
         },
         startMode: 'manual',
-        groupAssertions
+        groupAssertions,
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        metadata: {}
     };
 }
 

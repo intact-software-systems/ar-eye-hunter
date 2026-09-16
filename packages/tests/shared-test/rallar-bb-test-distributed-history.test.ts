@@ -21,8 +21,23 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 workspaceId: 'default',
                 groupId: 'group-a'
             },
-            targetPolicy: { mode: 'selected-agents', agentIds: [] },
-            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender' }]
+            targetPolicy: { mode: 'selected-agents', agentIds: [], includeOfflineExpectedAgents: false },
+            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender', variables: {}, secretRefs: [], required: true }],
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'failed',

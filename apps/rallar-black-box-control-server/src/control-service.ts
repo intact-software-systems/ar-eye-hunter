@@ -74,6 +74,7 @@ import {
     toDistributedStageCommands,
     toDistributedStartCommands,
     toRecoveredDistributedCommandLinks,
+    toScheduledStartEpochMs,
     type DistributedPhaseCommand
 } from './distributed/distributed-run-commands.ts';
 import { toDistributedRunRollup } from './distributed/distributed-run-evaluation.ts';
@@ -84,6 +85,7 @@ import {
     type DistributedRunNextStep
 } from './distributed/distributed-run-lifecycle.ts';
 import {
+    DISTRIBUTED_TARGET_STALE_AFTER_MS,
     isResolvedTargetPolicy,
     toControlAgentCandidates,
     toDistributedRecipeKey,
@@ -294,7 +296,8 @@ export class RallarBlackBoxControlService {
         return resolveDistributedRunTargets({
             manifest: normalized.manifest,
             agents: toControlAgentCandidates(this.runs.get(normalized.controlRunId)),
-            nowEpochMs: this.dependencies.now()
+            nowEpochMs: this.dependencies.now(),
+            staleAfterMs: DISTRIBUTED_TARGET_STALE_AFTER_MS
         });
     }
 
@@ -810,7 +813,7 @@ export class RallarBlackBoxControlService {
             agentId,
             commandId: command.commandId,
             command,
-            deadlineEpochMs: phase === 'start' ? distributedRun.manifest.startDeadlineEpochMs : undefined
+            deadlineEpochMs: phase === 'start' ? toScheduledStartEpochMs(distributedRun) : undefined
         });
         if (enqueued.right === undefined) {
             return enqueued.left;

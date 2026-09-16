@@ -970,7 +970,8 @@ describe('distributed recipes catalog', () => {
                                             'rtc',
                                             'ws-then-rtc',
                                             'rtc-with-ws-fallback'
-                                        ]
+                                        ],
+                                        apiBaseUrlConfigured: true
                                     },
                                     messaging: FULL_MESSAGING_CAPABILITY
                                 }
@@ -1022,7 +1023,10 @@ describe('distributed recipes catalog', () => {
                     schemaVersion: 1,
                     recipeId: 'sender-recipe',
                     commands: [{ kind: 'health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             },
             {
                 recipeId: 'receiver-recipe',
@@ -1031,7 +1035,10 @@ describe('distributed recipes catalog', () => {
                     schemaVersion: 1,
                     recipeId: 'receiver-recipe',
                     commands: [{ kind: 'health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             },
             {
                 recipeId: 'shared-recipe',
@@ -1039,13 +1046,16 @@ describe('distributed recipes catalog', () => {
                     schemaVersion: 1,
                     recipeId: 'shared-recipe',
                     commands: [{ kind: 'health' }]
-                }
+                },
+                variables: {},
+                secretRefs: [],
+                required: true
             }
         ] satisfies ControlDistributedRunSnapshot['manifest']['recipes'];
         const resolvedAssignments = [
-            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'] },
-            { agentId: 'agent-b', role: 'receiver' },
-            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'] }
+            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'], required: true, variables: {} },
+            { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} },
+            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'], required: true, variables: {} }
         ] as const;
         const commandLinks = [
             {
@@ -1079,11 +1089,12 @@ describe('distributed recipes catalog', () => {
                     roles: {
                         sender: ['agent-c'],
                         receiver: ['agent-a']
-                    }
+                    },
+                    includeOfflineExpectedAgents: false
                 },
                 roleAssignments: [
-                    { agentId: 'agent-a', role: 'receiver' },
-                    { agentId: 'agent-b', role: 'sender' }
+                    { agentId: 'agent-a', role: 'receiver', variables: {}, recipeIds: [], required: true },
+                    { agentId: 'agent-b', role: 'sender', variables: {}, recipeIds: [], required: true }
                 ]
             },
             targetResolution: {
@@ -1130,7 +1141,8 @@ describe('distributed recipes catalog', () => {
                     ...roleScopedRun.manifest,
                     targetPolicy: {
                         mode: 'selected-agents',
-                        agentIds: ['agent-a', 'agent-b', 'agent-c']
+                        agentIds: ['agent-a', 'agent-b', 'agent-c'],
+                        includeOfflineExpectedAgents: false
                     },
                     roleAssignments: resolvedAssignments
                 }

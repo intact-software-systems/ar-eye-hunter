@@ -5,7 +5,9 @@ import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
-    RallarBlackBoxDistributedTargetPolicy
+    RallarBlackBoxDistributedScheduledRunManifest,
+    RallarBlackBoxDistributedTargetPolicy,
+    RallarBlackBoxDistributedUnscheduledRunManifest
 } from '../distributed-run.ts';
 import {
     DistributedRecipeRolePattern,
@@ -20,22 +22,28 @@ export type DistributedRecipeTargetPolicyMode =
     | 'selected-agents'
     | 'role-map';
 
-export type BuildDistributedRunManifestInput = Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    displayName?: string;
-    group: RallarBlackBoxDistributedGroupRef;
-    recipes: readonly DistributedRecipeCatalogItem[];
-    targetAgentIds: readonly string[];
-    targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    rolePattern: DistributedRecipeRolePattern;
-    ackTimeoutMs: number;
-    barrier?: RallarBlackBoxDistributedBarrierPolicy;
-    startMode: 'manual' | 'auto-after-ready' | 'scheduled';
-    startDeadlineEpochMs?: number;
-    expectedParticipantCount?: number;
-    groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
-}>;
+export type BuildDistributedRunManifestStart =
+    | Pick<RallarBlackBoxDistributedUnscheduledRunManifest, 'startMode'>
+    | Pick<RallarBlackBoxDistributedScheduledRunManifest, 'startMode' | 'startDeadlineEpochMs'>;
+
+export type BuildDistributedRunManifestInput = BuildDistributedRunManifestFields & BuildDistributedRunManifestStart;
+
+export interface BuildDistributedRunManifestFields {
+    readonly distributedRunId: string;
+    readonly controlRunId: string;
+    /** Absent when the author gives the run no display name. */
+    readonly displayName?: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly recipes: readonly DistributedRecipeCatalogItem[];
+    readonly targetAgentIds: readonly string[];
+    readonly targetPolicyMode: DistributedRecipeTargetPolicyMode;
+    readonly rolePattern: DistributedRecipeRolePattern;
+    readonly ackTimeoutMs: number;
+    readonly barrier: RallarBlackBoxDistributedBarrierPolicy;
+    /** Absent when staging should accept however many agents the target policy resolves. */
+    readonly expectedParticipantCount?: number;
+    readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
+}
 
 export function buildDistributedRunManifest(
     input: BuildDistributedRunManifestInput
@@ -45,7 +53,9 @@ export function buildDistributedRunManifest(
         recipe: item.recipe,
         role: toRecipeRoleForPattern(input.rolePattern, index, input.recipes.length),
         profile: item.profiles[0],
-        required: true
+        required: true,
+        variables: {},
+        secretRefs: []
     } satisfies RallarBlackBoxDistributedRunRecipeSelection));
     const roles = toRolesForPattern(input.rolePattern, input.targetAgentIds);
     const targetPolicy = toTargetPolicy({
@@ -57,13 +67,12 @@ export function buildDistributedRunManifest(
     const useOrderedTargetRoles = input.targetPolicyMode === 'all-online-group-members' &&
         input.rolePattern !== 'all-agents';
     const roleAssignments = useOrderedTargetRoles
-        ? undefined
+        ? []
         : toRoleAssignmentsForPattern(input.rolePattern, input.targetAgentIds);
     const roleAssignmentPolicy = useOrderedTargetRoles
         ? toOrderedTargetRoleAssignmentPolicy(input.rolePattern)
         : undefined;
-
-    return {
+    const fields = {
         schemaVersion: 1,
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
@@ -71,14 +80,14 @@ export function buildDistributedRunManifest(
         group: input.group,
         recipes: recipeSelections,
         targetPolicy,
+        variables: {},
+        secretRefs: [],
         roleAssignments,
         roleAssignmentPolicy,
         ackTimeoutMs: input.ackTimeoutMs,
-        barrier: input.barrier,
-        startMode: input.startMode,
-        startDeadlineEpochMs: input.startMode === 'scheduled'
-            ? input.startDeadlineEpochMs
-            : undefined,
+        barrier: input.barrier
+    } as const;
+    const settings = {
         artifactPolicy: {
             retainArtifacts: true,
             includeDistributedMetadata: true,
@@ -92,35 +101,43 @@ export function buildDistributedRunManifest(
             rolePattern: input.rolePattern
         }
     };
+
+    return input.startMode === 'scheduled'
+        ? { ...fields, startMode: input.startMode, startDeadlineEpochMs: input.startDeadlineEpochMs, ...settings }
+        : { ...fields, startMode: input.startMode, ...settings };
 }
 
-function toTargetPolicy(
-    input: Readonly<{
-        mode: DistributedRecipeTargetPolicyMode;
-        agentIds: readonly string[];
-        roles: Readonly<Record<string, readonly string[]>>;
-        expectedParticipantCount?: number;
-    }>
-): RallarBlackBoxDistributedTargetPolicy {
+interface ToTargetPolicyInput {
+    readonly mode: DistributedRecipeTargetPolicyMode;
+    readonly agentIds: readonly string[];
+    readonly roles: Readonly<Record<string, readonly string[]>>;
+    /** Absent when staging should accept however many agents the target policy resolves. */
+    readonly expectedParticipantCount?: number;
+}
+
+function toTargetPolicy(input: ToTargetPolicyInput): RallarBlackBoxDistributedTargetPolicy {
     const expected = input.expectedParticipantCount && input.expectedParticipantCount > 0
         ? { expectedParticipantCount: Math.floor(input.expectedParticipantCount) }
         : {};
     if (input.mode === 'all-online-group-members') {
         return {
             mode: input.mode,
-            ...expected
+            ...expected,
+            includeOfflineExpectedAgents: false
         };
     }
     if (input.mode === 'role-map') {
         return {
             mode: input.mode,
             roles: input.roles,
-            ...expected
+            ...expected,
+            includeOfflineExpectedAgents: false
         };
     }
     return {
         mode: input.mode,
         agentIds: input.agentIds,
-        ...expected
+        ...expected,
+        includeOfflineExpectedAgents: false
     };
 }

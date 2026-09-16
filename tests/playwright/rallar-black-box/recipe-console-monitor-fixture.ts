@@ -319,18 +319,40 @@ function createDistributedRun(
             controlRunId: MONITOR_CONTROL_RUN_ID,
             displayName: 'Monitor deterministic later failure',
             group: GROUP,
-            recipes: [{ recipeId: MONITOR_FAILURE_RECIPE_ID, recipe: RECIPE, required: true }],
+            recipes: [{
+                recipeId: MONITOR_FAILURE_RECIPE_ID,
+                recipe: RECIPE,
+                required: true,
+                variables: {},
+                secretRefs: []
+            }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: participantCount
+                expectedParticipantCount: participantCount,
+                includeOfflineExpectedAgents: false
             },
             roleAssignments: agentIds.map((agentId) => ({
                 agentId,
                 role: agentId === SENDER_ID ? 'sender' : 'receiver',
                 recipeIds: [MONITOR_FAILURE_RECIPE_ID],
-                required: true
-            }))
+                required: true,
+                variables: {}
+            })),
+            variables: {},
+            secretRefs: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: commandLinks.map(([phase, agentId, offset]) => ({
             phase,

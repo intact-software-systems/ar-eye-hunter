@@ -203,7 +203,9 @@ describe('distributed recipes verdict', () => {
                         readyPeerCount: 1
                     }),
                     profile: 'rtc',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }]
             },
             commandLinks: [

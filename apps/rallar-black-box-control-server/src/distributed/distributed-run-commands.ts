@@ -37,7 +37,6 @@ interface DistributedRecipeTarget extends DistributedPhaseTarget {
     readonly selection: RallarBlackBoxDistributedRunRecipeSelection;
 }
 
-const DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS = 15_000;
 const BARRIER_RECIPE_KEY = 'ready';
 const CANCEL_RECIPE_KEY = 'run';
 const COMMAND_ID_FALLBACK_SEGMENT = 'segment';
@@ -116,11 +115,10 @@ export function toRecoveredDistributedCommandLinks(
     return recovered;
 }
 
-export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributedRunState): number {
-    const timeoutMs = distributedRun.manifest.barrier?.timeoutMs;
-    return typeof timeoutMs === 'number' && Number.isInteger(timeoutMs) && timeoutMs > 0
-        ? timeoutMs
-        : distributedRun.manifest.ackTimeoutMs ?? DEFAULT_DISTRIBUTED_BARRIER_TIMEOUT_MS;
+/** Absent when the manifest's barrier is disabled. */
+export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributedRunState): number | undefined {
+    const barrier = distributedRun.manifest.barrier;
+    return barrier.enabled ? barrier.timeoutMs : undefined;
 }
 
 function toDistributedStageCommand(target: DistributedRecipeTarget): RallarBlackBoxTestCommand {
@@ -174,7 +172,7 @@ function toRecipePhaseTargets(
 }
 
 function toRecoverableTargets(distributedRun: ControlDistributedRunState): readonly DistributedPhaseTarget[] {
-    const barrierEnabled = distributedRun.manifest.barrier?.enabled === true;
+    const barrierEnabled = distributedRun.manifest.barrier.enabled;
     return distributedRun.targetAgentIds.flatMap((agentId) => [
         ...toRecipeSelectionsForAgent(distributedRun, agentId).flatMap((selection) => [
             { distributedRun, phase: 'stage' as const, agentId, selection },
@@ -233,9 +231,7 @@ function toBarrierMetadata(distributedRun: ControlDistributedRunState): RallarBl
         event: 'barrier.ready',
         expectedAgentIds: [...distributedRun.targetAgentIds],
         timeoutMs: toDistributedBarrierTimeoutMs(distributedRun),
-        scheduledStartEpochMs: distributedRun.manifest.startMode === 'scheduled'
-            ? distributedRun.manifest.startDeadlineEpochMs
-            : undefined
+        scheduledStartEpochMs: toScheduledStartEpochMs(distributedRun)
     };
 }
 
@@ -247,4 +243,10 @@ function toDistributedCommandId(target: DistributedPhaseTarget, recipeKey: strin
         toCommandIdSegment(target.agentId, COMMAND_ID_FALLBACK_SEGMENT),
         toCommandIdSegment(recipeKey, COMMAND_ID_FALLBACK_SEGMENT)
     ].join('-');
+}
+
+/** Absent unless the manifest schedules its start. */
+export function toScheduledStartEpochMs(distributedRun: ControlDistributedRunState): number | undefined {
+    const manifest = distributedRun.manifest;
+    return manifest.startMode === 'scheduled' ? manifest.startDeadlineEpochMs : undefined;
 }

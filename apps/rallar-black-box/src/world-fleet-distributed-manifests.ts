@@ -237,7 +237,8 @@ function createWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFle
         ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
         barrier: { enabled: true, timeoutMs: DEFAULT_ACK_TIMEOUT_MS },
         startMode: 'manual',
-        expectedParticipantCount: WORLD_FLEET_AGENT_COUNT
+        expectedParticipantCount: WORLD_FLEET_AGENT_COUNT,
+        groupAssertions: []
     });
 
     return {

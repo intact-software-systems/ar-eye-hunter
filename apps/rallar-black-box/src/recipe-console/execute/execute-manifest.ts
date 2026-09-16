@@ -4,7 +4,7 @@ import type {
 import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import {
     validateDistributedRunManifest,
-    type DistributedRunManifestValidationResult
+    type DistributedRunManifestValidationIssue
 } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
@@ -16,7 +16,7 @@ export const EXECUTE_ACK_TIMEOUT_MS = 15_000;
 
 export type ExecuteManifestDraft = Readonly<{
     manifest: RallarBlackBoxDistributedRunManifest;
-    validation: DistributedRunManifestValidationResult;
+    validationIssues: readonly DistributedRunManifestValidationIssue[];
     rawJson: string;
     fingerprint: string;
 }>;
@@ -92,8 +92,10 @@ export function deriveExecuteManifest(
         targetPolicyMode: 'selected-agents',
         rolePattern: 'all-agents',
         ackTimeoutMs: EXECUTE_ACK_TIMEOUT_MS,
+        barrier: { enabled: false },
         startMode: 'manual',
-        expectedParticipantCount: selectedAgentIds.length
+        expectedParticipantCount: selectedAgentIds.length,
+        groupAssertions: []
     });
     return projectExecuteManifest(manifest);
 }
@@ -102,7 +104,7 @@ export function projectExecuteManifest(
 ): ExecuteManifestDraft {
     return {
         manifest,
-        validation: validateDistributedRunManifest(manifest),
+        validationIssues: validateDistributedRunManifest(manifest),
         rawJson: JSON.stringify(manifest, null, 2),
         fingerprint: executeManifestFingerprint(manifest)
     };
@@ -119,7 +121,9 @@ export function compareExecuteTargetResolution(
     }>
 ): ExecuteTargetResolutionComparison {
     const issues: ExecuteTargetResolutionIssue[] = [];
-    const selected = [...(input.manifest.targetPolicy.agentIds ?? [])];
+    const selected = input.manifest.targetPolicy.mode === 'selected-agents'
+        ? [...input.manifest.targetPolicy.agentIds]
+        : [];
     const resolved = [...input.resolution.targetAgentIds];
     const selectedSet = new Set(selected);
 

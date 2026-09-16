@@ -28,9 +28,9 @@ export function distributedRunManifestContractIssues(
     run: ControlDistributedRunSnapshot
 ): string[] {
     try {
-        const validation = validateDistributedRunManifest(run.manifest);
-        if (!validation.ok) {
-            const first = validation.errors[0];
+        const issues = validateDistributedRunManifest(run.manifest);
+        if (issues.length > 0) {
+            const first = issues[0];
             return [
                 first
                     ? `Distributed run manifest is invalid at ${first.path}: ${first.message}`

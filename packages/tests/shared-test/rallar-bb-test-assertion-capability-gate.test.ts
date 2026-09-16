@@ -77,14 +77,33 @@ function manifestWith(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxDistribut
             {
                 recipeId: recipe.recipeId,
                 required: true,
-                recipe
+                recipe,
+                variables: {},
+                secretRefs: []
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1
+            expectedParticipantCount: 1,
+            includeOfflineExpectedAgents: false
         },
-        startMode: 'manual'
+        startMode: 'manual',
+        schemaVersion: 1,
+        controlRunId: `gate-${recipe.recipeId}`,
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -126,8 +145,12 @@ describe('rallar-bb-test assertion capability gate', () => {
     it('blocks staging targets for old-capability agents with a named reason', () => {
         const resolution = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
-            agents: [agentWith({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY })],
-            nowEpochMs: 1_500
+            agents: [agentWith({
+                crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
+                messaging: FULL_MESSAGING_CAPABILITY
+            })],
+            nowEpochMs: 1_500,
+            staleAfterMs: 30_000
         });
 
         expect(resolution.targetAgentIds).toEqual([]);
@@ -153,15 +176,20 @@ describe('rallar-bb-test assertion capability gate', () => {
         const gated = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
             agents: [complete],
-            nowEpochMs: 1_500
+            nowEpochMs: 1_500,
+            staleAfterMs: 30_000
         });
         expect(gated.targetAgentIds).toEqual(['gate-agent']);
         expect(gated.blockers).toEqual([]);
 
         const baseline = resolveDistributedRunTargets({
             manifest: manifestWith(BASELINE_RECIPE),
-            agents: [agentWith({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY })],
-            nowEpochMs: 1_500
+            agents: [agentWith({
+                crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
+                messaging: FULL_MESSAGING_CAPABILITY
+            })],
+            nowEpochMs: 1_500,
+            staleAfterMs: 30_000
         });
         expect(baseline.targetAgentIds).toEqual(['gate-agent']);
         expect(baseline.blockers).toEqual([]);

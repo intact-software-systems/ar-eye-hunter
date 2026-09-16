@@ -127,20 +127,36 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             recipeId: 'health-only',
             recipe: recipe.recipe,
             profile: 'smoke',
-            required: true
+            required: true,
+            variables: {},
+            secretRefs: []
         }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
-            expectedParticipantCount: 2
+            expectedParticipantCount: 2,
+            includeOfflineExpectedAgents: false
         },
         roleAssignments: [
-            { agentId: 'agent-a', role: 'sender', required: true },
-            { agentId: 'agent-b', role: 'receiver', required: true }
+            { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
+            { agentId: 'agent-b', role: 'receiver', required: true, variables: {}, recipeIds: [] }
         ],
         metadata: {
             createdBy: 'alice'
-        }
+        },
+        variables: {},
+        secretRefs: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: []
     },
     commandLinks: [
         { phase: 'stage', agentId: 'agent-a', commandId: 'stage-a', recipeId: 'health-only', queuedAtEpochMs: 1_110 },

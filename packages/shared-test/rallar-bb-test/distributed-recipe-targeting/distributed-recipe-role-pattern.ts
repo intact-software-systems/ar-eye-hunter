@@ -39,16 +39,17 @@ export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
 export function toRoleAssignmentsForPattern(
     pattern: DistributedRecipeRolePattern,
     agentIds: readonly string[]
-): readonly RallarBlackBoxDistributedRoleAssignment[] | undefined {
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const roles = toRolesForPattern(pattern, agentIds);
-    const assignments = Object.entries(roles).flatMap(([role, ids]) =>
+    return Object.entries(roles).flatMap(([role, ids]) =>
         ids.map((agentId) => ({
             role,
             agentId,
-            required: true
+            required: true,
+            recipeIds: [],
+            variables: {}
         }))
     );
-    return assignments.length > 0 ? assignments : undefined;
 }
 
 export function toOrderedTargetRoleAssignmentPolicy(

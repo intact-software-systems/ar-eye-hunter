@@ -675,7 +675,9 @@ describe('rallar-bb-test capability and schema contract', () => {
         });
 
         expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, {
+            schemaVersion: 1,
             distributedRunId: 'distributed-schema-run',
+            controlRunId: 'distributed-schema-run',
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
@@ -685,19 +687,34 @@ describe('rallar-bb-test capability and schema contract', () => {
                 {
                     recipeId: 'health-only',
                     role: 'all-agents',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }
             ],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2
+                expectedParticipantCount: 2,
+                includeOfflineExpectedAgents: false
             },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
             ackTimeoutMs: 5_000,
             barrier: {
                 enabled: true,
                 timeoutMs: 5_000
             },
-            startMode: 'manual'
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         });
 
         const spec = controlOpenApiSpec(new Request('http://localhost:5180/api/openapi.json')) as {
@@ -733,10 +750,27 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
         const command = { kind: 'recipe.load', recipe };
         const manifest = {
+            schemaVersion: 1,
             distributedRunId: 'published-schema',
+            controlRunId: 'published-schema',
             group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe }],
-            targetPolicy: { mode: 'all-online-group-members' }
+            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe, variables: {}, secretRefs: [] }],
+            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         };
         expectValid(publishedCommandSchema, command);
         expectValid(publishedManifestSchema, manifest);

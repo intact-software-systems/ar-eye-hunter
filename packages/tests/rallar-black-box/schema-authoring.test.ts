@@ -67,16 +67,33 @@ describe('schema authoring helpers', () => {
         const manifestValidation = validateSchemaAuthoringValue('distributed-run-manifest', {
             schemaVersion: 1,
             distributedRunId: 'dist-authoring',
+            controlRunId: 'dist-authoring',
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: recipe.recipeId, recipe }],
+            recipes: [{ recipeId: recipe.recipeId, recipe, variables: {}, secretRefs: [], required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-a']
-            }
+                agentIds: ['agent-a'],
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         });
 
         expect(manifestValidation.ok).toBe(true);

@@ -31,14 +31,31 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     schemaVersion: 1,
                     recipeId: 'health-recipe',
                     commands: [{ kind: 'health', commandId: 'health' }]
-                }
+                },
+                variables: {},
+                secretRefs: []
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1
+            expectedParticipantCount: 1,
+            includeOfflineExpectedAgents: false
         },
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 

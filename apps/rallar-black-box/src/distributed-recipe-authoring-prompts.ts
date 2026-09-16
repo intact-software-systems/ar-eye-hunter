@@ -180,15 +180,31 @@ const DISTRIBUTED_RUN_MANIFEST_SKELETON = {
             recipeId: '{{recipeId}}',
             role: '{{optional-role}}',
             required: true,
-            recipe: BROWSER_AGENT_RECIPE_SKELETON
+            recipe: BROWSER_AGENT_RECIPE_SKELETON,
+            variables: {},
+            secretRefs: []
         }
     ],
     targetPolicy: {
         mode: 'all-online-group-members',
-        expectedParticipantCount: 2
+        expectedParticipantCount: 2,
+        includeOfflineExpectedAgents: false
     },
+    variables: {},
+    secretRefs: [],
+    roleAssignments: [],
     ackTimeoutMs: 30_000,
-    startMode: 'manual'
+    barrier: { enabled: false },
+    startMode: 'manual',
+    artifactPolicy: {
+        retainArtifacts: true,
+        includeEventJsonl: true,
+        includeResultJsonl: true,
+        includeFailureBundle: true,
+        includeDistributedMetadata: true
+    },
+    groupAssertions: [],
+    metadata: {}
 };
 
 export function distributedRecipePromptTemplateById(
@@ -294,6 +310,8 @@ export function renderDistributedRecipePromptTemplate(
         '',
         'Hard constraints:',
         '- Use schemaVersion 1 for distributed manifests and inline browser-agent recipes.',
+        '- Write every manifest author setting explicitly, as the manifest skeleton does: the schema rejects a ' +
+        'manifest that omits one.',
         '- Use stable distributedRunId, recipeId, and commandId values.',
         '- Prefer targetPolicy.mode all-online-group-members for whole-group checks and role-map for sender-only commands.',
         '- Include applicationId, workspaceId, groupId, roomRef, and roomId where group-scoped WS or RTC delivery needs them.',

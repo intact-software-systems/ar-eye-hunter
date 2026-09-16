@@ -5,13 +5,12 @@ import type {
     ControlDistributedRunCommandPhase,
     ControlDistributedRunSnapshot
 } from '../control-snapshots.ts';
+import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } from '../distributed-run-validation.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
-    type RallarBlackBoxDistributedRoleAssignment,
-    type RallarBlackBoxDistributedRunError,
+    type RallarBlackBoxDistributedResolvedRoleAssignment,
     type RallarBlackBoxDistributedRunItemState,
-    type RallarBlackBoxDistributedRunManifest,
     type RallarBlackBoxDistributedTargetBlocker,
     type RallarBlackBoxDistributedTargetBlockerStatus,
     type RallarBlackBoxDistributedTargetResolution
@@ -26,10 +25,10 @@ import {
     type RallarBlackBoxDistributedGroupAssertionResult,
     type RallarBlackBoxGroupAssertionAgentRow
 } from '../distributed/group-assertions.ts';
+import type { RallarBlackBoxTestError } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     decodeArrayItems,
-    isAbsentOrBoolean,
     isAbsentOrFiniteNumber,
     isAbsentOrNonEmptyText,
     isFiniteNumber,
@@ -140,10 +139,6 @@ const OPTIONAL_PHASE_TIMESTAMPS = [
     'completedAtEpochMs'
 ] as const;
 
-/**
- * The manifest inside a snapshot is the manifest the control server validated when the run was
- * created; this decoder narrows it as an object and leaves its field contract to the manifest owner.
- */
 export function decodeControlDistributedRunSnapshot(
     value: unknown
 ): Either<string, ControlDistributedRunSnapshot> {
@@ -153,7 +148,6 @@ export function decodeControlDistributedRunSnapshot(
     const issue = toFirstDecodeIssue([
         [isNonEmptyText(value.distributedRunId), 'distributedRunId must be a non-empty string'],
         [isNonEmptyText(value.controlRunId), 'controlRunId must be a non-empty string'],
-        [isJsonRecordValue(value.manifest), 'manifest must be a JSON object'],
         [isOneOf(value.state, RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES), 'state must be a distributed run state'],
         [isFiniteNumber(value.createdAtEpochMs), 'createdAtEpochMs must be a finite number'],
         [isFiniteNumber(value.updatedAtEpochMs), 'updatedAtEpochMs must be a finite number'],
@@ -168,8 +162,13 @@ export function decodeControlDistributedRunSnapshot(
     if (!isAbsentOrRunError(value.error)) {
         return Either.ofLeft('error must carry a code and message when present');
     }
+    const manifest = decodeDistributedRunManifest(value.manifest)
+        .mapLeft((issues) =>
+            `manifest is not a valid distributed run manifest:\n${toDistributedRunManifestValidationText(issues)}`
+        );
     const targetResolution = decodeOptionalTargetResolution(value.targetResolution);
     const entryIssue = [
+        manifest,
         decodeArrayItems(value.commandLinks, 'commandLinks', decodeCommandLink),
         decodeDistributedRunRollup(value.rollup),
         targetResolution
@@ -179,7 +178,7 @@ export function decodeControlDistributedRunSnapshot(
     }
     return Either.ofRight({
         ...value,
-        manifest: value.manifest as RallarBlackBoxDistributedRunManifest,
+        manifest: manifest.right,
         ...targetResolution.right
     } as ControlDistributedRunSnapshot);
 }
@@ -382,26 +381,33 @@ function decodeTargetResolutionSummaryChecks(summary: unknown): readonly (readon
 function decodeRoleAssignment(
     value: unknown,
     path: string
-): Either<string, RallarBlackBoxDistributedRoleAssignment> {
+): Either<string, RallarBlackBoxDistributedResolvedRoleAssignment> {
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const issue = toFirstDecodeIssue([
-        [isNonEmptyText(value.role), `${path}.role must be a non-empty string`],
-        [isNonEmptyText(value.agentId), `${path}.agentId must be a non-empty string`],
-        [
-            value.recipeIds === undefined || isTextArray(value.recipeIds),
-            `${path}.recipeIds must be an array of strings when present`
-        ],
-        [isAbsentOrBoolean(value.required), `${path}.required must be a boolean when present`],
-        [
-            value.variables === undefined || isJsonRecordValue(value.variables),
-            `${path}.variables must be a JSON object when present`
-        ]
-    ]);
-    return issue === undefined
-        ? Either.ofRight(value as RallarBlackBoxDistributedRoleAssignment)
-        : Either.ofLeft(issue);
+    const { role, agentId, required, recipeIds, variables } = value;
+    if (!isNonEmptyText(role)) {
+        return Either.ofLeft(`${path}.role must be a non-empty string`);
+    }
+    if (!isNonEmptyText(agentId)) {
+        return Either.ofLeft(`${path}.agentId must be a non-empty string`);
+    }
+    if (recipeIds !== undefined && !isTextArray(recipeIds)) {
+        return Either.ofLeft(`${path}.recipeIds must be an array of strings when present`);
+    }
+    if (typeof required !== 'boolean') {
+        return Either.ofLeft(`${path}.required must be a boolean`);
+    }
+    if (variables !== undefined && !isJsonRecordValue(variables)) {
+        return Either.ofLeft(`${path}.variables must be a JSON object when present`);
+    }
+    return Either.ofRight({
+        role,
+        agentId,
+        required,
+        ...(recipeIds === undefined ? {} : { recipeIds }),
+        ...(variables === undefined ? {} : { variables })
+    });
 }
 
 function decodeTargetBlocker(
@@ -411,25 +417,28 @@ function decodeTargetBlocker(
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const identity = value.identity === undefined ? undefined : decodeControlAgentIdentity(value.identity);
-    const issue = toFirstDecodeIssue([
-        [isNonEmptyText(value.agentId), `${path}.agentId must be a non-empty string`],
-        [isOneOf(value.status, TARGET_BLOCKER_STATUSES), `${path}.status must be a target blocker status`],
-        [typeof value.reason === 'string', `${path}.reason must be a string`],
-        [
-            value.identity === undefined || identity !== undefined,
-            `${path}.identity must be a control agent identity when present`
-        ]
-    ]);
-    if (issue !== undefined) {
-        return Either.ofLeft(issue);
+    const { agentId, status, reason } = value;
+    if (!isNonEmptyText(agentId)) {
+        return Either.ofLeft(`${path}.agentId must be a non-empty string`);
     }
-    return Either.ofRight(
-        (identity === undefined ? value : { ...value, identity }) as RallarBlackBoxDistributedTargetBlocker
-    );
+    if (!isOneOf(status, TARGET_BLOCKER_STATUSES)) {
+        return Either.ofLeft(`${path}.status must be a target blocker status`);
+    }
+    if (typeof reason !== 'string') {
+        return Either.ofLeft(`${path}.reason must be a string`);
+    }
+    if (status === 'agent-without-identity') {
+        return value.identity === undefined
+            ? Either.ofRight({ agentId, status, reason })
+            : Either.ofLeft(`${path}.identity must be absent for an agent without identity`);
+    }
+    const identity = decodeControlAgentIdentity(value.identity);
+    return identity === undefined
+        ? Either.ofLeft(`${path}.identity must be a control agent identity`)
+        : Either.ofRight({ agentId, status, reason, identity });
 }
 
-function isAbsentOrRunError(value: unknown): value is RallarBlackBoxDistributedRunError | undefined {
+function isAbsentOrRunError(value: unknown): value is RallarBlackBoxTestError | undefined {
     return value === undefined ||
         (isJsonRecordValue(value) && typeof value.code === 'string' && typeof value.message === 'string');
 }

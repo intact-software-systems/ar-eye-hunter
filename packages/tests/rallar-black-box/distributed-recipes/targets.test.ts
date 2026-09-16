@@ -126,7 +126,8 @@ describe('distributed recipes targets', () => {
                     capabilities: {
                         crdt: {
                             supported: true,
-                            transports: ['ws']
+                            transports: ['ws'],
+                            apiBaseUrlConfigured: true
                         },
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
@@ -202,7 +203,8 @@ describe('distributed recipes targets', () => {
                     capabilities: {
                         crdt: {
                             supported: true,
-                            transports: ['ws']
+                            transports: ['ws'],
+                            apiBaseUrlConfigured: true
                         },
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
@@ -258,7 +260,8 @@ describe('distributed recipes targets', () => {
                     capabilities: {
                         crdt: {
                             supported: true,
-                            transports: ['ws']
+                            transports: ['ws'],
+                            apiBaseUrlConfigured: true
                         },
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
@@ -294,24 +297,23 @@ describe('distributed recipes targets', () => {
                 targetPolicyMode: 'selected-agents',
                 rolePattern: 'all-agents',
                 ackTimeoutMs: 15_000,
+                barrier: { enabled: false },
                 startMode: 'manual',
-                expectedParticipantCount: targetAgentIds.length || undefined
+                expectedParticipantCount: targetAgentIds.length || undefined,
+                groupAssertions: []
             });
         };
 
         const rtcManifest = manifestFor('rtc');
         const wsManifest = manifestFor('ws');
 
-        expect(rtcManifest.targetPolicy.agentIds).toEqual([]);
-        expect(validateDistributedRunManifest(rtcManifest)).toMatchObject({
-            ok: false,
-            errors: [expect.objectContaining({
-                source: 'contract',
-                path: '$.targetPolicy.agentIds'
-            })]
-        });
-        expect(wsManifest.targetPolicy.agentIds).toEqual(['agent-a']);
-        expect(validateDistributedRunManifest(wsManifest).ok).toBe(true);
+        expect(rtcManifest.targetPolicy).toMatchObject({ mode: 'selected-agents', agentIds: [] });
+        expect(validateDistributedRunManifest(rtcManifest)).toEqual([expect.objectContaining({
+            source: 'contract',
+            path: '$.targetPolicy.agentIds'
+        })]);
+        expect(wsManifest.targetPolicy).toMatchObject({ mode: 'selected-agents', agentIds: ['agent-a'] });
+        expect(validateDistributedRunManifest(wsManifest)).toEqual([]);
     });
 
     it('derives explicit CRDT transports through every nested recipe container', () => {
@@ -382,8 +384,10 @@ describe('distributed recipes targets', () => {
             targetPolicyMode: 'role-map',
             rolePattern: 'sender-receiver',
             ackTimeoutMs: 5_000,
+            barrier: { enabled: true, timeoutMs: 5_000 },
             startMode: 'manual',
-            expectedParticipantCount: 2
+            expectedParticipantCount: 2,
+            groupAssertions: []
         });
 
         expect(manifest.targetPolicy).toMatchObject({
@@ -395,10 +399,57 @@ describe('distributed recipes targets', () => {
             }
         });
         expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
-        expect(manifest.roleAssignments?.map((assignment) => [assignment.agentId, assignment.role])).toEqual([
+        expect(manifest.roleAssignments.map((assignment) => [assignment.agentId, assignment.role])).toEqual([
             ['agent-a', 'sender'],
             ['agent-b', 'receiver']
         ]);
+        expect(validateDistributedRunManifest(manifest)).toEqual([]);
+    });
+
+    it('writes every manifest author setting explicitly', () => {
+        const manifest = buildDistributedRunManifest({
+            distributedRunId: 'dist-explicit',
+            controlRunId: 'run-explicit',
+            group: {
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'bb-group'
+            },
+            recipes: [recipe],
+            targetAgentIds: ['agent-a'],
+            targetPolicyMode: 'selected-agents',
+            rolePattern: 'all-agents',
+            ackTimeoutMs: 5_000,
+            barrier: { enabled: false },
+            startMode: 'scheduled',
+            startDeadlineEpochMs: 20_000,
+            expectedParticipantCount: 1,
+            groupAssertions: []
+        });
+
+        expect(manifest).toMatchObject({
+            schemaVersion: 1,
+            controlRunId: 'run-explicit',
+            recipes: [{ recipeId: recipe.recipe.recipeId, variables: {}, secretRefs: [], required: true }],
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 5_000,
+            barrier: { enabled: false },
+            startMode: 'scheduled',
+            startDeadlineEpochMs: 20_000,
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: { createdBy: 'rallar-black-box-spa', rolePattern: 'all-agents' }
+        });
+        expect(validateDistributedRunManifest(manifest)).toEqual([]);
     });
 
     it('builds all-online world-fleet manifests with ordered server role assignment', () => {
@@ -415,15 +466,18 @@ describe('distributed recipes targets', () => {
             targetPolicyMode: 'all-online-group-members',
             rolePattern: 'one-sender-many-receivers',
             ackTimeoutMs: 5_000,
+            barrier: { enabled: false },
             startMode: 'manual',
-            expectedParticipantCount: 50
+            expectedParticipantCount: 50,
+            groupAssertions: []
         });
 
         expect(manifest.targetPolicy).toEqual({
             mode: 'all-online-group-members',
-            expectedParticipantCount: 50
+            expectedParticipantCount: 50,
+            includeOfflineExpectedAgents: false
         });
-        expect(manifest.roleAssignments).toBeUndefined();
+        expect(manifest.roleAssignments).toEqual([]);
         expect(manifest.roleAssignmentPolicy).toEqual({
             mode: 'ordered-targets',
             pattern: 'one-sender-many-receivers',
@@ -498,7 +552,8 @@ describe('distributed recipes targets', () => {
                     ...distributedRun.manifest,
                     targetPolicy: {
                         mode: 'all-online-group-members',
-                        expectedParticipantCount: 2
+                        expectedParticipantCount: 2,
+                        includeOfflineExpectedAgents: false
                     }
                 },
                 targetResolution: loadedRunResolution

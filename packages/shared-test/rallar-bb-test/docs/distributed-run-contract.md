@@ -16,56 +16,76 @@ symbols, but shared distributed-run behavior should start in this package.
 `RallarBlackBoxDistributedRunManifest` is the JSON shape used to describe one
 distributed recipe test independent of React component state.
 
-Required fields:
+Every author setting is required and written explicitly: a manifest that omits
+one is rejected by the schema with `Missing required property ...`, and nothing
+fills it in with a default. Required fields:
 
-- `distributedRunId`
-- `group.applicationId`
-- `group.workspaceId`
-- `group.groupId`
-- `recipes`
-- `targetPolicy`
-
-Important optional fields:
-
-- `controlRunId`: link to the lower-level control-server run.
-- `variables` and `secretRefs`: shared run-level inputs.
-- `recipes[].recipeId` or `recipes[].recipe`: catalog recipe reference or
-  inline `rallar-bb-test` recipe.
-- `recipes[].role`, `profile`, `variables`, `secretRefs`, and `required`.
-- `targetPolicy.mode`: `all-online-group-members`, `selected-agents`, or
-  `role-map`.
-- `roleAssignments`: per-agent role and recipe assignment.
-- `roleAssignmentPolicy`: optional dynamic role derivation. The first policy is
-  `{ mode: "ordered-targets", orderBy: "agent-id" }` with patterns
-  `all-agents`, `sender-receiver`, `one-sender-many-receivers`, or
-  `three-browser-matrix`.
+- `schemaVersion: 1`, `distributedRunId`, and `controlRunId` (the lower-level
+  control-server run; write the `distributedRunId` when the run has no separate
+  control run).
+- `group.applicationId`, `group.workspaceId`, and `group.groupId`.
+- `recipes`: at least one selection. Each selection writes `recipeId`,
+  `variables` (`{}` when none), `secretRefs` (`[]` when none), and `required`.
+- `targetPolicy`: a tagged union on `mode`. Every mode writes
+  `includeOfflineExpectedAgents`; `selected-agents` also writes `agentIds`, and
+  `role-map` also writes `roles`. A policy carrying the other mode's field is
+  rejected.
+- `variables` and `secretRefs`: shared run-level inputs (`{}` and `[]` when none).
+- `roleAssignments`: per-agent role and recipe assignment (`[]` when roles come
+  from `targetPolicy.roles` or a pattern). Each assignment writes `role`,
+  `agentId`, `recipeIds` (`[]` when the agent runs every selection for its role),
+  `required`, and `variables`.
 - `ackTimeoutMs`: readiness/ACK timeout before the run is considered failed or
   timed out.
-- `barrier`: optional start-synchronization phase. When `enabled` is true, the
-  control server queues one `barrier` command per target after all stage ACKs
-  have passed and waits for `barrier.ready` evidence before the run can start.
-  `barrier.timeoutMs` defaults to `ackTimeoutMs` or 15 seconds.
-- `startMode`: `manual`, `auto-after-ready`, or `scheduled`.
-- `startDeadlineEpochMs`: required when `startMode` is `scheduled`.
-- `artifactPolicy`: event JSONL, result JSONL, failure bundle, and distributed
-  metadata retention preferences.
-- `groupAssertions`: optional coordinator-evaluated invariants over the
-  collected evidence of every targeted agent. See "Group Assertions" below.
+- `barrier`: `{ "enabled": false }`, or `{ "enabled": true, "timeoutMs": ... }`
+  for the start-synchronization phase. When enabled, the control server queues
+  one `barrier` command per target after all stage ACKs have passed and waits for
+  `barrier.ready` evidence for `timeoutMs` before the run can start. A disabled
+  barrier carries no `timeoutMs`.
+- `startMode`: `manual`, `auto-after-ready`, or `scheduled`. Only `scheduled`
+  carries `startDeadlineEpochMs`, and it must.
+- `artifactPolicy`: `retainArtifacts`, `includeEventJsonl`, `includeResultJsonl`,
+  `includeFailureBundle`, and `includeDistributedMetadata`.
+- `groupAssertions`: coordinator-evaluated invariants over the collected
+  evidence of every targeted agent (`[]` when none). See "Group Assertions" below.
+- `metadata`: free-form author metadata (`{}` when none).
 
-Use `validateDistributedRunManifestContract(manifest)` after JSON Schema
-validation for domain checks such as:
+Fields that stay optional, each absent only with the stated meaning:
 
-- recipe selection must contain `recipeId` or an inline `recipe`
+- `displayName` and `description`: absent when the author gives the run none.
+- `recipes[].recipe`: absent when the selection references a catalog recipe the
+  agent loads by `recipeId`.
+- `recipes[].role`: absent when the recipe runs on every targeted agent.
+- `recipes[].profile`: absent when the selection names no catalog profile.
+- `targetPolicy.expectedParticipantCount`: absent when staging accepts however
+  many agents the policy resolves.
+- `roleAssignmentPolicy`: absent when roles come from `targetPolicy.roles` or
+  `roleAssignments`. When present it writes `mode: "ordered-targets"`, a
+  `pattern` (`all-agents`, `sender-receiver`, `one-sender-many-receivers`, or
+  `three-browser-matrix`), and `orderBy: "agent-id"`.
+- `artifactPolicy.retentionDays`: absent when the author requests no retention
+  period.
+
+Use `decodeDistributedRunManifest(value)` from `distributed-run-validation.ts`
+to decode JSON: it runs the schema, then
+`validateDistributedRunManifestContract(manifest)` for domain checks such as:
+
+- recipe selection `recipeId` must be a non-empty string
 - `selected-agents` requires at least one agent ID
 - `role-map` requires roles or role assignments
-- scheduled runs require `startDeadlineEpochMs`
+- only the policy mode that owns `agentIds` or `roles` may carry it
+- scheduled runs require `startDeadlineEpochMs`, and only they accept it
 - ACK timeout and expected participant count must be positive integers
-- barrier timeout must be a positive integer when supplied
+- an enabled barrier requires a positive integer `timeoutMs`; a disabled one
+  accepts none
 - group assertion IDs must be unique; sources must reference a manifest recipe
   key (and, for inline recipes, an authored `commandId`); `scope.role` must be
   a declared role unless a role-assignment pattern policy derives roles;
   `countMatching` needs at least one bound and `allEqualWithin` a tolerance
   `>= 0`; `minParticipants` must be an integer `>= 1`
+
+`validateDistributedRunManifest(manifest)` returns the same issues for an
+already typed manifest, empty when it is valid.
 
 ## Lifecycle States
 
@@ -431,7 +451,10 @@ Distributed run manifests should include `schemaVersion: 1`. Every inline
 inside commands. Missing or unsupported versions fail validation before dispatch;
 no automatic conversion or saved-recipe migration is provided.
 
-Adding optional manifest fields or new artifact policy flags is compatible.
+Author settings are required, so a manifest written before a setting became
+required stops validating until it writes that setting explicitly. Adding a new
+author setting is therefore a contract change: regenerate the checked-in
+manifests and update fixtures, examples, and prompt templates in the same change.
 
 Changing lifecycle state names, target policy modes, start modes, or rollup
 semantics is a contract change and should update this document, schema tests,

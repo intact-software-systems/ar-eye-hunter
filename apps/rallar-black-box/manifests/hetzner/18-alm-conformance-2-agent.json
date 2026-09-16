@@ -1647,7 +1647,9 @@
       },
       "role": "sender",
       "profile": "alm",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     },
     {
       "recipeId": "alm-conformance-receiver",
@@ -2770,7 +2772,9 @@
       },
       "role": "receiver",
       "profile": "alm",
-      "required": true
+      "required": true,
+      "variables": {},
+      "secretRefs": []
     }
   ],
   "targetPolicy": {
@@ -2783,18 +2787,25 @@
         "controller-02"
       ]
     },
-    "expectedParticipantCount": 2
+    "expectedParticipantCount": 2,
+    "includeOfflineExpectedAgents": false
   },
+  "variables": {},
+  "secretRefs": [],
   "roleAssignments": [
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true
+      "required": true,
+      "recipeIds": [],
+      "variables": {}
     }
   ],
   "ackTimeoutMs": 30000,
@@ -2810,6 +2821,7 @@
     "includeResultJsonl": true,
     "includeFailureBundle": true
   },
+  "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",
     "rolePattern": "sender-receiver",

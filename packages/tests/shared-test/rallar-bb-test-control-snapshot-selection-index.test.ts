@@ -268,8 +268,8 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...resolution.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true },
-                            { agentId: agent, role: 'manifest-later', required: true }
+                            { agentId: agent, role: 'manifest-first', required: true, variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', required: true, variables: {}, recipeIds: [] }
                         ]
                     },
                     targetResolution: targetResolution(agent, [
@@ -282,8 +282,8 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...manifest.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true },
-                            { agentId: agent, role: 'manifest-later', required: true }
+                            { agentId: agent, role: 'manifest-first', required: true, variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', required: true, variables: {}, recipeIds: [] }
                         ]
                     }
                 },
@@ -351,7 +351,9 @@ describe('control snapshot selection index', () => {
                     roleAssignments: [{
                         agentId: agent,
                         role: 'manifest-fallback',
-                        required: true
+                        required: true,
+                        variables: {},
+                        recipeIds: []
                     }]
                 },
                 targetResolution: targetResolution(
@@ -690,7 +692,23 @@ function distributedRun(
                 groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] }
+            targetPolicy: { mode: 'selected-agents', agentIds: [], includeOfflineExpectedAgents: false },
+            schemaVersion: 1,
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         state,
         createdAtEpochMs: updatedAtEpochMs,

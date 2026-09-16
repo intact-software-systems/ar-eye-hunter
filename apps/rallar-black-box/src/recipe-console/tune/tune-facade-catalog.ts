@@ -145,6 +145,8 @@ function manifestSummaryProjection(
     facade: AnalyzeTuneArtifactFacade
 ): RallarBlackBoxDistributedRunManifest {
     const summary = facade.manifestSummary;
+    // The bounded summary retains no ACK timeout, barrier, variables or policies; Tune reads this projection as a
+    // partial manifest whose unretained author settings stay unset, and its barrier knob stays blocked.
     return {
         schemaVersion: 1,
         distributedRunId: summary.distributedRunId,
@@ -157,8 +159,9 @@ function manifestSummaryProjection(
             mode: summary.targetPolicy.mode,
             expectedParticipantCount: summary.targetPolicy.expectedParticipantCount,
             agentIds: facade.distributedRun.targetAgentIds.entries
-        }
-    };
+        },
+        barrier: { enabled: false }
+    } as unknown as RallarBlackBoxDistributedRunManifest;
 }
 
 function facadeSnapshot(

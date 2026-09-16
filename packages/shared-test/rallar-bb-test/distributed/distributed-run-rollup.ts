@@ -1,10 +1,10 @@
 import type {
     RallarBlackBoxDistributedParticipantResult,
     RallarBlackBoxDistributedRecipeResult,
-    RallarBlackBoxDistributedRunError,
     RallarBlackBoxDistributedRunItemState,
     RallarBlackBoxDistributedRunState
 } from '../distributed-run.ts';
+import type { RallarBlackBoxTestError } from '../rallar-black-box-test-contracts.ts';
 import type { RallarBlackBoxDistributedGroupAssertionResult } from './group-assertions.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES = [
@@ -28,7 +28,7 @@ export type RallarBlackBoxDistributedRunRollupFailure = Readonly<{
     key: string;
     state: RallarBlackBoxDistributedRunItemState;
     required: boolean;
-    error?: RallarBlackBoxDistributedRunError;
+    error?: RallarBlackBoxTestError;
 }>;
 
 export type RallarBlackBoxDistributedRunRollup = Readonly<{

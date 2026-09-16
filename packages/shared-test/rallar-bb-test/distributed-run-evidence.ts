@@ -1,4 +1,3 @@
-import type { ControlDistributedRunSnapshot } from './control-snapshots.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 import type {
     DistributedRunArtifactValidationStatus,
@@ -7,10 +6,7 @@ import type {
     DistributedRunFailureRow,
     DistributedRunTimelineItem
 } from './distributed-run-observation/distributed-run-row-contracts.ts';
-import type {
-    RallarBlackBoxDistributedRoleAssignment,
-    RallarBlackBoxDistributedRunRecipeSelection
-} from './distributed-run.ts';
+import type { RallarBlackBoxDistributedRunRecipeSelection } from './distributed-run.ts';
 
 export type DistributedRunFailureEvidenceDestinationKind =
     | 'agent'
@@ -38,14 +34,6 @@ export function distributedRunRecipeSelectionKey(
     return cleanRecipeSelectionPart(selection.recipeId) ??
         cleanRecipeSelectionPart(selection.recipe?.recipeId) ??
         cleanRecipeSelectionPart(selection.role);
-}
-export function distributedRunExpectedAgentIdsForRecipe(
-    distributedRun: ControlDistributedRunSnapshot,
-    selection: RallarBlackBoxDistributedRunRecipeSelection
-): readonly string[] {
-    return distributedRun.targetAgentIds.filter((agentId) =>
-        distributedRecipeSelectionsForAgent(distributedRun, agentId).includes(selection)
-    );
 }
 export function deriveDistributedRunFailureEvidenceDestinations(
     input: Readonly<{
@@ -187,63 +175,6 @@ export function deriveDistributedRunFailureEvidenceDestinations(
         });
     }
     return destinations;
-}
-function distributedRecipeSelectionsForAgent(
-    distributedRun: ControlDistributedRunSnapshot,
-    agentId: string
-): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
-    const assignments = distributedRecipeRoleAssignmentsForAgent(distributedRun, agentId);
-    const assignedRecipeIds = new Set(assignments
-        .flatMap((assignment) => assignment.recipeIds ?? []));
-    const roles = distributedRecipeRolesForAgent(distributedRun, agentId);
-    const selections = distributedRun.manifest.recipes.filter((selection) => {
-        const recipeId = distributedRunRecipeSelectionKey(selection);
-        if (assignedRecipeIds.size > 0 && recipeId && assignedRecipeIds.has(recipeId)) {
-            return true;
-        }
-        if (selection.role) {
-            return roles.has(selection.role);
-        }
-        return assignedRecipeIds.size === 0;
-    });
-    return selections.length > 0
-        ? selections
-        : distributedRun.manifest.recipes.filter((selection) => !selection.role);
-}
-function distributedRecipeRolesForAgent(
-    distributedRun: ControlDistributedRunSnapshot,
-    agentId: string
-): ReadonlySet<string> {
-    const roles = new Set<string>();
-    const resolvedAssignments = distributedRun.targetResolution?.roleAssignments;
-    if (resolvedAssignments) {
-        resolvedAssignments.forEach((assignment) => {
-            if (assignment.agentId === agentId) {
-                roles.add(assignment.role);
-            }
-        });
-        return roles;
-    }
-    Object.entries(distributedRun.manifest.targetPolicy.roles ?? {}).forEach(([role, agentIds]) => {
-        if (agentIds.includes(agentId)) {
-            roles.add(role);
-        }
-    });
-    (distributedRun.manifest.roleAssignments ?? []).forEach((assignment) => {
-        if (assignment.agentId === agentId) {
-            roles.add(assignment.role);
-        }
-    });
-    return roles;
-}
-function distributedRecipeRoleAssignmentsForAgent(
-    distributedRun: ControlDistributedRunSnapshot,
-    agentId: string
-): readonly RallarBlackBoxDistributedRoleAssignment[] {
-    const assignments = distributedRun.targetResolution?.roleAssignments ??
-        distributedRun.manifest.roleAssignments ??
-        [];
-    return assignments.filter((assignment) => assignment.agentId === agentId);
 }
 function compositeDrilldownMatchesFailure(
     drilldown: DistributedRunCompositeDrilldown,

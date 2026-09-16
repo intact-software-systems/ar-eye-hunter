@@ -133,7 +133,7 @@ describe('distributed recipes history', () => {
                     ...distributedRun.manifest.group,
                     groupId: 'other-group'
                 },
-                recipes: [{ recipeId: 'other-recipe', profile: 'regression' }],
+                recipes: [{ recipeId: 'other-recipe', profile: 'regression', variables: {}, secretRefs: [], required: true }],
                 metadata: {
                     createdBy: 'bob'
                 }

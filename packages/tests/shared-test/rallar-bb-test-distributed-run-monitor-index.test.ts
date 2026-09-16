@@ -100,7 +100,8 @@ describe('distributed run monitor indexed derivation', () => {
                     : index % 3 === 1
                     ? []
                     : ['unknown:recipe|界'],
-                required: true
+                required: true,
+                variables: {}
             })
         );
         const distributedRun: ControlDistributedRunSnapshot = {
@@ -240,7 +241,9 @@ describe('distributed run monitor indexed derivation', () => {
                 roleAssignments: agentIds.map((agentId) => ({
                     agentId,
                     role,
-                    recipeIds: []
+                    recipeIds: [],
+                    required: true,
+                    variables: {}
                 }))
             }
         };
@@ -281,20 +284,27 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'manifest-role',
                     role: 'role:manifest|界',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: 'resolved-role',
                     role: 'role:resolved|界',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: 'unroled',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }],
                 roleAssignments: [{
                     agentId: 'agent:duplicate|\u202E界',
                     role: 'role:manifest|界',
                     recipeIds: ['manifest-role'],
-                    required: true
+                    required: true,
+                    variables: {}
                 }]
             },
             targetResolution: focusedTargetResolution({
@@ -329,7 +339,9 @@ describe('distributed run monitor indexed derivation', () => {
                     roleAssignments: [{
                         agentId: 'agent:duplicate|\u202E界',
                         role: 'role:resolved|界',
-                        recipeIds: []
+                        recipeIds: [],
+                        variables: {},
+                        required: true
                     }]
                 })
             },
@@ -368,45 +380,68 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'recipe:id-only|\u202E界',
                     role: 'role:not-assigned',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: '',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }, {
                     recipeId: 'recipe:fallback|界',
-                    required: true
+                    required: true,
+                    variables: {},
+                    secretRefs: []
                 }],
                 targetPolicy: {
-                    ...input.distributedRun.manifest.targetPolicy,
-                    roles: { [matchingRole]: [policyAgentId] }
+                    mode: 'role-map',
+                    roles: { [matchingRole]: [policyAgentId] },
+                    expectedParticipantCount: input.distributedRun.manifest.targetPolicy.expectedParticipantCount,
+                    includeOfflineExpectedAgents: false
                 },
                 roleAssignments: [{
                     agentId: assignedAgentId,
                     role: matchingRole,
-                    recipeIds: ['recipe:id-only|\u202E界']
+                    recipeIds: ['recipe:id-only|\u202E界'],
+                    variables: {},
+                    required: true
                 }, {
                     agentId: assignedAgentId,
                     role: matchingRole,
-                    recipeIds: []
+                    recipeIds: [],
+                    variables: {},
+                    required: true
                 }, {
                     agentId: assignedAgentId,
-                    role: 'role:third|界'
+                    role: 'role:third|界',
+                    variables: {},
+                    recipeIds: [],
+                    required: true
                 }, {
                     agentId: emptyAgentId,
                     role: '',
-                    recipeIds: ['recipe:unknown|界']
+                    recipeIds: ['recipe:unknown|界'],
+                    variables: {},
+                    required: true
                 }, {
                     agentId: fallbackAgentId,
                     role: 'role:no-match|界',
-                    recipeIds: ['recipe:unknown|界']
+                    recipeIds: ['recipe:unknown|界'],
+                    variables: {},
+                    required: true
                 }]
             }
         };
@@ -449,22 +484,31 @@ describe('distributed run monitor indexed derivation', () => {
             ...input.distributedRun,
             manifest: {
                 ...input.distributedRun.manifest,
-                recipes: [{ recipeId: 'shared-recipe', role }, {
+                recipes: [{ recipeId: 'shared-recipe', role, variables: {}, secretRefs: [], required: true }, {
                     recipeId: 'shared-recipe',
-                    role
+                    role,
+                    variables: {},
+                    secretRefs: [],
+                    required: true
                 }],
                 roleAssignments: [{
                     agentId: 'overlap-agent',
                     role,
-                    recipeIds: ['shared-recipe']
+                    recipeIds: ['shared-recipe'],
+                    variables: {},
+                    required: true
                 }, {
                     agentId: 'role-agent',
                     role,
-                    recipeIds: []
+                    recipeIds: [],
+                    variables: {},
+                    required: true
                 }, {
                     agentId: 'direct-agent',
                     role: 'role:other',
-                    recipeIds: ['shared-recipe']
+                    recipeIds: ['shared-recipe'],
+                    variables: {},
+                    required: true
                 }]
             }
         };
@@ -506,11 +550,15 @@ describe('distributed run monitor indexed derivation', () => {
         const roleAssignments = [{
             agentId: 'agent-a',
             role: 'role-a',
-            recipeIds: ['recipe-a']
+            recipeIds: ['recipe-a'],
+            required: true,
+            variables: {}
         }, {
             agentId: 'agent-b',
             role: 'role-b',
-            recipeIds: ['recipe-b']
+            recipeIds: ['recipe-b'],
+            required: true,
+            variables: {}
         }];
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
@@ -1314,13 +1362,31 @@ function adversarialScaleInput(): Readonly<{
             recipes: recipeIds.map((recipeId, index) => ({
                 recipeId,
                 profile: index === 0 ? 'profile:a|b' : `profile-${index}`,
-                required: true
+                required: true,
+                variables: {},
+                secretRefs: []
             })),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: SCALE
-            }
+                expectedParticipantCount: SCALE,
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks,
         rollup: {
@@ -1408,12 +1474,28 @@ function focusedInput(
                 workspaceId: 'default',
                 groupId: 'focused-group'
             },
-            recipes: input.recipeIds.map((recipeId) => ({ recipeId, required: true })),
+            recipes: input.recipeIds.map((recipeId) => ({ recipeId, required: true, variables: {}, secretRefs: [] })),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: input.agentIds,
-                expectedParticipantCount: input.agentIds.length
-            }
+                expectedParticipantCount: input.agentIds.length,
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: input.links,
         rollup: {

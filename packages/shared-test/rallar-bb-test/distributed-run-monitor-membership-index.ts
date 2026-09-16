@@ -49,7 +49,7 @@ export function createDistributedRunMonitorMembershipIndex(
 ): DistributedRunMonitorMembershipIndex {
     work.roleAssignmentIndexPassCount += 1;
     const resolvedAssignments = distributedRun.targetResolution?.roleAssignments;
-    const assignments = resolvedAssignments ?? distributedRun.manifest.roleAssignments ?? [];
+    const assignments = resolvedAssignments ?? distributedRun.manifest.roleAssignments;
     const displayRolesByAgentId = new Map<string, string[]>();
     const expectedRolesByAgentId = new Map<string, Set<string>>();
     const assignedRecipeIdsByAgentId = new Map<string, Set<string>>();
@@ -63,12 +63,9 @@ export function createDistributedRunMonitorMembershipIndex(
         }
     }
 
-    if (resolvedAssignments === undefined) {
-        for (
-            const [role, agentIds] of Object.entries(
-                distributedRun.manifest.targetPolicy.roles ?? {}
-            )
-        ) {
+    const targetPolicy = distributedRun.manifest.targetPolicy;
+    if (resolvedAssignments === undefined && targetPolicy.mode === 'role-map') {
+        for (const [role, agentIds] of Object.entries(targetPolicy.roles)) {
             for (const agentId of agentIds) {
                 work.targetPolicyRoleMembershipVisitCount += 1;
                 addMapSetValue(expectedRolesByAgentId, agentId, role);

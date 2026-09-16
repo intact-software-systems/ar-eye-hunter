@@ -25,11 +25,24 @@ function coreFiles(
         schemaVersion: 1,
         distributedRunId: 'distributed-analyze',
         controlRunId: 'control-analyze',
-        group: { groupId: 'ci-analyze' },
-        recipes: [{ recipeId: 'rtc-stability', profile: 'browser' }],
-        targetPolicy: {},
+        group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-analyze' },
+        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, secretRefs: [], required: true }],
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'], includeOfflineExpectedAgents: false },
+        variables: {},
+        secretRefs: [],
         roleAssignments: [],
-        startMode: 'manual'
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
     return {
         'distributed-run.json': JSON.stringify({

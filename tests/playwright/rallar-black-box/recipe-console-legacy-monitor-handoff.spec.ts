@@ -125,13 +125,31 @@ function distributedRun(
                     name: 'Legacy Monitor handoff health',
                     commands: [{ kind: 'health', commandId: 'legacy-monitor-health' }]
                 },
-                required: true
+                required: true,
+                variables: {},
+                secretRefs: []
             }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: [],
-                expectedParticipantCount: 0
-            }
+                expectedParticipantCount: 0,
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: {

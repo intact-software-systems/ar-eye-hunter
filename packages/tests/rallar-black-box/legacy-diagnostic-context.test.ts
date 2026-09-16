@@ -1086,8 +1086,24 @@ function distributedRunSnapshot(
             recipes: [],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: []
-            }
+                agentIds: [],
+                includeOfflineExpectedAgents: false
+            },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'draft',
         createdAtEpochMs: 1,

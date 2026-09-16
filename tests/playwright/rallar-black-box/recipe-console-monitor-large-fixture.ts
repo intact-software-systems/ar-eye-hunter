@@ -316,14 +316,30 @@ function createLargeDistributedRun(
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: agentIds.length
+                expectedParticipantCount: agentIds.length,
+                includeOfflineExpectedAgents: false
             },
             roleAssignments: agentIds.map((agentId, index) => ({
                 agentId,
                 role: largeMonitorRole(index),
                 recipeIds: [LARGE_MONITOR_COMMON_RECIPE_ID],
-                required: true
-            }))
+                required: true,
+                variables: {}
+            })),
+            variables: {},
+            secretRefs: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [...stageLinks, ...failureLinks, ...compositeLinks],
         rollup: {
@@ -354,7 +370,9 @@ function largeMonitorRecipeSelections() {
             recipe: LARGE_MONITOR_RECIPE,
             role: largeMonitorRole(index),
             profile: `large-profile-${String(index).padStart(3, '0')}`,
-            required: true
+            required: true,
+            variables: {},
+            secretRefs: []
         })
     );
     const unique = Array.from(
@@ -371,7 +389,9 @@ function largeMonitorRecipeSelections() {
                     name: `Large unique recipe ${index + 1}`,
                     commands: [{ kind: 'health' as const }]
                 },
-                required: true
+                required: true,
+                variables: {},
+                secretRefs: []
             };
         }
     );

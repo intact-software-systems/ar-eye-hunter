@@ -16,7 +16,13 @@ Deno.test('manifest request decoding rejects an unversioned inline recipe at the
     const manifest = distributedManifest();
     const unversioned = {
         ...manifest,
-        recipes: [{ recipeId: 'api-health', recipe: { recipeId: 'api-health', commands: [] } }]
+        recipes: [{
+            recipeId: 'api-health',
+            recipe: { recipeId: 'api-health', commands: [] },
+            variables: {},
+            secretRefs: [],
+            required: true
+        }]
     };
 
     const decoded = decodeDistributedRunManifestRequest({ manifest: unversioned });

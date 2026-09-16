@@ -5,14 +5,17 @@ import type {
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedBarrierPolicy,
+    RallarBlackBoxDistributedRunManifest
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export function tuningManifest(input: Readonly<{
     commands?: readonly RallarBlackBoxTestCommand[];
     referenceOnly?: boolean;
     ackTimeoutMs?: number;
-    barrier?: Readonly<{ enabled?: boolean; timeoutMs?: number; }>;
+    barrier?: RallarBlackBoxDistributedBarrierPolicy;
 }> = {}): RallarBlackBoxDistributedRunManifest {
     const recipe = input.referenceOnly
         ? undefined
@@ -31,19 +34,31 @@ export function tuningManifest(input: Readonly<{
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true }],
+        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true, variables: {}, secretRefs: [] }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
-            expectedParticipantCount: 2
+            expectedParticipantCount: 2,
+            includeOfflineExpectedAgents: false
         },
         roleAssignments: [
-            { agentId: 'agent-a', role: 'sender', required: true },
-            { agentId: 'agent-b', role: 'receiver', required: true }
+            { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
+            { agentId: 'agent-b', role: 'receiver', required: true, variables: {}, recipeIds: [] }
         ],
         ackTimeoutMs: input.ackTimeoutMs ?? 5_000,
         barrier: input.barrier ?? { enabled: true, timeoutMs: 7_500 },
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        secretRefs: [],
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 

@@ -12,7 +12,7 @@ describe('distributed artifact file reader', () => {
             distributedRunId: 'dist-import',
             controlRunId: 'run-import',
             state: 'passed',
-            agentIds: []
+            agentIds: ['agent-import']
         });
         const files = [
             artifactFile('distributed-run.json', JSON.stringify(distributedRun)),

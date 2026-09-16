@@ -144,11 +144,23 @@ export function createDistributedRunManifest(
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         group: FIXTURE_GROUP,
-        recipes: input.recipes ?? [{ recipeId: HEALTH_RECIPE.recipeId, recipe: HEALTH_RECIPE }],
-        targetPolicy: { mode: 'selected-agents', agentIds: [...input.agentIds] },
+        recipes: input.recipes ?? [{ recipeId: HEALTH_RECIPE.recipeId, recipe: HEALTH_RECIPE, variables: {}, secretRefs: [], required: true }],
+        targetPolicy: { mode: 'selected-agents', agentIds: [...input.agentIds], includeOfflineExpectedAgents: false },
         roleAssignments: [],
         startMode: 'manual',
-        metadata: {}
+        metadata: {},
+        variables: {},
+        secretRefs: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        artifactPolicy: {
+            retainArtifacts: true,
+            includeEventJsonl: true,
+            includeResultJsonl: true,
+            includeFailureBundle: true,
+            includeDistributedMetadata: true
+        },
+        groupAssertions: []
     };
 }
 

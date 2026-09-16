@@ -105,7 +105,13 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
             body: JSON.stringify({
                 manifest: {
                     ...distributedManifest(),
-                    recipes: [{ recipeId: 'api-health', recipe: { recipeId: 'api-health', commands: [] } }]
+                    recipes: [{
+                        recipeId: 'api-health',
+                        recipe: { recipeId: 'api-health', commands: [] },
+                        variables: {},
+                        secretRefs: [],
+                        required: true
+                    }]
                 }
             })
         });
@@ -124,7 +130,8 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                         ...distributedManifest(),
                         targetPolicy: {
                             mode: 'all-online-group-members',
-                            expectedParticipantCount: 1
+                            expectedParticipantCount: 1,
+                            includeOfflineExpectedAgents: false
                         },
                         roleAssignmentPolicy: {
                             mode: 'ordered-targets',

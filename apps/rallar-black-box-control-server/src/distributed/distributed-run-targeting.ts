@@ -1,6 +1,6 @@
 import type {
     RallarBlackBoxControlAgentCandidate,
-    RallarBlackBoxDistributedRoleAssignment,
+    RallarBlackBoxDistributedResolvedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
     RallarBlackBoxDistributedTargetResolution
@@ -13,19 +13,15 @@ export interface NormalizedDistributedRunManifest {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
 }
 
-const EXPLICIT_TARGET_STALE_AFTER_MS = 30_000;
+export const DISTRIBUTED_TARGET_STALE_AFTER_MS = 30_000;
 
 export function toNormalizedDistributedRunManifest(
     manifest: RallarBlackBoxDistributedRunManifest
 ): NormalizedDistributedRunManifest {
-    const controlRunId = toTrimmedIdentifier(manifest.controlRunId) ?? manifest.distributedRunId;
+    const controlRunId = manifest.controlRunId.trim();
     return {
         controlRunId,
-        manifest: {
-            ...manifest,
-            schemaVersion: manifest.schemaVersion ?? 1,
-            controlRunId
-        }
+        manifest: { ...manifest, controlRunId }
     };
 }
 
@@ -61,7 +57,7 @@ export function toExplicitDistributedTargetResolution(
     return {
         group: manifest.group,
         resolvedAtEpochMs: nowEpochMs,
-        staleAfterMs: EXPLICIT_TARGET_STALE_AFTER_MS,
+        staleAfterMs: DISTRIBUTED_TARGET_STALE_AFTER_MS,
         targetPolicyMode: manifest.targetPolicy.mode,
         targetAgentIds,
         roleAssignments,
@@ -77,12 +73,12 @@ export function toDistributedTargetAgentIds(
     const manifest = distributedRun.manifest;
     const policy = manifest.targetPolicy;
     if (policy.mode === 'selected-agents') {
-        return toUniqueIdentifiers(policy.agentIds ?? []);
+        return toUniqueIdentifiers(policy.agentIds);
     }
     if (policy.mode === 'role-map') {
         return toUniqueIdentifiers([
-            ...Object.values(policy.roles ?? {}).flat(),
-            ...(manifest.roleAssignments ?? []).map((assignment) => assignment.agentId)
+            ...Object.values(policy.roles).flat(),
+            ...manifest.roleAssignments.map((assignment) => assignment.agentId)
         ]);
     }
 
@@ -136,12 +132,13 @@ export function toRolesForAgent(
     }
 
     const roles = new Set<string>();
-    for (const [role, agentIds] of Object.entries(manifest.targetPolicy.roles ?? {})) {
+    const policyRoles = manifest.targetPolicy.mode === 'role-map' ? manifest.targetPolicy.roles : {};
+    for (const [role, agentIds] of Object.entries(policyRoles)) {
         if (agentIds.includes(agentId)) {
             roles.add(role);
         }
     }
-    for (const assignment of manifest.roleAssignments ?? []) {
+    for (const assignment of manifest.roleAssignments) {
         if (assignment.agentId === agentId) {
             roles.add(assignment.role);
         }
@@ -186,7 +183,7 @@ function toTrimmedIdentifier(value: string | undefined): string | undefined {
 interface ExplicitTargetSummaryInput {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
     readonly targetAgentIds: readonly string[];
-    readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
+    readonly roleAssignments: readonly RallarBlackBoxDistributedResolvedRoleAssignment[];
     readonly candidates: readonly RallarBlackBoxControlAgentCandidate[];
 }
 
@@ -217,16 +214,16 @@ function toExplicitTargetSummary(
 function toExplicitRoleAssignments(
     manifest: RallarBlackBoxDistributedRunManifest,
     targetAgentIds: readonly string[]
-): readonly RallarBlackBoxDistributedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
     const selected = new Set(targetAgentIds);
-    const explicitAssignments = manifest.roleAssignments ?? [];
+    const explicitAssignments = manifest.roleAssignments;
     if (explicitAssignments.length > 0) {
         return explicitAssignments
             .filter((assignment) => selected.has(assignment.agentId))
             .map((assignment) => ({ ...assignment }));
     }
 
-    return Object.entries(manifest.targetPolicy.roles ?? {})
+    return Object.entries(manifest.targetPolicy.mode === 'role-map' ? manifest.targetPolicy.roles : {})
         .flatMap(([role, agentIds]) =>
             agentIds
                 .filter((agentId) => selected.has(agentId))
@@ -237,10 +234,9 @@ function toExplicitRoleAssignments(
 function toRoleAssignmentsForAgent(
     distributedRun: ControlDistributedRunState,
     agentId: string
-): readonly RallarBlackBoxDistributedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
     const assignments = distributedRun.targetResolution?.roleAssignments ??
-        distributedRun.manifest.roleAssignments ??
-        [];
+        distributedRun.manifest.roleAssignments;
     return assignments.filter((assignment) => assignment.agentId === agentId);
 }
 

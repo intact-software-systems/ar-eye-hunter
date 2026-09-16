@@ -233,27 +233,32 @@ const DATACENTER_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLo
     'hetzner/fsn1': {
         latitude: 52.5333,
         longitude: 13.3833,
-        label: 'Hetzner FSN1, Germany'
+        label: 'Hetzner FSN1, Germany',
+        precision: 'exact'
     },
     'hetzner/nbg1': {
         latitude: 49.4521,
         longitude: 11.0767,
-        label: 'Hetzner NBG1, Germany'
+        label: 'Hetzner NBG1, Germany',
+        precision: 'exact'
     },
     'hetzner/hel1': {
         latitude: 60.1699,
         longitude: 24.9384,
-        label: 'Hetzner HEL1, Finland'
+        label: 'Hetzner HEL1, Finland',
+        precision: 'exact'
     },
     'hetzner/ash': {
         latitude: 39.0438,
         longitude: -77.4874,
-        label: 'Hetzner ASH, US East'
+        label: 'Hetzner ASH, US East',
+        precision: 'exact'
     },
     'hetzner/hil': {
         latitude: 45.5229,
         longitude: -122.9898,
-        label: 'Hetzner HIL, US West'
+        label: 'Hetzner HIL, US West',
+        precision: 'exact'
     }
 };
 
@@ -261,27 +266,32 @@ const REGION_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLocati
     'eu-north': {
         latitude: 60,
         longitude: 18,
-        label: 'Europe north'
+        label: 'Europe north',
+        precision: 'exact'
     },
     'eu-central': {
         latitude: 50.8,
         longitude: 10.3,
-        label: 'Europe central'
+        label: 'Europe central',
+        precision: 'exact'
     },
     'eu-west': {
         latitude: 53,
         longitude: -7.5,
-        label: 'Europe west'
+        label: 'Europe west',
+        precision: 'exact'
     },
     'us-east': {
         latitude: 39.5,
         longitude: -77,
-        label: 'US east'
+        label: 'US east',
+        precision: 'exact'
     },
     'us-west': {
         latitude: 45.5,
         longitude: -122.6,
-        label: 'US west'
+        label: 'US west',
+        precision: 'exact'
     }
 };
 

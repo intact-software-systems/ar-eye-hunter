@@ -52,7 +52,7 @@ function targetResolution(
     manifest: RallarBlackBoxDistributedRunManifest,
     overrides: Partial<RallarBlackBoxDistributedTargetResolution> = {}
 ): RallarBlackBoxDistributedTargetResolution {
-    const targetAgentIds = manifest.targetPolicy.agentIds ?? [];
+    const targetAgentIds = manifest.targetPolicy.mode === 'selected-agents' ? manifest.targetPolicy.agentIds : [];
     const expectedParticipantCount = manifest.targetPolicy.expectedParticipantCount;
     return {
         group: manifest.group,
@@ -129,7 +129,7 @@ describe('Recipe Console Execute manifest', () => {
         });
         expect(draft.manifest.recipes).toHaveLength(1);
         expect(draft.manifest.recipes[0]?.recipe).toEqual(selectedRecipe().item.recipe);
-        expect(draft.validation).toMatchObject({ ok: true, errors: [] });
+        expect(draft.validationIssues).toEqual([]);
         expect(JSON.parse(draft.rawJson)).toEqual(draft.manifest);
         expect(draft.rawJson).toContain('\n  "distributedRunId"');
         expect(draft.fingerprint).toBe(executeManifestFingerprint(draft.manifest));
@@ -141,9 +141,10 @@ describe('Recipe Console Execute manifest', () => {
             ...generated.manifest,
             displayName: 'Authoritative server draft',
             targetPolicy: {
-                ...generated.manifest.targetPolicy,
+                mode: 'selected-agents' as const,
                 agentIds: ['agent-b'],
-                expectedParticipantCount: 1
+                expectedParticipantCount: 1,
+                includeOfflineExpectedAgents: false
             }
         };
 
@@ -151,7 +152,7 @@ describe('Recipe Console Execute manifest', () => {
 
         expect(projected.manifest).toBe(stored);
         expect(JSON.parse(projected.rawJson)).toEqual(stored);
-        expect(projected.validation.ok).toBe(true);
+        expect(projected.validationIssues).toEqual([]);
         expect(projected.fingerprint).toBe(executeManifestFingerprint(stored));
     });
 
@@ -196,7 +197,8 @@ describe('Recipe Console Execute manifest', () => {
         const unrelatedBlocker = {
             agentId: 'agent-unrelated',
             status: 'offline-agent' as const,
-            reason: 'An unrelated known agent is offline.'
+            reason: 'An unrelated known agent is offline.',
+            identity: { principalId: 'agent-unrelated' }
         };
         const matching = targetResolution(manifest, {
             blockers: [unrelatedBlocker]
@@ -232,8 +234,10 @@ describe('Recipe Console Execute manifest', () => {
                 {
                     ...manifest,
                     targetPolicy: {
-                        ...manifest.targetPolicy,
-                        agentIds: ['agent-a', 'agent-a']
+                        mode: 'selected-agents',
+                        agentIds: ['agent-a', 'agent-a'],
+                        expectedParticipantCount: manifest.targetPolicy.expectedParticipantCount,
+                        includeOfflineExpectedAgents: false
                     }
                 },
                 matching,
@@ -282,7 +286,8 @@ describe('Recipe Console Execute manifest', () => {
                     blockers: [{
                         agentId: 'agent-a',
                         status: 'stale-agent',
-                        reason: 'The selected agent became stale.'
+                        reason: 'The selected agent became stale.',
+                        identity: { principalId: 'agent-a' }
                     }]
                 }),
                 'selected-target-blocked'
@@ -315,7 +320,6 @@ describe('Recipe Console Execute manifest', () => {
             .toBe(evidence);
 
         const changes: readonly RallarBlackBoxDistributedRunManifest[] = [
-            { ...manifest, schemaVersion: undefined },
             { ...manifest, distributedRunId: 'distributed-changed' },
             { ...manifest, controlRunId: 'control-changed' },
             { ...manifest, displayName: 'Changed display name' },
@@ -330,9 +334,10 @@ describe('Recipe Console Execute manifest', () => {
             {
                 ...manifest,
                 targetPolicy: {
-                    ...manifest.targetPolicy,
+                    mode: 'selected-agents',
                     agentIds: ['agent-a'],
-                    expectedParticipantCount: 1
+                    expectedParticipantCount: 1,
+                    includeOfflineExpectedAgents: false
                 }
             },
             { ...manifest, variables: { changed: true } },
@@ -342,7 +347,9 @@ describe('Recipe Console Execute manifest', () => {
                 roleAssignments: [{
                     agentId: 'agent-a',
                     role: 'changed-role',
-                    required: true
+                    required: true,
+                    variables: {},
+                    recipeIds: []
                 }]
             },
             {
@@ -356,7 +363,7 @@ describe('Recipe Console Execute manifest', () => {
             { ...manifest, ackTimeoutMs: 15_001 },
             { ...manifest, barrier: { enabled: true, timeoutMs: 15_000 } },
             { ...manifest, startMode: 'auto-after-ready' },
-            { ...manifest, startDeadlineEpochMs: 123_456 },
+            { ...manifest, startMode: 'scheduled', startDeadlineEpochMs: 123_456 },
             {
                 ...manifest,
                 artifactPolicy: {
