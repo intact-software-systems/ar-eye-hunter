@@ -11,43 +11,67 @@ import {
     type DistributedRunTimingRecord
 } from './decode-distributed-run-stream-summary.ts';
 
-/** What analysis reads from fleet-report.json; every field is absent when the report does not record it. */
+/** What analysis reads from fleet-report.json. */
 export interface DistributedRunFleetReportEvidence {
+    /** Absent when the report records no boolean verdict. */
     readonly ok?: boolean;
+    /** Absent when the report summary counts no agents. */
     readonly agents?: number;
+    /** Absent when the report summary records no pass rate. */
     readonly passRate?: number;
+    /** Absent when the report summary counts no failure groups. */
     readonly failureGroups?: number;
+    /** Absent when the report summary counts no failed agents. */
     readonly failedAgents?: number;
+    /** Absent when the report summary counts no missing agents. */
     readonly missingAgents?: number;
+    /** Absent when the report summary counts no stale agents. */
     readonly staleAgents?: number;
+    /** Absent when the report summary counts no flaky agents. */
     readonly flakyAgents?: number;
+    /** Absent when the report records no command timing object. */
     readonly commandTiming?: DistributedRunTimingRecord;
+    /** Absent when the report's run timing records no median. */
     readonly runP50Ms?: number;
+    /** Absent when the report names no group. */
     readonly group?: DistributedRunAnalysisGroup;
-    /** The first entry of failureSignatures, when that entry is a JSON object. */
+    /** The first entry of failureSignatures; absent when there is none or it is not a JSON object. */
     readonly firstFailureSignature?: DistributedRunFleetFailureSignature;
 }
 
-/** A fleet failure signature; each text is absent when the signature does not record it. */
+/** A fleet failure signature. */
 export interface DistributedRunFleetFailureSignature {
+    /** Absent when the signature names no category. */
     readonly category?: string;
+    /** Absent when the signature names no transport. */
     readonly transport?: string;
+    /** Absent when the signature carries no title. */
     readonly title?: string;
+    /** Absent when the signature carries no normalized message. */
     readonly normalizedMessage?: string;
+    /** Absent when the signature names no likely cause. */
     readonly likelyCause?: string;
+    /** Absent when the signature names no next action. */
     readonly nextAction?: string;
     readonly affectedAgents: readonly string[];
     readonly affectedRegions: readonly string[];
+    /** Absent when the signature names no command. */
     readonly commandId?: string;
+    /** Absent when the signature names no recipe. */
     readonly recipeId?: string;
 }
 
-/** The first failures.json entry; each field is absent when the entry does not record it. */
+/** The first failures.json entry. */
 export interface DistributedRunBundledFailure {
+    /** Absent when the entry's error records no code. */
     readonly code?: string;
+    /** Absent when the entry carries no top-level message. */
     readonly message?: string;
+    /** Absent when the entry's error records no message. */
     readonly errorMessage?: string;
+    /** Absent when the entry names no agent. */
     readonly agentId?: string;
+    /** Absent when the entry names no command. */
     readonly commandId?: string;
 }
 

@@ -8,18 +8,22 @@ import {
 
 /**
  * What analysis reads from a control event envelope or an events.jsonl row. Control snapshots carry the
- * event under payload and the recorder under value, so every field is absent when the row does not record it.
+ * event under payload and the recorder under value.
  */
 export interface DistributedRunEventEvidence {
+    /** Absent when the row names no agent. */
     readonly agentId?: string;
+    /** Absent when the row names no command. */
     readonly commandId?: string;
+    /** Absent when the row names no transport; control envelopes never do. */
     readonly transport?: string;
-    /** The first topic on the row, its payload or value, or their data. */
+    /** The first topic on the row, its payload or value, or their data; absent when none names one. */
     readonly topic?: string;
-    /** The first severity on the value, the payload or the row. */
+    /** The first severity on the value, the payload or the row; absent when none records one. */
     readonly severity?: string;
-    /** The first message on the value, the payload or the row. */
+    /** The first message on the value, the payload or the row; absent when none records one. */
     readonly message?: string;
+    /** Absent when no event payload wrapper holds an rtc.stream summary. */
     readonly streamSummary?: DistributedRunStreamSummary;
     /** The recorded stream summary as JSON text; absent with the summary. */
     readonly streamSummaryText?: string;

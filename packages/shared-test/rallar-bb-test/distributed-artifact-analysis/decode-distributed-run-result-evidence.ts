@@ -13,41 +13,53 @@ import {
 } from './decode-distributed-run-stream-summary.ts';
 import { decodeReceiverDeliverySpec, type ReceiverDeliverySpec } from './decode-receiver-delivery-spec.ts';
 
-/** Receiver stats a result reports; the command id and delivery bound are absent when the stats do not record them. */
+/** Receiver stats a result reports. */
 export interface DistributedRunStatsSummary {
+    /** Absent when the stats name no command. */
     readonly commandId?: string;
     readonly receivedMessages: number;
+    /** Absent when the stats metadata sets no receiver delivery bound. */
     readonly receiverDeliverySpec?: ReceiverDeliverySpec;
 }
 
 /**
  * What analysis reads from a control result envelope or a results.jsonl row. Control snapshots and the
- * artifact recorder shape results differently, so every field is absent when the row does not record it.
+ * artifact recorder shape results differently, so most fields are optional.
  */
 export interface DistributedRunResultEvidence {
+    /** Absent when the row names no agent. */
     readonly agentId?: string;
-    /** The command id, or the command part of an `agentId:commandId` result key. */
+    /** The command id, or the command part of an `agentId:commandId` result key; absent when neither names one. */
     readonly commandId?: string;
-    /** The first of resultKey, id, commandId and envelope.commandId that names this execution. */
+    /** The first of resultKey, id, commandId and envelope.commandId that names this execution; absent when none does. */
     readonly executionIdentity?: string;
+    /** Absent when the row records no status text; control envelopes never do. */
     readonly status?: string;
+    /** Absent when the row records no boolean outcome. */
     readonly ok?: boolean;
+    /** Absent when the row names no transport; control envelopes never do. */
     readonly transport?: string;
+    /** Absent when the row names no command action; control envelopes never do. */
     readonly action?: string;
+    /** Absent when the row carries no top-level message; control envelopes never do. */
     readonly message?: string;
-    /** The code and message of the recorded actual value or error. */
+    /** The code of the recorded actual value or error; absent when neither records one. */
     readonly failureCode?: string;
+    /** The message of the recorded actual value or error; absent when neither records one. */
     readonly failureMessage?: string;
     /** Codes and messages of the actual value, its details, the error and the value, in that order. */
     readonly streamFailureTexts: readonly string[];
     /** Source, message and code of the actual value, error or value, then its details' source and message. */
     readonly deliveryFailureTexts: readonly string[];
+    /** Absent when no result payload wrapper holds an rtc.stream summary. */
     readonly streamSummary?: DistributedRunStreamSummary;
+    /** Absent when no result payload wrapper reports a receiver message count. */
     readonly stats?: DistributedRunStatsSummary;
-    /** The command id the result payload names. */
+    /** The command id the result payload names; absent when the payload names none. */
     readonly payloadCommandId?: string;
-    /** The first receiver delivery bound set on the row, its payload, its value or its stats. */
+    /** The first receiver delivery bound set on the row, its payload, its value or its stats; absent when none is set. */
     readonly receiverDeliverySpec?: ReceiverDeliverySpec;
+    /** Absent when the row records neither a duration nor both start and end times. */
     readonly durationMs?: number;
     /** Results of the recipes a recipe.run command ran. */
     readonly nestedResults: readonly DistributedRunResultEvidence[];
