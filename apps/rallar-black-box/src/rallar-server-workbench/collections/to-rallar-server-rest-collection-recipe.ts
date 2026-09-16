@@ -27,7 +27,7 @@ interface CollectionStepCommandSource {
     readonly index: number;
 }
 
-/** A step whose request cannot be translated fails the whole recipe with that step's message. */
+/** A step whose request cannot be translated fails the whole recipe with the message of that step. */
 export function toRallarServerRestCollectionRecipe(
     source: RallarServerRestCollectionRecipeSource
 ): Either<string, RallarBlackBoxTestRecipe> {
