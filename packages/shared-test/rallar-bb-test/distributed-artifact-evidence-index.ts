@@ -1,10 +1,10 @@
-import { Either } from '@shared/resilience/Either.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 import {
     computeDistributedRunArtifactPipelineAnalysis,
     type DistributedRunArtifactRejection
 } from './distributed-artifact-analysis.ts';
-import { toDistributedRunArtifactContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
+import { toDistributedRunBundleContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
@@ -37,39 +37,29 @@ export function deriveDistributedArtifactEvidence(
     const parsed = parseDistributedArtifactPipeline(input.files, {
         projection: 'literal-loose-files'
     });
-    return toDistributedRunArtifactContent(parsed).flatMap(
-        (rejection) => Either.ofLeft(rejection),
-        (content) => {
-            if (content.variant === 'control-request-failure') {
-                return Either.ofLeft({
-                    fileName: 'distributed-run.json',
-                    message:
-                        `distributed-run.json is required: the artifacts record a failed control ${content.controlPostFailure.request.phase} request instead of a distributed run.`
-                });
-            }
-            const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
+    return toDistributedRunBundleContent(parsed).mapRight((content) => {
+        const analysisResult = computeDistributedRunArtifactPipelineAnalysis({
+            parsed,
+            content,
+            generatedAtEpochMs
+        });
+        return deriveDistributedArtifactEvidenceIndex({
+            analysis: analysisResult.analysis,
+            snapshots: analysisResult.snapshots,
+            monitor: analysisResult.monitor,
+            parsedControlRun: distributedArtifactPipelineJsonRecord(
                 parsed,
-                content,
-                generatedAtEpochMs
-            });
-            return Either.ofRight(deriveDistributedArtifactEvidenceIndex({
-                analysis: analysisResult.analysis,
-                snapshots: analysisResult.snapshots,
-                monitor: analysisResult.monitor,
-                parsedControlRun: distributedArtifactPipelineJsonRecord(
-                    parsed,
-                    'control-run.json'
-                ),
-                sourceFileNames: Object.keys(parsed.projectedFiles).filter(
-                    (fileName) => parsed.projectedFiles[fileName] !== undefined
-                ),
-                sourceFiles: parsed.projectedFiles,
-                indexLimit: input.indexLimit,
-                summaryLimit: input.summaryLimit,
-                payloadSummaryLimit: input.payloadSummaryLimit
-            }));
-        }
-    );
+                'control-run.json'
+            ),
+            sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+                (fileName) => parsed.projectedFiles[fileName] !== undefined
+            ),
+            sourceFiles: parsed.projectedFiles,
+            indexLimit: input.indexLimit,
+            summaryLimit: input.summaryLimit,
+            payloadSummaryLimit: input.payloadSummaryLimit
+        });
+    });
 }
 
 export function deriveDistributedArtifactEvidenceIndex(
