@@ -547,7 +547,7 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'command-b',
                 queuedAtEpochMs: 2
             }],
-            results: [focusedResult('command-b', 'agent-b', false, 10)]
+            results: [focusedResult({ commandId: 'command-b', agentId: 'agent-b', ok: false, endedAtEpochMs: 10 })]
         });
         const roleAssignments = [{
             agentId: 'agent-a',
@@ -624,10 +624,10 @@ describe('distributed run monitor indexed derivation', () => {
             recipeIds: ['b', 'a:b', 'a|b'],
             links,
             results: [
-                focusedResult('command-a', 'agent:a', false, 10),
-                focusedResult('command-b', 'agent', true, 11),
-                focusedResult('command-c', 'agent|a', true, 12),
-                focusedResult('command-d', 'agent', false, 13)
+                focusedResult({ commandId: 'command-a', agentId: 'agent:a', ok: false, endedAtEpochMs: 10 }),
+                focusedResult({ commandId: 'command-b', agentId: 'agent', ok: true, endedAtEpochMs: 11 }),
+                focusedResult({ commandId: 'command-c', agentId: 'agent|a', ok: true, endedAtEpochMs: 12 }),
+                focusedResult({ commandId: 'command-d', agentId: 'agent', ok: false, endedAtEpochMs: 13 })
             ],
             events: [{
                 kind: 'event',
@@ -704,8 +704,8 @@ describe('distributed run monitor indexed derivation', () => {
             recipeIds: ['only-recipe'],
             links,
             results: [
-                focusedResult('undefined-recipe', 'agent-a', true, 10),
-                focusedResult('empty-recipe', 'agent-b', true, 11)
+                focusedResult({ commandId: 'undefined-recipe', agentId: 'agent-a', ok: true, endedAtEpochMs: 10 }),
+                focusedResult({ commandId: 'empty-recipe', agentId: 'agent-b', ok: true, endedAtEpochMs: 11 })
             ]
         });
         const monitor = deriveDistributedRunMonitor(input);
@@ -755,9 +755,9 @@ describe('distributed run monitor indexed derivation', () => {
                 queuedAtEpochMs: 3
             }],
             results: [
-                focusedResult('command-a', 'agent-a', true, 10),
-                focusedResult('command-b', 'agent-b', false, 11),
-                focusedResult('command-b', 'agent-b', true, 12)
+                focusedResult({ commandId: 'command-a', agentId: 'agent-a', ok: true, endedAtEpochMs: 10 }),
+                focusedResult({ commandId: 'command-b', agentId: 'agent-b', ok: false, endedAtEpochMs: 11 }),
+                focusedResult({ commandId: 'command-b', agentId: 'agent-b', ok: true, endedAtEpochMs: 12 })
             ]
         });
 
@@ -788,7 +788,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'duplicate-command',
                 queuedAtEpochMs: 2
             }],
-            results: [focusedResult('duplicate-command', 'agent-a', false, 10)]
+            results: [focusedResult({
+                commandId: 'duplicate-command',
+                agentId: 'agent-a',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const monitor = deriveDistributedRunMonitor(input);
         const report = deriveDistributedRunAnalysisReport({ ...input, monitor });
@@ -810,7 +815,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'local-report-lookup',
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult('local-report-lookup', 'agent-a', false, 10)]
+            results: [focusedResult({
+                commandId: 'local-report-lookup',
+                agentId: 'agent-a',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const monitor = deriveDistributedRunMonitor(input);
 
@@ -846,7 +856,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'cross-snapshot-command',
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult('cross-snapshot-command', 'agent-a', false, 10)]
+            results: [focusedResult({
+                commandId: 'cross-snapshot-command',
+                agentId: 'agent-a',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const monitor = deriveDistributedRunMonitor(input);
         const reportRun: ControlDistributedRunSnapshot = {
@@ -880,7 +895,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'replaced-links-command',
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult('replaced-links-command', 'agent-a', false, 10)]
+            results: [focusedResult({
+                commandId: 'replaced-links-command',
+                agentId: 'agent-a',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const mutableRun = { ...input.distributedRun };
         const monitor = deriveDistributedRunMonitor({
@@ -949,7 +969,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: failedCommandId,
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult(failedCommandId, 'supplied-agent', false, 10)]
+            results: [focusedResult({
+                commandId: failedCommandId,
+                agentId: 'supplied-agent',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
         const headReport = deriveDistributedRunAnalysisReport({
@@ -1001,7 +1026,12 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'supplied-failure',
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult('supplied-failure', 'supplied-agent', false, 10)]
+            results: [focusedResult({
+                commandId: 'supplied-failure',
+                agentId: 'supplied-agent',
+                ok: false,
+                endedAtEpochMs: 10
+            })]
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
         const headReport = deriveDistributedRunAnalysisReport({
@@ -1052,9 +1082,19 @@ describe('distributed run monitor indexed derivation', () => {
                 queuedAtEpochMs: 4
             }],
             results: [
-                focusedResult('exact-command', 'failure-agent', false, 12_000),
-                focusedResult('near-15000', 'boundary-agent', false, 10_000),
-                focusedResult('far-15001', 'boundary-agent', false, 9_999)
+                focusedResult({
+                    commandId: 'exact-command',
+                    agentId: 'failure-agent',
+                    ok: false,
+                    endedAtEpochMs: 12_000
+                }),
+                focusedResult({
+                    commandId: 'near-15000',
+                    agentId: 'boundary-agent',
+                    ok: false,
+                    endedAtEpochMs: 10_000
+                }),
+                focusedResult({ commandId: 'far-15001', agentId: 'boundary-agent', ok: false, endedAtEpochMs: 9_999 })
             ],
             failures: [{
                 kind: 'participant',
@@ -1068,15 +1108,24 @@ describe('distributed run monitor indexed derivation', () => {
                 required: true
             }],
             events: [
-                focusedDiagnostic('diagnostic-exact', 'other-agent', 40_000, {
+                focusedDiagnostic({
+                    eventId: 'diagnostic-exact',
+                    agentId: 'other-agent',
+                    atEpochMs: 40_000,
                     commandId: 'exact-command',
                     distributedRunId
                 }),
-                focusedDiagnostic('diagnostic-duplicates', 'other-agent', 40_001, {
+                focusedDiagnostic({
+                    eventId: 'diagnostic-duplicates',
+                    agentId: 'other-agent',
+                    atEpochMs: 40_001,
                     commandId: 'duplicate-key',
                     distributedRunId
                 }),
-                focusedDiagnostic('diagnostic-boundary', 'boundary-agent', 25_000, {
+                focusedDiagnostic({
+                    eventId: 'diagnostic-boundary',
+                    agentId: 'boundary-agent',
+                    atEpochMs: 25_000,
                     distributedRunId
                 })
             ]
@@ -1107,8 +1156,16 @@ describe('distributed run monitor indexed derivation', () => {
                 commandId: 'empty-agent-failure',
                 queuedAtEpochMs: 1
             }],
-            results: [focusedResult('empty-agent-failure', '', false, 10_000)],
-            events: [focusedDiagnostic('empty-agent-diagnostic', '', 10_001, {
+            results: [focusedResult({
+                commandId: 'empty-agent-failure',
+                agentId: '',
+                ok: false,
+                endedAtEpochMs: 10_000
+            })],
+            events: [focusedDiagnostic({
+                eventId: 'empty-agent-diagnostic',
+                agentId: '',
+                atEpochMs: 10_001,
                 distributedRunId: 'focused-distributed'
             })]
         });
@@ -1137,14 +1194,30 @@ describe('distributed run monitor indexed derivation', () => {
                 queuedAtEpochMs: 2
             }],
             results: [
-                focusedResult('nan-failure', 'nan-failure-agent', false, Number.NaN),
-                focusedResult('finite-failure', 'nan-diagnostic-agent', false, 10_000)
+                focusedResult({
+                    commandId: 'nan-failure',
+                    agentId: 'nan-failure-agent',
+                    ok: false,
+                    endedAtEpochMs: Number.NaN
+                }),
+                focusedResult({
+                    commandId: 'finite-failure',
+                    agentId: 'nan-diagnostic-agent',
+                    ok: false,
+                    endedAtEpochMs: 10_000
+                })
             ],
             events: [
-                focusedDiagnostic('finite-diagnostic', 'nan-failure-agent', 10_000, {
+                focusedDiagnostic({
+                    eventId: 'finite-diagnostic',
+                    agentId: 'nan-failure-agent',
+                    atEpochMs: 10_000,
                     distributedRunId: 'focused-distributed'
                 }),
-                focusedDiagnostic('nan-diagnostic', 'nan-diagnostic-agent', Number.NaN, {
+                focusedDiagnostic({
+                    eventId: 'nan-diagnostic',
+                    agentId: 'nan-diagnostic-agent',
+                    atEpochMs: Number.NaN,
                     distributedRunId: 'focused-distributed'
                 })
             ]
@@ -1174,8 +1247,8 @@ describe('distributed run monitor indexed derivation', () => {
                 queuedAtEpochMs: 2
             }],
             events: [
-                focusedDiagnostic(undefined, 'agent-a', 200, { commandId: 'command-a' }),
-                focusedDiagnostic(undefined, 'agent-b', 100, { commandId: 'command-b' })
+                focusedDiagnostic({ agentId: 'agent-a', atEpochMs: 200, commandId: 'command-a' }),
+                focusedDiagnostic({ agentId: 'agent-b', atEpochMs: 100, commandId: 'command-b' })
             ]
         });
 
@@ -1617,11 +1690,15 @@ function noReadArray<Value>(
     });
 }
 
+interface FocusedResultInput {
+    readonly commandId: string;
+    readonly agentId: string;
+    readonly ok: boolean;
+    readonly endedAtEpochMs: number;
+}
+
 function focusedResult(
-    commandId: string,
-    agentId: string,
-    ok: boolean,
-    endedAtEpochMs: number
+    { commandId, agentId, ok, endedAtEpochMs }: FocusedResultInput
 ): ControlRunSnapshot['results'][number] {
     return {
         kind: 'result',
@@ -1648,26 +1725,34 @@ function focusedResult(
     };
 }
 
+interface FocusedDiagnosticInput {
+    /** Absent to exercise the diagnostic row's fallback identity. */
+    readonly eventId?: string;
+    readonly agentId: string;
+    readonly atEpochMs: number;
+    /** Absent when the diagnostic names no command. */
+    readonly commandId?: string;
+    /** Absent when the diagnostic payload does not reference the distributed run. */
+    readonly distributedRunId?: string;
+}
+
 function focusedDiagnostic(
-    eventId: string | undefined,
-    agentId: string,
-    atEpochMs: number,
-    input: Readonly<{ commandId?: string; distributedRunId?: string; }>
+    input: FocusedDiagnosticInput
 ): ControlRunSnapshot['events'][number] {
     return {
         kind: 'diagnostic',
         protocolVersion: 1,
         runId: 'focused-control',
-        agentId,
-        atEpochMs,
-        ...(eventId === undefined ? {} : { eventId }),
+        agentId: input.agentId,
+        atEpochMs: input.atEpochMs,
+        ...(input.eventId === undefined ? {} : { eventId: input.eventId }),
         ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
         payload: {
             diagnosticSchemaVersion: 1,
             diagnosticTypeId: 'rtc.focused',
             severity: 'warning',
             transport: 'messages.rtc',
-            message: eventId ?? 'fallback diagnostic',
+            message: input.eventId ?? 'fallback diagnostic',
             data: {
                 ...(input.distributedRunId === undefined
                     ? {}
@@ -1677,7 +1762,7 @@ function focusedDiagnostic(
     };
 }
 
-function sha256(value: unknown): string {
+function sha256(value: object): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 

@@ -254,7 +254,7 @@ describe('rallar-bb-test distributed run contract', () => {
             roleAssignments: []
         });
 
-        expect(manifestErrorPaths({ ...withoutKey(manifest, 'startMode'), startMode: 'scheduled' })).toEqual([
+        expect(toManifestIssueTexts({ ...toValueWithoutKey(manifest, 'startMode'), startMode: 'scheduled' })).toEqual([
             '$.targetPolicy.roles role-map target policy requires roles or roleAssignments.',
             '$.startDeadlineEpochMs Scheduled distributed runs require startDeadlineEpochMs.'
         ]);
@@ -796,7 +796,7 @@ describe('rallar-bb-test distributed run contract', () => {
     });
 });
 
-function explicitManifest(): RallarBlackBoxDistributedRunManifest {
+function createExplicitManifest(): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,
         distributedRunId: 'explicit-run',
@@ -828,17 +828,17 @@ function explicitManifest(): RallarBlackBoxDistributedRunManifest {
     };
 }
 
-function withoutKey<Value extends object>(value: Value, key: string): object {
+function toValueWithoutKey<Value extends object>(value: Value, key: string): object {
     return Object.fromEntries(Object.entries(value).filter(([entryKey]) => entryKey !== key));
 }
 
-function manifestErrorPaths(value: object): readonly string[] {
+function toManifestIssueTexts(value: object): readonly string[] {
     return (decodeDistributedRunManifest(value).left ?? []).map((error) => `${error.path} ${error.message}`);
 }
 
 describe('distributed run manifest author settings', () => {
     it('accepts a manifest that writes every author setting explicitly', () => {
-        expect(validateDistributedRunManifest(explicitManifest())).toEqual([]);
+        expect(validateDistributedRunManifest(createExplicitManifest())).toEqual([]);
     });
 
     it.each([
@@ -854,35 +854,35 @@ describe('distributed run manifest author settings', () => {
         'groupAssertions',
         'metadata'
     ])('rejects a manifest without %s', (key) => {
-        expect(manifestErrorPaths(withoutKey(explicitManifest(), key))).toEqual([
+        expect(toManifestIssueTexts(toValueWithoutKey(createExplicitManifest(), key))).toEqual([
             `$ Missing required property ${key}.`
         ]);
     });
 
     it.each(['recipeId', 'variables', 'secretRefs', 'required'])('rejects a recipe selection without %s', (key) => {
-        const manifest = explicitManifest();
-        expect(manifestErrorPaths({ ...manifest, recipes: [withoutKey(manifest.recipes[0]!, key)] })).toEqual([
+        const manifest = createExplicitManifest();
+        expect(toManifestIssueTexts({ ...manifest, recipes: [toValueWithoutKey(manifest.recipes[0]!, key)] })).toEqual([
             `$.recipes[0] Missing required property ${key}.`
         ]);
     });
 
     it.each(['recipeIds', 'required', 'variables'])('rejects a role assignment without %s', (key) => {
-        const manifest = explicitManifest();
+        const manifest = createExplicitManifest();
         expect(
-            manifestErrorPaths({ ...manifest, roleAssignments: [withoutKey(manifest.roleAssignments[0]!, key)] })
+            toManifestIssueTexts({ ...manifest, roleAssignments: [toValueWithoutKey(manifest.roleAssignments[0]!, key)] })
         ).toEqual([`$.roleAssignments[0] Missing required property ${key}.`]);
     });
 
     it('rejects a target policy without includeOfflineExpectedAgents', () => {
-        const manifest = explicitManifest();
+        const manifest = createExplicitManifest();
         expect(
-            manifestErrorPaths({ ...manifest, targetPolicy: withoutKey(manifest.targetPolicy, 'includeOfflineExpectedAgents') })
+            toManifestIssueTexts({ ...manifest, targetPolicy: toValueWithoutKey(manifest.targetPolicy, 'includeOfflineExpectedAgents') })
         ).toEqual(['$.targetPolicy Missing required property includeOfflineExpectedAgents.']);
     });
 
     it('rejects a role assignment policy without orderBy', () => {
-        expect(manifestErrorPaths({
-            ...explicitManifest(),
+        expect(toManifestIssueTexts({
+            ...createExplicitManifest(),
             roleAssignmentPolicy: { mode: 'ordered-targets', pattern: 'sender-receiver' }
         })).toEqual(['$.roleAssignmentPolicy Missing required property orderBy.']);
     });
@@ -894,34 +894,34 @@ describe('distributed run manifest author settings', () => {
         'includeFailureBundle',
         'includeDistributedMetadata'
     ])('rejects an artifact policy without %s', (key) => {
-        const manifest = explicitManifest();
-        expect(manifestErrorPaths({ ...manifest, artifactPolicy: withoutKey(manifest.artifactPolicy, key) }))
+        const manifest = createExplicitManifest();
+        expect(toManifestIssueTexts({ ...manifest, artifactPolicy: toValueWithoutKey(manifest.artifactPolicy, key) }))
             .toEqual([`$.artifactPolicy Missing required property ${key}.`]);
     });
 
     it('rejects a barrier without enabled, an enabled barrier without timeoutMs and a disabled barrier with one', () => {
-        expect(manifestErrorPaths({ ...explicitManifest(), barrier: { timeoutMs: 5_000 } }))
+        expect(toManifestIssueTexts({ ...createExplicitManifest(), barrier: { timeoutMs: 5_000 } }))
             .toEqual(['$.barrier Missing required property enabled.']);
-        expect(manifestErrorPaths({ ...explicitManifest(), barrier: { enabled: true } }))
+        expect(toManifestIssueTexts({ ...createExplicitManifest(), barrier: { enabled: true } }))
             .toEqual(['$.barrier.timeoutMs An enabled barrier requires timeoutMs.']);
-        expect(manifestErrorPaths({ ...explicitManifest(), barrier: { enabled: false, timeoutMs: 5_000 } }))
+        expect(toManifestIssueTexts({ ...createExplicitManifest(), barrier: { enabled: false, timeoutMs: 5_000 } }))
             .toEqual(['$.barrier.timeoutMs A disabled barrier accepts no timeoutMs.']);
     });
 
     it('accepts startDeadlineEpochMs only on scheduled runs', () => {
-        expect(manifestErrorPaths({ ...explicitManifest(), startDeadlineEpochMs: 20_000 }))
+        expect(toManifestIssueTexts({ ...createExplicitManifest(), startDeadlineEpochMs: 20_000 }))
             .toEqual(['$.startDeadlineEpochMs Only scheduled distributed runs accept startDeadlineEpochMs.']);
-        expect(manifestErrorPaths({ ...explicitManifest(), startMode: 'scheduled', startDeadlineEpochMs: 20_000 }))
+        expect(toManifestIssueTexts({ ...createExplicitManifest(), startMode: 'scheduled', startDeadlineEpochMs: 20_000 }))
             .toEqual([]);
     });
 
     it('accepts agentIds only on selected-agents policies and roles only on role-map policies', () => {
-        expect(manifestErrorPaths({
-            ...explicitManifest(),
+        expect(toManifestIssueTexts({
+            ...createExplicitManifest(),
             targetPolicy: { mode: 'all-online-group-members', agentIds: ['alice-agent'], includeOfflineExpectedAgents: false }
         })).toEqual(['$.targetPolicy.agentIds Only selected-agents target policies accept agentIds.']);
-        expect(manifestErrorPaths({
-            ...explicitManifest(),
+        expect(toManifestIssueTexts({
+            ...createExplicitManifest(),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['alice-agent'],
@@ -929,12 +929,12 @@ describe('distributed run manifest author settings', () => {
                 includeOfflineExpectedAgents: false
             }
         })).toEqual(['$.targetPolicy.roles Only role-map target policies accept roles.']);
-        expect(manifestErrorPaths({
-            ...explicitManifest(),
+        expect(toManifestIssueTexts({
+            ...createExplicitManifest(),
             targetPolicy: { mode: 'selected-agents', includeOfflineExpectedAgents: false }
         })).toEqual(['$.targetPolicy.agentIds selected-agents target policy requires at least one agent ID.']);
-        expect(manifestErrorPaths({
-            ...explicitManifest(),
+        expect(toManifestIssueTexts({
+            ...createExplicitManifest(),
             targetPolicy: { mode: 'role-map', includeOfflineExpectedAgents: false }
         })).toEqual(['$.targetPolicy.roles A role-map target policy requires roles.']);
     });
