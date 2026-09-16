@@ -1790,7 +1790,8 @@ test('preserves the complete 240-target manifest through pressure lifecycle muta
     expect(create?.manifest?.targetPolicy).toEqual({
         mode: 'selected-agents',
         agentIds: Array.from({ length: 240 }, (_unused, index) => `pressure-agent-${String(index).padStart(4, '0')}`),
-        expectedParticipantCount: 240
+        expectedParticipantCount: 240,
+        includeOfflineExpectedAgents: false
     });
     await actions.getByRole('button', { name: /Stage \d+ agents/ }).click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(
