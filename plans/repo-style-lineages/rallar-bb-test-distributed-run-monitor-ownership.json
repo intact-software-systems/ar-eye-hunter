@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/distributed-run-monitor.ts",
+        "blob": "e9114f63e1138526b3cda464034e19909355debb"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/distributed/unique-sorted-values.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/compute-loop-iteration-estimate.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-command-preview.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/resolve-command-capability.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-composite-command-branch.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-distributed-recipe-command-analysis.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-distributed-recipe-command-summary.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-expectation-command-branch.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-preflight-service-badges.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-transport-command-details.ts"
+      ]
+    }
+  ]
+}

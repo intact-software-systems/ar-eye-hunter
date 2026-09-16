@@ -1,5 +1,5 @@
 import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
-import { distributedRecipePreflight } from './distributed-run-monitor.ts';
+import { distributedRecipePreflight } from './distributed-recipe-preflight/distributed-recipe-preflight.ts';
 import {
     tuningAgentIssuePointer,
     tuningPointerTargetsObject,

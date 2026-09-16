@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { distributedRecipePreflight } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { distributedRecipePreflight } from '../../shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight.ts';
 import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const ROOM_IDENTITY_WARNING = 'Browser Rallar RTC readiness cannot point-refresh room state without an exact room reference';

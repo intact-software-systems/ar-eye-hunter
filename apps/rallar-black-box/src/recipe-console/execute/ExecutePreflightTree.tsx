@@ -1,4 +1,4 @@
-import type { DistributedRecipePreflightTreeRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipePreflightTreeRow } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
 import type { CSSProperties } from 'react';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { createExecuteWindowRevision } from './execute-window-revision.ts';

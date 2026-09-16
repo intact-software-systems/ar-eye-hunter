@@ -1,9 +1,7 @@
-import {
-    distributedRecipeCommandKinds,
-    distributedRecipePreflight,
-    type DistributedRecipeCatalogItem,
-    type DistributedRecipePreflightSummary
-} from './distributed-run-monitor.ts';
+import { distributedRecipeCommandKinds } from './distributed-recipe-preflight/distributed-recipe-command-preview.ts';
+import type { DistributedRecipePreflightSummary } from './distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
+import { distributedRecipePreflight } from './distributed-recipe-preflight/distributed-recipe-preflight.ts';
+import type { DistributedRecipeCatalogItem } from './distributed-run-monitor.ts';
 import type { RallarBlackBoxDistributedGroupRef } from './distributed-run.ts';
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
