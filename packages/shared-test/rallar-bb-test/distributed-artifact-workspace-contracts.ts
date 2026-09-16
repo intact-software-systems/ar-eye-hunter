@@ -47,6 +47,8 @@ export type DistributedArtifactWorkspaceIssueCode =
     | 'ambiguous-envelope'
     | 'identity-conflict'
     | 'unsupported-family'
+    | 'missing-generation-time'
+    | 'control-request-failure'
     | 'analysis-failed';
 
 export type DistributedArtifactWorkspaceIssue = Readonly<{
@@ -66,7 +68,8 @@ export type DistributedArtifactWorkspace = Readonly<{
     family: DistributedArtifactFamily;
     source: DistributedArtifactWorkspaceSource;
     support: DistributedArtifactWorkspaceSupport;
-    generatedAtEpochMs: number;
+    /** Absent when neither the caller, an artifact envelope nor metadata.json supplies a generation time. */
+    generatedAtEpochMs?: number;
     artifactSchemaVersion?: number;
     distributedRunId?: string;
     files: DistributedRunArtifactFiles;

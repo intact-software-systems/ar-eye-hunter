@@ -673,6 +673,9 @@ describe('Hetzner distributed manifest catalog', () => {
                     requiredRecipes: 1,
                     passedRecipes: 2,
                     failedRecipes: 0,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
                     blockingFailures: 0
                 },
                 failures: []
@@ -683,6 +686,7 @@ describe('Hetzner distributed manifest catalog', () => {
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 5_500,
             agents: agentIds.map((agentId) => ({
+                runId: controlRunId,
                 agentId,
                 connected: true,
                 status: 'connected',
@@ -692,7 +696,13 @@ describe('Hetzner distributed manifest catalog', () => {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
                     groupId: 'hetzner-headless-room'
-                }
+                },
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 2,
+                receivedEventCount: 1,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: []
             })),
             commands: [
                 controlCommand(controlRunId, 'controller-01', 'stage-controller-01', 1_210, 40),
@@ -723,10 +733,11 @@ describe('Hetzner distributed manifest catalog', () => {
         };
 
         const snapshots = distributedArtifactSnapshotsFromFiles(files, 6_000);
-        const monitor = deriveDistributedRunMonitor({
-            distributedRun: snapshots.distributedRun,
-            controlRun: snapshots.controlRun,
-            artifactBundle: snapshots.artifactBundle
+        expect(snapshots.left).toBeUndefined();
+        const monitor = snapshots.right && deriveDistributedRunMonitor({
+            distributedRun: snapshots.right.distributedRun,
+            controlRun: snapshots.right.controlRun,
+            artifactBundle: snapshots.right.artifactBundle
         });
         const performance = deriveRtcPerformanceView({
             diagnostics: deriveRtcDiagnostics(emptySpaState()),
@@ -734,13 +745,13 @@ describe('Hetzner distributed manifest catalog', () => {
             distributedMonitor: monitor
         });
 
-        expect(monitor.state).toBe('passed');
-        expect(monitor.artifact.status).toBe('valid');
-        expect(monitor.agentProgress.map((row) => [row.agentId, row.execution, row.averageLatencyMs])).toEqual([
+        expect(monitor?.state).toBe('passed');
+        expect(monitor?.artifact.status).toBe('valid');
+        expect(monitor?.agentProgress.map((row) => [row.agentId, row.execution, row.averageLatencyMs])).toEqual([
             ['controller-01', 'passed', 110],
             ['controller-02', 'passed', 240]
         ]);
-        expect(monitor.latency.p95Ms).toBe(420);
+        expect(monitor?.latency.p95Ms).toBe(420);
         expect(performance.summary.commandCount).toBe(2);
         expect(performance.summary.p99Ms).toBe(240);
         expect(performance.scatter.map((point) => [point.source, point.agentId, point.durationMs])).toEqual([
@@ -1064,7 +1075,8 @@ function controlCommand(runId: string, agentId: string, commandId: string, queue
             commandId,
             command: {
                 kind: 'recipe.run',
-                commandId
+                commandId,
+                recipe: { schemaVersion: 1, recipeId: 'rtc-realtime', commands: [{ kind: 'health' }] }
             }
         },
         queuedAtEpochMs,

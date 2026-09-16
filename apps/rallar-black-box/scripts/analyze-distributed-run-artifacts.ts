@@ -1,36 +1,64 @@
-import {
-    analyzeDistributedRunArtifactFiles,
-    type DistributedRunArtifactFiles
-} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunArtifactAnalysis,
+    type DistributedRunArtifactFiles,
+    type DistributedRunArtifactRejection
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+
+export interface AnalyzeDistributedRunArtifactDirectoryInput {
+    readonly artifactDir: string;
+    readonly outDir: string;
+    readonly generatedAtEpochMs: number;
+}
 
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
     const artifactDir = args['artifact-dir'];
     if (!artifactDir) {
-        throw new Error('Missing required --artifact-dir <path>.');
+        console.error('Missing required --artifact-dir <path>.');
+        process.exitCode = 1;
+        return;
     }
-    const outDir = args['out-dir'] ?? join(artifactDir, 'analysis');
-    await analyzeDistributedRunArtifactDirectory(artifactDir, outDir);
+    const analyzed = await analyzeDistributedRunArtifactDirectory({
+        artifactDir,
+        outDir: args['out-dir'] ?? join(artifactDir, 'analysis'),
+        generatedAtEpochMs: Date.now()
+    });
+    if (analyzed.left !== undefined) {
+        console.error(analyzed.left.message);
+        process.exitCode = 1;
+    }
 }
 
 export async function analyzeDistributedRunArtifactDirectory(
-    artifactDir: string,
-    outDir = join(artifactDir, 'analysis')
-): Promise<void> {
-    const files = await readArtifactFiles(artifactDir);
-    const analysis = analyzeDistributedRunArtifactFiles({ files });
+    input: AnalyzeDistributedRunArtifactDirectoryInput
+): Promise<Either<DistributedRunArtifactRejection, DistributedRunArtifactAnalysis>> {
+    const files = await readArtifactFiles(input.artifactDir);
+    const analyzed = analyzeDistributedRunArtifactFiles({
+        files,
+        generatedAtEpochMs: input.generatedAtEpochMs
+    });
+    if (analyzed.right !== undefined) {
+        await writeAnalysisFiles(input.outDir, analyzed.right);
+    }
+    return analyzed;
+}
 
+async function writeAnalysisFiles(outDir: string, artifactAnalysis: DistributedRunArtifactAnalysis): Promise<void> {
+    const analysis = artifactAnalysis.analysis;
     await mkdir(outDir, { recursive: true });
     await writeFile(join(outDir, 'analysis.json'), `${JSON.stringify(analysis, null, 2)}\n`);
     await writeFile(join(outDir, 'summary.md'), analysis.summaryMarkdown);
     if (analysis.fixProposalMarkdown) {
         await writeFile(join(outDir, 'fix-proposal.md'), analysis.fixProposalMarkdown);
     }
-    if (analysis.performanceMarkdown) {
-        await writeFile(join(outDir, 'performance.md'), analysis.performanceMarkdown);
+    if (artifactAnalysis.variant === 'distributed-run' && artifactAnalysis.analysis.performanceMarkdown) {
+        await writeFile(join(outDir, 'performance.md'), artifactAnalysis.analysis.performanceMarkdown);
     }
 }
 

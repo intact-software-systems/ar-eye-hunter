@@ -43,16 +43,16 @@ describe('Recipe Console deterministic scale fixture', () => {
         ).toBe(true);
         expect(fixture.bytes).toEqual({
             byFile: {
-                'distributed-run.json': 1_309,
+                'distributed-run.json': 463_471,
                 'manifest.json': 635,
                 'control-run.json': 443,
                 'report.json': 363,
-                'results.jsonl': 1_101_362,
+                'results.jsonl': 1_224_367,
                 'events.jsonl': 3_648_310,
                 'failures.json': 334,
                 'metadata.json': 383
             },
-            total: 4_753_139
+            total: 5_338_306
         });
     });
 
@@ -125,7 +125,7 @@ describe('Recipe Console deterministic scale fixture', () => {
             files: fixture.files,
             artifactSchemaVersion: fixture.artifactSchemaVersion,
             generatedAtEpochMs: fixture.generatedAtEpochMs
-        });
+        }).right?.analysis;
 
         expect(
             manifestValidation.ok,
@@ -136,7 +136,7 @@ describe('Recipe Console deterministic scale fixture', () => {
             support: 'supported',
             distributedRunId: 'recipe-console-scale-distributed-run'
         });
-        expect(analysis.parseWarnings).toEqual([]);
+        expect(analysis?.parseWarnings).toEqual([]);
         expect(analysis).toMatchObject({
             distributedRunId: 'recipe-console-scale-distributed-run',
             controlRunId: 'recipe-console-scale-control-run',
@@ -152,7 +152,7 @@ describe('Recipe Console deterministic scale fixture', () => {
                 commandId: 'scale-command-000000'
             }
         });
-        expect(analysis.failure?.nextAction.length).toBeGreaterThan(20);
+        expect(analysis?.failure?.nextAction.length).toBeGreaterThan(20);
         expect(fixture.files['results.jsonl']).toContain(fixture.needles.actionableFailure);
         expect(fixture.files['events.jsonl']).toContain(fixture.needles.actionableDiagnostic);
     });

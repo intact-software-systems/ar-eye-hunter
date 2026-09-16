@@ -6,7 +6,16 @@ import {
     evaluatePollingOutcomeParityRows,
     type AssertionOutcomeParityRow
 } from '../../shared-test/rallar-bb-test/conformance/assertion-outcome-parity.ts';
-import { analyzeDistributedRunArtifactFiles } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles
+} from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
 
 function expectRowsHold(rows: readonly AssertionOutcomeParityRow[]): void {
     expect(rows.length).toBeGreaterThan(0);
@@ -28,43 +37,40 @@ function pollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
     }) as typeof fetch;
 }
 
-function failingRunFiles(code: string, message: string): Record<string, string> {
-    return {
-        'distributed-run.json': JSON.stringify({
+function failingRunFiles(code: string, message: string): DistributedRunArtifactFiles {
+    return toDistributedRunArtifactFiles({
+        distributedRun: createDistributedRunSnapshot({
             distributedRunId: `dist-${code.toLowerCase()}`,
             controlRunId: 'run-assertions',
             state: 'failed',
+            agentIds: ['controller-01'],
             startedAtEpochMs: 1_000,
-            completedAtEpochMs: 4_000,
-            rollup: {
-                ok: false,
-                summary: {
-                    participants: 1,
-                    failedParticipants: 1,
-                    blockingFailures: 1
-                }
-            },
-            manifest: {
-                group: {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'bb-group'
-                }
-            }
+            completedAtEpochMs: 4_000
         }),
-        'results.jsonl': JSON.stringify({
-            resultKey: `controller-01:${code}`,
-            status: 'FAILURE',
-            transport: 'realtime',
-            action: 'wait',
-            agentId: 'controller-01',
-            commandId: 'assertion-command',
-            actual: {
-                code,
-                message
-            }
-        })
-    };
+        controlRun: createControlRunSnapshot({ runId: 'run-assertions', agents: [{ agentId: 'controller-01' }] }),
+        files: {
+            'results.jsonl': JSON.stringify({
+                resultKey: `controller-01:${code}`,
+                status: 'FAILURE',
+                transport: 'realtime',
+                action: 'wait',
+                agentId: 'controller-01',
+                commandId: 'assertion-command',
+                actual: {
+                    code,
+                    message
+                }
+            })
+        }
+    });
+}
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
 }
 
 describe('rallar-bb-test assertion outcome parity', () => {
@@ -85,12 +91,10 @@ describe('rallar-bb-test assertion outcome parity', () => {
     });
 
     it('names absence violations in analysis and fix proposals', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: failingRunFiles(
-                'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED',
-                'Wait absence was violated: a runtime event matched before the window closed.'
-            )
-        });
+        const analysis = analyzedRun(failingRunFiles(
+            'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED',
+            'Wait absence was violated: a runtime event matched before the window closed.'
+        ));
 
         expect(analysis.status).toBe('failed');
         expect(analysis.failure?.category).toBe('assertion-absence');
@@ -100,12 +104,10 @@ describe('rallar-bb-test assertion outcome parity', () => {
     });
 
     it('names until-loop exhaustion in analysis and fix proposals', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: failingRunFiles(
-                'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED',
-                'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.'
-            )
-        });
+        const analysis = analyzedRun(failingRunFiles(
+            'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED',
+            'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.'
+        ));
 
         expect(analysis.status).toBe('failed');
         expect(analysis.failure?.category).toBe('convergence-polling');

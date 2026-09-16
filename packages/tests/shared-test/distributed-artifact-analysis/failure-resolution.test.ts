@@ -1,97 +1,92 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeDistributedRunArtifactFiles } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    createQueuedCommandSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
 
 describe('distributed run artifact failure resolution', () => {
     it('creates a fix proposal from failed fleet signatures and command evidence', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-failed',
+                controlRunId: 'run-failed',
+                state: 'failed',
+                agentIds: ['controller-01', 'controller-02'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 4_000,
+                commandLinks: [
+                    { phase: 'start', agentId: 'controller-02', commandId: 'send-rtc', queuedAtEpochMs: 1_100 }
+                ],
+                summary: { passedParticipants: 1, failedParticipants: 1 }
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-failed',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 2 },
+                    { agentId: 'controller-02', reconnectCount: 1, receivedEventCount: 3 }
+                ],
+                commands: [
+                    createQueuedCommandSnapshot({
+                        runId: 'run-failed',
+                        agentId: 'controller-02',
+                        commandId: 'send-rtc',
+                        command: { kind: 'rtc.send', transport: 'realtime' },
+                        queuedAtEpochMs: 1_100,
+                        dispatchedAtEpochMs: 1_150,
+                        completedAtEpochMs: 2_400
+                    })
+                ],
+                results: [{
+                    kind: 'result',
+                    protocolVersion: 1,
+                    runId: 'run-failed',
+                    agentId: 'controller-02',
+                    commandId: 'send-rtc',
+                    ok: false,
+                    error: { code: 'RTC_NO_ROUTE', message: 'No route to peer.' }
+                }]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-failed',
-                    controlRunId: 'run-failed',
-                    state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 4_000,
-                    rollup: {
-                        ok: false,
-                        summary: {
-                            participants: 2,
-                            failedParticipants: 1,
-                            blockingFailures: 1
-                        }
-                    },
-                    manifest: {
-                        group: {
-                            applicationId: 'rallar-server',
-                            workspaceId: 'default',
-                            groupId: 'bb-group'
-                        }
+                'results.jsonl': JSON.stringify({
+                    resultKey: 'controller-02:send-rtc',
+                    status: 'FAILURE',
+                    transport: 'realtime',
+                    action: 'rtc.send',
+                    agentId: 'controller-02',
+                    commandId: 'send-rtc',
+                    actual: {
+                        code: 'RTC_NO_ROUTE',
+                        message: 'No route to peer.'
                     }
                 }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-failed',
-                    agents: [
-                        {
-                            agentId: 'controller-01',
-                            connected: true,
-                            reconnectCount: 0,
-                            receivedEventCount: 2
-                        },
-                        {
-                            agentId: 'controller-02',
-                            connected: true,
-                            reconnectCount: 1,
-                            receivedEventCount: 3
-                        }
-                    ],
-                    commands: [
-                        {
-                            envelope: {
-                                agentId: 'controller-02',
-                                commandId: 'send-rtc',
-                                command: {
-                                    kind: 'rtc.send',
-                                    transport: 'realtime'
-                                }
-                            },
-                            queuedAtEpochMs: 1_100,
-                            dispatchedAtEpochMs: 1_150,
-                            completedAtEpochMs: 2_400
-                        }
-                    ],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
+                'events.jsonl': JSON.stringify({
+                    kind: 'rtc-diagnostic',
+                    status: 'diagnostic',
+                    transport: 'realtime',
+                    agentId: 'controller-02',
+                    commandId: 'send-rtc',
+                    value: {
+                        diagnosticTypeId: 'rallar.browser.rtc.no_route',
+                        severity: 'error',
+                        message: 'No RTC route to receiver.'
+                    }
                 }),
-                'results.jsonl': [
-                    JSON.stringify({
-                        resultKey: 'controller-02:send-rtc',
-                        status: 'FAILURE',
-                        transport: 'realtime',
-                        action: 'rtc.send',
-                        agentId: 'controller-02',
-                        commandId: 'send-rtc',
-                        actual: {
-                            code: 'RTC_NO_ROUTE',
-                            message: 'No route to peer.'
-                        }
-                    })
-                ].join('\n'),
-                'events.jsonl': [
-                    JSON.stringify({
-                        kind: 'rtc-diagnostic',
-                        status: 'diagnostic',
-                        transport: 'realtime',
-                        agentId: 'controller-02',
-                        commandId: 'send-rtc',
-                        value: {
-                            diagnosticTypeId: 'rallar.browser.rtc.no_route',
-                            severity: 'error',
-                            message: 'No RTC route to receiver.'
-                        }
-                    })
-                ].join('\n'),
                 'failures.json': JSON.stringify({
                     failures: [
                         {
@@ -140,7 +135,7 @@ describe('distributed run artifact failure resolution', () => {
                     }
                 })
             }
-        });
+        }));
 
         expect(analysis.ok).toBe(false);
         expect(analysis.status).toBe('failed');
@@ -156,52 +151,40 @@ describe('distributed run artifact failure resolution', () => {
     });
 
     it('falls back to distributed and control artifacts when fleet report is missing', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-no-fleet',
-                    controlRunId: 'run-no-fleet',
-                    state: 'timed-out',
-                    startedAtEpochMs: 2_000,
-                    completedAtEpochMs: 12_000,
-                    rollup: {
-                        ok: false,
-                        failures: [
-                            {
-                                kind: 'participant',
-                                key: 'controller-03',
-                                message: 'Missing stage ACK before timeout.',
-                                code: 'ACK_TIMEOUT',
-                                agentId: 'controller-03'
-                            }
-                        ]
-                    },
-                    manifest: {
-                        group: {
-                            applicationId: 'rallar-server',
-                            workspaceId: 'default',
-                            groupId: 'bb-group'
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-no-fleet',
+                controlRunId: 'run-no-fleet',
+                state: 'timed-out',
+                agentIds: ['controller-01', 'controller-03'],
+                startedAtEpochMs: 2_000,
+                completedAtEpochMs: 12_000,
+                failures: [
+                    {
+                        kind: 'participant',
+                        key: 'controller-03',
+                        state: 'timed-out',
+                        required: true,
+                        error: {
+                            code: 'ACK_TIMEOUT',
+                            message: 'Missing stage ACK before timeout.'
                         }
                     }
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-no-fleet',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 1 },
-                        { agentId: 'controller-03', connected: false, reconnectCount: 2, receivedEventCount: 0 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                ]
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-no-fleet',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 1 },
+                    { agentId: 'controller-03', connected: false, reconnectCount: 2 }
+                ]
+            }),
+            files: {
                 'results.jsonl': '',
                 'events.jsonl': '',
                 'failures.json': JSON.stringify({ failures: [] })
             }
-        });
+        }));
 
         expect(analysis.ok).toBe(false);
         expect(analysis.status).toBe('timed-out');
@@ -211,30 +194,22 @@ describe('distributed run artifact failure resolution', () => {
         expect(analysis.fixProposalMarkdown).toContain('controller-03');
     });
 
-    it('uses payload diagnostic evidence when failed runs have no result failure', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+    it('uses payload diagnostic evidence when the fleet report fails a run whose rollup holds no failure evidence', () => {
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-payload-diagnostic',
+                controlRunId: 'run-payload-diagnostic',
+                state: 'passed',
+                agentIds: ['agent-a'],
+                startedAtEpochMs: 100,
+                completedAtEpochMs: 200
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-payload-diagnostic',
+                agents: [{ agentId: 'agent-a' }]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-payload-diagnostic',
-                    controlRunId: 'run-payload-diagnostic',
-                    state: 'failed',
-                    startedAtEpochMs: 100,
-                    completedAtEpochMs: 200,
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['agent-a'],
-                    commandLinks: []
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-payload-diagnostic',
-                    agents: [{ agentId: 'agent-a', connected: true }],
-                    commands: [{}],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                'fleet-report.json': JSON.stringify({ ok: false }),
                 'events.jsonl': JSON.stringify({
                     kind: 'diagnostic',
                     transport: 'realtime',
@@ -246,8 +221,9 @@ describe('distributed run artifact failure resolution', () => {
                     }
                 })
             }
-        });
+        }));
 
+        expect(analysis.ok).toBe(false);
         expect(analysis.failure).toMatchObject({
             category: 'diagnostic',
             title: 'Payload-only RTC route diagnostic.',

@@ -52,9 +52,10 @@ function coreFiles(
                 state: 'failed',
                 ok: false,
                 failures: [{
-                    kind: 'command',
-                    key: 'command:send-rtc',
+                    kind: 'participant',
+                    key: 'agent-eu',
                     state: 'failed',
+                    required: true,
                     agentId: 'agent-eu',
                     recipeId: 'rtc-stability',
                     commandId: 'send-rtc',
@@ -64,7 +65,21 @@ function coreFiles(
                     },
                     atEpochMs: 350
                 }],
-                summary: { blockingFailures: 1 }
+                summary: {
+                    participants: 1,
+                    requiredParticipants: 1,
+                    readyParticipants: 1,
+                    passedParticipants: 0,
+                    failedParticipants: 1,
+                    recipes: 1,
+                    requiredRecipes: 1,
+                    passedRecipes: 0,
+                    failedRecipes: 1,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
+                    blockingFailures: 1
+                }
             }
         }),
         'manifest.json': JSON.stringify(manifest),
@@ -317,12 +332,8 @@ describe('Recipe Console Analyze artifact model', () => {
     });
 
     it('retains an incomplete core workspace and still creates a portable envelope', () => {
-        const files = coreFiles({
-            'manifest.json': undefined,
-            'control-run.json': undefined
-        });
         const model = createAnalyzeArtifactModel({
-            files,
+            files: coreFiles({ 'manifest.json': undefined }),
             source: 'local-files',
             label: 'Partial CI bundle',
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
@@ -341,7 +352,31 @@ describe('Recipe Console Analyze artifact model', () => {
             }
         });
         expect(Object.keys(model.portableEnvelope.files))
-            .toEqual(['distributed-run.json']);
+            .toEqual(['control-run.json', 'distributed-run.json']);
+    });
+
+    it('rejects a core bundle without control-run.json as unusable instead of inventing a control run', () => {
+        let rejection: AnalyzeArtifactModelError | undefined;
+        try {
+            createAnalyzeArtifactModel({
+                files: coreFiles({ 'manifest.json': undefined, 'control-run.json': undefined }),
+                source: 'local-files',
+                label: 'Partial CI bundle',
+                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+            });
+        }
+        catch (error) {
+            if (!(error instanceof AnalyzeArtifactModelError)) {
+                throw error;
+            }
+            rejection = error;
+        }
+
+        expect(rejection).toMatchObject({ code: 'unusable-distributed-artifact' });
+        expect(rejection?.workspace.issues).toContainEqual(expect.objectContaining({
+            code: 'analysis-failed',
+            fileName: 'control-run.json'
+        }));
     });
 
     it('retains usable analysis when an optional evidence file is malformed', () => {

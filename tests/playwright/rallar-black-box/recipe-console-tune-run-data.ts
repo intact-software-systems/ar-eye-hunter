@@ -151,6 +151,9 @@ export function createTuneDistributedRun(
                 requiredRecipes: 1,
                 passedRecipes: right ? 0 : 1,
                 failedRecipes: right ? 1 : 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: right ? 1 : 0
             },
             failures: right

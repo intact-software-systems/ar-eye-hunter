@@ -1,62 +1,84 @@
 import { describe, expect, it } from 'vitest';
+
 import {
     analyzeDistributedRunArtifactFiles,
     distributedArtifactBundleFromFiles,
     distributedArtifactSnapshotsFromFiles,
+    type DistributedRunAnalysis,
     type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunMonitor } from '../../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+const GENERATED_AT_EPOCH_MS = 123;
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
+
+function passedRunFiles(files: DistributedRunArtifactFiles = {}): DistributedRunArtifactFiles {
+    return toDistributedRunArtifactFiles({
+        distributedRun: createDistributedRunSnapshot({
+            distributedRunId: 'dist-decoded',
+            controlRunId: 'run-decoded',
+            state: 'passed',
+            agentIds: ['agent-a'],
+            startedAtEpochMs: 10,
+            completedAtEpochMs: 40
+        }),
+        controlRun: createControlRunSnapshot({
+            runId: 'run-decoded',
+            agents: [{ agentId: 'agent-a', receivedEventCount: 7 }]
+        }),
+        files
+    });
+}
 
 describe('distributed run artifact decoding', () => {
     it('includes target-resolution evidence in analysis summaries', () => {
-        const files: DistributedRunArtifactFiles = {
-            'distributed-run.json': JSON.stringify({
+        const files = toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-world-fleet',
                 controlRunId: 'run-world-fleet',
                 state: 'failed',
-                targetAgentIds: ['agent-01', 'agent-02'],
-                commandLinks: [],
-                rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                manifest: {
-                    recipes: [],
-                    group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' }
-                }
+                agentIds: ['agent-01', 'agent-02']
             }),
-            'control-run.json': JSON.stringify({
-                runId: 'run-world-fleet',
-                agents: [],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            }),
-            'target-resolution.json': JSON.stringify({
-                targetAgentIds: ['agent-01', 'agent-02'],
-                roleAssignments: [
-                    { agentId: 'agent-01', role: 'sender', required: true },
-                    { agentId: 'agent-02', role: 'receiver', required: true }
-                ],
-                blockers: [
-                    { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }
-                ],
-                summary: {
-                    selected: 2,
-                    expectedParticipantCount: 3,
-                    missingExpectedParticipants: 1,
-                    staleAgents: 1,
-                    offlineAgents: 0,
-                    wrongGroupAgents: 0,
-                    agentsWithoutIdentity: 0,
-                    roleCounts: { receiver: 1, sender: 1 },
-                    regions: { 'eu-north': 2 },
-                    providers: { hetzner: 2 }
-                }
-            })
-        };
+            controlRun: createControlRunSnapshot({ runId: 'run-world-fleet' }),
+            files: {
+                'target-resolution.json': JSON.stringify({
+                    targetAgentIds: ['agent-01', 'agent-02'],
+                    roleAssignments: [
+                        { agentId: 'agent-01', role: 'sender', required: true },
+                        { agentId: 'agent-02', role: 'receiver', required: true }
+                    ],
+                    blockers: [
+                        { agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }
+                    ],
+                    summary: {
+                        selected: 2,
+                        expectedParticipantCount: 3,
+                        missingExpectedParticipants: 1,
+                        staleAgents: 1,
+                        offlineAgents: 0,
+                        wrongGroupAgents: 0,
+                        agentsWithoutIdentity: 0,
+                        roleCounts: { receiver: 1, sender: 1 },
+                        regions: { 'eu-north': 2 },
+                        providers: { hetzner: 2 }
+                    }
+                })
+            }
+        });
 
-        const analysis = analyzeDistributedRunArtifactFiles({ files });
+        const analysis = analyzedRun(files);
 
         expect(analysis.targetResolution).toMatchObject({
             selected: 2,
@@ -70,226 +92,217 @@ describe('distributed run artifact decoding', () => {
         expect(analysis.summaryMarkdown).toContain('Target blockers: 1');
     });
 
-    it('uses JSONL fallback evidence consistently for CLI analysis and SPA snapshots', () => {
-        const files: DistributedRunArtifactFiles = {
-            'distributed-run.json': JSON.stringify({
+    it('promotes JSONL rows that name their agent, command and outcome without inventing envelopes or command links', () => {
+        const files = toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
                 distributedRunId: 'dist-jsonl-only',
                 controlRunId: 'run-jsonl-only',
                 state: 'failed',
+                agentIds: ['agent-a'],
                 startedAtEpochMs: 1_000,
-                completedAtEpochMs: 2_000,
-                targetAgentIds: ['agent-a'],
-                commandLinks: [],
-                rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                manifest: {
-                    recipes: [{ recipeId: 'rtc-smoke', recipe: { recipeId: 'rtc-smoke', commands: [] } }],
-                    group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' }
-                }
+                completedAtEpochMs: 2_000
             }),
-            'control-run.json': JSON.stringify({
+            controlRun: createControlRunSnapshot({
                 runId: 'run-jsonl-only',
-                agents: [{ agentId: 'agent-a', connected: true, reconnectCount: 0, receivedEventCount: 1 }],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
+                agents: [{ agentId: 'agent-a', receivedEventCount: 1 }]
             }),
-            'results.jsonl': JSON.stringify({
-                resultKey: 'agent-a:send-rtc',
-                status: 'FAILURE',
-                agentId: 'agent-a',
-                action: 'rtc.send',
-                actual: {
-                    code: 'RTC_NO_ROUTE',
-                    message: 'No route to peer.'
-                }
-            }),
-            'events.jsonl': JSON.stringify({
-                kind: 'rtc-diagnostic',
-                transport: 'realtime',
-                agentId: 'agent-a',
-                value: {
-                    severity: 'error',
-                    message: 'No RTC route to receiver.'
-                }
-            })
-        };
+            files: {
+                'results.jsonl': [
+                    JSON.stringify({
+                        resultKey: 'agent-a:send-rtc',
+                        status: 'FAILURE',
+                        agentId: 'agent-a',
+                        action: 'rtc.send',
+                        actual: {
+                            code: 'RTC_NO_ROUTE',
+                            message: 'No route to peer.'
+                        }
+                    }),
+                    JSON.stringify({ status: 'FAILURE', action: 'rtc.send' })
+                ].join('\n'),
+                'events.jsonl': JSON.stringify({
+                    kind: 'rtc-diagnostic',
+                    transport: 'realtime',
+                    agentId: 'agent-a',
+                    value: {
+                        severity: 'error',
+                        message: 'No RTC route to receiver.'
+                    }
+                })
+            }
+        });
 
-        const analysis = analyzeDistributedRunArtifactFiles({ files });
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 123);
+        const analysis = analyzedRun(files);
+        const snapshots = distributedArtifactSnapshotsFromFiles(files, GENERATED_AT_EPOCH_MS).right;
 
         expect(analysis.failure).toMatchObject({
             commandId: 'send-rtc',
-            affectedAgents: ['agent-a']
+            affectedAgents: ['agent-a'],
+            evidenceFile: 'results.jsonl'
         });
-        expect(analysis.spa?.report.firstFailure).toMatchObject({
+        expect(analysis.performance?.errorDiagnosticCount).toBe(1);
+        expect(snapshots?.distributedRun.commandLinks).toEqual([]);
+        expect(snapshots?.controlRun.results).toEqual([{
+            kind: 'result',
+            protocolVersion: 1,
+            runId: 'run-jsonl-only',
+            agentId: 'agent-a',
             commandId: 'send-rtc',
-            agentId: 'agent-a'
-        });
-        expect(snapshots.distributedRun.commandLinks.map((link) => link.commandId)).toEqual(['send-rtc']);
-        expect(snapshots.controlRun.results.map((result) => [result.commandId, result.ok])).toEqual([
-            ['send-rtc', false]
-        ]);
-        expect(snapshots.controlRun.events.map((event) => [event.kind, event.agentId])).toEqual([
-            ['diagnostic', 'agent-a']
-        ]);
+            ok: false,
+            error: { code: 'RTC_NO_ROUTE', message: 'No route to peer.' }
+        }]);
+        expect(snapshots?.controlRun.events).toEqual([]);
     });
 
-    it('uses runner summary and manifest fallbacks when the distributed-run snapshot is empty', () => {
-        const files: DistributedRunArtifactFiles = {
-            'distributed-run.json': '',
-            'runner-summary.json': JSON.stringify({
-                distributedRunId: 'dist-empty-snapshot',
-                controlRunId: 'run-empty-snapshot',
-                state: 'timed-out',
-                ok: false
-            }),
-            'manifest.json': JSON.stringify({
-                schemaVersion: 1,
-                distributedRunId: 'dist-empty-snapshot',
-                controlRunId: 'run-empty-snapshot',
-                group: {
-                    applicationId: 'rallar-server',
-                    workspaceId: 'default',
-                    groupId: 'hetzner-headless-room'
-                },
-                recipes: []
-            }),
-            'control-run.json': JSON.stringify({
-                runId: 'run-empty-snapshot',
-                agents: [{ agentId: 'controller-01', connected: true }],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            }),
-            'results.jsonl': JSON.stringify({
-                agentId: 'controller-01',
-                commandId: 'rtc-realtime-position-stream',
-                action: 'rtc.stream',
-                status: 'FAILURE',
-                result: {
-                    durationMs: 1_350,
-                    plannedFrames: 100,
-                    completedFrames: 82,
-                    failedFrames: 18,
-                    droppedFrames: 18,
-                    observations: [{ durationMs: 1_350, dropped: false }]
-                },
-                error: {
-                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
-                    message: 'RTC stream had failed frame sends.'
-                }
-            }),
-            'events.jsonl': JSON.stringify({
-                kind: 'diagnostic',
-                topic: 'rallar.bb.rtc.stream_failed',
-                agentId: 'controller-01',
-                commandId: 'rtc-realtime-position-stream',
-                payload: {
-                    severity: 'error',
-                    message: 'RTC stream had failed frame sends.'
-                }
-            }),
-            'failures.json': JSON.stringify({
-                failures: [{
-                    agentId: 'controller-01',
-                    commandId: 'rtc-realtime-position-stream',
-                    error: {
-                        code: 'RALLAR_BLACK_BOX_RTC_STREAM_SEND_FAILED',
-                        message: 'RTC stream had failed frame sends.'
-                    }
-                }]
-            })
-        };
-
-        const analysis = analyzeDistributedRunArtifactFiles({ files });
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 123);
-        const monitor = deriveDistributedRunMonitor({
-            distributedRun: snapshots.distributedRun,
-            controlRun: snapshots.controlRun,
-            artifactBundle: snapshots.artifactBundle
+    it('rejects artifacts that hold neither a distributed run snapshot nor a failed control request record', () => {
+        const analyzed = analyzeDistributedRunArtifactFiles({
+            files: {
+                'runner-summary.json': JSON.stringify({
+                    distributedRunId: 'dist-missing',
+                    controlRunId: 'run-missing',
+                    state: 'failed',
+                    ok: false,
+                    artifactDir: '/artifacts/dist-missing'
+                }),
+                'control-run.json': JSON.stringify(createControlRunSnapshot({ runId: 'run-missing' }))
+            },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
 
-        expect(analysis).toMatchObject({
-            distributedRunId: 'dist-empty-snapshot',
-            controlRunId: 'run-empty-snapshot',
-            status: 'timed-out',
-            ok: false,
-            failure: {
-                commandId: 'rtc-realtime-position-stream',
-                evidenceFile: 'results.jsonl'
-            }
+        expect(analyzed.left).toEqual({
+            fileName: 'distributed-run.json',
+            message: 'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
         });
-        expect(analysis.parseWarnings).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                fileName: 'distributed-run.json',
-                message: expect.stringContaining('using runner-summary.json and manifest.json fallback')
-            })
-        ]));
-        expect(analysis.performance?.streamTiming).toMatchObject({
-            plannedFrames: 100,
-            completedFrames: 82,
-            droppedFrames: 18
+    });
+
+    it('rejects an empty distributed-run.json instead of rebuilding the run from the runner summary and manifest', () => {
+        const analyzed = analyzeDistributedRunArtifactFiles({
+            files: {
+                ...passedRunFiles(),
+                'distributed-run.json': '',
+                'runner-summary.json': JSON.stringify({
+                    distributedRunId: 'dist-decoded',
+                    controlRunId: 'run-decoded',
+                    state: 'timed-out',
+                    ok: false,
+                    artifactDir: '/artifacts/dist-decoded'
+                })
+            },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
-        expect(monitor.artifact).toMatchObject({ status: 'invalid-json' });
-        expect(snapshots.distributedRun.manifest.group).toMatchObject({
-            groupId: 'hetzner-headless-room'
+
+        expect(analyzed.left).toEqual({
+            fileName: 'distributed-run.json',
+            message: 'distributed-run.json is required and must not be empty.'
         });
     });
 
     it('rejects malformed required JSON artifacts with a useful error', () => {
-        expect(() =>
-            analyzeDistributedRunArtifactFiles({
-                files: {
-                    'distributed-run.json': '{',
-                    'control-run.json': JSON.stringify({ runId: 'run-bad', agents: [] })
+        const analyzed = analyzeDistributedRunArtifactFiles({
+            files: {
+                ...passedRunFiles(),
+                'distributed-run.json': '{'
+            },
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+        });
+
+        expect(analyzed.left?.fileName).toBe('distributed-run.json');
+        expect(analyzed.left?.message).toMatch(/^distributed-run\.json is not valid JSON: /);
+    });
+
+    it('rejects snapshots that omit a required key instead of substituting a placeholder', () => {
+        const distributedRun = createDistributedRunSnapshot({
+            distributedRunId: 'dist-decoded',
+            controlRunId: 'run-decoded',
+            state: 'passed',
+            agentIds: ['agent-a']
+        });
+        const controlRun = createControlRunSnapshot({ runId: 'run-decoded', agents: [{ agentId: 'agent-a' }] });
+        const { createdAtEpochMs: _createdAtEpochMs, ...runWithoutCreatedAt } = distributedRun;
+        const { blockingFailures: _blockingFailures, ...partialSummary } = distributedRun.rollup.summary;
+        const cases = [
+            {
+                name: 'distributed run without createdAtEpochMs',
+                files: { 'distributed-run.json': JSON.stringify(runWithoutCreatedAt) },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message: 'distributed-run.json is not a distributed run snapshot: createdAtEpochMs must be a finite number.'
                 }
-            })
-        ).toThrow(/distributed-run\.json is not valid JSON/);
+            },
+            {
+                name: 'command link without queuedAtEpochMs',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        commandLinks: [{ phase: 'start', agentId: 'agent-a', commandId: 'start-a' }]
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message: 'distributed-run.json is not a distributed run snapshot: commandLinks[0].queuedAtEpochMs must be a finite number.'
+                }
+            },
+            {
+                name: 'rollup summary without blockingFailures',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        rollup: { ...distributedRun.rollup, summary: partialSummary }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message: 'distributed-run.json is not a distributed run snapshot: rollup.summary.blockingFailures must be a finite number.'
+                }
+            },
+            {
+                name: 'control run recorded as null',
+                files: { 'control-run.json': 'null' },
+                expected: {
+                    fileName: 'control-run.json',
+                    message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
+                }
+            },
+            {
+                name: 'control run command that is not a control command',
+                files: { 'control-run.json': JSON.stringify({ ...controlRun, commands: [{}] }) },
+                expected: {
+                    fileName: 'control-run.json',
+                    message: 'control-run.json is not a control run snapshot: commands[0].envelope must be a JSON object.'
+                }
+            },
+            {
+                name: 'control run agent without its counters',
+                files: {
+                    'control-run.json': JSON.stringify({
+                        ...controlRun,
+                        agents: [{ runId: 'run-decoded', agentId: 'agent-a', connected: true }]
+                    })
+                },
+                expected: {
+                    fileName: 'control-run.json',
+                    message: 'control-run.json is not a control run snapshot: agents[0].connectionSequence must be a finite number.'
+                }
+            }
+        ];
+
+        for (const decodeCase of cases) {
+            const analyzed = analyzeDistributedRunArtifactFiles({
+                files: { ...passedRunFiles(), ...decodeCase.files },
+                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+            });
+            expect(analyzed.left, decodeCase.name).toEqual(decodeCase.expected);
+        }
     });
 
     it('keeps optional artifact parse errors visible without hiding the run verdict', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-warning',
-                    controlRunId: 'run-warning',
-                    state: 'passed',
-                    startedAtEpochMs: 10,
-                    completedAtEpochMs: 40,
-                    rollup: { ok: true, summary: { blockingFailures: 0 } },
-                    manifest: {
-                        group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
-                        recipes: []
-                    },
-                    targetAgentIds: [],
-                    commandLinks: []
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-warning',
-                    agents: [
-                        { agentId: 'agent-a', connected: true, reconnectCount: 0, receivedEventCount: 7 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
-                'fleet-report.json': '{',
-                'events.jsonl': [
-                    JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
-                    '{not-json'
-                ].join('\n')
-            },
-            generatedAtEpochMs: 123
-        });
+        const analysis = analyzedRun(passedRunFiles({
+            'fleet-report.json': '{',
+            'events.jsonl': [
+                JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
+                '{not-json'
+            ].join('\n')
+        }));
 
         expect(analysis.ok).toBe(true);
         expect(analysis.parseWarnings.map((warning) => warning.fileName)).toEqual([
@@ -303,71 +316,11 @@ describe('distributed run artifact decoding', () => {
         expect(analysis.summaryMarkdown).toContain('Artifact warnings: 2');
     });
 
-    it('reports SPA derivation failures as artifact warnings', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-spa-warning',
-                    controlRunId: 'run-spa-warning',
-                    state: 'passed',
-                    startedAtEpochMs: 1,
-                    completedAtEpochMs: 2,
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: [],
-                    commandLinks: []
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-spa-warning',
-                    agents: [],
-                    commands: [{}],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                })
-            }
-        });
-
-        expect(analysis.spa).toBeUndefined();
-        expect(analysis.parseWarnings).toEqual(expect.arrayContaining([
-            expect.objectContaining({
-                fileName: 'spa-analysis',
-                message: expect.stringContaining('Unable to derive SPA report')
-            })
-        ]));
-        expect(analysis.ok).toBe(true);
-    });
-
-    it('builds a browser-safe v1-compatible bundle from partial CI artifact imports', () => {
-        const files = {
-            'distributed-run.json': JSON.stringify({
-                distributedRunId: 'dist-import',
-                controlRunId: 'run-import',
-                state: 'passed',
-                rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                targetAgentIds: [],
-                commandLinks: []
-            }),
-            'control-run.json': JSON.stringify({
-                runId: 'run-import',
-                agents: [],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            }),
-            'manifest.json': JSON.stringify({ distributedRunId: 'dist-import' }),
-            'events.jsonl': '',
-            'results.jsonl': ''
-        };
-        const bundle = distributedArtifactBundleFromFiles(files, 456);
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 456);
-        const monitor = deriveDistributedRunMonitor({
+    it('builds a browser-safe v1 bundle from the snapshot files, manifest and JSONL evidence', () => {
+        const files = passedRunFiles({ 'events.jsonl': '', 'results.jsonl': '' });
+        const bundle = distributedArtifactBundleFromFiles(files, 456).right;
+        const snapshots = distributedArtifactSnapshotsFromFiles(files, 456).right;
+        const monitor = snapshots && deriveDistributedRunMonitor({
             distributedRun: snapshots.distributedRun,
             controlRun: snapshots.controlRun,
             artifactBundle: bundle
@@ -375,28 +328,29 @@ describe('distributed run artifact decoding', () => {
 
         expect(bundle).toMatchObject({
             artifactSchemaVersion: 1,
-            distributedRunId: 'dist-import',
+            distributedRunId: 'dist-decoded',
             generatedAtEpochMs: 456,
             files: {
-                'manifest.json': JSON.stringify({ distributedRunId: 'dist-import' }),
+                'manifest.json': files['manifest.json'],
                 'events.jsonl': '',
                 'results.jsonl': ''
             }
         });
-        expect(monitor.artifact).toMatchObject({ status: 'valid' });
+        expect(snapshots?.artifactBundle).toEqual(bundle);
+        expect(monitor?.artifact).toMatchObject({ status: 'valid' });
     });
 
     it('keeps full v2 imported artifact bundles marked as v2', () => {
-        const bundle = distributedArtifactBundleFromFiles({
-            'distributed-run.json': JSON.stringify({ distributedRunId: 'dist-import-v2' }),
-            'control-run.json': JSON.stringify({ runId: 'run-import-v2' }),
-            'manifest.json': JSON.stringify({ distributedRunId: 'dist-import-v2' }),
-            'report.json': '{}',
-            'events.jsonl': '',
-            'results.jsonl': '',
-            'failures.json': '{}',
-            'metadata.json': '{}'
-        }, 789);
+        const bundle = distributedArtifactBundleFromFiles(
+            passedRunFiles({
+                'report.json': '{}',
+                'events.jsonl': '',
+                'results.jsonl': '',
+                'failures.json': '{}',
+                'metadata.json': '{}'
+            }),
+            789
+        ).right;
 
         expect(bundle?.artifactSchemaVersion).toBe(2);
         expect(bundle?.files).toMatchObject({
@@ -404,5 +358,18 @@ describe('distributed run artifact decoding', () => {
             'failures.json': '{}',
             'metadata.json': '{}'
         });
+    });
+
+    it('reports a missing manifest.json as an analysis warning instead of bundling the run snapshot as the manifest', () => {
+        const { 'manifest.json': _manifest, ...filesWithoutManifest } = passedRunFiles();
+        const bundle = distributedArtifactBundleFromFiles(filesWithoutManifest, 456);
+        const analysis = analyzedRun(filesWithoutManifest);
+
+        expect(bundle.left).toEqual({
+            fileName: 'manifest.json',
+            message: 'manifest.json is required to form a distributed-run artifact bundle.'
+        });
+        expect(analysis.parseWarnings).toEqual([bundle.left]);
+        expect(analysis.spa?.verdict).toBeDefined();
     });
 });

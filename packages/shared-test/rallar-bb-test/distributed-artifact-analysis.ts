@@ -1,13 +1,27 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
-    ControlFleetRunReport,
     ControlRunSnapshot
 } from './control-snapshots.ts';
+import { decodeControlDistributedRunSnapshot } from './distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import {
+    decodeControlPostRequest,
+    type DistributedRunControlPostRequest
+} from './distributed-artifact-analysis/decode-control-post-request.ts';
+import { decodeControlRunSnapshot } from './distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import {
+    decodeDistributedRunRunnerSummary,
+    type DistributedRunRunnerSummary
+} from './distributed-artifact-analysis/decode-distributed-run-runner-summary.ts';
+import {
+    decodeJsonlControlEventEnvelope,
+    decodeJsonlControlResultEnvelope
+} from './distributed-artifact-analysis/decode-jsonl-control-envelopes.ts';
 import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonlRows,
-    distributedArtifactPipelineJsonRecord,
     parseDistributedArtifactPipeline,
     type ParsedDistributedArtifactPipeline
 } from './distributed-artifact-pipeline.ts';
@@ -24,9 +38,15 @@ export type DistributedRunArtifactFiles = Readonly<Record<string, string | undef
 
 export type DistributedRunAnalysisInput = Readonly<{
     files: DistributedRunArtifactFiles;
-    generatedAtEpochMs?: number;
+    generatedAtEpochMs: number;
+    /** Absent when the analysis takes the schema version the artifact files imply. */
     artifactSchemaVersion?: number;
 }>;
+
+export interface DistributedRunArtifactRejection {
+    readonly fileName: string;
+    readonly message: string;
+}
 
 export type DistributedRunArtifactParseWarning = Readonly<{
     fileName: string;
@@ -212,25 +232,42 @@ export type DistributedRunAnalysis = Readonly<{
 export type DistributedRunArtifactSnapshots = Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     controlRun: ControlRunSnapshot;
+    /** Absent when the artifact files cannot form a bundle; the analysis warnings say why. */
     artifactBundle?: ControlDistributedRunArtifactBundle;
 }>;
 
+/** The analysis of artifacts that record a failed control request instead of a distributed run. */
+export interface DistributedRunControlRequestFailureAnalysis {
+    readonly generatedAtEpochMs: number;
+    /** Absent when the runner stopped before it wrote runner-summary.json. */
+    readonly runnerSummary?: DistributedRunRunnerSummary;
+    readonly ok: false;
+    readonly request: DistributedRunControlPostRequest;
+    /** Absent when the failed request returned no response body. */
+    readonly responseBody?: string;
+    readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
+    readonly failure: DistributedRunFailureAnalysis;
+    readonly summaryMarkdown: string;
+    readonly fixProposalMarkdown: string;
+}
+
+export type DistributedRunArtifactAnalysis =
+    | Readonly<{ variant: 'distributed-run'; analysis: DistributedRunAnalysis; }>
+    | Readonly<{ variant: 'control-request-failure'; analysis: DistributedRunControlRequestFailureAnalysis; }>;
+
 export type DistributedRunArtifactPipelineAnalysisInput = Readonly<{
     parsed: ParsedDistributedArtifactPipeline;
-    generatedAtEpochMs?: number;
+    content: DistributedRunBundleContent;
+    generatedAtEpochMs: number;
+    /** Absent when the analysis takes the schema version the artifact files imply. */
     artifactSchemaVersion?: number;
-    parsedFiles?: ParsedDistributedRunArtifactFiles;
-    snapshots?: DistributedRunArtifactSnapshots;
-    artifactBundle?: ControlDistributedRunArtifactBundle;
-    artifactValidation?: DistributedRunArtifactValidation;
-    monitor?: DistributedRunMonitor;
-    report?: DistributedRunAnalysisReport;
 }>;
 
 export type DistributedRunArtifactPipelineAnalysisResult = Readonly<{
     analysis: DistributedRunAnalysis;
-    monitor?: DistributedRunMonitor;
-    report?: DistributedRunAnalysisReport;
+    snapshots: DistributedRunArtifactSnapshots;
+    monitor: DistributedRunMonitor;
+    report: DistributedRunAnalysisReport;
     telemetry: Readonly<{
         monitorDerivationCount: number;
         reportDerivationCount: number;
@@ -238,13 +275,13 @@ export type DistributedRunArtifactPipelineAnalysisResult = Readonly<{
 }>;
 
 type ControlPostFailureArtifact = Readonly<{
-    phase?: string;
-    path?: string;
-    httpStatus?: string;
-    curlStatus?: number;
-    exitStatus?: number;
-    responseFile: string;
-    body: Record<string, unknown>;
+    request: DistributedRunControlPostRequest;
+    /** Absent when the failed request returned no response body or the body file is missing. */
+    response?: Readonly<{
+        fileName: string;
+        text: string;
+        body: Record<string, unknown>;
+    }>;
 }>;
 
 type ReceiverDeliverySpec = Readonly<{
@@ -297,14 +334,26 @@ const CONTROL_POST_ERROR_FILE_NAMES = [
 
 export function analyzeDistributedRunArtifactFiles(
     input: DistributedRunAnalysisInput
-): DistributedRunAnalysis {
-    return analyzeDistributedRunArtifactPipeline({
-        parsed: parseDistributedArtifactPipeline(input.files, {
-            projection: 'literal-loose-files'
-        }),
-        generatedAtEpochMs: input.generatedAtEpochMs,
-        artifactSchemaVersion: input.artifactSchemaVersion
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactAnalysis> {
+    const parsed = parseDistributedArtifactPipeline(input.files, {
+        projection: 'literal-loose-files'
     });
+    return parseDistributedRunArtifactPipeline(parsed).mapRight((content): DistributedRunArtifactAnalysis =>
+        content.variant === 'distributed-run'
+            ? {
+                variant: 'distributed-run',
+                analysis: deriveDistributedRunArtifactPipelineAnalysis({
+                    parsed,
+                    content,
+                    generatedAtEpochMs: input.generatedAtEpochMs,
+                    artifactSchemaVersion: input.artifactSchemaVersion
+                }).analysis
+            }
+            : {
+                variant: 'control-request-failure',
+                analysis: deriveControlRequestFailureAnalysis(content, input.generatedAtEpochMs)
+            }
+    );
 }
 
 export function analyzeDistributedRunArtifactPipeline(
@@ -316,10 +365,8 @@ export function analyzeDistributedRunArtifactPipeline(
 export function deriveDistributedRunArtifactPipelineAnalysis(
     input: DistributedRunArtifactPipelineAnalysisInput
 ): DistributedRunArtifactPipelineAnalysisResult {
-    const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
-    const parsedFiles = input.parsedFiles ??
-        parseDistributedRunArtifactPipeline(input.parsed);
-    const parseWarnings = parsedFiles.parseWarnings.map((warning) => ({ ...warning }));
+    const { parsed, content, generatedAtEpochMs } = input;
+    const { distributedRun, controlRun } = content.snapshots;
     const {
         fleetReport,
         failureBundle,
@@ -327,39 +374,31 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
         results,
         events,
         targetResolutionRecord
-    } = parsedFiles;
-    const snapshots = input.snapshots ?? distributedArtifactSnapshotsFromPipeline(
-        input.parsed,
+    } = content;
+    const artifactSchemaVersion = input.artifactSchemaVersion ?? inferredArtifactSchemaVersion(parsed);
+    const bundle = pipelineArtifactBundle({
+        parsed,
+        distributedRunId: distributedRun.distributedRunId,
         generatedAtEpochMs,
-        input.artifactSchemaVersion,
-        parsedFiles
-    );
-    const distributedRun = snapshots.distributedRun;
-    const controlRun = snapshots.controlRun;
-    const artifactBundle = input.artifactBundle ?? snapshots.artifactBundle;
-    const spaDerivation = deriveSpaAnalysis(
+        artifactSchemaVersion
+    });
+    const parseWarnings = [
+        ...content.parseWarnings.map((warning) => ({ ...warning })),
+        ...(bundle.left === undefined ? [] : [bundle.left])
+    ];
+    const artifactBundle = bundle.right;
+    const spaDerivation = deriveSpaAnalysis({
         distributedRun,
         controlRun,
         artifactBundle,
-        parseWarnings,
-        input.artifactValidation ?? validateDistributedRunArtifactFromParsed(
-            artifactBundle,
-            input.parsed
-        ),
-        input.monitor,
-        input.report
-    );
+        artifactValidation: validateDistributedRunArtifactFromParsed(artifactBundle, parsed)
+    });
     const spa = spaDerivation.spa;
 
-    const distributedRunId = firstString(
-        distributedRun.distributedRunId,
-        fleetReport.distributedRunId,
-        'unknown-distributed-run'
-    ) ?? 'unknown-distributed-run';
-    const controlRunId = firstString(distributedRun.controlRunId, controlRun.runId);
-    const status = firstString(distributedRun.state, fleetReport.state, 'unknown') ?? 'unknown';
-    const ok = booleanValue(fleetReport.ok) ?? booleanValue(readPath(distributedRun, ['rollup', 'ok'])) ??
-        status === 'passed';
+    const distributedRunId = distributedRun.distributedRunId;
+    const controlRunId = distributedRun.controlRunId;
+    const status = distributedRun.state;
+    const ok = booleanValue(fleetReport.ok) ?? distributedRun.rollup.ok;
     const group = groupFromArtifacts(distributedRun, fleetReport);
     const performance = deriveDistributedRunSnapshotPerformance({
         distributedRun,
@@ -378,20 +417,19 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
             controlPostFailure,
             results,
             events,
-            spaReport: spa?.report
+            spaReport: spa.report
         });
     const summary = {
         agents: numberValue(readPath(fleetReport, ['summary', 'agents'])) ?? performance.agentCount,
         passRate: numberValue(readPath(fleetReport, ['summary', 'passRate'])) ?? performance.passRate,
         failureGroups: numberValue(readPath(fleetReport, ['summary', 'failureGroups'])) ??
             (failure ? 1 : 0),
-        blockingFailures: numberValue(readPath(distributedRun, ['rollup', 'summary', 'blockingFailures'])) ??
-            (failure ? 1 : 0)
+        blockingFailures: distributedRun.rollup.summary.blockingFailures
     };
 
     const base: Omit<DistributedRunAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'> = {
         generatedAtEpochMs,
-        artifactSchemaVersion: artifactBundle?.artifactSchemaVersion ?? input.artifactSchemaVersion ?? 1,
+        artifactSchemaVersion,
         distributedRunId,
         controlRunId,
         status,
@@ -415,6 +453,11 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
             fixProposalMarkdown,
             performanceMarkdown
         },
+        snapshots: {
+            distributedRun,
+            controlRun,
+            ...(artifactBundle === undefined ? {} : { artifactBundle })
+        },
         monitor: spaDerivation.monitor,
         report: spaDerivation.report,
         telemetry: spaDerivation.telemetry
@@ -423,32 +466,62 @@ export function deriveDistributedRunArtifactPipelineAnalysis(
 
 export function distributedArtifactBundleFromFiles(
     files: DistributedRunArtifactFiles,
-    generatedAtEpochMs = Date.now(),
-    fallbackDistributedRunId = 'imported-distributed-run',
-    artifactSchemaVersionOverride?: number
-): ControlDistributedRunArtifactBundle | undefined {
-    return distributedArtifactBundleFromPipeline(
-        parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files'
-        }),
-        generatedAtEpochMs,
-        fallbackDistributedRunId,
-        artifactSchemaVersionOverride
+    generatedAtEpochMs: number,
+    artifactSchemaVersion?: number
+): Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle> {
+    const parsed = parseDistributedArtifactPipeline(files, {
+        projection: 'literal-loose-files'
+    });
+    return parseDistributedRunBundleContent(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) =>
+            pipelineArtifactBundle({
+                parsed,
+                distributedRunId: content.snapshots.distributedRun.distributedRunId,
+                generatedAtEpochMs,
+                artifactSchemaVersion: artifactSchemaVersion ?? inferredArtifactSchemaVersion(parsed)
+            })
     );
 }
 
-export function distributedArtifactBundleFromPipeline(
-    parsed: ParsedDistributedArtifactPipeline,
-    generatedAtEpochMs = Date.now(),
-    fallbackDistributedRunId = 'imported-distributed-run',
-    artifactSchemaVersionOverride?: number
-): ControlDistributedRunArtifactBundle | undefined {
-    const files = parsed.projectedFiles;
-    const distributedRunText = files['distributed-run.json'];
-    const controlRunText = files['control-run.json'];
-    const manifestText = files['manifest.json'] ?? distributedRunText;
-    if (distributedRunText === undefined || controlRunText === undefined || manifestText === undefined) {
-        return undefined;
+export function distributedArtifactSnapshotsFromFiles(
+    files: DistributedRunArtifactFiles,
+    generatedAtEpochMs: number,
+    artifactSchemaVersion?: number
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
+    const parsed = parseDistributedArtifactPipeline(files, {
+        projection: 'literal-loose-files'
+    });
+    return parseDistributedRunBundleContent(parsed).mapRight((content) => {
+        const bundle = pipelineArtifactBundle({
+            parsed,
+            distributedRunId: content.snapshots.distributedRun.distributedRunId,
+            generatedAtEpochMs,
+            artifactSchemaVersion: artifactSchemaVersion ?? inferredArtifactSchemaVersion(parsed)
+        });
+        return {
+            ...content.snapshots,
+            ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right })
+        };
+    });
+}
+
+function pipelineArtifactBundle(
+    input: Readonly<{
+        parsed: ParsedDistributedArtifactPipeline;
+        distributedRunId: string;
+        generatedAtEpochMs: number;
+        artifactSchemaVersion: number;
+    }>
+): Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle> {
+    const files = input.parsed.projectedFiles;
+    const missingFileName = (['distributed-run.json', 'control-run.json', 'manifest.json'] as const)
+        .find((fileName) => files[fileName] === undefined);
+    if (missingFileName !== undefined) {
+        return Either.ofLeft({
+            fileName: missingFileName,
+            message: `${missingFileName} is required to form a distributed-run artifact bundle.`
+        });
     }
 
     const bundleFiles: Record<string, string> = {};
@@ -457,186 +530,167 @@ export function distributedArtifactBundleFromPipeline(
             bundleFiles[fileName] = text;
         }
     }
-    if (!bundleFiles['manifest.json']) {
-        bundleFiles['manifest.json'] = manifestText;
-    }
-    const artifactSchemaVersion = artifactSchemaVersionOverride ??
-        (DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES
-                .every((fileName) => bundleFiles[fileName] !== undefined)
-            ? 2
-            : 1);
-
-    return {
-        artifactSchemaVersion,
-        distributedRunId: firstString(
-            distributedArtifactPipelineJsonRecord(parsed, 'distributed-run.json')
-                .distributedRunId,
-            fallbackDistributedRunId
-        ) ?? fallbackDistributedRunId,
-        generatedAtEpochMs,
+    return Either.ofRight({
+        artifactSchemaVersion: input.artifactSchemaVersion,
+        distributedRunId: input.distributedRunId,
+        generatedAtEpochMs: input.generatedAtEpochMs,
         files: bundleFiles as ControlDistributedRunArtifactBundle['files']
-    };
+    });
 }
 
-export function distributedArtifactSnapshotsFromFiles(
-    files: DistributedRunArtifactFiles,
-    generatedAtEpochMs = Date.now(),
-    artifactSchemaVersion?: number
-): DistributedRunArtifactSnapshots {
-    return distributedArtifactSnapshotsFromPipeline(
-        parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files'
-        }),
-        generatedAtEpochMs,
-        artifactSchemaVersion
-    );
-}
-
-export function distributedArtifactSnapshotsFromPipeline(
-    parsed: ParsedDistributedArtifactPipeline,
-    generatedAtEpochMs = Date.now(),
-    artifactSchemaVersion?: number,
-    parsedFiles?: ParsedDistributedRunArtifactFiles
-): DistributedRunArtifactSnapshots {
-    const {
-        distributedRunRecord,
-        controlRunRecord,
-        results,
-        events
-    } = parsedFiles ?? parseDistributedRunArtifactPipeline(parsed);
-    const distributedRun = normalizeDistributedRunRecord(distributedRunRecord, results);
-    const controlRun = normalizeControlRunRecord(
-        controlRunRecord,
-        distributedRun.controlRunId,
-        results,
-        events
-    );
-    return {
-        distributedRun,
-        controlRun,
-        artifactBundle: distributedArtifactBundleFromPipeline(
-            parsed,
-            generatedAtEpochMs,
-            distributedRun.distributedRunId,
-            artifactSchemaVersion
-        )
-    };
+function inferredArtifactSchemaVersion(parsed: ParsedDistributedArtifactPipeline): number {
+    return DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES
+            .every((fileName) => parsed.projectedFiles[fileName] !== undefined)
+        ? 2
+        : 1;
 }
 
 function deriveSpaAnalysis(
-    distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot,
-    artifactBundle: ControlDistributedRunArtifactBundle | undefined,
-    warnings: DistributedRunArtifactParseWarning[],
-    artifactValidation: DistributedRunArtifactValidation,
-    precomputedMonitor?: DistributedRunMonitor,
-    precomputedReport?: DistributedRunAnalysisReport
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun: ControlRunSnapshot;
+        artifactBundle: ControlDistributedRunArtifactBundle | undefined;
+        artifactValidation: DistributedRunArtifactValidation;
+    }>
 ): Readonly<{
-    spa?: NonNullable<DistributedRunAnalysis['spa']>;
-    monitor?: DistributedRunMonitor;
-    report?: DistributedRunAnalysisReport;
+    spa: NonNullable<DistributedRunAnalysis['spa']>;
+    monitor: DistributedRunMonitor;
+    report: DistributedRunAnalysisReport;
     telemetry: Readonly<{
         monitorDerivationCount: number;
         reportDerivationCount: number;
     }>;
 }> {
-    let monitor = precomputedMonitor;
-    let report = precomputedReport;
-    let monitorDerivationCount = 0;
-    let reportDerivationCount = 0;
-    try {
-        if (!monitor) {
-            monitorDerivationCount += 1;
-            monitor = deriveDistributedRunMonitor({
-                distributedRun,
-                controlRun,
-                artifactBundle,
-                artifactValidation
-            });
-        }
-        if (!report) {
-            reportDerivationCount += 1;
-            report = deriveDistributedRunAnalysisReport({
-                distributedRun,
-                controlRun,
-                artifactBundle,
-                monitor
-            });
-        }
-        return {
-            spa: {
+    const monitor = deriveDistributedRunMonitor(input);
+    const report = deriveDistributedRunAnalysisReport({
+        distributedRun: input.distributedRun,
+        controlRun: input.controlRun,
+        artifactBundle: input.artifactBundle,
+        monitor
+    });
+    return {
+        spa: {
+            report,
+            verdict: deriveRunVerdictView({
+                distributedRun: input.distributedRun,
+                monitor,
                 report,
-                verdict: deriveRunVerdictView({
-                    distributedRun,
-                    monitor,
-                    report,
-                    artifactBundle
-                })
-            },
-            monitor,
-            report,
-            telemetry: { monitorDerivationCount, reportDerivationCount }
-        };
-    }
-    catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        warnings.push({
-            fileName: 'spa-analysis',
-            message: `Unable to derive SPA report: ${detail}`
-        });
-        return {
-            monitor,
-            report,
-            telemetry: { monitorDerivationCount, reportDerivationCount }
-        };
-    }
+                artifactBundle: input.artifactBundle
+            })
+        },
+        monitor,
+        report,
+        telemetry: { monitorDerivationCount: 1, reportDerivationCount: 1 }
+    };
+}
+
+function deriveControlRequestFailureAnalysis(
+    content: DistributedRunControlRequestFailureContent,
+    generatedAtEpochMs: number
+): DistributedRunControlRequestFailureAnalysis {
+    const { controlPostFailure } = content;
+    const base = {
+        generatedAtEpochMs,
+        ...(content.runnerSummary === undefined ? {} : { runnerSummary: content.runnerSummary }),
+        ok: false as const,
+        request: controlPostFailure.request,
+        ...(controlPostFailure.response === undefined ? {} : { responseBody: controlPostFailure.response.text }),
+        parseWarnings: content.parseWarnings,
+        failure: controlPostFailureAnalysis(controlPostFailure)
+    };
+    return {
+        ...base,
+        summaryMarkdown: renderControlRequestFailureSummaryMarkdown(base),
+        fixProposalMarkdown: renderControlRequestFailureFixProposalMarkdown(base)
+    };
+}
+
+function renderControlRequestFailureSummaryMarkdown(
+    analysis: Omit<DistributedRunControlRequestFailureAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown'>
+): string {
+    const { request, runnerSummary } = analysis;
+    return [
+        `# Control Request Failure: ${runnerSummary?.distributedRunId ?? 'unnamed distributed run'}`,
+        '',
+        'Result: failed',
+        runnerSummary ? `Control run: ${runnerSummary.controlRunId}` : undefined,
+        runnerSummary ? `Runner state: ${runnerSummary.state}` : undefined,
+        `Request: ${request.method} ${request.path} (${request.phase})`,
+        request.httpStatus ? `HTTP status: ${request.httpStatus}` : undefined,
+        request.curlStatus !== undefined ? `curl exit: ${request.curlStatus}` : undefined,
+        `Runner exit: ${request.exitStatus}`,
+        `Response body: ${request.responseFile ?? 'none'}`,
+        `Error: ${analysis.failure.likelyCause}`,
+        `Artifact warnings: ${analysis.parseWarnings.length}`,
+        ''
+    ].filter((line): line is string => line !== undefined).join('\n');
+}
+
+function renderControlRequestFailureFixProposalMarkdown(
+    analysis: Omit<DistributedRunControlRequestFailureAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown'>
+): string {
+    const failure = analysis.failure;
+    return [
+        `# Fix Proposal: ${analysis.runnerSummary?.distributedRunId ?? 'unnamed distributed run'}`,
+        '',
+        `Title: ${failure.title}`,
+        `Category: ${failure.category}`,
+        `Likely cause: ${failure.likelyCause}`,
+        `Next action: ${failure.nextAction}`,
+        `Minimal fix area: ${failure.minimalFixArea}`,
+        `Evidence: ${failure.evidenceFile}`,
+        '',
+        'Suggested verification:',
+        failure.verificationCommand,
+        ''
+    ].join('\n');
 }
 
 function controlPostFailureAnalysis(
     failure: ControlPostFailureArtifact
 ): DistributedRunFailureAnalysis {
+    const { request } = failure;
     const message = controlPostFailureMessage(failure);
-    const phase = failure.phase ?? 'request';
-    const path = failure.path ?? 'unknown path';
-    const status = failure.httpStatus ? ` HTTP ${failure.httpStatus}` : '';
+    const status = request.httpStatus ? ` HTTP ${request.httpStatus}` : '';
     const minimalFix = minimalFixArea({
         category: 'control-api',
-        text: `${phase} ${path} ${message}`
+        text: `${request.phase} ${request.path} ${message}`
     });
+    const evidenceFile = failure.response?.fileName ?? 'control-post-error-metadata.json';
     return {
         category: 'control-api',
-        title: `Control API ${phase} request failed.`,
+        title: `Control API ${request.phase} request failed.`,
         likelyCause: message,
-        nextAction: `Inspect ${failure.responseFile}; POST ${path} returned${
+        nextAction: `Inspect ${evidenceFile}; ${request.method} ${request.path} returned${
             status || ' a failure'
         } before the distributed run could continue.`,
         minimalFixArea: minimalFix,
         verificationCommand: verificationCommand(minimalFix),
         affectedAgents: [],
         affectedRegions: [],
-        evidenceFile: failure.responseFile
+        evidenceFile
     };
 }
 
 function controlPostFailureMessage(failure: ControlPostFailureArtifact): string {
-    if (Object.keys(failure.body).length === 0) {
+    const body = failure.response?.body ?? {};
+    if (Object.keys(body).length === 0) {
+        const { request } = failure;
         const details = [
-            failure.httpStatus ? `HTTP ${failure.httpStatus}` : undefined,
-            failure.curlStatus !== undefined ? `curl ${failure.curlStatus}` : undefined,
-            failure.exitStatus !== undefined ? `exit ${failure.exitStatus}` : undefined
+            request.httpStatus ? `HTTP ${request.httpStatus}` : undefined,
+            request.curlStatus !== undefined ? `curl ${request.curlStatus}` : undefined,
+            `exit ${request.exitStatus}`
         ].filter((value): value is string => value !== undefined);
-        return details.length > 0
-            ? `Control API request failed without a response body (${details.join(', ')}).`
-            : 'Control API request failed without a response body.';
+        return `Control API request failed without a response body (${details.join(', ')}).`;
     }
 
-    const error = asRecord(failure.body.error);
+    const error = asRecord(body.error);
     return firstString(
-        failure.body.message,
+        body.message,
         error.message,
-        failure.body.error,
-        failure.body.detail,
-        failure.body.title,
+        body.error,
+        body.detail,
+        body.title,
         'Control API request failed.'
     ) ?? 'Control API request failed.';
 }
@@ -1321,45 +1375,169 @@ function targetResolutionAnalysis(
     };
 }
 
-export type ParsedDistributedRunArtifactFiles = Readonly<{
-    parseWarnings: DistributedRunArtifactParseWarning[];
-    distributedRunRecord: Record<string, unknown>;
-    controlRunRecord: Record<string, unknown>;
+export type DistributedRunBundleContent = Readonly<{
+    variant: 'distributed-run';
+    parseWarnings: readonly DistributedRunArtifactParseWarning[];
+    snapshots: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun: ControlRunSnapshot;
+    }>;
     fleetReport: Record<string, unknown>;
     failureBundle: Record<string, unknown>;
-    runnerSummary: Record<string, unknown>;
-    manifestRecord: Record<string, unknown>;
     targetResolutionRecord: Record<string, unknown>;
+    /** Absent when the runner recorded no failed control request. */
     controlPostFailure?: ControlPostFailureArtifact;
     results: readonly Record<string, unknown>[];
     events: readonly Record<string, unknown>[];
 }>;
 
+export type DistributedRunControlRequestFailureContent = Readonly<{
+    variant: 'control-request-failure';
+    parseWarnings: readonly DistributedRunArtifactParseWarning[];
+    controlPostFailure: ControlPostFailureArtifact;
+    /** Absent when the runner stopped before it wrote runner-summary.json. */
+    runnerSummary?: DistributedRunRunnerSummary;
+}>;
+
+export type DistributedRunArtifactContent =
+    | DistributedRunBundleContent
+    | DistributedRunControlRequestFailureContent;
+
+/**
+ * A folder without distributed-run.json is analyzable only when the runner recorded the failed
+ * control request that prevented the run from existing.
+ */
 export function parseDistributedRunArtifactPipeline(
     parsed: ParsedDistributedArtifactPipeline
-): ParsedDistributedRunArtifactFiles {
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
     const parseWarnings: DistributedRunArtifactParseWarning[] = [];
-    const runnerSummary = parsedJsonRecord(parsed, 'runner-summary.json', parseWarnings);
-    const manifestRecord = parsedJsonRecord(parsed, 'manifest.json', parseWarnings);
-    const controlPostFailure = parseControlPostFailureFromParsed(parsed, parseWarnings);
+    return parseControlPostFailure(parsed, parseWarnings).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        ({ controlPostFailure }): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> => {
+            if (distributedArtifactPipelineFile(parsed, 'distributed-run.json').status === 'missing') {
+                return controlPostFailure === undefined
+                    ? Either.ofLeft({
+                        fileName: 'distributed-run.json',
+                        message:
+                            'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
+                    })
+                    : parseControlRequestFailureContent(parsed, controlPostFailure, parseWarnings);
+            }
+            return parseSnapshots(parsed).mapRight((snapshots) => {
+                const fleetReport = parsedJsonRecord(parsed, 'fleet-report.json', parseWarnings);
+                const failureBundle = parsedJsonRecord(parsed, 'failures.json', parseWarnings);
+                const targetResolutionRecord = parsedJsonRecord(parsed, 'target-resolution.json', parseWarnings);
+                const results = parsedJsonlRecords(parsed, 'results.jsonl', parseWarnings);
+                const events = parsedJsonlRecords(parsed, 'events.jsonl', parseWarnings);
+                return {
+                    variant: 'distributed-run',
+                    parseWarnings,
+                    snapshots: {
+                        distributedRun: snapshots.distributedRun,
+                        controlRun: withJsonlControlEnvelopes(snapshots.controlRun, results, events)
+                    },
+                    fleetReport,
+                    failureBundle,
+                    targetResolutionRecord,
+                    ...(controlPostFailure === undefined ? {} : { controlPostFailure }),
+                    results,
+                    events
+                };
+            });
+        }
+    );
+}
+
+/**
+ * An artifact import whose control-run.json holds no results or events carries that evidence in the
+ * recorder JSONL files; rows that name their agent, command and outcome stand in for the envelopes.
+ */
+function withJsonlControlEnvelopes(
+    controlRun: ControlRunSnapshot,
+    results: readonly Record<string, unknown>[],
+    events: readonly Record<string, unknown>[]
+): ControlRunSnapshot {
     return {
-        parseWarnings,
-        distributedRunRecord: parseDistributedRunRecordFromParsed(
-            parsed,
-            runnerSummary,
-            manifestRecord,
-            parseWarnings
-        ),
-        controlRunRecord: parsedJsonRecord(parsed, 'control-run.json', parseWarnings),
-        fleetReport: parsedJsonRecord(parsed, 'fleet-report.json', parseWarnings),
-        failureBundle: parsedJsonRecord(parsed, 'failures.json', parseWarnings),
-        targetResolutionRecord: parsedJsonRecord(parsed, 'target-resolution.json', parseWarnings),
-        runnerSummary,
-        manifestRecord,
-        controlPostFailure,
-        results: parsedJsonlRecords(parsed, 'results.jsonl', parseWarnings),
-        events: parsedJsonlRecords(parsed, 'events.jsonl', parseWarnings)
+        ...controlRun,
+        results: controlRun.results.length > 0
+            ? controlRun.results
+            : results.flatMap((row) => decodeJsonlControlResultEnvelope(row, controlRun.runId) ?? []),
+        events: controlRun.events.length > 0
+            ? controlRun.events
+            : events.flatMap((row) => decodeJsonlControlEventEnvelope(row, controlRun.runId) ?? [])
     };
+}
+
+function parseDistributedRunBundleContent(
+    parsed: ParsedDistributedArtifactPipeline
+): Either<DistributedRunArtifactRejection, DistributedRunBundleContent> {
+    return parseDistributedRunArtifactPipeline(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) =>
+            content.variant === 'distributed-run'
+                ? Either.ofRight(content)
+                : Either.ofLeft({
+                    fileName: 'distributed-run.json',
+                    message:
+                        `distributed-run.json is required: the artifacts record a failed control ${content.controlPostFailure.request.phase} request instead of a distributed run.`
+                })
+    );
+}
+
+function parseSnapshots(
+    parsed: ParsedDistributedArtifactPipeline
+): Either<DistributedRunArtifactRejection, DistributedRunBundleContent['snapshots']> {
+    return parseRequiredJsonFile(
+        parsed,
+        'distributed-run.json',
+        'a distributed run snapshot',
+        decodeControlDistributedRunSnapshot
+    )
+        .flatMap(
+            (rejection) => Either.ofLeft(rejection),
+            (distributedRun) =>
+                parseRequiredJsonFile(parsed, 'control-run.json', 'a control run snapshot', decodeControlRunSnapshot)
+                    .mapRight((controlRun) => ({ distributedRun, controlRun }))
+        );
+}
+
+function parseControlRequestFailureContent(
+    parsed: ParsedDistributedArtifactPipeline,
+    controlPostFailure: ControlPostFailureArtifact,
+    parseWarnings: readonly DistributedRunArtifactParseWarning[]
+): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
+    const content = {
+        variant: 'control-request-failure' as const,
+        parseWarnings,
+        controlPostFailure
+    };
+    if (distributedArtifactPipelineFile(parsed, 'runner-summary.json').status === 'missing') {
+        return Either.ofRight(content);
+    }
+    return parseRequiredJsonFile(parsed, 'runner-summary.json', 'a runner summary', decodeDistributedRunRunnerSummary)
+        .mapRight((runnerSummary) => ({ ...content, runnerSummary }));
+}
+
+function parseRequiredJsonFile<Decoded>(
+    parsed: ParsedDistributedArtifactPipeline,
+    fileName: string,
+    contractName: string,
+    decodeFile: (value: unknown) => Either<string, Decoded>
+): Either<DistributedRunArtifactRejection, Decoded> {
+    const file = distributedArtifactPipelineFile(parsed, fileName);
+    if (file.status === 'missing' || file.status === 'empty') {
+        return Either.ofLeft({ fileName, message: `${fileName} is required and must not be empty.` });
+    }
+    if (file.format !== 'json' || file.status !== 'parsed') {
+        return Either.ofLeft({
+            fileName,
+            message: `${fileName} is not valid JSON: ${parsedJsonErrorDetail(fileName, file.message)}`
+        });
+    }
+    return decodeFile(file.value).mapLeft((issue) => ({
+        fileName,
+        message: `${fileName} is not ${contractName}: ${issue.endsWith('.') ? issue : `${issue}.`}`
+    }));
 }
 
 function timingFromFleetOrValues(
@@ -2626,162 +2804,58 @@ function outlierCount(
     return values.filter((value) => value >= p95Ms && value > p50Ms).length;
 }
 
-function parseControlPostFailureFromParsed(
+function parseControlPostFailure(
     parsed: ParsedDistributedArtifactPipeline,
     warnings: DistributedRunArtifactParseWarning[]
-): ControlPostFailureArtifact | undefined {
-    const files = parsed.projectedFiles;
-    const metadata = parsedJsonRecord(
-        parsed,
-        'control-post-error-metadata.json',
-        warnings
-    );
-    const metadataResponseFile = firstString(metadata.responseFile);
-    const responseFile = metadataResponseFile && files[metadataResponseFile] !== undefined
-        ? metadataResponseFile
-        : CONTROL_POST_ERROR_FILE_NAMES.find((fileName) => files[fileName] !== undefined);
-    const hasMetadataFailure = Object.keys(metadata).length > 0;
-    if (!responseFile && !hasMetadataFailure) {
-        return undefined;
+): Either<DistributedRunArtifactRejection, Readonly<{ controlPostFailure?: ControlPostFailureArtifact; }>> {
+    const metadataFileName = 'control-post-error-metadata.json';
+    if (distributedArtifactPipelineFile(parsed, metadataFileName).status === 'missing') {
+        return Either.ofRight({});
     }
-
-    return {
-        phase: firstString(metadata.phase) ?? (responseFile ? controlPostPhaseFromFileName(responseFile) : undefined),
-        path: firstString(metadata.path),
-        httpStatus: firstString(metadata.httpStatus),
-        curlStatus: numberValue(metadata.curlStatus),
-        exitStatus: numberValue(metadata.exitStatus),
-        responseFile: responseFile ?? 'control-post-error-metadata.json',
-        body: responseFile ? parsedJsonRecord(parsed, responseFile, warnings) : {}
-    };
-}
-
-function controlPostPhaseFromFileName(fileName: string): string | undefined {
-    const match = fileName.match(/^control-post-(.+)-error\.json$/);
-    return match?.[1];
-}
-
-function parseDistributedRunRecordFromParsed(
-    parsed: ParsedDistributedArtifactPipeline,
-    runnerSummary: Record<string, unknown>,
-    manifestRecord: Record<string, unknown>,
-    warnings: DistributedRunArtifactParseWarning[]
-): Record<string, unknown> {
-    const fileName = 'distributed-run.json';
-    const file = distributedArtifactPipelineFile(parsed, fileName);
-    if (file.status === 'missing' || file.status === 'empty') {
-        const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
-        if (fallback) {
-            warnings.push({
-                fileName: 'distributed-run.json',
-                message:
-                    'distributed-run.json is missing or empty; using runner-summary.json and manifest.json fallback.'
-            });
-            return fallback;
-        }
-        throw new Error('distributed-run.json is required.');
-    }
-
-    if (file.format === 'json' && file.status === 'parsed') {
-        return asRecord(file.value);
-    }
-    {
-        const detail = parsedJsonErrorDetail(fileName, file.message);
-        const fallback = distributedRunRecordFromFallback(runnerSummary, manifestRecord);
-        if (fallback) {
-            warnings.push({
-                fileName: 'distributed-run.json',
-                message:
-                    `distributed-run.json is not valid JSON: ${detail}; using runner-summary.json and manifest.json fallback.`
-            });
-            return fallback;
-        }
-        throw new Error(`distributed-run.json is not valid JSON: ${detail}`);
-    }
-}
-
-function distributedRunRecordFromFallback(
-    runnerSummary: Record<string, unknown>,
-    manifestRecord: Record<string, unknown>
-): Record<string, unknown> | undefined {
-    if (Object.keys(runnerSummary).length === 0 && Object.keys(manifestRecord).length === 0) {
-        return undefined;
-    }
-
-    const distributedRunId = firstString(
-        runnerSummary.distributedRunId,
-        manifestRecord.distributedRunId,
-        'unknown-distributed-run'
-    ) ?? 'unknown-distributed-run';
-    const controlRunId = firstString(
-        runnerSummary.controlRunId,
-        manifestRecord.controlRunId,
-        distributedRunId
-    ) ?? distributedRunId;
-    const state = firstString(runnerSummary.state, 'unknown') ?? 'unknown';
-    const ok = booleanValue(runnerSummary.ok) ?? state === 'passed';
-    const blockingFailures = ok ? 0 : 1;
-
-    return {
-        distributedRunId,
-        controlRunId,
-        state,
-        createdAtEpochMs: numberValue(runnerSummary.createdAtEpochMs) ??
-            numberValue(runnerSummary.startedAtEpochMs) ??
-            0,
-        startedAtEpochMs: numberValue(runnerSummary.startedAtEpochMs),
-        completedAtEpochMs: numberValue(runnerSummary.completedAtEpochMs),
-        updatedAtEpochMs: numberValue(runnerSummary.completedAtEpochMs) ??
-            numberValue(runnerSummary.startedAtEpochMs) ??
-            0,
-        targetAgentIds: stringArray(runnerSummary.targetAgentIds),
-        commandLinks: arrayRecords(runnerSummary.commandLinks),
-        manifest: {
-            ...manifestRecord,
-            schemaVersion: numberValue(manifestRecord.schemaVersion) ?? 1,
-            distributedRunId: firstString(manifestRecord.distributedRunId, distributedRunId) ?? distributedRunId,
-            controlRunId: firstString(manifestRecord.controlRunId, controlRunId) ?? controlRunId,
-            group: asRecord(manifestRecord.group),
-            recipes: arrayRecords(manifestRecord.recipes),
-            targetPolicy: asRecord(manifestRecord.targetPolicy),
-            roleAssignments: arrayRecords(manifestRecord.roleAssignments)
-        },
-        rollup: {
-            state,
-            ok,
-            summary: {
-                blockingFailures,
-                ...asRecord(runnerSummary.summary)
-            },
-            failures: arrayRecords(runnerSummary.failures)
-        }
-    };
+    return parseRequiredJsonFile(parsed, metadataFileName, 'a control request record', decodeControlPostRequest)
+        .mapRight((request) => {
+            const responseFile = request.responseFile;
+            if (responseFile === undefined) {
+                return { controlPostFailure: { request } };
+            }
+            const text = parsed.projectedFiles[responseFile];
+            if (text === undefined) {
+                warnings.push({
+                    fileName: responseFile,
+                    message: `${responseFile} is named by ${metadataFileName} but is not among the artifact files.`
+                });
+                return { controlPostFailure: { request } };
+            }
+            return {
+                controlPostFailure: {
+                    request,
+                    response: {
+                        fileName: responseFile,
+                        text,
+                        body: parsedJsonRecord(parsed, responseFile, warnings)
+                    }
+                }
+            };
+        });
 }
 
 function parsedJsonRecord(
     parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
-    warnings: DistributedRunArtifactParseWarning[],
-    required = false
+    warnings: DistributedRunArtifactParseWarning[]
 ): Record<string, unknown> {
     const file = distributedArtifactPipelineFile(parsed, fileName);
     if (file.status === 'missing' || file.status === 'empty') {
-        if (required) {
-            throw new Error(`${fileName} is required.`);
-        }
         return {};
     }
     if (file.format === 'json' && file.status === 'parsed') {
         return asRecord(file.value);
     }
-    {
-        const detail = parsedJsonErrorDetail(fileName, file.message);
-        if (required) {
-            throw new Error(`${fileName} is not valid JSON: ${detail}`);
-        }
-        warnings.push({ fileName, message: `${fileName} is not valid JSON: ${detail}` });
-        return {};
-    }
+    warnings.push({
+        fileName,
+        message: `${fileName} is not valid JSON: ${parsedJsonErrorDetail(fileName, file.message)}`
+    });
+    return {};
 }
 
 function parsedJsonlRecords(
@@ -2815,176 +2889,6 @@ function parsedJsonErrorDetail(
         : message ?? 'Unknown JSON parse error';
 }
 
-function normalizeDistributedRunRecord(
-    record: Record<string, unknown>,
-    exportedResults: readonly Record<string, unknown>[] = []
-): ControlDistributedRunSnapshot {
-    const rollup = asRecord(record.rollup);
-    const rollupFailures = arrayRecords(rollup.failures).map(normalizeRollupFailureRecord);
-    const commandLinks = arrayRecords(record.commandLinks);
-    const rawManifest = asRecord(record.manifest);
-    const distributedRunId = firstString(
-        record.distributedRunId,
-        rawManifest.distributedRunId,
-        'unknown-distributed-run'
-    ) ?? 'unknown-distributed-run';
-    const controlRunId = firstString(
-        record.controlRunId,
-        rawManifest.controlRunId,
-        distributedRunId,
-        'unknown-control-run'
-    ) ?? 'unknown-control-run';
-    return {
-        distributedRunId,
-        controlRunId,
-        manifest: {
-            ...recognizedDistributedManifestFields(rawManifest),
-            schemaVersion: numberValue(rawManifest.schemaVersion) ?? 1,
-            distributedRunId,
-            controlRunId,
-            group: asRecord(rawManifest.group),
-            recipes: arrayRecords(rawManifest.recipes) as ControlDistributedRunSnapshot['manifest']['recipes'],
-            targetPolicy: asRecord(
-                rawManifest.targetPolicy
-            ) as ControlDistributedRunSnapshot['manifest']['targetPolicy'],
-            roleAssignments: arrayRecords(
-                rawManifest.roleAssignments
-            ) as ControlDistributedRunSnapshot['manifest']['roleAssignments'],
-            startMode: firstString(
-                rawManifest.startMode,
-                'manual'
-            ) as ControlDistributedRunSnapshot['manifest']['startMode'],
-            displayName: firstString(rawManifest.displayName),
-            metadata: asRecord(rawManifest.metadata)
-        } as unknown as ControlDistributedRunSnapshot['manifest'],
-        state: firstString(record.state, 'unknown') as ControlDistributedRunSnapshot['state'],
-        createdAtEpochMs: numberValue(record.createdAtEpochMs) ?? numberValue(record.startedAtEpochMs) ?? 0,
-        updatedAtEpochMs: numberValue(record.updatedAtEpochMs) ?? numberValue(record.completedAtEpochMs) ??
-            numberValue(record.startedAtEpochMs) ?? 0,
-        stagedAtEpochMs: numberValue(record.stagedAtEpochMs),
-        barrierStartedAtEpochMs: numberValue(record.barrierStartedAtEpochMs),
-        barrierCompletedAtEpochMs: numberValue(record.barrierCompletedAtEpochMs),
-        startedAtEpochMs: numberValue(record.startedAtEpochMs),
-        cancelledAtEpochMs: numberValue(record.cancelledAtEpochMs),
-        completedAtEpochMs: numberValue(record.completedAtEpochMs),
-        targetAgentIds: stringArray(record.targetAgentIds),
-        commandLinks: (commandLinks.length > 0
-            ? commandLinks
-            : exportedResults.map((result) => ({
-                phase: 'start',
-                agentId: firstString(result.agentId, 'unknown-agent') ?? 'unknown-agent',
-                commandId: commandIdFromResult(result) ?? 'unknown-command',
-                recipeId: firstString(result.recipeId),
-                queuedAtEpochMs: numberValue(result.queuedAtEpochMs) ?? 0
-            }))) as ControlDistributedRunSnapshot['commandLinks'],
-        rollup: {
-            state: firstString(
-                rollup.state,
-                record.state,
-                'unknown'
-            ) as ControlDistributedRunSnapshot['rollup']['state'],
-            ok: booleanValue(rollup.ok) ?? false,
-            summary: asRecord(rollup.summary) as ControlDistributedRunSnapshot['rollup']['summary'],
-            failures: rollupFailures as unknown as ControlDistributedRunSnapshot['rollup']['failures']
-        },
-        error: optionalRecord(record.error) as ControlDistributedRunSnapshot['error']
-    };
-}
-
-function recognizedDistributedManifestFields(
-    manifest: Record<string, unknown>
-): Record<string, unknown> {
-    const recognized: Record<string, unknown> = {};
-    for (
-        const key of [
-            'description',
-            'variables',
-            'secretRefs',
-            'roleAssignmentPolicy',
-            'ackTimeoutMs',
-            'barrier',
-            'startDeadlineEpochMs',
-            'artifactPolicy'
-        ]
-    ) {
-        if (manifest[key] !== undefined) {
-            recognized[key] = manifest[key];
-        }
-    }
-    return recognized;
-}
-
-function normalizeControlRunRecord(
-    record: Record<string, unknown>,
-    fallbackRunId: string,
-    fallbackResults: readonly Record<string, unknown>[] = [],
-    fallbackEvents: readonly Record<string, unknown>[] = []
-): ControlRunSnapshot {
-    const runId = firstString(record.runId, fallbackRunId, 'unknown-control-run') ?? 'unknown-control-run';
-    const results = arrayRecords(record.results);
-    const events = arrayRecords(record.events);
-    return {
-        runId,
-        createdAtEpochMs: numberValue(record.createdAtEpochMs) ?? 0,
-        updatedAtEpochMs: numberValue(record.updatedAtEpochMs) ?? 0,
-        agents: arrayRecords(record.agents) as ControlRunSnapshot['agents'],
-        commands: arrayRecords(record.commands) as ControlRunSnapshot['commands'],
-        results: (results.length > 0
-            ? results
-            : fallbackResults.map((result) => normalizeControlResultRecord(result, runId))) as ControlRunSnapshot[
-                'results'
-            ],
-        events: (events.length > 0
-            ? events
-            : fallbackEvents.map((event, index) =>
-                normalizeControlEventRecord(event, runId, index)
-            )) as ControlRunSnapshot['events'],
-        stats: arrayRecords(record.stats) as ControlRunSnapshot['stats'],
-        reports: arrayRecords(record.reports) as ControlRunSnapshot['reports'],
-        heartbeats: arrayRecords(record.heartbeats) as ControlRunSnapshot['heartbeats']
-    };
-}
-
-function normalizeRollupFailureRecord(failure: Record<string, unknown>): Record<string, unknown> {
-    const error = asRecord(failure.error);
-    const code = firstString(error.code, failure.code);
-    const message = firstString(error.message, failure.message, failure.state);
-    return {
-        ...failure,
-        error: {
-            ...error,
-            ...(code ? { code } : {}),
-            ...(message ? { message } : {})
-        }
-    };
-}
-
-function normalizeControlResultRecord(
-    result: Record<string, unknown>,
-    fallbackRunId: string
-): Record<string, unknown> {
-    const actual = asRecord(result.actual ?? result.error);
-    const status = firstString(result.status)?.toUpperCase();
-    const ok = booleanValue(result.ok) ?? (status ? status !== 'FAILURE' : false);
-    return {
-        kind: 'result',
-        protocolVersion: 1,
-        runId: firstString(result.runId, fallbackRunId) ?? fallbackRunId,
-        agentId: firstString(result.agentId, 'unknown-agent') ?? 'unknown-agent',
-        resultKey: firstString(result.resultKey),
-        commandId: commandIdFromResult(result) ?? 'unknown-command',
-        ok,
-        result: normalizeResultPayload(result),
-        error: ok
-            ? undefined
-            : {
-                code: firstString(actual.code, 'COMMAND_FAILED') ?? 'COMMAND_FAILED',
-                message: firstString(actual.message, result.message, 'Command failed.') ?? 'Command failed.',
-                details: actual.details
-            }
-    };
-}
-
 function commandIdFromResult(result: Record<string, unknown> | undefined): string | undefined {
     if (!result) {
         return undefined;
@@ -2999,46 +2903,6 @@ function commandIdFromResult(result: Record<string, unknown> | undefined): strin
     }
     const [, commandId] = resultKey.split(/:(.*)/s);
     return commandId || resultKey;
-}
-
-function normalizeResultPayload(result: Record<string, unknown>): Record<string, unknown> {
-    const nested = asRecord(result.result);
-    const streamSummary = streamSummaryRecord(result.actual) ?? streamSummaryRecord(result.error);
-    const payload = Object.keys(nested).length > 0 ? nested : streamSummary ?? nested;
-    return {
-        ...payload,
-        ...(numberValue(payload.durationMs) === undefined && numberValue(result.durationMs) !== undefined
-            ? { durationMs: numberValue(result.durationMs) }
-            : {}),
-        ...(numberValue(payload.startedAtEpochMs) === undefined && numberValue(result.startedAtEpochMs) !== undefined
-            ? { startedAtEpochMs: numberValue(result.startedAtEpochMs) }
-            : {}),
-        ...(numberValue(payload.endedAtEpochMs) === undefined && numberValue(result.endedAtEpochMs) !== undefined
-            ? { endedAtEpochMs: numberValue(result.endedAtEpochMs) }
-            : {}),
-        ...(firstString(payload.commandId) === undefined && commandIdFromResult(result)
-            ? { commandId: commandIdFromResult(result) }
-            : {})
-    };
-}
-
-function normalizeControlEventRecord(
-    event: Record<string, unknown>,
-    fallbackRunId: string,
-    index: number
-): Record<string, unknown> {
-    const value = event.value ?? event.payload ?? event;
-    const severity = firstString(readPath(value, ['severity']), event.severity);
-    return {
-        kind: severity === 'error' || severity === 'warning' ? 'diagnostic' : 'event',
-        protocolVersion: 1,
-        runId: firstString(event.runId, fallbackRunId) ?? fallbackRunId,
-        agentId: firstString(event.agentId, 'unknown-agent') ?? 'unknown-agent',
-        commandId: firstString(event.commandId),
-        eventId: firstString(event.eventId, `${firstString(event.kind, 'event')}-${index}`),
-        atEpochMs: numberValue(event.atEpochMs) ?? numberValue(readPath(value, ['atEpochMs'])) ?? 0,
-        payload: value
-    };
 }
 
 function readPath(value: unknown, path: readonly string[]): unknown {

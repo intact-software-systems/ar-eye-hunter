@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
+
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     analyzeDistributedRunArtifactFiles,
-    deriveDistributedRunSnapshotPerformance
+    deriveDistributedRunSnapshotPerformance,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles
 } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    createQueuedCommandSnapshot,
+    createResultEnvelope,
+    HEALTH_RECIPE,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
 
 describe('distributed run artifact command timing', () => {
     it('keeps 200,000 timing and receiver-delivery values within exact extrema', () => {
@@ -119,78 +138,54 @@ describe('distributed run artifact command timing', () => {
     }, 60_000);
 
     it('creates performance analysis for passed runs', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-passed',
+                controlRunId: 'run-passed',
+                state: 'passed',
+                agentIds: ['controller-01', 'controller-02', 'controller-03'],
+                startedAtEpochMs: 2_000,
+                completedAtEpochMs: 8_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-passed',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 4 },
+                    { agentId: 'controller-02', receivedEventCount: 5 },
+                    { agentId: 'controller-03', receivedEventCount: 6 }
+                ],
+                commands: [
+                    createQueuedCommandSnapshot({
+                        runId: 'run-passed',
+                        agentId: 'controller-01',
+                        commandId: 'stage-1',
+                        queuedAtEpochMs: 2_100,
+                        dispatchedAtEpochMs: 2_150,
+                        completedAtEpochMs: 2_500
+                    }),
+                    createQueuedCommandSnapshot({
+                        runId: 'run-passed',
+                        agentId: 'controller-01',
+                        commandId: 'start-1',
+                        command: { kind: 'recipe.run', recipe: HEALTH_RECIPE },
+                        queuedAtEpochMs: 3_000,
+                        dispatchedAtEpochMs: 3_100,
+                        completedAtEpochMs: 5_000
+                    })
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-passed',
-                    controlRunId: 'run-passed',
-                    state: 'passed',
-                    startedAtEpochMs: 2_000,
-                    completedAtEpochMs: 8_000,
-                    rollup: {
-                        ok: true,
-                        summary: {
-                            participants: 3,
-                            failedParticipants: 0,
-                            blockingFailures: 0
-                        }
-                    },
-                    manifest: {
-                        group: {
-                            applicationId: 'rallar-server',
-                            workspaceId: 'default',
-                            groupId: 'bb-group'
-                        }
+                'results.jsonl': '',
+                'events.jsonl': JSON.stringify({
+                    kind: 'rtc-diagnostic',
+                    status: 'diagnostic',
+                    transport: 'realtime',
+                    agentId: 'controller-01',
+                    value: {
+                        severity: 'info',
+                        message: 'RTC send completed.'
                     }
                 }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-passed',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 4 },
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 5 },
-                        { agentId: 'controller-03', connected: true, reconnectCount: 0, receivedEventCount: 6 }
-                    ],
-                    commands: [
-                        {
-                            envelope: {
-                                agentId: 'controller-01',
-                                commandId: 'stage-1',
-                                command: { kind: 'health' }
-                            },
-                            queuedAtEpochMs: 2_100,
-                            dispatchedAtEpochMs: 2_150,
-                            completedAtEpochMs: 2_500
-                        },
-                        {
-                            envelope: {
-                                agentId: 'controller-01',
-                                commandId: 'start-1',
-                                command: { kind: 'recipe.run' }
-                            },
-                            queuedAtEpochMs: 3_000,
-                            dispatchedAtEpochMs: 3_100,
-                            completedAtEpochMs: 5_000
-                        }
-                    ],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
-                'results.jsonl': '',
-                'events.jsonl': [
-                    JSON.stringify({
-                        kind: 'rtc-diagnostic',
-                        status: 'diagnostic',
-                        transport: 'realtime',
-                        agentId: 'controller-01',
-                        value: {
-                            severity: 'info',
-                            message: 'RTC send completed.'
-                        }
-                    })
-                ].join('\n'),
                 'failures.json': JSON.stringify({ failures: [] }),
                 'fleet-report.json': JSON.stringify({
                     distributedRunId: 'dist-passed',
@@ -214,7 +209,7 @@ describe('distributed run artifact command timing', () => {
                     }
                 })
             }
-        });
+        }));
 
         expect(analysis.ok).toBe(true);
         expect(analysis.status).toBe('passed');
@@ -243,73 +238,55 @@ describe('distributed run artifact command timing', () => {
     });
 
     it('keeps command timing metrics on one linked distributed-command sample set', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-linked-timing',
-                    controlRunId: 'run-linked-timing',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 3_000,
-                    commandLinks: [
-                        { phase: 'stage', agentId: 'controller-01', commandId: 'stage-1' },
-                        { phase: 'start', agentId: 'controller-01', commandId: 'start-1' }
-                    ],
-                    rollup: {
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-linked-timing',
+                controlRunId: 'run-linked-timing',
+                state: 'passed',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 3_000,
+                commandLinks: [
+                    { phase: 'stage', agentId: 'controller-01', commandId: 'stage-1', queuedAtEpochMs: 1_050 },
+                    { phase: 'start', agentId: 'controller-01', commandId: 'start-1', queuedAtEpochMs: 1_750 }
+                ]
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-linked-timing',
+                agents: [{ agentId: 'controller-01' }],
+                commands: [
+                    createQueuedCommandSnapshot({
+                        runId: 'run-linked-timing',
+                        agentId: 'controller-01',
+                        commandId: 'stage-1',
+                        command: { kind: 'recipe.load', recipe: HEALTH_RECIPE },
+                        queuedAtEpochMs: 1_050,
+                        dispatchedAtEpochMs: 1_100,
+                        completedAtEpochMs: 1_600
+                    }),
+                    createQueuedCommandSnapshot({
+                        runId: 'run-linked-timing',
+                        agentId: 'controller-01',
+                        commandId: 'start-1',
+                        command: { kind: 'recipe.run', recipe: HEALTH_RECIPE },
+                        queuedAtEpochMs: 1_750,
+                        dispatchedAtEpochMs: 1_800,
+                        completedAtEpochMs: 2_800
+                    })
+                ],
+                results: [
+                    createResultEnvelope({
+                        runId: 'run-linked-timing',
+                        agentId: 'controller-01',
+                        commandId: 'reset-control-1',
+                        kind: 'reset',
                         ok: true,
-                        summary: {
-                            participants: 1,
-                            passedParticipants: 1,
-                            failedParticipants: 0,
-                            blockingFailures: 0
-                        }
-                    },
-                    manifest: {
-                        group: {
-                            applicationId: 'rallar-server',
-                            workspaceId: 'default',
-                            groupId: 'bb-group'
-                        }
-                    }
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-linked-timing',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 0 }
-                    ],
-                    commands: [
-                        {
-                            envelope: {
-                                agentId: 'controller-01',
-                                commandId: 'stage-1',
-                                command: { kind: 'recipe.load' }
-                            },
-                            dispatchedAtEpochMs: 1_100,
-                            completedAtEpochMs: 1_600
-                        },
-                        {
-                            envelope: {
-                                agentId: 'controller-01',
-                                commandId: 'start-1',
-                                command: { kind: 'recipe.run' }
-                            },
-                            dispatchedAtEpochMs: 1_800,
-                            completedAtEpochMs: 2_800
-                        }
-                    ],
-                    results: [
-                        {
-                            agentId: 'controller-01',
-                            commandId: 'reset-control-1',
-                            ok: true,
-                            result: { durationMs: 10_000 }
-                        }
-                    ],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                        startedAtEpochMs: 0,
+                        durationMs: 10_000
+                    })
+                ]
+            }),
+            files: {
                 'events.jsonl': '',
                 'fleet-report.json': JSON.stringify({
                     distributedRunId: 'dist-linked-timing',
@@ -331,7 +308,7 @@ describe('distributed run artifact command timing', () => {
                     }
                 })
             }
-        });
+        }));
 
         expect(analysis.performance?.commandTiming).toMatchObject({
             count: 2,
@@ -360,48 +337,59 @@ describe('distributed run artifact command timing', () => {
         ]);
     });
 
-    it('uses result JSONL durations for passed-run performance when command snapshots are bounded', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-result-timing',
-                    controlRunId: 'run-result-timing',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 2_000,
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['agent-a', 'agent-b'],
-                    commandLinks: [
-                        { phase: 'start', agentId: 'agent-a', commandId: 'cmd-a', queuedAtEpochMs: 1_010 },
-                        { phase: 'start', agentId: 'agent-b', commandId: 'cmd-b', queuedAtEpochMs: 1_020 },
-                        { phase: 'start', agentId: 'agent-b', commandId: 'cmd-c', queuedAtEpochMs: 1_030 }
-                    ]
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-result-timing',
-                    agents: [
-                        { agentId: 'agent-a', connected: true, reconnectCount: 0, receivedEventCount: 1 },
-                        { agentId: 'agent-b', connected: true, reconnectCount: 0, receivedEventCount: 1 }
-                    ],
-                    commands: [
-                        { envelope: { agentId: 'agent-a', commandId: 'cmd-a', command: { kind: 'health' } } },
-                        { envelope: { agentId: 'agent-b', commandId: 'cmd-b', command: { kind: 'health' } } },
-                        { envelope: { agentId: 'agent-b', commandId: 'cmd-c', command: { kind: 'health' } } }
-                    ],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
-                'results.jsonl': [
-                    JSON.stringify({ agentId: 'agent-a', commandId: 'cmd-a', ok: true, result: { durationMs: 20 } }),
-                    JSON.stringify({ agentId: 'agent-b', commandId: 'cmd-b', ok: true, result: { durationMs: 40 } }),
-                    JSON.stringify({ agentId: 'agent-b', commandId: 'cmd-c', ok: true, result: { startedAtEpochMs: 1_100, endedAtEpochMs: 1_500 } })
-                ].join('\n')
-            }
-        });
+    it('uses control result durations when queued command snapshots carry no dispatch or completion times', () => {
+        const commandIds = ['cmd-a', 'cmd-b', 'cmd-c'];
+        const agentIdByCommandId: Readonly<Record<string, string>> = {
+            'cmd-a': 'agent-a',
+            'cmd-b': 'agent-b',
+            'cmd-c': 'agent-b'
+        };
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-result-timing',
+                controlRunId: 'run-result-timing',
+                state: 'passed',
+                agentIds: ['agent-a', 'agent-b'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 2_000,
+                commandLinks: commandIds.map((commandId, index) => ({
+                    phase: 'start' as const,
+                    agentId: agentIdByCommandId[commandId] ?? 'agent-a',
+                    commandId,
+                    queuedAtEpochMs: 1_010 + index * 10
+                }))
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-result-timing',
+                agents: [
+                    { agentId: 'agent-a', receivedEventCount: 1 },
+                    { agentId: 'agent-b', receivedEventCount: 1 }
+                ],
+                commands: commandIds.map((commandId, index) =>
+                    createQueuedCommandSnapshot({
+                        runId: 'run-result-timing',
+                        agentId: agentIdByCommandId[commandId] ?? 'agent-a',
+                        commandId,
+                        queuedAtEpochMs: 1_010 + index * 10
+                    })
+                ),
+                results: [
+                    { commandId: 'cmd-a', durationMs: 20 },
+                    { commandId: 'cmd-b', durationMs: 40 },
+                    { commandId: 'cmd-c', durationMs: 400 }
+                ].map((sample) =>
+                    createResultEnvelope({
+                        runId: 'run-result-timing',
+                        agentId: agentIdByCommandId[sample.commandId] ?? 'agent-a',
+                        commandId: sample.commandId,
+                        kind: 'health',
+                        ok: true,
+                        startedAtEpochMs: 1_100,
+                        durationMs: sample.durationMs
+                    })
+                )
+            })
+        }));
 
         expect(analysis.performance?.commandTiming).toMatchObject({
             count: 3,

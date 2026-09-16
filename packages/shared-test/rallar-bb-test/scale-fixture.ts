@@ -3,8 +3,8 @@ import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts'
 
 export const RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT = 12_000;
 export const RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT = 3_000;
-// The canonical 15k fixture measures 4,753,139 bytes. At this ceiling the
-// result-heavy stream measures 14,679,261 bytes, retaining headroom
+// The canonical 15k fixture measures 5,338,306 bytes. At this ceiling the
+// result-heavy stream measures 16,319,143 bytes, retaining headroom
 // below the browser's 16 MiB per-file intake limit.
 export const RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT = 40_000;
 export const RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES = 16 * 1_024 * 1_024;
@@ -145,7 +145,7 @@ function toScaleArtifactFiles(plan: ScaleFixturePlan): DistributedRunArtifactFil
     const manifest = toScaleManifest();
     const summary = toScaleArtifactSummary(plan.counts);
     return {
-        'distributed-run.json': JSON.stringify(toScaleDistributedRun(manifest)),
+        'distributed-run.json': JSON.stringify(toScaleDistributedRun(manifest, plan.counts)),
         'manifest.json': JSON.stringify(manifest),
         'control-run.json': JSON.stringify(toScaleControlRun(plan.counts)),
         'report.json': JSON.stringify(toScaleReport(summary)),
@@ -239,7 +239,7 @@ function toScaleManifest(): RallarBlackBoxDistributedRunManifest {
     };
 }
 
-function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest): ScaleArtifactRow {
+function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest, counts: ScaleCounts): ScaleArtifactRow {
     return {
         distributedRunId: DISTRIBUTED_RUN_ID,
         controlRunId: CONTROL_RUN_ID,
@@ -249,22 +249,40 @@ function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest): 
         startedAtEpochMs: STARTED_AT_EPOCH_MS,
         completedAtEpochMs: GENERATED_AT_EPOCH_MS,
         targetAgentIds: [AGENT_ID],
-        commandLinks: [],
+        commandLinks: Array.from({ length: counts.results }, (_, index) => ({
+            phase: 'start',
+            agentId: AGENT_ID,
+            commandId: toScaleCommandId(index),
+            recipeId: RECIPE_ID,
+            queuedAtEpochMs: toScaleResultStartedAtEpochMs(index)
+        })),
         manifest,
         rollup: {
             state: 'failed',
             ok: false,
             failures: [{
-                agentId: AGENT_ID,
-                recipeId: RECIPE_ID,
-                commandId: toScaleCommandId(0),
-                code: 'SCALE_UPSTREAM_UNAVAILABLE',
-                message: 'Scale fixture upstream returned 503.'
+                kind: 'participant',
+                key: AGENT_ID,
+                state: 'failed',
+                required: true,
+                error: {
+                    code: 'SCALE_UPSTREAM_UNAVAILABLE',
+                    message: 'Scale fixture upstream returned 503.'
+                }
             }],
             summary: {
-                totalParticipants: 1,
-                completedParticipants: 1,
+                participants: 1,
+                requiredParticipants: 1,
+                readyParticipants: 1,
+                passedParticipants: 0,
                 failedParticipants: 1,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 0,
+                failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1
             }
         }
@@ -354,7 +372,7 @@ function toScaleMetadata(summary: Readonly<Record<string, number>>): ScaleArtifa
 
 function toScaleResultRow(index: number, results: ScaleSourceStream): ScaleArtifactRow {
     const failed = index === 0;
-    const startedAtEpochMs = STARTED_AT_EPOCH_MS + index * 4;
+    const startedAtEpochMs = toScaleResultStartedAtEpochMs(index);
     return {
         resultKey: `${AGENT_ID}:${toScaleCommandId(index)}`,
         commandId: toScaleCommandId(index),
@@ -363,12 +381,14 @@ function toScaleResultRow(index: number, results: ScaleSourceStream): ScaleArtif
         action: 'http.request',
         status: failed ? 'FAILURE' : 'SUCCESS',
         ok: !failed,
-        startedAtEpochMs,
-        endedAtEpochMs: startedAtEpochMs + 3,
-        durationMs: 3,
         result: {
+            commandId: toScaleCommandId(index),
             kind: 'http.request',
-            status: failed ? 'failed' : 'passed',
+            status: failed ? 'failed' : 'ok',
+            ok: !failed,
+            startedAtEpochMs,
+            endedAtEpochMs: startedAtEpochMs + 3,
+            durationMs: 3,
             value: {
                 statusCode: failed ? 503 : 200,
                 needle: resolveNeedle(index, results)
@@ -410,6 +430,10 @@ function toScaleEventRow(index: number, plan: ScaleFixturePlan): ScaleArtifactRo
                 needle
             }
     };
+}
+
+function toScaleResultStartedAtEpochMs(index: number): number {
+    return STARTED_AT_EPOCH_MS + index * 4;
 }
 
 function toScaleCommandId(index: number): string {

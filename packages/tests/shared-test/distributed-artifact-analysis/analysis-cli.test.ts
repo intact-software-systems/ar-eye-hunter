@@ -1,56 +1,72 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import { analyzeDistributedRunArtifactDirectory } from '../../../../apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts';
+import type {
+    DistributedRunAnalysis,
+    DistributedRunArtifactFiles,
+    DistributedRunControlRequestFailureAnalysis
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    createQueuedCommandSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+const GENERATED_AT_EPOCH_MS = 123;
+
+async function createArtifactDirectory(prefix: string, files: DistributedRunArtifactFiles): Promise<string> {
+    const artifactDir = await mkdtemp(path.join(tmpdir(), prefix));
+    await Promise.all(
+        Object.entries(files).map(async ([fileName, text]) => {
+            if (text !== undefined) {
+                await writeFile(path.join(artifactDir, fileName), text);
+            }
+        })
+    );
+    return artifactDir;
+}
+
+async function readAnalysisJson<Analysis>(outDir: string): Promise<Analysis> {
+    return JSON.parse(await readFile(path.join(outDir, 'analysis.json'), 'utf8')) as Analysis;
+}
 
 describe('distributed run artifact analysis CLI', () => {
     it('writes CLI analysis files for failed and passed artifact directories', async () => {
-        const artifactDir = await mkdtemp(path.join(tmpdir(), 'rallar-distributed-artifacts-'));
-        const outDir = path.join(artifactDir, 'analysis');
-        await writeFile(
-            path.join(artifactDir, 'distributed-run.json'),
-            JSON.stringify({
-                distributedRunId: 'dist-cli',
-                controlRunId: 'run-cli',
-                state: 'failed',
-                startedAtEpochMs: 1,
-                completedAtEpochMs: 5,
-                rollup: {
-                    ok: false,
+        const artifactDir = await createArtifactDirectory(
+            'rallar-distributed-artifacts-',
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-cli',
+                    controlRunId: 'run-cli',
+                    state: 'failed',
+                    agentIds: ['agent-a'],
+                    startedAtEpochMs: 1,
+                    completedAtEpochMs: 5,
                     failures: [{
                         kind: 'participant',
                         key: 'agent-a',
                         state: 'failed',
+                        required: true,
                         error: { code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT', message: 'Missing ACK.' }
-                    }],
-                    summary: { blockingFailures: 1 }
-                },
-                manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                targetAgentIds: ['agent-a'],
-                commandLinks: []
+                    }]
+                }),
+                controlRun: createControlRunSnapshot({ runId: 'run-cli' })
             })
         );
-        await writeFile(
-            path.join(artifactDir, 'control-run.json'),
-            JSON.stringify({
-                runId: 'run-cli',
-                agents: [],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            })
-        );
+        const outDir = path.join(artifactDir, 'analysis');
 
-        await analyzeDistributedRunArtifactDirectory(artifactDir, outDir);
+        const analyzed = await analyzeDistributedRunArtifactDirectory({
+            artifactDir,
+            outDir,
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+        });
 
-        const analysis = JSON.parse(await readFile(path.join(outDir, 'analysis.json'), 'utf8')) as {
-            failure?: { minimalFixArea?: string; };
-            parseWarnings: unknown[];
-        };
+        const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
+        expect(analyzed.right?.analysis).toEqual(analysis);
         expect(analysis.failure?.minimalFixArea).toBe('headless agent readiness');
         expect(analysis.parseWarnings).toEqual([]);
         await expect(readFile(path.join(outDir, 'summary.md'), 'utf8')).resolves.toContain('dist-cli');
@@ -58,67 +74,68 @@ describe('distributed run artifact analysis CLI', () => {
     });
 
     it('writes passed-run performance files with percentile and diagnostic severity counts', async () => {
-        const artifactDir = await mkdtemp(path.join(tmpdir(), 'rallar-distributed-passed-artifacts-'));
+        const artifactDir = await createArtifactDirectory(
+            'rallar-distributed-passed-artifacts-',
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-cli-passed',
+                    controlRunId: 'run-cli-passed',
+                    state: 'passed',
+                    agentIds: ['agent-a', 'agent-b'],
+                    startedAtEpochMs: 100,
+                    completedAtEpochMs: 900,
+                    commandLinks: [
+                        { phase: 'start', agentId: 'agent-a', commandId: 'cmd-a', queuedAtEpochMs: 100 },
+                        { phase: 'start', agentId: 'agent-b', commandId: 'cmd-b', queuedAtEpochMs: 100 },
+                        { phase: 'start', agentId: 'agent-b', commandId: 'cmd-c', queuedAtEpochMs: 100 }
+                    ]
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-cli-passed',
+                    agents: [
+                        { agentId: 'agent-a', receivedEventCount: 2 },
+                        { agentId: 'agent-b', reconnectCount: 1, receivedEventCount: 3 }
+                    ],
+                    commands: [
+                        createQueuedCommandSnapshot({
+                            runId: 'run-cli-passed',
+                            agentId: 'agent-a',
+                            commandId: 'cmd-a',
+                            queuedAtEpochMs: 100,
+                            dispatchedAtEpochMs: 110,
+                            completedAtEpochMs: 130
+                        }),
+                        createQueuedCommandSnapshot({
+                            runId: 'run-cli-passed',
+                            agentId: 'agent-b',
+                            commandId: 'cmd-b',
+                            queuedAtEpochMs: 100,
+                            dispatchedAtEpochMs: 120,
+                            completedAtEpochMs: 160
+                        }),
+                        createQueuedCommandSnapshot({
+                            runId: 'run-cli-passed',
+                            agentId: 'agent-b',
+                            commandId: 'cmd-c',
+                            queuedAtEpochMs: 100,
+                            dispatchedAtEpochMs: 130,
+                            completedAtEpochMs: 530
+                        })
+                    ]
+                }),
+                files: {
+                    'events.jsonl': [
+                        JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
+                        JSON.stringify({ kind: 'runtime', value: { severity: 'warning', message: 'slow route' } })
+                    ].join('\n')
+                }
+            })
+        );
         const outDir = path.join(artifactDir, 'analysis');
-        await writeFile(
-            path.join(artifactDir, 'distributed-run.json'),
-            JSON.stringify({
-                distributedRunId: 'dist-cli-passed',
-                controlRunId: 'run-cli-passed',
-                state: 'passed',
-                startedAtEpochMs: 100,
-                completedAtEpochMs: 900,
-                rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                targetAgentIds: ['agent-a', 'agent-b'],
-                commandLinks: [
-                    { phase: 'start', agentId: 'agent-a', commandId: 'cmd-a', queuedAtEpochMs: 100 },
-                    { phase: 'start', agentId: 'agent-b', commandId: 'cmd-b', queuedAtEpochMs: 100 },
-                    { phase: 'start', agentId: 'agent-b', commandId: 'cmd-c', queuedAtEpochMs: 100 }
-                ]
-            })
-        );
-        await writeFile(
-            path.join(artifactDir, 'control-run.json'),
-            JSON.stringify({
-                runId: 'run-cli-passed',
-                agents: [
-                    { agentId: 'agent-a', connected: true, reconnectCount: 0, receivedEventCount: 2 },
-                    { agentId: 'agent-b', connected: true, reconnectCount: 1, receivedEventCount: 3 }
-                ],
-                commands: [
-                    { envelope: { agentId: 'agent-a', commandId: 'cmd-a', command: { kind: 'health' } }, dispatchedAtEpochMs: 110, completedAtEpochMs: 130 },
-                    { envelope: { agentId: 'agent-b', commandId: 'cmd-b', command: { kind: 'health' } }, dispatchedAtEpochMs: 120, completedAtEpochMs: 160 },
-                    { envelope: { agentId: 'agent-b', commandId: 'cmd-c', command: { kind: 'health' } }, dispatchedAtEpochMs: 130, completedAtEpochMs: 530 }
-                ],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            })
-        );
-        await writeFile(
-            path.join(artifactDir, 'events.jsonl'),
-            [
-                JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
-                JSON.stringify({ kind: 'runtime', value: { severity: 'warning', message: 'slow route' } })
-            ].join('\n')
-        );
 
-        await analyzeDistributedRunArtifactDirectory(artifactDir, outDir);
+        await analyzeDistributedRunArtifactDirectory({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
-        const analysis = JSON.parse(await readFile(path.join(outDir, 'analysis.json'), 'utf8')) as {
-            performance?: {
-                diagnosticCount: number;
-                warningDiagnosticCount: number;
-                errorDiagnosticCount: number;
-                commandTiming: {
-                    p99Ms?: number;
-                    outlierCount?: number;
-                };
-            };
-        };
+        const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
         expect(analysis.performance?.diagnosticCount).toBe(1);
         expect(analysis.performance?.warningDiagnosticCount).toBe(1);
         expect(analysis.performance?.errorDiagnosticCount).toBe(0);
@@ -131,18 +148,17 @@ describe('distributed run artifact analysis CLI', () => {
     });
 
     it('names group-assertion failures with their own category and fix area', async () => {
-        const artifactDir = await mkdtemp(path.join(tmpdir(), 'rallar-distributed-ga-artifacts-'));
-        const outDir = path.join(artifactDir, 'analysis');
-        await writeFile(
-            path.join(artifactDir, 'distributed-run.json'),
-            JSON.stringify({
-                distributedRunId: 'dist-ga',
-                controlRunId: 'run-ga',
-                state: 'failed',
-                startedAtEpochMs: 1,
-                completedAtEpochMs: 5,
-                rollup: {
-                    ok: false,
+        const artifactDir = await createArtifactDirectory(
+            'rallar-distributed-ga-artifacts-',
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-ga',
+                    controlRunId: 'run-ga',
+                    state: 'failed',
+                    agentIds: ['agent-a', 'agent-b'],
+                    startedAtEpochMs: 1,
+                    completedAtEpochMs: 5,
+                    summary: { failedGroupAssertions: 1 },
                     failures: [{
                         kind: 'group-assertion',
                         key: 'members-converge',
@@ -160,37 +176,77 @@ describe('distributed run artifact analysis CLI', () => {
                                 ]
                             }
                         }
-                    }],
-                    summary: { blockingFailures: 1, failedGroupAssertions: 1 }
-                },
-                manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                targetAgentIds: ['agent-a', 'agent-b'],
-                commandLinks: []
+                    }]
+                }),
+                controlRun: createControlRunSnapshot({ runId: 'run-ga' })
             })
         );
-        await writeFile(
-            path.join(artifactDir, 'control-run.json'),
-            JSON.stringify({
-                runId: 'run-ga',
-                agents: [],
-                commands: [],
-                results: [],
-                events: [],
-                stats: [],
-                reports: [],
-                heartbeats: []
-            })
-        );
+        const outDir = path.join(artifactDir, 'analysis');
 
-        await analyzeDistributedRunArtifactDirectory(artifactDir, outDir);
+        await analyzeDistributedRunArtifactDirectory({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
-        const analysis = JSON.parse(await readFile(path.join(outDir, 'analysis.json'), 'utf8')) as {
-            failure?: { category?: string; minimalFixArea?: string; };
-        };
+        const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
         expect(analysis.failure?.category).toBe('group-assertion');
         expect(analysis.failure?.minimalFixArea).toBe('group assertion contract or fleet evidence');
         await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain(
             'rallar-bb-test-group-assertion-conformance.test.ts'
         );
+    });
+
+    it('writes a control request failure summary and fix proposal without a performance report', async () => {
+        const artifactDir = await createArtifactDirectory('rallar-distributed-post-failure-', {
+            'runner-summary.json': JSON.stringify({
+                distributedRunId: 'dist-cli-post-failure',
+                controlRunId: 'run-cli-post-failure',
+                state: 'failed',
+                ok: false,
+                artifactDir: '/artifacts/dist-cli-post-failure'
+            }),
+            'control-post-create-error.json': '{"error":"bad manifest","message":"target policy rejected"}',
+            'control-post-error-metadata.json': JSON.stringify({
+                phase: 'create',
+                method: 'POST',
+                path: '/distributed-runs',
+                httpStatus: '400',
+                curlStatus: 0,
+                exitStatus: 22,
+                responseFile: 'control-post-create-error.json',
+                atEpochSeconds: 1_700_000_000
+            })
+        });
+        const outDir = path.join(artifactDir, 'analysis');
+
+        const analyzed = await analyzeDistributedRunArtifactDirectory({
+            artifactDir,
+            outDir,
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+        });
+
+        const analysis = await readAnalysisJson<DistributedRunControlRequestFailureAnalysis>(outDir);
+        expect(analyzed.right?.variant).toBe('control-request-failure');
+        expect(analysis.failure.likelyCause).toBe('target policy rejected');
+        await expect(readFile(path.join(outDir, 'summary.md'), 'utf8')).resolves.toContain(
+            'Control Request Failure: dist-cli-post-failure'
+        );
+        await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain(
+            'Evidence: control-post-create-error.json'
+        );
+        await expect(access(path.join(outDir, 'performance.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+
+    it('returns the rejection and writes nothing for artifacts without a distributed run or failed request record', async () => {
+        const artifactDir = await createArtifactDirectory('rallar-distributed-rejected-', {
+            'control-run.json': JSON.stringify(createControlRunSnapshot({ runId: 'run-rejected' }))
+        });
+        const outDir = path.join(artifactDir, 'analysis');
+
+        const analyzed = await analyzeDistributedRunArtifactDirectory({
+            artifactDir,
+            outDir,
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+        });
+
+        expect(analyzed.left?.fileName).toBe('distributed-run.json');
+        await expect(access(outDir)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 });

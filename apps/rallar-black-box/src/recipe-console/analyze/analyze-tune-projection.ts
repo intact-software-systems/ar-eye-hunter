@@ -53,7 +53,7 @@ export function projectAnalyzeTuneArtifactFacade(
             total: model.workspace.issues.length,
             omitted: Math.max(0, model.workspace.issues.length - MAX_TUNE_ROWS)
         },
-        generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+        generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
         manifestSummary: {
             distributedRunId: projectAuthorityIdentifier(manifest.distributedRunId),
             ...(manifest.controlRunId

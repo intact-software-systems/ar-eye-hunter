@@ -2,10 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
     analyzeDistributedRunArtifactFiles,
     distributedArtifactSnapshotsFromFiles,
-    type DistributedRunArtifactFiles
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles,
+    type DistributedRunArtifactSnapshots
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { resolveDistributedArtifactEvidenceCatalogEntryIds } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
-import type { DistributedArtifactEvidenceEntry } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
+import type {
+    DeriveDistributedArtifactEvidenceInput,
+    DistributedArtifactEvidenceEntry,
+    DistributedArtifactEvidenceIndex
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
 import {
     composeDistributedArtifactIssueMarkdown,
     deriveDistributedArtifactEvidence,
@@ -28,6 +34,7 @@ function evidenceFiles(): DistributedRunArtifactFiles {
             controlRunId: 'run-evidence-search',
             state: 'failed',
             createdAtEpochMs: 100,
+            updatedAtEpochMs: 500,
             completedAtEpochMs: 500,
             targetAgentIds: ['agent-a', 'agent-b'],
             commandLinks: [
@@ -47,12 +54,14 @@ function evidenceFiles(): DistributedRunArtifactFiles {
                 }
             ],
             rollup: {
+                state: 'failed',
                 ok: false,
                 failures: [
                     {
-                        kind: 'command',
-                        key: 'command:send-rtc',
+                        kind: 'participant',
+                        key: 'agent-a',
                         state: 'failed',
+                        required: true,
                         agentId: 'agent-a',
                         recipeId: 'rtc-stability',
                         commandId: 'send-rtc',
@@ -63,7 +72,21 @@ function evidenceFiles(): DistributedRunArtifactFiles {
                         atEpochMs: 350
                     }
                 ],
-                summary: { blockingFailures: 1 }
+                summary: {
+                    participants: 2,
+                    requiredParticipants: 2,
+                    readyParticipants: 2,
+                    passedParticipants: 1,
+                    failedParticipants: 1,
+                    recipes: 1,
+                    requiredRecipes: 1,
+                    passedRecipes: 0,
+                    failedRecipes: 1,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
+                    blockingFailures: 1
+                }
             },
             manifest: {
                 schemaVersion: 1,
@@ -207,10 +230,34 @@ function evidenceFilesWithoutCommandLinks(): DistributedRunArtifactFiles {
     };
 }
 
+function evidenceIndex(input: DeriveDistributedArtifactEvidenceInput): DistributedArtifactEvidenceIndex {
+    const derived = deriveDistributedArtifactEvidence(input);
+    if (derived.right === undefined) {
+        throw new Error(`Expected an evidence index, got ${JSON.stringify(derived.left)}`);
+    }
+    return derived.right;
+}
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
+
+function decodedSnapshots(files: DistributedRunArtifactFiles): DistributedRunArtifactSnapshots {
+    const snapshots = distributedArtifactSnapshotsFromFiles(files, GENERATED_AT_EPOCH_MS);
+    if (snapshots.right === undefined) {
+        throw new Error(`Expected decoded snapshots, got ${JSON.stringify(snapshots.left)}`);
+    }
+    return snapshots.right;
+}
+
 describe('distributed artifact evidence index', () => {
     it('derives the same bounded deterministic index from files or precomputed artifacts', () => {
         const files = evidenceFiles();
-        const fromFiles = deriveDistributedArtifactEvidence({
+        const fromFiles = evidenceIndex({
             files,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 4,
@@ -218,11 +265,8 @@ describe('distributed artifact evidence index', () => {
             payloadSummaryLimit: 32
         });
         const fromPrecomputed = deriveDistributedArtifactEvidenceIndex({
-            analysis: analyzeDistributedRunArtifactFiles({
-                files,
-                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
-            }),
-            snapshots: distributedArtifactSnapshotsFromFiles(files, GENERATED_AT_EPOCH_MS),
+            analysis: analyzedRun(files),
+            snapshots: decodedSnapshots(files),
             sourceFileNames: Object.keys(files),
             indexLimit: 4,
             summaryLimit: 28,
@@ -286,7 +330,7 @@ describe('distributed artifact evidence index', () => {
     });
 
     it('indexes failures, results, events, and diagnostics without duplicating diagnostic events', () => {
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -332,7 +376,7 @@ describe('distributed artifact evidence index', () => {
             },
             message: 'Rallar black-box command timeout reached.'
         };
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100,
@@ -378,7 +422,7 @@ describe('distributed artifact evidence index', () => {
                 }
             }
         };
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100,
@@ -406,7 +450,7 @@ describe('distributed artifact evidence index', () => {
             message: 'Direct nested result error',
             stack: 'DirectRuntimeError: Direct nested result error\n at command.ts:4:2'
         };
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -418,7 +462,7 @@ describe('distributed artifact evidence index', () => {
 
         controlRun.results[0].error = { details: {} };
         delete controlRun.results[0].result.error;
-        const missing = deriveDistributedArtifactEvidence({
+        const missing = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -449,7 +493,7 @@ describe('distributed artifact evidence index', () => {
     });
 
     it('retains usable result and event rows when a partial run has no command links', () => {
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: evidenceFilesWithoutCommandLinks(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -496,7 +540,7 @@ describe('distributed artifact evidence index', () => {
                 payload: { topic: 'collision', message: 'second' }
             }
         );
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -528,7 +572,7 @@ describe('distributed artifact evidence index', () => {
                 }
                 : { topic: 'bounded.noise', message: `noise ${index}` }
         })));
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 2
@@ -548,7 +592,7 @@ describe('distributed artifact evidence index', () => {
         const event = controlRun.events[0];
         controlRun.results = [];
         controlRun.events = [];
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: {
                 ...files,
                 'control-run.json': JSON.stringify(controlRun),
@@ -568,7 +612,7 @@ describe('distributed artifact evidence index', () => {
 
 describe('distributed artifact evidence search', () => {
     it('matches every searchable evidence field case-insensitively', () => {
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -599,7 +643,7 @@ describe('distributed artifact evidence search', () => {
             },
             message: 'Rallar black-box command timeout reached.'
         };
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -636,7 +680,7 @@ describe('distributed artifact evidence search', () => {
     });
 
     it('combines structured filters with AND, treats time bounds as inclusive, and reports exact omissions', () => {
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100
@@ -670,7 +714,7 @@ describe('distributed artifact evidence search', () => {
             totalMatchesIsComplete: true
         });
 
-        const maximums = deriveDistributedArtifactEvidence({
+        const maximums = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: Number.MAX_SAFE_INTEGER
@@ -682,7 +726,7 @@ describe('distributed artifact evidence search', () => {
             }).limit
         ).toBe(500);
 
-        const boundedIndex = deriveDistributedArtifactEvidence({
+        const boundedIndex = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 1
@@ -698,10 +742,7 @@ describe('distributed artifact evidence search', () => {
 
     it('searches every affected agent and treats passed as an alias of ok', () => {
         const files = evidenceFiles();
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files,
-            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
-        });
+        const analysis = analyzedRun(files);
         if (!analysis.failure) {
             throw new Error('Expected deterministic failure.');
         }
@@ -713,10 +754,7 @@ describe('distributed artifact evidence search', () => {
                     affectedAgents: ['agent-a', 'agent-b']
                 }
             },
-            snapshots: distributedArtifactSnapshotsFromFiles(
-                files,
-                GENERATED_AT_EPOCH_MS
-            ),
+            snapshots: decodedSnapshots(files),
             sourceFileNames: Object.keys(files),
             indexLimit: 100
         });
@@ -743,7 +781,7 @@ describe('distributed artifact evidence search', () => {
 
 describe('distributed artifact issue markdown', () => {
     it('composes bounded issue-ready markdown with warnings, source evidence, and a labeled likely trail', () => {
-        const index = deriveDistributedArtifactEvidence({
+        const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
             indexLimit: 100

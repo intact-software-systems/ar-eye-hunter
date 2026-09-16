@@ -28,9 +28,9 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
 }
 
 function files(
-    distributedRun: Record<string, unknown>,
-    results: readonly Record<string, unknown>[] = [],
-    controlResults: readonly Record<string, unknown>[] = []
+    distributedRun: object,
+    results: readonly object[] = [],
+    controlResults: readonly object[] = []
 ): DistributedRunArtifactFiles {
     return {
         'distributed-run.json': JSON.stringify(distributedRun),
@@ -39,7 +39,17 @@ function files(
             runId: 'manifest-control',
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 2_000,
-            agents: [{ agentId: 'agent-a', connected: true, reconnectCount: 0 }],
+            agents: [{
+                runId: 'manifest-control',
+                agentId: 'agent-a',
+                connected: true,
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 0,
+                receivedEventCount: 0,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: []
+            }],
             commands: [],
             results: controlResults,
             events: [],
@@ -52,8 +62,10 @@ function files(
     };
 }
 
-function distributedRun(overrides: Record<string, unknown> = {}) {
+function distributedRun(overrides: object = {}) {
     return {
+        distributedRunId: 'outer-distributed',
+        controlRunId: 'manifest-control',
         state: 'passed',
         createdAtEpochMs: 1_000,
         updatedAtEpochMs: 2_000,
@@ -62,7 +74,26 @@ function distributedRun(overrides: Record<string, unknown> = {}) {
         targetAgentIds: ['agent-a'],
         commandLinks: [],
         manifest: manifest(),
-        rollup: { state: 'passed', ok: true, failures: [], summary: { blockingFailures: 0 } },
+        rollup: {
+            state: 'passed',
+            ok: true,
+            failures: [],
+            summary: {
+                participants: 1,
+                requiredParticipants: 1,
+                readyParticipants: 1,
+                passedParticipants: 1,
+                failedParticipants: 0,
+                recipes: 1,
+                requiredRecipes: 1,
+                passedRecipes: 1,
+                failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
+                blockingFailures: 0
+            }
+        },
         ...overrides
     };
 }
@@ -70,9 +101,11 @@ function distributedRun(overrides: Record<string, unknown> = {}) {
 function analyzedPerformance(
     artifactFiles: DistributedRunArtifactFiles
 ): DistributedRunPerformanceAnalysis {
-    const performance = analyzeDistributedRunArtifactFiles({
-        files: artifactFiles
-    }).performance;
+    const analyzed = analyzeDistributedRunArtifactFiles({
+        files: artifactFiles,
+        generatedAtEpochMs: 2_000
+    }).right;
+    const performance = analyzed?.variant === 'distributed-run' ? analyzed.analysis.performance : undefined;
     if (!performance) {
         throw new Error('artifact analysis returned no performance section');
     }
@@ -80,22 +113,16 @@ function analyzedPerformance(
 }
 
 describe('distributed recipe tuning Task 2 hardening', () => {
-    it('uses one normalized identity for outer and manifest snapshots', () => {
+    it('rejects snapshot identities that are not strings instead of borrowing the manifest identity', () => {
         for (
             const input of [
-                distributedRun(),
+                distributedRun({ distributedRunId: undefined }),
                 distributedRun({ distributedRunId: 42, controlRunId: null })
             ]
         ) {
-            const snapshot = distributedArtifactSnapshotsFromFiles(files(input), 2_000)
-                .distributedRun;
-            expect(snapshot).toMatchObject({
-                distributedRunId: 'manifest-distributed',
-                controlRunId: 'manifest-control',
-                manifest: {
-                    distributedRunId: 'manifest-distributed',
-                    controlRunId: 'manifest-control'
-                }
+            expect(distributedArtifactSnapshotsFromFiles(files(input), 2_000).left).toEqual({
+                fileName: 'distributed-run.json',
+                message: 'distributed-run.json is not a distributed run snapshot: distributedRunId must be a non-empty string.'
             });
         }
         const outer = distributedArtifactSnapshotsFromFiles(
@@ -104,11 +131,11 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 controlRunId: 'outer-control'
             })),
             2_000
-        ).distributedRun;
-        expect(outer.distributedRunId).toBe('outer-distributed');
-        expect(outer.controlRunId).toBe('outer-control');
-        expect(outer.manifest.distributedRunId).toBe('outer-distributed');
-        expect(outer.manifest.controlRunId).toBe('outer-control');
+        ).right?.distributedRun;
+        expect(outer?.distributedRunId).toBe('outer-distributed');
+        expect(outer?.controlRunId).toBe('outer-control');
+        expect(outer?.manifest.distributedRunId).toBe('manifest-distributed');
+        expect(outer?.manifest.controlRunId).toBe('manifest-control');
     });
 
     it('does not double count normalized fallback and explicit RTC results', () => {
@@ -153,15 +180,16 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             }),
             [result]
         );
-        const snapshots = distributedArtifactSnapshotsFromFiles(artifactFiles, 2_000);
+        const snapshots = distributedArtifactSnapshotsFromFiles(artifactFiles, 2_000).right;
+        if (!snapshots) {
+            throw new Error('Expected decoded snapshots.');
+        }
         const performance = deriveDistributedRunSnapshotPerformance({
             ...snapshots,
             artifactResults: [result]
         });
 
-        expect(performance).toEqual(
-            analyzeDistributedRunArtifactFiles({ files: artifactFiles }).performance
-        );
+        expect(performance).toEqual(analyzedPerformance(artifactFiles));
         expect(performance.streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 3,

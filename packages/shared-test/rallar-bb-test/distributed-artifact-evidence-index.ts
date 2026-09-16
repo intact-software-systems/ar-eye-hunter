@@ -1,7 +1,9 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 import {
     deriveDistributedRunArtifactPipelineAnalysis,
-    distributedArtifactSnapshotsFromPipeline,
-    parseDistributedRunArtifactPipeline
+    parseDistributedRunArtifactPipeline,
+    type DistributedRunArtifactRejection
 } from './distributed-artifact-analysis.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
@@ -30,40 +32,44 @@ import { deriveDistributedRunMonitor } from './distributed-run-monitor.ts';
 
 export function deriveDistributedArtifactEvidence(
     input: DeriveDistributedArtifactEvidenceInput
-): DistributedArtifactEvidenceIndex {
+): Either<DistributedRunArtifactRejection, DistributedArtifactEvidenceIndex> {
     const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
     const parsed = parseDistributedArtifactPipeline(input.files, {
         projection: 'literal-loose-files'
     });
-    const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
-    const snapshots = distributedArtifactSnapshotsFromPipeline(
-        parsed,
-        generatedAtEpochMs,
-        undefined,
-        parsedFiles
+    return parseDistributedRunArtifactPipeline(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) => {
+            if (content.variant === 'control-request-failure') {
+                return Either.ofLeft({
+                    fileName: 'distributed-run.json',
+                    message:
+                        `distributed-run.json is required: the artifacts record a failed control ${content.controlPostFailure.request.phase} request instead of a distributed run.`
+                });
+            }
+            const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
+                parsed,
+                content,
+                generatedAtEpochMs
+            });
+            return Either.ofRight(deriveDistributedArtifactEvidenceIndex({
+                analysis: analysisResult.analysis,
+                snapshots: analysisResult.snapshots,
+                monitor: analysisResult.monitor,
+                parsedControlRun: distributedArtifactPipelineJsonRecord(
+                    parsed,
+                    'control-run.json'
+                ),
+                sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+                    (fileName) => parsed.projectedFiles[fileName] !== undefined
+                ),
+                sourceFiles: parsed.projectedFiles,
+                indexLimit: input.indexLimit,
+                summaryLimit: input.summaryLimit,
+                payloadSummaryLimit: input.payloadSummaryLimit
+            }));
+        }
     );
-    const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
-        parsed,
-        parsedFiles,
-        snapshots,
-        generatedAtEpochMs
-    });
-    return deriveDistributedArtifactEvidenceIndex({
-        analysis: analysisResult.analysis,
-        snapshots,
-        monitor: analysisResult.monitor,
-        parsedControlRun: distributedArtifactPipelineJsonRecord(
-            parsed,
-            'control-run.json'
-        ),
-        sourceFileNames: Object.keys(parsed.projectedFiles).filter(
-            (fileName) => parsed.projectedFiles[fileName] !== undefined
-        ),
-        sourceFiles: parsed.projectedFiles,
-        indexLimit: input.indexLimit,
-        summaryLimit: input.summaryLimit,
-        payloadSummaryLimit: input.payloadSummaryLimit
-    });
 }
 
 export function deriveDistributedArtifactEvidenceIndex(

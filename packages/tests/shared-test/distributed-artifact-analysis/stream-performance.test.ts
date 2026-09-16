@@ -1,37 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeDistributedRunArtifactFiles } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
 
 describe('distributed run artifact stream performance', () => {
     it('derives stream performance from rtc.stream JSONL result summaries', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-passed',
+                controlRunId: 'run-stream-passed',
+                state: 'passed',
+                agentIds: ['controller-01', 'controller-02'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 7_000,
+                commandLinks: [
+                    { phase: 'start', agentId: 'controller-01', commandId: 'stream-a', queuedAtEpochMs: 1_000 },
+                    { phase: 'start', agentId: 'controller-02', commandId: 'stream-b', queuedAtEpochMs: 1_000 }
+                ]
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-stream-passed',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 30 },
+                    { agentId: 'controller-02', receivedEventCount: 35 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-stream-passed',
-                    controlRunId: 'run-stream-passed',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 7_000,
-                    commandLinks: [
-                        { phase: 'start', agentId: 'controller-01', commandId: 'stream-a' },
-                        { phase: 'start', agentId: 'controller-02', commandId: 'stream-b' }
-                    ],
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01', 'controller-02']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-stream-passed',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 30 },
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 35 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-01',
@@ -93,7 +103,7 @@ describe('distributed run artifact stream performance', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 2,
@@ -127,29 +137,21 @@ describe('distributed run artifact stream performance', () => {
     });
 
     it('suppresses stream timing when another agent has only progress evidence', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-mixed-evidence',
+                controlRunId: 'run-stream-mixed-evidence',
+                state: 'passed',
+                agentIds: ['controller-01', 'controller-02']
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-stream-mixed-evidence',
+                agents: [
+                    { agentId: 'controller-01' },
+                    { agentId: 'controller-02' }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-stream-mixed-evidence',
-                    controlRunId: 'run-stream-mixed-evidence',
-                    state: 'passed',
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01', 'controller-02']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-stream-mixed-evidence',
-                    agents: [
-                        { agentId: 'controller-01', connected: true },
-                        { agentId: 'controller-02', connected: true }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': [
                     JSON.stringify({
                         resultKey: 'controller-01:stream-complete',
@@ -191,34 +193,28 @@ describe('distributed run artifact stream performance', () => {
                     }
                 })
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-events',
+                controlRunId: 'run-stream-events',
+                state: 'passed',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 7_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-stream-events',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 3 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-stream-events',
-                    controlRunId: 'run-stream-events',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 7_000,
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-stream-events',
-                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 3 }],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': '',
                 'events.jsonl': [
                     JSON.stringify({
@@ -270,7 +266,7 @@ describe('distributed run artifact stream performance', () => {
                     })
                 ].join('\n')
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 1,
@@ -288,28 +284,22 @@ describe('distributed run artifact stream performance', () => {
     });
 
     it('uses stream progress evidence when timed-out runs have no failed result', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-timeout',
+                controlRunId: 'run-stream-timeout',
+                state: 'timed-out',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 61_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-stream-timeout',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 5 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-stream-timeout',
-                    controlRunId: 'run-stream-timeout',
-                    state: 'timed-out',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 61_000,
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-stream-timeout',
-                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 5 }],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': '',
                 'events.jsonl': [
                     JSON.stringify({
@@ -346,7 +336,7 @@ describe('distributed run artifact stream performance', () => {
                     })
                 ].join('\n')
             }
-        });
+        }));
 
         expect(analysis.failure).toMatchObject({
             category: 'rtc-stream',
@@ -402,31 +392,23 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-nested-stream-passed',
+                controlRunId: 'run-nested-stream-passed',
+                state: 'passed',
+                agentIds: ['controller-01', 'controller-02'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 7_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-nested-stream-passed',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 30 },
+                    { agentId: 'controller-02', receivedEventCount: 35 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-nested-stream-passed',
-                    controlRunId: 'run-nested-stream-passed',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 7_000,
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01', 'controller-02']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-nested-stream-passed',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 30 },
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 35 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-01',
@@ -479,7 +461,7 @@ describe('distributed run artifact stream performance', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 2,
@@ -546,28 +528,22 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-repeated-nested-streams',
+                controlRunId: 'run-repeated-nested-streams',
+                state: 'passed',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 9_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-repeated-nested-streams',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 60 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-repeated-nested-streams',
-                    controlRunId: 'run-repeated-nested-streams',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 9_000,
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-repeated-nested-streams',
-                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 60 }],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-01',
@@ -610,7 +586,7 @@ describe('distributed run artifact stream performance', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 2,
@@ -637,41 +613,29 @@ describe('distributed run artifact stream performance', () => {
     });
 
     it('keeps failed rtc.stream result summaries available for performance analysis', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-stream-failed',
-                    controlRunId: 'run-stream-failed',
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-failed',
+                controlRunId: 'run-stream-failed',
+                state: 'failed',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 8_000,
+                failures: [{
+                    kind: 'participant',
+                    key: 'controller-01',
                     state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 8_000,
-                    rollup: {
-                        ok: false,
-                        failures: [
-                            {
-                                kind: 'participant',
-                                key: 'controller-01',
-                                error: {
-                                    code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
-                                    message: 'RTC stream did not satisfy configured thresholds.'
-                                }
-                            }
-                        ],
-                        summary: { blockingFailures: 1 }
-                    },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-stream-failed',
-                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 1, receivedEventCount: 20 }],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                    required: true,
+                    error: { code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED', message: 'RTC stream did not satisfy configured thresholds.' }
+                }]
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-stream-failed',
+                agents: [
+                    { agentId: 'controller-01', reconnectCount: 1, receivedEventCount: 20 }
+                ]
+            }),
+            files: {
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-01',
@@ -716,7 +680,7 @@ describe('distributed run artifact stream performance', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 1,
@@ -767,28 +731,22 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-tolerated-stream-drops',
+                controlRunId: 'run-tolerated-stream-drops',
+                state: 'failed',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 8_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-tolerated-stream-drops',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 50 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-tolerated-stream-drops',
-                    controlRunId: 'run-tolerated-stream-drops',
-                    state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 8_000,
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-tolerated-stream-drops',
-                    agents: [{ agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 50 }],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-01',
@@ -812,7 +770,7 @@ describe('distributed run artifact stream performance', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.failure).toMatchObject({
             category: 'command',
@@ -863,30 +821,22 @@ describe('distributed run artifact stream performance', () => {
                 }
             ]
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-nested-stream-failed',
+                controlRunId: 'run-nested-stream-failed',
+                state: 'failed',
+                agentIds: ['controller-02'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 9_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-nested-stream-failed',
+                agents: [
+                    { agentId: 'controller-02', receivedEventCount: 30 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-nested-stream-failed',
-                    controlRunId: 'run-nested-stream-failed',
-                    state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 9_000,
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: { recipes: [], group: { groupId: 'bb-group' } },
-                    targetAgentIds: ['controller-02']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-nested-stream-failed',
-                    agents: [
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 30 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': JSON.stringify({
                     agentId: 'controller-02',
                     commandId: 'distributed-start-controller-02-rtc-realtime',
@@ -912,7 +862,7 @@ describe('distributed run artifact stream performance', () => {
                 }),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.failure).toMatchObject({
             category: 'rtc-stream-performance',
@@ -996,31 +946,23 @@ describe('distributed run artifact stream performance', () => {
             ],
             thresholdFailures: []
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-rtc-stream-performance',
+                controlRunId: 'run-rtc-stream-performance',
+                state: 'failed',
+                agentIds: ['controller-01', 'controller-02'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 30_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-rtc-stream-performance',
+                agents: [
+                    { agentId: 'controller-01', receivedEventCount: 230 },
+                    { agentId: 'controller-02', receivedEventCount: 234 }
+                ]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-rtc-stream-performance',
-                    controlRunId: 'run-rtc-stream-performance',
-                    state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 30_000,
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: { recipes: [], group: { groupId: 'hetzner-headless-room' } },
-                    targetAgentIds: ['controller-01', 'controller-02']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-rtc-stream-performance',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 230 },
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 234 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'results.jsonl': JSON.stringify({
                     agentId: 'controller-02',
                     commandId: 'distributed-start-controller-02-rtc-realtime',
@@ -1058,7 +1000,7 @@ describe('distributed run artifact stream performance', () => {
                     })
                 ].join('\n')
             }
-        });
+        }));
 
         expect(analysis.failure).toMatchObject({
             category: 'rtc-stream-performance',

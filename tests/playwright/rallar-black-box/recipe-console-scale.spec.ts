@@ -384,7 +384,7 @@ async function expectExactAnalyzeWorkerTelemetry(page: Page): Promise<void> {
     const telemetry = tracked?.completeTelemetry[0];
     expect(telemetry).toMatchObject({
         sourceFileCount: 8,
-        sourceBytes: 4_753_103,
+        sourceBytes: 5_338_306,
         pipelinePassCount: 1,
         sourceCollectionPassCount: 1,
         sourceFileVisitCount: 8,

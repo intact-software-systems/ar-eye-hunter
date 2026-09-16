@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeDistributedRunArtifactFiles } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactFiles
+} from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe } from '../../../shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
+import type { RallarBlackBoxTestCommand } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    createControlRunSnapshot,
+    createDistributedRunManifest,
+    createDistributedRunSnapshot,
+    toDistributedRunArtifactFiles
+} from './distributed-artifact-files-fixture.ts';
+
+function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis {
+    const analyzed = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 123 });
+    if (analyzed.right?.variant !== 'distributed-run') {
+        throw new Error(`Expected a distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+    }
+    return analyzed.right.analysis;
+}
 
 describe('distributed run artifact receiver delivery', () => {
     it('derives receiver delivery performance from final receiver stats and ignores interim snapshots', () => {
-        const receiverInterimStatsCommand = {
+        const receiverInterimStatsCommand: RallarBlackBoxTestCommand = {
             kind: 'stats',
             commandId: 'rtc-messages-principal-receiver-stats',
             metadata: {
@@ -15,7 +35,7 @@ describe('distributed run artifact receiver delivery', () => {
                 }
             }
         };
-        const receiverStatsCommand = {
+        const receiverStatsCommand: RallarBlackBoxTestCommand = {
             kind: 'stats',
             commandId: 'rtc-messages-principal-receiver-final-stats',
             metadata: {
@@ -26,44 +46,40 @@ describe('distributed run artifact receiver delivery', () => {
                 }
             }
         };
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
+        const agentIds = ['controller-02', 'controller-03', 'controller-04'];
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-receiver-delivery',
+                controlRunId: 'run-receiver-delivery',
+                state: 'passed',
+                agentIds,
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 34_000,
+                manifest: createDistributedRunManifest({
                     distributedRunId: 'dist-receiver-delivery',
                     controlRunId: 'run-receiver-delivery',
-                    state: 'passed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 34_000,
-                    commandLinks: [],
-                    rollup: { ok: true, failures: [], summary: { blockingFailures: 0 } },
-                    manifest: {
-                        recipes: [{
+                    agentIds,
+                    recipes: [{
+                        recipeId: 'rtc-messages-principal-multicast-receiver',
+                        recipe: {
+                            schemaVersion: 1,
                             recipeId: 'rtc-messages-principal-multicast-receiver',
-                            recipe: {
-                                recipeId: 'rtc-messages-principal-multicast-receiver',
-                                commands: [receiverInterimStatsCommand, receiverStatsCommand]
-                            },
-                            role: 'receiver',
-                            required: true
-                        }],
-                        group: { groupId: 'bb-group' }
-                    },
-                    targetAgentIds: ['controller-02', 'controller-03', 'controller-04']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-receiver-delivery',
-                    agents: [
-                        { agentId: 'controller-02', connected: true, reconnectCount: 0, receivedEventCount: 610 },
-                        { agentId: 'controller-03', connected: true, reconnectCount: 0, receivedEventCount: 570 },
-                        { agentId: 'controller-04', connected: true, reconnectCount: 0, receivedEventCount: 625 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                            commands: [receiverInterimStatsCommand, receiverStatsCommand]
+                        },
+                        role: 'receiver',
+                        required: true
+                    }]
+                })
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-receiver-delivery',
+                agents: [
+                    { agentId: 'controller-02', receivedEventCount: 610 },
+                    { agentId: 'controller-03', receivedEventCount: 570 },
+                    { agentId: 'controller-04', receivedEventCount: 625 }
+                ]
+            }),
+            files: {
                 'results.jsonl': [
                     JSON.stringify({
                         agentId: 'controller-02',
@@ -128,7 +144,7 @@ describe('distributed run artifact receiver delivery', () => {
                 ].join('\n'),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.receiverDelivery).toMatchObject({
             sampleCount: 3,
@@ -176,38 +192,26 @@ describe('distributed run artifact receiver delivery', () => {
             rateHz: 5,
             minReceiveRatio: 0.9
         });
-        const analysis = analyzeDistributedRunArtifactFiles({
-            files: {
-                'distributed-run.json': JSON.stringify({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-all-peer-settle-only',
+                controlRunId: 'run-all-peer-settle-only',
+                state: 'cancelled',
+                agentIds: ['controller-01'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 8_000,
+                manifest: createDistributedRunManifest({
                     distributedRunId: 'dist-all-peer-settle-only',
                     controlRunId: 'run-all-peer-settle-only',
-                    state: 'cancelled',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 8_000,
-                    commandLinks: [],
-                    rollup: { ok: false, failures: [], summary: { blockingFailures: 1 } },
-                    manifest: {
-                        recipes: [{
-                            recipeId: recipe.recipeId,
-                            recipe,
-                            required: true
-                        }],
-                        group: { groupId: 'bb-group' }
-                    },
-                    targetAgentIds: ['controller-01']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-all-peer-settle-only',
-                    agents: [
-                        { agentId: 'controller-01', connected: true, reconnectCount: 0, receivedEventCount: 0 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
+                    agentIds: ['controller-01'],
+                    recipes: [{ recipeId: recipe.recipeId, recipe, required: true }]
+                })
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-all-peer-settle-only',
+                agents: [{ agentId: 'controller-01' }]
+            }),
+            files: {
                 'results.jsonl': JSON.stringify({
                     agentId: 'controller-01',
                     commandId: 'settle-stats-a',
@@ -220,45 +224,27 @@ describe('distributed run artifact receiver delivery', () => {
                 }),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.performance?.receiverDelivery).toBeUndefined();
         expect(analysis.performanceMarkdown).not.toContain('Receiver delivery:');
     });
 
     it('classifies receiver delivery threshold assertions as delivery failures', () => {
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-receiver-delivery-failed',
+                controlRunId: 'run-receiver-delivery-failed',
+                state: 'failed',
+                agentIds: ['controller-03'],
+                startedAtEpochMs: 1_000,
+                completedAtEpochMs: 34_000
+            }),
+            controlRun: createControlRunSnapshot({
+                runId: 'run-receiver-delivery-failed',
+                agents: [{ agentId: 'controller-03', receivedEventCount: 570 }]
+            }),
             files: {
-                'distributed-run.json': JSON.stringify({
-                    distributedRunId: 'dist-receiver-delivery-failed',
-                    controlRunId: 'run-receiver-delivery-failed',
-                    state: 'failed',
-                    startedAtEpochMs: 1_000,
-                    completedAtEpochMs: 34_000,
-                    commandLinks: [],
-                    rollup: {
-                        ok: false,
-                        failures: [],
-                        summary: { blockingFailures: 1 }
-                    },
-                    manifest: {
-                        recipes: [],
-                        group: { groupId: 'bb-group' }
-                    },
-                    targetAgentIds: ['controller-03']
-                }),
-                'control-run.json': JSON.stringify({
-                    runId: 'run-receiver-delivery-failed',
-                    agents: [
-                        { agentId: 'controller-03', connected: true, reconnectCount: 0, receivedEventCount: 570 }
-                    ],
-                    commands: [],
-                    results: [],
-                    events: [],
-                    stats: [],
-                    reports: [],
-                    heartbeats: []
-                }),
                 'fleet-report.json': JSON.stringify({
                     distributedRunId: 'dist-receiver-delivery-failed',
                     ok: false,
@@ -292,7 +278,7 @@ describe('distributed run artifact receiver delivery', () => {
                 }),
                 'events.jsonl': ''
             }
-        });
+        }));
 
         expect(analysis.failure).toMatchObject({
             category: 'receiver-delivery',

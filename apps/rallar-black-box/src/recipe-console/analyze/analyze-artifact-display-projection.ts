@@ -31,7 +31,7 @@ export function projectAnalyzeArtifactModel(
         workspace: {
             source: model.workspace.source,
             support: model.workspace.support,
-            generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+            generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
             ...(model.workspace.artifactSchemaVersion !== undefined
                 ? { artifactSchemaVersion: finiteNumber(model.workspace.artifactSchemaVersion) }
                 : {}),
@@ -149,7 +149,7 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
         workspace: {
             source: model.workspace.source,
             support: model.workspace.support,
-            generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+            generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
             ...(model.workspace.artifactSchemaVersion !== undefined
                 ? { artifactSchemaVersion: finiteNumber(model.workspace.artifactSchemaVersion) }
                 : {}),

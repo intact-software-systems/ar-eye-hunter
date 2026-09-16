@@ -224,14 +224,14 @@ export function finalizeAnalyzeArtifactModel(
             artifactSchemaVersion: workspace.artifactSchemaVersion ??
                 analysis.artifactSchemaVersion ?? 1,
             distributedRunId: analysis.distributedRunId,
-            generatedAtEpochMs: workspace.generatedAtEpochMs,
+            generatedAtEpochMs: analysis.generatedAtEpochMs,
             files: portableFiles
         },
         provenance: {
             source: input.source,
             label: input.label,
             workspaceSource: workspace.source,
-            generatedAtEpochMs: workspace.generatedAtEpochMs,
+            generatedAtEpochMs: analysis.generatedAtEpochMs,
             selectedFileCount: selectedArtifactFileCount + ignoredFiles.length,
             artifactFileCount: Object.keys(portableFiles).length,
             loadedFileCount: workspace.inventory.filter(

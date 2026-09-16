@@ -1,9 +1,7 @@
 import {
     deriveDistributedRunArtifactPipelineAnalysis,
-    distributedArtifactSnapshotsFromPipeline,
     parseDistributedRunArtifactPipeline,
-    type DistributedRunAnalysis,
-    type DistributedRunArtifactSnapshots
+    type DistributedRunArtifactPipelineAnalysisResult
 } from './distributed-artifact-analysis.ts';
 import {
     createDistributedArtifactInventoryFromParsed,
@@ -154,8 +152,7 @@ export function deriveDistributedArtifactWorkspace(
     issues.push(...identityIssues);
 
     const generatedAtEpochMs = input.generatedAtEpochMs ??
-        projection.generatedAtEpochMs ?? distributedArtifactGeneratedAtFromParsed(parsed) ??
-        Date.now();
+        projection.generatedAtEpochMs ?? distributedArtifactGeneratedAtFromParsed(parsed);
     let support = distributedArtifactWorkspaceSupport({
         family,
         inventory,
@@ -167,50 +164,57 @@ export function deriveDistributedArtifactWorkspace(
     if (identityIssues.length > 0) {
         support = 'incompatible';
     }
-    let analysis: DistributedRunAnalysis | undefined;
-    let snapshots: DistributedRunArtifactSnapshots | undefined;
-    let bundle: DistributedArtifactWorkspace['bundle'];
-    let monitor: DistributedRunMonitor | undefined;
-    let report: DistributedRunAnalysisReport | undefined;
+    let derived: DistributedRunArtifactPipelineAnalysisResult | undefined;
     if (
         family === 'distributed-run' && !hasSchemaConflict &&
         !projection.invalidSchemaMessage && !projection.fatalMessage
     ) {
-        try {
-            const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
-            telemetry.parsedArtifactPassCount += 1;
-            snapshots = distributedArtifactSnapshotsFromPipeline(
-                parsed,
-                generatedAtEpochMs,
-                artifactSchemaVersion,
-                parsedFiles
-            );
-            telemetry.normalizedSnapshotCount += 1;
-            telemetry.bundleDerivationCount += 1;
-            bundle = snapshots.artifactBundle;
-            const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
-                parsed,
-                generatedAtEpochMs,
-                artifactSchemaVersion,
-                parsedFiles,
-                snapshots,
-                artifactBundle: bundle
-            });
-            analysis = analysisResult.analysis;
-            monitor = analysisResult.monitor;
-            report = analysisResult.report;
-            telemetry.monitorDerivationCount += analysisResult.telemetry.monitorDerivationCount;
-            telemetry.reportDerivationCount += analysisResult.telemetry.reportDerivationCount;
-        }
-        catch (error) {
+        if (generatedAtEpochMs === undefined) {
             support = 'incompatible';
             issues.push({
-                code: 'analysis-failed',
+                code: 'missing-generation-time',
                 severity: 'error',
-                message: `Unable to analyze distributed-run artifacts: ${errorMessage(error)}`
+                message:
+                    'The artifacts record no generation time (neither an envelope nor metadata.json), and none was supplied.'
             });
         }
+        else {
+            const content = parseDistributedRunArtifactPipeline(parsed);
+            telemetry.parsedArtifactPassCount += 1;
+            if (content.left !== undefined) {
+                support = support === 'incomplete' ? 'incomplete' : 'incompatible';
+                issues.push({
+                    code: 'analysis-failed',
+                    severity: 'error',
+                    fileName: content.left.fileName,
+                    message: `Unable to analyze distributed-run artifacts: ${content.left.message}`
+                });
+            }
+            else if (content.right?.variant === 'control-request-failure') {
+                support = 'incompatible';
+                issues.push({
+                    code: 'control-request-failure',
+                    severity: 'error',
+                    fileName: 'control-post-error-metadata.json',
+                    message:
+                        `The artifacts record a failed control ${content.right.controlPostFailure.request.phase} request and contain no distributed run; analyze the folder with the distributed-run artifact CLI.`
+                });
+            }
+            else if (content.right?.variant === 'distributed-run') {
+                derived = deriveDistributedRunArtifactPipelineAnalysis({
+                    parsed,
+                    content: content.right,
+                    generatedAtEpochMs,
+                    artifactSchemaVersion
+                });
+                telemetry.normalizedSnapshotCount += 1;
+                telemetry.bundleDerivationCount += 1;
+                telemetry.monitorDerivationCount += derived.telemetry.monitorDerivationCount;
+                telemetry.reportDerivationCount += derived.telemetry.reportDerivationCount;
+            }
+        }
     }
+    const analysis = derived?.analysis;
     if (
         analysis && projection.distributedRunId &&
         projection.distributedRunId !== analysis.distributedRunId
@@ -236,12 +240,8 @@ export function deriveDistributedArtifactWorkspace(
         inventory,
         issues,
         analysis,
-        snapshots,
-        bundle
+        snapshots: derived?.snapshots,
+        bundle: derived?.snapshots.artifactBundle
     };
-    return { parsed, workspace, monitor, report, telemetry };
-}
-
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    return { parsed, workspace, monitor: derived?.monitor, report: derived?.report, telemetry };
 }

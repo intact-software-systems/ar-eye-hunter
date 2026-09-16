@@ -24,6 +24,8 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
             distributedRunId: manifest.distributedRunId,
             controlRunId: 'control-tune',
             state: 'passed',
+            createdAtEpochMs: 1_000,
+            updatedAtEpochMs: 4_000,
             startedAtEpochMs: 1_000,
             completedAtEpochMs: 4_000,
             targetAgentIds: ['agent-a'],
@@ -33,7 +35,21 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
                 state: 'passed',
                 ok: true,
                 failures: [],
-                summary: { participants: 1, failedParticipants: 0, blockingFailures: 0 }
+                summary: {
+                    participants: 1,
+                    requiredParticipants: 1,
+                    readyParticipants: 1,
+                    passedParticipants: 1,
+                    failedParticipants: 0,
+                    recipes: 2,
+                    requiredRecipes: 2,
+                    passedRecipes: 2,
+                    failedRecipes: 0,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
+                    blockingFailures: 0
+                }
             }
         }),
         'manifest.json': JSON.stringify(manifest),
@@ -42,19 +58,29 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 4_000,
             agents: [{
+                runId: 'control-tune',
                 agentId: 'agent-a',
                 connected: true,
+                connectionSequence: 1,
                 reconnectCount: 0,
-                receivedEventCount: 0
+                receivedResultCount: 0,
+                receivedEventCount: 0,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: []
             }],
             commands: [{
                 envelope: {
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'control-tune',
                     agentId: 'agent-a',
                     commandId: 'start-a',
-                    command: { kind: 'recipe.run' }
+                    command: { kind: 'health' }
                 },
+                queuedAtEpochMs: 1_100,
                 dispatchedAtEpochMs: 1_200,
-                completedAtEpochMs: 3_200
+                completedAtEpochMs: 3_200,
+                dispatchCount: 1
             }],
             results: [],
             events: [],
@@ -146,15 +172,18 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
 describe('distributed recipe tuning Task 2 contracts', () => {
     it('exposes snapshot performance without inventing absent evidence', () => {
         const files = artifactFiles(tuningManifest());
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 4_242);
-        const expected = analyzeDistributedRunArtifactFiles({ files }).performance;
+        const snapshots = distributedArtifactSnapshotsFromFiles(files, 4_242).right;
+        const expected = analyzeDistributedRunArtifactFiles({ files, generatedAtEpochMs: 4_242 }).right?.analysis;
+        if (!snapshots || expected?.ok !== true) {
+            throw new Error('Expected decoded tuning artifacts.');
+        }
 
         const performance = deriveDistributedRunSnapshotPerformance({
             distributedRun: snapshots.distributedRun,
             controlRun: snapshots.controlRun
         });
 
-        expect(performance).toEqual(expected);
+        expect(performance).toEqual(expected.performance);
         expect(performance).toMatchObject({
             runDurationMs: 3_000,
             commandTiming: { count: 1, p95Ms: 2_000, p99Ms: 2_000 }
@@ -165,7 +194,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
     it('preserves manifest tuning truth during loose and envelope normalization', () => {
         const manifest = tuningManifest();
         const files = artifactFiles(manifest);
-        const loose = createDistributedArtifactWorkspace({ files });
+        const loose = createDistributedArtifactWorkspace({ files, generatedAtEpochMs: 4_242 });
         const envelope = createDistributedArtifactWorkspace({
             files: {
                 'dist-tune-artifact.json': JSON.stringify({
@@ -197,7 +226,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         }
     });
 
-    it('keeps snapshot identities authoritative over stale nested manifest identities', () => {
+    it('keeps the snapshot manifest as recorded instead of rewriting stale nested identities', () => {
         const manifest = tuningManifest();
         const files = artifactFiles(manifest);
         const distributedRun = JSON.parse(files['distributed-run.json'] ?? '{}');
@@ -207,11 +236,15 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         const snapshots = distributedArtifactSnapshotsFromFiles({
             ...files,
             'distributed-run.json': JSON.stringify(distributedRun)
-        });
+        }, 4_242).right;
 
-        expect(snapshots.distributedRun.manifest).toMatchObject({
+        expect(snapshots?.distributedRun).toMatchObject({
             distributedRunId: 'dist-tune',
-            controlRunId: 'control-tune',
+            controlRunId: 'control-tune'
+        });
+        expect(snapshots?.distributedRun.manifest).toMatchObject({
+            distributedRunId: 'stale-distributed-id',
+            controlRunId: 'stale-control-id',
             group: manifest.group,
             recipes: manifest.recipes,
             targetPolicy: manifest.targetPolicy,

@@ -413,15 +413,20 @@ export function useRunnerRunsController({
         setDistributedError(undefined);
         try {
             const generatedAtEpochMs = Date.now();
+            const read = await readDistributedArtifactFiles(
+                selectedFiles,
+                generatedAtEpochMs
+            );
+            if (read.right === undefined) {
+                setDistributedError(read.left?.message);
+                return;
+            }
             const {
                 artifactFiles,
                 analysis,
                 snapshots,
                 artifactBundle
-            } = await readDistributedArtifactFiles(
-                selectedFiles,
-                generatedAtEpochMs
-            );
+            } = read.right;
             activeSyntheticSeedRef.current = undefined;
             setActiveSyntheticSeed(undefined);
             setSelectedSyntheticSeedId('');

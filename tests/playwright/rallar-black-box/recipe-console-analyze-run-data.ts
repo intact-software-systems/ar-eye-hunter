@@ -95,20 +95,20 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1
             },
             failures: [{
-                kind: 'command',
-                key: `command:${ANALYZE_COMMAND_ID}`,
+                kind: 'participant',
+                key: ANALYZE_AGENT_ID,
                 state: 'failed',
-                agentId: ANALYZE_AGENT_ID,
-                recipeId: ANALYZE_RECIPE_ID,
-                commandId: ANALYZE_COMMAND_ID,
+                required: true,
                 error: {
                     code: 'RTC_NO_RELAY',
                     message: ANALYZE_FAILURE_MESSAGE
-                },
-                atEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500
+                }
             }]
         }
     };

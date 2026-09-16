@@ -39,8 +39,28 @@ function serverV2Files(
         rollup: {
             state: 'failed',
             ok: false,
-            failures: [{ code: 'rtc-timeout', message: 'Receiver timed out.' }],
-            summary: { blockingFailures: 1 }
+            failures: [{
+                kind: 'participant',
+                key: 'agent-eu',
+                state: 'failed',
+                required: true,
+                error: { code: 'rtc-timeout', message: 'Receiver timed out.' }
+            }],
+            summary: {
+                participants: 1,
+                requiredParticipants: 1,
+                readyParticipants: 1,
+                passedParticipants: 0,
+                failedParticipants: 1,
+                recipes: 0,
+                requiredRecipes: 0,
+                passedRecipes: 0,
+                failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
+                blockingFailures: 1
+            }
         }
     };
     const controlRun = {
@@ -119,7 +139,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     it('recognizes the authoritative server v2 bundle without linked JSONL files', () => {
         const files = serverV2Files();
         const workspace = createWorkspace({ files, generatedAtEpochMs: 4_242 });
-        const bundle = distributedArtifactBundleFromFiles(files, 4_242);
+        const bundle = distributedArtifactBundleFromFiles(files, 4_242).right;
 
         expect(bundle?.artifactSchemaVersion).toBe(2);
         expect(workspace).toMatchObject({
@@ -182,19 +202,14 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             'failures.json': undefined,
             'metadata.json': undefined
         });
-        const analysis = analyzeDistributedRunArtifactFiles({
+        const analyzed = analyzeDistributedRunArtifactFiles({
             files,
             generatedAtEpochMs: 6_161,
             artifactSchemaVersion: 2
-        });
-        const bundle = distributedArtifactBundleFromFiles(
-            files,
-            6_161,
-            'distributed-import',
-            2
-        );
+        }).right;
+        const bundle = distributedArtifactBundleFromFiles(files, 6_161, 2).right;
 
-        expect(analysis.artifactSchemaVersion).toBe(2);
+        expect(analyzed?.variant === 'distributed-run' && analyzed.analysis.artifactSchemaVersion).toBe(2);
         expect(bundle?.artifactSchemaVersion).toBe(2);
     });
 
@@ -281,23 +296,29 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
 
         expect(missing.support).toBe('incomplete');
         expect(inventoryStatus(missing, 'control-run.json')).toBe('missing-core');
-        expect(missing.analysis).toMatchObject({
-            distributedRunId: 'distributed-import',
-            controlRunId: 'control-import'
-        });
-        expect(missing.snapshots).toMatchObject({
-            distributedRun: { distributedRunId: 'distributed-import' },
-            controlRun: { runId: 'control-import' }
-        });
+        expect(missing.analysis).toBeUndefined();
+        expect(missing.snapshots).toBeUndefined();
         expect(missing.bundle).toBeUndefined();
+        expect(missing.issues).toContainEqual({
+            code: 'analysis-failed',
+            severity: 'error',
+            fileName: 'control-run.json',
+            message: 'Unable to analyze distributed-run artifacts: control-run.json is required and must not be empty.'
+        });
         expect(malformed.support).toBe('incompatible');
         expect(inventoryStatus(malformed, 'distributed-run.json')).toBe('malformed');
-        expect(malformed.analysis?.parseWarnings).toEqual(expect.arrayContaining([
-            expect.objectContaining({ fileName: 'distributed-run.json' })
-        ]));
+        expect(malformed.analysis).toBeUndefined();
+        expect(malformed.issues).toContainEqual(expect.objectContaining({
+            code: 'analysis-failed',
+            fileName: 'distributed-run.json'
+        }));
         expect(incompatible.support).toBe('incompatible');
         expect(inventoryStatus(incompatible, 'distributed-run.json')).toBe('incompatible');
-        expect(incompatible.analysis).toBeDefined();
+        expect(incompatible.analysis).toBeUndefined();
+        expect(incompatible.issues).toContainEqual(expect.objectContaining({
+            code: 'analysis-failed',
+            message: 'Unable to analyze distributed-run artifacts: distributed-run.json is not a distributed run snapshot: the snapshot must be a JSON object.'
+        }));
     });
 
     it('marks unknown schema versions without coercing them to a supported version', () => {
