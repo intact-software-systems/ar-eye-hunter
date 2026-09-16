@@ -1,6 +1,6 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession, WebSocketTicketResponse } from '@shared/api/api-config.ts';
 import { clearSession } from '@shared/api/auth.ts';
 import { useEffect, useMemo, useState } from 'react';
@@ -13,14 +13,14 @@ import {
 } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
-import { recordValue as optionalRecord } from '../../shared/record-value.ts';
+import { recordValue } from '../../shared/record-value.ts';
 import { redactedJson, uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { formatDuration, formatRelativeDuration, formatTime } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { readCurrentAuthSession } from '../../shell/read-current-auth-session.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 import { restLogEntry, type CommandCenterRestActionLog } from '../shared/rest-action-log.ts';
-import { authRecipeSnippet } from './auth-recipe.ts';
+import { toAuthCommandCenterRecipeText } from './to-auth-command-center-recipe-text.ts';
 
 export function AuthCommandCenterPanel({
     state,
@@ -50,7 +50,7 @@ export function AuthCommandCenterPanel({
     const [localError, setLocalError] = useState<string | undefined>();
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
     const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
-    const recipeText = useMemo(() => authRecipeSnippet(username), [username]);
+    const recipeText = useMemo(() => toAuthCommandCenterRecipeText(username), [username]);
     const diagnosticsText = useMemo(
         () =>
             redactedJson(
@@ -190,7 +190,7 @@ export function AuthCommandCenterPanel({
                 timeoutMs: 5_000
             }, requestId);
             appendAction(restLogEntry('Create WS ticket', response));
-            const body = optionalRecord(response.bodyJson);
+            const body = recordValue(response.bodyJson);
             if (
                 response.ok &&
                 typeof body.ticket === 'string' &&

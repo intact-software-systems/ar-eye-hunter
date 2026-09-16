@@ -74,7 +74,7 @@ beforeAll(async () => {
         lifecycleModule('QuickRallarTestPanel')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
+        '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-panel.tsx',
         lifecycleModule('AuthCommandCenterPanel')
     );
     vi.doMock(

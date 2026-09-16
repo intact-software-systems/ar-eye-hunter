@@ -133,7 +133,7 @@ const rallarDataPanelSourcePath = new URL(
     import.meta.url
 );
 const authPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-panel.tsx',
     import.meta.url
 );
 const roomsClientsRequestSourcePath = new URL(

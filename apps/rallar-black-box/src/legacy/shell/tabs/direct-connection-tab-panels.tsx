@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { AuthCommandCenterPanel } from '../../diagnostics/auth/AuthCommandCenterPanel.tsx';
+import { AuthCommandCenterPanel } from '../../diagnostics/auth/auth-command-center-panel.tsx';
 import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { QuickRallarTestPanel } from '../../diagnostics/quick-test/quick-rallar-test-panel.tsx';
 import { RtcRealtimePanel } from '../../diagnostics/rtc-realtime/RtcRealtimePanel.tsx';

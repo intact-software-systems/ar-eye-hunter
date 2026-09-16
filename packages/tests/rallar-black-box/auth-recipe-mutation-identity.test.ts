@@ -1,12 +1,12 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { describe, expect, it } from 'vitest';
-import { authRecipeSnippet } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-recipe.ts';
+import { toAuthCommandCenterRecipeText } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/to-auth-command-center-recipe-text.ts';
 
 describe('auth command-center recipe mutation identity', () => {
     it('allocates distinct opaque path identities for each generated operator action', () => {
-        const recipe = readRecipe(authRecipeSnippet('visible-username'));
-        const repeated = readRecipe(authRecipeSnippet('visible-username'));
+        const recipe = readRecipe(toAuthCommandCenterRecipeText('visible-username'));
+        const repeated = readRecipe(toAuthCommandCenterRecipeText('visible-username'));
 
         expect(recipe.commands.map((command) => command.request.path)).toEqual([
             expect.stringMatching(/^\/api\/auth\/login\/requests\/[^/]+$/),
@@ -31,7 +31,7 @@ describe('auth command-center recipe mutation identity', () => {
 
 describe('auth command-center recipe export', () => {
     it('copies a strict version-1 recipe', () => {
-        const recipe = JSON.parse(authRecipeSnippet('visible-username'));
+        const recipe = JSON.parse(toAuthCommandCenterRecipeText('visible-username'));
 
         expect(recipe).toMatchObject({ schemaVersion: 1 });
         expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
