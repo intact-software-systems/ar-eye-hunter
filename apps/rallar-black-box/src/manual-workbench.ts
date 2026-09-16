@@ -3,8 +3,10 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 
@@ -43,8 +45,8 @@ export interface ManualWorkbenchValues {
     readonly topicId: string;
     readonly timeoutMs: number;
     readonly providerMode: RallarBlackBoxProviderMode;
-    readonly rallarUsername?: string;
-    readonly rallarPassword?: string;
+    readonly rallarUsername: string | undefined;
+    readonly rallarPassword: string | undefined;
     readonly rallarRegister: boolean;
     readonly rallarRestoreSession: boolean;
     readonly rallarLogoutOnClose: boolean;
@@ -73,12 +75,8 @@ export interface ManualReceivedMessage {
     readonly topic: string;
     readonly atEpochMs: number;
     readonly payload: unknown;
-    readonly commandId?: string;
+    readonly commandId: string | undefined;
 }
-
-export type JsonParseResult =
-    | Readonly<{ ok: true; value: RallarMessagePayload; }>
-    | Readonly<{ ok: false; error: string; }>;
 
 export const MANUAL_PAYLOAD_PRESETS: readonly ManualPayloadPreset[] = [
     {
@@ -139,18 +137,12 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     rallarLeaveRoomOnClose: true
 };
 
-export function parseManualPayload(text: string): JsonParseResult {
+export function decodeManualPayloadText(text: string): Either<string, RallarMessagePayload> {
     try {
-        return {
-            ok: true,
-            value: JSON.parse(text)
-        };
+        return Either.ofRight(JSON.parse(text));
     }
     catch (error) {
-        return {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error)
-        };
+        return Either.ofLeft(error instanceof Error ? error.message : String(error));
     }
 }
 
@@ -177,10 +169,10 @@ export function toManualReceivedMessages(
     return events
         .filter((event) => event.kind === 'message')
         .map((event) => {
-            const payload = toRecord(event.payload);
-            const data = toRecord(payload.data);
-            const nestedData = toRecord(data.data);
-            const envelope = toRecord(data.payload);
+            const payload = decodeRecord(event.payload);
+            const delivery = decodeRecord(payload.data);
+            const innerDelivery = decodeRecord(delivery.data);
+            const envelope = decodeRecord(delivery.payload);
             return {
                 eventId: event.eventId,
                 connection: event.connection ?? 'default',
@@ -188,17 +180,17 @@ export function toManualReceivedMessages(
                 sender: toFirstText([
                     payload.senderId,
                     payload.remotePeerId,
-                    data.senderId,
-                    data.sender,
-                    nestedData.senderId,
-                    nestedData.sender,
+                    delivery.senderId,
+                    delivery.sender,
+                    innerDelivery.senderId,
+                    innerDelivery.sender,
                     event.actor
                 ]) ?? '-',
                 topic: toFirstText([
                     payload.topicId,
                     payload.topic,
-                    data.topic,
-                    nestedData.topic,
+                    delivery.topic,
+                    innerDelivery.topic,
                     envelope.topic,
                     event.topic
                 ]) ?? event.topic,
@@ -209,12 +201,6 @@ export function toManualReceivedMessages(
                 commandId: event.commandId
             };
         });
-}
-
-function toRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
 }
 
 function toFirstText(values: readonly unknown[]): string | undefined {

@@ -4,14 +4,16 @@ import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 
 export interface ManualRallarWorkbenchOptions {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    globalValuesEdited?: boolean;
+    readonly state: RallarBlackBoxTestState;
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    readonly authSession: AuthSession | undefined;
+    readonly globalValues: CommandCenterGlobalValues | undefined;
+    readonly globalValuesEdited: boolean | undefined;
     onSelectCommand(commandId: string): void;
-    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
+    readonly onGlobalValueChange: CommandCenterGlobalValueChange | undefined;
 }
+
+type CommandCenterGlobalValueChange = <K extends keyof CommandCenterGlobalValues>(
+    key: K,
+    value: CommandCenterGlobalValues[K]
+) => void;

@@ -3,11 +3,14 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    decodeBoolean,
+    decodeFiniteNumber
+} from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
-    type ManualWorkbenchAction,
     type ManualWorkbenchTransport,
     type ManualWorkbenchValues
 } from '../../../manual-workbench.ts';
@@ -34,25 +37,6 @@ export function toManualWorkbenchValues(input: ManualWorkbenchValuesInput): Manu
             : input.bootstrap.providerMode,
         ...toManualRallarSessionValues(input, recordValue(config?.rallar))
     };
-}
-
-export function toManualActionLabel(action: ManualWorkbenchAction): string {
-    switch (action) {
-        case 'configure':
-            return 'Configure group';
-        case 'join':
-            return 'Create and join group';
-        case 'connect':
-            return 'Connect';
-        case 'send':
-            return 'Send payload';
-        case 'health':
-            return 'Health check';
-        case 'close':
-            return 'Close connections';
-        case 'reset':
-            return 'Reset runtime';
-    }
 }
 
 type ManualTargetValues = Pick<
@@ -97,18 +81,13 @@ function toManualTargetValues(
             bootstrap.actor,
         sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
         groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
-        scopeText: decodeJsonText(
-            config?.defaults?.scope ?? configRallar.scope,
-            DEFAULT_MANUAL_WORKBENCH_VALUES.scopeText
-        ),
-        roomRefText: decodeJsonText(
-            config?.defaults?.roomRef ?? configRallar.roomRef,
-            DEFAULT_MANUAL_WORKBENCH_VALUES.roomRefText
-        ),
-        minSnapshotVersion: decodeFiniteNumber(
-            config?.defaults?.minSnapshotVersion ?? configRallar.minSnapshotVersion,
-            DEFAULT_MANUAL_WORKBENCH_VALUES.minSnapshotVersion
-        ),
+        scopeText: decodeJsonText(config?.defaults?.scope ?? configRallar.scope) ??
+            DEFAULT_MANUAL_WORKBENCH_VALUES.scopeText,
+        roomRefText: decodeJsonText(config?.defaults?.roomRef ?? configRallar.roomRef) ??
+            DEFAULT_MANUAL_WORKBENCH_VALUES.roomRefText,
+        minSnapshotVersion:
+            decodeFiniteNumber(config?.defaults?.minSnapshotVersion ?? configRallar.minSnapshotVersion) ??
+                DEFAULT_MANUAL_WORKBENCH_VALUES.minSnapshotVersion,
         connection: String(config?.defaults?.connection ?? DEFAULT_MANUAL_WORKBENCH_VALUES.connection)
     };
 }
@@ -120,11 +99,11 @@ function toManualRallarSessionValues(
     return {
         rallarUsername: bootstrap.rallarUsername ?? authSession?.username ?? stringValue(configRallar.username),
         rallarPassword: bootstrap.rallarPassword,
-        rallarRegister: Boolean(bootstrap.rallarRegister) || decodeBoolean(configRallar.register, false),
+        rallarRegister: Boolean(bootstrap.rallarRegister) || (decodeBoolean(configRallar.register) ?? false),
         rallarRestoreSession: bootstrap.rallarRestoreSession || Boolean(authSession) ||
-            decodeBoolean(configRallar.restoreSession, false),
-        rallarLogoutOnClose: bootstrap.rallarLogoutOnClose || decodeBoolean(configRallar.logoutOnClose, false),
-        rallarLeaveRoomOnClose: decodeBoolean(configRallar.leaveRoomOnClose, bootstrap.rallarLeaveRoomOnClose)
+            (decodeBoolean(configRallar.restoreSession) ?? false),
+        rallarLogoutOnClose: bootstrap.rallarLogoutOnClose || (decodeBoolean(configRallar.logoutOnClose) ?? false),
+        rallarLeaveRoomOnClose: decodeBoolean(configRallar.leaveRoomOnClose) ?? bootstrap.rallarLeaveRoomOnClose
     };
 }
 
@@ -136,29 +115,17 @@ function toManualTransport(
         : 'realtime';
 }
 
-function decodeBoolean(value: unknown, fallback: boolean): boolean {
-    return typeof value === 'boolean' ? value : fallback;
-}
-
-function decodeJsonText(value: unknown, fallback: string): string {
+function decodeJsonText(value: unknown): string | undefined {
     if (typeof value === 'string') {
         return value;
     }
-
-    if (value && typeof value === 'object') {
-        try {
-            return JSON.stringify(value);
-        }
-        catch {
-            return fallback;
-        }
+    if (!value || typeof value !== 'object') {
+        return undefined;
     }
-
-    return fallback;
-}
-
-function decodeFiniteNumber(value: unknown, fallback: number): number {
-    return typeof value === 'number' && Number.isFinite(value)
-        ? value
-        : fallback;
+    try {
+        return JSON.stringify(value);
+    }
+    catch {
+        return undefined;
+    }
 }

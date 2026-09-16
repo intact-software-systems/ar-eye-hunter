@@ -11,7 +11,7 @@ import {
 } from '../../../ui-persistence.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
-import { toManualWorkbenchValues } from './manual-workbench-defaults.ts';
+import { toManualWorkbenchValues } from './to-manual-workbench-values.ts';
 
 import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 export function useManualWorkbenchDraft(options: ManualRallarWorkbenchOptions) {

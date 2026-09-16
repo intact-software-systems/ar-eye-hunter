@@ -3,7 +3,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
 import { formatTime } from '../../shared/time-format.ts';
-import { toManualActionLabel } from './manual-workbench-defaults.ts';
+import { toManualActionLabel } from './to-manual-action-label.ts';
 import type { ManualRallarWorkbenchModel } from './use-manual-rallar-workbench.ts';
 
 export function ManualRallarExecutionPanel({
@@ -38,6 +38,7 @@ export function ManualRallarExecutionPanel({
         setRecipeVisible,
         copyRecipeSnippet
     } = model;
+    const payloadValid = payloadResult.foldRight(() => true) ?? false;
 
     return (
         <>
@@ -47,16 +48,16 @@ export function ManualRallarExecutionPanel({
                     <span>{previewCommands.length} command</span>
                 </div>
                 <pre className="json-block">
-                    {payloadResult.ok
-                        ? redactedJson(
-                              previewCommands.length === 1
-                                  ? previewCommands[0]
-                                  : previewCommands,
-                              state,
-                              authSession,
-                              [values.rallarPassword],
-                          )
-                        : payloadResult.error}
+                    {payloadResult.fold(
+                        (error) => error,
+                        () =>
+                            redactedJson(
+                                previewCommands.length === 1 ? previewCommands[0] : previewCommands,
+                                state,
+                                authSession,
+                                [values.rallarPassword]
+                            )
+                    )}
                 </pre>
                 {previewRecipeValidation && (
                     <SchemaAuthoringPanel
@@ -80,7 +81,7 @@ export function ManualRallarExecutionPanel({
                     <button
                         key={action}
                         type="button"
-                        disabled={busy || (action === 'send' && !payloadResult.ok)}
+                        disabled={busy || (action === 'send' && !payloadValid)}
                         onClick={() => void runManualAction(action)}
                     >
                         {toManualActionLabel(action)}
@@ -95,21 +96,21 @@ export function ManualRallarExecutionPanel({
                 <div className="manual-action-grid">
                     <button
                         type="button"
-                        disabled={busy || !payloadResult.ok}
+                        disabled={busy || !payloadValid}
                         onClick={() => void runRtcMatrix('realtime')}
                     >
                         Run Realtime Matrix
                     </button>
                     <button
                         type="button"
-                        disabled={busy || !payloadResult.ok}
+                        disabled={busy || !payloadValid}
                         onClick={() => void runRtcMatrix('messages.rtc')}
                     >
                         Run Messages Matrix
                     </button>
                     <button
                         type="button"
-                        disabled={busy || !payloadResult.ok}
+                        disabled={busy || !payloadValid}
                         onClick={() => void runRtcNackProbe()}
                     >
                         NACK Probe
@@ -117,14 +118,14 @@ export function ManualRallarExecutionPanel({
                     <button
                         type="button"
                         onClick={copyRtcMatrixRecipe}
-                        disabled={!payloadResult.ok}
+                        disabled={!payloadValid}
                     >
                         Copy Matrix Recipe
                     </button>
                     <button
                         type="button"
                         onClick={copyNegativeRecipe}
-                        disabled={!payloadResult.ok}
+                        disabled={!payloadValid}
                     >
                         Copy Negative Recipe
                     </button>

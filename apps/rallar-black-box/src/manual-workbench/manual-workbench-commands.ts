@@ -8,7 +8,13 @@ import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-m
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../client-defaults.ts';
 import type { ManualWorkbenchAction, ManualWorkbenchValues } from '../manual-workbench.ts';
-import { toOptionalText, toScopedRtcFields, toTargets, toTimeoutMs } from './manual-command-fields.ts';
+import {
+    toManualCommandId,
+    toOptionalText,
+    toScopedRtcFields,
+    toTargets,
+    toTimeoutMs
+} from './manual-command-fields.ts';
 
 export interface ManualWorkbenchCommandInput {
     readonly action: ManualWorkbenchAction;
@@ -51,7 +57,7 @@ export function toManualConfigureCommand(
 
     return {
         kind: 'configure',
-        commandId: toCommandId('configure', sequence),
+        commandId: toManualCommandId('configure', sequence),
         label: 'Configure manual group',
         config
     };
@@ -64,7 +70,7 @@ export function toManualConnectCommand(
     if (values.transport === 'ws') {
         return {
             kind: 'ws.open',
-            commandId: toCommandId('ws-open', sequence),
+            commandId: toManualCommandId('ws-open', sequence),
             label: 'Open manual WebSocket',
             connection: toOptionalText(values.connection),
             url: toOptionalText(values.wsUrl),
@@ -80,7 +86,7 @@ export function toManualConnectCommand(
 
     return {
         kind: 'rtc.connect',
-        commandId: toCommandId('rtc-connect', sequence),
+        commandId: toManualCommandId('rtc-connect', sequence),
         label: 'Connect manual RTC client',
         connection: toOptionalText(values.connection),
         actor: toOptionalText(values.actor),
@@ -110,7 +116,7 @@ export function toManualCreateGroupCommand(
     const workspaceId = toOptionalText(values.workspaceId) ?? DEFAULT_STATE_WORKSPACE_ID;
     return {
         kind: 'http.request',
-        commandId: toCommandId('group-create', sequence),
+        commandId: toManualCommandId('group-create', sequence),
         label: 'Create manual Rallar group',
         request: {
             method: 'POST',
@@ -160,7 +166,7 @@ export function toManualSendCommand(
     if (values.transport === 'ws') {
         return {
             kind: 'ws.send',
-            commandId: toCommandId(`ws-send-${values.deliveryMode}`, sequence),
+            commandId: toManualCommandId(`ws-send-${values.deliveryMode}`, sequence),
             label: `WS ${values.deliveryMode}`,
             connection: toOptionalText(values.connection),
             data: toPayloadEnvelope(values, payload),
@@ -180,7 +186,7 @@ export function toManualSimpleCommand(
 ): RallarBlackBoxTestCommand {
     return {
         kind: action,
-        commandId: toCommandId(action, sequence),
+        commandId: toManualCommandId(action, sequence),
         label: `Manual ${action}`
     };
 }
@@ -250,7 +256,7 @@ export function toManualRtcSendCommand(
     const basePayload = toRtcSendPayload(values, payload);
     return {
         kind: 'rtc.send',
-        commandId: toCommandId(`rtc-send-${values.deliveryMode}`, sequence),
+        commandId: toManualCommandId(`rtc-send-${values.deliveryMode}`, sequence),
         label: `RTC ${values.deliveryMode}`,
         connection: toOptionalText(values.connection),
         transport: values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime',
@@ -293,10 +299,6 @@ function toRedaction(
     ].filter((value): value is string => Boolean(value && value.length > 0));
 
     return secretValues.length > 0 ? { secretValues } : undefined;
-}
-
-function toCommandId(action: string, sequence: number): string {
-    return `manual-${action}-${sequence}`;
 }
 
 function toPayloadEnvelope(

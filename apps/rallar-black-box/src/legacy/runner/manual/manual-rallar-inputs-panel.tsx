@@ -239,7 +239,7 @@ export function ManualRallarInputsPanel({
             </CollapsiblePanelSection>
             <CollapsiblePanelSection
                 title="Manual Payload"
-                meta={payloadResult.ok ? 'json valid' : 'json invalid'}
+                meta={payloadResult.foldRight(() => 'json valid') ?? 'json invalid'}
             >
                 <div className="payload-toolbar">
                     <label className="field compact-field">

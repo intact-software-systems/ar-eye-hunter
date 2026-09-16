@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+    decodeManualPayloadText,
     DEFAULT_MANUAL_WORKBENCH_VALUES,
-    parseManualPayload,
     toManualReceivedMessages,
     toManualRecipeText,
     type ManualActionHistoryEntry
@@ -383,16 +383,10 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('validates payload JSON before command execution', () => {
-        expect(parseManualPayload('{"ok":true}')).toEqual({
-            ok: true,
-            value: {
-                ok: true
-            }
+        expect(decodeManualPayloadText('{"ok":true}').fold((error) => ({ error }), (value) => ({ value }))).toEqual({
+            value: { ok: true }
         });
-
-        expect(parseManualPayload('{')).toMatchObject({
-            ok: false
-        });
+        expect(decodeManualPayloadText('{').fold((error) => typeof error, () => 'decoded')).toBe('string');
     });
 
     it('derives received inbox rows from runtime message events', () => {

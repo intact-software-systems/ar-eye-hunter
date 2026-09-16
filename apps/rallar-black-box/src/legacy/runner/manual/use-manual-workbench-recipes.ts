@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import {
-    parseManualPayload,
+    decodeManualPayloadText,
     toManualRecipeText,
     type ManualActionHistoryEntry,
     type ManualWorkbenchValues
@@ -17,32 +17,34 @@ interface ManualWorkbenchRecipeInput {
 }
 export function useManualWorkbenchRecipes({ values, payloadText, sequence, history }: ManualWorkbenchRecipeInput) {
     return useMemo(() => {
-        const payloadResult = parseManualPayload(payloadText);
-        const previewCommands = payloadResult.ok
-            ? [toManualSendCommand(values, payloadResult.value, sequence)]
-            : [];
+        const payloadResult = decodeManualPayloadText(payloadText);
+        const previewCommands = payloadResult.fold(
+            () => [],
+            (payload) => [toManualSendCommand(values, payload, sequence)]
+        );
         const recipeText = toManualRecipeText(history);
-        const negativeRecipeText = payloadResult.ok
-            ? toManualRtcNegativeRecipeText(values, payloadResult.value)
-            : payloadResult.error;
+        const negativeRecipeText = payloadResult.fold(
+            (error) => error,
+            (payload) => toManualRtcNegativeRecipeText(values, payload)
+        );
         return {
             payloadResult,
             previewCommands,
             recipeText,
             negativeRecipeText,
-            previewRecipeValidation: payloadResult.ok
-                ? validateSchemaAuthoringValue('recipe', {
+            previewRecipeValidation: payloadResult.foldRight(() =>
+                validateSchemaAuthoringValue('recipe', {
                     schemaVersion: 1,
                     recipeId: 'manual-rallar-command-preview',
                     commands: previewCommands
                 })
-                : undefined,
+            ),
             manualRecipeValidation: recipeText.trim().length > 0
                 ? validateSchemaAuthoringText('recipe', recipeText)
                 : undefined,
-            negativeRecipeValidation: payloadResult.ok
-                ? validateSchemaAuthoringText('recipe', negativeRecipeText)
-                : undefined
+            negativeRecipeValidation: payloadResult.foldRight(() =>
+                validateSchemaAuthoringText('recipe', negativeRecipeText)
+            )
         };
     }, [values, payloadText, sequence, history]);
 }

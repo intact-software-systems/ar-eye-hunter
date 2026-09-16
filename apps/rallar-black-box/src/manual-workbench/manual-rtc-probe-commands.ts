@@ -1,6 +1,7 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ManualWorkbenchTransport, ManualWorkbenchValues } from '../manual-workbench.ts';
+import { toManualCommandId } from './manual-command-fields.ts';
 import {
     toManualConfigureCommand,
     toManualConnectCommand,
@@ -96,7 +97,7 @@ export function toManualRtcNackProbeCommands(
     const send = toManualRtcSendCommand(scopedValues, payload, sequence);
     return [{
         ...send,
-        commandId: `manual-rtc-nack-not-yet-in-sync-${sequence}`,
+        commandId: toManualCommandId('rtc-nack-not-yet-in-sync', sequence),
         label: 'RTC not-yet-in-sync probe',
         metadata: {
             ...send.metadata,

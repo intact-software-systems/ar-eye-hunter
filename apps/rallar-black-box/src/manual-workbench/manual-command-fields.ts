@@ -10,6 +10,10 @@ export interface ManualRtcScope {
     readonly minSnapshotVersion?: number;
 }
 
+export function toManualCommandId(action: string, sequence: number): string {
+    return `manual-${action}-${sequence}`;
+}
+
 export function toOptionalText(value: string): string | undefined {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;

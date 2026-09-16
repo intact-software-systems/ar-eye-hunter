@@ -5,7 +5,7 @@ import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { ManualRallarExecutionPanel } from './manual-rallar-execution-panel.tsx';
-import { ManualRallarInputsPanel } from './ManualRallarInputsPanel.tsx';
+import { ManualRallarInputsPanel } from './manual-rallar-inputs-panel.tsx';
 import { useManualRallarWorkbench } from './use-manual-rallar-workbench.ts';
 
 export function ManualRallarWorkbenchPanel({
@@ -45,9 +45,9 @@ export function ManualRallarWorkbenchPanel({
             <div className="panel-heading">
                 <h2>Manual Rallar</h2>
                 <span
-                    className={`pill ${model.payloadResult.ok ? 'good' : 'bad'}`}
+                    className={`pill ${model.payloadResult.foldRight(() => 'good') ?? 'bad'}`}
                 >
-                    {model.payloadResult.ok ? 'json valid' : 'json invalid'}
+                    {model.payloadResult.foldRight(() => 'json valid') ?? 'json invalid'}
                 </span>
             </div>
             <ManualRallarInputsPanel busy={busy} model={model} />
