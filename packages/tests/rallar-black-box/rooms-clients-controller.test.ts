@@ -186,7 +186,7 @@ describe('rooms and clients controller preservation', () => {
         });
     });
 
-    it('keeps edits until the global value they follow changes, and keeps an edited client instance id after a global identity change', async () => {
+    it('keeps panel edits while the global values stay unchanged, and on any global value change, even to the base URL alone, re-applies the global base URL and identity while an edited client instance id survives', async () => {
         await render();
         await act(async () => {
             view.setApiBaseUrl('http://edited.example');
@@ -196,21 +196,58 @@ describe('rooms and clients controller preservation', () => {
         await render();
         const rerendered = { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId, clientInstanceId: view.variables.clientInstanceId };
         await render({ globalValues: { ...globalValues, apiBaseUrl: 'http://other.example' } });
-        const afterBaseUrl = { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId };
-        await render({ globalValues: { ...globalValues, apiBaseUrl: 'http://other.example', sessionId: 'session-b' } });
 
         expect({
             rerendered,
-            afterBaseUrl,
-            afterIdentity: {
-                groupId: view.variables.groupId,
-                sessionId: view.variables.sessionId,
-                clientInstanceId: view.variables.clientInstanceId
-            }
+            afterBaseUrl: { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId, clientInstanceId: view.variables.clientInstanceId }
         }).toEqual({
             rerendered: { apiBaseUrl: 'http://edited.example', groupId: 'edited-room', clientInstanceId: 'edited-instance' },
-            afterBaseUrl: { apiBaseUrl: 'http://other.example', groupId: 'edited-room' },
-            afterIdentity: { groupId: 'room-a', sessionId: 'session-b', clientInstanceId: 'edited-instance' }
+            afterBaseUrl: { apiBaseUrl: 'http://other.example', groupId: 'room-a', clientInstanceId: 'edited-instance' }
+        });
+    });
+
+    it('discards a panel-edited base URL for the global one when the configured or bootstrap base URL changes, and keeps the edited identity', async () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig('?provider=browser-rallar', {}, '');
+        const configured: RallarBlackBoxTestState = { ...state, currentConfig: { apiBaseUrl: 'http://config.example' } };
+        await render();
+        await act(async () => {
+            view.setApiBaseUrl('http://edited.example');
+            view.updateVariable('groupId', 'edited-room');
+        });
+        await render({ state: configured });
+        const afterConfig = { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId };
+        await act(async () => view.setApiBaseUrl('http://edited-again.example'));
+        await render({ state: configured, bootstrap: { ...bootstrap, apiBaseUrl: 'http://bootstrap.example' } });
+
+        expect({ afterConfig, afterBootstrap: { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId } }).toEqual({
+            afterConfig: { apiBaseUrl: 'http://localhost', groupId: 'edited-room' },
+            afterBootstrap: { apiBaseUrl: 'http://localhost', groupId: 'edited-room' }
+        });
+    });
+
+    it('discards panel identity edits for the global identity when the auth session, configured or bootstrap identity changes under unchanged global values', async () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig('?provider=browser-rallar', {}, '');
+        const renewed: AuthSession = { ...authSession, sessionId: 'session-renewed' };
+        const configured: RallarBlackBoxTestState = { ...state, currentConfig: { roomId: 'room-configured' } };
+        const groupIdAfterEditAnd = async (next: Partial<UseRoomsClientsControllerInput>): Promise<string> => {
+            await act(async () => view.updateVariable('groupId', 'edited-room'));
+            await render(next);
+            return view.variables.groupId;
+        };
+        await render();
+        const afterAuth = await groupIdAfterEditAnd({ authSession: renewed });
+        const afterConfig = await groupIdAfterEditAnd({ authSession: renewed, state: configured });
+        const afterBootstrap = await groupIdAfterEditAnd({
+            authSession: renewed,
+            state: configured,
+            bootstrap: { ...bootstrap, actor: 'bootstrap-actor' }
+        });
+
+        expect({ afterAuth, afterConfig, afterBootstrap, sessionId: view.variables.sessionId }).toEqual({
+            afterAuth: 'room-a',
+            afterConfig: 'room-a',
+            afterBootstrap: 'room-a',
+            sessionId: 'session'
         });
     });
 
