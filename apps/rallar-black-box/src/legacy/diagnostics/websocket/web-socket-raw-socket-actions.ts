@@ -10,7 +10,8 @@ export namespace WebSocketRawSocketActions {
     export interface Input extends WebSocketCommandCenterActions.Input {
         readonly commandCenter: Pick<WebSocketCommandCenterActions, 'runAction' | 'recordWebSocketEvent'>;
     }
-    export interface OpenOptions {
+    export interface OpenRequest {
+        readonly url: string;
         readonly useTicket: boolean;
     }
     export interface OpenAttempt {
@@ -26,28 +27,10 @@ export class WebSocketRawSocketActions {
     constructor(input: WebSocketRawSocketActions.Input) {
         this.input = input;
     }
-    public readonly open = (
-        url = this.input.values.wsUrl,
-        options: WebSocketRawSocketActions.OpenOptions = { useTicket: true }
-    ): Promise<void> => {
-        const signal = this.input.rawSocketLifetime.signal;
-        if (signal.aborted) {
-            return Promise.resolve();
-        }
-        const ticketRequestId = options.useTicket ? this.input.createRequestId() : undefined;
-        const label = options.useTicket ? 'Open WebSocket' : 'Open WebSocket without ticket';
-        return this.input.commandCenter.runAction({
-            label,
-            target: url,
-            runningMessage: options.useTicket
-                ? 'Creating a ticket and opening the raw WebSocket.'
-                : 'Opening raw WebSocket without acquiring a ticket.',
-            signal,
-            failedWaitStatus: 'raw ws open failed',
-            run: (startedAtEpochMs) => this.openRawSocket({ ticketRequestId, url, label, startedAtEpochMs, signal })
-        });
-    };
-    public readonly close = (reason = this.input.values.closeReason): Promise<void> =>
+    public readonly open = (url: string): Promise<void> => this.startOpen({ url, useTicket: true });
+    public readonly openMissingTicket = (): Promise<void> =>
+        this.startOpen({ url: '{config.wsBaseUrl}/api/ws/{auth.sessionId}', useTicket: false });
+    public readonly close = (reason: string): Promise<void> =>
         this.input.commandCenter.runAction({
             label: 'Close WebSocket',
             target: this.input.values.wsUrl,
@@ -87,8 +70,25 @@ export class WebSocketRawSocketActions {
             }
         });
     };
-    public readonly openMissingTicket = (): Promise<void> =>
-        this.open('{config.wsBaseUrl}/api/ws/{auth.sessionId}', { useTicket: false });
+
+    private startOpen({ url, useTicket }: WebSocketRawSocketActions.OpenRequest): Promise<void> {
+        const signal = this.input.rawSocketLifetime.signal;
+        if (signal.aborted) {
+            return Promise.resolve();
+        }
+        const ticketRequestId = useTicket ? this.input.createRequestId() : undefined;
+        const label = useTicket ? 'Open WebSocket' : 'Open WebSocket without ticket';
+        return this.input.commandCenter.runAction({
+            label,
+            target: url,
+            runningMessage: useTicket
+                ? 'Creating a ticket and opening the raw WebSocket.'
+                : 'Opening raw WebSocket without acquiring a ticket.',
+            signal,
+            failedWaitStatus: 'raw ws open failed',
+            run: (startedAtEpochMs) => this.openRawSocket({ ticketRequestId, url, label, startedAtEpochMs, signal })
+        });
+    }
 
     private async requestWsTicket(requestId: string, signal: AbortSignal): Promise<AuthCommandCenterTicket> {
         const nextTicket = await requestWebSocketTicket({

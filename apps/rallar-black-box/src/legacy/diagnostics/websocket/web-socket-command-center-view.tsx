@@ -293,10 +293,10 @@ export function WebSocketCommandCenterView({
                     >
                         Wait for message
                     </button>
-                    <button type="button" onClick={() => copyRecipe(false)}>
+                    <button type="button" onClick={() => void copyRecipe(false)}>
                         Copy WS recipe
                     </button>
-                    <button type="button" onClick={() => copyRecipe(true)}>
+                    <button type="button" onClick={() => void copyRecipe(true)}>
                         Copy WS/RTC compare recipe
                     </button>
                 </div>
@@ -324,7 +324,7 @@ export function WebSocketCommandCenterView({
                     <button
                         type="button"
                         disabled={busy || Boolean(busyAction)}
-                        onClick={() => void open()}
+                        onClick={() => void open(values.wsUrl)}
                     >
                         Open
                     </button>
@@ -345,7 +345,7 @@ export function WebSocketCommandCenterView({
                     <button
                         type="button"
                         disabled={busy || Boolean(busyAction)}
-                        onClick={() => void close()}
+                        onClick={() => void close(values.closeReason)}
                     >
                         Close
                     </button>
@@ -363,7 +363,7 @@ export function WebSocketCommandCenterView({
                     >
                         Missing ticket open
                     </button>
-                    <button type="button" onClick={copyDiagnostics}>
+                    <button type="button" onClick={() => void copyDiagnostics()}>
                         Copy diagnostics
                     </button>
                 </div>

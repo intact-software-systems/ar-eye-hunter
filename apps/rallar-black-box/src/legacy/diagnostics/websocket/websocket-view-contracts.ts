@@ -37,9 +37,9 @@ export type WebSocketCommandCenterViewModel = Readonly<{
     ): void;
     selectPayloadPreset(presetId: string): void;
     configure(): Promise<void>;
-    open(url?: string): Promise<void>;
+    open(url: string): Promise<void>;
     send(): Promise<void>;
-    close(reason?: string): Promise<void>;
+    close(reason: string): Promise<void>;
     reconnect(): Promise<void>;
     cleanup(): Promise<void>;
     subscribeWs(): Promise<void>;
@@ -47,7 +47,7 @@ export type WebSocketCommandCenterViewModel = Readonly<{
     createTicket(): Promise<void>;
     waitForMessage(): Promise<void>;
     waitForRallarWsOpen(): Promise<void>;
-    copyDiagnostics(): void;
-    copyRecipe(includeRtcParity: boolean): void;
+    copyDiagnostics(): Promise<void>;
+    copyRecipe(includeRtcParity: boolean): Promise<void>;
     openMissingTicket(): Promise<void>;
 }>;

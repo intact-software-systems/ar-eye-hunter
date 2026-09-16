@@ -8,6 +8,7 @@ import {
 } from '../../../direct-rallar-operations.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
+import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import {
     completedActionFeedback,
     runningActionFeedback,
@@ -223,8 +224,8 @@ export class WebSocketCommandCenterActions {
             failedWaitStatus: undefined,
             run: (startedAtEpochMs) => this.recordConfiguration(startedAtEpochMs)
         });
-    public readonly copyDiagnostics = (): void => {
-        void navigator.clipboard?.writeText(
+    public readonly copyDiagnostics = (): Promise<void> =>
+        this.copyText(
             redactedJson(
                 {
                     values: this.input.values,
@@ -250,13 +251,12 @@ export class WebSocketCommandCenterActions {
                 this.input.authSession
             )
         );
-    };
-    public readonly copyRecipe = (includeRtcParity = false): void => {
+    public readonly copyRecipe = (includeRtcParity: boolean): Promise<void> => {
         if (!this.input.payloadResult.ok) {
             this.input.setLocalError(this.input.payloadResult.error);
-            return;
+            return Promise.resolve();
         }
-        void navigator.clipboard?.writeText(
+        return this.copyText(
             toWebSocketCommandCenterRecipeText({
                 values: this.input.values,
                 payload: this.input.payloadResult.value,
@@ -268,6 +268,18 @@ export class WebSocketCommandCenterActions {
             })
         );
     };
+
+    private async copyText(text: string): Promise<void> {
+        const signal = this.input.lifetime.signal;
+        if (signal.aborted) {
+            return;
+        }
+        this.input.setLocalError(undefined);
+        const written = await writeTextToClipboard(text);
+        if (!signal.aborted) {
+            written.foldLeft(this.input.setLocalError);
+        }
+    }
 
     private recordConfiguration(startedAtEpochMs: number): void {
         this.input.setSequence((current) => current + 1);

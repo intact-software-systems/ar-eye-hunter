@@ -1,6 +1,6 @@
 import { useWebSocketCommandCenterController } from './use-web-socket-command-center-controller.ts';
+import { WebSocketCommandCenterView } from './web-socket-command-center-view.tsx';
 import type { UseWebSocketCommandCenterControllerInput } from './websocket-contracts.ts';
-import { WebSocketCommandCenterView } from './WebSocketCommandCenterView.tsx';
 
 type WebSocketCommandCenterPanelProps =
     & UseWebSocketCommandCenterControllerInput

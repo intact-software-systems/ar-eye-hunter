@@ -651,7 +651,7 @@ describe('diagnostic controller action and lifecycle preservation', () => {
             }))
         );
         await act(async () => {
-            void websocket[action]().then(opening.resolve, opening.reject);
+            void (action === 'open' ? websocket.open(websocket.values.wsUrl) : websocket.createTicket()).then(opening.resolve, opening.reject);
         });
         if (teardown === 'cleanup') {
             await act(async () => websocket.cleanup());

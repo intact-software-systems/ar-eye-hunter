@@ -223,6 +223,20 @@ describe('WebSocket command-center controller actions', () => {
         });
     });
 
+    it.each(['copyDiagnostics', 'copyRecipe'] as const)('reports unavailable clipboard through %s', async (action) => {
+        vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard'));
+        await render();
+        await act(async () => (action === 'copyRecipe' ? websocket.copyRecipe(false) : websocket.copyDiagnostics()));
+        expect(websocket.localError).toBe('Clipboard access is unavailable in this browser.');
+    });
+
+    it.each(['copyDiagnostics', 'copyRecipe'] as const)('reports rejected clipboard writes through %s', async (action) => {
+        vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('permission denied'));
+        await render();
+        await act(async () => (action === 'copyRecipe' ? websocket.copyRecipe(false) : websocket.copyDiagnostics()));
+        expect(websocket.localError).toBe('Unable to copy to the clipboard. Check browser permissions and try again.');
+    });
+
     it('copies a recipe only for a valid payload', async () => {
         const copied: string[] = [];
         vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(async (text) => {

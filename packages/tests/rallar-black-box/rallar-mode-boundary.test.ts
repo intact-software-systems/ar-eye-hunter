@@ -111,7 +111,7 @@ const webSocketSupportSourcePaths = [
     '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts'
 ].map((path) => new URL(path, import.meta.url));
 const webSocketViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/web-socket-command-center-view.tsx',
     import.meta.url
 );
 const webSocketControllerSourcePath = new URL(
