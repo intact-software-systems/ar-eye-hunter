@@ -48,6 +48,7 @@ export function computeControlRequestFailure(failure: ControlPostFailureArtifact
     const status = request.httpStatus ? ` HTTP ${request.httpStatus}` : '';
     const minimalFix = resolveMinimalFixArea({
         category: 'control-api',
+        transport: undefined,
         text: `${request.phase} ${request.path} ${message}`
     });
     const evidenceFile = response.kind === 'json' || response.kind === 'text'

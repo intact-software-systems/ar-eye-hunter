@@ -3,7 +3,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import {
     parseControlClientMessage,
     parseControlServerMessage,
-    type ControlClientEnvelope
+    type ControlClientEnvelope,
+    type ControlEventEnvelope
 } from '../control-protocol.ts';
 import type {
     ControlAgentSnapshot,
@@ -24,6 +25,16 @@ import {
 
 type ControlClientEnvelopeKind = ControlClientEnvelope['kind'];
 
+export const CONTROL_EVENT_ENVELOPE_KINDS = Object.keys(
+    { event: true, diagnostic: true, stats: true, report: true } satisfies Record<ControlEventEnvelope['kind'], true>
+) as readonly ControlEventEnvelope['kind'][];
+
+/** Where a queued command sits: the control run it belongs to and its path in control-run.json. */
+interface QueuedCommandLocation {
+    readonly runId: string;
+    readonly path: string;
+}
+
 const AGENT_TIMESTAMPS = [
     'registeredAtEpochMs',
     'disconnectedAtEpochMs',
@@ -37,8 +48,6 @@ const AGENT_COUNTERS = [
     'receivedResultCount',
     'receivedEventCount'
 ] as const;
-
-const EVENT_ENVELOPE_KINDS: readonly ControlClientEnvelopeKind[] = ['event', 'diagnostic', 'stats', 'report'];
 
 /** Command, result, event and heartbeat entries are decoded by the control protocol owner. */
 export function decodeControlRunSnapshot(value: unknown): Either<string, ControlRunSnapshot> {
@@ -64,9 +73,9 @@ export function decodeControlRunSnapshot(value: unknown): Either<string, Control
         agents,
         commands,
         decodeClientEnvelopes(value.results, 'results', ['result']),
-        decodeClientEnvelopes(value.events, 'events', EVENT_ENVELOPE_KINDS),
-        decodeClientEnvelopes(value.stats, 'stats', EVENT_ENVELOPE_KINDS),
-        decodeClientEnvelopes(value.reports, 'reports', EVENT_ENVELOPE_KINDS),
+        decodeClientEnvelopes(value.events, 'events', CONTROL_EVENT_ENVELOPE_KINDS),
+        decodeClientEnvelopes(value.stats, 'stats', CONTROL_EVENT_ENVELOPE_KINDS),
+        decodeClientEnvelopes(value.reports, 'reports', CONTROL_EVENT_ENVELOPE_KINDS),
         decodeClientEnvelopes(value.heartbeats, 'heartbeats', ['heartbeat'])
     ].find((decoded) => decoded.left !== undefined)?.left;
     return entryIssue === undefined
@@ -103,9 +112,9 @@ function decodeControlAgentSnapshot(value: unknown, path: string): Either<string
 
 function decodeQueuedCommandSnapshot(
     value: unknown,
-    input: Readonly<{ runId: string; path: string; }>
+    location: QueuedCommandLocation
 ): Either<string, ControlQueuedCommandSnapshot> {
-    const path = input.path;
+    const path = location.path;
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
@@ -132,7 +141,7 @@ function decodeQueuedCommandSnapshot(
     }
     // The protocol parser compares the expected agent only when the envelope addresses one.
     const parsed = parseControlServerMessage(envelope, {
-        runId: input.runId,
+        runId: location.runId,
         agentId: isNonEmptyText(envelope.agentId) ? envelope.agentId : ''
     });
     return parsed.ok

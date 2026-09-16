@@ -3,6 +3,10 @@ import type { DistributedRunFailureAnalysis } from '../distributed-artifact-anal
 import {
     computeStreamInFlightLimitDropCount,
     hasStreamFailureEvidence,
+    isStreamFailureText,
+    STREAM_FAILED_TOPIC,
+    STREAM_PROGRESS_TOPIC,
+    STREAM_STARTED_TOPIC,
     toEventStreamTimingSample,
     toResultStreamTimingSamples,
     type StreamTimingSample
@@ -10,9 +14,9 @@ import {
 import type { DistributedRunEventEvidence } from './decode-distributed-run-event-evidence.ts';
 import type { DistributedRunResultEvidence } from './decode-distributed-run-result-evidence.ts';
 import {
-    isStreamFailureText,
     resolveMinimalFixArea,
     resolveVerificationCommand,
+    STREAM_FIX_AREA,
     TERMINAL_FAILURE_STATES,
     toAffectedAgents
 } from './distributed-run-failure-vocabulary.ts';
@@ -23,9 +27,6 @@ interface StreamFailureCandidate {
     readonly agentId?: string;
     readonly evidenceFile: string;
 }
-
-const STREAM_PERFORMANCE_FIX_AREA = 'RTC stream pacing/performance';
-const STREAM_FAILED_TOPIC = 'rallar.bb.rtc.stream_failed';
 
 /** Absent when no result or stream event shows a stream that failed or crossed a threshold. */
 export function computeStreamPerformanceFailure(
@@ -58,8 +59,8 @@ export function computeStreamPerformanceFailure(
         }.`,
         nextAction:
             'Reduce green-suite stream rate/load or inspect stream progress, in-flight drops, send duration percentiles, and RTC diagnostics for affected agents.',
-        minimalFixArea: STREAM_PERFORMANCE_FIX_AREA,
-        verificationCommand: resolveVerificationCommand(STREAM_PERFORMANCE_FIX_AREA),
+        minimalFixArea: STREAM_FIX_AREA,
+        verificationCommand: resolveVerificationCommand(STREAM_FIX_AREA),
         affectedAgents: toAffectedAgents(candidate.agentId ?? candidate.sample.agentId),
         affectedRegions: [],
         commandId,
@@ -76,7 +77,7 @@ export function computeStreamTimeoutFailure(
         return undefined;
     }
     const streamEvent = [...events].reverse().find((event) =>
-        event.topic === 'rallar.bb.rtc.stream_progress' || event.topic === 'rallar.bb.rtc.stream_started'
+        event.topic === STREAM_PROGRESS_TOPIC || event.topic === STREAM_STARTED_TOPIC
     );
     if (!streamEvent) {
         return undefined;

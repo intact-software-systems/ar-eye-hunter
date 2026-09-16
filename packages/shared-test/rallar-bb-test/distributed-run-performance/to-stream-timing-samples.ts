@@ -1,7 +1,6 @@
 import type { DistributedRunEventEvidence } from '../distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
 import type { DistributedRunResultEvidence } from '../distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
 import type { DistributedRunStreamSummary } from '../distributed-artifact-analysis/decode-distributed-run-stream-summary.ts';
-import { isStreamFailureText } from '../distributed-artifact-analysis/distributed-run-failure-vocabulary.ts';
 
 /** One rtc.stream execution as a result or an event reports it. */
 export interface StreamTimingSample {
@@ -18,11 +17,22 @@ export interface StreamTimingSample {
     readonly summary: DistributedRunStreamSummary;
 }
 
+export const STREAM_STARTED_TOPIC = 'rallar.bb.rtc.stream_started';
+export const STREAM_PROGRESS_TOPIC = 'rallar.bb.rtc.stream_progress';
+export const STREAM_FAILED_TOPIC = 'rallar.bb.rtc.stream_failed';
+
 const STREAM_TOPIC_PREFIX = 'rallar.bb.rtc.stream_';
 const STREAM_COMPLETED_TOPIC = 'rallar.bb.rtc.stream_completed';
-const STREAM_FAILED_TOPIC = 'rallar.bb.rtc.stream_failed';
 const IN_FLIGHT_LIMIT_ERROR_CODE = 'RALLAR_BLACK_BOX_RTC_STREAM_IN_FLIGHT_LIMIT';
 const RESULT_FAILURE_STATUSES: ReadonlySet<string> = new Set(['failure', 'failed', 'error']);
+
+/** Lower-case markers of a failed stream in codes, messages and topics. */
+const STREAM_FAILURE_FRAGMENTS = [
+    'rallar_black_box_rtc_stream_threshold_failed',
+    IN_FLIGHT_LIMIT_ERROR_CODE.toLowerCase(),
+    STREAM_FAILED_TOPIC,
+    'maxdroppedframes'
+] as const;
 
 export function toResultStreamTimingSamples(result: DistributedRunResultEvidence): readonly StreamTimingSample[] {
     return toNestedResultStreamTimingSamples(result, {});
@@ -50,10 +60,15 @@ export function toStreamEventPriority(event: DistributedRunEventEvidence): numbe
     if (event.topic === STREAM_COMPLETED_TOPIC || event.topic === STREAM_FAILED_TOPIC) {
         return 3;
     }
-    if (event.topic === 'rallar.bb.rtc.stream_progress') {
+    if (event.topic === STREAM_PROGRESS_TOPIC) {
         return 2;
     }
-    return event.topic === 'rallar.bb.rtc.stream_started' ? 1 : 0;
+    return event.topic === STREAM_STARTED_TOPIC ? 1 : 0;
+}
+
+export function isStreamFailureText(text: string): boolean {
+    const normalized = text.toLowerCase();
+    return STREAM_FAILURE_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
 export function hasStreamFailureEvidence(sample: StreamTimingSample): boolean {

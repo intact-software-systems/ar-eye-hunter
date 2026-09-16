@@ -146,6 +146,7 @@ function computeReportActionFailure(
     const failure = spaReport.firstFailure;
     const minimalFix = resolveMinimalFixArea({
         category: action.category,
+        transport: undefined,
         text: `${action.title} ${action.likelyCause} ${action.nextAction}`
     });
     return {
@@ -172,6 +173,7 @@ function computeBundledFailure(
     const message = bundledFailure.errorMessage ?? bundledFailure.message ?? 'Failure bundle entry';
     const minimalFix = resolveMinimalFixArea({
         category: resolveFailureCategory(bundledFailure.code, message),
+        transport: undefined,
         text: message
     });
     return {

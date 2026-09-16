@@ -1,6 +1,10 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { ControlDistributedRunCommandLink, ControlDistributedRunSnapshot } from '../control-snapshots.ts';
+import type {
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunCommandPhase,
+    ControlDistributedRunSnapshot
+} from '../control-snapshots.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
@@ -36,12 +40,15 @@ import {
     toFirstDecodeIssue
 } from './artifact-json-value-guards.ts';
 
-const COMMAND_LINK_PHASES: readonly ControlDistributedRunCommandLink['phase'][] = [
-    'stage',
-    'barrier',
-    'start',
-    'cancel'
-];
+/** A target resolution that may be unrecorded. */
+export interface OptionalTargetResolution {
+    /** Absent when the snapshot carries none or target-resolution.json records null. */
+    readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
+}
+
+const COMMAND_LINK_PHASES = Object.keys(
+    { stage: true, barrier: true, start: true, cancel: true } satisfies Record<ControlDistributedRunCommandPhase, true>
+) as readonly ControlDistributedRunCommandPhase[];
 
 const RUN_ITEM_STATES = Object.keys(
     {
@@ -59,11 +66,13 @@ const RUN_ITEM_STATES = Object.keys(
     } satisfies Record<RallarBlackBoxDistributedRunItemState, true>
 ) as readonly RallarBlackBoxDistributedRunItemState[];
 
-const ROLLUP_FAILURE_KINDS: readonly RallarBlackBoxDistributedRunRollupFailure['kind'][] = [
-    'participant',
-    'recipe',
-    'group-assertion'
-];
+const ROLLUP_FAILURE_KINDS = Object.keys(
+    {
+        participant: true,
+        recipe: true,
+        'group-assertion': true
+    } satisfies Record<RallarBlackBoxDistributedRunRollupFailure['kind'], true>
+) as readonly RallarBlackBoxDistributedRunRollupFailure['kind'][];
 
 const ROLLUP_SUMMARY_COUNTERS = Object.keys(
     {
@@ -338,9 +347,7 @@ function decodeGroupAssertionAgentRow(
         : Either.ofLeft(issue);
 }
 
-function decodeOptionalTargetResolution(
-    value: unknown
-): Either<string, Readonly<{ targetResolution?: RallarBlackBoxDistributedTargetResolution; }>> {
+function decodeOptionalTargetResolution(value: unknown): Either<string, OptionalTargetResolution> {
     if (value === undefined) {
         return Either.ofRight({});
     }

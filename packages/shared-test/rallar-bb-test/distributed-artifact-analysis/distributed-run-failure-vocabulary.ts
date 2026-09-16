@@ -1,10 +1,10 @@
+import { isStreamFailureText } from '../distributed-run-performance/to-stream-timing-samples.ts';
+
+/** The failure evidence a fix area is chosen from; each value is undefined when the evidence does not name it. */
 export interface MinimalFixAreaInput {
-    /** Absent when the failure evidence names no category. */
-    readonly category?: string;
-    /** Absent when the failure evidence names no transport. */
-    readonly transport?: string;
-    /** Absent when the failure evidence carries no message text. */
-    readonly text?: string;
+    readonly category: string | undefined;
+    readonly transport: string | undefined;
+    readonly text: string | undefined;
 }
 
 interface TextRule {
@@ -12,16 +12,9 @@ interface TextRule {
     readonly fragments: readonly string[];
 }
 
-const STREAM_FAILURE_FRAGMENTS = [
-    'rallar_black_box_rtc_stream_threshold_failed',
-    'rallar_black_box_rtc_stream_in_flight_limit',
-    'rallar.bb.rtc.stream_failed',
-    'maxdroppedframes'
-] as const;
-
 export const TERMINAL_FAILURE_STATES: ReadonlySet<string> = new Set(['failed', 'timed-out', 'cancelled']);
 
-const STREAM_FIX_AREA = 'RTC stream pacing/performance';
+export const STREAM_FIX_AREA = 'RTC stream pacing/performance';
 const LIVE_RTC_VERIFICATION = '`npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3`';
 
 const MINIMAL_FIX_AREA_RULES: readonly TextRule[] = [
@@ -63,11 +56,6 @@ const VERIFICATION_COMMANDS: ReadonlyMap<string, string> = new Map([
 
 export function toAffectedAgents(agentId: string | undefined): readonly string[] {
     return agentId ? [agentId] : [];
-}
-
-export function isStreamFailureText(text: string): boolean {
-    const normalized = text.toLowerCase();
-    return STREAM_FAILURE_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
 export function resolveMinimalFixArea(input: MinimalFixAreaInput): string {

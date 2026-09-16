@@ -60,7 +60,7 @@ export function decodeDistributedRunResultEvidence(value: unknown): DistributedR
     }
     const payload = isJsonRecordValue(value.result) ? value.result : undefined;
     const resultValue = isJsonRecordValue(value.value) ? value.value : undefined;
-    const commandId = decodeResultCommandId(value);
+    const commandId = decodeResultCommandId(value.commandId, value.resultKey);
     const stats = decodeStatsSummary(value.result) ?? decodeStatsSummary(value.value) ??
         decodeStatsSummary(value.actual) ?? decodeStatsSummary(value.error);
     const failure = value.actual ?? value.error;
@@ -118,17 +118,15 @@ export function toControlResultEvidence(envelope: ControlResultEnvelope): Distri
     };
 }
 
-function decodeResultCommandId(value: unknown): string | undefined {
-    if (!isJsonRecordValue(value)) {
-        return undefined;
+/** The command id, or the command part of the `agentId:commandId` result key the recorder writes; absent when neither names one. */
+export function decodeResultCommandId(commandId: unknown, resultKey: unknown): string | undefined {
+    const decodedCommandId = decodeText(commandId);
+    const decodedResultKey = decodeText(resultKey);
+    if (decodedCommandId !== undefined || decodedResultKey === undefined) {
+        return decodedCommandId;
     }
-    const commandId = decodeText(value.commandId);
-    const resultKey = decodeText(value.resultKey);
-    if (commandId !== undefined || resultKey === undefined) {
-        return commandId;
-    }
-    const [, keyedCommandId] = resultKey.split(/:(.*)/s);
-    return keyedCommandId || resultKey;
+    const [, keyedCommandId] = decodedResultKey.split(/:(.*)/s);
+    return keyedCommandId || decodedResultKey;
 }
 
 /** Stats carry a finite counters.messages, directly or under value, result or actual. */

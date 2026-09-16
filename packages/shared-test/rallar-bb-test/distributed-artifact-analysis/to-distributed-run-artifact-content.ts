@@ -23,7 +23,8 @@ import {
 import { decodeText } from './decode-artifact-json-values.ts';
 import {
     decodeControlDistributedRunSnapshot,
-    decodeTargetResolution
+    decodeTargetResolution,
+    type OptionalTargetResolution
 } from './decode-control-distributed-run-snapshot.ts';
 import { decodeControlPostRequest, type DistributedRunControlPostRequest } from './decode-control-post-request.ts';
 import { decodeControlRunSnapshot } from './decode-control-run-snapshot.ts';
@@ -128,11 +129,6 @@ const CONTROL_POST_REQUEST_FILE = {
 interface JsonlStandIn {
     readonly fileName: string;
     readonly envelopeName: string;
-}
-
-interface RecordedTargetResolution {
-    /** Absent when target-resolution.json records null. */
-    readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
 }
 
 /**
@@ -370,7 +366,7 @@ function toControlPostFailureResponseBody(
 }
 
 /** The control server writes null to target-resolution.json for a run it resolved no targets for. */
-function decodeRecordedTargetResolution(value: unknown): Either<string, RecordedTargetResolution> {
+function decodeRecordedTargetResolution(value: unknown): Either<string, OptionalTargetResolution> {
     return value === null
         ? Either.ofRight({})
         : decodeTargetResolution(value).mapRight((targetResolution) => ({ targetResolution }));

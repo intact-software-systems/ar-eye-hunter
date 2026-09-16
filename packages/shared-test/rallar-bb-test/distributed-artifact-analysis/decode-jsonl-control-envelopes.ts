@@ -3,14 +3,17 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '../control-protocol.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
-    type RallarBlackBoxTestResult
+    type RallarBlackBoxTestResult,
+    type RallarBlackBoxTestResultStatus
 } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { isFiniteNumber, isNonEmptyText, isOneOf } from './artifact-json-value-guards.ts';
+import { CONTROL_EVENT_ENVELOPE_KINDS } from './decode-control-run-snapshot.ts';
+import { decodeResultCommandId } from './decode-distributed-run-result-evidence.ts';
 
-const EVENT_ENVELOPE_KINDS: readonly ControlEventEnvelope['kind'][] = ['event', 'diagnostic', 'stats', 'report'];
-
-const RESULT_STATUSES: readonly RallarBlackBoxTestResult['status'][] = ['ok', 'failed', 'cancelled', 'skipped'];
+const RESULT_STATUSES = Object.keys(
+    { ok: true, failed: true, cancelled: true, skipped: true } satisfies Record<RallarBlackBoxTestResultStatus, true>
+) as readonly RallarBlackBoxTestResultStatus[];
 
 const RECORDER_OUTCOMES = ['SUCCESS', 'FAILURE'] as const;
 
@@ -64,9 +67,9 @@ export function decodeJsonlControlEventEnvelope(
     if (!isFiniteNumber(value.atEpochMs)) {
         return Either.ofLeft('atEpochMs must be a finite number');
     }
-    const kind = isOneOf(value.kind, EVENT_ENVELOPE_KINDS)
+    const kind = isOneOf(value.kind, CONTROL_EVENT_ENVELOPE_KINDS)
         ? value.kind
-        : isOneOf(value.status, EVENT_ENVELOPE_KINDS)
+        : isOneOf(value.status, CONTROL_EVENT_ENVELOPE_KINDS)
         ? value.status
         : undefined;
     if (kind === undefined) {
@@ -91,17 +94,6 @@ export function decodeJsonlControlEventEnvelope(
 /** The recorder mirrors every result into events.jsonl as a step-result row, which stands in for no event. */
 export function isJsonlResultMirrorRow(value: unknown): boolean {
     return isJsonRecordValue(value) && value.kind === 'step-result';
-}
-
-function decodeResultCommandId(commandId: unknown, resultKey: unknown): string | undefined {
-    if (isNonEmptyText(commandId)) {
-        return commandId;
-    }
-    if (!isNonEmptyText(resultKey)) {
-        return undefined;
-    }
-    const [, keyedCommandId] = resultKey.split(/:(.*)/s);
-    return keyedCommandId || resultKey;
 }
 
 function decodeRecorderOutcome(status: unknown): boolean | undefined {

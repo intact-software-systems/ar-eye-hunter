@@ -4,7 +4,7 @@ import type { ControlDistributedRunArtifactBundle } from '../control-snapshots.t
 import type { DistributedRunArtifactRejection } from '../distributed-artifact-analysis.ts';
 import type { ParsedDistributedArtifactPipeline } from '../distributed-artifact-pipeline.ts';
 
-export interface PipelineArtifactBundleInput {
+export interface ToPipelineArtifactBundleInput {
     readonly parsed: ParsedDistributedArtifactPipeline;
     readonly distributedRunId: string;
     readonly generatedAtEpochMs: number;
@@ -36,7 +36,7 @@ const DISTRIBUTED_ARTIFACT_V2_EVIDENCE_FILE_NAMES = ['report.json', 'failures.js
 
 /** A bundle needs the run snapshot, the control run and the manifest; other known artifact files ride along. */
 export function toPipelineArtifactBundle(
-    input: PipelineArtifactBundleInput
+    input: ToPipelineArtifactBundleInput
 ): Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle> {
     const files = input.parsed.projectedFiles;
     const missingFileName = BUNDLE_CORE_FILE_NAMES.find((fileName) => files[fileName] === undefined);
