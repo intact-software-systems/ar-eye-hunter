@@ -17,6 +17,7 @@ import {
     type RallarServerControllerModel
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts';
 import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
+import { CLIPBOARD_FAILURES } from './write-text-to-clipboard-fixtures.ts';
 
 interface RecordedRequest {
     readonly method: string;
@@ -56,19 +57,6 @@ function RallarServerHarness(props: { input: UseRallarServerControllerInput; cap
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
 }
-
-const CLIPBOARD_FAILURES = [
-    {
-        name: 'an unavailable clipboard',
-        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
-        error: 'Clipboard access is unavailable in this browser.'
-    },
-    {
-        name: 'a rejected copy',
-        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
-        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
-    }
-];
 
 describe('Rallar Server controller preservation', () => {
     let root: Root;

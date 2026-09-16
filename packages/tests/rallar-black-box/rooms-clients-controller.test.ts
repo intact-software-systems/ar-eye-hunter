@@ -23,6 +23,7 @@ import {
     type UseRoomsClientsControllerInput
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts';
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
+import { CLIPBOARD_FAILURES } from './write-text-to-clipboard-fixtures.ts';
 
 interface RecordedRequest {
     readonly method: string;
@@ -79,19 +80,6 @@ function action(actionId: RoomsClientsActionId): RoomsClientsAction {
     }
     return found;
 }
-
-const CLIPBOARD_FAILURES = [
-    {
-        name: 'an unavailable clipboard',
-        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
-        error: 'Clipboard access is unavailable in this browser.'
-    },
-    {
-        name: 'a rejected copy',
-        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
-        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
-    }
-];
 
 describe('rooms and clients controller preservation', () => {
     let root: Root;

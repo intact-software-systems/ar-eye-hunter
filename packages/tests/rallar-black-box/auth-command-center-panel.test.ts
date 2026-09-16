@@ -7,6 +7,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthCommandCenterPanel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-panel.tsx';
+import { CLIPBOARD_FAILURES } from './write-text-to-clipboard-fixtures.ts';
 
 interface RecordedRequest {
     readonly method: string;
@@ -36,19 +37,6 @@ const authSession: AuthSession = {
     accessToken: 'auth-secret-token',
     expiresAtEpochMs: Date.now() + 60_000
 };
-
-const CLIPBOARD_FAILURES = [
-    {
-        name: 'an unavailable clipboard',
-        arrange: () => vi.spyOn(navigator, 'clipboard', 'get').mockImplementation(() => Reflect.get({}, 'clipboard')),
-        error: 'Clipboard access is unavailable in this browser.'
-    },
-    {
-        name: 'a rejected copy',
-        arrange: () => vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied')),
-        error: 'Unable to copy to the clipboard. Check browser permissions and try again.'
-    }
-];
 
 describe('auth command-center panel preservation', () => {
     let root: Root;
