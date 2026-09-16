@@ -6,8 +6,8 @@ import {
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import {
+    computeDistributedArtifactWorkspace,
     computeDistributedRunSnapshotPerformance,
-    createDistributedArtifactWorkspace,
     distributedRecipePreflight,
     distributedRunTuningJsonPointer,
     inventoryDistributedRunTuningKnobs,
@@ -194,8 +194,8 @@ describe('distributed recipe tuning Task 2 contracts', () => {
     it('preserves manifest tuning truth during loose and envelope normalization', () => {
         const manifest = tuningManifest();
         const files = artifactFiles(manifest);
-        const loose = createDistributedArtifactWorkspace({ files, generatedAtEpochMs: 4_242 });
-        const envelope = createDistributedArtifactWorkspace({
+        const loose = computeDistributedArtifactWorkspace({ files, generatedAtEpochMs: 4_242 }).workspace;
+        const envelope = computeDistributedArtifactWorkspace({
             files: {
                 'dist-tune-artifact.json': JSON.stringify({
                     artifactSchemaVersion: 1,
@@ -204,7 +204,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
                     files
                 })
             }
-        });
+        }).workspace;
 
         for (const workspace of [loose, envelope]) {
             expect(workspace.snapshots?.distributedRun).toMatchObject({

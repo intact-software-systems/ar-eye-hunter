@@ -19,13 +19,13 @@ import {
     type DistributedArtifactEvidenceCatalog,
     type DistributedArtifactEvidenceCursor
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
-import { createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
+import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import { createRecipeConsoleScaleFixture, type RecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 function inputForFixture(
     fixture: RecipeConsoleScaleFixture
 ): DeriveDistributedArtifactEvidenceIndexInput {
-    const workspace = createDistributedArtifactWorkspace({
+    const { workspace } = computeDistributedArtifactWorkspace({
         files: fixture.files,
         generatedAtEpochMs: fixture.generatedAtEpochMs,
         artifactSchemaVersion: fixture.artifactSchemaVersion

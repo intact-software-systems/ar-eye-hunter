@@ -15,7 +15,7 @@ import { projectDistributedArtifactEnvelope } from '../../../packages/shared-tes
 import { distributedArtifactIdentityIssues } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-identity.ts';
 import { parseDistributedArtifactPipeline } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-pipeline.ts';
 import * as monitorModule from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { computeDistributedArtifactWorkspace, createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 describe('distributed artifact workspace parsed integration', () => {
@@ -27,11 +27,6 @@ describe('distributed artifact workspace parsed integration', () => {
             artifactSchemaVersion: fixture.artifactSchemaVersion
         });
 
-        expect(derived.workspace).toEqual(createDistributedArtifactWorkspace({
-            files: fixture.files,
-            generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion
-        }));
         expect(derived.parsed.telemetry).toMatchObject({
             pipelinePassCount: 1,
             sourceCollectionPassCount: 1,
@@ -50,13 +45,6 @@ describe('distributed artifact workspace parsed integration', () => {
             Object.values(derived.parsed.telemetry.jsonlFilePassCountByFile)
                 .every((count) => count <= 1)
         ).toBe(true);
-        expect(derived.telemetry).toEqual({
-            parsedArtifactPassCount: 1,
-            normalizedSnapshotCount: 1,
-            bundleDerivationCount: 1,
-            monitorDerivationCount: 1,
-            reportDerivationCount: 1
-        });
         expect(derived.monitor).toBeDefined();
         expect(derived.report).toBeDefined();
         expect(derived.workspace.analysis?.spa?.report).toBe(derived.report);
@@ -167,8 +155,6 @@ describe('distributed artifact workspace parsed integration', () => {
         });
         expect(derived.parsed.telemetry.jsonDocumentParseCountByFile[responseFile])
             .toBe(1);
-        expect(derived.telemetry.monitorDerivationCount).toBe(1);
-        expect(derived.telemetry.reportDerivationCount).toBe(1);
     });
 
     it('reports a failed control request record as a workspace issue instead of a distributed run analysis', () => {
@@ -303,7 +289,8 @@ describe('distributed artifact workspace parsed integration', () => {
         const first = computeDistributedRunArtifactPipelineAnalysis({
             parsed,
             content,
-            generatedAtEpochMs: fixture.generatedAtEpochMs
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         }).analysis;
         const callerWarning = {
             fileName: 'caller',
@@ -316,7 +303,8 @@ describe('distributed artifact workspace parsed integration', () => {
         const second = computeDistributedRunArtifactPipelineAnalysis({
             parsed,
             content,
-            generatedAtEpochMs: fixture.generatedAtEpochMs
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         }).analysis;
 
         expect(second.parseWarnings).not.toContainEqual(callerWarning);

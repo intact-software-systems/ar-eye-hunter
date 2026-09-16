@@ -1,8 +1,15 @@
 import {
     computeDistributedRunArtifactPipelineAnalysis,
-    type DistributedRunArtifactPipelineAnalysisResult
+    type DistributedRunAnalysis,
+    type DistributedRunArtifactPipelineAnalysisResult,
+    type DistributedRunArtifactRejection
 } from './distributed-artifact-analysis.ts';
-import { toDistributedRunArtifactContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
+import {
+    toDistributedRunArtifactContent,
+    type DistributedRunBundleContent,
+    type DistributedRunControlRequestFailureContent
+} from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
+import { resolveArtifactSchemaVersion } from './distributed-artifact-analysis/to-pipeline-artifact-bundle.ts';
 import {
     createDistributedArtifactInventoryFromParsed,
     declaredDistributedArtifactSchemaVersionFromParsed,
@@ -29,22 +36,13 @@ import {
 import type { DistributedRunAnalysisReport } from './distributed-run-analysis/distributed-run-analysis-report.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 
-export interface DistributedArtifactWorkspaceDerivationTelemetry {
-    readonly parsedArtifactPassCount: number;
-    readonly normalizedSnapshotCount: number;
-    readonly bundleDerivationCount: number;
-    readonly monitorDerivationCount: number;
-    readonly reportDerivationCount: number;
-}
-
-export interface DerivedDistributedArtifactWorkspace {
+export interface DistributedArtifactWorkspaceComputed {
     readonly parsed: ParsedDistributedArtifactPipeline;
     readonly workspace: DistributedArtifactWorkspace;
     /** Absent when the workspace holds no analyzable distributed run. */
     readonly monitor?: DistributedRunMonitor;
     /** Absent when the workspace holds no analyzable distributed run. */
     readonly report?: DistributedRunAnalysisReport;
-    readonly telemetry: DistributedArtifactWorkspaceDerivationTelemetry;
 }
 
 interface WorkspaceSchemaInput {
@@ -61,33 +59,36 @@ interface WorkspaceSchema {
     readonly issues: readonly DistributedArtifactWorkspaceIssue[];
 }
 
+interface SchemaVersionFinding {
+    readonly inventoryItem: DistributedArtifactInventoryItem;
+    readonly issue: DistributedArtifactWorkspaceIssue;
+}
+
 interface WorkspaceAnalysisInput {
     readonly parsed: ParsedDistributedArtifactPipeline;
-    /** Absent when neither the caller, an artifact envelope nor metadata.json supplies a generation time. */
-    readonly generatedAtEpochMs?: number;
-    /** Absent when the caller and the envelope disagree or no version is declared or implied. */
-    readonly artifactSchemaVersion?: number;
+    readonly family: DistributedArtifactFamily;
+    readonly schema: WorkspaceSchema;
+    /** Undefined when neither the caller, an artifact envelope nor metadata.json supplies a generation time. */
+    readonly generatedAtEpochMs: number | undefined;
     readonly support: DistributedArtifactWorkspaceSupport;
 }
 
 interface WorkspaceAnalysis {
     readonly support: DistributedArtifactWorkspaceSupport;
     readonly issues: readonly DistributedArtifactWorkspaceIssue[];
-    /** One when the artifact content was read, whether or not it held a distributed run. */
-    readonly parsedArtifactPassCount: number;
     /** Absent when the artifacts hold no analyzable distributed run. */
     readonly derived?: DistributedRunArtifactPipelineAnalysisResult;
 }
 
-export function createDistributedArtifactWorkspace(
-    input: DistributedArtifactWorkspaceInput
-): DistributedArtifactWorkspace {
-    return computeDistributedArtifactWorkspace(input).workspace;
-}
+const MISSING_GENERATION_TIME_ISSUE: DistributedArtifactWorkspaceIssue = {
+    code: 'missing-generation-time',
+    severity: 'error',
+    message: 'The artifacts record no generation time (neither an envelope nor metadata.json), and none was supplied.'
+};
 
 export function computeDistributedArtifactWorkspace(
     input: DistributedArtifactWorkspaceInput
-): DerivedDistributedArtifactWorkspace {
+): DistributedArtifactWorkspaceComputed {
     const parsed = parseDistributedArtifactPipeline(input.files);
     const { projection } = parsed;
     const family = identifyDistributedArtifactFamilyFromParsed(parsed, projection.distributedRunId);
@@ -95,30 +96,18 @@ export function computeDistributedArtifactWorkspace(
     const identityIssues = family === 'distributed-run' ? distributedArtifactIdentityIssuesFromParsed(parsed) : [];
     const generatedAtEpochMs = input.generatedAtEpochMs ?? projection.generatedAtEpochMs ??
         distributedArtifactGeneratedAtFromParsed(parsed);
-    const assessedSupport = distributedArtifactWorkspaceSupport({
+    const analysis = toWorkspaceAnalysis({
+        parsed,
         family,
-        inventory: schema.inventory,
-        hasSchemaConflict: schema.hasSchemaConflict,
-        hasInvalidEnvelopeSchema: projection.invalidSchemaMessage !== undefined,
-        hasFatalEnvelopeIssue: projection.fatalMessage !== undefined,
-        artifactSchemaVersion: schema.artifactSchemaVersion
+        schema,
+        generatedAtEpochMs,
+        support: identityIssues.length > 0 ? 'incompatible' : toAssessedWorkspaceSupport(parsed, family, schema)
     });
-    const support = identityIssues.length > 0 ? 'incompatible' : assessedSupport;
-    const analysis = family === 'distributed-run' && !schema.hasSchemaConflict &&
-            !projection.invalidSchemaMessage && !projection.fatalMessage
-        ? toWorkspaceAnalysis({
-            parsed,
-            generatedAtEpochMs,
-            artifactSchemaVersion: schema.artifactSchemaVersion,
-            support
-        })
-        : { support, issues: [], parsedArtifactPassCount: 0 };
     const { derived } = analysis;
-    const identityConflict = toIdentityConflictIssue(parsed, derived);
     const workspace = {
         family,
         source: projection.source,
-        support: identityConflict ? 'incompatible' : analysis.support,
+        support: analysis.support,
         generatedAtEpochMs,
         artifactSchemaVersion: schema.artifactSchemaVersion,
         distributedRunId: derived?.analysis.distributedRunId ?? projection.distributedRunId,
@@ -128,57 +117,90 @@ export function computeDistributedArtifactWorkspace(
             ...schema.issues,
             ...toEnvelopeIssues(parsed, family),
             ...identityIssues,
-            ...analysis.issues,
-            ...(identityConflict ? [identityConflict] : [])
+            ...analysis.issues
         ],
         analysis: derived?.analysis,
         snapshots: derived?.snapshots,
         bundle: derived?.snapshots?.artifactBundle
     } satisfies DistributedArtifactWorkspace;
-    return { parsed, workspace, monitor: derived?.monitor, report: derived?.report, telemetry: toTelemetry(analysis) };
+    return { parsed, workspace, monitor: derived?.monitor, report: derived?.report };
 }
 
 /** A caller version that contradicts the envelope clears the version; otherwise an unsupported version is flagged. */
 function toWorkspaceSchema(schemaInput: WorkspaceSchemaInput): WorkspaceSchema {
     const { input, parsed, family } = schemaInput;
     const { projection } = parsed;
-    const issues: DistributedArtifactWorkspaceIssue[] = [];
-    const inventory = createDistributedArtifactInventoryFromParsed(family, parsed, projection, issues);
+    const inventoryIssues: DistributedArtifactWorkspaceIssue[] = [];
+    const inventory = createDistributedArtifactInventoryFromParsed(family, parsed, projection, inventoryIssues);
     const envelopeVersion = projection.artifactSchemaVersion;
-    const hasSchemaConflict = input.artifactSchemaVersion !== undefined && envelopeVersion !== undefined &&
-        input.artifactSchemaVersion !== envelopeVersion;
-    if (hasSchemaConflict) {
+    if (
+        input.artifactSchemaVersion !== undefined && envelopeVersion !== undefined &&
+        input.artifactSchemaVersion !== envelopeVersion
+    ) {
         const message =
             `Caller schema version ${input.artifactSchemaVersion} conflicts with envelope schema version ${envelopeVersion}.`;
-        inventory.push(distributedArtifactSchemaInventory('incompatible', message));
-        issues.push({
-            code: 'schema-version-conflict',
-            severity: 'error',
-            message,
-            fileName: '$artifactSchemaVersion'
-        });
-        return { hasSchemaConflict, inventory, issues };
+        return {
+            hasSchemaConflict: true,
+            inventory: [...inventory, distributedArtifactSchemaInventory('incompatible', message)],
+            issues: [
+                ...inventoryIssues,
+                { code: 'schema-version-conflict', severity: 'error', message, fileName: '$artifactSchemaVersion' }
+            ]
+        };
     }
     const artifactSchemaVersion = input.artifactSchemaVersion ?? envelopeVersion ??
         declaredDistributedArtifactSchemaVersionFromParsed(parsed) ??
         inferredDistributedArtifactSchemaVersionFromParsed(parsed, family);
+    const finding = toSchemaVersionFinding(parsed, artifactSchemaVersion);
+    return {
+        artifactSchemaVersion,
+        hasSchemaConflict: false,
+        inventory: finding === undefined ? inventory : [...inventory, finding.inventoryItem],
+        issues: finding === undefined ? inventoryIssues : [...inventoryIssues, finding.issue]
+    };
+}
+
+/** Absent when the envelope schema is valid and the version is supported or not known at all. */
+function toSchemaVersionFinding(
+    parsed: ParsedDistributedArtifactPipeline,
+    artifactSchemaVersion: number | undefined
+): SchemaVersionFinding | undefined {
+    const { projection } = parsed;
     if (projection.invalidSchemaMessage) {
-        inventory.push(distributedArtifactSchemaInventory('incompatible', projection.invalidSchemaMessage));
-        issues.push({
-            code: 'incompatible-file',
-            severity: 'error',
-            message: projection.invalidSchemaMessage,
-            fileName: projection.envelopeFileName
-        });
+        return {
+            inventoryItem: distributedArtifactSchemaInventory('incompatible', projection.invalidSchemaMessage),
+            issue: {
+                code: 'incompatible-file',
+                severity: 'error',
+                message: projection.invalidSchemaMessage,
+                fileName: projection.envelopeFileName
+            }
+        };
     }
-    else if (
-        artifactSchemaVersion !== undefined && !DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS.has(artifactSchemaVersion)
-    ) {
-        const message = `Artifact schema version ${artifactSchemaVersion} is not supported.`;
-        inventory.push(distributedArtifactSchemaInventory('unknown-version', message));
-        issues.push({ code: 'unknown-schema-version', severity: 'error', message, fileName: '$artifactSchemaVersion' });
+    if (artifactSchemaVersion === undefined || DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS.has(artifactSchemaVersion)) {
+        return undefined;
     }
-    return { artifactSchemaVersion, hasSchemaConflict, inventory, issues };
+    const message = `Artifact schema version ${artifactSchemaVersion} is not supported.`;
+    return {
+        inventoryItem: distributedArtifactSchemaInventory('unknown-version', message),
+        issue: { code: 'unknown-schema-version', severity: 'error', message, fileName: '$artifactSchemaVersion' }
+    };
+}
+
+function toAssessedWorkspaceSupport(
+    parsed: ParsedDistributedArtifactPipeline,
+    family: DistributedArtifactFamily,
+    schema: WorkspaceSchema
+): DistributedArtifactWorkspaceSupport {
+    const { projection } = parsed;
+    return distributedArtifactWorkspaceSupport({
+        family,
+        inventory: schema.inventory,
+        hasSchemaConflict: schema.hasSchemaConflict,
+        hasInvalidEnvelopeSchema: projection.invalidSchemaMessage !== undefined,
+        hasFatalEnvelopeIssue: projection.fatalMessage !== undefined,
+        artifactSchemaVersion: schema.artifactSchemaVersion
+    });
 }
 
 function toEnvelopeIssues(
@@ -206,63 +228,80 @@ function toEnvelopeIssues(
     }];
 }
 
-/** Analysis needs a generation time and content that holds a distributed run rather than a failed request. */
+/**
+ * Only a distributed-run family with a consistent schema and envelope is analyzed; analysis then needs a
+ * generation time and content that holds a distributed run rather than a failed request.
+ */
 function toWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAnalysis {
-    const { parsed, generatedAtEpochMs, support } = analysisInput;
+    const { parsed, family, schema, generatedAtEpochMs, support } = analysisInput;
+    const { projection } = parsed;
+    if (
+        family !== 'distributed-run' || schema.hasSchemaConflict || projection.invalidSchemaMessage ||
+        projection.fatalMessage
+    ) {
+        return { support, issues: [] };
+    }
     if (generatedAtEpochMs === undefined) {
-        return {
-            support: 'incompatible',
-            parsedArtifactPassCount: 0,
-            issues: [{
-                code: 'missing-generation-time',
-                severity: 'error',
-                message:
-                    'The artifacts record no generation time (neither an envelope nor metadata.json), and none was supplied.'
-            }]
-        };
+        return { support: 'incompatible', issues: [MISSING_GENERATION_TIME_ISSUE] };
     }
-    const content = toDistributedRunArtifactContent(parsed);
-    if (content.left !== undefined) {
-        return {
+    return toDistributedRunArtifactContent(parsed).fold(
+        (rejection): WorkspaceAnalysis => ({
             support: support === 'incomplete' ? 'incomplete' : 'incompatible',
-            parsedArtifactPassCount: 1,
-            issues: [{
-                code: 'analysis-failed',
-                severity: 'error',
-                fileName: content.left.fileName,
-                message: `Unable to analyze distributed-run artifacts: ${content.left.message}`
-            }]
-        };
-    }
-    if (content.right?.variant !== 'distributed-run') {
-        return {
-            support: 'incompatible',
-            parsedArtifactPassCount: 1,
-            issues: [{
-                code: 'control-request-failure',
-                severity: 'error',
-                fileName: 'control-post-error-metadata.json',
-                message:
-                    `The artifacts record a failed control ${content.right?.controlPostFailure.request.phase} request and contain no distributed run; analyze the folder with the distributed-run artifact CLI.`
-            }]
-        };
-    }
+            issues: [toAnalysisFailedIssue(rejection)]
+        }),
+        (content) =>
+            content.variant === 'distributed-run'
+                ? toDistributedRunWorkspaceAnalysis(analysisInput, content, generatedAtEpochMs)
+                : { support: 'incompatible', issues: [toControlRequestFailureIssue(content)] }
+    );
+}
+
+/** An envelope that names a different run than distributed-run.json makes the analyzed workspace incompatible. */
+function toDistributedRunWorkspaceAnalysis(
+    analysisInput: WorkspaceAnalysisInput,
+    content: DistributedRunBundleContent,
+    generatedAtEpochMs: number
+): WorkspaceAnalysis {
+    const { parsed, schema, support } = analysisInput;
     const derived = computeDistributedRunArtifactPipelineAnalysis({
         parsed,
-        content: content.right,
+        content,
         generatedAtEpochMs,
-        artifactSchemaVersion: analysisInput.artifactSchemaVersion
+        artifactSchemaVersion: schema.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
     });
-    return { support, issues: [], parsedArtifactPassCount: 1, derived };
+    const identityConflict = toIdentityConflictIssue(parsed, derived.analysis);
+    return identityConflict === undefined
+        ? { support, issues: [], derived }
+        : { support: 'incompatible', issues: [identityConflict], derived };
+}
+
+function toAnalysisFailedIssue(rejection: DistributedRunArtifactRejection): DistributedArtifactWorkspaceIssue {
+    return {
+        code: 'analysis-failed',
+        severity: 'error',
+        fileName: rejection.fileName,
+        message: `Unable to analyze distributed-run artifacts: ${rejection.message}`
+    };
+}
+
+function toControlRequestFailureIssue(
+    content: DistributedRunControlRequestFailureContent
+): DistributedArtifactWorkspaceIssue {
+    return {
+        code: 'control-request-failure',
+        severity: 'error',
+        fileName: 'control-post-error-metadata.json',
+        message:
+            `The artifacts record a failed control ${content.controlPostFailure.request.phase} request and contain no distributed run; analyze the folder with the distributed-run artifact CLI.`
+    };
 }
 
 function toIdentityConflictIssue(
     parsed: ParsedDistributedArtifactPipeline,
-    derived: DistributedRunArtifactPipelineAnalysisResult | undefined
+    analysis: DistributedRunAnalysis
 ): DistributedArtifactWorkspaceIssue | undefined {
     const { projection } = parsed;
-    const analysis = derived?.analysis;
-    if (!analysis || !projection.distributedRunId || projection.distributedRunId === analysis.distributedRunId) {
+    if (!projection.distributedRunId || projection.distributedRunId === analysis.distributedRunId) {
         return undefined;
     }
     return {
@@ -272,16 +311,5 @@ function toIdentityConflictIssue(
         message: `${
             projection.envelopeFileName ?? 'Artifact envelope'
         } declares distributed run ${projection.distributedRunId}, but distributed-run.json contains ${analysis.distributedRunId}.`
-    };
-}
-
-function toTelemetry(analysis: WorkspaceAnalysis): DistributedArtifactWorkspaceDerivationTelemetry {
-    const derivedCount = analysis.derived === undefined ? 0 : 1;
-    return {
-        parsedArtifactPassCount: analysis.parsedArtifactPassCount,
-        normalizedSnapshotCount: derivedCount,
-        bundleDerivationCount: derivedCount,
-        monitorDerivationCount: analysis.derived?.telemetry.monitorDerivationCount ?? 0,
-        reportDerivationCount: analysis.derived?.telemetry.reportDerivationCount ?? 0
     };
 }

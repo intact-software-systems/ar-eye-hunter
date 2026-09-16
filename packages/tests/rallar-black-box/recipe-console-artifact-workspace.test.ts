@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-    computeDistributedRunArtifactAnalysis,
     toDistributedArtifactBundle,
     type DistributedRunArtifactFiles
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
-    createDistributedArtifactWorkspace,
+    computeDistributedArtifactWorkspace,
     type DistributedArtifactWorkspace,
     type DistributedArtifactWorkspaceInput
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
-function createWorkspace(input: DistributedArtifactWorkspaceInput): DistributedArtifactWorkspace {
-    return createDistributedArtifactWorkspace(input);
+function computeWorkspace(input: DistributedArtifactWorkspaceInput): DistributedArtifactWorkspace {
+    return computeDistributedArtifactWorkspace(input).workspace;
 }
 
 function serverV2Files(
@@ -138,7 +137,7 @@ function inventoryStatus(
 describe('Recipe Console distributed artifact workspace compatibility', () => {
     it('recognizes the authoritative server v2 bundle without linked JSONL files', () => {
         const files = serverV2Files();
-        const workspace = createWorkspace({ files, generatedAtEpochMs: 4_242 });
+        const workspace = computeWorkspace({ files, generatedAtEpochMs: 4_242 });
         const bundle = toDistributedArtifactBundle(files, 4_242).right;
 
         expect(bundle?.artifactSchemaVersion).toBe(2);
@@ -166,12 +165,12 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
 
     it('unwraps exported envelopes and converges with the equivalent loose files', () => {
         const files = serverV2Files();
-        const loose = createWorkspace({
+        const loose = computeWorkspace({
             files,
             artifactSchemaVersion: 2,
             generatedAtEpochMs: 5_151
         });
-        const envelope = createWorkspace({
+        const envelope = computeWorkspace({
             files: {
                 'distributed-import-artifact.json': JSON.stringify({
                     artifactSchemaVersion: 2,
@@ -196,25 +195,21 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         expect(envelope.inventory).toEqual(loose.inventory);
     });
 
-    it('projects an explicit source schema version through analysis and bundle helpers', () => {
+    it('projects an explicit caller schema version through the workspace analysis and bundle', () => {
         const files = serverV2Files({
             'report.json': undefined,
             'failures.json': undefined,
             'metadata.json': undefined
         });
-        const analyzed = computeDistributedRunArtifactAnalysis({
-            files,
-            generatedAtEpochMs: 6_161,
-            artifactSchemaVersion: 2
-        }).right;
-        const bundle = toDistributedArtifactBundle(files, 6_161, 2).right;
+        const workspace = computeWorkspace({ files, generatedAtEpochMs: 6_161, artifactSchemaVersion: 2 });
 
-        expect(analyzed?.variant === 'distributed-run' && analyzed.analysis.artifactSchemaVersion).toBe(2);
-        expect(bundle?.artifactSchemaVersion).toBe(2);
+        expect(workspace.analysis?.artifactSchemaVersion).toBe(2);
+        expect(workspace.bundle?.artifactSchemaVersion).toBe(2);
+        expect(toDistributedArtifactBundle(files, 6_161).right?.artifactSchemaVersion).toBe(1);
     });
 
     it('reports a caller and envelope schema conflict as incompatible', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             artifactSchemaVersion: 1,
             files: {
                 'distributed-import-artifact.json': JSON.stringify({
@@ -241,7 +236,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('keeps valid siblings usable when optional evidence is malformed or incompatible', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: serverV2Files({
                 'events.jsonl': `${
                     JSON.stringify({
@@ -281,15 +276,15 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('distinguishes missing, malformed, and incompatible core files', () => {
-        const missing = createWorkspace({
+        const missing = computeWorkspace({
             files: serverV2Files({ 'control-run.json': undefined }),
             generatedAtEpochMs: 9_191
         });
-        const malformed = createWorkspace({
+        const malformed = computeWorkspace({
             files: serverV2Files({ 'distributed-run.json': '{bad' }),
             generatedAtEpochMs: 9_192
         });
-        const incompatible = createWorkspace({
+        const incompatible = computeWorkspace({
             files: serverV2Files({ 'distributed-run.json': '[]' }),
             generatedAtEpochMs: 9_193
         });
@@ -321,7 +316,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('marks unknown schema versions without coercing them to a supported version', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: {
                 'distributed-import-artifact.json': JSON.stringify({
                     artifactSchemaVersion: 99,
@@ -348,7 +343,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
 
     it('rejects an envelope mixed with loose artifact files instead of choosing one silently', () => {
         const files = serverV2Files();
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             generatedAtEpochMs: 10_202,
             files: {
                 'manifest.json': files['manifest.json'],
@@ -373,7 +368,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('retains analysis but rejects an envelope whose declared run differs from inner evidence', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: {
                 'distributed-import-artifact.json': JSON.stringify({
                     artifactSchemaVersion: 2,
@@ -405,7 +400,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
         manifest.distributedRunId = 'distributed-manifest-other';
         controlRun.runId = 'control-other';
         report.distributedRunId = 'distributed-report-other';
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: {
                 ...files,
                 'manifest.json': JSON.stringify(manifest),
@@ -429,7 +424,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('reports an envelope-shaped wrong root precisely', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: {
                 'broken-artifact.json': JSON.stringify({
                     artifactSchemaVersion: '2',
@@ -452,7 +447,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('identifies generic black-box-runner artifacts as a separate unsupported family', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: {
                 'report.json': JSON.stringify({
                     schemaVersion: 1,
@@ -489,7 +484,7 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
     });
 
     it('records unknown loose files as ignored inventory and issues', () => {
-        const workspace = createWorkspace({
+        const workspace = computeWorkspace({
             files: serverV2Files({
                 'ci-notes.txt': 'retry on a different host',
                 'mystery.json': '{}'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeDistributedRunArtifactAnalysis } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
+import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     createRecipeConsoleScaleFixture,
@@ -116,14 +116,13 @@ describe('Recipe Console deterministic scale fixture', () => {
         const manifestValidation = validateDistributedRunManifest(
             JSON.parse(fixture.files['manifest.json'] ?? 'null')
         );
-        const workspace = createDistributedArtifactWorkspace({
+        const { workspace } = computeDistributedArtifactWorkspace({
             files: fixture.files,
             artifactSchemaVersion: fixture.artifactSchemaVersion,
             generatedAtEpochMs: fixture.generatedAtEpochMs
         });
         const analysis = computeDistributedRunArtifactAnalysis({
             files: fixture.files,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
             generatedAtEpochMs: fixture.generatedAtEpochMs
         }).right?.analysis;
 

@@ -46,8 +46,6 @@ export type DistributedRunArtifactFiles = Readonly<Record<string, string | undef
 export interface DistributedRunAnalysisInput {
     readonly files: DistributedRunArtifactFiles;
     readonly generatedAtEpochMs: number;
-    /** Absent when the analysis takes the schema version the artifact files imply. */
-    readonly artifactSchemaVersion?: number;
 }
 
 export interface DistributedRunArtifactRejection {
@@ -305,8 +303,7 @@ export interface DistributedRunArtifactPipelineAnalysisInput {
     readonly parsed: ParsedDistributedArtifactPipeline;
     readonly content: DistributedRunBundleContent;
     readonly generatedAtEpochMs: number;
-    /** Absent when the analysis takes the schema version the artifact files imply. */
-    readonly artifactSchemaVersion?: number;
+    readonly artifactSchemaVersion: number;
 }
 
 export interface DistributedRunContentSnapshotsInput {
@@ -322,12 +319,6 @@ export interface DistributedRunArtifactPipelineAnalysisResult {
     readonly snapshots?: DistributedRunArtifactSnapshots;
     readonly monitor: DistributedRunMonitor;
     readonly report: DistributedRunAnalysisReport;
-    readonly telemetry: DistributedRunAnalysisDerivationTelemetry;
-}
-
-export interface DistributedRunAnalysisDerivationTelemetry {
-    readonly monitorDerivationCount: number;
-    readonly reportDerivationCount: number;
 }
 
 export function computeDistributedRunArtifactAnalysis(
@@ -342,7 +333,7 @@ export function computeDistributedRunArtifactAnalysis(
                     parsed,
                     content,
                     generatedAtEpochMs: input.generatedAtEpochMs,
-                    artifactSchemaVersion: input.artifactSchemaVersion
+                    artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
                 }).analysis
             }
             : {
@@ -355,10 +346,9 @@ export function computeDistributedRunArtifactAnalysis(
 export function computeDistributedRunArtifactPipelineAnalysis(
     input: DistributedRunArtifactPipelineAnalysisInput
 ): DistributedRunArtifactPipelineAnalysisResult {
-    const { parsed, content, generatedAtEpochMs } = input;
+    const { parsed, content, generatedAtEpochMs, artifactSchemaVersion } = input;
     const { distributedRun } = content;
     const controlRun = content.controlRun.status === 'recorded' ? content.controlRun.snapshot : undefined;
-    const artifactSchemaVersion = input.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed);
     const bundle = toPipelineArtifactBundle({
         parsed,
         distributedRunId: distributedRun.distributedRunId,
@@ -388,15 +378,13 @@ export function computeDistributedRunArtifactPipelineAnalysis(
         analysis: toDistributedRunAnalysis(facts),
         ...(controlRun === undefined ? {} : { snapshots: toArtifactSnapshots(content, bundle).right }),
         monitor,
-        report,
-        telemetry: { monitorDerivationCount: 1, reportDerivationCount: 1 }
+        report
     };
 }
 
 export function toDistributedArtifactBundle(
     files: DistributedRunArtifactFiles,
-    generatedAtEpochMs: number,
-    artifactSchemaVersion?: number
+    generatedAtEpochMs: number
 ): Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle> {
     const parsed = parseDistributedArtifactPipeline(files, { projection: 'literal-loose-files' });
     return toDistributedRunBundleContent(parsed).flatMap(
@@ -406,15 +394,14 @@ export function toDistributedArtifactBundle(
                 parsed,
                 distributedRunId: content.distributedRun.distributedRunId,
                 generatedAtEpochMs,
-                artifactSchemaVersion: artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
+                artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
             })
     );
 }
 
 export function toDistributedArtifactSnapshots(
     files: DistributedRunArtifactFiles,
-    generatedAtEpochMs: number,
-    artifactSchemaVersion?: number
+    generatedAtEpochMs: number
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
     const parsed = parseDistributedArtifactPipeline(files, { projection: 'literal-loose-files' });
     return toDistributedRunBundleContent(parsed).flatMap(
@@ -424,7 +411,7 @@ export function toDistributedArtifactSnapshots(
                 parsed,
                 content,
                 generatedAtEpochMs,
-                artifactSchemaVersion: artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
+                artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
             })
     );
 }
@@ -472,42 +459,24 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
     const { content, spa } = input;
     const { distributedRun, fleetReport } = content;
     const ok = fleetReport?.ok ?? distributedRun.rollup.ok;
-    const performance = content.controlRun.status === 'recorded'
-        ? computeDistributedRunPerformance({
-            distributedRun,
-            controlRun: content.controlRun.snapshot,
-            fleetReport,
-            results: content.results,
-            events: content.events
-        })
-        : undefined;
-    const identity = {
+    const performance = computeRecordedPerformance(content);
+    const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
+    const sections = {
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion,
         distributedRunId: distributedRun.distributedRunId,
         controlRunId: distributedRun.controlRunId,
-        status: distributedRun.state
-    };
-    const agents = fleetReport?.agents ?? performance?.agentCount;
-    const overview = {
+        status: distributedRun.state,
         // distributed-run.json decoding checks the manifest only as an object, so its group is decoded here.
         group: resolveAnalysisGroup(decodeAnalysisGroup(distributedRun.manifest.group), fleetReport),
-        summary: {
-            ...(agents === undefined ? {} : { agents }),
-            passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
-            failureGroups: fleetReport?.failureGroups ?? (ok ? 0 : 1),
-            blockingFailures: distributedRun.rollup.summary.blockingFailures
-        },
-        parseWarnings: input.parseWarnings
-    };
-    const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
-    const evidence = {
+        summary: computeAnalysisSummary(content, performance, ok),
+        parseWarnings: input.parseWarnings,
         ...(performance === undefined ? {} : { performance }),
         targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
         spa
     };
     if (ok) {
-        return { ...identity, ok, ...overview, ...evidence };
+        return { ok, ...sections };
     }
     const failure = computeDistributedRunFailure({
         distributedRun,
@@ -518,7 +487,39 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         events: content.events,
         spaReport: spa.report
     });
-    return { ...identity, ok, ...overview, failure, ...evidence };
+    return { ok, ...sections, failure };
+}
+
+/** Performance needs the control run's agents, commands and results, so an unavailable control run leaves it absent. */
+function computeRecordedPerformance(
+    content: DistributedRunBundleContent
+): DistributedRunPerformanceAnalysis | undefined {
+    if (content.controlRun.status === 'unavailable') {
+        return undefined;
+    }
+    return computeDistributedRunPerformance({
+        distributedRun: content.distributedRun,
+        controlRun: content.controlRun.snapshot,
+        fleetReport: content.fleetReport,
+        results: content.results,
+        events: content.events
+    });
+}
+
+/** The fleet report's counts win; without one the run snapshot and the measured performance stand in. */
+function computeAnalysisSummary(
+    content: DistributedRunBundleContent,
+    performance: DistributedRunPerformanceAnalysis | undefined,
+    ok: boolean
+): DistributedRunAnalysisSummary {
+    const { distributedRun, fleetReport } = content;
+    const agents = fleetReport?.agents ?? performance?.agentCount;
+    return {
+        ...(agents === undefined ? {} : { agents }),
+        passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
+        failureGroups: fleetReport?.failureGroups ?? (ok ? 0 : 1),
+        blockingFailures: distributedRun.rollup.summary.blockingFailures
+    };
 }
 
 /** The manifest group wins; the fleet report group stands in only when the manifest names none. */

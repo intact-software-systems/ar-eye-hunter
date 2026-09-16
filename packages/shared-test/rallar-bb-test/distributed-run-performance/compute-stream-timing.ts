@@ -95,20 +95,7 @@ function toSummaryDurations(sample: StreamTimingSample): readonly number[] {
 function computeSlowestStreamAgents(
     samples: readonly StreamTimingSample[]
 ): readonly DistributedRunSlowestStreamAgent[] {
-    const samplesByAgent = new Map<string, StreamTimingSample[]>();
-    for (const sample of samples) {
-        if (!sample.agentId) {
-            continue;
-        }
-        const agentSamples = samplesByAgent.get(sample.agentId);
-        if (agentSamples) {
-            agentSamples.push(sample);
-        }
-        else {
-            samplesByAgent.set(sample.agentId, [sample]);
-        }
-    }
-    return [...samplesByAgent.entries()]
+    return [...toSamplesByAgent(samples).entries()]
         .map(([agentId, agentSamples]) => {
             const observationDurations = agentSamples.flatMap(toObservationDurations);
             const durations = observationDurations.length > 0
@@ -132,4 +119,22 @@ function computeSlowestStreamAgents(
             left.agentId.localeCompare(right.agentId)
         )
         .slice(0, SLOWEST_STREAM_AGENT_LIMIT);
+}
+
+/** Samples that name no agent belong to no agent's row. */
+function toSamplesByAgent(samples: readonly StreamTimingSample[]): ReadonlyMap<string, readonly StreamTimingSample[]> {
+    const samplesByAgent = new Map<string, StreamTimingSample[]>();
+    for (const sample of samples) {
+        if (!sample.agentId) {
+            continue;
+        }
+        const agentSamples = samplesByAgent.get(sample.agentId);
+        if (agentSamples) {
+            agentSamples.push(sample);
+        }
+        else {
+            samplesByAgent.set(sample.agentId, [sample]);
+        }
+    }
+    return samplesByAgent;
 }
