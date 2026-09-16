@@ -208,9 +208,12 @@ function validateTimeouts(
     return errors;
 }
 
+// A validator reports issues and never throws, so it stays total for a value that bypassed the schema.
 function validateNonEmptyText(
     value: string,
     path: string
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    return value.trim().length > 0 ? [] : [{ path, message: 'A non-empty string is required.' }];
+    return typeof value === 'string' && value.trim().length > 0
+        ? []
+        : [{ path, message: 'A non-empty string is required.' }];
 }
