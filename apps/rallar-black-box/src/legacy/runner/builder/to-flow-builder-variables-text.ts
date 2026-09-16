@@ -3,19 +3,17 @@ import type { CommandCenterGlobalValues } from '../../shell/global-context-model
 
 export function toFlowBuilderVariablesText(
     variables: FlowBuilderDefinition['variables'],
-    globalValues: CommandCenterGlobalValues | undefined
+    globalValues: CommandCenterGlobalValues
 ): string {
-    const merged = globalValues
-        ? {
-            ...variables,
-            apiBaseUrl: globalValues.apiBaseUrl,
-            applicationId: globalValues.applicationId,
-            workspaceId: globalValues.workspaceId,
-            groupId: globalValues.roomId,
-            actor: globalValues.clientId,
-            sessionId: globalValues.sessionId,
-            username: globalValues.clientId
-        }
-        : variables;
+    const merged = {
+        ...variables,
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        groupId: globalValues.roomId,
+        actor: globalValues.clientId,
+        sessionId: globalValues.sessionId,
+        username: globalValues.clientId
+    };
     return JSON.stringify(merged, null, 2);
 }

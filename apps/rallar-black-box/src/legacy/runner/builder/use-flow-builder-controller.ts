@@ -25,8 +25,9 @@ import { toFlowBuilderVariablesText } from './to-flow-builder-variables-text.ts'
 
 export interface UseFlowBuilderControllerInput {
     readonly state: RallarBlackBoxTestState;
+    /** Absent while the browser is signed out; the previews then redact no session secret. */
     readonly authSession: AuthSession | undefined;
-    readonly globalValues: CommandCenterGlobalValues | undefined;
+    readonly globalValues: CommandCenterGlobalValues;
     onSelectCommand(commandId: string): void;
 }
 
@@ -111,7 +112,7 @@ export function useFlowBuilderController(input: UseFlowBuilderControllerInput): 
     };
 }
 
-function useFlowBuilderDrafts(globalValues: CommandCenterGlobalValues | undefined): FlowBuilderDrafts {
+function useFlowBuilderDrafts(globalValues: CommandCenterGlobalValues): FlowBuilderDrafts {
     const firstTemplate = FLOW_BUILDER_TEMPLATES[0];
     const [templateId, setTemplateId] = useState(firstTemplate.templateId);
     const [flowText, setFlowText] = useState(() => toFlowBuilderText(firstTemplate.flow));
@@ -128,12 +129,12 @@ function useFlowBuilderDrafts(globalValues: CommandCenterGlobalValues | undefine
             );
         }
     }, [
-        globalValues?.apiBaseUrl,
-        globalValues?.applicationId,
-        globalValues?.clientId,
-        globalValues?.roomId,
-        globalValues?.sessionId,
-        globalValues?.workspaceId,
+        globalValues.apiBaseUrl,
+        globalValues.applicationId,
+        globalValues.clientId,
+        globalValues.roomId,
+        globalValues.sessionId,
+        globalValues.workspaceId,
         templateId,
         variablesEdited
     ]);

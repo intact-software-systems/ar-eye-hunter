@@ -12,7 +12,7 @@ import { toFlowBuilderVariablesText } from './to-flow-builder-variables-text.ts'
 
 export namespace FlowBuilderActions {
     export interface Input {
-        readonly globalValues: CommandCenterGlobalValues | undefined;
+        readonly globalValues: CommandCenterGlobalValues;
         readonly flowResult: Either<string, FlowBuilderDefinition>;
         readonly recipe: RallarBlackBoxTestRecipe | undefined;
         readonly parseError: string | undefined;
