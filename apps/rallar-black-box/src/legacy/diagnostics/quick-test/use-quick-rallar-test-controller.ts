@@ -1,34 +1,20 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-    type DirectRallarOperationResult
-} from '../../../direct-rallar-operations.ts';
-import { type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import type { DirectRallarOperationResult } from '../../../direct-rallar-operations.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
 import { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import type {
     QuickRallarReceivedMessageRow,
     QuickRallarSubscriptionState,
     QuickRallarTestViewModel,
     QuickRallarValues,
-    QuickRallarWorkflowStep
+    QuickRallarWorkflowStep,
+    UseQuickRallarTestControllerInput
 } from './quick-rallar-contracts.ts';
 import { QUICK_RALLAR_DEFAULT_VALUES } from './quick-rallar-defaults.ts';
 import { QuickRallarTestActions } from './quick-rallar-test-actions.ts';
-export interface UseQuickRallarTestControllerInput {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues: CommandCenterGlobalValues;
-    browserStatus: RallarBrowserStatusSummary;
-    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
-}
+
 interface QuickRallarTestControls {
     readonly values: QuickRallarValues;
     readonly setValues: React.Dispatch<React.SetStateAction<QuickRallarValues>>;

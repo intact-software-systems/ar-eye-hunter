@@ -1,3 +1,21 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
+import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
+
+export interface UseQuickRallarTestControllerInput {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K]
+    ): void;
+}
+
 export type QuickRallarTransport = 'ws';
 
 export type QuickRallarValues = Readonly<{

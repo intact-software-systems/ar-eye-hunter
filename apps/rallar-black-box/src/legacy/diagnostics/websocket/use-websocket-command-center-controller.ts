@@ -1,16 +1,13 @@
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
+import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    rallarBlackBoxProviderModeFromConfig,
-    type RallarBlackBoxBootstrapConfig
+    rallarBlackBoxProviderModeFromConfig
 } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
 import {
     idleActionFeedback,
     type CommandCenterActionFeedback
@@ -19,6 +16,7 @@ import type { AuthCommandCenterTicket } from '../shared/auth-command-center-tick
 import { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import { WebSocketCommandCenterActions } from './web-socket-command-center-actions.ts';
 import type {
+    UseWebSocketCommandCenterControllerInput,
     WebSocketCommandCenterValues,
     WebSocketDiagnostic,
     WebSocketPayloadPreset,
@@ -40,13 +38,6 @@ import {
     webSocketRoutePreview
 } from './websocket-routing.ts';
 import type { WebSocketCommandCenterViewModel } from './websocket-view-contracts.ts';
-export interface UseWebSocketCommandCenterControllerInput {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    browserStatus: RallarBrowserStatusSummary;
-}
 interface WebSocketCommandCenterControls {
     readonly values: WebSocketCommandCenterValues;
     readonly setValues: React.Dispatch<React.SetStateAction<WebSocketCommandCenterValues>>;

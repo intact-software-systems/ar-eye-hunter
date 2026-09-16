@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRecipe
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type * as React from 'react';
@@ -21,9 +24,9 @@ import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-control
 import type {
     QuickRallarReceivedMessageRow,
     QuickRallarSubscriptionState,
-    QuickRallarValues
+    QuickRallarValues,
+    UseQuickRallarTestControllerInput
 } from './quick-rallar-contracts.ts';
-import type { UseQuickRallarTestControllerInput } from './use-quick-rallar-test-controller.ts';
 
 export namespace QuickRallarTestActions {
     export interface Input extends UseQuickRallarTestControllerInput {

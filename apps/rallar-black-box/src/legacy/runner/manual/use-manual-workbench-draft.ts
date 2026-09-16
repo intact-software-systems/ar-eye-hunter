@@ -13,7 +13,7 @@ import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import { manualValuesFromState } from './manual-workbench-defaults.ts';
 
-import type { ManualRallarWorkbenchOptions } from './use-manual-rallar-workbench.ts';
+import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 export function useManualWorkbenchDraft(options: ManualRallarWorkbenchOptions) {
     const { state, authSession } = options;
     const defaultDraft = useManualDefaultDraft(options);

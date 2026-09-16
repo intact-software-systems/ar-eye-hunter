@@ -1,8 +1,6 @@
+import type { UseQuickRallarTestControllerInput } from './quick-rallar-contracts.ts';
 import { QuickRallarTestView } from './QuickRallarTestView.tsx';
-import {
-    useQuickRallarTestController,
-    type UseQuickRallarTestControllerInput
-} from './use-quick-rallar-test-controller.ts';
+import { useQuickRallarTestController } from './use-quick-rallar-test-controller.ts';
 
 type QuickRallarTestPanelProps =
     & UseQuickRallarTestControllerInput

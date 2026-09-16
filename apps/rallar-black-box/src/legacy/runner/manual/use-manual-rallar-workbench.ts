@@ -1,29 +1,11 @@
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { useEffect, useState } from 'react';
-import {
-    type ManualActionHistoryEntry
-} from '../../../manual-workbench.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ManualActionHistoryEntry } from '../../../manual-workbench.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
+import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 import { ManualWorkbenchActions } from './manual-workbench-actions.ts';
 import { useManualWorkbenchDraft } from './use-manual-workbench-draft.ts';
 import { useManualWorkbenchRecipes } from './use-manual-workbench-recipes.ts';
-export interface ManualRallarWorkbenchOptions {
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    globalValuesEdited?: boolean;
-    onSelectCommand(commandId: string): void;
-    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
-        key: K,
-        value: CommandCenterGlobalValues[K]
-    ): void;
-}
 
 export function useManualRallarWorkbench(options: ManualRallarWorkbenchOptions) {
     const draft = useManualWorkbenchDraft(options);

@@ -1,5 +1,5 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { copyTextToClipboard } from '../../../copy-text-to-clipboard.ts';
 import {
     buildManualWorkbenchCommands,
@@ -16,7 +16,7 @@ import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { actionLabel } from './manual-workbench-defaults.ts';
 
 import type * as React from 'react';
-import type { ManualRallarWorkbenchOptions } from './use-manual-rallar-workbench.ts';
+import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
 export namespace ManualWorkbenchActions {
     export interface Input extends ManualRallarWorkbenchOptions {
         readonly values: ManualWorkbenchValues;

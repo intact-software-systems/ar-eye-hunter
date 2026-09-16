@@ -16,11 +16,11 @@ import { act, createElement, StrictMode, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DirectRallarFacade } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
-import type { QuickRallarTestViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-contracts.ts';
-import {
-    useQuickRallarTestController,
-    type UseQuickRallarTestControllerInput
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts';
+import type {
+    QuickRallarTestViewModel,
+    UseQuickRallarTestControllerInput
+} from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-contracts.ts';
+import { useQuickRallarTestController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts';
 import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts';
 import type { WebSocketCommandCenterViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-view-contracts.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';

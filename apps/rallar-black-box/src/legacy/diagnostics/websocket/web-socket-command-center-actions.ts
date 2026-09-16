@@ -27,8 +27,8 @@ import type { AuthCommandCenterTicket } from '../shared/auth-command-center-tick
 import type { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import { observeRawWebSocket, type WebSocketRecordedEvent } from './observe-raw-web-socket.ts';
 import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
-import type { UseWebSocketCommandCenterControllerInput } from './use-websocket-command-center-controller.ts';
 import type {
+    UseWebSocketCommandCenterControllerInput,
     WebSocketCommandCenterValues,
     WebSocketDiagnostic,
     WebSocketRoutePreview,
