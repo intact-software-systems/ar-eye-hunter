@@ -1,5 +1,4 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -27,10 +26,8 @@ export interface UseRoomsClientsControllerInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     /** Absent until the browser signs in. */
     readonly authSession?: AuthSession;
-    /** Absent when the panel renders outside the command-center shell. */
-    readonly globalValues?: CommandCenterGlobalValues;
-    /** Absent when the panel cannot change the shared command-center context. */
-    onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(key: K, value: CommandCenterGlobalValues[K]): void;
+    readonly globalValues: CommandCenterGlobalValues;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(key: K, value: CommandCenterGlobalValues[K]): void;
 }
 
 export interface RoomsClientsControllerModel
@@ -61,7 +58,6 @@ export function useRoomsClientsController(input: UseRoomsClientsControllerInput)
         ...draft,
         ...controls,
         authSession: input.authSession,
-        globalValues: input.globalValues,
         sendRequest: (request) => sendRallarServerRestRequest({ request, fetch }),
         nowMs: Date.now
     });
@@ -80,22 +76,20 @@ export function useRoomsClientsController(input: UseRoomsClientsControllerInput)
 }
 
 function useRoomsClientsDraft(input: UseRoomsClientsControllerInput): RoomsClientsDraftModel {
-    const defaults = useRoomsClientsDefaults(input);
-    const [apiBaseUrl, setApiBaseUrl] = useState(defaults.apiBaseUrl);
-    const [variables, setVariables] = useState<RallarServerWorkbenchVariables>(defaults.variables);
+    const globalApiBaseUrl = input.globalValues.apiBaseUrl;
+    const defaultVariables = useRoomsClientsDefaultVariables(input);
+    const [apiBaseUrl, setApiBaseUrl] = useState(globalApiBaseUrl);
+    const [variables, setVariables] = useState<RallarServerWorkbenchVariables>(defaultVariables);
     const [timeoutMs, setTimeoutMs] = useState(5_000);
     const [onlyGroupsWithMembers, setOnlyGroupsWithMembers] = useState(false);
     const [onlyOnlineClients, setOnlyOnlineClients] = useState(false);
     const [groupSort, setGroupSort] = useState<GroupSortId>('active-desc');
     const [clientSort, setClientSort] = useState<ClientSortId>('online-active-desc');
     const [expectedOtherClient, setExpectedOtherClient] = useState('bob');
-    useEffect(
-        () => setApiBaseUrl(defaults.apiBaseUrl),
-        [input.bootstrap.apiBaseUrl, defaults.configApiBaseUrl, input.globalValues?.apiBaseUrl]
-    );
+    useEffect(() => setApiBaseUrl(globalApiBaseUrl), [globalApiBaseUrl]);
     useEffect(() => {
-        setVariables((current) => toSynchronizedVariables(current, defaults.variables, Boolean(input.globalValues)));
-    }, [defaults.variables, input.globalValues]);
+        setVariables((current) => toSynchronizedVariables(current, defaultVariables));
+    }, [defaultVariables]);
     return {
         apiBaseUrl,
         setApiBaseUrl,
@@ -116,59 +110,31 @@ function useRoomsClientsDraft(input: UseRoomsClientsControllerInput): RoomsClien
     };
 }
 
-interface RoomsClientsDefaults {
-    readonly apiBaseUrl: string;
-    /** A change to the configured base URL re-applies the resolved one, even when a global base URL wins. */
-    readonly configApiBaseUrl: string | undefined;
-    readonly variables: RallarServerWorkbenchVariables;
-}
-
-function useRoomsClientsDefaults(
-    { state, bootstrap, authSession, globalValues }: UseRoomsClientsControllerInput
-): RoomsClientsDefaults {
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const variables = useMemo(
+function useRoomsClientsDefaultVariables(
+    { authSession, globalValues }: UseRoomsClientsControllerInput
+): RallarServerWorkbenchVariables {
+    return useMemo(
         () =>
             toRallarServerWorkbenchVariables({
-                hints: toRoomsClientsVariableHints({ state, bootstrap, authSession, globalValues }, config),
+                hints: {
+                    applicationId: globalValues.applicationId,
+                    workspaceId: globalValues.workspaceId,
+                    principalId: globalValues.clientId,
+                    sessionId: globalValues.sessionId,
+                    groupId: globalValues.roomId,
+                    username: authSession?.username ?? globalValues.clientId
+                },
                 createOpaqueId: () => crypto.randomUUID()
             }),
         [
-            authSession?.clientId,
-            authSession?.sessionId,
             authSession?.username,
-            bootstrap.actor,
-            bootstrap.roomId,
-            bootstrap.sessionId,
-            config?.actor,
-            config?.roomId,
-            config?.sessionId,
-            globalValues?.applicationId,
-            globalValues?.clientId,
-            globalValues?.roomId,
-            globalValues?.sessionId,
-            globalValues?.workspaceId
+            globalValues.applicationId,
+            globalValues.clientId,
+            globalValues.roomId,
+            globalValues.sessionId,
+            globalValues.workspaceId
         ]
     );
-    return {
-        apiBaseUrl: globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        configApiBaseUrl: config?.apiBaseUrl,
-        variables
-    };
-}
-
-function toRoomsClientsVariableHints(
-    { bootstrap, authSession, globalValues }: UseRoomsClientsControllerInput,
-    config: ReturnType<typeof selectRallarBlackBoxCurrentConfig>
-): Partial<RallarServerWorkbenchVariables> {
-    return {
-        applicationId: globalValues?.applicationId,
-        workspaceId: globalValues?.workspaceId,
-        principalId: globalValues?.clientId ?? authSession?.clientId ?? config?.actor ?? bootstrap.actor,
-        sessionId: globalValues?.sessionId ?? authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        groupId: globalValues?.roomId ?? config?.roomId ?? bootstrap.roomId,
-        username: authSession?.username ?? globalValues?.clientId ?? config?.actor ?? bootstrap.actor
-    };
 }
 
 function useRoomsClientsControls(): RoomsClientsControls {
@@ -193,22 +159,19 @@ function useRoomsClientsControls(): RoomsClientsControls {
     };
 }
 
-/** Global values own the shared identity fields; without them an operator edit survives until it is cleared. */
+/** Global values own the shared identity fields; the opaque ids and an edited client instance id survive a global change. */
 function toSynchronizedVariables(
     current: RallarServerWorkbenchVariables,
-    defaults: RallarServerWorkbenchVariables,
-    followsGlobalValues: boolean
+    defaults: RallarServerWorkbenchVariables
 ): RallarServerWorkbenchVariables {
-    const resolve = (key: 'applicationId' | 'workspaceId' | 'principalId' | 'sessionId' | 'groupId' | 'username') =>
-        followsGlobalValues ? defaults[key] : current[key] || defaults[key];
     return {
         ...current,
-        applicationId: resolve('applicationId'),
-        workspaceId: resolve('workspaceId'),
-        principalId: resolve('principalId'),
-        sessionId: resolve('sessionId'),
-        groupId: resolve('groupId'),
-        username: resolve('username'),
+        applicationId: defaults.applicationId,
+        workspaceId: defaults.workspaceId,
+        principalId: defaults.principalId,
+        sessionId: defaults.sessionId,
+        groupId: defaults.groupId,
+        username: defaults.username,
         clientInstanceId: current.clientInstanceId || defaults.clientInstanceId
     };
 }

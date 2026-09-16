@@ -186,12 +186,32 @@ describe('rooms and clients controller preservation', () => {
         });
     });
 
-    it('keeps edited variables without global values', async () => {
-        await render({ globalValues: undefined });
-        await act(async () => view.updateVariable('groupId', 'edited-room'));
-        await render({ globalValues: undefined });
+    it('keeps edits until the global value they follow changes, and keeps an edited client instance id after a global identity change', async () => {
+        await render();
+        await act(async () => {
+            view.setApiBaseUrl('http://edited.example');
+            view.updateVariable('groupId', 'edited-room');
+            view.updateVariable('clientInstanceId', 'edited-instance');
+        });
+        await render();
+        const rerendered = { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId, clientInstanceId: view.variables.clientInstanceId };
+        await render({ globalValues: { ...globalValues, apiBaseUrl: 'http://other.example' } });
+        const afterBaseUrl = { apiBaseUrl: view.apiBaseUrl, groupId: view.variables.groupId };
+        await render({ globalValues: { ...globalValues, apiBaseUrl: 'http://other.example', sessionId: 'session-b' } });
 
-        expect(view.variables.groupId).toBe('edited-room');
+        expect({
+            rerendered,
+            afterBaseUrl,
+            afterIdentity: {
+                groupId: view.variables.groupId,
+                sessionId: view.variables.sessionId,
+                clientInstanceId: view.variables.clientInstanceId
+            }
+        }).toEqual({
+            rerendered: { apiBaseUrl: 'http://edited.example', groupId: 'edited-room', clientInstanceId: 'edited-instance' },
+            afterBaseUrl: { apiBaseUrl: 'http://other.example', groupId: 'edited-room' },
+            afterIdentity: { groupId: 'room-a', sessionId: 'session-b', clientInstanceId: 'edited-instance' }
+        });
     });
 
     it('runs a preset action as an authenticated state request and promotes a created group to the global room', async () => {
@@ -468,7 +488,8 @@ describe('rooms and clients controller preservation', () => {
                 state,
                 bootstrap: resolveRallarBlackBoxBootstrapConfig('?provider=browser-rallar', {}, ''),
                 authSession,
-                globalValues
+                globalValues,
+                onGlobalValueChange: (key, value) => globalChanges.push(`${key}=${String(value)}`)
             }))
         );
         const feedback = () => container.querySelector('[aria-live="polite"]')?.textContent ?? '';

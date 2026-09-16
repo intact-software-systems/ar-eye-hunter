@@ -39,9 +39,8 @@ export namespace RoomsClientsActions {
     export interface Input {
         readonly bootstrap: RallarBlackBoxBootstrapConfig;
         readonly authSession: AuthSession | undefined;
-        readonly globalValues: CommandCenterGlobalValues | undefined;
-        /** Absent when the panel cannot change the shared command-center context. */
-        onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
+        readonly globalValues: CommandCenterGlobalValues;
+        onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
             key: K,
             value: CommandCenterGlobalValues[K]
         ): void;
@@ -441,7 +440,7 @@ export class RoomsClientsActions implements RoomsClientsOperations {
     private promoteGroupToGlobal(body: RoomsClientsStateBodies['groupsBody']): void {
         const { globalValues, onGlobalValueChange, variables } = this.input;
         const groupId = findStringDeep(body, ['groupId', 'roomId']) ?? variables.groupId.trim();
-        if (groupId && onGlobalValueChange && globalValues?.roomId !== groupId) {
+        if (groupId && globalValues.roomId !== groupId) {
             onGlobalValueChange('roomId', groupId);
         }
     }

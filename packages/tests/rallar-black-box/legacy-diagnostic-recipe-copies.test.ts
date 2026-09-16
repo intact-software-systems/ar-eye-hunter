@@ -41,7 +41,7 @@ function RtcRealtimeHarness(props: { globalValues?: typeof input.globalValues; c
     return null;
 }
 function RoomsClientsHarness(props: { capture(view: RoomsClientsControllerModel): void; }) {
-    const view = useRoomsClientsController(input);
+    const view = useRoomsClientsController({ ...input, onGlobalValueChange: () => {} });
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
 }
