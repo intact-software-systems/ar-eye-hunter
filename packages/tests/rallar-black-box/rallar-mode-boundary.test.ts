@@ -468,18 +468,6 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(directPanels).not.toContain('createSpaBrowserRallarRuntime');
     });
 
-    it('uses the shared browser Rallar facade for direct WebSocket and RTC actions', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
-
-        expect(websocketPanel).toContain('runDirectRallarWsSend');
-        expect(websocketPanel).toContain('runDirectRallarWsSubscribe');
-        expect(websocketPanel).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('facade.start');
-    });
-
     it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
         const source = appSource();
         const rtcRealtimePanel = rtcRealtimeOwnerSource(source);

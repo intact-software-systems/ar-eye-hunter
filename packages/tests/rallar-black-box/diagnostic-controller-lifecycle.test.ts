@@ -21,6 +21,10 @@ import type {
     UseQuickRallarTestControllerInput
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-contracts.ts';
 import { useQuickRallarTestController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/use-quick-rallar-test-controller.ts';
+import {
+    useRtcDiagnosticsController,
+    type RtcDiagnosticsControllerModel
+} from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc/use-rtc-diagnostics-controller.ts';
 import { useWebSocketCommandCenterController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts';
 import type { WebSocketCommandCenterViewModel } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-view-contracts.ts';
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
@@ -73,6 +77,11 @@ function QuickHarness(props: { input: UseQuickRallarTestControllerInput; capture
 }
 function WebSocketHarness(props: { input: UseQuickRallarTestControllerInput; capture(view: WebSocketCommandCenterViewModel): void; }) {
     const view = useWebSocketCommandCenterController(props.input);
+    useLayoutEffect(() => props.capture(view), [view, props]);
+    return null;
+}
+function RtcDiagnosticsHarness(props: { capture(view: RtcDiagnosticsControllerModel): void; }) {
+    const view = useRtcDiagnosticsController({ ...input, busy: false, onSelectCommand: () => {} });
     useLayoutEffect(() => props.capture(view), [view, props]);
     return null;
 }
@@ -150,6 +159,66 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         vi.useRealTimers();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
+    });
+
+    it('sends and subscribes WebSocket command-center traffic through the shared browser Rallar facade', async () => {
+        const sent: Array<Readonly<{ roomId: string | undefined; typeId: string; }>> = [];
+        facade.messages.ws.send = async (message) => {
+            sent.push({ roomId: message.roomId, typeId: message.typeId });
+            return createMessageDelivery('ws', undefined).handle;
+        };
+        await act(async () =>
+            root.render(createElement(WebSocketHarness, {
+                input,
+                capture: (view) => {
+                    websocket = view;
+                }
+            }))
+        );
+        await act(async () => websocket.subscribeWs());
+        await act(async () => websocket.send());
+        expect({ localError: websocket.localError, registeredListeners: listeners.size, sent }).toEqual({
+            localError: undefined,
+            registeredListeners: 1,
+            sent: [{ roomId: 'room-a', typeId: websocket.values.typeId }]
+        });
+    });
+
+    it('connects RTC diagnostics through the shared browser Rallar facade', async () => {
+        const starts: Array<Readonly<{ connect?: boolean; }>> = [];
+        const rtcFacade: RtcDiagnosticsTestFacade = {
+            ...facade,
+            start: async (options) => {
+                starts.push({ connect: options?.connect });
+                return { session: authSession, connected: true };
+            },
+            disconnect: async () => {},
+            rtc: {
+                status: () => ({ laneId: 'default', knownPeerIds: [], activePeerIds: [], peerIdsWithNoReconnectableLanes: [], readyPeerIds: [], peers: [] })
+            },
+            realtime: { health: () => ({}) }
+        };
+        loadFacade.mockResolvedValue(rtcFacade);
+        let rtc: RtcDiagnosticsControllerModel | undefined;
+        await act(async () =>
+            root.render(createElement(RtcDiagnosticsHarness, {
+                capture: (view) => {
+                    rtc = view;
+                }
+            }))
+        );
+        await act(async () => rtc?.runAction('Connect', 'connect'));
+        expect({
+            localError: rtc?.localError,
+            starts,
+            joins,
+            topics: runtimeEvents.map((event) => event.topic)
+        }).toEqual({
+            localError: undefined,
+            starts: [{ connect: true }],
+            joins: ['room-a'],
+            topics: ['rallar.direct.rtc_diagnostics.connect.completed']
+        });
     });
 
     it('copies a canonical v1 runner recipe through the public quick-test action', async () => {
@@ -641,6 +710,11 @@ describe('diagnostic controller action and lifecycle preservation', () => {
         expect(socket.closed).toEqual([[1000, 'rallar-black-box auth cleanup']]);
     });
 });
+
+interface RtcDiagnosticsTestFacade extends DirectRallarFacade {
+    disconnect(): Promise<void>;
+    readonly realtime: { health(): Readonly<Record<string, never>>; };
+}
 
 class DiagnosticSocket extends EventTarget {
     static readonly CLOSING = 2;
