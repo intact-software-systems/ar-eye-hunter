@@ -1,6 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession } from '@shared/api/auth.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import type * as React from 'react';
 import { authenticateRallarBlackBox, authErrorMessage, bootstrapPatchFromAuthSession } from '../../../auth-flow.ts';
 import type {
