@@ -83,7 +83,7 @@ moved or changed test.
       "id": "api-v1-medium-scale-routing",
       "domain": "API-v1 medium-scale recipe routing",
       "owner": "Rallar server maintainers",
-      "summary": "Each group poll targets the API node whose clustered convergence it proves. Executable assertion: “names every group poll for the API node that executes it”.",
+      "summary": "Each group poll targets the API node whose clustered convergence it proves. Executable assertion: \u201cnames every group poll for the API node that executes it\u201d.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts#names every group poll for the API node that executes it",
       "coverageRelation": "The recipe semantics suite executes the clustered profile and verifies tertiary service requirements; this fixture read ties each named poll to the API node whose convergence it proves."
     },
@@ -91,7 +91,7 @@ moved or changed test.
       "id": "api-v1-recipe-fixture-interface",
       "domain": "API-v1 recipe fixture loading",
       "owner": "Rallar server maintainers",
-      "summary": "Shared recipe tests load executable YAML fixtures through one repository-root-aware interface. Executable assertion: “defines a no-browser three-server topology convergence recipe”.",
+      "summary": "Shared recipe tests load executable YAML fixtures through one repository-root-aware interface. Executable assertion: \u201cdefines a no-browser three-server topology convergence recipe\u201d.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe",
       "coverageRelation": "The three-server recipe suite executes parsed YAML through the shared fixture loader; these reads are the repository-root and fixture-text inputs to that public test interface."
     },
@@ -99,7 +99,7 @@ moved or changed test.
       "id": "api-v1-runner-plan-interface",
       "domain": "API-v1 runner plan interface",
       "owner": "Rallar server maintainers",
-      "summary": "Managed Postgres commands expose three API nodes and select complete recipe plans without hidden side effects. Executable assertion: “starts three API servers for every managed Postgres cluster command”.",
+      "summary": "Managed Postgres commands expose three API nodes and select complete recipe plans without hidden side effects. Executable assertion: \u201cstarts three API servers for every managed Postgres cluster command\u201d.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts#starts three API servers for every managed Postgres cluster command",
       "coverageRelation": "The runner-plan suite executes managed Postgres planning and asserts all three server processes; this manifest read supplies the actual package command selected by that plan."
     },
@@ -107,7 +107,7 @@ moved or changed test.
       "id": "black-box-schema-public-interface--keeps-schema-compatibility-guide-json-examples-validating",
       "domain": "Shared black-box schema interface",
       "owner": "Shared Test maintainers",
-      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: “keeps schema compatibility guide JSON examples validating”.",
+      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: \u201ckeeps schema compatibility guide JSON examples validating\u201d.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#keeps schema compatibility guide JSON examples validating",
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
@@ -115,7 +115,7 @@ moved or changed test.
       "id": "black-box-schema-public-interface--keeps-the-app-local-rtc-example-self-contained-for-headless-brow",
       "domain": "Shared black-box schema interface",
       "owner": "Shared Test maintainers",
-      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: “keeps the app-local RTC example self-contained for headless browser agents”.",
+      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: \u201ckeeps the app-local RTC example self-contained for headless browser agents\u201d.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#keeps the app-local RTC example self-contained for headless browser agents",
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
@@ -123,7 +123,7 @@ moved or changed test.
       "id": "black-box-schema-public-interface--validates-recipe-fixtures-examples-flow-exports-manual-snippets-",
       "domain": "Shared black-box schema interface",
       "owner": "Shared Test maintainers",
-      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: “validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets”.",
+      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema. Executable assertion: \u201cvalidates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets\u201d.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets",
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
@@ -131,7 +131,7 @@ moved or changed test.
       "id": "shared-web-room-formation-command-request",
       "domain": "Shared-web room formation commands",
       "owner": "Shared Web maintainers",
-      "summary": "A formation command issues exactly one lifecycle POST under one fresh request id whose body carries the reason and nothing the route's schema does not declare. Executable assertion: “plans through the bound room and accepts the receipt into the cache”.",
+      "summary": "A formation command issues exactly one lifecycle POST under one fresh request id whose body carries the reason and nothing the route's schema does not declare. Executable assertion: \u201cplans through the bound room and accepts the receipt into the cache\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#plans through the bound room and accepts the receipt into the cache",
       "coverageRelation": "The handle test executes plan through the facade and observes the HTTP port the handle owns; the request-id path and first-call body assertions are the wire contract the api-v1 lifecycle route decodes.",
       "interactionRequirement": {
@@ -146,7 +146,7 @@ moved or changed test.
       "id": "shared-web-room-formation-connect-fence",
       "domain": "Shared-web room formation connect",
       "owner": "Shared Web maintainers",
-      "summary": "A connect with no explicit layout names the cached formation epoch and the planned-slot identity in its one lifecycle POST. Executable assertion: “connects the current planned layout with the cached epoch”.",
+      "summary": "A connect with no explicit layout names the cached formation epoch and the planned-slot identity in its one lifecycle POST. Executable assertion: \u201cconnects the current planned layout with the cached epoch\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#connects the current planned layout with the cached epoch",
       "coverageRelation": "The handle test seeds the snapshot and the planned slot, executes connect through the facade, and observes the single POST on the HTTP port the handle owns; the body is the fence the server compares.",
       "interactionRequirement": {
@@ -161,7 +161,7 @@ moved or changed test.
       "id": "shared-web-room-formation-connect-read-through-order",
       "domain": "Shared-web room formation connect read-through",
       "owner": "Shared Web maintainers",
-      "summary": "A connect with no planned layout in the slot reads the group point snapshot before the topology view and spends no lifecycle request. Executable assertion: “refuses to connect locally when no planned layout exists after a read-through”.",
+      "summary": "A connect with no planned layout in the slot reads the group point snapshot before the topology view and spends no lifecycle request. Executable assertion: \u201crefuses to connect locally when no planned layout exists after a read-through\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#refuses to connect locally when no planned layout exists after a read-through",
       "coverageRelation": "The handle test executes connect against an empty planned slot and observes the ordered HTTP calls of the room refresh the handle owns; no lifecycle POST follows the two reads.",
       "interactionRequirement": {
@@ -176,7 +176,7 @@ moved or changed test.
       "id": "shared-web-room-formation-connect-lagging-snapshot-order",
       "domain": "Shared-web room formation connect read-through",
       "owner": "Shared Web maintainers",
-      "summary": "A connect whose planned slot was published past the cached snapshot reads the group point snapshot and then the topology view before its one lifecycle POST names the refreshed epoch. Executable assertion: “reads the room through before connecting when the cached snapshot lags the planned layout”.",
+      "summary": "A connect whose planned slot was published past the cached snapshot reads the group point snapshot and then the topology view before its one lifecycle POST names the refreshed epoch. Executable assertion: \u201creads the room through before connecting when the cached snapshot lags the planned layout\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/formation/create-room-formation.test.ts#reads the room through before connecting when the cached snapshot lags the planned layout",
       "coverageRelation": "The handle test seeds a snapshot behind the planned slot's causal revision, executes connect through the facade, and observes the ordered HTTP calls of the room refresh and the lifecycle port the handle owns; the fence in the POST body is the refreshed epoch.",
       "interactionRequirement": {
@@ -199,7 +199,7 @@ moved or changed test.
       "id": "control-protocol-browser-boundary",
       "domain": "Distributed monitor production ownership",
       "owner": "Shared Test maintainers",
-      "summary": "The SPA delegates distributed monitor, analysis, and verdict derivation to shared-test. Executable assertion: “keeps distributed run monitor derivation in shared-test instead of the SPA app”.",
+      "summary": "The SPA delegates distributed monitor, analysis, and verdict derivation to shared-test. Executable assertion: \u201ckeeps distributed run monitor derivation in shared-test instead of the SPA app\u201d.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app",
       "coverageRelation": "This approved package-boundary assertion inspects the SPA integration module for its canonical shared-test import and absence of three local derivations. Rendered monitor behavior cannot distinguish delegation from a behaviorally identical app-local duplicate."
     },
@@ -207,7 +207,7 @@ moved or changed test.
       "id": "control-protocol-server-import-direction",
       "domain": "Control-server protocol import direction",
       "owner": "Shared Test maintainers",
-      "summary": "The control server cannot import the SPA-owned protocol module. Executable assertion: “does not import control protocol from the SPA app into the control server”.",
+      "summary": "The control server cannot import the SPA-owned protocol module. Executable assertion: \u201cdoes not import control protocol from the SPA app into the control server\u201d.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server",
       "coverageRelation": "This approved architecture assertion enumerates the control-server source and rejects the forbidden SPA protocol import. Runtime protocol behavior cannot reveal an app-local fork or a reversed server-to-SPA dependency when both copies still behave alike."
     },
@@ -215,7 +215,7 @@ moved or changed test.
       "id": "hetzner-control-deno-runtime",
       "domain": "Hetzner control-server Deno runtime",
       "owner": "Rallar operations maintainers",
-      "summary": "Deployment cache warming and systemd startup use the control server owned Deno configuration. Executable assertion: “uses the control-server Deno config for Hetzner cache warming and systemd start”.",
+      "summary": "Deployment cache warming and systemd startup use the control server owned Deno configuration. Executable assertion: \u201cuses the control-server Deno config for Hetzner cache warming and systemd start\u201d.",
       "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start",
       "coverageRelation": "The named deployment test executes the SPA environment script and verifies that cache warming and service startup resolve the control server configuration actually shipped to Hetzner."
     },
@@ -223,7 +223,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--keeps-playwright-packages-aligned-past-the-node-24-browser-insta",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “keeps Playwright packages aligned past the Node 24 browser-install hang regression”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201ckeeps Playwright packages aligned past the Node 24 browser-install hang regression\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -231,7 +231,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--materializes-a-deterministic-isolated-group-throughout-executabl",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “materializes a deterministic isolated group throughout executable manifest data”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201cmaterializes a deterministic isolated group throughout executable manifest data\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -239,7 +239,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--persists-control-server-snapshots-with-an-atomic-temp-file-renam",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “persists control-server snapshots with an atomic temp-file rename”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201cpersists control-server snapshots with an atomic temp-file rename\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -247,7 +247,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--prepares-the-supported-commit-once-before-running-the-serial-man",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “prepares the supported commit once before running the serial manifest matrix”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201cprepares the supported commit once before running the serial manifest matrix\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -255,7 +255,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--preserves-a-parallel-label-that-happens-to-equal-the-source-room",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “preserves a parallel label that happens to equal the source room”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201cpreserves a parallel label that happens to equal the source room\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -263,7 +263,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--rejects-an-executable-command-scoped-outside-the-source-manifest",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “rejects an executable command scoped outside the source manifest group”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201crejects an executable command scoped outside the source manifest group\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -271,7 +271,7 @@ moved or changed test.
       "id": "hetzner-distributed-workflow--repairs-known-deno-lockfile-drift-before-the-controlled-rollout-",
       "domain": "Supported Hetzner distributed workflow",
       "owner": "Rallar operations maintainers",
-      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: “repairs known Deno lockfile drift before the controlled rollout dirty checkout guard”.",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic. Executable assertion: \u201crepairs known Deno lockfile drift before the controlled rollout dirty checkout guard\u201d.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard",
       "coverageRelation": "The named operations test executes the checked-in workflow or controller helper and asserts its externally visible file, command, or manifest result; the read is evidence produced or consumed by that exact scenario."
     },
@@ -279,7 +279,7 @@ moved or changed test.
       "id": "package-dependency-direction-import-map",
       "domain": "Package dependency direction",
       "owner": "Rallar platform maintainers",
-      "summary": "The api-v1 Deno import map advertises no browser or test-only package to application source. Executable assertion: “keeps the api-v1 Deno import map free of browser and test-only packages”.",
+      "summary": "The api-v1 Deno import map advertises no browser or test-only package to application source. Executable assertion: \u201ckeeps the api-v1 Deno import map free of browser and test-only packages\u201d.",
       "semanticCoverage": "packages/tests/repo/package-dependency-direction.test.ts#keeps the api-v1 Deno import map free of browser and test-only packages",
       "coverageRelation": "The import-direction suite executes the layering rule over every package source file; this config read covers the one surface that grants resolution before any import exists."
     },
@@ -287,7 +287,7 @@ moved or changed test.
       "id": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
       "domain": "Supported recipe matrix",
       "owner": "Shared Test maintainers",
-      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: “advertises the API-v1 profile in recipe-matrix CLI usage”.",
+      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: \u201cadvertises the API-v1 profile in recipe-matrix CLI usage\u201d.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage",
       "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
     },
@@ -295,7 +295,7 @@ moved or changed test.
       "id": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
       "domain": "Supported recipe matrix",
       "owner": "Shared Test maintainers",
-      "summary": "Every API-v1 recipe declares whether it is a Tier 1 public-interface test or a Tier 2 durability proof that reads SQL evidence. Executable assertion: “labels every api-v1 entry with an honest evidence tier”.",
+      "summary": "Every API-v1 recipe declares whether it is a Tier 1 public-interface test or a Tier 2 durability proof that reads SQL evidence. Executable assertion: \u201clabels every api-v1 entry with an honest evidence tier\u201d.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier",
       "coverageRelation": "The named matrix test compares each published tier with the concrete SQL-evidence operator used by its shipped recipe. Executing the recipe can prove its assertions but cannot reveal whether the evidence came from the public API or the database, so the static operator classification is part of the operator-facing catalog contract."
     },
@@ -303,7 +303,7 @@ moved or changed test.
       "id": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
       "domain": "Supported recipe matrix",
       "owner": "Shared Test maintainers",
-      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: “points every entry at a catalog recipe file”.",
+      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility. Executable assertion: \u201cpoints every entry at a catalog recipe file\u201d.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file",
       "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
     },
@@ -311,7 +311,7 @@ moved or changed test.
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Every governed Deno configuration inherits the canonical TypeScript formatter settings. Executable assertion: “keeps TypeScript formatter settings aligned with the canonical baseline”.",
+      "summary": "Every governed Deno configuration inherits the canonical TypeScript formatter settings. Executable assertion: \u201ckeeps TypeScript formatter settings aligned with the canonical baseline\u201d.",
       "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline",
       "coverageRelation": "The assertion reads each governed Deno config and compares its formatter object with the canonical baseline. Formatting one sample file cannot prove that every repository formatter entrypoint uses the same settings."
     },
@@ -319,7 +319,7 @@ moved or changed test.
       "id": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
       "domain": "Shared RTC benchmark package navigation",
       "owner": "Shared RTC benchmark maintainers",
-      "summary": "The private benchmark package publishes one durable navigation row per executable, names exact command, setup, measured-operation, and timing facts, and participates in root test discovery. Executable assertion: “documents each executable exactly once and discovers package tests”.",
+      "summary": "The private benchmark package publishes one durable navigation row per executable, names exact command, setup, measured-operation, and timing facts, and participates in root test discovery. Executable assertion: \u201cdocuments each executable exactly once and discovers package tests\u201d.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests",
       "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README, locks the exact baseline grammar and code-derived setup, measured-operation, and timing claims, and independently verifies root Vitest discovery for the package test tree."
     },
@@ -327,7 +327,7 @@ moved or changed test.
       "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
       "domain": "Shared RTC benchmark diagnostic navigation",
       "owner": "Shared RTC benchmark maintainers",
-      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package Deno checking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and checked by Deno”.",
+      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package Deno checking. Executable assertion: \u201ckeeps diagnostics outside accepted baseline catalog and checked by Deno\u201d.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno",
       "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
     },
@@ -335,7 +335,7 @@ moved or changed test.
       "id": "ar-browser-ai-explicit-provider-selection",
       "domain": "AR Eye Hunter browser AI provider selection",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "WebLLM failures stay visible and never silently switch an explicitly selected provider mode. Executable assertion: “keeps WebLLM generation failures visible without switching providers”.",
+      "summary": "WebLLM failures stay visible and never silently switch an explicitly selected provider mode. Executable assertion: \u201ckeeps WebLLM generation failures visible without switching providers\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-browser-ai-provider.test.ts#keeps WebLLM generation failures visible without switching providers",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -350,7 +350,7 @@ moved or changed test.
       "id": "ar-webllm-engine-lifecycle",
       "domain": "AR Eye Hunter WebLLM engine lifecycle",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "One lazily loaded WebLLM engine serves every request while each request reaches completion. Executable assertion: “loads one engine, requests JSON mode, and parses JSON results”.",
+      "summary": "One lazily loaded WebLLM engine serves every request while each request reaches completion. Executable assertion: \u201cloads one engine, requests JSON mode, and parses JSON results\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/browser-ai/arena-webllm-provider.test.ts#loads one engine, requests JSON mode, and parses JSON results",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -365,7 +365,7 @@ moved or changed test.
       "id": "ar-arena-reliable-snapshot-coalescing",
       "domain": "AR Eye Hunter reliable snapshot coalescing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Rapid reliable snapshots publish the first revision immediately and the latest once after the coalescing interval. Executable assertion: “coalesces rapid reliable director snapshots to the latest revision”.",
+      "summary": "Rapid reliable snapshots publish the first revision immediately and the latest once after the coalescing interval. Executable assertion: \u201ccoalesces rapid reliable director snapshots to the latest revision\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#coalesces rapid reliable director snapshots to the latest revision",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -380,7 +380,7 @@ moved or changed test.
       "id": "ar-arena-pending-snapshot-generation-cancellation",
       "domain": "AR Eye Hunter network-generation snapshot fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "A network-generation reset cancels a queued reliable snapshot before transport. Executable assertion: “cancels pending reliable director snapshots when the network generation resets”.",
+      "summary": "A network-generation reset cancels a queued reliable snapshot before transport. Executable assertion: \u201ccancels pending reliable director snapshots when the network generation resets\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#cancels pending reliable director snapshots when the network generation resets",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -395,7 +395,7 @@ moved or changed test.
       "id": "ar-arena-expired-auth-transition",
       "domain": "AR Eye Hunter expired-auth lifecycle",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "An auth expiry clears arena state without issuing a manual logout request. Executable assertion: “clears arena state when auth expires outside manual logout”.",
+      "summary": "An auth expiry clears arena state without issuing a manual logout request. Executable assertion: \u201cclears arena state when auth expires outside manual logout\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#clears arena state when auth expires outside manual logout",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -410,7 +410,7 @@ moved or changed test.
       "id": "ar-arena-manual-logout-rejection",
       "domain": "AR Eye Hunter manual logout failure handling",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Manual logout invokes revocation once and leaves local state signed out even when revocation rejects. Executable assertion: “catches manual logout rejection and leaves the arena signed out”.",
+      "summary": "Manual logout invokes revocation once and leaves local state signed out even when revocation rejects. Executable assertion: \u201ccatches manual logout rejection and leaves the arena signed out\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#catches manual logout rejection and leaves the arena signed out",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -425,7 +425,7 @@ moved or changed test.
       "id": "ar-arena-manual-logout-network-fence",
       "domain": "AR Eye Hunter manual logout network fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Manual logout stops networking immediately while one remote revoke remains pending. Executable assertion: “disables network immediately while manual logout revoke is pending”.",
+      "summary": "Manual logout stops networking immediately while one remote revoke remains pending. Executable assertion: \u201cdisables network immediately while manual logout revoke is pending\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#disables network immediately while manual logout revoke is pending",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -440,7 +440,7 @@ moved or changed test.
       "id": "ar-arena-pending-logout-egress-fence",
       "domain": "AR Eye Hunter pending-logout egress fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Canvas callbacks captured before logout cannot publish while revocation is pending. Executable assertion: “blocks stale canvas callbacks while manual logout revoke is pending”.",
+      "summary": "Canvas callbacks captured before logout cannot publish while revocation is pending. Executable assertion: \u201cblocks stale canvas callbacks while manual logout revoke is pending\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas callbacks while manual logout revoke is pending",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -455,7 +455,7 @@ moved or changed test.
       "id": "ar-arena-signed-out-diagnostics-fence",
       "domain": "AR Eye Hunter signed-out diagnostics fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Diagnostics refresh remains local after logout. Executable assertion: “does not probe diagnostics transports after logout”.",
+      "summary": "Diagnostics refresh remains local after logout. Executable assertion: \u201cdoes not probe diagnostics transports after logout\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#does not probe diagnostics transports after logout",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -470,7 +470,7 @@ moved or changed test.
       "id": "ar-arena-signed-out-snapshot-fence",
       "domain": "AR Eye Hunter signed-out snapshot fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "A snapshot callback captured before logout cannot publish after logout. Executable assertion: “blocks stale canvas snapshot publication after logout”.",
+      "summary": "A snapshot callback captured before logout cannot publish after logout. Executable assertion: \u201cblocks stale canvas snapshot publication after logout\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas snapshot publication after logout",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -485,7 +485,7 @@ moved or changed test.
       "id": "ar-arena-signed-out-combat-fence",
       "domain": "AR Eye Hunter signed-out combat fencing",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Combat callbacks captured before logout cannot publish after logout. Executable assertion: “blocks stale canvas combat callbacks after logout”.",
+      "summary": "Combat callbacks captured before logout cannot publish after logout. Executable assertion: \u201cblocks stale canvas combat callbacks after logout\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#blocks stale canvas combat callbacks after logout",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -500,7 +500,7 @@ moved or changed test.
       "id": "ar-arena-create-and-switch-boundary",
       "domain": "AR Eye Hunter arena room switching",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Creating an arena uses atomic create-and-switch rather than create-only. Executable assertion: “creates a new arena by switching rooms and clearing stale remote players”.",
+      "summary": "Creating an arena uses atomic create-and-switch rather than create-only. Executable assertion: \u201ccreates a new arena by switching rooms and clearing stale remote players\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts#creates a new arena by switching rooms and clearing stale remote players",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -515,7 +515,7 @@ moved or changed test.
       "id": "ar-arena-rallar-game-presence-boundary",
       "domain": "AR Eye Hunter pose transport ownership",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Director poses use Rallar Game presence and never bypass it through raw realtime JSON. Executable assertion: “still publishes the local director pose through Rallar Game presence”.",
+      "summary": "Director poses use Rallar Game presence and never bypass it through raw realtime JSON. Executable assertion: \u201cstill publishes the local director pose through Rallar Game presence\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#still publishes the local director pose through Rallar Game presence",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -530,7 +530,7 @@ moved or changed test.
       "id": "ar-arena-reliable-snapshot-deduplication",
       "domain": "AR Eye Hunter reliable snapshot deduplication",
       "owner": "AR Eye Hunter maintainers",
-      "summary": "Repeated publication of one revision produces one reliable write. Executable assertion: “deduplicates reliable director snapshots by revision”.",
+      "summary": "Repeated publication of one revision produces one reliable write. Executable assertion: \u201cdeduplicates reliable director snapshots by revision\u201d.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-game-realtime.test.ts#deduplicates reliable director snapshots by revision",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -545,7 +545,7 @@ moved or changed test.
       "id": "shared-web-webllm-runtime-lifecycle",
       "domain": "Shared-web WebLLM runtime lifecycle",
       "owner": "Shared Web maintainers",
-      "summary": "One lazily loaded WebLLM runtime serves all requests while each request generates an envelope. Executable assertion: “loads one runtime and validates each generated envelope”.",
+      "summary": "One lazily loaded WebLLM runtime serves all requests while each request generates an envelope. Executable assertion: \u201cloads one runtime and validates each generated envelope\u201d.",
       "semanticCoverage": "packages/tests/shared-web/ai/webllm-rallar-ai-provider.test.ts#loads one runtime and validates each generated envelope",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -560,7 +560,7 @@ moved or changed test.
       "id": "shared-web-ticket-429-cooldown",
       "domain": "Shared-web WebSocket ticket cooldown",
       "owner": "Shared Web maintainers",
-      "summary": "A 429 suppresses another ticket request until Retry-After expires. Executable assertion: “suppresses repeated ws ticket requests after a 429 response”.",
+      "summary": "A 429 suppresses another ticket request until Retry-After expires. Executable assertion: \u201csuppresses repeated ws ticket requests after a 429 response\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#suppresses repeated ws ticket requests after a 429 response",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -575,7 +575,7 @@ moved or changed test.
       "id": "shared-web-ticket-request-id-retry",
       "domain": "Shared-web WebSocket ticket idempotent retry",
       "owner": "Shared Web maintainers",
-      "summary": "A retry after a lost response reuses caller-owned request identity. Executable assertion: “reuses a caller-owned request ID when a ws ticket response is lost”.",
+      "summary": "A retry after a lost response reuses caller-owned request identity. Executable assertion: \u201creuses a caller-owned request ID when a ws ticket response is lost\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#reuses a caller-owned request ID when a ws ticket response is lost",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -590,7 +590,7 @@ moved or changed test.
       "id": "shared-web-ticket-local-rate-limit",
       "domain": "Shared-web WebSocket ticket local rate limiting",
       "owner": "Shared Web maintainers",
-      "summary": "The local limiter suppresses a ticket storm before a second API request. Executable assertion: “locally suppresses ticket storms before hitting the API”.",
+      "summary": "The local limiter suppresses a ticket storm before a second API request. Executable assertion: \u201clocally suppresses ticket storms before hitting the API\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#locally suppresses ticket storms before hitting the API",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -605,7 +605,7 @@ moved or changed test.
       "id": "shared-web-ticket-circuit-breaker",
       "domain": "Shared-web WebSocket ticket circuit breaker",
       "owner": "Shared Web maintainers",
-      "summary": "A server failure opens the circuit and suppresses the next request before fetch. Executable assertion: “opens a local circuit after server failures and suppresses the next ticket request”.",
+      "summary": "A server failure opens the circuit and suppresses the next request before fetch. Executable assertion: \u201copens a local circuit after server failures and suppresses the next ticket request\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#opens a local circuit after server failures and suppresses the next ticket request",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -620,7 +620,7 @@ moved or changed test.
       "id": "shared-web-ticket-429-circuit-isolation",
       "domain": "Shared-web WebSocket ticket failure classification",
       "owner": "Shared Web maintainers",
-      "summary": "Server rate limiting uses cooldown without opening the failure circuit. Executable assertion: “does not trip the circuit breaker for server 429 cooldown responses”.",
+      "summary": "Server rate limiting uses cooldown without opening the failure circuit. Executable assertion: \u201cdoes not trip the circuit breaker for server 429 cooldown responses\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#does not trip the circuit breaker for server 429 cooldown responses",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -635,7 +635,7 @@ moved or changed test.
       "id": "shared-web-ticket-circuit-diagnostic-precedence",
       "domain": "Shared-web WebSocket ticket suppression precedence",
       "owner": "Shared Web maintainers",
-      "summary": "An open circuit remains the suppression reason after repeated calls. Executable assertion: “keeps circuit-open diagnostics ahead of the local rate limiter while open”.",
+      "summary": "An open circuit remains the suppression reason after repeated calls. Executable assertion: \u201ckeeps circuit-open diagnostics ahead of the local rate limiter while open\u201d.",
       "semanticCoverage": "packages/tests/shared-web/auth/websocket-ticket-http-api.test.ts#keeps circuit-open diagnostics ahead of the local rate limiter while open",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -650,7 +650,7 @@ moved or changed test.
       "id": "shared-web-create-room-failure-atomicity",
       "domain": "Shared-web create-and-switch room workflow",
       "owner": "Shared Web maintainers",
-      "summary": "Failed room creation leaves the current room and never starts leave. Executable assertion: “does not leave when create fails”.",
+      "summary": "Failed room creation leaves the current room and never starts leave. Executable assertion: \u201cdoes not leave when create fails\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/create-and-join-room.test.ts#does not leave when create fails",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -665,7 +665,7 @@ moved or changed test.
       "id": "shared-web-join-room-failure-atomicity",
       "domain": "Shared-web join room workflow",
       "owner": "Shared Web maintainers",
-      "summary": "Failed room join leaves the current room and never starts leave. Executable assertion: “does not leave when joining the next room fails”.",
+      "summary": "Failed room join leaves the current room and never starts leave. Executable assertion: \u201cdoes not leave when joining the next room fails\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#does not leave when joining the next room fails",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -680,7 +680,7 @@ moved or changed test.
       "id": "shared-web-room-reference-validation",
       "domain": "Shared-web room identity validation",
       "owner": "Shared Web maintainers",
-      "summary": "Conflicting roomId and roomRef fail before mutation. Executable assertion: “rejects mismatched roomId and roomRef before the workflow”.",
+      "summary": "Conflicting roomId and roomRef fail before mutation. Executable assertion: \u201crejects mismatched roomId and roomRef before the workflow\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/join-room.test.ts#rejects mismatched roomId and roomRef before the workflow",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -695,7 +695,7 @@ moved or changed test.
       "id": "shared-web-leave-without-current-room",
       "domain": "Shared-web leave room resolution",
       "owner": "Shared Web maintainers",
-      "summary": "Leaving without a resolvable room performs no mutation or hydration. Executable assertion: “returns undefined without a workflow when no room can be resolved”.",
+      "summary": "Leaving without a resolvable room performs no mutation or hydration. Executable assertion: \u201creturns undefined without a workflow when no room can be resolved\u201d.",
       "semanticCoverage": "packages/tests/shared-web/rooms/leave-room.test.ts#returns undefined without a workflow when no room can be resolved",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -710,7 +710,7 @@ moved or changed test.
       "id": "shared-web-delta-causal-gap-recovery",
       "domain": "Shared-web state-cache delta recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A causal gap triggers one durable floored snapshot read. Executable assertion: “pulls the floored group snapshot when a delta envelope arrives over a causal gap”.",
+      "summary": "A causal gap triggers one durable floored snapshot read. Executable assertion: \u201cpulls the floored group snapshot when a delta envelope arrives over a causal gap\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-delta-recovery.test.ts#pulls the floored group snapshot when a delta envelope arrives over a causal gap",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -725,7 +725,7 @@ moved or changed test.
       "id": "shared-web-incomparable-state-recovery",
       "domain": "Shared-web incomparable state recovery",
       "owner": "Shared Web maintainers",
-      "summary": "An incomparable tuple performs one durable reread before RTC application. Executable assertion: “recovers incomparable group tuples through a durable reread before RTC recomputation”.",
+      "summary": "An incomparable tuple performs one durable reread before RTC application. Executable assertion: \u201crecovers incomparable group tuples through a durable reread before RTC recomputation\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#recovers incomparable group tuples through a durable reread before RTC recomputation",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -740,7 +740,7 @@ moved or changed test.
       "id": "shared-web-left-session-overlay-removal",
       "domain": "Shared-web state-cache local-session departure",
       "owner": "Shared Web maintainers",
-      "summary": "A snapshot dropping the current session uses retention-aware delete, not active update. Executable assertion: “removes overlays but retains RTC connections when an active snapshot no longer includes the current session”.",
+      "summary": "A snapshot dropping the current session uses retention-aware delete, not active update. Executable assertion: \u201cremoves overlays but retains RTC connections when an active snapshot no longer includes the current session\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#removes overlays but retains RTC connections when an active snapshot no longer includes the current session",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -755,7 +755,7 @@ moved or changed test.
       "id": "shared-web-directory-only-rtc-reconciliation",
       "domain": "Shared-web directory-only RTC reconciliation",
       "owner": "Shared Web maintainers",
-      "summary": "A directory-only snapshot triggers one global RTC reconciliation without per-group mutation. Executable assertion: “reconciles RTC peers when an active directory snapshot excludes the current session”.",
+      "summary": "A directory-only snapshot triggers one global RTC reconciliation without per-group mutation. Executable assertion: \u201creconciles RTC peers when an active directory snapshot excludes the current session\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#reconciles RTC peers when an active directory snapshot excludes the current session",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -770,7 +770,7 @@ moved or changed test.
       "id": "shared-web-removed-group-cleanup",
       "domain": "Shared-web removed-group cleanup",
       "owner": "Shared Web maintainers",
-      "summary": "Removing a cached group deletes RTC tracking without reapplying it. Executable assertion: “cleans up RTC group tracking and notifies listeners when a group snapshot is removed”.",
+      "summary": "Removing a cached group deletes RTC tracking without reapplying it. Executable assertion: \u201ccleans up RTC group tracking and notifies listeners when a group snapshot is removed\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#cleans up RTC group tracking and notifies listeners when a group snapshot is removed",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -785,7 +785,7 @@ moved or changed test.
       "id": "shared-web-hydration-incomparable-recovery",
       "domain": "Shared-web initialized incomparable recovery",
       "owner": "Shared Web maintainers",
-      "summary": "Initialized lifecycle rereads and recomputes once without applying divergent input. Executable assertion: “retains durable incomparable recovery across initialise and hydrate”.",
+      "summary": "Initialized lifecycle rereads and recomputes once without applying divergent input. Executable assertion: \u201cretains durable incomparable recovery across initialise and hydrate\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#retains durable incomparable recovery across initialise and hydrate",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -800,7 +800,7 @@ moved or changed test.
       "id": "shared-web-overlay-topology-notification",
       "domain": "Shared-web overlay topology delivery",
       "owner": "Shared Web maintainers",
-      "summary": "Every topology envelope notifies RTC while causal rules own cache state. Executable assertion: “applies overlay topology websocket snapshots to the local overlay cache”.",
+      "summary": "Every topology envelope notifies RTC while causal rules own cache state. Executable assertion: \u201capplies overlay topology websocket snapshots to the local overlay cache\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-cache/browser-state-cache-lifecycle.test.ts#applies overlay topology websocket snapshots to the local overlay cache",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -815,7 +815,7 @@ moved or changed test.
       "id": "shared-web-state-delta-resulting-noop",
       "domain": "Shared-web group-state delta no-op resolution",
       "owner": "Shared Web maintainers",
-      "summary": "Equal-resulting and summary no-op deltas resolve without a durable read. Executable assertion: “resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule”.",
+      "summary": "Equal-resulting and summary no-op deltas resolve without a durable read. Executable assertion: \u201cresolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves equal-resulting and summary no-op envelopes as typed no-ops before the apply rule",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -830,7 +830,7 @@ moved or changed test.
       "id": "shared-web-state-delta-resulting-floor",
       "domain": "Shared-web group-state resulting-floor recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A dominated cache not matching the predecessor triggers one floored read. Executable assertion: “pulls at the resulting floor when the cached snapshot is dominated but not the predecessor”.",
+      "summary": "A dominated cache not matching the predecessor triggers one floored read. Executable assertion: \u201cpulls at the resulting floor when the cached snapshot is dominated but not the predecessor\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the resulting floor when the cached snapshot is dominated but not the predecessor",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -845,7 +845,7 @@ moved or changed test.
       "id": "shared-web-state-delta-out-of-order-noop",
       "domain": "Shared-web out-of-order delta handling",
       "owner": "Shared Web maintainers",
-      "summary": "A delta older than cache resolves without a durable read. Executable assertion: “resolves an out-of-order envelope after a newer snapshot as a no-op”.",
+      "summary": "A delta older than cache resolves without a durable read. Executable assertion: \u201cresolves an out-of-order envelope after a newer snapshot as a no-op\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#resolves an out-of-order envelope after a newer snapshot as a no-op",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -860,7 +860,7 @@ moved or changed test.
       "id": "shared-web-state-delta-missing-session-recovery",
       "domain": "Shared-web missing-session delta recovery",
       "owner": "Shared Web maintainers",
-      "summary": "Missing active-session material triggers one floored read. Executable assertion: “pulls at the floor when an active session record is missing from the delta and the cache”.",
+      "summary": "Missing active-session material triggers one floored read. Executable assertion: \u201cpulls at the floor when an active session record is missing from the delta and the cache\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#pulls at the floor when an active session record is missing from the delta and the cache",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -875,7 +875,7 @@ moved or changed test.
       "id": "shared-web-state-delta-conflict-recovery",
       "domain": "Shared-web revision-conflict recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A revision conflict self-heals with one floored read. Executable assertion: “counts a revision conflict from the divergence oracle and self-heals with the floored pull”.",
+      "summary": "A revision conflict self-heals with one floored read. Executable assertion: \u201ccounts a revision conflict from the divergence oracle and self-heals with the floored pull\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#counts a revision conflict from the divergence oracle and self-heals with the floored pull",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -890,7 +890,7 @@ moved or changed test.
       "id": "shared-web-state-delta-predecessor-apply",
       "domain": "Shared-web predecessor-matched delta application",
       "owner": "Shared Web maintainers",
-      "summary": "A predecessor-matched delta applies locally without a durable read. Executable assertion: “applies a delta at the cached predecessor and materializes the server-canonical snapshot”.",
+      "summary": "A predecessor-matched delta applies locally without a durable read. Executable assertion: \u201capplies a delta at the cached predecessor and materializes the server-canonical snapshot\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/group-state-delta-reconciliation.test.ts#applies a delta at the cached predecessor and materializes the server-canonical snapshot",
       "coverageRelation": "The named assertion executes this lifecycle and observes its owned side-effect port; the registered evidence directly proves the stated constraint.",
       "interactionRequirement": {
@@ -905,7 +905,7 @@ moved or changed test.
       "id": "shared-web-app-import-boundary",
       "domain": "Shared-web application import boundary",
       "owner": "Shared Web maintainers",
-      "summary": "Reusable browser modules never import application-owned code or reverse the intended package direction. Executable assertion: “keeps Relic on its runtime adapter boundary without the broad shared-web barrel”.",
+      "summary": "Reusable browser modules never import application-owned code or reverse the intended package direction. Executable assertion: \u201ckeeps Relic on its runtime adapter boundary without the broad shared-web barrel\u201d.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts#keeps Relic on its runtime adapter boundary without the broad shared-web barrel",
       "coverageRelation": "The named application-boundary test parses the consumer imports and proves that application code depends on the intended narrow package surface without reversing ownership."
     },
@@ -913,7 +913,7 @@ moved or changed test.
       "id": "shared-web-browser-bundle-boundary",
       "domain": "Shared-web browser bundle boundary",
       "owner": "Shared Web maintainers",
-      "summary": "Browser entrypoints remain free of server-only dependencies when bundled for application consumers. Executable assertion: “keeps shared-web from declaring graphology directly”.",
+      "summary": "Browser entrypoints remain free of server-only dependencies when bundled for application consumers. Executable assertion: \u201ckeeps shared-web from declaring graphology directly\u201d.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly",
       "coverageRelation": "The browser bundle suite builds the narrow entrypoints and checks their dependency graph and size; this manifest read establishes the package dependency declaration used by that executable bundle check."
     },
@@ -921,7 +921,7 @@ moved or changed test.
       "id": "source-analysis-test-interface",
       "domain": "Repository source-analysis test interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Test suites parse tracked TypeScript through one deterministic, path-aware analysis interface. Executable assertion: “normalizes TypeScript and TSX module syntax without exposing parser nodes”.",
+      "summary": "Test suites parse tracked TypeScript through one deterministic, path-aware analysis interface. Executable assertion: \u201cnormalizes TypeScript and TSX module syntax without exposing parser nodes\u201d.",
       "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes",
       "coverageRelation": "The helper unit suite executes parsing, normalization, resolution, graph traversal, and path-aware failures; this AST access is the implementation input for that repository test interface."
     },
@@ -929,7 +929,7 @@ moved or changed test.
       "id": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
       "domain": "Clustered state-read convergence recipe",
       "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “defines run-scoped identifiers as interpolated string values”.",
+      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: \u201cdefines run-scoped identifiers as interpolated string values\u201d.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values",
       "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
     },
@@ -937,7 +937,7 @@ moved or changed test.
       "id": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
       "domain": "Clustered state-read convergence recipe",
       "owner": "Rallar server maintainers",
-      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: “proves tertiary scalar and causal floors with revision and source headers”.",
+      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities. Executable assertion: \u201cproves tertiary scalar and causal floors with revision and source headers\u201d.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers",
       "coverageRelation": "The named recipe test executes the parsed convergence fixture and asserts the run-scoped identity or tertiary causal evidence represented by this read."
     },
@@ -945,7 +945,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--executes-the-topology-exact-revision-assertions-before-every-cle",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “executes the topology exact-revision assertions before every cleanup step”.",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: \u201cexecutes the topology exact-revision assertions before every cleanup step\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
@@ -953,7 +953,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “forbids literal SET values from claiming durable state-write evidence”.",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: \u201cforbids literal SET values from claiming durable state-write evidence\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
@@ -961,7 +961,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--isolates-crdt-appinbox-evidence-by-command-prefixes",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "CRDT AppInbox evidence selects only the commands owned by its recipe even when another recipe uses a containing update ID. Executable assertion: “isolates CRDT AppInbox evidence by recipe command prefixes”.",
+      "summary": "CRDT AppInbox evidence selects only the commands owned by its recipe even when another recipe uses a containing update ID. Executable assertion: \u201cisolates CRDT AppInbox evidence by recipe command prefixes\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#isolates CRDT AppInbox evidence by recipe command prefixes",
       "coverageRelation": "The named recipe test reads the executable CRDT fixture and verifies that its broad durable selector is narrowed by the two exact command-ID prefixes owned by that recipe."
     },
@@ -969,7 +969,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “observes committed socket authorization before clustered WS effects”.",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: \u201cobserves committed socket authorization before clustered WS effects\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
@@ -977,7 +977,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--selects-auth-ticket-races-by-the-redacted-secret-and-exact-durab",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “selects auth ticket races by the redacted secret and exact durable digest”.",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: \u201cselects auth ticket races by the redacted secret and exact durable digest\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
@@ -993,7 +993,7 @@ moved or changed test.
       "id": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
       "domain": "State-write recipe evidence",
       "owner": "Shared Test maintainers",
-      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “uses one bounded execution identity for the command and its evidence”.",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: \u201cuses one bounded execution identity for the command and its evidence\u201d.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
     },
@@ -1001,7 +1001,7 @@ moved or changed test.
       "id": "tests-project-module-alias-parity",
       "domain": "Tests-project module alias declaration parity",
       "owner": "Rallar repository maintainers",
-      "summary": "The tests project declares every module alias the root project and the Vitest runner declare. Executable assertion: “declares every module alias the root project and the vitest runner declare”.",
+      "summary": "The tests project declares every module alias the root project and the Vitest runner declare. Executable assertion: \u201cdeclares every module alias the root project and the vitest runner declare\u201d.",
       "semanticCoverage": "packages/tests/repo/tests-typecheck-gate.test.ts#declares every module alias the root project and the vitest runner declare",
       "coverageRelation": "The same assertion compares the three alias declaration sites against one another; this read supplies the tests-project side of that comparison, which cannot be observed by resolving a module at runtime."
     },
@@ -1009,7 +1009,7 @@ moved or changed test.
       "id": "tests-typecheck-debt-ledger-shape",
       "domain": "Tests typecheck debt ratchet",
       "owner": "Rallar repository maintainers",
-      "summary": "The recorded typecheck debt stays well-formed so the allowlist can only shrink. Executable assertion: “keeps the recorded debt well-formed so the allowlist can only shrink”.",
+      "summary": "The recorded typecheck debt stays well-formed so the allowlist can only shrink. Executable assertion: \u201ckeeps the recorded debt well-formed so the allowlist can only shrink\u201d.",
       "semanticCoverage": "packages/tests/repo/tests-typecheck-gate.test.ts#keeps the recorded debt well-formed so the allowlist can only shrink",
       "coverageRelation": "The assertion recomputes the ledger totals from its own entries and rejects non-positive counts; the ledger file is the only place that state exists, so the read is the assertion's subject rather than an incidental input."
     },
@@ -1017,7 +1017,7 @@ moved or changed test.
       "id": "typescript-seven-release-boundary",
       "domain": "TypeScript 7 release boundary",
       "owner": "Rallar repository maintainers",
-      "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications. Executable assertion: “keeps TypeScript and Deno checking as separate release gates”.",
+      "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications. Executable assertion: \u201ckeeps TypeScript and Deno checking as separate release gates\u201d.",
       "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates",
       "coverageRelation": "The release-boundary test executes the manifest/workflow inspection that keeps npm TypeScript checking separate from Deno checking; this workflow read is its exact release interface."
     },
@@ -1025,7 +1025,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-conditional-private-owner-call-in-the-exported-family-",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a conditional private-owner call in the exported family registrar”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a conditional private-owner call in the exported family registrar\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a conditional private-owner call in the exported family registrar",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1033,7 +1033,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-after-the-handler-return",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only after the handler return”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a correct handoff found only after the handler return\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only after the handler return",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1041,7 +1041,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-a-literal-false-handler-",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only in a literal-false handler branch”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a correct handoff found only in a literal-false handler branch\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in a literal-false handler branch",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1049,7 +1049,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-correct-handoff-found-only-in-an-uninvoked-nested-hand",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a correct handoff found only in an uninvoked nested handler function”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a correct handoff found only in an uninvoked nested handler function\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1057,7 +1057,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-duplicate-private-owner-call-in-the-exported-family-re",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a duplicate private-owner call in the exported family registrar”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a duplicate private-owner call in the exported family registrar\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a duplicate private-owner call in the exported family registrar",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1065,7 +1065,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-private-owner-call-after-a-family-registrar-return",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a private-owner call after a family-registrar return”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a private-owner call after a family-registrar return\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a private-owner call after a family-registrar return",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1073,7 +1073,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-removed-private-owner-call-from-the-exported-family-re",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a removed private-owner call from the exported family registrar”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a removed private-owner call from the exported family registrar\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1081,7 +1081,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-second-exact-registration-in-the-exported-family-regis",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a second exact registration in the exported family registrar”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a second exact registration in the exported family registrar\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a second exact registration in the exported family registrar",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1089,7 +1089,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-a-separately-bound-command-declared-after-its-submission",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects a separately bound command declared after its submission”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects a separately bound command declared after its submission\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1097,7 +1097,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-computed-result-object-",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an AppInbox type overridden by a computed result-object property”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an AppInbox type overridden by a computed result-object property\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a computed result-object property",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1105,7 +1105,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-appinbox-type-overridden-by-a-later-result-object-spr",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an AppInbox type overridden by a later result-object spread”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an AppInbox type overridden by a later result-object spread\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a later result-object spread",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1113,7 +1113,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-exact-registration-after-an-unconditional-owner-retur",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an exact registration after an unconditional owner return”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an exact registration after an unconditional owner return\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration after an unconditional owner return",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1121,7 +1121,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-exact-registration-inside-a-literal-false-owner-branc",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an exact registration inside a literal-false owner branch”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an exact registration inside a literal-false owner branch\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration inside a literal-false owner branch",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1129,7 +1129,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-computed-command-object-pro",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an operation overridden by a computed command-object property”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an operation overridden by a computed command-object property\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a computed command-object property",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1137,7 +1137,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-an-operation-overridden-by-a-later-command-object-spread",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects an operation overridden by a later command-object spread”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects an operation overridden by a later command-object spread\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a later command-object spread",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1145,7 +1145,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-duplicate-direct-appinbox-type-properties-in-the-result-",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects duplicate direct AppInbox type properties in the result object”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects duplicate direct AppInbox type properties in the result object\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct AppInbox type properties in the result object",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1153,7 +1153,7 @@ moved or changed test.
       "id": "group-http-mutation-contract--rejects-duplicate-direct-operation-properties-in-the-command-obj",
       "domain": "Group HTTP mutation contract",
       "owner": "Rallar server maintainers",
-      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: “rejects duplicate direct operation properties in the command object”.",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes. Executable assertion: \u201crejects duplicate direct operation properties in the command object\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct operation properties in the command object",
       "coverageRelation": "The named HTTP-shape test executes one malformed command, result, registration, control-flow, or translator mutation and requires the analyzer to reject that exact public mutation path."
     },
@@ -1161,7 +1161,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a canonical family name rebound to a different imported family”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a canonical family name rebound to a different imported family\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1169,7 +1169,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a conditional family call in the exported root”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a conditional family call in the exported root\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1177,7 +1177,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a different app passed from a family to its private owner”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a different app passed from a family to its private owner\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1185,7 +1185,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a duplicate family call in the exported root”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a duplicate family call in the exported root\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1193,7 +1193,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call after an exported-root return”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a family call after an exported-root return\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1201,7 +1201,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call before authorization exists”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a family call before authorization exists\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1209,7 +1209,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family removed from the exported root”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a family removed from the exported root\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1217,7 +1217,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a missing family-to-private-owner argument”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects a missing family-to-private-owner argument\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1225,7 +1225,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an extra family-to-private-owner argument”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects an extra family-to-private-owner argument\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1233,7 +1233,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an extra root-to-family argument”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects an extra root-to-family argument\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1241,7 +1241,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects an uninventoryed live private owner and route in a family”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects an uninventoryed live private owner and route in a family\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1249,7 +1249,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects reordered family-to-private-owner arguments”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects reordered family-to-private-owner arguments\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1257,7 +1257,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects reordered root-to-family arguments”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects reordered root-to-family arguments\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1265,7 +1265,7 @@ moved or changed test.
       "id": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects wrong root-to-family arguments”.",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: \u201crejects wrong root-to-family arguments\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
@@ -1273,7 +1273,7 @@ moved or changed test.
       "id": "mutation-boundary-analysis-interface",
       "domain": "Mutation boundary analysis interface",
       "owner": "Rallar server maintainers",
-      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model. Executable assertion: “exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions”.",
+      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model. Executable assertion: \u201cexports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions",
       "coverageRelation": "The analyzer test executes import traversal and inventory checks across the authoritative mutation surface; this file enumeration is the fail-closed production input to that security audit."
     },
@@ -1281,7 +1281,7 @@ moved or changed test.
       "id": "mutation-capability-export-interface",
       "domain": "Mutation capability export analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run. Executable assertion: “resolves mutable repository capabilities through the shared-server barrel”.",
+      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run. Executable assertion: \u201cresolves mutable repository capabilities through the shared-server barrel\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel",
       "coverageRelation": "The capability traversal test executes barrel and re-export resolution; this AST parse is the mechanism that follows a mutable capability to its canonical owner."
     },
@@ -1289,7 +1289,7 @@ moved or changed test.
       "id": "mutation-capability-type-interface",
       "domain": "Mutation capability type analysis",
       "owner": "Rallar server maintainers",
-      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: “maps all 56 entrypoints and 52 types to real registrations and owners”.",
+      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners. Executable assertion: \u201cmaps all 56 entrypoints and 52 types to real registrations and owners\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#maps all 56 entrypoints and 52 types to real registrations and owners",
       "coverageRelation": "The route-owner suite executes type-to-owner mapping over the complete inventory; this AST parse distinguishes type declarations from executable mutation owners."
     },
@@ -1297,7 +1297,7 @@ moved or changed test.
       "id": "mutation-registration-collections--binds-direct-client-registrations-to-their-live-types",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “binds direct client registrations to their live types”.",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: \u201cbinds direct client registrations to their live types\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#binds direct client registrations to their live types",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
@@ -1305,7 +1305,7 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-a-missing-direct-topology-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct topology registration”.",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: \u201crejects a missing direct topology registration\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct topology registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
@@ -1313,7 +1313,7 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-a-missing-direct-crdt-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct CRDT registration”.",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: \u201crejects a missing direct CRDT registration\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct CRDT registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
@@ -1321,7 +1321,7 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-an-auth-registration-loop-replaced-with-an-empty-iterabl",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects an auth registration loop replaced with an empty iterable”.",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: \u201crejects an auth registration loop replaced with an empty iterable\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects an auth registration loop replaced with an empty iterable",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
@@ -1329,7 +1329,7 @@ moved or changed test.
       "id": "mutation-registration-collections--rejects-a-missing-direct-group-registration",
       "domain": "Mutation handler registration collections",
       "owner": "Rallar server maintainers",
-      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: “rejects a missing direct group registration”.",
+      "summary": "Registration collections include every authoritative mutation family exactly once. Executable assertion: \u201crejects a missing direct group registration\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects a missing direct group registration",
       "coverageRelation": "The named collection test executes a removed or rebound live registration family and requires the audit to distinguish authoritative message collections from ordinary domain values."
     },
@@ -1337,7 +1337,7 @@ moved or changed test.
       "id": "mutation-registration-predicates--evaluates-safe-logical-includes-and-identity-map-chains-exactly",
       "domain": "Mutation registration predicates",
       "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “evaluates safe logical includes and identity map chains exactly”.",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: \u201cevaluates safe logical includes and identity map chains exactly\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly",
       "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
@@ -1345,7 +1345,7 @@ moved or changed test.
       "id": "mutation-registration-predicates--fails-closed-for-an-opaque-registration-predicate",
       "domain": "Mutation registration predicates",
       "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “fails closed for an opaque registration predicate”.",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: \u201cfails closed for an opaque registration predicate\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate",
       "coverageRelation": "The named test mutates the live group registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
@@ -1353,7 +1353,7 @@ moved or changed test.
       "id": "mutation-registration-predicates--narrows-the-auth-registration-array-with-an-exact-equality-filte",
       "domain": "Mutation registration predicates",
       "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “narrows the auth registration array with an exact equality filter”.",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: \u201cnarrows the auth registration array with an exact equality filter\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter",
       "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
@@ -1361,7 +1361,7 @@ moved or changed test.
       "id": "mutation-registration-predicates--rejects-an-auth-registration-filter-that-is-always-false",
       "domain": "Mutation registration predicates",
       "owner": "Rallar server maintainers",
-      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: “rejects an auth registration filter that is always false”.",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family. Executable assertion: \u201crejects an auth registration filter that is always false\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-predicates.test.ts#rejects an auth registration filter that is always false",
       "coverageRelation": "The named test mutates the live auth registration expression and executes the fail-closed route-owner analyzer; the source read supplies the exact security boundary being mutated."
     },
@@ -1369,7 +1369,7 @@ moved or changed test.
       "id": "mutation-route-owner-analysis--uses-one-named-readonly-input-object-for-each-authorised-websock",
       "domain": "Authoritative mutation route ownership",
       "owner": "Rallar server maintainers",
-      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: “uses one named readonly input object for each authorised websocket enqueue helper”.",
+      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass. Executable assertion: \u201cuses one named readonly input object for each authorised websocket enqueue helper\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper",
       "coverageRelation": "The named analyzer test executes a concrete route, type, owner, or fallback mutation and requires the security audit to reject it; each source access supplies the exact mutated module or canonical comparison for that scenario."
     },
@@ -1377,7 +1377,7 @@ moved or changed test.
       "id": "mutation-route-owner-crdt-reservation-materialization",
       "domain": "CRDT administrative mutation routing",
       "owner": "Rallar repository maintainers",
-      "summary": "CRDT reservation construction remains connected to canonical durable AppInbox command materialization. Executable assertion: “rejects a CRDT reservation builder disconnected from command materialization”.",
+      "summary": "CRDT reservation construction remains connected to canonical durable AppInbox command materialization. Executable assertion: \u201crejects a CRDT reservation builder disconnected from command materialization\u201d.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-analysis.test.ts#rejects a CRDT reservation builder disconnected from command materialization",
       "coverageRelation": "The test replaces the actual CRDT administrative route command-materialization call and executes the mutation-route inventory validator; reading that production route is the executable input that proves reservation construction cannot bypass canonical durable AppInbox command materialization."
     },
@@ -1385,7 +1385,7 @@ moved or changed test.
       "id": "rtc-topology-replay-single-live-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "One handler invocation for the current single-page publication sends its immutable durable outbox message once. Executable assertion: “delivers the exact immutable outbox message when the publication is current”.",
+      "summary": "One handler invocation for the current single-page publication sends its immutable durable outbox message once. Executable assertion: \u201cdelivers the exact immutable outbox message when the publication is current\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#delivers the exact immutable outbox message when the publication is current",
       "coverageRelation": "The named assertion invokes the real replay handler once with a current single-page publication and observes its owned live-send port. The count requires delivery without duplicate submission within this handler attempt; it does not constrain multi-page publications or later retry attempts.",
       "interactionRequirement": {
@@ -1400,7 +1400,7 @@ moved or changed test.
       "id": "rtc-topology-replay-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: “returns a typed retention gap without attempting a send”.",
+      "summary": "An expired delivery-log entry sends nothing: a retention gap is a typed result the consumer handles, never a stale delivery. Executable assertion: \u201creturns a typed retention gap without attempting a send\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#returns a typed retention gap without attempting a send",
       "coverageRelation": "The named assertion executes the replay entry handler on an expired entry and observes the owned live-send port; the absence of a send is the constraint that expired history never reaches members.",
       "interactionRequirement": {
@@ -1415,7 +1415,7 @@ moved or changed test.
       "id": "rtc-topology-replay-corruption-suppressed-send",
       "domain": "RTC topology replay live delivery",
       "owner": "Rallar server maintainers",
-      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: “propagates corruption for a missing unexpired durable reference”.",
+      "summary": "A corrupt delivery-log entry sends nothing: corruption propagates to the replay consumer without reaching the socket. Executable assertion: \u201cpropagates corruption for a missing unexpired durable reference\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#propagates corruption for a missing unexpired durable reference",
       "coverageRelation": "The named assertion executes the replay entry handler on a corrupt entry and observes the owned live-send port; the absence of a send is the constraint that invalid history never reaches members.",
       "interactionRequirement": {
@@ -1513,7 +1513,7 @@ moved or changed test.
       "id": "queue-pubsub-expired-identity-no-effects",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "Crossing the original claimed deadline during identity lookup emits neither a topology wake nor a live send. Executable assertion: “does not wake topology or send when loading the identity fact crosses the claimed deadline”.",
+      "summary": "Crossing the original claimed deadline during identity lookup emits neither a topology wake nor a live send. Executable assertion: \u201cdoes not wake topology or send when loading the identity fact crosses the claimed deadline\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#does not wake topology or send when loading the identity fact crosses the claimed deadline",
       "coverageRelation": "This exact wake assertion observes one independently outward-facing port after the held identity lookup advances the owned clock to the deadline. Both assertions share this same executable test, not a broad expiry registry contract.",
       "interactionRequirement": {
@@ -1528,7 +1528,7 @@ moved or changed test.
       "id": "queue-pubsub-malformed-notice-no-storage",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "Malformed physical keys, oversized publisher identity and fractional deadlines are rejected without canonical storage access. Executable assertion: “rejects malformed and oversized notices before loading canonical storage”.",
+      "summary": "Malformed physical keys, oversized publisher identity and fractional deadlines are rejected without canonical storage access. Executable assertion: \u201crejects malformed and oversized notices before loading canonical storage\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects malformed and oversized notices before loading canonical storage",
       "coverageRelation": "The real subscription callback receives five invalid wire notices; the owned repository read port proves decoding rejects them before an external storage lookup, rather than merely returning no delivery after I/O.",
       "interactionRequirement": {
@@ -1543,7 +1543,7 @@ moved or changed test.
       "id": "queue-pubsub-corrupt-identity-no-effects",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery. Executable assertion: “rejects a %s live identity fact before topology wake or delivery”.",
+      "summary": "Missing or corrupt live provenance rejects with ALAdmissionCorruptionError and produces no topology wake or delivery. Executable assertion: \u201crejects a %s live identity fact before topology wake or delivery\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects a %s live identity fact before topology wake or delivery",
       "coverageRelation": "The parameterized test supplies three distinct corrupt identity cases at real canonical storage and checks the wake port after the actual callback rejects. The exception alone would permit an effect emitted before rejection.",
       "interactionRequirement": {
@@ -1558,7 +1558,7 @@ moved or changed test.
       "id": "queue-pubsub-missing-canonical-no-send",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "A missing live canonical message raises corruption and never reaches the live sender. Executable assertion: “rejects missing live durable key-only messages with timing details”.",
+      "summary": "A missing live canonical message raises corruption and never reaches the live sender. Executable assertion: \u201crejects missing live durable key-only messages with timing details\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects missing live durable key-only messages with timing details",
       "coverageRelation": "The actual subscribed callback loads an absent canonical record; send absence proves no live effect can precede the reported missing-message error.",
       "interactionRequirement": {
@@ -1573,7 +1573,7 @@ moved or changed test.
       "id": "queue-pubsub-key-mismatch-no-send",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "A durable row returned under a mismatched physical identity rejects before delivery. Executable assertion: “drops a durable key load whose identity differs from its envelope”.",
+      "summary": "A durable row returned under a mismatched physical identity rejects before delivery. Executable assertion: \u201cdrops a durable key load whose identity differs from its envelope\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#drops a durable key load whose identity differs from its envelope",
       "coverageRelation": "The repository port returns a row with a different resource ID; the real subscriber rejects and the external send port must remain unused.",
       "interactionRequirement": {
@@ -1588,7 +1588,7 @@ moved or changed test.
       "id": "queue-pubsub-malformed-payload-no-send",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "A retained non-AL payload rejects without live delivery. Executable assertion: “rejects durable outbox work whose retained payload is not an AL message”.",
+      "summary": "A retained non-AL payload rejects without live delivery. Executable assertion: \u201crejects durable outbox work whose retained payload is not an AL message\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#rejects durable outbox work whose retained payload is not an AL message",
       "coverageRelation": "The test persists invalid payload bytes and invokes the valid notice through the subscriber; observing the sender distinguishes fail-before-send from send-then-throw.",
       "interactionRequirement": {
@@ -1603,7 +1603,7 @@ moved or changed test.
       "id": "rtc-topology-replay-missing-page-no-send",
       "domain": "Server canonical queue and replay admission",
       "owner": "Rallar server maintainers",
-      "summary": "A publication missing its final durable page rejects as corruption before any page reaches the sender. Executable assertion: “rejects a missing final durable page before sending any part of the publication”.",
+      "summary": "A publication missing its final durable page rejects as corruption before any page reaches the sender. Executable assertion: \u201crejects a missing final durable page before sending any part of the publication\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/replay/consumer/rtc-topology-replay-entry-handler.test.ts#rejects a missing final durable page before sending any part of the publication",
       "coverageRelation": "The test removes the final persisted page from a multi-page publication, calls the real handler and checks the owned send port remained empty. This differs from the existing missing-whole-reference test by catching streaming before complete-page validation.",
       "interactionRequirement": {
@@ -1761,7 +1761,7 @@ moved or changed test.
       "id": "json-ws-client-before-parse-byte-limit",
       "domain": "WebSocket client frame resource admission",
       "owner": "Shared realtime maintainers",
-      "summary": "An oversized frame must be rejected before any JSON parsing for the bounded subscription. Executable assertion: “rejects oversized client frames before parsing and keeps accepting bounded traffic”.",
+      "summary": "An oversized frame must be rejected before any JSON parsing for the bounded subscription. Executable assertion: \u201crejects oversized client frames before parsing and keeps accepting bounded traffic\u201d.",
       "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#rejects oversized client frames before parsing and keeps accepting bounded traffic",
       "coverageRelation": "The test delivers oversized native text through the simulated WebSocket, observes parser absence and rejection, then delivers bounded text successfully.",
       "interactionRequirement": {
@@ -1776,7 +1776,7 @@ moved or changed test.
       "id": "json-ws-server-subscription-before-parse-limit",
       "domain": "WebSocket server subscription resource admission",
       "owner": "Shared realtime maintainers",
-      "summary": "With only a capped subscription, an oversized UTF-8 frame must be rejected without JSON parsing; generic subscriptions retain their existing unbounded behavior. Executable assertion: “limits server ALM subscriptions without limiting generic JSON subscribers”.",
+      "summary": "With only a capped subscription, an oversized UTF-8 frame must be rejected without JSON parsing; generic subscriptions retain their existing unbounded behavior. Executable assertion: \u201climits server ALM subscriptions without limiting generic JSON subscribers\u201d.",
       "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#limits server ALM subscriptions without limiting generic JSON subscribers",
       "coverageRelation": "The same test executes capped-only, mixed capped/generic, and bounded input cases through the native server event path.",
       "interactionRequirement": {
@@ -1791,7 +1791,7 @@ moved or changed test.
       "id": "json-ws-native-binary-preconversion-limit",
       "domain": "WebSocket native binary resource admission",
       "owner": "Shared realtime maintainers",
-      "summary": "Oversized Blob, ArrayBuffer, and typed-array frames must be rejected using native byte size without Blob text conversion or JSON coercion. Executable assertion: “checks native binary sizes without Blob conversion or JSON coercion”.",
+      "summary": "Oversized Blob, ArrayBuffer, and typed-array frames must be rejected using native byte size without Blob text conversion or JSON coercion. Executable assertion: \u201cchecks native binary sizes without Blob conversion or JSON coercion\u201d.",
       "semanticCoverage": "packages/tests/shared/websocket/json-message-limits.test.ts#checks native binary sizes without Blob conversion or JSON coercion",
       "coverageRelation": "The test emits all three native binary representations through a bounded server subscription and observes rejection plus untouched conversion ports.",
       "interactionRequirement": {
@@ -1806,7 +1806,7 @@ moved or changed test.
       "id": "ws-native-failure-one-attempt-accounting",
       "domain": "WS outbound native attempt accounting",
       "owner": "Shared realtime maintainers",
-      "summary": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt. Executable assertion: “retains native-send failure accounting when an open socket throws”.",
+      "summary": "One failed physical dispatch invokes native send exactly once and records one QueueBox processing attempt. Executable assertion: \u201cretains native-send failure accounting when an open socket throws\u201d.",
       "semanticCoverage": "packages/tests/shared/ws-server-readiness.test.ts#retains native-send failure accounting when an open socket throws",
       "coverageRelation": "The test enqueues through the real WS AL runtime and checks both the native write port and the resulting public work row.",
       "interactionRequirement": {
@@ -1821,7 +1821,7 @@ moved or changed test.
       "id": "rtc-error-settlement-attempted-versus-untouched",
       "domain": "RTC queued send settlement",
       "owner": "Shared realtime maintainers",
-      "summary": "When the first queued native send synchronously fails the channel and throws, only that item is attempted; the queued sibling is cleared without native submission. Executable assertion: “distinguishes an uncertain attempted send from untouched siblings cleared by its channel error”.",
+      "summary": "When the first queued native send synchronously fails the channel and throws, only that item is attempted; the queued sibling is cleared without native submission. Executable assertion: \u201cdistinguishes an uncertain attempted send from untouched siblings cleared by its channel error\u201d.",
       "semanticCoverage": "packages/tests/shared/qrtc-data-channel.test.ts#distinguishes an uncertain attempted send from untouched siblings cleared by its channel error",
       "coverageRelation": "The test queues two keyed messages under pressure, triggers native failure on the first drain call, and checks both settlement identities and native attempt count.",
       "interactionRequirement": {
@@ -1836,7 +1836,7 @@ moved or changed test.
       "id": "local-ws-alm-before-decode-resource-admission",
       "domain": "Local black-box WS ALM observation",
       "owner": "Shared Test maintainers",
-      "summary": "Scoped ALM observation rejects oversized text before JSON parsing and rejects binary ALM input without Blob text conversion. Executable assertion: “rejects oversized ALM text before parsing and binary input without converting it”.",
+      "summary": "Scoped ALM observation rejects oversized text before JSON parsing and rejects binary ALM input without Blob text conversion. Executable assertion: \u201crejects oversized ALM text before parsing and binary input without converting it\u201d.",
       "semanticCoverage": "packages/tests/shared-test/local-websocket-session.test.ts#rejects oversized ALM text before parsing and binary input without converting it",
       "coverageRelation": "The test feeds actual socket frames to LocalWsConnection with snapshot scope and inspects its public retained rejection observations.",
       "interactionRequirement": {
@@ -1851,7 +1851,7 @@ moved or changed test.
       "id": "json-size-unknown-shape-no-user-hooks",
       "domain": "Native JSON frame size validation",
       "owner": "Shared realtime maintainers",
-      "summary": "Unknown object shapes must be rejected without invoking caller-controlled JSON serialization or string conversion hooks. Executable assertion: “rejects unknown shapes without invoking JSON hooks”.",
+      "summary": "Unknown object shapes must be rejected without invoking caller-controlled JSON serialization or string conversion hooks. Executable assertion: \u201crejects unknown shapes without invoking JSON hooks\u201d.",
       "semanticCoverage": "packages/tests/shared/json-message-validation.test.ts#rejects unknown shapes without invoking JSON hooks",
       "coverageRelation": "The test passes a raw object containing both hooks through validateJsonMessageSize and checks the typed rejection plus hook absence.",
       "interactionRequirement": {
@@ -1866,7 +1866,7 @@ moved or changed test.
       "id": "ws-invalid-application-command-skips-authorization",
       "domain": "WS server typed ingress admission",
       "owner": "Shared realtime maintainers",
-      "summary": "An application validator rejection must return the typed failure before invoking authorization or writing admission state. Executable assertion: “runs a typed application validator before authorization or admission”.",
+      "summary": "An application validator rejection must return the typed failure before invoking authorization or writing admission state. Executable assertion: \u201cruns a typed application validator before authorization or admission\u201d.",
       "semanticCoverage": "packages/tests/shared/services/ws-queue-box-server-ingress.test.ts#runs a typed application validator before authorization or admission",
       "coverageRelation": "The test installs an application validator that rejects and an authority port, then calls public acceptIncomingMessage against a valid live authenticated connection.",
       "interactionRequirement": {
@@ -1881,7 +1881,7 @@ moved or changed test.
       "id": "black-box-agent-final-report-upload-once",
       "domain": "Black-box control agent final report upload",
       "owner": "Shared Test maintainers",
-      "summary": "Disconnecting a control agent uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: “sends and uploads a redacted final report”.",
+      "summary": "Disconnecting a control agent uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: \u201csends and uploads a redacted final report\u201d.",
       "semanticCoverage": "packages/tests/rallar-black-box/control-client.test.ts#sends and uploads a redacted final report",
       "coverageRelation": "The test configures an agent with a secret, disconnects it, and observes the injected upload port receive one authorized request whose body carries the redacted report envelope.",
       "interactionRequirement": {
@@ -1896,7 +1896,7 @@ moved or changed test.
       "id": "shared-control-client-final-report-upload-once",
       "domain": "Shared control client final report upload",
       "owner": "Shared Test maintainers",
-      "summary": "Disconnecting the shared control client uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: “sends and uploads a redacted final report”.",
+      "summary": "Disconnecting the shared control client uploads its redacted final report to the run's agent report endpoint exactly once. Executable assertion: \u201csends and uploads a redacted final report\u201d.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-client.test.ts#sends and uploads a redacted final report",
       "coverageRelation": "The test configures the shared client with a secret, disconnects it, and observes the injected upload port receive one authorized request whose decoded body is the redacted report envelope.",
       "interactionRequirement": {
@@ -1956,7 +1956,7 @@ moved or changed test.
       "id": "resource-inbox-reservation-bounded-indexed-read",
       "domain": "IndexedDB queue box bounded reservation reads",
       "owner": "Rallar shared maintainers",
-      "summary": "A per-type reservation read is a bounded index query, never a whole-store scan. Executable assertion: “reserveEntries for one type never returns another type and stays within the requested bound”.",
+      "summary": "A per-type reservation read is a bounded index query, never a whole-store scan. Executable assertion: \u201creserveEntries for one type never returns another type and stays within the requested bound\u201d.",
       "semanticCoverage": "packages/tests/shared/queuebox/indexeddb-queuebox-indexed-reads.test.ts#reserveEntries for one type never returns another type and stays within the requested bound",
       "coverageRelation": "The test reserves one type through the public reserveEntries API and inspects the IDBIndex.getAll calls that read produced; the spy is the only way to observe whether the read touched a bounded index range instead of the whole object store.",
       "interactionRequirement": {
@@ -1986,7 +1986,7 @@ moved or changed test.
       "id": "rtc-group-refresh-skips-admitted-messages",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
-      "summary": "An RTC message that completed admission does not request an authoritative group refresh. Executable assertion: “does not read authority after successful admission”.",
+      "summary": "An RTC message that completed admission does not request an authoritative group refresh. Executable assertion: \u201cdoes not read authority after successful admission\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#does not read authority after successful admission",
       "coverageRelation": "The test reports successful admission through the public recovery callback and observes the injected authoritative group-refresh port remain unused.",
       "interactionRequirement": {
@@ -2016,7 +2016,7 @@ moved or changed test.
       "id": "rtc-group-refresh-coalesces-concurrent-requests",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
-      "summary": "Concurrent not-yet-in-sync messages for one group share one active authoritative refresh. Executable assertion: “coalesces repeated recovery requests for the same group and snapshot floor”.",
+      "summary": "Concurrent not-yet-in-sync messages for one group share one active authoritative refresh. Executable assertion: \u201ccoalesces repeated recovery requests for the same group and snapshot floor\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#coalesces repeated recovery requests for the same group and snapshot floor",
       "coverageRelation": "The test holds the first injected group-refresh request open, reports the same recovery condition again, and observes one request through completion.",
       "interactionRequirement": {
@@ -2031,7 +2031,7 @@ moved or changed test.
       "id": "rtc-group-refresh-retries-after-failure",
       "domain": "Browser RTC group authority recovery",
       "owner": "Shared Web maintainers",
-      "summary": "A failed authoritative refresh releases its coalescing slot so the retained QueueBox retry can request authority again. Executable assertion: “leaves failed refreshes to the retained QueueBox retry”.",
+      "summary": "A failed authoritative refresh releases its coalescing slot so the retained QueueBox retry can request authority again. Executable assertion: \u201cleaves failed refreshes to the retained QueueBox retry\u201d.",
       "semanticCoverage": "packages/tests/shared-web/state-read/rtc-group-snapshot-refresh.test.ts#leaves failed refreshes to the retained QueueBox retry",
       "coverageRelation": "The test rejects the first injected group-refresh request, reports the retained recovery condition again, and observes a second request succeed.",
       "interactionRequirement": {
@@ -2046,7 +2046,7 @@ moved or changed test.
       "id": "rtc-signaling-failure-report-not-a-log",
       "domain": "RTC peer signaling failure reporting",
       "owner": "Rallar realtime maintainers",
-      "summary": "A terminal signaling admission is reported to the session as a typed failure per lost hop instead of being written to the console and dropped. Executable assertion: “reports the hop a terminal signaling failure lost, instead of logging and dropping it”.",
+      "summary": "A terminal signaling admission is reported to the session as a typed failure per lost hop instead of being written to the console and dropped. Executable assertion: \u201creports the hop a terminal signaling failure lost, instead of logging and dropping it\u201d.",
       "semanticCoverage": "packages/tests/shared/qrtc-peer-connection.test.ts#reports the hop a terminal signaling failure lost, instead of logging and dropping it",
       "coverageRelation": "The named test drives both outbound hops through a rejecting signaler and observes the failure callback the peer owns; the console absence is what separates a reported hop from the log-and-drop behaviour it replaced.",
       "interactionRequirement": {
@@ -2061,7 +2061,7 @@ moved or changed test.
       "id": "queuebox-pubsub-requeue-announces-external-write",
       "domain": "QueueBox pub/sub outbox requeue",
       "owner": "Rallar server maintainers",
-      "summary": "A row the bridge requeues after a failed remote delivery is announced to the engine as an external write, because the requeue runs outside every ALM runtime. Executable assertion: “announces a requeued row as an external write, because the requeue runs outside every runtime”.",
+      "summary": "A row the bridge requeues after a failed remote delivery is announced to the engine as an external write, because the requeue runs outside every ALM runtime. Executable assertion: \u201cannounces a requeued row as an external write, because the requeue runs outside every runtime\u201d.",
       "semanticCoverage": "packages/tests/shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.test.ts#announces a requeued row as an external write, because the requeue runs outside every runtime",
       "coverageRelation": "The named test drives a failed remote delivery through the bridge and observes both the requeued row in the outbox and the engine-wake port the bridge owns; the row state alone says nothing about whether an owner was told.",
       "interactionRequirement": {
@@ -2123,6 +2123,141 @@ moved or changed test.
         "observableEffect": "Resolving the stale report produces no new appointment side effect while the latest attempt or signed-out state remains unchanged.",
         "requiredConstraint": "No appointment invocation occurs after logout ends the report attempt before it resolves.",
         "failureRationale": "A stale invocation could appoint authority for an abandoned attempt even if a later UI state guard discarded its result."
+      }
+    },
+    {
+      "id": "monitor-inspector-event-activation",
+      "domain": "Recipe Console monitor inspector selection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Activating a windowed command-evidence row raises the inspector selection callback with the exact event identity that was clicked, not a windowed ordinal. Executable assertion: \"browses command evidence failure-first in 16-row windows and activates the exact late item\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#browses command evidence failure-first in 16-row windows and activates the exact late item",
+      "coverageRelation": "The test renders the inspector over a large evidence set and drives a real click; the last-call payload is the selection contract the Monitor workspace decodes into URL state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Monitor inspector selection callback port",
+        "observableEffect": "One selection call carrying the clicked event identity verbatim, including its bidirectional control characters.",
+        "requiredConstraint": "The last selection call must carry the exact clicked identity; windowing must not substitute an index or a truncated identity.",
+        "failureRationale": "Rendered text alone passes when the callback reports a neighbouring row, which would open the wrong evidence in the inspector."
+      }
+    },
+    {
+      "id": "monitor-inspector-destination-patch",
+      "domain": "Recipe Console monitor inspector selection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Activating a windowed correlated-failure destination raises the selection callback with both the destination identity and its agent/recipe/command patch. Executable assertion: \"windows 46 correlated failure destinations at 40 and preserves destination patches\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#windows 46 correlated failure destinations at 40 and preserves destination patches",
+      "coverageRelation": "The test windows 46 destinations at a 40-row budget and clicks the late row; the second callback argument is the patch the Monitor workspace merges into its selection.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Monitor inspector selection callback port",
+        "observableEffect": "One selection call carrying the destination identity and its separate patch argument.",
+        "requiredConstraint": "The patch argument must accompany the identity on the same call; a windowed destination may not lose its agent, recipe, or command context.",
+        "failureRationale": "Without the call assertion a destination that silently drops its patch still renders identically, and the inspector would filter by the previous selection."
+      }
+    },
+    {
+      "id": "monitor-inspector-recipe-choice-reset",
+      "domain": "Recipe Console monitor inspector selection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Choosing a role-scoped recipe beyond the window budget raises the selection callback with the composed recipe selection identity. Executable assertion: \"browses 65 role-scoped recipe choices at 60 and resets for another recipe\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#browses 65 role-scoped recipe choices at 60 and resets for another recipe",
+      "coverageRelation": "The test browses 65 role-scoped choices at a 60-row budget and activates the late one; the composed identity is what the Monitor workspace round-trips through URL state.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Monitor inspector selection callback port",
+        "observableEffect": "One selection call carrying the composed recipe selection identity for the activated choice.",
+        "requiredConstraint": "The selection identity must be composed from the activated recipe and role, not from the window cursor.",
+        "failureRationale": "A reset that kept the previous cursor would render the same list while reporting the earlier recipe to the workspace."
+      }
+    },
+    {
+      "id": "monitor-failure-window-action-authority",
+      "domain": "Recipe Console monitor windowing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Paging the failure ledger is browsing, not acting: no inspect, navigate, refresh, or destructive callback fires while the window moves. Executable assertion: \"windows failures without changing selection or action authority\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#windows failures without changing selection or action authority",
+      "coverageRelation": "The test drives real window movement over a large failure ledger; the four callbacks are the operator-visible actions the ledger may raise.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Monitor failure ledger action callback ports",
+        "observableEffect": "No inspect, navigate, refresh, or destructive call while only the window cursor moves.",
+        "requiredConstraint": "All four action callbacks must stay uncalled for a pure window movement.",
+        "failureRationale": "The rendered rows are identical whether or not a refresh or destructive action fired, so only the call counts witness that browsing stayed read-only."
+      }
+    },
+    {
+      "id": "monitor-budget-mount-is-passive",
+      "domain": "Recipe Console monitor windowing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Mounting the exact agent, recipe, readiness, and diagnostic row budgets raises no inspect or filter callback. Executable assertion: \"mounts exact agent, recipe, readiness, and diagnostic budgets with ordinal keys\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#mounts exact agent, recipe, readiness, and diagnostic budgets with ordinal keys",
+      "coverageRelation": "The test mounts each section at its exact budget and asserts the ordinal keys; the callbacks are the only way a mount could reach the workspace.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Monitor section inspect and filter callback ports",
+        "observableEffect": "No inspect or filter call raised by mounting rows at the budget.",
+        "requiredConstraint": "Mounting rows must not raise an inspect or filter call; both stay uncalled.",
+        "failureRationale": "A section that filtered on mount would render the same budgeted rows while silently narrowing the operator view."
+      }
+    },
+    {
+      "id": "monitor-diagnostics-cursor-reset-is-local",
+      "domain": "Recipe Console monitor windowing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Changing the active diagnostics filters resets that section cursor without raising an inspect or filter callback of its own. Executable assertion: \"resets only the diagnostics cursor when its active filters change\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#resets only the diagnostics cursor when its active filters change",
+      "coverageRelation": "The test changes the diagnostics filters and asserts the other section cursors survive; the callbacks are the boundary the reset must not cross.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Monitor diagnostics inspect and filter callback ports",
+        "observableEffect": "No inspect or filter call raised by the cursor reset that follows a filter change.",
+        "requiredConstraint": "The cursor reset must stay local; neither callback fires as a consequence of it.",
+        "failureRationale": "A reset that re-raised the filter callback would loop the workspace filter state, and the rendered rows would not show it."
+      }
+    },
+    {
+      "id": "monitor-closed-disclosure-mounts-nothing",
+      "domain": "Recipe Console monitor windowing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A closed disclosure keeps its cursor and mounts no rows, so no inspect callback can be raised from it. Executable assertion: \"keeps disclosure cursors alive while closed and mounts no closed rows\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#keeps disclosure cursors alive while closed and mounts no closed rows",
+      "coverageRelation": "The test closes a disclosure, drives the surrounding sections, and reopens it; the absent inspect call is what proves no hidden row stayed live.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Monitor disclosure inspect callback port",
+        "observableEffect": "No inspect call while the disclosure is closed.",
+        "requiredConstraint": "A closed disclosure raises no inspect call even though its cursor is retained.",
+        "failureRationale": "A retained cursor that still mounted its rows would be invisible in the DOM assertions but would report selections from a hidden list."
+      }
+    },
+    {
+      "id": "execute-target-toggle-scope",
+      "domain": "Recipe Console execute targeting",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Activating a windowed target row toggles exactly that agent once and never selects a control run. Executable assertion: \"keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows",
+      "coverageRelation": "The test windows 240 target rows and clicks the last one while a 250-run searchable list is mounted; the two callbacks separate target selection from run selection.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Execute target toggle and control-run selection callback ports",
+        "observableEffect": "Exactly one toggle call for the clicked agent id and no control-run selection call.",
+        "requiredConstraint": "One toggle per activation, addressed by agent id, with the control-run selection port untouched.",
+        "failureRationale": "Both lists render the same rows whether the click toggled a target or re-selected the control run, so only the call counts separate the two ports."
+      }
+    },
+    {
+      "id": "execute-resolution-refresh-is-passive",
+      "domain": "Recipe Console execute targeting",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Refreshing a resolution that yields an equal row count re-renders the evidence without toggling any target. Executable assertion: \"keeps late resolution evidence browseable across equal-row refreshed resolutions\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps late resolution evidence browseable across equal-row refreshed resolutions",
+      "coverageRelation": "The test replaces the resolution with an equal-row one and keeps browsing; the absent toggle call is what proves the refresh did not re-select.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Execute target toggle callback port",
+        "observableEffect": "No toggle call raised by an equal-row resolution refresh.",
+        "requiredConstraint": "An equal-row refresh raises no toggle call.",
+        "failureRationale": "An equal-row refresh that re-toggled would produce an identical list while silently changing which agents the next run targets."
       }
     }
   ],
@@ -2597,7 +2732,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Deno workflow gate.",
+      "rationale": "Reads the shared-test manifest\u2019s TypeScript check command and pairs it with the independently executed Deno workflow gate.",
       "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates"
     },
     {
@@ -2608,7 +2743,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "Parses the checked-in medium-scale recipe so each group poll’s service name can be compared with the API node that actually executes it.",
+      "rationale": "Parses the checked-in medium-scale recipe so each group poll\u2019s service name can be compared with the API node that actually executes it.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts#names every group poll for the API node that executes it"
     },
     {
@@ -3939,7 +4074,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Removes the family’s only private-owner call, directly testing the missing handoff that would leave routes unowned.",
+      "rationale": "Removes the family\u2019s only private-owner call, directly testing the missing handoff that would leave routes unowned.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/group/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar"
     },
     {
@@ -4093,7 +4228,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Replaces the auth registrar’s live collection with an empty iterable, testing that a syntactically valid loop cannot mask total registration loss.",
+      "rationale": "Replaces the auth registrar\u2019s live collection with an empty iterable, testing that a syntactically valid loop cannot mask total registration loss.",
       "semanticCoverage": "packages/tests/repo/mutation-route-ownership/route-owner/mutation-route-owner-registration-collections.test.ts#rejects an auth registration loop replaced with an empty iterable"
     },
     {
@@ -4832,6 +4967,149 @@ moved or changed test.
       "owner": "AR Eye Hunter maintainers",
       "rationale": "The unused appointment port proves the stale report is fenced before any authority mutation, which final UI state alone cannot establish.",
       "semanticCoverage": "packages/tests/ar-eye-hunter-v1/arena-director-delivery.test.ts#does not appoint after an old capability report resolves across logout"
+    },
+    {
+      "id": "test-structure-coupling-0eacc2fff330f742",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-inspector-event-activation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The last-call payload is the only witness that the activated late row reported its own exact event identity rather than a windowed neighbour.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#browses command evidence failure-first in 16-row windows and activates the exact late item"
+    },
+    {
+      "id": "test-structure-coupling-5c80414eee60d1fb",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-inspector-destination-patch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The two-argument last call is the only witness that the windowed destination kept its agent, recipe, and command patch.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#windows 46 correlated failure destinations at 40 and preserves destination patches"
+    },
+    {
+      "id": "test-structure-coupling-53cd21b61916ac6c",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-inspector-recipe-choice-reset",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The last-call identity is the only witness that the reset browse reported the newly activated recipe instead of the earlier one.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts#browses 65 role-scoped recipe choices at 60 and resets for another recipe"
+    },
+    {
+      "id": "test-structure-coupling-d5acce51d6572d98",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-failure-window-action-authority",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The four zero counts are the only witness that moving the failure window raised no operator action; the rendered ledger is identical either way.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#windows failures without changing selection or action authority"
+    },
+    {
+      "id": "test-structure-coupling-d41a32b802533ed6",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-budget-mount-is-passive",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent inspect call is the only witness that mounting the exact budgets did not open evidence by itself.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#mounts exact agent, recipe, readiness, and diagnostic budgets with ordinal keys"
+    },
+    {
+      "id": "test-structure-coupling-68cb0729901733e9",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-budget-mount-is-passive",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The paired absent filter call is what makes the preceding absence a statement about mounting rather than about a surface that never filters.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#mounts exact agent, recipe, readiness, and diagnostic budgets with ordinal keys"
+    },
+    {
+      "id": "test-structure-coupling-a92258a2a0020b1c",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-diagnostics-cursor-reset-is-local",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent inspect call is the only witness that the diagnostics cursor reset stayed inside the section.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#resets only the diagnostics cursor when its active filters change"
+    },
+    {
+      "id": "test-structure-coupling-927b1c2a56427793",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-diagnostics-cursor-reset-is-local",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent filter call is what forbids the reset from re-raising the filter change that caused it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#resets only the diagnostics cursor when its active filters change"
+    },
+    {
+      "id": "test-structure-coupling-a513b4ba22809411",
+      "path": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "monitor-closed-disclosure-mounts-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent inspect call is the only witness that the retained cursor mounted no live rows behind the closed disclosure.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-windowing.test.ts#keeps disclosure cursors alive while closed and mounts no closed rows"
+    },
+    {
+      "id": "test-structure-coupling-829365009ddb3992",
+      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "execute-target-toggle-scope",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The exactly-once toggle with the clicked agent id is the only witness that the windowed row addressed its own agent.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows"
+    },
+    {
+      "id": "test-structure-coupling-9eb8c8a8207c8e18",
+      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "execute-target-toggle-scope",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent control-run selection is what separates the target port from the run port; both lists render the same rows either way.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows"
+    },
+    {
+      "id": "test-structure-coupling-3d3a6d9722822c3c",
+      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "execute-target-toggle-scope",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The repeated absence after the searchable list is opened proves browsing runs does not select one.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows"
+    },
+    {
+      "id": "test-structure-coupling-8f5cc2cf641fee5d",
+      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "execute-resolution-refresh-is-passive",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent toggle call is the only witness that an equal-row resolution refresh left the selected targets alone.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts#keeps late resolution evidence browseable across equal-row refreshed resolutions"
     }
   ]
 }
