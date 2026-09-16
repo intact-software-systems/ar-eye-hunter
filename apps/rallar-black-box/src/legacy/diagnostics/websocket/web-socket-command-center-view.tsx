@@ -53,7 +53,7 @@ export function WebSocketCommandCenterView(props: WebSocketCommandCenterViewProp
 
 function WebSocketInputsSection({ model }: Pick<WebSocketCommandCenterViewProps, 'model'>) {
     const { values, updateValue } = model;
-    const text = (label: string, key: WebSocketTextKey, className = 'field') => (
+    const text = (label: string, key: WebSocketTextKey, className: string) => (
         <WebSocketTextField
             label={label}
             value={values[key]}
@@ -64,10 +64,10 @@ function WebSocketInputsSection({ model }: Pick<WebSocketCommandCenterViewProps,
     return (
         <CollapsiblePanelSection title="WebSocket Inputs" meta={model.routePreview.destination}>
             <div className="websocket-context-grid">
-                {text('API Base URL', 'apiBaseUrl')}
-                {text('Connection', 'connection')}
-                {text('Application', 'applicationId')}
-                {text('Workspace', 'workspaceId')}
+                {text('API Base URL', 'apiBaseUrl', 'field')}
+                {text('Connection', 'connection', 'field')}
+                {text('Application', 'applicationId', 'field')}
+                {text('Workspace', 'workspaceId', 'field')}
                 <WebSocketTextField
                     label="Group"
                     value={values.groupId}
@@ -75,12 +75,12 @@ function WebSocketInputsSection({ model }: Pick<WebSocketCommandCenterViewProps,
                     onChange={model.updateGroupId}
                 />
                 <WebSocketScopeField model={model} />
-                {text('Type ID', 'typeId')}
-                {text('Topic ID', 'topicId')}
-                {text('Context ID', 'contextId')}
-                {text('Resource ID', 'resourceId')}
+                {text('Type ID', 'typeId', 'field')}
+                {text('Topic ID', 'topicId', 'field')}
+                {text('Context ID', 'contextId', 'field')}
+                {text('Resource ID', 'resourceId', 'field')}
                 {text('WebSocket URL', 'wsUrl', 'field websocket-url-field')}
-                {text('Protocols', 'protocols')}
+                {text('Protocols', 'protocols', 'field')}
                 <WebSocketNumberField
                     label="Timeout"
                     value={values.timeoutMs}
@@ -93,7 +93,7 @@ function WebSocketInputsSection({ model }: Pick<WebSocketCommandCenterViewProps,
                     min={undefined}
                     onChange={(value) => updateValue('closeCode', value)}
                 />
-                {text('Close Reason', 'closeReason')}
+                {text('Close Reason', 'closeReason', 'field')}
             </div>
         </CollapsiblePanelSection>
     );
