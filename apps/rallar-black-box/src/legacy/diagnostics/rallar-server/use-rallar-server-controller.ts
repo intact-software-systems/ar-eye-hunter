@@ -4,10 +4,13 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { useEffect, useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import { computeRallarServerRestAssertions } from '../../../rallar-server-workbench/compute-rallar-server-rest-assertions.ts';
+import { computeRallarServerRestAssertions } from '../../../rallar-server-workbench/collections/compute-rallar-server-rest-assertions.ts';
 import {
     createRallarServerRestCollectionTemplates
-} from '../../../rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
+} from '../../../rallar-server-workbench/collections/create-rallar-server-rest-collection-templates.ts';
+import { toRallarServerCollectionStepRequestInput } from '../../../rallar-server-workbench/collections/to-rallar-server-collection-step-request-input.ts';
+import { toRallarServerExtractedVariables } from '../../../rallar-server-workbench/collections/to-rallar-server-extracted-variables.ts';
+import { toRallarServerRestCollectionRecipe } from '../../../rallar-server-workbench/collections/to-rallar-server-rest-collection-recipe.ts';
 import { RALLAR_SERVER_ENDPOINT_PRESETS } from '../../../rallar-server-workbench/rallar-server-endpoint-presets.ts';
 import type {
     RallarServerEndpointPreset,
@@ -28,11 +31,8 @@ import {
 } from '../../../rallar-server-workbench/redact-rallar-server-value.ts';
 import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerBlackBoxCommand } from '../../../rallar-server-workbench/to-rallar-server-black-box-command.ts';
-import { toRallarServerCollectionStepRequestInput } from '../../../rallar-server-workbench/to-rallar-server-collection-step-request-input.ts';
 import { toRallarServerCurl } from '../../../rallar-server-workbench/to-rallar-server-curl.ts';
 import { toRallarServerEndpointDraft } from '../../../rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
-import { toRallarServerExtractedVariables } from '../../../rallar-server-workbench/to-rallar-server-extracted-variables.ts';
-import { toRallarServerRestCollectionRecipe } from '../../../rallar-server-workbench/to-rallar-server-rest-collection-recipe.ts';
 import { toRallarServerRestRequest } from '../../../rallar-server-workbench/to-rallar-server-rest-request.ts';
 import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workbench/to-rallar-server-workbench-variables.ts';
 import {
@@ -684,7 +684,21 @@ function decodeCollectionDraft(
     );
 }
 
-function toRedactedResponsePayload(response: RallarServerRestResponse, authSession: AuthSession | undefined) {
+interface RedactedResponsePayload {
+    readonly url: string;
+    readonly status: number;
+    readonly statusText: string;
+    readonly durationMs: number;
+    readonly error: RallarServerRestResponse['error'];
+    readonly bodyKind: RallarServerRestResponse['bodyKind'];
+    readonly bodyText: string | undefined;
+    readonly bodyJson: RallarServerRestResponse['bodyJson'];
+}
+
+function toRedactedResponsePayload(
+    response: RallarServerRestResponse,
+    authSession: AuthSession | undefined
+): RedactedResponsePayload {
     return {
         url: redactRallarServerUrl(response.url, authSession),
         status: response.status,

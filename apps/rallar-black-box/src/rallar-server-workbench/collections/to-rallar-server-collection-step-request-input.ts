@@ -4,7 +4,7 @@ import type {
     RallarServerRestCollectionStep,
     RallarServerRestCollectionVariables,
     RallarServerRestRequestInput
-} from './rallar-server-workbench-contracts.ts';
+} from '../rallar-server-workbench-contracts.ts';
 import { resolveRallarServerCollectionValue } from './resolve-rallar-server-collection-value.ts';
 
 export interface RallarServerCollectionStepRequestSource {

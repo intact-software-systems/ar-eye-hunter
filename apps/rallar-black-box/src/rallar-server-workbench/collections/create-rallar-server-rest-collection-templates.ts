@@ -1,7 +1,7 @@
 import type {
     RallarServerRestCollection,
     RallarServerWorkbenchVariables
-} from './rallar-server-workbench-contracts.ts';
+} from '../rallar-server-workbench-contracts.ts';
 
 function stateCollectionPath(suffix: string): string {
     return '/api/state/apps/{{applicationId}}/workspaces/{{workspaceId}}' + suffix;

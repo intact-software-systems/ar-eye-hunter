@@ -4,7 +4,7 @@ import type {
     RallarServerRestCollectionValueExpectation,
     RallarServerRestCollectionVariables,
     RallarServerRestResponse
-} from './rallar-server-workbench-contracts.ts';
+} from '../rallar-server-workbench-contracts.ts';
 import { resolveRallarServerCollectionValue } from './resolve-rallar-server-collection-value.ts';
 import { resolveRallarServerJsonPath } from './resolve-rallar-server-json-path.ts';
 import { toLowerCaseRallarServerHeaders } from './to-lower-case-rallar-server-headers.ts';

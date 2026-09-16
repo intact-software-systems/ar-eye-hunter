@@ -3,27 +3,27 @@ import { load as loadYaml } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { computeRallarServerRestAssertions } from '../../../apps/rallar-black-box/src/rallar-server-workbench/compute-rallar-server-rest-assertions.ts';
+import { computeRallarServerRestAssertions } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/compute-rallar-server-rest-assertions.ts';
 import {
     createRallarServerRestCollectionTemplates
-} from '../../../apps/rallar-black-box/src/rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
+} from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/create-rallar-server-rest-collection-templates.ts';
+import { resolveRallarServerCollectionValue } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-collection-value.ts';
+import { resolveRallarServerJsonPath } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-json-path.ts';
+import { toRallarServerCollectionStepRequestInput } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-collection-step-request-input.ts';
+import { toRallarServerExtractedVariables } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-extracted-variables.ts';
+import { toRallarServerRestCollectionRecipe } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-rest-collection-recipe.ts';
 import { decodeRallarServerOpenApiEndpoints } from '../../../apps/rallar-black-box/src/rallar-server-workbench/decode-rallar-server-open-api-endpoints.ts';
 import { RALLAR_SERVER_ENDPOINT_PRESETS } from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-endpoint-presets.ts';
 import type {
     RallarServerWorkbenchVariables
 } from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-workbench-contracts.ts';
-import { resolveRallarServerCollectionValue } from '../../../apps/rallar-black-box/src/rallar-server-workbench/resolve-rallar-server-collection-value.ts';
-import { resolveRallarServerJsonPath } from '../../../apps/rallar-black-box/src/rallar-server-workbench/resolve-rallar-server-json-path.ts';
 import {
     sendRallarServerMutationRequest,
     sendRallarServerRestRequest
 } from '../../../apps/rallar-black-box/src/rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerBlackBoxCommand } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-black-box-command.ts';
-import { toRallarServerCollectionStepRequestInput } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-collection-step-request-input.ts';
 import { toRallarServerCurl } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-curl.ts';
 import { toRallarServerEndpointDraft } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
-import { toRallarServerExtractedVariables } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-extracted-variables.ts';
-import { toRallarServerRestCollectionRecipe } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-rest-collection-recipe.ts';
 import { toRallarServerRestRequest } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-rest-request.ts';
 import { toRallarServerWorkbenchVariables } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-workbench-variables.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';

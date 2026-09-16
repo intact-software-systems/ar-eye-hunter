@@ -2,7 +2,7 @@ import type {
     RallarServerRestCollectionExtraction,
     RallarServerRestCollectionVariables,
     RallarServerRestResponse
-} from './rallar-server-workbench-contracts.ts';
+} from '../rallar-server-workbench-contracts.ts';
 import { resolveRallarServerJsonPath } from './resolve-rallar-server-json-path.ts';
 import { toLowerCaseRallarServerHeaders } from './to-lower-case-rallar-server-headers.ts';
 

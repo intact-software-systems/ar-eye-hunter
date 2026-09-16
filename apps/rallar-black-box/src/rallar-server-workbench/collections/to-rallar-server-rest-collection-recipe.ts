@@ -7,8 +7,8 @@ import type {
     RallarServerRestCollection,
     RallarServerRestCollectionStep,
     RallarServerRestCollectionVariables
-} from './rallar-server-workbench-contracts.ts';
-import { toRallarServerBlackBoxCommand } from './to-rallar-server-black-box-command.ts';
+} from '../rallar-server-workbench-contracts.ts';
+import { toRallarServerBlackBoxCommand } from '../to-rallar-server-black-box-command.ts';
 import {
     toRallarServerCollectionStepRequestInput,
     type RallarServerCollectionStepRequestSource

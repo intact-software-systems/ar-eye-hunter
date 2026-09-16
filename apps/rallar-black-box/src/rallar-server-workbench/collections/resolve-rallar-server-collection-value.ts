@@ -1,4 +1,4 @@
-import type { RallarServerRestCollectionVariables } from './rallar-server-workbench-contracts.ts';
+import type { RallarServerRestCollectionVariables } from '../rallar-server-workbench-contracts.ts';
 import { resolveRallarServerJsonPath } from './resolve-rallar-server-json-path.ts';
 
 const VARIABLE_REFERENCE = /\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}|\$\{([A-Za-z0-9_.-]+)\}/g;
