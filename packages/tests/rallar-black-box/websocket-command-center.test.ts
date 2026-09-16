@@ -1,3 +1,4 @@
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { describe, expect, it } from 'vitest';
 import type { WebSocketCommandCenterValues, WebSocketDiagnostic } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
 import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
@@ -18,7 +19,11 @@ import {
     webSocketRoutePreview
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
@@ -425,6 +430,23 @@ describe('WebSocket command-center copied recipes', () => {
             reason: 'done',
             timeoutMs: 2_500
         });
+    });
+
+    it.each([false, true])('copies a strict version-1 recipe with RTC parity %s', (includeRtcParity) => {
+        const recipe = JSON.parse(
+            webSocketCommandCenterRecipe({
+                values,
+                payload: { text: 'strict' },
+                bootstrap,
+                providerMode: 'browser-rallar',
+                authSession,
+                sequence: 1,
+                includeRtcParity
+            })
+        );
+
+        expect(recipe).toMatchObject({ schemaVersion: 1 });
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
     });
 
     it('keeps copied recipe command order, parity commands, and secret redaction exact', () => {

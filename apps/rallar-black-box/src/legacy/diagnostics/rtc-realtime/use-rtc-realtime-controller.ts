@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestSeverity,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
@@ -536,13 +539,16 @@ export function useRtcRealtimeController({
         void navigator.clipboard?.writeText(
             redactedJson(
                 {
+                    schemaVersion: 1,
                     recipeId: 'rallar-direct-rtc-realtime-export',
                     name: 'Direct RTC/Realtimes export from Rallar Black Box',
-                    requirements: [
-                        'provider=browser-rallar',
-                        'logged-in browser session',
-                        'joined group with RTC signaling available'
-                    ],
+                    metadata: {
+                        requirements: [
+                            'provider=browser-rallar',
+                            'logged-in browser session',
+                            'joined group with RTC signaling available'
+                        ]
+                    },
                     commands: [
                         {
                             kind: 'rtc.connect',

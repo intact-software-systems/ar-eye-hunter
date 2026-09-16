@@ -1,4 +1,5 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { describe, expect, it } from 'vitest';
 import { authRecipeSnippet } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-recipe.ts';
 
@@ -25,6 +26,15 @@ describe('auth command-center recipe mutation identity', () => {
         expect(repeated.commands.map((command) => command.request.path)).not.toEqual(
             recipe.commands.map((command) => command.request.path)
         );
+    });
+});
+
+describe('auth command-center recipe export', () => {
+    it('copies a strict version-1 recipe', () => {
+        const recipe = JSON.parse(authRecipeSnippet('visible-username'));
+
+        expect(recipe).toMatchObject({ schemaVersion: 1 });
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
     });
 });
 

@@ -5,6 +5,7 @@ export function authRecipeSnippet(username: string): string {
     const ticketRequestId = crypto.randomUUID();
     const missingTokenRequestId = crypto.randomUUID();
     return json({
+        schemaVersion: 1,
         recipeId: 'rallar-auth-command-center',
         name: 'Rallar auth command-center recipe',
         continueOnFailure: true,

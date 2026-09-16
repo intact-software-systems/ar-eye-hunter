@@ -1,3 +1,4 @@
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { load as loadYaml } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -495,6 +496,31 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             snapshotVersion: '3',
             statusCode: 200
         });
+    });
+
+    it('exports every REST collection template as a strict version-1 recipe', () => {
+        const collections = createRallarServerRestCollectionTemplates(
+            defaultRallarServerWorkbenchVariables({
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                groupId: 'bb-group',
+                principalId: 'alice-client'
+            })
+        );
+
+        expect(collections.length).toBeGreaterThan(0);
+        for (const collection of collections) {
+            const recipe = toRallarServerRestCollectionRecipe({
+                collection,
+                apiBaseUrl: 'http://localhost:8080',
+                variables: collection.variables ?? {},
+                authSession,
+                defaultTimeoutMs: 5000
+            });
+
+            expect(recipe, collection.collectionId).toMatchObject({ schemaVersion: 1 });
+            expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe }), collection.collectionId).toEqual({ ok: true });
+        }
     });
 
     it('exports REST collections as black-box recipes with assertion metadata', () => {

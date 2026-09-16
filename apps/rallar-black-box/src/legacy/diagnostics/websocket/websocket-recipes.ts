@@ -1,5 +1,5 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -190,6 +190,7 @@ export function webSocketCommandCenterRecipe(
     );
 
     return json({
+        schemaVersion: 1,
         recipeId: input.includeRtcParity
             ? 'rallar-websocket-rtc-parity-command-center'
             : 'rallar-websocket-command-center',

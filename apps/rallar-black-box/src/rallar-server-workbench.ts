@@ -1,5 +1,5 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
@@ -598,6 +598,7 @@ export function toRallarServerRestCollectionRecipe(
     };
 
     return {
+        schemaVersion: 1,
         recipeId: input.collection.collectionId,
         name: input.collection.name,
         continueOnFailure: false,

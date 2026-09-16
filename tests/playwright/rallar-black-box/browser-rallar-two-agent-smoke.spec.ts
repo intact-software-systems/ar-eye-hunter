@@ -592,6 +592,7 @@ async function runFinalizationCommands(
     await executeOk(request, runId, agent.agentId, commandIds[2], {
         kind: 'recipe.run',
         recipe: {
+            schemaVersion: 1,
             recipeId: `two-agent-final-report-${agent.agentId}-${suffix}`,
             commands: [
                 {

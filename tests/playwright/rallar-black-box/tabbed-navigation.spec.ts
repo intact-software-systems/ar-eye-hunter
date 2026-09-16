@@ -2375,7 +2375,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-a',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
                     }
                 },
                 queuedAtEpochMs: now - 5_000,
@@ -2392,7 +2392,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-b',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
                     }
                 },
                 queuedAtEpochMs: now - 5_000,

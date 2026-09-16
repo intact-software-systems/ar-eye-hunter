@@ -814,6 +814,7 @@ async function fetchDistributedArtifact(
 
 function healthRecipe(recipeId: string): RallarBlackBoxTestRecipe {
     return {
+        schemaVersion: 1,
         recipeId,
         name: recipeId,
         commands: [{
@@ -1156,6 +1157,7 @@ function wsSendRecipe(
     }>
 ): RallarBlackBoxTestRecipe {
     return {
+        schemaVersion: 1,
         recipeId,
         commands: [{
             kind: 'ws.send',
@@ -1187,6 +1189,7 @@ function rtcConnectRecipe(
     group: RallarBlackBoxDistributedGroupRef
 ): RallarBlackBoxTestRecipe {
     return {
+        schemaVersion: 1,
         recipeId,
         commands: [{
             kind: 'rtc.connect',
@@ -1216,6 +1219,7 @@ function rtcSendRecipe(
     distributedRunId?: string
 ): RallarBlackBoxTestRecipe {
     return {
+        schemaVersion: 1,
         recipeId,
         commands: [{
             kind: 'rtc.send',
@@ -1540,6 +1544,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                         recipeId: `role-fail-${suffix}`,
                         role: 'breaker',
                         recipe: {
+                            schemaVersion: 1,
                             recipeId: `role-fail-${suffix}`,
                             commands: [{
                                 kind: 'ws.send',

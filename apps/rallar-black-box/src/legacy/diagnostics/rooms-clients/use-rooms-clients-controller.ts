@@ -1,5 +1,5 @@
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { configureDirectRallarFacade, createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
@@ -572,6 +572,7 @@ export function useRoomsClientsController({
         });
         void navigator.clipboard?.writeText(
             json({
+                schemaVersion: 1,
                 recipeId: 'rallar-rooms-clients-command-center',
                 name: 'Rallar rooms and clients command-center recipe',
                 continueOnFailure: false,
