@@ -15,6 +15,8 @@ import {
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
 import { DiagnosticControllerLifecycle } from '../shared/diagnostic-controller-lifecycle.ts';
 import { WebSocketCommandCenterActions } from './web-socket-command-center-actions.ts';
+import { WebSocketRallarMessageActions } from './web-socket-rallar-message-actions.ts';
+import { WebSocketRawSocketActions } from './web-socket-raw-socket-actions.ts';
 import type {
     UseWebSocketCommandCenterControllerInput,
     WebSocketCommandCenterValues,
@@ -132,15 +134,20 @@ export function useWebSocketCommandCenterController(
     const controls = useWebSocketCommandCenterControls(defaultContext);
     const lifecycle = useWebSocketCommandCenterLifecycle(input, controls, defaultContext);
     const projection = useWebSocketCommandCenterPresentation(input, controls, providerMode);
-    const actions = new WebSocketCommandCenterActions({
+    const actionInput: WebSocketCommandCenterActions.Input = {
         nowMs: Date.now,
         createRequestId: () => crypto.randomUUID(),
         ...input,
         ...controls,
         ...lifecycle,
         ...projection
+    };
+    const commandCenter = new WebSocketCommandCenterActions(actionInput);
+    return toWebSocketCommandCenterViewModel(controls, projection, {
+        commandCenter,
+        rawSocket: new WebSocketRawSocketActions({ ...actionInput, commandCenter }),
+        rallarMessages: new WebSocketRallarMessageActions({ ...actionInput, commandCenter })
     });
-    return toWebSocketCommandCenterViewModel(controls, projection, actions);
 }
 interface WebSocketCommandCenterLifecycle {
     readonly lifetime: DiagnosticControllerLifecycle;
@@ -240,10 +247,15 @@ function useWebSocketCommandCenterPresentation(
         payloadResult
     };
 }
+interface WebSocketCommandCenterActionOwners {
+    readonly commandCenter: WebSocketCommandCenterActions;
+    readonly rawSocket: WebSocketRawSocketActions;
+    readonly rallarMessages: WebSocketRallarMessageActions;
+}
 function toWebSocketCommandCenterViewModel(
     controls: WebSocketCommandCenterControls,
     projection: WebSocketCommandCenterPresentation,
-    actions: WebSocketCommandCenterActions
+    { commandCenter, rawSocket, rallarMessages }: WebSocketCommandCenterActionOwners
 ): WebSocketCommandCenterViewModel {
     return {
         providerMode: projection.providerMode,
@@ -263,24 +275,24 @@ function toWebSocketCommandCenterViewModel(
         subscriptionStatusTone: projection.subscriptionStatusTone,
         receiveStatusText: projection.receiveStatusText,
         payloadResult: projection.payloadResult,
-        updateValue: actions.updateValue,
-        updateGroupId: actions.updateGroupId,
-        updateWsScope: actions.updateWsScope,
-        selectPayloadPreset: actions.selectPayloadPreset,
-        configure: actions.configure,
-        open: actions.open,
-        send: actions.send,
-        close: actions.close,
-        reconnect: actions.reconnect,
-        cleanup: actions.cleanup,
-        subscribeWs: actions.subscribeWs,
-        unsubscribeWs: actions.unsubscribeWs,
-        createTicket: actions.createTicket,
-        waitForMessage: actions.waitForMessage,
-        waitForRallarWsOpen: actions.waitForRallarWsOpen,
-        copyDiagnostics: actions.copyDiagnostics,
-        copyRecipe: actions.copyRecipe,
-        openMissingTicket: actions.openMissingTicket
+        updateValue: commandCenter.updateValue,
+        updateGroupId: commandCenter.updateGroupId,
+        updateWsScope: commandCenter.updateWsScope,
+        selectPayloadPreset: commandCenter.selectPayloadPreset,
+        configure: commandCenter.configure,
+        open: rawSocket.open,
+        send: rallarMessages.send,
+        close: rawSocket.close,
+        reconnect: rawSocket.reconnect,
+        cleanup: rawSocket.cleanup,
+        subscribeWs: rallarMessages.subscribeWs,
+        unsubscribeWs: rallarMessages.unsubscribeWs,
+        createTicket: rawSocket.createTicket,
+        waitForMessage: rallarMessages.waitForMessage,
+        waitForRallarWsOpen: rallarMessages.waitForRallarWsOpen,
+        copyDiagnostics: commandCenter.copyDiagnostics,
+        copyRecipe: commandCenter.copyRecipe,
+        openMissingTicket: rawSocket.openMissingTicket
     };
 }
 
