@@ -1,4 +1,4 @@
-import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import { useMemo, type KeyboardEvent } from 'react';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';

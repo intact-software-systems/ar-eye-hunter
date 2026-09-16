@@ -1,8 +1,8 @@
+import type { DistributedRecipeTargetPolicyMode } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import {
     DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
-    type DistributedRecipeRolePattern,
-    type DistributedRecipeTargetPolicyMode
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+    type DistributedRecipeRolePattern
+} from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution

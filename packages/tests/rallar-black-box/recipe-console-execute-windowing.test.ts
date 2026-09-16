@@ -14,7 +14,7 @@ import { ExecuteWindowedList } from '../../../apps/rallar-black-box/src/recipe-c
 import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import { projectDistributedRecipeCatalog } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import type { DistributedRecipeTargetRow } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeTargetRow } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;

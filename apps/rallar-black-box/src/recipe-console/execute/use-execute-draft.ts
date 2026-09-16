@@ -1,6 +1,6 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRecipeCatalogEntryProjection } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { distributedRecipeTargetRows } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { distributedRecipeTargetRows } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-rows.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useEffect, useMemo, useState } from 'react';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';

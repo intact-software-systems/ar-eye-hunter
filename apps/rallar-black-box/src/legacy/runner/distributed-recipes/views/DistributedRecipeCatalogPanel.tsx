@@ -1,6 +1,6 @@
 import { distributedRecipeCommandPreview } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-command-preview.ts';
 import { distributedRecipePreflight } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight.ts';
-import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import {

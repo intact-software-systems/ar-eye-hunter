@@ -1,5 +1,5 @@
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetResolutionEvidence } from './execute-manifest.ts';

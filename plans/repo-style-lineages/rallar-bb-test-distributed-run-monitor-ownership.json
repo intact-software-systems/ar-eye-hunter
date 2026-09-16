@@ -8,7 +8,6 @@
         "blob": "e9114f63e1138526b3cda464034e19909355debb"
       },
       "targets": [
-        "packages/shared-test/rallar-bb-test/distributed/unique-sorted-values.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/compute-loop-iteration-estimate.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-command-preview.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts",
@@ -19,7 +18,14 @@
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-distributed-recipe-command-summary.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-expectation-command-branch.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-preflight-service-badges.ts",
-        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-transport-command-details.ts"
+        "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-transport-command-details.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/derive-distributed-world-fleet-target-gate.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-rows.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/to-distributed-recipe-target-row.ts",
+        "packages/shared-test/rallar-bb-test/distributed/unique-sorted-values.ts"
       ]
     }
   ]

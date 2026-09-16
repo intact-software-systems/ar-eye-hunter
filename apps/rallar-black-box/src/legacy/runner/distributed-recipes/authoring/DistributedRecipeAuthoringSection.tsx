@@ -1,8 +1,6 @@
-import type {
-    DistributedRecipeCatalogItem,
-    DistributedRecipeRolePattern,
-    DistributedRecipeTargetPolicyMode
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import type { DistributedRecipeTargetPolicyMode } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
+import type { DistributedRecipeRolePattern } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import {

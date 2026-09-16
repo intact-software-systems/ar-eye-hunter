@@ -1,7 +1,6 @@
 import { distributedRecipeCommandKinds } from './distributed-recipe-preflight/distributed-recipe-command-preview.ts';
 import type { DistributedRecipePreflightSummary } from './distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
 import { distributedRecipePreflight } from './distributed-recipe-preflight/distributed-recipe-preflight.ts';
-import type { DistributedRecipeCatalogItem } from './distributed-run-monitor.ts';
 import type { RallarBlackBoxDistributedGroupRef } from './distributed-run.ts';
 import {
     createRallarBlackBoxProviderParityLiveRecipe,
@@ -20,9 +19,22 @@ import {
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
     RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from './fixtures/rtc-realtime-recipes.ts';
+import type { RallarBlackBoxTestRecipe } from './rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from './schema.ts';
 import { validateJsonSchema } from './schema/json-schema-validation.ts';
+
+export type DistributedRecipeCatalogItem = Readonly<{
+    itemId: string;
+    title: string;
+    description: string;
+    recipe: RallarBlackBoxTestRecipe;
+    providerMode: string;
+    profiles: readonly string[];
+    prerequisites: readonly string[];
+    live: boolean;
+    source: 'app-local';
+}>;
 
 const RTC_REALTIME_STABILITY_CATALOG_TITLE = 'RTC Realtime Stability';
 

@@ -1,7 +1,7 @@
 import type {
     DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import {
     validateDistributedRunManifest,
     type DistributedRunManifestValidationResult

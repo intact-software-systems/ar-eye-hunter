@@ -1,4 +1,4 @@
-import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     readyExecuteAgentIds,

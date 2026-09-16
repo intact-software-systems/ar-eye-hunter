@@ -59,6 +59,7 @@ import {
     validateAgentAssertionCapability,
     type DistributedAssertionFeatures
 } from './distributed/control-agent-capabilities.ts';
+import { uniqueSortedValues } from './distributed/unique-sorted-values.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
@@ -75,84 +76,8 @@ import {
     type RallarBlackBoxTestWaitCommand,
     type RallarBlackBoxTestWaitResultValue
 } from './rallar-black-box-test-contracts.ts';
+import { decodeRecord } from './runtime/decode-runtime-result-values.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema/rallar-black-box-command-capabilities.ts';
-
-export type DistributedRecipeRolePattern =
-    | 'all-agents'
-    | 'sender-receiver'
-    | 'one-sender-many-receivers'
-    | 'three-browser-matrix';
-
-export type DistributedRecipeTargetPolicyMode =
-    | 'all-online-group-members'
-    | 'selected-agents'
-    | 'role-map';
-
-export type DistributedRecipeCatalogItem = Readonly<{
-    itemId: string;
-    title: string;
-    description: string;
-    recipe: RallarBlackBoxTestRecipe;
-    providerMode: string;
-    profiles: readonly string[];
-    prerequisites: readonly string[];
-    live: boolean;
-    source: 'app-local';
-}>;
-
-export type DistributedRecipeTargetStatus =
-    | 'matched'
-    | 'duplicate-session'
-    | 'stale'
-    | 'offline'
-    | 'different-group'
-    | 'missing-identity'
-    | 'missing-crdt-runtime'
-    | 'missing-assertion-capability'
-    | 'missing-crdt-transport';
-
-export type DistributedRecipeTargetRow = Readonly<{
-    agentId: string;
-    connected: boolean;
-    status: DistributedRecipeTargetStatus;
-    targetable: boolean;
-    reason: string;
-    principalId?: string;
-    sessionId?: string;
-    groupId?: string;
-    applicationId?: string;
-    workspaceId?: string;
-    crdtSupported?: boolean;
-    crdtTransports?: readonly string[];
-    lastHeartbeatAtEpochMs?: number;
-    lastSeenAtEpochMs?: number;
-}>;
-
-export type DistributedWorldFleetTargetGate = Readonly<{
-    usesWorldFleetTargets: boolean;
-    targetResolution?: RallarBlackBoxDistributedTargetResolution;
-    expectedParticipantCount?: number;
-    previewSelected?: number;
-    blocked: boolean;
-    blockReason?: string;
-}>;
-
-export type BuildDistributedRunManifestInput = Readonly<{
-    distributedRunId: string;
-    controlRunId: string;
-    displayName?: string;
-    group: RallarBlackBoxDistributedGroupRef;
-    recipes: readonly DistributedRecipeCatalogItem[];
-    targetAgentIds: readonly string[];
-    targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    rolePattern: DistributedRecipeRolePattern;
-    ackTimeoutMs: number;
-    barrier?: RallarBlackBoxDistributedBarrierPolicy;
-    startMode: 'manual' | 'auto-after-ready' | 'scheduled';
-    startDeadlineEpochMs?: number;
-    expectedParticipantCount?: number;
-    groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
-}>;
 
 export type DistributedRunProgressStatus =
     | 'pending'
@@ -675,264 +600,6 @@ export type DistributedRunWarningRegressionReport = Readonly<{
     failures: readonly string[];
 }>;
 
-export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
-    value: DistributedRecipeRolePattern;
-    label: string;
-    description: string;
-}>[] = [
-    {
-        value: 'all-agents',
-        label: 'All agents same recipe',
-        description: 'Every selected browser receives every selected recipe.'
-    },
-    {
-        value: 'sender-receiver',
-        label: 'Sender / receiver pair',
-        description: 'First target is sender, second target is receiver.'
-    },
-    {
-        value: 'one-sender-many-receivers',
-        label: 'One sender, many receivers',
-        description: 'First target is sender, remaining targets are receivers.'
-    },
-    {
-        value: 'three-browser-matrix',
-        label: 'Three-browser matrix',
-        description: 'First target publishes, second relays, third and later observe.'
-    }
-];
-
-export function distributedRecipeTargetRows(
-    input: Readonly<{
-        run: ControlRunSnapshot | undefined;
-        group: RallarBlackBoxDistributedGroupRef;
-        requiredCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
-        requiredRecipes?: readonly RallarBlackBoxTestRecipe[];
-        nowEpochMs?: number;
-        staleAfterMs?: number;
-    }>
-): readonly DistributedRecipeTargetRow[] {
-    const nowEpochMs = input.nowEpochMs ?? Date.now();
-    const staleAfterMs = input.staleAfterMs ?? 30_000;
-    const agents = [...(input.run?.agents ?? [])]
-        .sort((left, right) => left.agentId.localeCompare(right.agentId));
-    const requiredCommandKinds = uniqueValues([
-        ...(input.requiredCommandKinds ?? []),
-        ...(input.requiredRecipes ?? []).flatMap(distributedRecipeCommandKinds)
-    ]);
-    const requiresCrdtRuntime = hasCrdtCommandKind(requiredCommandKinds);
-    const requiredCrdtTransports = uniqueValues(
-        (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports)
-    );
-    const requiredAssertionFeatures = collectDistributedAssertionFeatures(
-        input.requiredRecipes ?? []
-    );
-    const rows = agents.map((agent) =>
-        distributedRecipeTargetRow({
-            agent,
-            group: input.group,
-            nowEpochMs,
-            staleAfterMs,
-            requiresCrdtRuntime,
-            requiredCrdtTransports,
-            requiredAssertionFeatures
-        })
-    );
-    const duplicateIdentityCounts = new Map<string, number>();
-
-    rows.forEach((row, index) => {
-        if (!isFreshGroupTargetStatus(row.status)) {
-            return;
-        }
-        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
-        if (identityKey) {
-            duplicateIdentityCounts.set(
-                identityKey,
-                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1
-            );
-        }
-    });
-
-    return rows.map((row, index) => {
-        if (!isFreshGroupTargetStatus(row.status)) {
-            return row;
-        }
-        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
-        if (!identityKey || (duplicateIdentityCounts.get(identityKey) ?? 0) < 2) {
-            return row;
-        }
-        return {
-            ...row,
-            status: 'duplicate-session',
-            targetable: false,
-            reason: 'Multiple fresh control agents report the same normalized Rallar identity and session.'
-        };
-    });
-}
-
-/**
- * Normalizes the scoped principal/session identity used to block duplicate live
- * targets. Client-instance IDs deliberately do not split one authenticated
- * Rallar session into independently targetable agents.
- */
-export function distributedRecipeTargetIdentityKey(
-    agent: ControlAgentSnapshot
-): string | undefined {
-    const identity = agent.identity;
-    const principal = normalizedIdentityPart(
-        identity?.principalId ?? identity?.clientId ?? identity?.username
-    );
-    const session = normalizedIdentityPart(identity?.sessionId);
-    const applicationId = normalizedIdentityPart(identity?.applicationId);
-    const workspaceId = normalizedIdentityPart(identity?.workspaceId);
-    const groupId = normalizedIdentityPart(identity?.groupId);
-
-    if (!principal || !session || !applicationId || !workspaceId || !groupId) {
-        return undefined;
-    }
-
-    return [applicationId, workspaceId, groupId, principal, session].join('\u0000');
-}
-
-export function defaultDistributedRecipeTargetIds(
-    rows: readonly DistributedRecipeTargetRow[]
-): readonly string[] {
-    return rows
-        .filter((row) => row.targetable)
-        .map((row) => row.agentId);
-}
-
-export function reconcileDistributedRecipeTargetIds(
-    selectedAgentIds: readonly string[],
-    rows: readonly DistributedRecipeTargetRow[]
-): readonly string[] {
-    const defaults = defaultDistributedRecipeTargetIds(rows);
-    const targetable = new Set(defaults);
-    const retained = selectedAgentIds.filter((agentId) => targetable.has(agentId));
-    return retained.length > 0 ? retained : defaults;
-}
-
-export function deriveDistributedWorldFleetTargetGate(
-    input: Readonly<{
-        usesWorldFleetTargets: boolean;
-        expectedParticipantCount?: number;
-        targetResolutionPreview?: RallarBlackBoxDistributedTargetResolution;
-        selectedDistributedRun?: ControlDistributedRunSnapshot;
-        distributedRunId?: string;
-    }>
-): DistributedWorldFleetTargetGate {
-    const selectedRunUsesWorldFleetTargets =
-        input.selectedDistributedRun?.manifest.targetPolicy.mode === 'all-online-group-members';
-    const selectedRunMatchesDraft = input.distributedRunId === undefined ||
-        input.selectedDistributedRun?.distributedRunId === input.distributedRunId;
-    const useSelectedRunResolution = selectedRunUsesWorldFleetTargets &&
-        (!input.usesWorldFleetTargets || selectedRunMatchesDraft);
-    const targetResolution = input.usesWorldFleetTargets
-        ? input.targetResolutionPreview ??
-            (useSelectedRunResolution ? input.selectedDistributedRun?.targetResolution : undefined)
-        : useSelectedRunResolution
-        ? input.selectedDistributedRun?.targetResolution
-        : undefined;
-    const usesWorldFleetTargets = input.usesWorldFleetTargets || useSelectedRunResolution;
-    const expectedParticipantCount = input.usesWorldFleetTargets
-        ? input.expectedParticipantCount
-        : useSelectedRunResolution
-        ? input.selectedDistributedRun?.manifest.targetPolicy.expectedParticipantCount
-        : undefined;
-    const previewSelected = usesWorldFleetTargets
-        ? targetResolution?.summary.selected
-        : undefined;
-    const resolutionExpected = targetResolution?.summary.expectedParticipantCount;
-    const blocked = usesWorldFleetTargets &&
-        (
-            targetResolution === undefined ||
-            expectedParticipantCount === undefined ||
-            resolutionExpected !== expectedParticipantCount ||
-            previewSelected !== expectedParticipantCount
-        );
-    const blockReason = blocked
-        ? targetResolution === undefined
-            ? 'Resolve world-fleet targets before staging or starting.'
-            : `Resolved ${previewSelected ?? 0}/${expectedParticipantCount ?? 'unknown'} world-fleet target(s).`
-        : undefined;
-
-    return {
-        usesWorldFleetTargets,
-        targetResolution,
-        expectedParticipantCount,
-        previewSelected,
-        blocked,
-        blockReason
-    };
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
-}
-
-function uniqueValues<T extends string>(values: readonly T[]): readonly T[] {
-    return [...new Set(values)].sort();
-}
-
-export function buildDistributedRunManifest(
-    input: BuildDistributedRunManifestInput
-): RallarBlackBoxDistributedRunManifest {
-    const recipeSelections = input.recipes.map((item, index) => ({
-        recipeId: item.recipe.recipeId,
-        recipe: item.recipe,
-        role: recipeRoleForPattern(input.rolePattern, index, input.recipes.length),
-        profile: item.profiles[0],
-        required: true
-    } satisfies RallarBlackBoxDistributedRunRecipeSelection));
-    const roles = rolesForPattern(input.rolePattern, input.targetAgentIds);
-    const targetPolicy = buildTargetPolicy({
-        mode: input.targetPolicyMode,
-        agentIds: input.targetAgentIds,
-        roles,
-        expectedParticipantCount: input.expectedParticipantCount
-    });
-    const useOrderedTargetRoles = input.targetPolicyMode === 'all-online-group-members' &&
-        input.rolePattern !== 'all-agents';
-    const roleAssignments = useOrderedTargetRoles
-        ? undefined
-        : roleAssignmentsForPattern(input.rolePattern, input.targetAgentIds);
-    const roleAssignmentPolicy = useOrderedTargetRoles
-        ? orderedTargetRoleAssignmentPolicy(input.rolePattern)
-        : undefined;
-
-    return {
-        schemaVersion: 1,
-        distributedRunId: input.distributedRunId,
-        controlRunId: input.controlRunId,
-        displayName: input.displayName,
-        group: input.group,
-        recipes: recipeSelections,
-        targetPolicy,
-        roleAssignments,
-        roleAssignmentPolicy,
-        ackTimeoutMs: input.ackTimeoutMs,
-        barrier: input.barrier,
-        startMode: input.startMode,
-        startDeadlineEpochMs: input.startMode === 'scheduled'
-            ? input.startDeadlineEpochMs
-            : undefined,
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeDistributedMetadata: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true
-        },
-        groupAssertions: input.groupAssertions,
-        metadata: {
-            createdBy: 'rallar-black-box-spa',
-            rolePattern: input.rolePattern
-        }
-    };
-}
-
 export function distributedRecipeStateTone(state: string): string {
     if (state === 'passed' || state === 'ready') {
         return 'good';
@@ -1347,7 +1014,7 @@ function runVerdictWarnings(
             }.`]
             : [])
     ];
-    return uniqueValues(warnings);
+    return uniqueSortedValues(warnings);
 }
 
 function runVerdictSuccessSignals(
@@ -1752,18 +1419,18 @@ export function deriveDistributedRunWarningRegressionReport(
         .filter((value) => monitorEvidenceText.includes(value));
     const artifactMessageEvidence = expectedMessageEvidence
         .filter((value) => artifactEvidenceText.includes(value));
-    const diagnosticTypeIds = uniqueValues(monitor.runtimeDiagnostics.map((row) => row.diagnosticTypeId));
-    const warningDiagnosticTypeIds = uniqueValues(
+    const diagnosticTypeIds = uniqueSortedValues(monitor.runtimeDiagnostics.map((row) => row.diagnosticTypeId));
+    const warningDiagnosticTypeIds = uniqueSortedValues(
         monitor.runtimeDiagnostics
             .filter((row) => row.severity === 'warning')
             .map((row) => row.diagnosticTypeId)
     );
-    const highSeverityDiagnosticTypeIds = uniqueValues(
+    const highSeverityDiagnosticTypeIds = uniqueSortedValues(
         monitor.runtimeDiagnostics
             .filter((row) => failOnDiagnosticSeverities.includes(row.severity))
             .map((row) => row.diagnosticTypeId)
     );
-    const compositeRecipeIds = uniqueValues(
+    const compositeRecipeIds = uniqueSortedValues(
         monitor.compositeDrilldowns
             .map((row) => row.recipeId ?? row.commandId)
             .filter((value): value is string => Boolean(value))
@@ -1815,229 +1482,6 @@ export function deriveDistributedRunWarningRegressionReport(
         },
         failures
     };
-}
-
-interface DistributedRecipeTargetRowInput {
-    readonly agent: ControlAgentSnapshot;
-    readonly group: RallarBlackBoxDistributedGroupRef;
-    readonly nowEpochMs: number;
-    readonly staleAfterMs: number;
-    readonly requiresCrdtRuntime: boolean;
-    readonly requiredCrdtTransports: readonly RallarBlackBoxTestCrdtTransport[];
-    readonly requiredAssertionFeatures: DistributedAssertionFeatures;
-}
-
-function distributedRecipeTargetRow(
-    input: DistributedRecipeTargetRowInput
-): DistributedRecipeTargetRow {
-    const { agent, group, nowEpochMs, staleAfterMs, requiresCrdtRuntime, requiredCrdtTransports } = input;
-    const identity = agent.identity;
-    const crdt = identity?.capabilities?.crdt;
-    const crdtTransports = crdt?.transports ?? [];
-    const lastActiveAtEpochMs = agent.lastHeartbeatAtEpochMs ?? agent.lastSeenAtEpochMs ?? identity?.updatedAtEpochMs;
-    const stale = typeof lastActiveAtEpochMs === 'number' && nowEpochMs - lastActiveAtEpochMs > staleAfterMs;
-    const base = {
-        agentId: agent.agentId,
-        connected: agent.connected,
-        principalId: identity?.principalId ?? identity?.clientId ?? identity?.username,
-        sessionId: identity?.sessionId,
-        groupId: identity?.groupId,
-        applicationId: identity?.applicationId,
-        workspaceId: identity?.workspaceId,
-        crdtSupported: crdt?.supported,
-        crdtTransports,
-        lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
-        lastSeenAtEpochMs: agent.lastSeenAtEpochMs
-    };
-
-    if (!identity?.applicationId || !identity.workspaceId || !identity.groupId) {
-        return {
-            ...base,
-            status: 'missing-identity',
-            targetable: false,
-            reason: 'Agent has not reported enough Rallar identity metadata.'
-        };
-    }
-
-    if (
-        identity.applicationId !== group.applicationId ||
-        identity.workspaceId !== group.workspaceId ||
-        identity.groupId !== group.groupId
-    ) {
-        return {
-            ...base,
-            status: 'different-group',
-            targetable: false,
-            reason: 'Agent identity does not match the selected global group.'
-        };
-    }
-
-    if (!agent.connected) {
-        return {
-            ...base,
-            status: 'offline',
-            targetable: false,
-            reason: 'Agent matches the group but is disconnected from the control server.'
-        };
-    }
-
-    if (stale) {
-        return {
-            ...base,
-            status: 'stale',
-            targetable: false,
-            reason: 'Agent matches the group but the last heartbeat is stale.'
-        };
-    }
-
-    if (requiresCrdtRuntime && !crdt?.supported) {
-        return {
-            ...base,
-            status: 'missing-crdt-runtime',
-            targetable: false,
-            reason: 'Agent matches the group but has not reported a CRDT runtime.'
-        };
-    }
-
-    const missingCrdtTransport = requiredCrdtTransports
-        .find((transport) => !crdtTransports.includes(transport));
-    if (missingCrdtTransport) {
-        return {
-            ...base,
-            status: 'missing-crdt-transport',
-            targetable: false,
-            reason: `Agent CRDT runtime does not report ${missingCrdtTransport} transport support.`
-        };
-    }
-
-    const unmetAssertionReason = validateAgentAssertionCapability(
-        input.requiredAssertionFeatures,
-        identity?.capabilities
-    );
-    if (unmetAssertionReason) {
-        return {
-            ...base,
-            status: 'missing-assertion-capability',
-            targetable: false,
-            reason: unmetAssertionReason
-        };
-    }
-
-    return {
-        ...base,
-        status: 'matched',
-        targetable: true,
-        reason: 'Agent is connected and reports the selected global group.'
-    };
-}
-
-function isFreshGroupTargetStatus(status: DistributedRecipeTargetStatus): boolean {
-    return status === 'matched' ||
-        status === 'missing-crdt-runtime' ||
-        status === 'missing-crdt-transport';
-}
-
-function normalizedIdentityPart(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0
-        ? value.trim().toLowerCase()
-        : undefined;
-}
-
-function buildTargetPolicy(
-    input: Readonly<{
-        mode: DistributedRecipeTargetPolicyMode;
-        agentIds: readonly string[];
-        roles: Readonly<Record<string, readonly string[]>>;
-        expectedParticipantCount?: number;
-    }>
-): RallarBlackBoxDistributedTargetPolicy {
-    const expected = input.expectedParticipantCount && input.expectedParticipantCount > 0
-        ? { expectedParticipantCount: Math.floor(input.expectedParticipantCount) }
-        : {};
-    if (input.mode === 'all-online-group-members') {
-        return {
-            mode: input.mode,
-            ...expected
-        };
-    }
-    if (input.mode === 'role-map') {
-        return {
-            mode: input.mode,
-            roles: input.roles,
-            ...expected
-        };
-    }
-    return {
-        mode: input.mode,
-        agentIds: input.agentIds,
-        ...expected
-    };
-}
-
-function roleAssignmentsForPattern(
-    pattern: DistributedRecipeRolePattern,
-    agentIds: readonly string[]
-): readonly RallarBlackBoxDistributedRoleAssignment[] | undefined {
-    const roles = rolesForPattern(pattern, agentIds);
-    const assignments = Object.entries(roles).flatMap(([role, ids]) =>
-        ids.map((agentId) => ({
-            role,
-            agentId,
-            required: true
-        }))
-    );
-    return assignments.length > 0 ? assignments : undefined;
-}
-
-function orderedTargetRoleAssignmentPolicy(
-    pattern: DistributedRecipeRolePattern
-): RallarBlackBoxDistributedRoleAssignmentPolicy {
-    return {
-        mode: 'ordered-targets',
-        pattern,
-        orderBy: 'agent-id'
-    };
-}
-
-function rolesForPattern(
-    pattern: DistributedRecipeRolePattern,
-    agentIds: readonly string[]
-): Readonly<Record<string, readonly string[]>> {
-    if (pattern === 'all-agents') {
-        return {};
-    }
-    if (pattern === 'sender-receiver') {
-        return {
-            sender: agentIds.slice(0, 1),
-            receiver: agentIds.slice(1, 2)
-        };
-    }
-    if (pattern === 'one-sender-many-receivers') {
-        return {
-            sender: agentIds.slice(0, 1),
-            receiver: agentIds.slice(1)
-        };
-    }
-    return {
-        publisher: agentIds.slice(0, 1),
-        relay: agentIds.slice(1, 2),
-        observer: agentIds.slice(2)
-    };
-}
-
-function recipeRoleForPattern(
-    pattern: DistributedRecipeRolePattern,
-    recipeIndex: number,
-    recipeCount: number
-): string | undefined {
-    if (pattern === 'all-agents' || recipeCount < 2) {
-        return undefined;
-    }
-    if (pattern === 'sender-receiver' || pattern === 'one-sender-many-receivers') {
-        return recipeIndex === 0 ? 'sender' : 'receiver';
-    }
-    const roles = ['publisher', 'relay', 'observer'];
-    return roles[Math.min(recipeIndex, roles.length - 1)];
 }
 
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
@@ -2162,14 +1606,14 @@ function recipeRunChildResults(result: RallarBlackBoxTestResult): readonly Ralla
     if (result.kind !== 'recipe.run') {
         return [];
     }
-    const value = asRecord(result.value);
+    const value = decodeRecord(result.value);
     return Array.isArray(value.results)
         ? value.results.filter(isRallarBlackBoxTestResult)
         : [];
 }
 
 function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
-    const candidate = asRecord(value);
+    const candidate = decodeRecord(value);
     return typeof candidate.commandId === 'string' &&
         typeof candidate.kind === 'string' &&
         typeof candidate.status === 'string' &&
@@ -2346,7 +1790,7 @@ function compositeErrorSummary(error: unknown): string | undefined {
     if (error === undefined) {
         return undefined;
     }
-    const record = asRecord(error);
+    const record = decodeRecord(error);
     const code = firstString(record.code);
     const message = firstString(record.message);
     if (code || message) {
@@ -2356,7 +1800,7 @@ function compositeErrorSummary(error: unknown): string | undefined {
 }
 
 function waitMatchSummary(value: unknown): string | undefined {
-    const match = asRecord(value);
+    const match = decodeRecord(value);
     return [
         firstString(match.topic),
         firstString(match.commandId),
@@ -2386,7 +1830,7 @@ function compositeGroupStatus(
 }
 
 function compositeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultValue | undefined {
-    const candidate = asRecord(value) as Partial<RallarBlackBoxTestLoopResultValue>;
+    const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestLoopResultValue>;
     return Array.isArray(candidate.results) &&
             typeof candidate.iterations === 'number' &&
             typeof candidate.childResultCount === 'number'
@@ -2395,7 +1839,7 @@ function compositeLoopResultValue(value: unknown): RallarBlackBoxTestLoopResultV
 }
 
 function compositeParallelResultValue(value: unknown): RallarBlackBoxTestParallelResultValue | undefined {
-    const candidate = asRecord(value) as Partial<RallarBlackBoxTestParallelResultValue>;
+    const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestParallelResultValue>;
     return Array.isArray(candidate.groups) &&
             typeof candidate.groupCount === 'number' &&
             typeof candidate.maxConcurrency === 'number'
@@ -2404,14 +1848,14 @@ function compositeParallelResultValue(value: unknown): RallarBlackBoxTestParalle
 }
 
 function compositeWaitResultValue(value: unknown): RallarBlackBoxTestWaitResultValue | undefined {
-    const candidate = asRecord(value) as Partial<RallarBlackBoxTestWaitResultValue>;
+    const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestWaitResultValue>;
     return typeof candidate.matched === 'boolean' && candidate.match !== undefined
         ? candidate as RallarBlackBoxTestWaitResultValue
         : undefined;
 }
 
 function compositeAssertResultValue(value: unknown): RallarBlackBoxTestAssertResultValue | undefined {
-    const candidate = asRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
+    const candidate = decodeRecord(value) as Partial<RallarBlackBoxTestAssertResultValue>;
     return typeof candidate.source === 'string' &&
             typeof candidate.operator === 'string' &&
             typeof candidate.exists === 'boolean' &&
@@ -2475,13 +1919,13 @@ function distributedRunRuntimeDiagnostic(
     event: ControlEventSnapshot,
     index: number
 ): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> | undefined {
-    const runtimeEvent = asRecord(event.payload);
+    const runtimeEvent = decodeRecord(event.payload);
     const payload = normalizedRuntimeDiagnosticPayload(event.payload);
     if (!payload) {
         return undefined;
     }
 
-    const data = asRecord(payload.data);
+    const data = decodeRecord(payload.data);
     const topic = firstString(
         payload.topic,
         runtimeEvent.topic,
@@ -2914,7 +2358,7 @@ function isDistributedAnalysisTerminal(state: string): boolean {
 }
 
 function compactStrings(values: readonly (string | undefined)[]): readonly string[] {
-    return uniqueValues(values.filter((value): value is string => Boolean(value && value.length > 0)));
+    return uniqueSortedValues(values.filter((value): value is string => Boolean(value && value.length > 0)));
 }
 
 function uniqueExplanations(
@@ -3660,7 +3104,7 @@ function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Read
         index: number;
     }>[];
 }> {
-    const record = asRecord(run.manifest);
+    const record = decodeRecord(run.manifest);
     const recipes = Array.isArray(record.recipes)
         ? record.recipes.flatMap((selection, index) =>
             isRecord(selection)
@@ -3673,8 +3117,8 @@ function distributedRunHistoryManifest(run: ControlDistributedRunSnapshot): Read
         : [];
     return {
         record,
-        group: asRecord(record.group),
-        metadata: asRecord(record.metadata),
+        group: decodeRecord(record.group),
+        metadata: decodeRecord(record.metadata),
         recipes
     };
 }
@@ -3725,8 +3169,8 @@ function payloadReferencesDistributedRun(payload: unknown, distributedRunId: str
 function normalizedRuntimeDiagnosticPayload(
     payload: unknown
 ): (RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>) | undefined {
-    const envelope = asRecord(payload);
-    const nested = asRecord(envelope.payload);
+    const envelope = decodeRecord(payload);
+    const nested = decodeRecord(envelope.payload);
     if (isRuntimeDiagnosticPayload(nested)) {
         return nested as RallarBlackBoxRuntimeDiagnosticPayload & Record<string, unknown>;
     }
@@ -3823,9 +3267,9 @@ function eventSummary(event: ControlEventSnapshot): string {
 }
 
 function distributedRunEventPayloadSummary(payload: unknown): string {
-    const event = asRecord(payload);
-    const nestedPayload = asRecord(event.payload);
-    const nestedData = asRecord(nestedPayload.data ?? event.data);
+    const event = decodeRecord(payload);
+    const nestedPayload = decodeRecord(event.payload);
+    const nestedData = decodeRecord(nestedPayload.data ?? event.data);
     const fields = [
         ['kind', firstString(event.kind)],
         ['topic', firstString(event.topic, nestedPayload.topic, nestedData.topic, payloadTopic(payload))],
