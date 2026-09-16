@@ -171,7 +171,7 @@ export function toManualRecipeText(
     );
 }
 
-export function deriveManualReceivedMessages(
+export function toManualReceivedMessages(
     events: readonly RallarBlackBoxTestEvent[]
 ): readonly ManualReceivedMessage[] {
     return events

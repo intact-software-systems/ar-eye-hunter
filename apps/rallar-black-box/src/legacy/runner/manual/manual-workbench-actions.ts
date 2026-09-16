@@ -15,7 +15,7 @@ import { toManualWorkbenchCommands } from '../../../manual-workbench/manual-work
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
-import { actionLabel } from './manual-workbench-defaults.ts';
+import { toManualActionLabel } from './manual-workbench-defaults.ts';
 
 import type * as React from 'react';
 import type { ManualRallarWorkbenchOptions } from './manual-rallar-workbench-options.ts';
@@ -102,7 +102,7 @@ export class ManualWorkbenchActions {
             this.input.onGlobalValueChange('roomId', selectedGroupId);
         }
 
-        const label = actionLabel(action);
+        const label = toManualActionLabel(action);
         const startSequence = this.input.sequence;
         const commands = toManualWorkbenchCommands({
             action: action,

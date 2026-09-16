@@ -1,10 +1,13 @@
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { CommandHistoryPanel } from '../advanced/CommandHistoryPanel.tsx';
-import { ManualRallarWorkbenchPanel } from './ManualRallarWorkbenchPanel.tsx';
-import { ReceivedDataInboxPanel } from './ReceivedDataInboxPanel.tsx';
+import { ManualRallarWorkbenchPanel } from './manual-rallar-workbench-panel.tsx';
+import { ReceivedDataInboxPanel } from './received-data-inbox-panel.tsx';
 
 export function ManualRallarSection({
     state,

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { RunnerAdvancedPanel } from '../../runner/advanced/RunnerAdvancedPanel.tsx';
+import { RunnerAdvancedPanel } from '../../runner/advanced/runner-advanced-panel.tsx';
 import type {
     LegacyShellAuth,
     LegacyShellGlobalContext,

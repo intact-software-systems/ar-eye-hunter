@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
-    deriveManualReceivedMessages,
     parseManualPayload,
+    toManualReceivedMessages,
     toManualRecipeText,
     type ManualActionHistoryEntry
 } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
@@ -396,7 +396,7 @@ describe('rallar-black-box manual workbench helpers', () => {
     });
 
     it('derives received inbox rows from runtime message events', () => {
-        const messages = deriveManualReceivedMessages([
+        const messages = toManualReceivedMessages([
             {
                 eventId: 'event-1',
                 kind: 'message',

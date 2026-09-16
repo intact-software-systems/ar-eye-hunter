@@ -36,7 +36,7 @@ export function toManualWorkbenchValues(input: ManualWorkbenchValuesInput): Manu
     };
 }
 
-export function actionLabel(action: ManualWorkbenchAction): string {
+export function toManualActionLabel(action: ManualWorkbenchAction): string {
     switch (action) {
         case 'configure':
             return 'Configure group';

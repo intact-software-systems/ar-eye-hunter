@@ -1,10 +1,10 @@
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
-import { ManualRallarExecutionPanel } from './ManualRallarExecutionPanel.tsx';
+import { ManualRallarExecutionPanel } from './manual-rallar-execution-panel.tsx';
 import { ManualRallarInputsPanel } from './ManualRallarInputsPanel.tsx';
 import { useManualRallarWorkbench } from './use-manual-rallar-workbench.ts';
 

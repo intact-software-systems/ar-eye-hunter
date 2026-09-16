@@ -3,7 +3,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
 import { formatTime } from '../../shared/time-format.ts';
-import { actionLabel } from './manual-workbench-defaults.ts';
+import { toManualActionLabel } from './manual-workbench-defaults.ts';
 import type { ManualRallarWorkbenchModel } from './use-manual-rallar-workbench.ts';
 
 export function ManualRallarExecutionPanel({
@@ -83,7 +83,7 @@ export function ManualRallarExecutionPanel({
                         disabled={busy || (action === 'send' && !payloadResult.ok)}
                         onClick={() => void runManualAction(action)}
                     >
-                        {actionLabel(action)}
+                        {toManualActionLabel(action)}
                     </button>
                 ))}
             </div>

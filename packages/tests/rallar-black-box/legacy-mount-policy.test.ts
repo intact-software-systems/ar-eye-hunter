@@ -28,7 +28,7 @@ function lifecycleModule(
     };
 }
 
-type AdvancedPanel = typeof import('../../../apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx')['RunnerAdvancedPanel'];
+type AdvancedPanel = typeof import('../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx')['RunnerAdvancedPanel'];
 type DirectPanels = typeof import('../../../apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx')['DirectConnectionTabPanels'];
 
 let RunnerAdvancedPanel: AdvancedPanel;
@@ -54,7 +54,7 @@ beforeAll(async () => {
         lifecycleModule('LocalWorkbenchSection')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/runner/manual/ManualRallarSection.tsx',
+        '../../../apps/rallar-black-box/src/legacy/runner/manual/manual-rallar-section.tsx',
         lifecycleModule('ManualRallarSection')
     );
     vi.doMock(
@@ -107,7 +107,7 @@ beforeAll(async () => {
     ]);
 
     ({ RunnerAdvancedPanel } = await import(
-        '../../../apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx'
+        '../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx'
     ));
     ({ DirectConnectionTabPanels } = await import(
         '../../../apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx'
