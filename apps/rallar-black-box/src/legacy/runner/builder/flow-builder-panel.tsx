@@ -1,12 +1,12 @@
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { FlowBuilderEditor } from './flow-builder-editor.tsx';
-import { FlowBuilderPreviews } from './FlowBuilderPreviews.tsx';
+import { FlowBuilderPreviews } from './flow-builder-previews.tsx';
 import { useFlowBuilderController, type UseFlowBuilderControllerInput } from './use-flow-builder-controller.ts';
 
-type FlowBuilderPanelProps = UseFlowBuilderControllerInput & {
-    busy: boolean;
-};
+interface FlowBuilderPanelProps extends UseFlowBuilderControllerInput {
+    readonly busy: boolean;
+}
 
 export function FlowBuilderPanel({
     state,

@@ -1,5 +1,11 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderStep } from '../flow-builder.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestRecord
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import type { FlowBuilderStep } from './flow-builder-contracts.ts';
 import { computeFlowBuilderVariables } from './flow-builder-variables.ts';
 import { toFlowBuilderRecipe, type FlowBuilderRecipeInput } from './to-flow-builder-recipe.ts';
 
@@ -10,7 +16,8 @@ export interface FlowBuilderRunnerScenario {
 }
 
 export interface FlowBuilderRunnerVariable {
-    readonly default: unknown;
+    readonly default: RallarBlackBoxTestJsonValue;
+    /** Absent for a variable whose name does not mark it as a credential. */
     readonly secret?: true;
 }
 
@@ -18,8 +25,10 @@ export interface FlowBuilderRunnerStep {
     readonly name: string;
     readonly expect: FlowBuilderStep['expect'];
     readonly type: string;
+    /** Absent for a check or runner-local step that uses no connection. */
     readonly connection?: string;
-    readonly request: object;
+    /** The fields the runner reads for the step type, or the whole command for a kind the runner forwards unchanged. */
+    readonly request: RallarBlackBoxTestRecord | RallarBlackBoxTestCommand;
 }
 
 type FlowBuilderRunnerStepBase = Pick<FlowBuilderRunnerStep, 'name' | 'expect'>;
@@ -82,8 +91,8 @@ function toRunnerVariables(input: FlowBuilderRecipeInput): Readonly<Record<strin
         Object.entries(computeFlowBuilderVariables(input.flow, input.overrides)).map(([key, value]) => [
             key,
             isSecretLike(key)
-                ? { default: value, secret: true }
-                : { default: value }
+                ? { default: decodeRunnerVariableDefault(value), secret: true }
+                : { default: decodeRunnerVariableDefault(value) }
         ])
     );
 }
@@ -263,8 +272,13 @@ function toRunnerRtcStep(
     return { ...base, type: command.kind, connection: command.connection ?? 'flowRtc', request };
 }
 
-function decodeRecord(value: unknown): Readonly<Record<string, unknown>> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
+/** Flow variables come from JSON, so a value outside JSON only appears through a programmatic override. */
+function decodeRunnerVariableDefault(value: unknown): RallarBlackBoxTestJsonValue {
+    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(decodeRunnerVariableDefault);
+    }
+    return isJsonRecordValue(value) ? value : null;
 }

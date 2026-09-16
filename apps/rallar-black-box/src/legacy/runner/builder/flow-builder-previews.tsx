@@ -1,27 +1,28 @@
 import type {
+    RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeRecord } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { FlowBuilderDefinition } from '../../../flow-builder.ts';
+import type { FlowBuilderDefinition } from '../../../flow-builder/flow-builder-contracts.ts';
 import type { SchemaAuthoringValidation } from '../../../schema-authoring.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
-import { flowStepCommandIds } from './flow-builder-support.ts';
 
-type FlowBuilderPreviewsProps = Readonly<{
-    flow?: FlowBuilderDefinition;
-    recipe?: RallarBlackBoxTestRecipe;
-    state: RallarBlackBoxTestState;
-    authSession?: AuthSession;
+interface FlowBuilderPreviewsProps {
+    readonly flow: FlowBuilderDefinition | undefined;
+    readonly recipe: RallarBlackBoxTestRecipe | undefined;
+    readonly state: RallarBlackBoxTestState;
+    readonly authSession: AuthSession | undefined;
     onSelectCommand(commandId: string): void;
-    recipeText: string;
-    recipeValidation?: SchemaAuthoringValidation;
-    runnerText: string;
-    runnerValidation?: SchemaAuthoringValidation;
-}>;
+    readonly recipeText: string;
+    readonly recipeValidation: SchemaAuthoringValidation | undefined;
+    readonly runnerText: string;
+    readonly runnerValidation: SchemaAuthoringValidation | undefined;
+}
 
 export function FlowBuilderPreviews({
     flow,
@@ -49,7 +50,7 @@ export function FlowBuilderPreviews({
                     )}
                     {flow?.steps.map((step) => {
                         const commandIds = recipe
-                            ? flowStepCommandIds(
+                            ? toFlowStepCommandIds(
                                 recipe.commands,
                                 step.stepId
                             )
@@ -136,4 +137,13 @@ export function FlowBuilderPreviews({
             </section>
         </div>
     );
+}
+
+function toFlowStepCommandIds(
+    recipeCommands: readonly RallarBlackBoxTestCommand[],
+    stepId: string
+): readonly string[] {
+    return recipeCommands
+        .filter((command) => decodeRecord(command.metadata?.flow).stepId === stepId)
+        .map((command, index) => command.commandId ?? `${command.kind}-${index + 1}`);
 }

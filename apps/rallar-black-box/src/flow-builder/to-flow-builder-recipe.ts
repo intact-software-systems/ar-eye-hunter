@@ -2,7 +2,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderDefinition, FlowBuilderStep } from '../flow-builder.ts';
+import type { FlowBuilderDefinition, FlowBuilderStep } from './flow-builder-contracts.ts';
 import { computeFlowBuilderVariables, toSubstitutedFlowBuilderValue } from './flow-builder-variables.ts';
 
 export interface FlowBuilderRecipeInput {

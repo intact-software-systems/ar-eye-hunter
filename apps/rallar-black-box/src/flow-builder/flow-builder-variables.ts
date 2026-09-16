@@ -1,4 +1,4 @@
-import type { FlowBuilderDefinition } from '../flow-builder.ts';
+import type { FlowBuilderDefinition } from './flow-builder-contracts.ts';
 
 const FLOW_VARIABLE_EXACT_REFERENCE = /^(?:\{\{([^{}]+)\}\}|\$\{([^{}]+)\}|\{([A-Za-z0-9_.-]+)\})$/;
 const FLOW_VARIABLE_REFERENCES: readonly RegExp[] = [/\{\{([^{}]+)\}\}/g, /\$\{([^{}]+)\}/g, /\{([A-Za-z0-9_.-]+)\}/g];
@@ -29,7 +29,7 @@ export function toSubstitutedFlowBuilderValue(
 
 export function computeFlowBuilderVariables(
     flow: FlowBuilderDefinition,
-    overrides: Readonly<Record<string, unknown>> = {}
+    overrides: Readonly<Record<string, unknown>>
 ): Readonly<Record<string, unknown>> {
     const variables: Record<string, unknown> = {
         ...flow.variables,

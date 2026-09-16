@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderDefinition, FlowBuilderStep, FlowBuilderStepKind } from '../flow-builder.ts';
+import type { FlowBuilderDefinition, FlowBuilderStep, FlowBuilderStepKind } from './flow-builder-contracts.ts';
 
 export function toCreateGroupCommand(commandId: string): RallarBlackBoxTestCommand {
     return {

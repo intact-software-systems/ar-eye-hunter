@@ -4,7 +4,7 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { parseFlowBuilderDefinition } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-definition-text.ts';
+import { decodeFlowBuilderDefinitionText } from '../../../apps/rallar-black-box/src/flow-builder/decode-flow-builder-definition-text.ts';
 import { appendFlowBuilderStep } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-steps.ts';
 import {
     FLOW_BUILDER_TEMPLATES,
@@ -14,7 +14,7 @@ import { toSubstitutedFlowBuilderValue } from '../../../apps/rallar-black-box/sr
 import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
 import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
 import { FlowBuilderPanel } from '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-panel.tsx';
-import { flowBuilderVariablesFromGlobalValues } from '../../../apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts';
+import { toFlowBuilderVariablesText } from '../../../apps/rallar-black-box/src/legacy/runner/builder/to-flow-builder-variables-text.ts';
 import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
@@ -188,19 +188,19 @@ describe('rallar-black-box flow builder helpers', () => {
     });
 
     it('parses editable flow JSON and appends step templates', () => {
-        const parsed = parseFlowBuilderDefinition(toTemplateFlowBuilderText('auth-rest-ws-rtc'));
-        expect(parsed.ok).toBe(true);
-        if (!parsed.ok) {
-            return;
+        const parsed = decodeFlowBuilderDefinitionText(toTemplateFlowBuilderText('auth-rest-ws-rtc'));
+        const flow = parsed.foldRight((decoded) => decoded);
+        if (!flow) {
+            throw new Error(parsed.foldLeft((error) => error));
         }
 
-        const next = appendFlowBuilderStep(parsed.flow, 'rtc.send');
+        const next = appendFlowBuilderStep(flow, 'rtc.send');
         expect(next.steps.at(-1)).toMatchObject({
             kind: 'rtc.send',
             label: 'Send RTC'
         });
 
-        const withLogin = appendFlowBuilderStep(parsed.flow, 'auth.login');
+        const withLogin = appendFlowBuilderStep(flow, 'auth.login');
         const loginCommand = withLogin.steps.at(-1)?.commands?.[0];
         expect(loginCommand).toMatchObject({
             kind: 'http.request',
@@ -250,11 +250,8 @@ describe('rallar-black-box flow builder helpers', () => {
         expect(textarea('Flow JSON').value).toBe(
             toTemplateFlowBuilderText(FLOW_BUILDER_TEMPLATES[0].templateId)
         );
-        expect(JSON.parse(textarea('Variables JSON').value)).toEqual(
-            flowBuilderVariablesFromGlobalValues(
-                FLOW_BUILDER_TEMPLATES[0].flow.variables,
-                GLOBAL_VALUES
-            )
+        expect(textarea('Variables JSON').value).toBe(
+            toFlowBuilderVariablesText(FLOW_BUILDER_TEMPLATES[0].flow.variables, GLOBAL_VALUES)
         );
         expect(container.textContent).not.toContain(
             'Edited primary Flow Builder draft'
@@ -269,6 +266,7 @@ describe('rallar-black-box flow builder helpers', () => {
         await act(async () =>
             root?.render(createElement(FlowBuilderPanel, {
                 state: FLOW_BUILDER_STATE,
+                authSession: undefined,
                 globalValues,
                 busy,
                 onSelectCommand: vi.fn()

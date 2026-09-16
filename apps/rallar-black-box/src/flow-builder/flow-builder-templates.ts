@@ -1,8 +1,8 @@
-import type { FlowBuilderDefinition, FlowBuilderTemplate } from '../flow-builder.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../manual-workbench.ts';
 import { toManualRtcDeliveryMatrixCommands } from '../manual-workbench/manual-rtc-probe-commands.ts';
-import { toFlowBuilderText } from './flow-builder-definition-text.ts';
+import type { FlowBuilderDefinition, FlowBuilderTemplate } from './flow-builder-contracts.ts';
 import { toCreateGroupCommand } from './flow-builder-steps.ts';
+import { toFlowBuilderText } from './to-flow-builder-text.ts';
 
 const DEFAULT_FLOW_VARIABLES = {
     providerMode: 'simulated',
@@ -311,8 +311,10 @@ export const FLOW_BUILDER_TEMPLATES: readonly FlowBuilderTemplate[] = [
     }
 ];
 
+export function resolveFlowBuilderTemplate(templateId: string): FlowBuilderTemplate {
+    return FLOW_BUILDER_TEMPLATES.find((entry) => entry.templateId === templateId) ?? FLOW_BUILDER_TEMPLATES[0];
+}
+
 export function toTemplateFlowBuilderText(templateId: string): string {
-    const template = FLOW_BUILDER_TEMPLATES.find((entry) => entry.templateId === templateId) ??
-        FLOW_BUILDER_TEMPLATES[0];
-    return toFlowBuilderText(template.flow);
+    return toFlowBuilderText(resolveFlowBuilderTemplate(templateId).flow);
 }

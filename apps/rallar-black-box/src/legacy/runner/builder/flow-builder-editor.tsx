@@ -1,27 +1,37 @@
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { FlowBuilderStepKind } from '../../../flow-builder.ts';
+import type { FlowBuilderStepKind } from '../../../flow-builder/flow-builder-contracts.ts';
 import { FLOW_BUILDER_TEMPLATES } from '../../../flow-builder/flow-builder-templates.ts';
 import type { FlowBuilderRunnerScenario } from '../../../flow-builder/to-flow-builder-runner-scenario.ts';
-import { FLOW_STEP_BUTTONS } from './flow-builder-support.ts';
 
-type FlowBuilderEditorProps = Readonly<{
-    templateId: string;
+interface FlowBuilderEditorProps {
+    readonly templateId: string;
     selectTemplate(value: string): void;
-    busy: boolean;
+    readonly busy: boolean;
     normalizeFlowJson(): void;
     runFlow(): Promise<void>;
-    recipe?: RallarBlackBoxTestRecipe;
+    readonly recipe: RallarBlackBoxTestRecipe | undefined;
     copyText(text: string): void;
-    recipeText: string;
-    runnerText: string;
-    runnerScenario?: FlowBuilderRunnerScenario;
+    readonly recipeText: string;
+    readonly runnerText: string;
+    readonly runnerScenario: FlowBuilderRunnerScenario | undefined;
     addStep(kind: FlowBuilderStepKind): void;
-    variablesText: string;
+    readonly variablesText: string;
     setVariablesEdited(value: boolean): void;
     setVariablesText(value: string): void;
-    flowText: string;
+    readonly flowText: string;
     setFlowText(value: string): void;
-}>;
+}
+
+const FLOW_STEP_BUTTONS: readonly FlowBuilderStepKind[] = [
+    'auth.login',
+    'rest.request',
+    'ws.open',
+    'ws.send',
+    'rtc.connect',
+    'rtc.send',
+    'wait',
+    'cleanup'
+];
 
 export function FlowBuilderEditor({
     templateId,
