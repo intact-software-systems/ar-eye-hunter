@@ -91,11 +91,6 @@ export function decodeJsonlControlEventEnvelope(
     });
 }
 
-/** The recorder mirrors every result into events.jsonl as a step-result row, which stands in for no event. */
-export function isJsonlResultMirrorRow(value: unknown): boolean {
-    return isJsonRecordValue(value) && value.kind === 'step-result';
-}
-
 function decodeRecorderOutcome(status: unknown): boolean | undefined {
     return isOneOf(status, RECORDER_OUTCOMES) ? status === 'SUCCESS' : undefined;
 }

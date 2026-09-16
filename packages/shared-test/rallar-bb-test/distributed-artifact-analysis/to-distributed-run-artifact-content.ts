@@ -46,11 +46,7 @@ import {
     decodeDistributedRunRunnerSummary,
     type DistributedRunRunnerSummary
 } from './decode-distributed-run-runner-summary.ts';
-import {
-    decodeJsonlControlEventEnvelope,
-    decodeJsonlControlResultEnvelope,
-    isJsonlResultMirrorRow
-} from './decode-jsonl-control-envelopes.ts';
+import { decodeJsonlControlEventEnvelope, decodeJsonlControlResultEnvelope } from './decode-jsonl-control-envelopes.ts';
 
 export interface ControlPostFailureArtifact {
     readonly request: DistributedRunControlPostRequest;
@@ -116,6 +112,9 @@ export type DistributedRunArtifactContent =
     | DistributedRunControlRequestFailureContent;
 
 const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json';
+
+/** The recorder mirrors every result into events.jsonl as a step-result row, which stands in for no event. */
+const RESULT_MIRROR_ROW_KIND = 'step-result';
 
 const DISTRIBUTED_RUN_FILE = { fileName: 'distributed-run.json', contractName: 'a distributed run snapshot' } as const;
 
@@ -256,8 +255,9 @@ function toControlRunWithJsonlEnvelopes(
     const events = controlRun.events.length > 0
         ? { value: controlRun.events, warnings: [] }
         : toJsonlStandInEnvelopes(
-            distributedArtifactPipelineJsonlRows(parsed, 'events.jsonl')
-                .filter((row) => !isJsonlResultMirrorRow(row.value)),
+            distributedArtifactPipelineJsonlRows(parsed, 'events.jsonl').filter((row) =>
+                !(isJsonRecordValue(row.value) && row.value.kind === RESULT_MIRROR_ROW_KIND)
+            ),
             { fileName: 'events.jsonl', envelopeName: 'a control event' },
             (row) => decodeJsonlControlEventEnvelope(row, runId)
         );
