@@ -247,6 +247,70 @@ describe('distributed run artifact control request failures', () => {
         expect(analysis.failure.nextAction).toContain('POST /distributed-runs/dist-post-start-failure/start');
     });
 
+    it('warns about a malformed control request record beside a distributed run and analyzes the run without it', () => {
+        const analyzed = computeDistributedRunArtifactAnalysis({
+            files: toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-malformed-request-record',
+                    controlRunId: 'run-malformed-request-record',
+                    state: 'failed',
+                    agentIds: ['controller-01']
+                }),
+                controlRun: createControlRunSnapshot({ runId: 'run-malformed-request-record' }),
+                files: {
+                    'control-post-error-metadata.json': JSON.stringify({
+                        phase: 'start',
+                        method: 'POST',
+                        path: '/distributed-runs/dist-malformed-request-record/start',
+                        httpStatus: null,
+                        curlStatus: 7,
+                        exitStatus: 7,
+                        responseFile: null
+                    })
+                }
+            }),
+            generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+        });
+
+        const analysis = analyzed.right?.analysis;
+        if (analyzed.right?.variant !== 'distributed-run' || analysis?.ok !== false) {
+            throw new Error(`Expected a failed distributed run analysis, got ${JSON.stringify(analyzed.left ?? analyzed.right)}`);
+        }
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'control-post-error-metadata.json',
+            message: 'control-post-error-metadata.json is not a control request record: atEpochSeconds must be a finite number.'
+        }]);
+        expect(analysis.failure.category).not.toBe('control-api');
+        expect(analysis.failure.evidenceFile).not.toBe('control-post-error-metadata.json');
+    });
+
+    it('warns about a malformed runner summary beside a failed request record and names the run from manifest.json', () => {
+        const analysis = controlRequestFailure(failedCreateFiles({
+            'runner-summary.json': JSON.stringify({ distributedRunId: 'dist-post-failure', state: 'failed' }),
+            'control-post-error-metadata.json': failedCreateRecord(null, null)
+        }));
+
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'runner-summary.json',
+            message: 'runner-summary.json is not a runner summary: controlRunId must be a non-empty string.'
+        }]);
+        expect(analysis.runnerSummary).toBeUndefined();
+        expect(analysis.distributedRunId).toBe('dist-post-failure');
+    });
+
+    it('warns about a manifest.json that is not valid JSON beside a failed request record', () => {
+        const analysis = controlRequestFailure({
+            ...failedCreateFiles({ 'control-post-error-metadata.json': failedCreateRecord(null, null) }),
+            'manifest.json': '{'
+        });
+
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'manifest.json',
+            message: expect.stringMatching(/^manifest\.json is not valid JSON: /)
+        }]);
+        expect(analysis.distributedRunId).toBe('dist-post-failure');
+    });
+
     it('rejects a control request record that omits a field the runner always writes', () => {
         const analyzed = computeDistributedRunArtifactAnalysis({
             files: failedCreateFiles({

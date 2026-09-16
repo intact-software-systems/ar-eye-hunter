@@ -366,7 +366,11 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   is not JSON, or a named file that is missing), a failure analysis and a fix
   proposal, with no snapshot, performance or monitor sections. `summary.md` and
   `fix-proposal.md` quote a bounded excerpt of a recorded body. Any other folder
-  without `distributed-run.json` is rejected.
+  without `distributed-run.json` is rejected. That variant requires a conforming
+  request record; its `runner-summary.json` and `manifest.json` are optional
+  evidence, so a malformed one is a parse warning and the run is named from the
+  other. Beside a distributed run the request record is optional evidence too: a
+  malformed record is a parse warning and the failure focus ignores it.
 - `target-resolution.json` is decoded with the snapshot's target resolution
   decoder: `null` means no resolution and a non-conforming record is a parse
   warning. The other optional evidence (`fleet-report.json`, `failures.json`,

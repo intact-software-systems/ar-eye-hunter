@@ -9,7 +9,6 @@ import type {
 import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonlRows,
-    distributedArtifactPipelineJsonValue,
     type ParsedDistributedArtifactPipeline
 } from '../distributed-artifact-pipeline.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
@@ -81,7 +80,7 @@ export interface DistributedRunBundleContent {
     readonly bundledFailure?: DistributedRunBundledFailure;
     /** Absent when target-resolution.json is missing, records null, or is not a target resolution; a warning says which. */
     readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
-    /** Absent when the runner recorded no failed control request. */
+    /** Absent when the runner recorded no failed control request or its record is malformed; a warning says which. */
     readonly controlPostFailure?: ControlPostFailureArtifact;
     readonly results: readonly DistributedRunResultEvidence[];
     readonly events: readonly DistributedRunEventEvidence[];
@@ -91,9 +90,9 @@ export interface DistributedRunControlRequestFailureContent {
     readonly variant: 'control-request-failure';
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
     readonly controlPostFailure: ControlPostFailureArtifact;
-    /** Absent when the runner stopped before it wrote runner-summary.json. */
+    /** Absent when the runner stopped before it wrote runner-summary.json or the summary is malformed; a warning says which. */
     readonly runnerSummary?: DistributedRunRunnerSummary;
-    /** Absent when manifest.json is missing, not valid JSON or names no distributed run. */
+    /** Absent when manifest.json is missing, or is malformed or names no distributed run; a warning says which. */
     readonly manifestDistributedRunId?: string;
 }
 
@@ -103,6 +102,11 @@ export type DistributedRunArtifactContent =
 
 const CONTROL_POST_ERROR_METADATA_FILE_NAME = 'control-post-error-metadata.json';
 
+const CONTROL_POST_REQUEST_FILE = {
+    fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME,
+    contractName: 'a control request record'
+} as const;
+
 interface RecordedTargetResolution {
     /** Absent when target-resolution.json records null. */
     readonly targetResolution?: RallarBlackBoxDistributedTargetResolution;
@@ -110,27 +114,24 @@ interface RecordedTargetResolution {
 
 /**
  * A folder without distributed-run.json is analyzable only when the runner recorded the failed
- * control request that prevented the run from existing.
+ * control request that prevented the run from existing; that record is then required, while beside a
+ * distributed run it is optional evidence.
  */
 export function toDistributedRunArtifactContent(
     parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
-    return toRecordedControlPostFailure(parsed).flatMap(
-        (rejection) => Either.ofLeft(rejection),
-        (recorded): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> => {
-            if (distributedArtifactPipelineFile(parsed, 'distributed-run.json').status !== 'missing') {
-                return toBundleContent(parsed, recorded);
-            }
-            const controlPostFailure = recorded.value;
-            return controlPostFailure === undefined
-                ? Either.ofLeft({
-                    fileName: 'distributed-run.json',
-                    message:
-                        'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
-                })
-                : toControlRequestFailureContent(parsed, { value: controlPostFailure, warnings: recorded.warnings });
-        }
-    );
+    if (distributedArtifactPipelineFile(parsed, 'distributed-run.json').status !== 'missing') {
+        return toBundleContent(parsed);
+    }
+    if (distributedArtifactPipelineFile(parsed, CONTROL_POST_ERROR_METADATA_FILE_NAME).status === 'missing') {
+        return Either.ofLeft({
+            fileName: 'distributed-run.json',
+            message:
+                'distributed-run.json is required: the artifacts hold neither a distributed run snapshot nor a failed control request record.'
+        });
+    }
+    return toRequiredJsonFileValue(parsed, CONTROL_POST_REQUEST_FILE, decodeControlPostRequest)
+        .mapRight((request) => toControlRequestFailureContent(parsed, toControlPostFailure(parsed, request)));
 }
 
 export function toDistributedRunBundleContent(
@@ -150,10 +151,10 @@ export function toDistributedRunBundleContent(
 }
 
 function toBundleContent(
-    parsed: ParsedDistributedArtifactPipeline,
-    recorded: ArtifactFileReading<ControlPostFailureArtifact | undefined>
+    parsed: ParsedDistributedArtifactPipeline
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
     return toSnapshots(parsed).mapRight((snapshots) => {
+        const recorded = toOptionalControlPostFailure(parsed);
         const fleetReport = toOptionalJsonFileEvidence(
             parsed,
             'fleet-report.json',
@@ -228,40 +229,40 @@ function toSnapshots(
     );
 }
 
+/** The runner summary and manifest are optional evidence of the run that was never created. */
 function toControlRequestFailureContent(
     parsed: ParsedDistributedArtifactPipeline,
     recorded: ArtifactFileReading<ControlPostFailureArtifact>
-): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
-    const manifestDistributedRunId = decodeManifestDistributedRunId(
-        distributedArtifactPipelineJsonValue(parsed, 'manifest.json')
+): DistributedRunControlRequestFailureContent {
+    const manifestDistributedRunId = toOptionalJsonFileValue(
+        parsed,
+        { fileName: 'manifest.json', contractName: 'a distributed run manifest' },
+        decodeManifestDistributedRunId
     );
-    const content = {
-        variant: 'control-request-failure' as const,
-        parseWarnings: recorded.warnings,
-        controlPostFailure: recorded.value,
-        ...(manifestDistributedRunId === undefined ? {} : { manifestDistributedRunId })
-    };
-    if (distributedArtifactPipelineFile(parsed, 'runner-summary.json').status === 'missing') {
-        return Either.ofRight(content);
-    }
-    return toRequiredJsonFileValue(
+    const runnerSummary = toOptionalJsonFileValue(
         parsed,
         { fileName: 'runner-summary.json', contractName: 'a runner summary' },
         decodeDistributedRunRunnerSummary
-    ).mapRight((runnerSummary) => ({ ...content, runnerSummary }));
+    );
+    return {
+        variant: 'control-request-failure',
+        parseWarnings: [recorded, runnerSummary, manifestDistributedRunId].flatMap((reading) => reading.warnings),
+        controlPostFailure: recorded.value,
+        ...(runnerSummary.value === undefined ? {} : { runnerSummary: runnerSummary.value }),
+        ...(manifestDistributedRunId.value === undefined
+            ? {}
+            : { manifestDistributedRunId: manifestDistributedRunId.value })
+    };
 }
 
-function toRecordedControlPostFailure(
+function toOptionalControlPostFailure(
     parsed: ParsedDistributedArtifactPipeline
-): Either<DistributedRunArtifactRejection, ArtifactFileReading<ControlPostFailureArtifact | undefined>> {
-    if (distributedArtifactPipelineFile(parsed, CONTROL_POST_ERROR_METADATA_FILE_NAME).status === 'missing') {
-        return Either.ofRight({ value: undefined, warnings: [] });
+): ArtifactFileReading<ControlPostFailureArtifact | undefined> {
+    const request = toOptionalJsonFileValue(parsed, CONTROL_POST_REQUEST_FILE, decodeControlPostRequest);
+    if (request.value === undefined) {
+        return { value: undefined, warnings: request.warnings };
     }
-    return toRequiredJsonFileValue(
-        parsed,
-        { fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME, contractName: 'a control request record' },
-        decodeControlPostRequest
-    ).mapRight((request) => toControlPostFailure(parsed, request));
+    return toControlPostFailure(parsed, request.value);
 }
 
 function toControlPostFailure(
@@ -317,6 +318,12 @@ function decodeControlResponseMessage(value: unknown): string | undefined {
 }
 
 /** A run that was never created has no decoded manifest; only the run id the runner validated is read. */
-function decodeManifestDistributedRunId(value: unknown): string | undefined {
-    return isJsonRecordValue(value) ? decodeText(value.distributedRunId) : undefined;
+function decodeManifestDistributedRunId(value: unknown): Either<string, string> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('the manifest must be a JSON object');
+    }
+    const distributedRunId = decodeText(value.distributedRunId);
+    return distributedRunId === undefined
+        ? Either.ofLeft('distributedRunId must be a non-empty string')
+        : Either.ofRight(distributedRunId);
 }
