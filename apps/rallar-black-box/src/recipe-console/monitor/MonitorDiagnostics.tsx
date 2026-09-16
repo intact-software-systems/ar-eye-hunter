@@ -1,4 +1,4 @@
-import type { DistributedRunRuntimeDiagnosticRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRunRuntimeDiagnosticRow } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 import type {
     RecipeConsoleDiagnosticSeverity,
     RecipeConsoleTransport,

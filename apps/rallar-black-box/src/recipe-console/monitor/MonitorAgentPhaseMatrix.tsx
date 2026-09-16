@@ -1,4 +1,4 @@
-import type { DistributedRunAgentProgressRow } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRunAgentProgressRow } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';

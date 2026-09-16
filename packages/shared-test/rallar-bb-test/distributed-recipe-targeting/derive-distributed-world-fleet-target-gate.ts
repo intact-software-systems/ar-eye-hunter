@@ -55,13 +55,3 @@ export function deriveDistributedWorldFleetTargetGate(
         blockReason
     };
 }
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
-}
-
-function uniqueValues<T extends string>(values: readonly T[]): readonly T[] {
-    return [...new Set(values)].sort();
-}

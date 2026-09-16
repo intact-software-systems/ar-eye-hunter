@@ -53,54 +53,20 @@ export function distributedRecipeTargetRows(
             requiredAssertionFeatures
         })
     );
-    const duplicateIdentityCounts = new Map<string, number>();
-
-    rows.forEach((row, index) => {
-        if (!isFreshGroupTargetStatus(row.status)) {
-            return;
-        }
-        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
-        if (identityKey) {
-            duplicateIdentityCounts.set(
-                identityKey,
-                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1
-            );
-        }
-    });
-
-    return rows.map((row, index) => {
-        if (!isFreshGroupTargetStatus(row.status)) {
-            return row;
-        }
-        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
-        if (!identityKey || (duplicateIdentityCounts.get(identityKey) ?? 0) < 2) {
-            return row;
-        }
-        return {
-            ...row,
-            status: 'duplicate-session',
-            targetable: false,
-            reason: 'Multiple fresh control agents report the same normalized Rallar identity and session.'
-        };
-    });
+    return markDuplicateSessionTargets(rows, agents);
 }
 
-/**
- * Normalizes the scoped principal/session identity used to block duplicate live
- * targets. Client-instance IDs deliberately do not split one authenticated
- * Rallar session into independently targetable agents.
- */
 export function distributedRecipeTargetIdentityKey(
     agent: ControlAgentSnapshot
 ): string | undefined {
     const identity = agent.identity;
-    const principal = normalizedIdentityPart(
+    const principal = toNormalizedIdentityPart(
         identity?.principalId ?? identity?.clientId ?? identity?.username
     );
-    const session = normalizedIdentityPart(identity?.sessionId);
-    const applicationId = normalizedIdentityPart(identity?.applicationId);
-    const workspaceId = normalizedIdentityPart(identity?.workspaceId);
-    const groupId = normalizedIdentityPart(identity?.groupId);
+    const session = toNormalizedIdentityPart(identity?.sessionId);
+    const applicationId = toNormalizedIdentityPart(identity?.applicationId);
+    const workspaceId = toNormalizedIdentityPart(identity?.workspaceId);
+    const groupId = toNormalizedIdentityPart(identity?.groupId);
 
     if (!principal || !session || !applicationId || !workspaceId || !groupId) {
         return undefined;
@@ -133,8 +99,48 @@ function isFreshGroupTargetStatus(status: DistributedRecipeTargetStatus): boolea
         status === 'missing-crdt-transport';
 }
 
-function normalizedIdentityPart(value: unknown): string | undefined {
+function toNormalizedIdentityPart(value: string | undefined): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value.trim().toLowerCase()
         : undefined;
+}
+
+/**
+ * Duplicate-session marking runs after status selection, so only fresh group targets
+ * can be demoted.
+ */
+function markDuplicateSessionTargets(
+    rows: readonly DistributedRecipeTargetRow[],
+    agents: readonly ControlAgentSnapshot[]
+): readonly DistributedRecipeTargetRow[] {
+    const duplicateIdentityCounts = new Map<string, number>();
+
+    rows.forEach((row, index) => {
+        if (!isFreshGroupTargetStatus(row.status)) {
+            return;
+        }
+        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
+        if (identityKey) {
+            duplicateIdentityCounts.set(
+                identityKey,
+                (duplicateIdentityCounts.get(identityKey) ?? 0) + 1
+            );
+        }
+    });
+
+    return rows.map((row, index) => {
+        if (!isFreshGroupTargetStatus(row.status)) {
+            return row;
+        }
+        const identityKey = distributedRecipeTargetIdentityKey(agents[index]);
+        if (!identityKey || (duplicateIdentityCounts.get(identityKey) ?? 0) < 2) {
+            return row;
+        }
+        return {
+            ...row,
+            status: 'duplicate-session',
+            targetable: false,
+            reason: 'Multiple fresh control agents report the same normalized Rallar identity and session.'
+        };
+    });
 }

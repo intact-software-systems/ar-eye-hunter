@@ -1,4 +1,4 @@
-import { distributedRecipeStateTone } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { distributedRecipeStateTone } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-recipe-state-tone.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot

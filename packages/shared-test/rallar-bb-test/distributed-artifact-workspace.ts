@@ -25,7 +25,8 @@ import {
     type DistributedArtifactWorkspaceInput,
     type DistributedArtifactWorkspaceIssue
 } from './distributed-artifact-workspace-contracts.ts';
-import type { DistributedRunAnalysisReport, DistributedRunMonitor } from './distributed-run-monitor.ts';
+import type { DistributedRunAnalysisReport } from './distributed-run-analysis/distributed-run-analysis-report.ts';
+import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 
 export type {
     DistributedArtifactFamily,

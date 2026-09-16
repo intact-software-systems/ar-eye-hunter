@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { projectDistributedRunHistoryLabels } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { projectDistributedRunHistoryLabels } from '../../../packages/shared-test/rallar-bb-test/distributed-run-history/project-distributed-run-history-labels.ts';
 
 function distributedRun(): ControlDistributedRunSnapshot {
     return {

@@ -14,7 +14,7 @@ import type {
     DistributedRunRecipeProgressRow,
     DistributedRunRuntimeDiagnosticRow,
     DistributedRunTimelineItem
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;

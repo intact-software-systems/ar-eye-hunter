@@ -1,12 +1,12 @@
 import type { ControlDistributedRunSnapshot } from './control-snapshots.ts';
+import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 import type {
     DistributedRunArtifactValidationStatus,
     DistributedRunCompositeDrilldown,
     DistributedRunEventRow,
     DistributedRunFailureRow,
-    DistributedRunMonitor,
     DistributedRunTimelineItem
-} from './distributed-run-monitor.ts';
+} from './distributed-run-observation/distributed-run-row-contracts.ts';
 import type {
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunRecipeSelection

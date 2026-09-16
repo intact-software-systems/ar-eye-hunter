@@ -12,7 +12,7 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-url-patches.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { filterDistributedRuns } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { filterDistributedRuns } from '../../../packages/shared-test/rallar-bb-test/distributed-run-history/filter-distributed-runs.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,

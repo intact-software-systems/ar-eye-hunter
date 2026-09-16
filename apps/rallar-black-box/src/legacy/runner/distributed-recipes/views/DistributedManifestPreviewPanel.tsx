@@ -1,5 +1,5 @@
-import type { DistributedRecipePreflightSummary } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import type { DistributedRecipePreflightSummary } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { SchemaAuthoringValidation } from '../../../../schema-authoring.ts';
 import { json } from '../../../shared/json-presentation.ts';

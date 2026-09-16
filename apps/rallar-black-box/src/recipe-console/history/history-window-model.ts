@@ -5,7 +5,7 @@ import type {
 import {
     projectDistributedRunHistoryLabels,
     type DistributedRunHistoryLabels
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '@shared-test/rallar-bb-test/distributed-run-history/project-distributed-run-history-labels.ts';
 import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneQuarantinedRun } from '../tune/tune-run-catalog.ts';
 import { historyRowSelectionActions, type HistoryRowSelectionActions } from './history-url-patches.ts';
 import type { RecipeConsoleHistoryCollection, RecipeConsoleHistoryProvenance } from './history-window-collection.ts';

@@ -8,7 +8,10 @@ import {
     createDistributedRunMonitorMembershipIndex,
     type DistributedRunMonitorMembershipIndex
 } from './distributed-run-monitor-membership-index.ts';
-import type { DistributedRunFailureRow, DistributedRunRuntimeDiagnosticRow } from './distributed-run-monitor.ts';
+import type {
+    DistributedRunFailureRow,
+    DistributedRunRuntimeDiagnosticRow
+} from './distributed-run-observation/distributed-run-row-contracts.ts';
 
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];

@@ -2676,9 +2676,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                         transport: 'realtime',
                         groupId: 'bb-group',
                         peerId: 'agent-b',
-                        expectedChannelLabel: 'rtc-realtime',
-                        observedChannelLabel: 'rtc-data-channel',
-                        accepted: false,
+                        laneId: 'rtc-data-channel',
                         source: 'browser-rallar-runtime'
                     }
                 }

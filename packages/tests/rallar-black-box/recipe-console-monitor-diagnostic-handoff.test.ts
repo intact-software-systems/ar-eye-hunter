@@ -7,7 +7,10 @@ import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/r
 import { MonitorDiagnosticHandoffs } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx';
 import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import type { DistributedRunFailureRow, DistributedRunRuntimeDiagnosticRow } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type {
+    DistributedRunFailureRow,
+    DistributedRunRuntimeDiagnosticRow
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;

@@ -53,15 +53,15 @@ interface SeedAgentInput {
     readonly failureMessage?: string;
 }
 
-type SeedBuildInput =
-    & DistributedRunSeedMetadata
-    & Readonly<{
-        state: ControlDistributedRunSnapshot['state'];
-        ok: boolean;
-        agents: readonly SeedAgentInput[];
-        warningDiagnostic?: boolean;
-        omitArtifact?: boolean;
-    }>;
+type SeedShape = Readonly<{
+    state: ControlDistributedRunSnapshot['state'];
+    ok: boolean;
+    agents: readonly SeedAgentInput[];
+    warningDiagnostic?: boolean;
+    omitArtifact?: boolean;
+}>;
+
+type SeedBuildInput = DistributedRunSeedMetadata & SeedShape;
 
 const SEED_BASE_EPOCH_MS = 1_900_000_000_000;
 
@@ -134,6 +134,142 @@ export function distributedRunSeedIdFromValue(
         : undefined;
 }
 
+/** Each seed's evidence shape; the metadata list above owns their operator ordering. */
+const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
+    'passed-clean': {
+        state: 'passed',
+        ok: true,
+        agents: [
+            {
+                agentId: 'seed-agent-a',
+                principalId: 'alice',
+                role: 'sender',
+                stageDurationMs: 80,
+                startDurationMs: 170,
+                startOk: true,
+                eventCount: 2
+            },
+            {
+                agentId: 'seed-agent-b',
+                principalId: 'bob',
+                role: 'receiver',
+                stageDurationMs: 90,
+                startDurationMs: 190,
+                startOk: true,
+                eventCount: 2
+            }
+        ]
+    },
+    'passed-warnings': {
+        state: 'passed',
+        ok: true,
+        warningDiagnostic: true,
+        agents: [
+            {
+                agentId: 'seed-agent-a',
+                principalId: 'alice',
+                role: 'sender',
+                stageDurationMs: 80,
+                startDurationMs: 170,
+                startOk: true,
+                eventCount: 2
+            },
+            {
+                agentId: 'seed-agent-b',
+                principalId: 'bob',
+                role: 'receiver',
+                stageDurationMs: 90,
+                startDurationMs: 190,
+                startOk: true,
+                eventCount: 2
+            }
+        ]
+    },
+    'failed-command': {
+        state: 'failed',
+        ok: false,
+        agents: [
+            {
+                agentId: 'seed-agent-a',
+                principalId: 'alice',
+                role: 'sender',
+                stageDurationMs: 80,
+                startDurationMs: 170,
+                startOk: true,
+                eventCount: 2
+            },
+            {
+                agentId: 'seed-agent-b',
+                principalId: 'bob',
+                role: 'receiver',
+                stageDurationMs: 90,
+                startDurationMs: 520,
+                startOk: false,
+                eventCount: 0,
+                failureMessage: 'Receiver did not observe the RTC payload.'
+            }
+        ]
+    },
+    'high-latency-rtc': {
+        state: 'passed',
+        ok: true,
+        agents: [
+            {
+                agentId: 'seed-agent-a',
+                principalId: 'alice',
+                role: 'sender',
+                stageDurationMs: 95,
+                startDurationMs: 130,
+                startOk: true,
+                eventCount: 3
+            },
+            {
+                agentId: 'seed-agent-b',
+                principalId: 'bob',
+                role: 'receiver',
+                stageDurationMs: 980,
+                startDurationMs: 1_040,
+                startOk: true,
+                eventCount: 3
+            },
+            {
+                agentId: 'seed-agent-c',
+                principalId: 'cara',
+                role: 'observer',
+                stageDurationMs: 1_120,
+                startDurationMs: 1_260,
+                startOk: true,
+                eventCount: 3
+            }
+        ]
+    },
+    'artifact-missing': {
+        state: 'passed',
+        ok: true,
+        omitArtifact: true,
+        agents: [
+            {
+                agentId: 'seed-agent-a',
+                principalId: 'alice',
+                role: 'sender',
+                stageDurationMs: 80,
+                startDurationMs: 170,
+                startOk: true,
+                eventCount: 2
+            },
+            {
+                agentId: 'seed-agent-b',
+                principalId: 'bob',
+                role: 'receiver',
+                stageDurationMs: 90,
+                startDurationMs: 190,
+                startOk: true,
+                eventCount: 2
+            }
+        ]
+    }
+};
+
 export function createSyntheticDistributedRunSeed(
     id: DistributedRunSeedId
 ): SyntheticDistributedRunSeed {
@@ -142,150 +278,7 @@ export function createSyntheticDistributedRunSeed(
         throw new Error(`Unknown distributed run seed: ${id}`);
     }
 
-    switch (id) {
-        case 'passed-clean':
-            return toSyntheticDistributedRunSeed({
-                ...metadata,
-                state: 'passed',
-                ok: true,
-                agents: [
-                    {
-                        agentId: 'seed-agent-a',
-                        principalId: 'alice',
-                        role: 'sender',
-                        stageDurationMs: 80,
-                        startDurationMs: 170,
-                        startOk: true,
-                        eventCount: 2
-                    },
-                    {
-                        agentId: 'seed-agent-b',
-                        principalId: 'bob',
-                        role: 'receiver',
-                        stageDurationMs: 90,
-                        startDurationMs: 190,
-                        startOk: true,
-                        eventCount: 2
-                    }
-                ]
-            });
-        case 'passed-warnings':
-            return toSyntheticDistributedRunSeed({
-                ...metadata,
-                state: 'passed',
-                ok: true,
-                warningDiagnostic: true,
-                agents: [
-                    {
-                        agentId: 'seed-agent-a',
-                        principalId: 'alice',
-                        role: 'sender',
-                        stageDurationMs: 80,
-                        startDurationMs: 170,
-                        startOk: true,
-                        eventCount: 2
-                    },
-                    {
-                        agentId: 'seed-agent-b',
-                        principalId: 'bob',
-                        role: 'receiver',
-                        stageDurationMs: 90,
-                        startDurationMs: 190,
-                        startOk: true,
-                        eventCount: 2
-                    }
-                ]
-            });
-        case 'failed-command':
-            return toSyntheticDistributedRunSeed({
-                ...metadata,
-                state: 'failed',
-                ok: false,
-                agents: [
-                    {
-                        agentId: 'seed-agent-a',
-                        principalId: 'alice',
-                        role: 'sender',
-                        stageDurationMs: 80,
-                        startDurationMs: 170,
-                        startOk: true,
-                        eventCount: 2
-                    },
-                    {
-                        agentId: 'seed-agent-b',
-                        principalId: 'bob',
-                        role: 'receiver',
-                        stageDurationMs: 90,
-                        startDurationMs: 520,
-                        startOk: false,
-                        eventCount: 0,
-                        failureMessage: 'Receiver did not observe the RTC payload.'
-                    }
-                ]
-            });
-        case 'high-latency-rtc':
-            return toSyntheticDistributedRunSeed({
-                ...metadata,
-                state: 'passed',
-                ok: true,
-                agents: [
-                    {
-                        agentId: 'seed-agent-a',
-                        principalId: 'alice',
-                        role: 'sender',
-                        stageDurationMs: 95,
-                        startDurationMs: 130,
-                        startOk: true,
-                        eventCount: 3
-                    },
-                    {
-                        agentId: 'seed-agent-b',
-                        principalId: 'bob',
-                        role: 'receiver',
-                        stageDurationMs: 980,
-                        startDurationMs: 1_040,
-                        startOk: true,
-                        eventCount: 3
-                    },
-                    {
-                        agentId: 'seed-agent-c',
-                        principalId: 'cara',
-                        role: 'observer',
-                        stageDurationMs: 1_120,
-                        startDurationMs: 1_260,
-                        startOk: true,
-                        eventCount: 3
-                    }
-                ]
-            });
-        case 'artifact-missing':
-            return toSyntheticDistributedRunSeed({
-                ...metadata,
-                state: 'passed',
-                ok: true,
-                omitArtifact: true,
-                agents: [
-                    {
-                        agentId: 'seed-agent-a',
-                        principalId: 'alice',
-                        role: 'sender',
-                        stageDurationMs: 80,
-                        startDurationMs: 170,
-                        startOk: true,
-                        eventCount: 2
-                    },
-                    {
-                        agentId: 'seed-agent-b',
-                        principalId: 'bob',
-                        role: 'receiver',
-                        stageDurationMs: 90,
-                        startDurationMs: 190,
-                        startOk: true,
-                        eventCount: 2
-                    }
-                ]
-            });
-    }
+    return toSyntheticDistributedRunSeed({ ...metadata, ...SEED_SHAPE_BY_ID[id] });
 }
 
 function toSyntheticDistributedRunSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {

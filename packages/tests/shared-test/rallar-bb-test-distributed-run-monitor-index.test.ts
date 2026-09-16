@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../shared-test/rallar-bb-test/control-snapshots.ts';
+import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-test/distributed-run-analysis/distributed-run-analysis-report.ts';
+import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
 import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
-import {
-    deriveDistributedRunAnalysisReport,
-    deriveDistributedRunMonitor,
-    deriveRunVerdictView
-} from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 const SCALE = 5_000;
 // Whole-object ratchets, originally captured from the pre-index implementation before Task 6A and

@@ -2,7 +2,7 @@ import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-
 import {
     compareDistributedRuns,
     type DistributedRunCompareSummary
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '@shared-test/rallar-bb-test/distributed-run-history/compare-distributed-runs.ts';
 import {
     compareDistributedRunTuningPerformance,
     type DistributedRunTuningPerformanceComparison

@@ -1,7 +1,7 @@
 import type {
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deriveAdvancedDiagnosticHandoffTargets } from '../../distributed-recipes.ts';
 import { createAdvancedLegacyHref } from '../advanced/advanced-legacy-href.ts';

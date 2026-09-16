@@ -1,6 +1,4 @@
-import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES } from '@shared-test/rallar-bb-test/distributed-run-analysis/distributed-failure-explanation-contracts.ts';
 import {
     DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
     DIAGNOSTIC_BRIDGE_TRANSPORTS,

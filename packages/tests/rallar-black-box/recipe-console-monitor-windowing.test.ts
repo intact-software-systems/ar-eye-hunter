@@ -12,16 +12,16 @@ import { MonitorProgressEvidence } from '../../../apps/rallar-black-box/src/reci
 import { MonitorWindowTruth } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorWindowTruth.tsx';
 import { useMonitorWindow } from '../../../apps/rallar-black-box/src/recipe-console/monitor/use-monitor-window.ts';
 import { ExplicitWindowControls } from '../../../apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.tsx';
+import type { DistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     DistributedRunAgentProgressRow,
     DistributedRunCompositeDrilldown,
     DistributedRunEventRow,
-    DistributedRunMonitor,
     DistributedRunReadinessRow,
     DistributedRunRecipeProgressRow,
     DistributedRunRuntimeDiagnosticRow,
     DistributedRunTimelineItem
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;

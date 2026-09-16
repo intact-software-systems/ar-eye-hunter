@@ -3,7 +3,7 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { filterDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { filterDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-history/filter-distributed-runs.ts';
 import type {
     RecipeConsoleControlDistributedRunsSource,
     RecipeConsoleControlQueryProvenance
