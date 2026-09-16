@@ -6,40 +6,21 @@ import type {
     ControlRunSnapshot
 } from './control-snapshots.ts';
 import { computeControlRequestFailureAnalysis } from './distributed-artifact-analysis/compute-control-request-failure.ts';
-import { computeDistributedRunFailure } from './distributed-artifact-analysis/compute-distributed-run-failure.ts';
-import type { DistributedRunControlPostRequest } from './distributed-artifact-analysis/decode-control-post-request.ts';
 import {
-    decodeAnalysisGroup,
-    type DistributedRunFleetReportEvidence
-} from './distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
+    computeDistributedRunArtifactPipelineAnalysis,
+    resolveArtifactSchemaVersion,
+    toDistributedRunContentSnapshots,
+    toPipelineArtifactBundle
+} from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
+import type { DistributedRunControlPostRequest } from './distributed-artifact-analysis/decode-control-post-request.ts';
 import type { DistributedRunRunnerSummary } from './distributed-artifact-analysis/decode-distributed-run-runner-summary.ts';
 import {
-    toDistributedRunFixProposalMarkdown,
-    toDistributedRunPerformanceMarkdown,
-    toDistributedRunSummaryMarkdown
-} from './distributed-artifact-analysis/to-distributed-run-analysis-markdown.ts';
-import {
     toDistributedRunArtifactContent,
-    toDistributedRunBundleContent,
-    type DistributedRunBundleContent
+    toDistributedRunBundleContent
 } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
-import {
-    resolveArtifactSchemaVersion,
-    toPipelineArtifactBundle
-} from './distributed-artifact-analysis/to-pipeline-artifact-bundle.ts';
-import {
-    parseDistributedArtifactPipeline,
-    type ParsedDistributedArtifactPipeline
-} from './distributed-artifact-pipeline.ts';
-import {
-    deriveDistributedRunAnalysisReport,
-    type DistributedRunAnalysisReport
-} from './distributed-run-analysis/distributed-run-analysis-report.ts';
-import { deriveRunVerdictView, type RunVerdictView } from './distributed-run-analysis/run-verdict-view.ts';
-import { deriveDistributedRunMonitor, type DistributedRunMonitor } from './distributed-run-monitor.ts';
-import { validateDistributedRunArtifactFromParsed } from './distributed-run-observation/validate-distributed-run-artifact.ts';
-import { computeDistributedRunPerformance } from './distributed-run-performance/compute-distributed-run-performance.ts';
-import type { RallarBlackBoxDistributedTargetResolution } from './distributed-run.ts';
+import { parseDistributedArtifactPipeline } from './distributed-artifact-pipeline.ts';
+import type { DistributedRunAnalysisReport } from './distributed-run-analysis/distributed-run-analysis-report.ts';
+import type { RunVerdictView } from './distributed-run-analysis/run-verdict-view.ts';
 
 export type DistributedRunArtifactFiles = Readonly<Record<string, string | undefined>>;
 
@@ -261,11 +242,6 @@ export interface DistributedRunFailedAnalysis extends DistributedRunAnalysisSect
 
 export type DistributedRunAnalysis = DistributedRunPassedAnalysis | DistributedRunFailedAnalysis;
 
-/** A run analysis before its markdown renderings. */
-export type DistributedRunAnalysisFacts =
-    | Omit<DistributedRunPassedAnalysis, 'summaryMarkdown' | 'performanceMarkdown'>
-    | Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>;
-
 export interface DistributedRunSnapshots {
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly controlRun: ControlRunSnapshot;
@@ -299,28 +275,6 @@ export type DistributedRunArtifactAnalysis =
     | Readonly<{ variant: 'distributed-run'; analysis: DistributedRunAnalysis; }>
     | Readonly<{ variant: 'control-request-failure'; analysis: DistributedRunControlRequestFailureAnalysis; }>;
 
-export interface DistributedRunArtifactPipelineAnalysisInput {
-    readonly parsed: ParsedDistributedArtifactPipeline;
-    readonly content: DistributedRunBundleContent;
-    readonly generatedAtEpochMs: number;
-    readonly artifactSchemaVersion: number;
-}
-
-export interface DistributedRunContentSnapshotsInput {
-    readonly parsed: ParsedDistributedArtifactPipeline;
-    readonly content: DistributedRunBundleContent;
-    readonly generatedAtEpochMs: number;
-    readonly artifactSchemaVersion: number;
-}
-
-export interface DistributedRunArtifactPipelineAnalysisResult {
-    readonly analysis: DistributedRunAnalysis;
-    /** Absent when control-run.json is missing or malformed; the analysis warnings say why. */
-    readonly snapshots?: DistributedRunArtifactSnapshots;
-    readonly monitor: DistributedRunMonitor;
-    readonly report: DistributedRunAnalysisReport;
-}
-
 export function computeDistributedRunArtifactAnalysis(
     input: DistributedRunAnalysisInput
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactAnalysis> {
@@ -341,45 +295,6 @@ export function computeDistributedRunArtifactAnalysis(
                 analysis: computeControlRequestFailureAnalysis(content, input.generatedAtEpochMs)
             }
     );
-}
-
-export function computeDistributedRunArtifactPipelineAnalysis(
-    input: DistributedRunArtifactPipelineAnalysisInput
-): DistributedRunArtifactPipelineAnalysisResult {
-    const { parsed, content, generatedAtEpochMs, artifactSchemaVersion } = input;
-    const { distributedRun } = content;
-    const controlRun = content.controlRun.status === 'recorded' ? content.controlRun.snapshot : undefined;
-    const bundle = toPipelineArtifactBundle({
-        parsed,
-        distributedRunId: distributedRun.distributedRunId,
-        generatedAtEpochMs,
-        artifactSchemaVersion
-    });
-    const artifactBundle = bundle.right;
-    const monitor = deriveDistributedRunMonitor({
-        distributedRun,
-        controlRun,
-        artifactBundle,
-        artifactValidation: validateDistributedRunArtifactFromParsed(artifactBundle, parsed)
-    });
-    const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, artifactBundle, monitor });
-    const facts = computeDistributedRunAnalysisFacts({
-        content,
-        generatedAtEpochMs,
-        artifactSchemaVersion,
-        parseWarnings: [
-            ...(content.controlRun.status === 'unavailable' ? [content.controlRun.reason] : []),
-            ...content.parseWarnings.map((warning) => ({ ...warning })),
-            ...(bundle.left ? [bundle.left] : [])
-        ],
-        spa: { report, verdict: deriveRunVerdictView({ distributedRun, monitor, report, artifactBundle }) }
-    });
-    return {
-        analysis: toDistributedRunAnalysis(facts),
-        ...(controlRun === undefined ? {} : { snapshots: toArtifactSnapshots(content, bundle).right }),
-        monitor,
-        report
-    };
 }
 
 export function toDistributedArtifactBundle(
@@ -414,158 +329,4 @@ export function toDistributedArtifactSnapshots(
                 artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
             })
     );
-}
-
-/** Snapshots need the control run; the artifact bundle rides along when the files form one. */
-export function toDistributedRunContentSnapshots(
-    input: DistributedRunContentSnapshotsInput
-): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
-    const { parsed, content } = input;
-    return toArtifactSnapshots(
-        content,
-        toPipelineArtifactBundle({
-            parsed,
-            distributedRunId: content.distributedRun.distributedRunId,
-            generatedAtEpochMs: input.generatedAtEpochMs,
-            artifactSchemaVersion: input.artifactSchemaVersion
-        })
-    );
-}
-
-function toArtifactSnapshots(
-    content: DistributedRunBundleContent,
-    bundle: Either<DistributedRunArtifactRejection, ControlDistributedRunArtifactBundle>
-): Either<DistributedRunArtifactRejection, DistributedRunArtifactSnapshots> {
-    if (content.controlRun.status === 'unavailable') {
-        return Either.ofLeft(content.controlRun.reason);
-    }
-    return Either.ofRight({
-        distributedRun: content.distributedRun,
-        controlRun: content.controlRun.snapshot,
-        ...(bundle.right === undefined ? {} : { artifactBundle: bundle.right }),
-        parseWarnings: [...content.parseWarnings, ...(bundle.left ? [bundle.left] : [])]
-    });
-}
-
-interface DistributedRunAnalysisFactsInput {
-    readonly content: DistributedRunBundleContent;
-    readonly generatedAtEpochMs: number;
-    readonly artifactSchemaVersion: number;
-    readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    readonly spa: DistributedRunSpaAnalysis;
-}
-
-function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsInput): DistributedRunAnalysisFacts {
-    const { content, spa } = input;
-    const { distributedRun, fleetReport } = content;
-    const ok = fleetReport?.ok ?? distributedRun.rollup.ok;
-    const performance = computeRecordedPerformance(content);
-    const targetResolution = content.targetResolution ?? distributedRun.targetResolution;
-    const sections = {
-        generatedAtEpochMs: input.generatedAtEpochMs,
-        artifactSchemaVersion: input.artifactSchemaVersion,
-        distributedRunId: distributedRun.distributedRunId,
-        controlRunId: distributedRun.controlRunId,
-        status: distributedRun.state,
-        // distributed-run.json decoding checks the manifest only as an object, so its group is decoded here.
-        group: resolveAnalysisGroup(decodeAnalysisGroup(distributedRun.manifest.group), fleetReport),
-        summary: computeAnalysisSummary(content, performance, ok),
-        parseWarnings: input.parseWarnings,
-        ...(performance === undefined ? {} : { performance }),
-        targetResolution: targetResolution === undefined ? undefined : toTargetResolutionAnalysis(targetResolution),
-        spa
-    };
-    if (ok) {
-        return { ok, ...sections };
-    }
-    const failure = computeDistributedRunFailure({
-        distributedRun,
-        fleetReport,
-        bundledFailure: content.bundledFailure,
-        controlPostFailure: content.controlPostFailure,
-        results: content.results,
-        events: content.events,
-        spaReport: spa.report
-    });
-    return { ok, ...sections, failure };
-}
-
-/** Performance needs the control run's agents, commands and results, so an unavailable control run leaves it absent. */
-function computeRecordedPerformance(
-    content: DistributedRunBundleContent
-): DistributedRunPerformanceAnalysis | undefined {
-    if (content.controlRun.status === 'unavailable') {
-        return undefined;
-    }
-    return computeDistributedRunPerformance({
-        distributedRun: content.distributedRun,
-        controlRun: content.controlRun.snapshot,
-        fleetReport: content.fleetReport,
-        results: content.results,
-        events: content.events
-    });
-}
-
-/** The fleet report's counts win; without one the run snapshot and the measured performance stand in. */
-function computeAnalysisSummary(
-    content: DistributedRunBundleContent,
-    performance: DistributedRunPerformanceAnalysis | undefined,
-    ok: boolean
-): DistributedRunAnalysisSummary {
-    const { distributedRun, fleetReport } = content;
-    const agents = fleetReport?.agents ?? performance?.agentCount;
-    return {
-        ...(agents === undefined ? {} : { agents }),
-        passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
-        failureGroups: fleetReport?.failureGroups ?? (ok ? 0 : 1),
-        blockingFailures: distributedRun.rollup.summary.blockingFailures
-    };
-}
-
-/** The manifest group wins; the fleet report group stands in only when the manifest names none. */
-function resolveAnalysisGroup(
-    manifestGroup: DistributedRunAnalysisGroup | undefined,
-    fleetReport: DistributedRunFleetReportEvidence | undefined
-): DistributedRunAnalysisGroup | undefined {
-    return manifestGroup ?? fleetReport?.group;
-}
-
-function toTargetResolutionAnalysis(
-    resolution: RallarBlackBoxDistributedTargetResolution
-): DistributedRunTargetResolutionAnalysis {
-    const { summary } = resolution;
-    return {
-        selected: summary.selected,
-        expectedParticipantCount: summary.expectedParticipantCount,
-        missingExpectedParticipants: summary.missingExpectedParticipants,
-        blockers: resolution.blockers.length,
-        staleAgents: summary.staleAgents,
-        offlineAgents: summary.offlineAgents,
-        wrongGroupAgents: summary.wrongGroupAgents,
-        agentsWithoutIdentity: summary.agentsWithoutIdentity,
-        roleCounts: toCountsByName(summary.roleCounts),
-        regions: toCountsByName(summary.regions),
-        providers: toCountsByName(summary.providers),
-        targetAgentIds: resolution.targetAgentIds,
-        blockingAgentIds: resolution.blockers.map((blocker) => blocker.agentId)
-    };
-}
-
-function toCountsByName(counts: Readonly<Record<string, number>>): Readonly<Record<string, number>> {
-    return Object.fromEntries(Object.entries(counts).sort(([left], [right]) => left.localeCompare(right)));
-}
-
-function toDistributedRunAnalysis(facts: DistributedRunAnalysisFacts): DistributedRunAnalysis {
-    const summaryMarkdown = toDistributedRunSummaryMarkdown(facts);
-    const performanceMarkdown = facts.performance === undefined
-        ? {}
-        : { performanceMarkdown: toDistributedRunPerformanceMarkdown(facts.distributedRunId, facts.performance) };
-    return facts.ok
-        ? { ...facts, summaryMarkdown, ...performanceMarkdown }
-        : {
-            ...facts,
-            summaryMarkdown,
-            fixProposalMarkdown: toDistributedRunFixProposalMarkdown(facts),
-            ...performanceMarkdown
-        };
 }

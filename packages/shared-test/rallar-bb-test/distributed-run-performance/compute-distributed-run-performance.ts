@@ -1,8 +1,5 @@
 import type { DistributedRunPerformanceAnalysis, DistributedRunSnapshots } from '../distributed-artifact-analysis.ts';
-import {
-    toControlEventEvidence,
-    type DistributedRunEventEvidence
-} from '../distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
+import type { DistributedRunEventEvidence } from '../distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
 import type { DistributedRunFleetReportEvidence } from '../distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import {
     toControlResultEvidence,
@@ -20,17 +17,6 @@ export interface DistributedRunPerformanceInput extends DistributedRunSnapshots 
     /** The results.jsonl rows, which outrank control results describing the same stream. */
     readonly results: readonly DistributedRunResultEvidence[];
     readonly events: readonly DistributedRunEventEvidence[];
-}
-
-/** Performance from the snapshots alone: no fleet report, no results.jsonl rows, and the control run's events. */
-export function computeDistributedRunSnapshotPerformance(
-    snapshots: DistributedRunSnapshots
-): DistributedRunPerformanceAnalysis {
-    return computeDistributedRunPerformance({
-        ...snapshots,
-        results: [],
-        events: snapshots.controlRun.events.map(toControlEventEvidence)
-    });
 }
 
 export function computeDistributedRunPerformance(

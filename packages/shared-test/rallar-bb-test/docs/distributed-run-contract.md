@@ -404,10 +404,13 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   snapshots or bundle.
 
 Capability owners live in `distributed-artifact-analysis/` (content decoding,
-evidence row decoders, failure resolution, markdown) and
+evidence row decoders, the pipeline analysis and bundle formation that the
+workspace and evidence index share, failure resolution, markdown) and
 `distributed-run-performance/` (command timing, the stream sample index, stream
-timing and receiver delivery; `computeDistributedRunSnapshotPerformance` for
-snapshot-only callers).
+timing and receiver delivery). `mod.ts` exports the analysis contracts, the
+three file-level entry points and `computeDistributedRunSnapshotPerformance`
+for snapshot-only callers; the pipeline analysis and the evidence-typed
+performance computation stay behind their owner modules.
 
 ## JSON Schema
 

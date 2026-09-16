@@ -1,15 +1,14 @@
+import type { DistributedRunAnalysis, DistributedRunArtifactRejection } from './distributed-artifact-analysis.ts';
 import {
     computeDistributedRunArtifactPipelineAnalysis,
-    type DistributedRunAnalysis,
-    type DistributedRunArtifactPipelineAnalysisResult,
-    type DistributedRunArtifactRejection
-} from './distributed-artifact-analysis.ts';
+    resolveArtifactSchemaVersion,
+    type DistributedRunArtifactPipelineAnalysisResult
+} from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
 import {
     toDistributedRunArtifactContent,
     type DistributedRunBundleContent,
     type DistributedRunControlRequestFailureContent
 } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
-import { resolveArtifactSchemaVersion } from './distributed-artifact-analysis/to-pipeline-artifact-bundle.ts';
 import {
     createDistributedArtifactInventoryFromParsed,
     declaredDistributedArtifactSchemaVersionFromParsed,

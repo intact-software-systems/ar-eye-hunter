@@ -1,5 +1,4 @@
 import type {
-    DistributedRunAnalysisFacts,
     DistributedRunFailedAnalysis,
     DistributedRunLowestReceiver,
     DistributedRunPerformanceAnalysis,
@@ -8,6 +7,7 @@ import type {
     DistributedRunTimingSummary
 } from '../distributed-artifact-analysis.ts';
 import { toRoundedMetric } from '../distributed-run-performance/compute-timing-summary.ts';
+import type { DistributedRunAnalysisFacts } from './compute-distributed-run-artifact-pipeline-analysis.ts';
 
 export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysisFacts): string {
     const { targetResolution } = analysis;

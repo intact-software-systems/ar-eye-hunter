@@ -1,12 +1,12 @@
 import { Either } from '@shared/resilience/Either.ts';
 
+import type { DistributedRunArtifactRejection } from './distributed-artifact-analysis.ts';
 import {
     computeDistributedRunArtifactPipelineAnalysis,
-    toDistributedRunContentSnapshots,
-    type DistributedRunArtifactRejection
-} from './distributed-artifact-analysis.ts';
+    resolveArtifactSchemaVersion,
+    toDistributedRunContentSnapshots
+} from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
 import { toDistributedRunBundleContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
-import { resolveArtifactSchemaVersion } from './distributed-artifact-analysis/to-pipeline-artifact-bundle.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
     DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,

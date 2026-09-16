@@ -6,7 +6,7 @@ import type {
     DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-snapshot-performance.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
 import {

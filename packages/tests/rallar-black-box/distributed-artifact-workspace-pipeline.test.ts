@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
-    computeDistributedRunArtifactPipelineAnalysis,
     toDistributedArtifactBundle,
     toDistributedArtifactSnapshots
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { computeDistributedRunArtifactPipelineAnalysis } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
 import { toDistributedRunArtifactContent } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
 import {
     declaredDistributedArtifactSchemaVersion,

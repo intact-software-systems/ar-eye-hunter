@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunArtifactFiles } from '../../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { computeDistributedRunSnapshotPerformance } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
+import { computeDistributedRunSnapshotPerformance } from '../../../shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-snapshot-performance.ts';
 import {
     ANALYSIS_GENERATED_AT_EPOCH_MS,
     computeDistributedRunAnalysis,
