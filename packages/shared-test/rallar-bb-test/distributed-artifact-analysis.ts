@@ -78,9 +78,12 @@ export interface DistributedRunFailureAnalysis {
     readonly evidenceFile: string;
 }
 
-/** Duration statistics; each one is absent when no duration was sampled and the recorded timing omits it. */
+/**
+ * Duration statistics over the sampled durations, or the recorded timing when none were sampled; each one is
+ * absent when no duration was sampled and the recorded timing omits it.
+ */
 export interface DistributedRunTimingSummary {
-    readonly count: number;
+    readonly count?: number;
     readonly minMs?: number;
     readonly p50Ms?: number;
     readonly p95Ms?: number;
@@ -89,7 +92,7 @@ export interface DistributedRunTimingSummary {
     readonly averageMs?: number;
     /** Absent without both a median and a p95. */
     readonly spreadRatio?: number;
-    readonly outlierCount: number;
+    readonly outlierCount?: number;
 }
 
 export interface DistributedRunSlowestAgent {
@@ -182,9 +185,12 @@ export interface DistributedRunPerformanceAnalysis {
     readonly exportedEventCount: number;
     readonly agentReportedEventCount: number;
     readonly failedAgentCount: number;
-    readonly missingAgentCount: number;
-    readonly staleAgentCount: number;
-    readonly flakyAgentCount: number;
+    /** Absent when no fleet report records the missing agents. */
+    readonly missingAgentCount?: number;
+    /** Absent when no fleet report records the stale agents. */
+    readonly staleAgentCount?: number;
+    /** Absent when no fleet report records the flaky agents. */
+    readonly flakyAgentCount?: number;
     readonly commandTiming: DistributedRunTimingSummary;
     /** Absent unless every stream sample is a terminal summary with its frame counts. */
     readonly streamTiming?: DistributedRunStreamTiming;
@@ -431,7 +437,7 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
     const { content, spa } = input;
     const { distributedRun } = content.snapshots;
     const { fleetReport } = content;
-    const ok = fleetReport.ok ?? distributedRun.rollup.ok;
+    const ok = fleetReport?.ok ?? distributedRun.rollup.ok;
     const performance = computeDistributedRunPerformance({
         ...content.snapshots,
         fleetReport,
@@ -460,9 +466,9 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
         // distributed-run.json decoding checks the manifest only as an object, so its group is decoded here.
         group: resolveAnalysisGroup(decodeAnalysisGroup(distributedRun.manifest.group), fleetReport),
         summary: {
-            agents: fleetReport.agents ?? performance.agentCount,
-            passRate: fleetReport.passRate ?? performance.passRate,
-            failureGroups: fleetReport.failureGroups ?? (failure ? 1 : 0),
+            agents: fleetReport?.agents ?? performance.agentCount,
+            passRate: fleetReport?.passRate ?? performance.passRate,
+            failureGroups: fleetReport?.failureGroups ?? (failure ? 1 : 0),
             blockingFailures: distributedRun.rollup.summary.blockingFailures
         },
         parseWarnings: input.parseWarnings
@@ -479,9 +485,9 @@ function computeDistributedRunAnalysisFacts(input: DistributedRunAnalysisFactsIn
 /** The manifest group wins; the fleet report group stands in only when the manifest names none. */
 function resolveAnalysisGroup(
     manifestGroup: DistributedRunAnalysisGroup | undefined,
-    fleetReport: DistributedRunFleetReportEvidence
+    fleetReport: DistributedRunFleetReportEvidence | undefined
 ): DistributedRunAnalysisGroup | undefined {
-    return manifestGroup ?? fleetReport.group;
+    return manifestGroup ?? fleetReport?.group;
 }
 
 function toTargetResolutionAnalysis(

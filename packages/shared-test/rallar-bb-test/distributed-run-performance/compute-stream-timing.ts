@@ -72,12 +72,12 @@ function computeDefinedAverage(values: readonly (number | undefined)[]): number 
 function computeStreamDurationTiming(samples: readonly StreamTimingSample[]): DistributedRunTimingSummary {
     const observationDurations = samples.flatMap(toObservationDurations);
     if (observationDurations.length > 0) {
-        return computeTimingSummary({}, observationDurations);
+        return computeTimingSummary(undefined, observationDurations);
     }
     if (samples.length === 1) {
         return computeTimingSummary(samples[0].summary.duration, []);
     }
-    return computeTimingSummary({}, samples.flatMap(toSummaryDurations));
+    return computeTimingSummary(undefined, samples.flatMap(toSummaryDurations));
 }
 
 function toObservationDurations(sample: StreamTimingSample): readonly number[] {
@@ -88,7 +88,7 @@ function toObservationDurations(sample: StreamTimingSample): readonly number[] {
 
 function toSummaryDurations(sample: StreamTimingSample): readonly number[] {
     const { duration } = sample.summary;
-    return [duration.minMs, duration.p50Ms, duration.p95Ms, duration.p99Ms, duration.maxMs]
+    return [duration?.minMs, duration?.p50Ms, duration?.p95Ms, duration?.p99Ms, duration?.maxMs]
         .filter((value): value is number => value !== undefined);
 }
 

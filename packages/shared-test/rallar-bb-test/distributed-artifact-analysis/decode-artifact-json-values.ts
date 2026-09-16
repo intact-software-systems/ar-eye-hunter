@@ -1,4 +1,3 @@
-import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { isFiniteNumber, isNonEmptyText } from './artifact-json-value-guards.ts';
 
 /** Absent when the value is not a non-empty string. */
@@ -26,10 +25,15 @@ export function decodeTexts(value: unknown): readonly string[] {
     return Array.isArray(value) ? value.filter(isNonEmptyText) : [];
 }
 
-/** An array's items, each item that is not a JSON object read as an empty object; none when the value is not an array. */
+/** The array items the decoder reads, skipping the ones it cannot; none when the value is not an array. */
 export function decodeRecordItems<Item>(
     value: unknown,
-    decodeItem: (item: unknown) => Item
+    decodeItem: (item: unknown) => Item | undefined
 ): readonly Item[] {
-    return Array.isArray(value) ? value.map((item) => decodeItem(isJsonRecordValue(item) ? item : {})) : [];
+    return Array.isArray(value)
+        ? value.flatMap((item) => {
+            const decoded = decodeItem(item);
+            return decoded === undefined ? [] : [decoded];
+        })
+        : [];
 }

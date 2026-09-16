@@ -93,7 +93,7 @@ function nestedStreamResult(outerIdentity: string, nestedIdentity: string, summa
 function computeStreamCandidates(sources: StreamCandidateSources) {
     const selection = computeStreamTimingSamples({
         controlResults: (sources.controlResults ?? []).map(toControlResultEvidence),
-        jsonlResults: (sources.artifactResults ?? []).map(decodeDistributedRunResultEvidence),
+        jsonlResults: (sources.artifactResults ?? []).flatMap((row) => decodeDistributedRunResultEvidence(row) ?? []),
         events: []
     });
     return { streamTiming: computeStreamTiming(selection.samples), telemetry: selection.telemetry };

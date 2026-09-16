@@ -48,7 +48,7 @@ export function computeStreamPerformanceFailure(
         `in-flight limit drops ${computeStreamInFlightLimitDropCount(candidate.sample)}`,
         summary.maxStartDriftMs !== undefined ? `max drift ${summary.maxStartDriftMs}ms` : undefined,
         summary.lateFrameCount !== undefined ? `late frames ${summary.lateFrameCount}` : undefined,
-        summary.duration.p99Ms !== undefined ? `p99 ${summary.duration.p99Ms}ms` : undefined
+        summary.duration?.p99Ms !== undefined ? `p99 ${summary.duration.p99Ms}ms` : undefined
     ].filter((value): value is string => value !== undefined);
     return {
         category: 'rtc-stream-performance',

@@ -6,6 +6,7 @@ import { computeStreamPerformanceFailure, computeStreamTimeoutFailure } from './
 import type { DistributedRunEventEvidence } from './decode-distributed-run-event-evidence.ts';
 import type {
     DistributedRunBundledFailure,
+    DistributedRunFleetFailureSignature,
     DistributedRunFleetReportEvidence
 } from './decode-distributed-run-report-evidence.ts';
 import type { DistributedRunResultEvidence } from './decode-distributed-run-result-evidence.ts';
@@ -23,7 +24,8 @@ const UNCLASSIFIED_CATEGORY = 'unknown';
 
 export interface DistributedRunFailureInput {
     readonly distributedRun: ControlDistributedRunSnapshot;
-    readonly fleetReport: DistributedRunFleetReportEvidence;
+    /** Absent when the artifacts hold no readable fleet-report.json. */
+    readonly fleetReport?: DistributedRunFleetReportEvidence;
     /** Absent when failures.json lists no failures. */
     readonly bundledFailure?: DistributedRunBundledFailure;
     /** Absent when the runner recorded no failed control request. */
@@ -42,7 +44,7 @@ export function computeDistributedRunFailure(input: DistributedRunFailureInput):
     return (input.controlPostFailure ? computeControlRequestFailure(input.controlPostFailure) : undefined) ??
         computeStreamPerformanceFailure(input.results, input.events) ??
         computeReceiverDeliveryFailure(input.results) ??
-        computeFleetSignatureFailure(input.fleetReport, input.results) ??
+        computeFleetSignatureFailure(input.fleetReport?.firstFailureSignature, input.results) ??
         computeFailedResultFailure(input.results) ??
         computeStreamTimeoutFailure(input.distributedRun, input.events) ??
         computeReportActionFailure(input.spaReport) ??
@@ -79,10 +81,9 @@ function computeReceiverDeliveryFailure(
 }
 
 function computeFleetSignatureFailure(
-    fleetReport: DistributedRunFleetReportEvidence,
+    signature: DistributedRunFleetFailureSignature | undefined,
     results: readonly DistributedRunResultEvidence[]
 ): DistributedRunFailureAnalysis | undefined {
-    const signature = fleetReport.firstFailureSignature;
     if (!signature) {
         return undefined;
     }

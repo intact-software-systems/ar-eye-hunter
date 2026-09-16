@@ -1,6 +1,11 @@
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { isFiniteNumber } from './artifact-json-value-guards.ts';
-import { decodeNumber, decodeRecordItems, decodeText } from './decode-artifact-json-values.ts';
+import {
+    decodeBoolean,
+    decodeNumber,
+    decodeRecordItems,
+    decodeText
+} from './decode-artifact-json-values.ts';
 
 /** A recorded timing record; each statistic is absent when the record does not carry it as a finite number. */
 export interface DistributedRunTimingRecord {
@@ -15,7 +20,8 @@ export interface DistributedRunTimingRecord {
 }
 
 export interface DistributedRunStreamObservation {
-    readonly dropped: boolean;
+    /** Absent when the observation does not record whether its frame dropped. */
+    readonly dropped?: boolean;
     /** Absent when the observation records no finite duration. */
     readonly durationMs?: number;
     /** Absent when the observation records neither errorCode nor code. */
@@ -38,7 +44,8 @@ export interface DistributedRunStreamSummary {
     readonly achievedCompletionHz?: number;
     readonly maxStartDriftMs?: number;
     readonly lateFrameCount?: number;
-    readonly duration: DistributedRunTimingRecord;
+    /** Absent when the summary records no duration object. */
+    readonly duration?: DistributedRunTimingRecord;
     readonly thresholdFailureCount: number;
     readonly observations: readonly DistributedRunStreamObservation[];
     /** The recorded duration, threshold failures and observations as JSON text; they tell stream executions apart. */
@@ -51,9 +58,10 @@ export interface DistributedRunStreamFingerprintText {
     readonly observations: string;
 }
 
-export function decodeDistributedRunTimingRecord(value: unknown): DistributedRunTimingRecord {
+/** Absent when the value is not a JSON object. */
+export function decodeDistributedRunTimingRecord(value: unknown): DistributedRunTimingRecord | undefined {
     if (!isJsonRecordValue(value)) {
-        return {};
+        return undefined;
     }
     return {
         count: decodeNumber(value.count),
@@ -72,11 +80,11 @@ export function decodeDistributedRunStreamSummary(value: unknown): DistributedRu
     if (!isJsonRecordValue(value)) {
         return undefined;
     }
-    const duration = isJsonRecordValue(value.duration) ? value.duration : {};
+    const duration = decodeDistributedRunTimingRecord(value.duration);
     const isSummary = isFiniteNumber(value.plannedFrames) ||
         isFiniteNumber(value.completedFrames) ||
         isFiniteNumber(value.scheduledFrames) ||
-        Object.keys(duration).length > 0;
+        (isJsonRecordValue(value.duration) && Object.keys(value.duration).length > 0);
     if (!isSummary) {
         return undefined;
     }
@@ -102,11 +110,11 @@ export function decodeDistributedRunStreamSummary(value: unknown): DistributedRu
         achievedCompletionHz: decodeNumber(value.achievedCompletionHz),
         maxStartDriftMs: decodeNumber(pacing?.maxStartDriftMs),
         lateFrameCount: decodeNumber(pacing?.lateFrameCount),
-        duration: decodeDistributedRunTimingRecord(duration),
+        duration,
         thresholdFailureCount: thresholdFailures.length,
         observations: decodeRecordItems(value.observations, decodeStreamObservation),
         fingerprintText: {
-            duration: JSON.stringify(duration),
+            duration: JSON.stringify(isJsonRecordValue(value.duration) ? value.duration : {}),
             thresholdFailures: JSON.stringify(thresholdFailures),
             observations: JSON.stringify(observations)
         }
@@ -139,12 +147,13 @@ export function decodeNestedStreamSummary(value: unknown): DistributedRunStreamS
     return undefined;
 }
 
-function decodeStreamObservation(value: unknown): DistributedRunStreamObservation {
+/** Absent when the value is not a JSON object. */
+function decodeStreamObservation(value: unknown): DistributedRunStreamObservation | undefined {
     if (!isJsonRecordValue(value)) {
-        return { dropped: false };
+        return undefined;
     }
     return {
-        dropped: Boolean(value.dropped),
+        dropped: decodeBoolean(value.dropped),
         durationMs: decodeNumber(value.durationMs),
         errorCode: decodeText(value.errorCode) ?? decodeText(value.code)
     };

@@ -360,6 +360,22 @@ describe('distributed run artifact decoding', () => {
         expect(analysis.summaryMarkdown).toContain('Artifact warnings: 2');
     });
 
+    it('skips JSONL rows that are not JSON objects with a warning instead of counting them as evidence', () => {
+        const analysis = analyzedRun(passedRunFiles({
+            'events.jsonl': [
+                JSON.stringify({ kind: 'runtime', value: { severity: 'info', message: 'loaded' } }),
+                '42'
+            ].join('\n')
+        }));
+
+        expect(analysis.parseWarnings).toEqual([{
+            fileName: 'events.jsonl',
+            lineNumber: 2,
+            message: 'events.jsonl:2 is not a JSON object.'
+        }]);
+        expect(analysis.performance?.exportedEventCount).toBe(1);
+    });
+
     it('builds a browser-safe v1 bundle from the snapshot files, manifest and JSONL evidence', () => {
         const files = passedRunFiles({ 'events.jsonl': '', 'results.jsonl': '' });
         const bundle = toDistributedArtifactBundle(files, 456).right;

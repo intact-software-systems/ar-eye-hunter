@@ -75,9 +75,9 @@ export function toDistributedRunPerformanceMarkdown(
         `Exported events: ${performance.exportedEventCount}`,
         `Agent-reported events: ${performance.agentReportedEventCount}`,
         `Failed agents: ${performance.failedAgentCount}`,
-        `Missing agents: ${performance.missingAgentCount}`,
-        `Stale agents: ${performance.staleAgentCount}`,
-        `Flaky agents: ${performance.flakyAgentCount}`,
+        `Missing agents: ${performance.missingAgentCount ?? 'unknown'}`,
+        `Stale agents: ${performance.staleAgentCount ?? 'unknown'}`,
+        `Flaky agents: ${performance.flakyAgentCount ?? 'unknown'}`,
         toCommandTimingLine(performance.commandTiming),
         ...(performance.streamTiming ? toStreamTimingLines(performance.streamTiming) : []),
         performance.receiverDelivery ? toReceiverDeliveryLine(performance.receiverDelivery) : undefined,
@@ -93,11 +93,11 @@ export function toDistributedRunPerformanceMarkdown(
 }
 
 function toCommandTimingLine(timing: DistributedRunTimingSummary): string {
-    return `Command timing: count=${timing.count}, min=${toMilliseconds(timing.minMs)}, p50=${
+    return `Command timing: count=${timing.count ?? 'unknown'}, min=${toMilliseconds(timing.minMs)}, p50=${
         toMilliseconds(timing.p50Ms)
     }, p95=${toMilliseconds(timing.p95Ms)}, p99=${toMilliseconds(timing.p99Ms)}, max=${
         toMilliseconds(timing.maxMs)
-    }, avg=${toMilliseconds(timing.averageMs)}, outliers=${timing.outlierCount}`;
+    }, avg=${toMilliseconds(timing.averageMs)}, outliers=${timing.outlierCount ?? 'unknown'}`;
 }
 
 function toStreamTimingLines(timing: DistributedRunStreamTiming): readonly string[] {

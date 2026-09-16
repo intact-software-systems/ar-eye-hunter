@@ -3,10 +3,7 @@ import {
     toControlEventEvidence,
     type DistributedRunEventEvidence
 } from '../distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
-import {
-    decodeDistributedRunFleetReportEvidence,
-    type DistributedRunFleetReportEvidence
-} from '../distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
+import type { DistributedRunFleetReportEvidence } from '../distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import {
     toControlResultEvidence,
     type DistributedRunResultEvidence
@@ -18,7 +15,8 @@ import { computeStreamTiming } from './compute-stream-timing.ts';
 import { computeElapsedMs, computeTimingSummary } from './compute-timing-summary.ts';
 
 export interface DistributedRunPerformanceInput extends DistributedRunSnapshots {
-    readonly fleetReport: DistributedRunFleetReportEvidence;
+    /** Absent when the artifacts hold no readable fleet-report.json. */
+    readonly fleetReport?: DistributedRunFleetReportEvidence;
     /** The results.jsonl rows, which outrank control results describing the same stream. */
     readonly results: readonly DistributedRunResultEvidence[];
     readonly events: readonly DistributedRunEventEvidence[];
@@ -30,7 +28,6 @@ export function computeDistributedRunSnapshotPerformance(
 ): DistributedRunPerformanceAnalysis {
     return computeDistributedRunPerformance({
         ...snapshots,
-        fleetReport: decodeDistributedRunFleetReportEvidence({}),
         results: [],
         events: snapshots.controlRun.events.map(toControlEventEvidence)
     });
@@ -50,21 +47,21 @@ export function computeDistributedRunPerformance(
     const { agents } = controlRun;
     return {
         runDurationMs: computeElapsedMs(distributedRun.startedAtEpochMs, distributedRun.completedAtEpochMs) ??
-            fleetReport.runP50Ms,
-        agentCount: fleetReport.agents ?? agents.length,
-        passRate: fleetReport.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
+            fleetReport?.runP50Ms,
+        agentCount: fleetReport?.agents ?? agents.length,
+        passRate: fleetReport?.passRate ?? (distributedRun.rollup.ok ? 1 : 0),
         reconnectCount: agents.reduce((sum, agent) => sum + agent.reconnectCount, 0),
         diagnosticCount: countEventSeverity(events, 'warning') + countEventSeverity(events, 'error'),
         warningDiagnosticCount: countEventSeverity(events, 'warning'),
         errorDiagnosticCount: countEventSeverity(events, 'error'),
         exportedEventCount: events.length,
         agentReportedEventCount: agents.reduce((sum, agent) => sum + agent.receivedEventCount, 0),
-        failedAgentCount: fleetReport.failedAgents ?? distributedRun.rollup.summary.failedParticipants,
-        missingAgentCount: fleetReport.missingAgents ?? 0,
-        staleAgentCount: fleetReport.staleAgents ?? 0,
-        flakyAgentCount: fleetReport.flakyAgents ?? 0,
+        failedAgentCount: fleetReport?.failedAgents ?? distributedRun.rollup.summary.failedParticipants,
+        missingAgentCount: fleetReport?.missingAgents,
+        staleAgentCount: fleetReport?.staleAgents,
+        flakyAgentCount: fleetReport?.flakyAgents,
         commandTiming: computeTimingSummary(
-            fleetReport.commandTiming,
+            fleetReport?.commandTiming,
             commandTimingSamples.map((sample) => sample.durationMs)
         ),
         streamTiming: computeStreamTiming(streamSamples),

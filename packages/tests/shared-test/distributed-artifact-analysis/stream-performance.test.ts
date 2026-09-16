@@ -136,6 +136,91 @@ describe('distributed run artifact stream performance', () => {
         expect(analysis.performanceMarkdown).toContain('p99=50ms');
     });
 
+    it('counts only observations that record a dropped frame as dropped', () => {
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-dropped-flag',
+                controlRunId: 'run-stream-dropped-flag',
+                state: 'passed',
+                agentIds: ['controller-01']
+            }),
+            controlRun: createControlRunSnapshot({ runId: 'run-stream-dropped-flag' }),
+            files: {
+                'results.jsonl': JSON.stringify({
+                    agentId: 'controller-01',
+                    commandId: 'stream-a',
+                    status: 'OK',
+                    ok: true,
+                    result: {
+                        commandId: 'stream-a',
+                        plannedFrames: 4,
+                        scheduledFrames: 4,
+                        attemptedFrames: 4,
+                        completedFrames: 3,
+                        failedFrames: 0,
+                        droppedFrames: 1,
+                        backpressureCount: 0,
+                        duration: {},
+                        observations: [
+                            { index: 0, durationMs: 10, ok: true, dropped: false },
+                            { index: 1, durationMs: 20, ok: true, dropped: 'false' },
+                            { index: 2, durationMs: 30, ok: true },
+                            { index: 3, durationMs: 90, ok: false, dropped: true },
+                            'not an observation'
+                        ],
+                        thresholdFailures: []
+                    }
+                })
+            }
+        }));
+
+        expect(analysis.performance?.streamTiming?.duration).toMatchObject({
+            count: 3,
+            minMs: 10,
+            maxMs: 30
+        });
+    });
+
+    it('repeats a single stream duration record without inventing its sample or outlier counts', () => {
+        const analysis = analyzedRun(toDistributedRunArtifactFiles({
+            distributedRun: createDistributedRunSnapshot({
+                distributedRunId: 'dist-stream-duration-record',
+                controlRunId: 'run-stream-duration-record',
+                state: 'passed',
+                agentIds: ['controller-01']
+            }),
+            controlRun: createControlRunSnapshot({ runId: 'run-stream-duration-record' }),
+            files: {
+                'results.jsonl': JSON.stringify({
+                    agentId: 'controller-01',
+                    commandId: 'stream-a',
+                    status: 'OK',
+                    ok: true,
+                    result: {
+                        commandId: 'stream-a',
+                        plannedFrames: 2,
+                        scheduledFrames: 2,
+                        attemptedFrames: 2,
+                        completedFrames: 2,
+                        failedFrames: 0,
+                        droppedFrames: 0,
+                        backpressureCount: 0,
+                        duration: { p50Ms: 40, p95Ms: 50, maxMs: 50 },
+                        observations: [],
+                        thresholdFailures: []
+                    }
+                })
+            }
+        }));
+
+        expect(analysis.performance?.streamTiming?.duration).toEqual({
+            p50Ms: 40,
+            p95Ms: 50,
+            maxMs: 50,
+            spreadRatio: 1.25
+        });
+    });
+
     it('suppresses stream timing when another agent has only progress evidence', () => {
         const analysis = analyzedRun(toDistributedRunArtifactFiles({
             distributedRun: createDistributedRunSnapshot({

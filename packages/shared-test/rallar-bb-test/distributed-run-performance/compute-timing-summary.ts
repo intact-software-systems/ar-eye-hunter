@@ -6,12 +6,12 @@ export interface NumberExtrema {
     readonly max: number;
 }
 
-/** Sampled durations win; without samples the summary repeats the recorded timing. */
+/** Sampled durations win; without samples the summary repeats the recorded timing, including what it does not record. */
 export function computeTimingSummary(
-    recorded: DistributedRunTimingRecord,
+    recorded: DistributedRunTimingRecord | undefined,
     values: readonly number[]
 ): DistributedRunTimingSummary {
-    if (values.length > 0) {
+    if (values.length > 0 || recorded === undefined) {
         const p50Ms = computePercentile(values, 0.5);
         const p95Ms = computePercentile(values, 0.95);
         const p99Ms = computePercentile(values, 0.99);
@@ -29,7 +29,7 @@ export function computeTimingSummary(
         };
     }
     return {
-        count: recorded.count ?? 0,
+        count: recorded.count,
         minMs: recorded.minMs,
         p50Ms: recorded.p50Ms,
         p95Ms: recorded.p95Ms,
@@ -37,7 +37,7 @@ export function computeTimingSummary(
         maxMs: recorded.maxMs,
         averageMs: recorded.averageMs,
         spreadRatio: computeSpreadRatio(recorded.p50Ms, recorded.p95Ms),
-        outlierCount: recorded.outlierCount ?? 0
+        outlierCount: recorded.outlierCount
     };
 }
 

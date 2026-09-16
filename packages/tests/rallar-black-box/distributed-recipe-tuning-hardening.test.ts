@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { toControlEventEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-event-evidence.ts';
-import { decodeDistributedRunFleetReportEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-report-evidence.ts';
 import { decodeDistributedRunResultEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis/decode-distributed-run-result-evidence.ts';
 import { computeDistributedRunPerformance } from '../../../packages/shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-performance.ts';
 import {
@@ -187,10 +186,13 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         if (!snapshots) {
             throw new Error('Expected decoded snapshots.');
         }
+        const resultEvidence = decodeDistributedRunResultEvidence(result);
+        if (!resultEvidence) {
+            throw new Error('Expected result evidence.');
+        }
         const performance = computeDistributedRunPerformance({
             ...snapshots,
-            fleetReport: decodeDistributedRunFleetReportEvidence({}),
-            results: [decodeDistributedRunResultEvidence(result)],
+            results: [resultEvidence],
             events: snapshots.controlRun.events.map(toControlEventEvidence)
         });
 

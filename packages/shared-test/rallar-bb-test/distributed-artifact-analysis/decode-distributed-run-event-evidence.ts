@@ -25,9 +25,10 @@ export interface DistributedRunEventEvidence {
     readonly streamSummaryText?: string;
 }
 
-export function decodeDistributedRunEventEvidence(value: unknown): DistributedRunEventEvidence {
+/** Absent when the row is not a JSON object. */
+export function decodeDistributedRunEventEvidence(value: unknown): DistributedRunEventEvidence | undefined {
     if (!isJsonRecordValue(value)) {
-        return {};
+        return undefined;
     }
     const payload = isJsonRecordValue(value.payload) ? value.payload : undefined;
     const eventValue = isJsonRecordValue(value.value) ? value.value : undefined;

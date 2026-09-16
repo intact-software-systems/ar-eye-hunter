@@ -123,7 +123,9 @@ export function ImportedDistributedArtifactAnalysisPanel({
             <div className="imported-artifact-band">
                 <div className="section-heading compact">
                     <h4>Performance Health</h4>
-                    <span>{performance ? `${performance.commandTiming.count} samples` : 'no samples'}</span>
+                    <span>
+                        {performance ? `${performance.commandTiming.count ?? 'unknown'} samples` : 'no samples'}
+                    </span>
                 </div>
                 <div className="distributed-monitor-metrics">
                     <Metric

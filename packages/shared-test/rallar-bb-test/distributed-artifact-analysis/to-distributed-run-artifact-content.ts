@@ -57,7 +57,8 @@ export interface DistributedRunBundleContent {
     readonly variant: 'distributed-run';
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
     readonly snapshots: DistributedRunSnapshots;
-    readonly fleetReport: DistributedRunFleetReportEvidence;
+    /** Absent when fleet-report.json is missing, empty, not valid JSON or not a JSON object. */
+    readonly fleetReport?: DistributedRunFleetReportEvidence;
     /** Absent when failures.json lists no failures. */
     readonly bundledFailure?: DistributedRunBundledFailure;
     /** Absent when target-resolution.json is missing, records null, or is not a target resolution; a warning says which. */
@@ -160,7 +161,7 @@ function toBundleContent(
                 distributedRun: snapshots.distributedRun,
                 controlRun: toControlRunWithJsonlEnvelopes(parsed, snapshots.controlRun)
             },
-            fleetReport: fleetReport.value,
+            ...(fleetReport.value === undefined ? {} : { fleetReport: fleetReport.value }),
             ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
             ...targetResolution.value,
             ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
@@ -321,12 +322,12 @@ function toOptionalJsonFileValue<Decoded>(
     );
 }
 
-/** A missing, empty or malformed optional file reads as an empty JSON object; malformed ones add a warning. */
+/** A missing, empty or malformed optional file is absent; a malformed one adds a warning. */
 function toOptionalJsonFileEvidence<Evidence>(
     parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
-    decodeFile: (value: unknown) => Evidence
-): ArtifactFileReading<Evidence> {
+    decodeFile: (value: unknown) => Evidence | undefined
+): ArtifactFileReading<Evidence | undefined> {
     const file = distributedArtifactPipelineFile(parsed, fileName);
     if (file.format === 'json' && file.status === 'parsed') {
         return { value: decodeFile(file.value), warnings: [] };
@@ -334,27 +335,42 @@ function toOptionalJsonFileEvidence<Evidence>(
     const warnings = file.status === 'missing' || file.status === 'empty'
         ? []
         : [{ fileName, message: `${fileName} is not valid JSON: ${toJsonErrorDetail(fileName, file.message)}` }];
-    return { value: decodeFile({}), warnings };
+    return { value: undefined, warnings };
 }
 
+/** Rows that are not valid JSON or not JSON objects are skipped with a warning each. */
 function toJsonlEvidence<Evidence>(
     parsed: ParsedDistributedArtifactPipeline,
     fileName: string,
-    decodeRow: (value: unknown) => Evidence
+    decodeRow: (value: unknown) => Evidence | undefined
 ): ArtifactFileReading<readonly Evidence[]> {
-    const rows = distributedArtifactPipelineJsonlRows(parsed, fileName);
-    return {
-        value: rows.flatMap((row) => row.status === 'parsed' ? [decodeRow(row.value)] : []),
-        warnings: rows.flatMap((row) =>
-            row.status === 'parsed'
-                ? []
-                : [{
+    const readings = distributedArtifactPipelineJsonlRows(parsed, fileName).map(
+        (row): ArtifactFileReading<readonly Evidence[]> => {
+            if (row.status !== 'parsed') {
+                return toJsonlRowWarning(
                     fileName,
-                    lineNumber: row.lineNumber,
-                    message: row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`
-                }]
-        )
+                    row.lineNumber,
+                    row.message ?? `${fileName}:${row.lineNumber} is not valid JSON.`
+                );
+            }
+            const evidence = decodeRow(row.value);
+            return evidence === undefined
+                ? toJsonlRowWarning(fileName, row.lineNumber, `${fileName}:${row.lineNumber} is not a JSON object.`)
+                : { value: [evidence], warnings: [] };
+        }
+    );
+    return {
+        value: readings.flatMap((reading) => reading.value),
+        warnings: readings.flatMap((reading) => reading.warnings)
     };
+}
+
+function toJsonlRowWarning(
+    fileName: string,
+    lineNumber: number,
+    message: string
+): ArtifactFileReading<readonly never[]> {
+    return { value: [], warnings: [{ fileName, lineNumber, message }] };
 }
 
 /** The control server writes null to target-resolution.json for a run it resolved no targets for. */

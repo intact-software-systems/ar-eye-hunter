@@ -113,7 +113,7 @@ export function deriveDistributedRunTuningDecisions(
 function hasTuningPerformanceEvidence(
     performance: NonNullable<DistributedRunAnalysis['performance']>
 ): boolean {
-    return performance.commandTiming.count > 0 ||
+    return (performance.commandTiming.count !== undefined && performance.commandTiming.count > 0) ||
         (performance.streamTiming?.streamCount ?? 0) > 0;
 }
 

@@ -53,9 +53,10 @@ export interface DistributedRunResultEvidence {
     readonly nestedResults: readonly DistributedRunResultEvidence[];
 }
 
-export function decodeDistributedRunResultEvidence(value: unknown): DistributedRunResultEvidence {
+/** Absent when the row is not a JSON object. */
+export function decodeDistributedRunResultEvidence(value: unknown): DistributedRunResultEvidence | undefined {
     if (!isJsonRecordValue(value)) {
-        return { streamFailureTexts: [], deliveryFailureTexts: [], nestedResults: [] };
+        return undefined;
     }
     const payload = isJsonRecordValue(value.result) ? value.result : undefined;
     const resultValue = isJsonRecordValue(value.value) ? value.value : undefined;

@@ -28,7 +28,7 @@ export function TuneCommandTiming({
                 </div>
                 <span>{timing?.count ?? 0} samples</span>
             </header>
-            {timing && timing.count > 0
+            {timing?.count !== undefined && timing.count > 0
                 ? (
                     <>
                         <ul className={styles.metricGrid}>
@@ -41,7 +41,7 @@ export function TuneCommandTiming({
                         <p className={styles.detailLine}>
                             Average {tuneMilliseconds(timing.averageMs)} · Spread {tuneNumber(timing.spreadRatio)}× ·
                             {' '}
-                            {timing.outlierCount} outliers
+                            {tuneNumber(timing.outlierCount)} outliers
                         </p>
                         {performance
                             ? (

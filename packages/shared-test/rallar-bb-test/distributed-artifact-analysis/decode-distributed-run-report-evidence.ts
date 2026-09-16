@@ -21,10 +21,10 @@ export interface DistributedRunFleetReportEvidence {
     readonly missingAgents?: number;
     readonly staleAgents?: number;
     readonly flakyAgents?: number;
-    readonly commandTiming: DistributedRunTimingRecord;
+    readonly commandTiming?: DistributedRunTimingRecord;
     readonly runP50Ms?: number;
     readonly group?: DistributedRunAnalysisGroup;
-    /** The first failure signature, present whenever failureSignatures holds any entry. */
+    /** The first entry of failureSignatures, when that entry is a JSON object. */
     readonly firstFailureSignature?: DistributedRunFleetFailureSignature;
 }
 
@@ -51,9 +51,10 @@ export interface DistributedRunBundledFailure {
     readonly commandId?: string;
 }
 
-export function decodeDistributedRunFleetReportEvidence(value: unknown): DistributedRunFleetReportEvidence {
+/** Absent when the report is not a JSON object. */
+export function decodeDistributedRunFleetReportEvidence(value: unknown): DistributedRunFleetReportEvidence | undefined {
     if (!isJsonRecordValue(value)) {
-        return { commandTiming: {} };
+        return undefined;
     }
     const summary = isJsonRecordValue(value.summary) ? value.summary : undefined;
     const timing = isJsonRecordValue(value.timing) ? value.timing : undefined;
@@ -71,23 +72,23 @@ export function decodeDistributedRunFleetReportEvidence(value: unknown): Distrib
         commandTiming: decodeDistributedRunTimingRecord(timing?.commands),
         runP50Ms: decodeNumber(runTiming?.p50Ms),
         group: decodeAnalysisGroup(value.group),
-        firstFailureSignature: signatures.length === 0 ? undefined : decodeFleetFailureSignature(signatures[0])
+        firstFailureSignature: decodeFleetFailureSignature(signatures[0])
     };
 }
 
-/** Absent when failures.json lists no failures. */
+/** Absent when failures.json lists no failures or its first failure is not a JSON object. */
 export function decodeBundledFailure(value: unknown): DistributedRunBundledFailure | undefined {
-    if (!isJsonRecordValue(value) || !Array.isArray(value.failures) || value.failures.length === 0) {
+    const failure = isJsonRecordValue(value) && Array.isArray(value.failures) ? value.failures[0] : undefined;
+    if (!isJsonRecordValue(failure)) {
         return undefined;
     }
-    const failure = isJsonRecordValue(value.failures[0]) ? value.failures[0] : undefined;
-    const error = isJsonRecordValue(failure?.error) ? failure.error : undefined;
+    const error = isJsonRecordValue(failure.error) ? failure.error : undefined;
     return {
         code: decodeText(error?.code),
-        message: decodeText(failure?.message),
+        message: decodeText(failure.message),
         errorMessage: decodeText(error?.message),
-        agentId: decodeText(failure?.agentId),
-        commandId: decodeText(failure?.commandId)
+        agentId: decodeText(failure.agentId),
+        commandId: decodeText(failure.commandId)
     };
 }
 
@@ -103,9 +104,9 @@ export function decodeAnalysisGroup(value: unknown): DistributedRunAnalysisGroup
     };
 }
 
-function decodeFleetFailureSignature(value: unknown): DistributedRunFleetFailureSignature {
+function decodeFleetFailureSignature(value: unknown): DistributedRunFleetFailureSignature | undefined {
     if (!isJsonRecordValue(value)) {
-        return { affectedAgents: [], affectedRegions: [] };
+        return undefined;
     }
     return {
         category: decodeText(value.category),

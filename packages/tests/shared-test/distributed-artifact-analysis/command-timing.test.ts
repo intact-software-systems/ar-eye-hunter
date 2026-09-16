@@ -24,6 +24,19 @@ function analyzedRun(files: DistributedRunArtifactFiles): DistributedRunAnalysis
     return analyzed.right.analysis;
 }
 
+function fleetCounterRunFiles(files: DistributedRunArtifactFiles): DistributedRunArtifactFiles {
+    return toDistributedRunArtifactFiles({
+        distributedRun: createDistributedRunSnapshot({
+            distributedRunId: 'dist-fleet-counters',
+            controlRunId: 'run-fleet-counters',
+            state: 'passed',
+            agentIds: ['controller-01']
+        }),
+        controlRun: createControlRunSnapshot({ runId: 'run-fleet-counters', agents: [{ agentId: 'controller-01' }] }),
+        files
+    });
+}
+
 describe('distributed run artifact command timing', () => {
     it('keeps 200,000 timing and receiver-delivery values within exact extrema', () => {
         const sampleCount = 200_000;
@@ -233,6 +246,41 @@ describe('distributed run artifact command timing', () => {
         expect(analysis.performanceMarkdown).toContain('Pass rate: 100%');
         expect(analysis.performanceMarkdown).toContain('p99=1900ms');
         expect(analysis.fixProposalMarkdown).toBeUndefined();
+    });
+
+    it('leaves the fleet counters unknown when the artifacts hold no fleet report', () => {
+        const withoutFleetReport = analyzedRun(fleetCounterRunFiles({}));
+        const withFleetReport = analyzedRun(fleetCounterRunFiles({
+            'fleet-report.json': JSON.stringify({ summary: { missing: 2, stale: 1, flaky: 0 } })
+        }));
+
+        expect(withoutFleetReport.performance?.missingAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performance?.staleAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performance?.flakyAgentCount).toBeUndefined();
+        expect(withoutFleetReport.performanceMarkdown).toContain('Missing agents: unknown');
+        expect(withoutFleetReport.performanceMarkdown).toContain('Stale agents: unknown');
+        expect(withoutFleetReport.performanceMarkdown).toContain('Flaky agents: unknown');
+        expect(withoutFleetReport.performance?.commandTiming).toEqual({ count: 0, outlierCount: 0 });
+        expect(withFleetReport.performance).toMatchObject({
+            missingAgentCount: 2,
+            staleAgentCount: 1,
+            flakyAgentCount: 0
+        });
+        expect(withFleetReport.performanceMarkdown).toContain('Missing agents: 2');
+    });
+
+    it('repeats a recorded command timing without inventing the counts it does not record', () => {
+        const withoutCount = analyzedRun(fleetCounterRunFiles({
+            'fleet-report.json': JSON.stringify({ timing: { commands: { p50Ms: 60, p95Ms: 70 } } })
+        }));
+        const withCount = analyzedRun(fleetCounterRunFiles({
+            'fleet-report.json': JSON.stringify({ timing: { commands: { count: 2, p50Ms: 60, p95Ms: 70 } } })
+        }));
+
+        expect(withoutCount.performance?.commandTiming).toEqual({ p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
+        expect(withoutCount.performanceMarkdown).toContain('Command timing: count=unknown,');
+        expect(withoutCount.performanceMarkdown).toContain('outliers=unknown');
+        expect(withCount.performance?.commandTiming).toEqual({ count: 2, p50Ms: 60, p95Ms: 70, spreadRatio: 1.17 });
     });
 
     it('keeps command timing metrics on one linked distributed-command sample set', () => {

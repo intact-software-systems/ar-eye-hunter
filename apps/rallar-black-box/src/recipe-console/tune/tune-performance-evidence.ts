@@ -5,7 +5,7 @@ export function hasTunePerformanceEvidence(
 ): boolean {
     return Boolean(
         performance && (
-            performance.commandTiming.count > 0 ||
+            (performance.commandTiming.count !== undefined && performance.commandTiming.count > 0) ||
             (performance.streamTiming?.streamCount ?? 0) > 0 ||
             (performance.receiverDelivery?.sampleCount ?? 0) > 0
         )
