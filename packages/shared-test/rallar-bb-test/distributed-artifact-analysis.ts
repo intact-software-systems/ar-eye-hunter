@@ -58,19 +58,27 @@ export interface DistributedRunFailureAnalysis {
 }
 
 /**
- * Duration statistics over the sampled durations, or the recorded timing when none were sampled; each one is
- * absent when no duration was sampled and the recorded timing omits it.
+ * Duration statistics over the sampled durations. Without samples the summary repeats the recorded timing;
+ * with neither samples nor a record it counts zero samples and zero outliers.
  */
 export interface DistributedRunTimingSummary {
+    /** Absent only when the summary repeats a recorded timing that omits its count. */
     readonly count?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly minMs?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly p50Ms?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly p95Ms?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly p99Ms?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly maxMs?: number;
+    /** Absent when no duration was sampled and there is no record or the record omits it. */
     readonly averageMs?: number;
     /** Absent without both a median and a p95. */
     readonly spreadRatio?: number;
+    /** Absent only when the summary repeats a recorded timing that omits its outlier count. */
     readonly outlierCount?: number;
 }
 
