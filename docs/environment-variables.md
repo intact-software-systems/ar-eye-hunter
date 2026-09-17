@@ -347,9 +347,10 @@ bootstrap flows: `fleetRegion`, `fleetProvider`, `fleetDatacenter`,
 
 Booleans read `1`, `true`, `yes`, `on`, `0`, `false`, `no` or `off`; `VITE_RALLAR_REGISTER` also reads
 `if-needed`. A launch value a setting cannot read, such as an unknown provider, an interval or runner agent
-count that is not an integer, or a coordinate out of range or without its pair, is recorded as a bootstrap
+count that is not an integer, or a coordinate that is not a number in range, is recorded as a bootstrap
 issue. A control agent refuses to start while any issue is present and reports every issue in its start
-failure; it never runs with a default in place of the value it was given.
+failure; it never runs with a default in place of the value it was given. The fleet location is optional: a
+location label, or one coordinate without the other, places no map location and is not an issue.
 
 ### Rallar Black Box Headless Worker
 

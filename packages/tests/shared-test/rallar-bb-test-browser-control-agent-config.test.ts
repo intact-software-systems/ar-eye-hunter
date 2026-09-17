@@ -56,7 +56,7 @@ describe('browser control-agent bootstrap config', () => {
 
     it('reports every launch value it cannot read as its setting, naming the key that carried it', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
-            '?autoConnect=maybe&transport=ws&rallarRegister=sometimes&rallarAuthStorage=cookie&fleetLongitude=10',
+            '?autoConnect=maybe&transport=ws&rallarRegister=sometimes&rallarAuthStorage=cookie',
             {
                 VITE_RALLAR_HEARTBEAT_INTERVAL_MS: '250ms',
                 VITE_RALLAR_STATS_INTERVAL_MS: '-5',
@@ -84,17 +84,22 @@ describe('browser control-agent bootstrap config', () => {
             {
                 launchKey: 'VITE_RALLAR_LOGOUT_ON_CLOSE',
                 message: 'VITE_RALLAR_LOGOUT_ON_CLOSE must be one of 1, true, yes, on, 0, false, no, off, not \'sure\'.'
-            },
-            { launchKey: 'fleetLongitude', message: 'fleetLongitude needs fleetLatitude to place the agent.' }
+            }
         ]);
     });
 
-    it('reports a fleet location label without coordinates', () => {
-        expect(resolveRallarBlackBoxBootstrapConfig('', { VITE_RALLAR_AGENT_LOCATION_LABEL: 'rack 3' }, '').issues)
-            .toEqual([{
-                launchKey: 'VITE_RALLAR_AGENT_LOCATION_LABEL',
-                message: 'VITE_RALLAR_AGENT_LOCATION_LABEL needs a fleet latitude and longitude to place the agent.'
-            }]);
+    it('places no fleet location for a location label or a coordinate without its pair, and reports no issue', () => {
+        const launches: readonly (readonly [string, Readonly<Record<string, string>>])[] = [
+            ['', { VITE_RALLAR_AGENT_LOCATION_LABEL: 'rack 3' }],
+            ['?fleetLatitude=52.5', {}],
+            ['?fleetLongitude=10&fleetLocationLabel=rack%203', {}]
+        ];
+        for (const [search, environment] of launches) {
+            const bootstrap = resolveRallarBlackBoxBootstrapConfig(search, environment, '');
+
+            expect(bootstrap.issues, search).toEqual([]);
+            expect(bootstrap.fleetLocation, search).toBeUndefined();
+        }
     });
 
     it('takes no Rallar access token from the launch URL or the Vite environment', () => {

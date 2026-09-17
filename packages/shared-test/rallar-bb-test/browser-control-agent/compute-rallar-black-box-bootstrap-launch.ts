@@ -133,10 +133,7 @@ export function computeRallarBlackBoxBootstrapLaunch(
             runnerAgentCount: readings.runnerAgentCount.value,
             fleetLocation: toFleetLocation(sources, readings.fleetLatitude.value, readings.fleetLongitude.value)
         },
-        issues: [
-            ...Object.values(readings).flatMap((reading) => reading.issues),
-            ...validateFleetLocationLaunch(sources)
-        ]
+        issues: Object.values(readings).flatMap((reading) => reading.issues)
     };
 }
 
@@ -158,7 +155,10 @@ function toUnreadableLaunchIssue(launch: LaunchValue, expectation: string): Rall
     };
 }
 
-/** Launch coordinates are the operator's explicit placement, so the agent reports them as exact. */
+/**
+ * Launch coordinates are the operator's explicit placement, so the agent reports them as exact. The location is
+ * optional: a label or one coordinate without the other places no location, as the headless worker forwards them.
+ */
 function toFleetLocation(
     sources: BootstrapLaunchSources,
     latitude: number | undefined,
@@ -169,31 +169,6 @@ function toFleetLocation(
     }
     const label = resolveLaunchValue(sources, 'fleetLocationLabel')?.text;
     return { latitude, longitude, ...(label === undefined ? {} : { label }), precision: 'exact' };
-}
-
-/** A launch location needs both coordinates; a label alone or one coordinate alone places nothing. */
-function validateFleetLocationLaunch(sources: BootstrapLaunchSources): readonly RallarBlackBoxBootstrapIssue[] {
-    const latitude = resolveLaunchValue(sources, 'fleetLatitude');
-    const longitude = resolveLaunchValue(sources, 'fleetLongitude');
-    const label = resolveLaunchValue(sources, 'fleetLocationLabel');
-    if (latitude !== undefined && longitude === undefined) {
-        return [{
-            launchKey: latitude.launchKey,
-            message: `${latitude.launchKey} needs fleetLongitude to place the agent.`
-        }];
-    }
-    if (longitude !== undefined && latitude === undefined) {
-        return [{
-            launchKey: longitude.launchKey,
-            message: `${longitude.launchKey} needs fleetLatitude to place the agent.`
-        }];
-    }
-    return label !== undefined && latitude === undefined
-        ? [{
-            launchKey: label.launchKey,
-            message: `${label.launchKey} needs a fleet latitude and longitude to place the agent.`
-        }]
-        : [];
 }
 
 function toBooleanReader(setting: LaunchSetting): LaunchSettingReader<boolean> {
