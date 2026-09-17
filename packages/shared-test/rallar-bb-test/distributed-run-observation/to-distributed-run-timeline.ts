@@ -25,7 +25,7 @@ export interface ToDistributedRunTimelineInput {
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
-/** A timeline item whose time is still unknown; the projection drops those. */
+/** A timeline item that may not have a time yet; the projection drops those. */
 type TimedTimelineItem = Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; };
 
 export function toDistributedRunTimeline(input: ToDistributedRunTimelineInput): readonly DistributedRunTimelineItem[] {
