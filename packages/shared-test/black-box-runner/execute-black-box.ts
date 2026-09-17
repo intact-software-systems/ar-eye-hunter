@@ -36,7 +36,7 @@ import { createParallelRendezvous } from './execution/parallel-rendezvous.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
 import { withPollUntil } from './execution/with-poll-until.ts';
 import { computeParallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
-import { executeHttpInteraction } from './http/execute-http-interaction.ts';
+import { runHttpInteraction } from './http/run-http-interaction.ts';
 import {
     toRtcPayload,
     type RtcClient
@@ -712,7 +712,12 @@ function executeTransportInteraction(transport: string, input: TransportInteract
         default:
             return isRallarRemoteBrowserRequest(interaction.request)
                 ? executeRemoteHttpInteraction(interaction, config, context)
-                : executeHttpInteraction({ interaction, config, now: context.dependencies.now });
+                : runHttpInteraction({
+                    interaction,
+                    config,
+                    now: context.dependencies.now,
+                    fetch: context.dependencies.fetch
+                });
     }
 }
 

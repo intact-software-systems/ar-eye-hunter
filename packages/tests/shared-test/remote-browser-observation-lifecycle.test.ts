@@ -156,7 +156,7 @@ for (
                 fetch: async () => ++reads === 1 ? emptySnapshot() : pendingRead.promise
             };
             const context = {
-                dependencies: { now: Date.now, createUuid: () => 'unused' },
+                dependencies: { now: Date.now, createUuid: () => 'unused', fetch: options.fetch },
                 options: { rallarRemoteBrowser: options },
                 rtcMessages: {},
                 wsMessages: {},

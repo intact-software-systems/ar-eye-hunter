@@ -41,10 +41,45 @@ describe('black-box execution dependencies', () => {
 
     it('uses the execution clock for report timestamps and the ID source for correlation', async () => {
         const report = await executeBlackBox([{ SET: { request: { output: 'value', value: 1 }, response: {} }, setValue: {} }], 0, {
-            dependencies: { now: () => 1234, createUuid: () => 'owned-id' }
+            dependencies: { ...createDefaultExecutionDependencies(), now: () => 1234, createUuid: () => 'owned-id' }
         });
         expect(report.resultsList[0]).toMatchObject({ startedAtEpochMs: 1234, endedAtEpochMs: 1234 });
         expect(JSON.stringify(report)).toContain('bb-run-owned-id');
+    });
+
+    it('sends an HTTP step through the fetch port of its execution dependencies', async () => {
+        const requests: string[] = [];
+        const report = await executeBlackBox(
+            [{
+                HTTP: { request: { method: 'GET', path: 'http://runner.invalid/status' }, response: { statusCode: 200 } },
+                readStatus: {}
+            }],
+            0,
+            {
+                dependencies: {
+                    now: () => 1234,
+                    createUuid: () => 'owned-id',
+                    fetch: async (input: RequestInfo | URL) => {
+                        requests.push(String(input));
+                        return Response.json({ ready: true });
+                    }
+                }
+            }
+        );
+        expect(requests).toEqual(['http://runner.invalid/status']);
+        expect(report.resultsByName.readStatus[0]).toMatchObject({ status: 'SUCCESS', actual: { body: { ready: true } } });
+    });
+
+    it('captures the global fetch once at the default composition root', async () => {
+        const captured = vi.fn(async () => Response.json({ captured: true }));
+        vi.stubGlobal('fetch', captured);
+        const dependencies = createDefaultExecutionDependencies();
+        vi.unstubAllGlobals();
+
+        const response = await dependencies.fetch('http://runner.invalid/captured');
+
+        expect(captured).toHaveBeenCalledTimes(1);
+        expect(await response.json()).toEqual({ captured: true });
     });
 
     it('uses the supplied clock to measure the polling stability window', async () => {
@@ -66,7 +101,7 @@ for (const transport of ['RTC', 'WS'] as const) {
         vi.useFakeTimers();
         let now = 0;
         const context = {
-            dependencies: { now: () => now, createUuid: () => 'unused' },
+            dependencies: { ...createDefaultExecutionDependencies(), now: () => now },
             rtcMessages: {},
             wsMessages: {},
             rtcConnections: {},
@@ -106,7 +141,7 @@ for (const transport of ['data-channel', 'signaling'] as const) {
                 settled = true;
                 return undefined;
             },
-            (error: unknown) => {
+            (error) => {
                 settled = true;
                 return error;
             }
@@ -145,7 +180,7 @@ for (const transport of ['RTC', 'WS'] as const) {
             vi.useFakeTimers();
             let now = 0;
             const context = {
-                dependencies: { now: () => now, createUuid: () => 'unused' },
+                dependencies: { ...createDefaultExecutionDependencies(), now: () => now },
                 rtcMessages: {},
                 wsMessages: {},
                 rtcConnections: {},

@@ -1,6 +1,6 @@
 import type { BlackBoxExecutionDependencies } from '../../black-box-runner/execution/black-box-scenario-context.ts';
 import { validateAssertValueComparators } from '../../black-box-runner/expectations/assert-value-comparators.ts';
-import { executeHttpInteraction } from '../../black-box-runner/http/execute-http-interaction.ts';
+import { runHttpInteraction } from '../../black-box-runner/http/run-http-interaction.ts';
 import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expectations.ts';
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
@@ -220,28 +220,21 @@ async function runPollingRunnerVerdict(
     fetch: typeof globalThis.fetch,
     now: () => number
 ): Promise<AssertionOutcomeVerdict> {
-    // The runner HTTP interaction calls the global fetch, so the injected fetch is installed for the attempt.
-    const previousFetch = globalThis.fetch;
-    globalThis.fetch = fetch;
-    try {
-        const result = await executeHttpInteraction({
-            now,
-            interaction: {
-                name: fixture.fixtureId,
-                connection: 'api',
-                request: {
-                    url: 'http://parity.invalid/status',
-                    method: 'GET',
-                    action: 'poll-until',
-                    poll: { maxAttempts: fixture.maxAttempts, maxDurationMs: 5_000, backoffMs: 1, backoffMultiplier: 1 }
-                },
-                response: { status: 200 }
+    const result = await runHttpInteraction({
+        now,
+        fetch,
+        interaction: {
+            name: fixture.fixtureId,
+            connection: 'api',
+            request: {
+                url: 'http://parity.invalid/status',
+                method: 'GET',
+                action: 'poll-until',
+                poll: { maxAttempts: fixture.maxAttempts, maxDurationMs: 5_000, backoffMs: 1, backoffMultiplier: 1 }
             },
-            config: { interaction: { request: {} } }
-        });
-        return decodeRunnerVerdict(result);
-    }
-    finally {
-        globalThis.fetch = previousFetch;
-    }
+            response: { status: 200 }
+        },
+        config: { interaction: { request: {} } }
+    });
+    return decodeRunnerVerdict(result);
 }

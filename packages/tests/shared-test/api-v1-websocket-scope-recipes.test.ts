@@ -1,6 +1,7 @@
 import { evaluateScenarioTransform } from '@shared-test/black-box-runner/execution/black-box-output-transform.ts';
 import { toRunnerCorrelationConfig } from '@shared-test/black-box-runner/execution/black-box-run-correlation.ts';
 import { resolveBlackBoxVariables } from '@shared-test/black-box-runner/execution/black-box-run-secrets.ts';
+import { createDefaultExecutionDependencies } from '@shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { resolvePlaceholders } from '@shared-test/black-box-runner/execution/black-box-value-resolution.ts';
 import {
     closeWs,
@@ -63,7 +64,7 @@ const socketConnection = { request: { connection: 'scope-test' } };
 beforeEach(() => {
     TestWebSocket.instances.length = 0;
     vi.stubGlobal('WebSocket', TestWebSocket);
-    sockets = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
+    sockets = { dependencies: createDefaultExecutionDependencies(), wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
 });
 
 afterEach(async () => {
@@ -93,7 +94,7 @@ describe.each(['default', 'override'] as const)('%s recipe WebSocket scope', (sc
         expect(urlTransform).toBeDefined();
         expect(openRequest).toBeDefined();
         const context = {
-            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            dependencies: createDefaultExecutionDependencies(),
             variables,
             correlation: toRunnerCorrelationConfig({ options: {}, createUuid: () => crypto.randomUUID() }),
             outputs: {
@@ -159,7 +160,7 @@ it.each([
         { ...scope, resourceId: 'another-group' }
     ].map((otherScope) => ({ data: { completedSnapshot: { route, typeId: 'overlay.topology', scope: otherScope } } }));
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { 'scope-test': [...unrelated, { data: { completedSnapshot: { route, typeId: 'overlay.topology', scope } } }] }
     };
 

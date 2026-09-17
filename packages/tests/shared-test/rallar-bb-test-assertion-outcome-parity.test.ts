@@ -26,14 +26,14 @@ function expectRowsHold(rows: readonly AssertionOutcomeParityRow[]): void {
 
 function createPollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
     let attempt = 0;
-    return (async () => {
+    return async () => {
         attempt += 1;
         const converged = succeedOnAttempt !== undefined && attempt >= succeedOnAttempt;
         return new Response(JSON.stringify({ attempt, converged }), {
             status: converged ? 200 : 503,
             headers: { 'content-type': 'application/json' }
         });
-    }) as typeof fetch;
+    };
 }
 
 function toFailingRunFiles(code: string, message: string): DistributedRunArtifactFiles {
@@ -79,6 +79,23 @@ describe('rallar-bb-test assertion outcome parity', () => {
 
     it('agrees with the runner polling verdicts for convergence and exhaustion', async () => {
         expectRowsHold(await runPollingOutcomeParityRows({ fetch: createPollingFetch, now: Date.now }));
+    });
+
+    it('sends the polling attempts through the injected fetch without replacing the global fetch', async () => {
+        const globalFetch = globalThis.fetch;
+        const globalFetchSeenByAttempts: Array<typeof fetch> = [];
+        const createObservedFetch = (succeedOnAttempt: number | undefined): typeof fetch => {
+            const pollingFetch = createPollingFetch(succeedOnAttempt);
+            return (input: RequestInfo | URL, init?: RequestInit) => {
+                globalFetchSeenByAttempts.push(globalThis.fetch);
+                return pollingFetch(input, init);
+            };
+        };
+
+        expectRowsHold(await runPollingOutcomeParityRows({ fetch: createObservedFetch, now: Date.now }));
+
+        expect(globalFetchSeenByAttempts.length).toBeGreaterThan(0);
+        expect(globalFetchSeenByAttempts.every((seen) => seen === globalFetch)).toBe(true);
     });
 
     it('names absence violations in analysis and fix proposals', () => {

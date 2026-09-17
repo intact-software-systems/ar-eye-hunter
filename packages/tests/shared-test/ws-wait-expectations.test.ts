@@ -1,3 +1,4 @@
+import { createDefaultExecutionDependencies } from '@shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { executeLocalWsInteraction } from '@shared-test/black-box-runner/execution/execute-local-ws-interaction.ts';
 import { executeRemoteWsInteraction } from '@shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
 import {
@@ -22,7 +23,7 @@ afterEach(() => vi.useRealTimers());
 
 it('fails absence when retained evidence is evicted during the full observation window', async () => {
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [{ data: { forbidden: true } }] },
         wsObservationLoss: { socket: 0 }
     };
@@ -34,7 +35,7 @@ it('fails absence when retained evidence is evicted during the full observation 
 });
 
 it('allows a fresh full window after historical loss without resetting a pending older window', async () => {
-    const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { socket: [] }, wsObservationLoss: { socket: 7 } };
+    const context = { dependencies: createDefaultExecutionDependencies(), wsMessages: { socket: [] }, wsObservationLoss: { socket: 7 } };
     const oldWindow = waitForWsMessageAbsence({ interaction, config, context });
     context.wsObservationLoss.socket++;
     const freshWindow = waitForWsMessageAbsence({ interaction, config, context });
@@ -45,14 +46,14 @@ it('allows a fresh full window after historical loss without resetting a pending
 });
 
 it('preserves forbidden buffered-message detection even when it predates the absence window', async () => {
-    const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { socket: [{ data: { forbidden: true } }] } };
+    const context = { dependencies: createDefaultExecutionDependencies(), wsMessages: { socket: [{ data: { forbidden: true } }] } };
     const waiting = waitForWsMessageAbsence({ interaction, config, context });
     await vi.advanceTimersByTimeAsync(50);
     expect(await waiting).toMatchObject({ status: 'FAILURE', actual: { matchedMessage: { data: { forbidden: true } } } });
 });
 
 it('does not let a consuming positive wait erase evidence from a concurrent absence wait', async () => {
-    const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { socket: [{ data: { forbidden: true } }] } };
+    const context = { dependencies: createDefaultExecutionDependencies(), wsMessages: { socket: [{ data: { forbidden: true } }] } };
     const absence = waitForWsMessageAbsence({ interaction, config, context });
     const positive = waitForWsMessage({
         interaction: { request: interaction.request, response: { message: { forbidden: true }, consume: true, withinMs: 50 } },
@@ -66,7 +67,7 @@ it('does not let a consuming positive wait erase evidence from a concurrent abse
 
 it('matches ordered messages without mutating the retained observations until consumption is requested', async () => {
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [{ data: { n: 2 } }, { data: { n: 1 } }, { data: { n: 2 } }] }
     };
     const waiting = waitForWsMessages({
@@ -91,7 +92,7 @@ it('matches ordered messages without mutating the retained observations until co
 it('fails an interrupted absence window when a remotely observed socket close arrives', async () => {
     const closeEvents: unknown[] = [];
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [] },
         wsCloseEvents: { socket: closeEvents }
     };
@@ -103,7 +104,7 @@ it('fails an interrupted absence window when a remotely observed socket close ar
 
 it('does not treat a saturated observation-loss counter as complete evidence', async () => {
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [] },
         wsObservationLoss: { socket: Number.MAX_SAFE_INTEGER }
     };
@@ -115,7 +116,7 @@ it('does not treat a saturated observation-loss counter as complete evidence', a
 it('fails remote absence when polling loses access to the event stream during its window', async () => {
     let reads = 0;
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsConnections: { socket: new TestWebSocket('ws://remote.example.test') },
         wsMessages: { socket: [] },
         wsCloseEvents: {},
@@ -149,7 +150,7 @@ it('fails remote absence when polling loses access to the event stream during it
 it('preserves explicit null payloads when sending through the local socket owner', async () => {
     const socket = new TestWebSocket('ws://local.example.test');
     socket.open();
-    const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsConnections: { socket }, wsMessages: {}, wsCloseEvents: {} };
+    const context = { dependencies: createDefaultExecutionDependencies(), wsConnections: { socket }, wsMessages: {}, wsCloseEvents: {} };
     await executeLocalWsInteraction({ request: { action: 'send', connection: 'socket', send: null } }, config, context);
     expect(socket.sent).toEqual(['null']);
 });
@@ -157,7 +158,7 @@ it('preserves explicit null payloads when sending through the local socket owner
 it('keeps stale local close diagnostics from invalidating a healthy new generation window', async () => {
     const closeEvents: unknown[] = [];
     const context = {
-        dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+        dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [] },
         wsCloseEvents: { socket: closeEvents },
         wsObservationLoss: { socket: 3 }
