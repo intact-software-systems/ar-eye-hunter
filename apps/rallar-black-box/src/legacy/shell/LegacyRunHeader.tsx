@@ -5,15 +5,12 @@ import {
     selectRallarBlackBoxFirstFailure,
     selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
+import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
-import {
-    rallarBlackBoxProviderModeFromConfig,
-    rallarBlackBoxRuntimeStore,
-    type RallarBlackBoxBootstrapConfig
-} from '../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import { statusTone } from '../shared/command-presentation.ts';
 import { Metric } from '../shared/Metric.tsx';
 import type { CommandCenterGlobalValues } from './global-context-model.ts';
@@ -50,7 +47,7 @@ export function Header({
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const firstFailure = selectRallarBlackBoxFirstFailure(state);
     const providerMode = config
-        ? rallarBlackBoxProviderModeFromConfig(config)
+        ? resolveRallarBlackBoxConfigProviderMode(config)
         : bootstrap.providerMode;
     const rallarValue = providerMode === 'simulated'
         ? 'simulated'

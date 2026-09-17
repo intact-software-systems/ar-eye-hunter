@@ -4,7 +4,7 @@ import type {
     RallarBlackBoxTestTransport
 } from './rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
-import { decodeRecord } from './runtime/decode-runtime-result-values.ts';
+import { decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
 
 export const RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
 
@@ -221,8 +221,4 @@ function toDiagnosticMessage(evidence: DiagnosticMessageEvidence): string {
         decodeNonBlankText(detailRecord.message) ??
         decodeNonBlankText(detailRecord.reason) ??
         evidence.topic;
-}
-
-function decodeNonBlankText(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }

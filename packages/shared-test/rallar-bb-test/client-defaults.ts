@@ -27,6 +27,7 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     targetClient: 'bob',
     multicastClients: 'bob,charlie',
     timeoutMs: 20_000,
+    heartbeatIntervalMs: 10_000,
     statsIntervalMs: 5_000,
     demoUsername: 'alice',
     demoPassword: 'local-demo-password',

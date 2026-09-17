@@ -14,8 +14,7 @@ import type { RtcRealtimeViewModel } from '../../../apps/rallar-black-box/src/le
 import { useRtcRealtimeController } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts';
 
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
-    rallarBlackBoxRuntimeStore: { recordRuntimeEvent: () => {} },
-    rallarBlackBoxProviderModeFromConfig: () => 'browser-rallar'
+    rallarBlackBoxRuntimeStore: { recordRuntimeEvent: () => {} }
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 

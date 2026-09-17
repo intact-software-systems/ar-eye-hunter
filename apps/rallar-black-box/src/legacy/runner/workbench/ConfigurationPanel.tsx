@@ -1,11 +1,11 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import { rallarBlackBoxProviderModeFromConfig } from '../../../runtime-store.ts';
+import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
 export function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState; }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
-    const providerMode = rallarBlackBoxProviderModeFromConfig(config);
+    const providerMode = resolveRallarBlackBoxConfigProviderMode(config);
 
     return (
         <section className="panel config-panel">

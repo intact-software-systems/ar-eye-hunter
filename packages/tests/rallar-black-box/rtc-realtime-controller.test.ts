@@ -43,8 +43,7 @@ vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-fa
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: {
         recordRuntimeEvent: (event: RallarBlackBoxTestRuntimeEventInput, lastAction: string | undefined) => runtimeEvents.push({ event, lastAction })
-    },
-    rallarBlackBoxProviderModeFromConfig: () => 'browser-rallar'
+    }
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 

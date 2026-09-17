@@ -25,7 +25,7 @@ export function useRunnerAgentLaunchState({
             `${safeIdSegment(authSession?.username ?? bootstrap.actor ?? 'agent')}-agent`
     );
     const [agentCount, setAgentCount] = useState(
-        Math.min(6, Math.max(1, bootstrap.runnerAgentCount ?? 1))
+        Math.min(6, Math.max(1, bootstrap.runnerAgentCount))
     );
     const [agentLaunchSuffix, setAgentLaunchSuffix] = useState(() => runnerNewAgentLaunchSuffix());
     const [agentRestoreSession, setAgentRestoreSession] = useState(

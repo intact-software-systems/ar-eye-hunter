@@ -106,7 +106,7 @@ describe('browser control-agent reload', () => {
     it('sends the agent.reload result before reloading and persists the resume record', async () => {
         const sockets = stubWebSockets();
         const sentAtReload: ControlClientEnvelope[][] = [];
-        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {} });
+        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
         await agent.start();
         const socket = sockets[0];
         const reload = vi
@@ -145,7 +145,7 @@ describe('browser control-agent reload', () => {
             completedCommandIds: ['configure-control-1', 'reload-1']
         });
         const sockets = stubWebSockets();
-        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {} });
+        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
 
         await agent.start();
         sockets[0].open();

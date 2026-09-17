@@ -1,9 +1,8 @@
 import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import {
-    remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
-    type RallarBlackBoxBootstrapConfig
+    type RallarBlackBoxBootstrapConfig,
+    type RallarBlackBoxBootstrapEnvironment
 } from './browser-control-agent-config.ts';
 import {
     createBrowserWebSocketFactory,
@@ -13,11 +12,14 @@ import {
 import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from './control-client.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
 import type {
+    RallarBlackBoxTestConfig,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestState
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
+import { readBrowserAuthSessionPresence, toRemoteControlConfig } from './to-remote-control-config.ts';
+import { validateRallarBlackBoxProviderConfig } from './validate-rallar-black-box-provider-config.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'
@@ -47,8 +49,9 @@ export type RallarBlackBoxBrowserControlAgent = Readonly<{
 }>;
 
 export type CreateRallarBlackBoxBrowserControlAgentOptions = Readonly<{
-    search?: string;
-    env?: Readonly<Record<string, string | undefined>>;
+    search: string;
+    env: RallarBlackBoxBootstrapEnvironment;
+    hash: string;
 }>;
 
 type RuntimeWithBridge = Readonly<{
@@ -127,9 +130,9 @@ function createRuntimeForBootstrap(
 
 function recordAndThrowProviderConfigError(
     runtime: RallarBlackBoxTestRuntime,
-    config: ReturnType<typeof remoteControlConfig>
+    config: RallarBlackBoxTestConfig
 ): void {
-    const configError = validateRallarBlackBoxProviderConfig(config);
+    const [configError] = validateRallarBlackBoxProviderConfig(config);
     if (!configError) {
         return;
     }
@@ -144,9 +147,9 @@ function recordAndThrowProviderConfigError(
 }
 
 export function createRallarBlackBoxBrowserControlAgent(
-    options: CreateRallarBlackBoxBrowserControlAgentOptions = {}
+    options: CreateRallarBlackBoxBrowserControlAgentOptions
 ): RallarBlackBoxBrowserControlAgent {
-    const bootstrap = resolveRallarBlackBoxBootstrapConfig(options.search, options.env);
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(options.search, options.env, options.hash);
     const { runtime, disposeBridge } = createRuntimeForBootstrap(bootstrap);
     const listeners = new Set<BrowserControlAgentListener>();
     let disposed = false;
@@ -203,7 +206,11 @@ export function createRallarBlackBoxBrowserControlAgent(
         },
         async start() {
             assertNotDisposed();
-            const config = remoteControlConfig(bootstrap, 1);
+            const config = toRemoteControlConfig({
+                bootstrap,
+                runNumber: 1,
+                hasStoredAuthSession: readBrowserAuthSessionPresence()
+            });
             const resumed = takeAgentResumeRecord(config.runId ?? bootstrap.runId, bootstrap.agentId);
             if (resumed) {
                 resumedCommandIds = resumed.completedCommandIds;

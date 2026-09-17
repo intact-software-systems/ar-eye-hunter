@@ -10,7 +10,8 @@ const rootElement = root;
 
 const agent = createRallarBlackBoxBrowserControlAgent({
     search: window.location.search,
-    env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {}
+    env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {},
+    hash: window.location.hash
 });
 
 function render(): void {

@@ -1,5 +1,6 @@
 import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useMemo, useState } from 'react';
@@ -15,7 +16,6 @@ import {
 } from '../../../rallar-server-workbench/redact-rallar-server-value.ts';
 import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerBlackBoxCommand } from '../../../rallar-server-workbench/to-rallar-server-black-box-command.ts';
-import { rallarBlackBoxProviderModeFromConfig } from '../../../runtime-store.ts';
 import type { RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { findStringDeep } from '../shared/deep-string-value.ts';
@@ -64,7 +64,7 @@ export function useRallarServerRequestController(
     input: UseRallarServerControllerInput,
     defaults: RallarServerDefaults
 ): RallarServerRequestController {
-    const providerMode = rallarBlackBoxProviderModeFromConfig(defaults.config);
+    const providerMode = resolveRallarBlackBoxConfigProviderMode(defaults.config);
     const { draft, setDraft, setters } = useRallarServerRequestDraft(input, defaults);
     const controls = useRallarServerRequestControls();
     const requestInput = toRallarServerRequestInput(draft, input.authSession, providerMode);

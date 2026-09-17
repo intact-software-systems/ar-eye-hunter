@@ -1,11 +1,6 @@
 import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
-    bootstrapFleetMetadata,
-    rallarBlackBoxProviderModeFromConfig,
-    rallarConfigFromBootstrap,
-    remoteControlConfig,
-    resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
+    readRallarBlackBoxBootstrapConfig,
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
@@ -32,18 +27,21 @@ import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import {
+    readBrowserAuthSessionPresence,
+    toRallarBlackBoxFleetConfig,
+    toRallarBlackBoxRallarConfig,
+    toRemoteControlConfig
+} from '@shared-test/rallar-bb-test/to-remote-control-config.ts';
+import {
+    resolveRallarBlackBoxConfigProviderMode,
+    validateRallarBlackBoxProviderConfig
+} from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 
-export {
-    bootstrapFleetMetadata,
-    rallarBlackBoxProviderModeFromConfig,
-    rallarConfigFromBootstrap,
-    remoteControlConfig,
-    resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig
-} from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+export { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 export type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
@@ -61,7 +59,7 @@ type RuntimeStoreSnapshot = Readonly<{
 type StoreListener = () => void;
 
 function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
-    const bootstrap = resolveRallarBlackBoxBootstrapConfig();
+    const bootstrap = readRallarBlackBoxBootstrapConfig();
     configureAuthSessionStorage(bootstrap.rallarAuthStorage);
     return bootstrap;
 }
@@ -86,7 +84,7 @@ function recordAndThrowProviderConfigError(
     runtime: RallarBlackBoxTestRuntime,
     config: RallarBlackBoxTestConfig
 ): void {
-    const configError = validateRallarBlackBoxProviderConfig(config);
+    const [configError] = validateRallarBlackBoxProviderConfig(config);
     if (!configError) {
         return;
     }
@@ -132,7 +130,7 @@ function browserRallarProviderNotReadyOutcome(
 ): RallarBlackBoxTestCommandOutcome {
     const config = context.config();
     if (config) {
-        const configError = validateRallarBlackBoxProviderConfig(config);
+        const [configError] = validateRallarBlackBoxProviderConfig(config);
         if (configError) {
             context.recordEvent({
                 kind: 'diagnostic',
@@ -180,7 +178,7 @@ async function providerCommandExecutor(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
     context: RallarBlackBoxTestCommandContext
 ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
-    const providerMode = rallarBlackBoxProviderModeFromConfig(context.config());
+    const providerMode = resolveRallarBlackBoxConfigProviderMode(context.config());
     if (providerMode === 'browser-rallar' && command.kind !== 'reset') {
         return browserRallarProviderNotReadyOutcome(command, context);
     }
@@ -696,7 +694,11 @@ class RallarBlackBoxRuntimeStore {
 
     async bootstrapControlAgent(): Promise<void> {
         const runNumber = this.runSequence++;
-        const config = remoteControlConfig(this.bootstrapConfig, runNumber);
+        const config = toRemoteControlConfig({
+            bootstrap: this.bootstrapConfig,
+            runNumber,
+            hasStoredAuthSession: readBrowserAuthSessionPresence()
+        });
         const resumed = takeAgentResumeRecord(config.runId ?? this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
         this.resumedCommandIds = resumed?.completedCommandIds ?? [];
         this.snapshot = {
@@ -929,7 +931,10 @@ class RallarBlackBoxRuntimeStore {
     }
 
     private async configureRuntime(runNumber: number): Promise<void> {
-        const rallar = rallarConfigFromBootstrap(this.bootstrapConfig);
+        const rallar = toRallarBlackBoxRallarConfig({
+            bootstrap: this.bootstrapConfig,
+            hasStoredAuthSession: readBrowserAuthSessionPresence()
+        });
         const config: RallarBlackBoxTestConfig = {
             runId: this.bootstrapConfig.runId,
             agentId: this.bootstrapConfig.agentId,
@@ -951,7 +956,7 @@ class RallarBlackBoxRuntimeStore {
                 connection: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.connection,
                 providerMode: this.bootstrapConfig.providerMode
             },
-            fleet: bootstrapFleetMetadata(this.bootstrapConfig)
+            fleet: toRallarBlackBoxFleetConfig(this.bootstrapConfig)
         };
         await this.runtime.execute({
             kind: 'configure',

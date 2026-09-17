@@ -20,8 +20,7 @@ const bootstrapPatches = vi.hoisted(() => [] as Array<Record<string, string | bo
 const loadFacade = vi.hoisted(() => vi.fn());
 const restorableSession = vi.hoisted(() => ({ current: undefined as undefined | Record<string, string | number> }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
-    rallarBlackBoxRuntimeStore: { updateBootstrapConfig: (patch: Record<string, string | boolean | undefined>) => bootstrapPatches.push(patch) },
-    rallarBlackBoxProviderModeFromConfig: () => 'browser-rallar'
+    rallarBlackBoxRuntimeStore: { updateBootstrapConfig: (patch: Record<string, string | boolean | undefined>) => bootstrapPatches.push(patch) }
 }));
 vi.mock('../../../apps/rallar-black-box/src/legacy/rallar/load-browser-rallar-facade.ts', () => ({ loadBrowserRallarFacade: loadFacade }));
 vi.mock('../../../apps/rallar-black-box/src/legacy/shell/read-current-auth-session.ts', () => ({

@@ -17,6 +17,8 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             controlUrl: 'wss://control.example.test/control',
             runId: 'run-1',
             agentId: 'agent-1',
+            heartbeatIntervalMs: 10_000,
+            statsIntervalMs: 5_000,
             environment: 'hetzner',
             apiBaseUrl: 'https://api.example.test',
             applicationId: 'rallar-server',
@@ -30,6 +32,7 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             rallarRestoreSession: false,
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
+            runnerAgentCount: 1,
             source: 'url'
         },
         control: {

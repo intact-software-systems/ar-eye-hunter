@@ -142,4 +142,6 @@ export {
 } from './schema/json-schema-validation.ts';
 export * from './schema/rallar-black-box-command-capabilities.ts';
 export * from './selectors.ts';
+export * from './to-remote-control-config.ts';
+export * from './validate-rallar-black-box-provider-config.ts';
 export * from './wait/wait-for-event.ts';

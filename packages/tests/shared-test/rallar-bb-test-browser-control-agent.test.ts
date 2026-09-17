@@ -6,7 +6,8 @@ describe('browser control-agent lifecycle', () => {
     it('creates an idle snapshot before startup', () => {
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-1&agentId=agent-1',
-            env: {}
+            env: {},
+            hash: ''
         });
 
         const snapshot = agent.getSnapshot();
@@ -22,7 +23,8 @@ describe('browser control-agent lifecycle', () => {
     it('notifies subscribers when snapshot changes', () => {
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-2&agentId=agent-2',
-            env: {}
+            env: {},
+            hash: ''
         });
         let callCount = 0;
         const unsubscribe = agent.subscribe(() => {
@@ -42,7 +44,8 @@ describe('browser control-agent lifecycle', () => {
         const connectSpy = vi.spyOn(RallarBlackBoxControlClient.prototype, 'connect');
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=0&runId=run-3&agentId=agent-3',
-            env: {}
+            env: {},
+            hash: ''
         });
 
         await agent.start();
@@ -60,7 +63,8 @@ describe('browser control-agent lifecycle', () => {
             .mockImplementation(() => undefined);
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-4&agentId=agent-4',
-            env: {}
+            env: {},
+            hash: ''
         });
 
         await agent.start();
@@ -84,7 +88,8 @@ describe('browser control-agent lifecycle', () => {
             .mockImplementation(() => undefined);
         const agent = createRallarBlackBoxBrowserControlAgent({
             search: '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-5&agentId=agent-5',
-            env: {}
+            env: {},
+            hash: ''
         });
 
         agent.dispose();

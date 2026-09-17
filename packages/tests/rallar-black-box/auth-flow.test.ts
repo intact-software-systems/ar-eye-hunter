@@ -133,7 +133,8 @@ describe('rallar-black-box auth flow', () => {
         const authSession = session('alice');
         const initial = resolveRallarBlackBoxBootstrapConfig(
             '?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test',
-            {}
+            {},
+            ''
         );
         expect(bootstrapMatchesAuthSession(initial, authSession)).toBe(false);
 
