@@ -1,16 +1,11 @@
 import type {
     RallarBlackBoxDistributedRoleAssignment,
-    RallarBlackBoxDistributedRoleAssignmentPolicy
+    RallarBlackBoxDistributedRoleAssignmentPolicy,
+    RallarBlackBoxDistributedRolePattern
 } from '../distributed-run.ts';
 
-export type DistributedRecipeRolePattern =
-    | 'all-agents'
-    | 'sender-receiver'
-    | 'one-sender-many-receivers'
-    | 'three-browser-matrix';
-
 export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
-    value: DistributedRecipeRolePattern;
+    value: RallarBlackBoxDistributedRolePattern;
     label: string;
     description: string;
 }>[] = [
@@ -37,7 +32,7 @@ export const DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS: readonly Readonly<{
 ];
 
 export function toRoleAssignmentsForPattern(
-    pattern: DistributedRecipeRolePattern,
+    pattern: RallarBlackBoxDistributedRolePattern,
     agentIds: readonly string[]
 ): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const roles = toRolesForPattern(pattern, agentIds);
@@ -53,7 +48,7 @@ export function toRoleAssignmentsForPattern(
 }
 
 export function toOrderedTargetRoleAssignmentPolicy(
-    pattern: DistributedRecipeRolePattern
+    pattern: RallarBlackBoxDistributedRolePattern
 ): RallarBlackBoxDistributedRoleAssignmentPolicy {
     return {
         mode: 'ordered-targets',
@@ -63,7 +58,7 @@ export function toOrderedTargetRoleAssignmentPolicy(
 }
 
 export function toRolesForPattern(
-    pattern: DistributedRecipeRolePattern,
+    pattern: RallarBlackBoxDistributedRolePattern,
     agentIds: readonly string[]
 ): Readonly<Record<string, readonly string[]>> {
     if (pattern === 'all-agents') {
@@ -89,7 +84,7 @@ export function toRolesForPattern(
 }
 
 export function toRecipeRoleForPattern(
-    pattern: DistributedRecipeRolePattern,
+    pattern: RallarBlackBoxDistributedRolePattern,
     recipeIndex: number,
     recipeCount: number
 ): string | undefined {

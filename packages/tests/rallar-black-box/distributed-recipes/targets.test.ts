@@ -3,7 +3,7 @@ import type {
     ControlRunSnapshot
 } from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
-    buildDistributedRunManifest,
+    createDistributedRunManifest,
     defaultDistributedRecipeTargetIds,
     deriveDistributedWorldFleetTargetGate,
     distributedRecipeCommandKinds,
@@ -300,7 +300,7 @@ describe('distributed recipes targets', () => {
                 nowEpochMs: 2_500
             });
             const targetAgentIds = reconcileDistributedRecipeTargetIds(['agent-a'], rows);
-            return buildDistributedRunManifest({
+            return createDistributedRunManifest({
                 distributedRunId: `safe-manifest-${transport}`,
                 controlRunId: run.runId,
                 group,
@@ -383,7 +383,7 @@ describe('distributed recipes targets', () => {
     });
 
     it('builds role-map distributed manifests for sender receiver patterns', () => {
-        const manifest = buildDistributedRunManifest({
+        const manifest = createDistributedRunManifest({
             distributedRunId: 'dist-1',
             controlRunId: 'run-1',
             group: {
@@ -419,7 +419,7 @@ describe('distributed recipes targets', () => {
     });
 
     it('writes every manifest author setting explicitly', () => {
-        const manifest = buildDistributedRunManifest({
+        const manifest = createDistributedRunManifest({
             distributedRunId: 'dist-explicit',
             controlRunId: 'run-explicit',
             group: {
@@ -457,7 +457,7 @@ describe('distributed recipes targets', () => {
     });
 
     it('builds all-online world-fleet manifests with ordered server role assignment', () => {
-        const manifest = buildDistributedRunManifest({
+        const manifest = createDistributedRunManifest({
             distributedRunId: 'dist-world-1',
             controlRunId: 'run-world-1',
             group: {

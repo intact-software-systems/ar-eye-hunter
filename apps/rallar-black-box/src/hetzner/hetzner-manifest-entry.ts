@@ -1,12 +1,10 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import {
-    buildDistributedRunManifest,
-    type DistributedRecipeTargetPolicyMode
-} from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
-import type { DistributedRecipeRolePattern } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
+import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
-    RallarBlackBoxDistributedRunManifest
+    RallarBlackBoxDistributedRolePattern,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxDistributedGroupAssertion
@@ -71,8 +69,8 @@ export interface ManifestCatalogInput {
     readonly profiles: readonly string[];
     readonly live: boolean;
     readonly targetAgentIds?: readonly string[];
-    readonly targetPolicyMode?: DistributedRecipeTargetPolicyMode;
-    readonly rolePattern?: DistributedRecipeRolePattern;
+    readonly targetPolicyMode?: RallarBlackBoxDistributedTargetPolicyMode;
+    readonly rolePattern?: RallarBlackBoxDistributedRolePattern;
     readonly mainline?: boolean;
     readonly diagnostic?: boolean;
     readonly expectedFailure?: boolean;
@@ -87,7 +85,7 @@ const DEFAULT_ACK_TIMEOUT_MS = 30_000;
 const DEFAULT_CONTROL_RUN_ID = 'hetzner-manifest-template-control-run';
 
 export function createManifestEntry(input: ManifestCatalogInput): HetznerDistributedManifestEntry {
-    const manifest = buildDistributedRunManifest({
+    const manifest = createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
         controlRunId: DEFAULT_CONTROL_RUN_ID,
         displayName: input.title,

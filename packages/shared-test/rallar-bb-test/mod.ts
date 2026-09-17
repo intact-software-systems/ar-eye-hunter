@@ -67,12 +67,9 @@ export {
     type DistributedRecipePreflightWait
 } from './distributed-recipe-preflight/distributed-recipe-preflight-contracts.ts';
 export * from './distributed-recipe-preflight/distributed-recipe-preflight.ts';
-export * from './distributed-recipe-targeting/build-distributed-run-manifest.ts';
+export * from './distributed-recipe-targeting/create-distributed-run-manifest.ts';
 export * from './distributed-recipe-targeting/derive-distributed-world-fleet-target-gate.ts';
-export {
-    DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
-    type DistributedRecipeRolePattern
-} from './distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
+export { DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS } from './distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 export * from './distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 export * from './distributed-recipe-targeting/distributed-recipe-target-rows.ts';
 export {

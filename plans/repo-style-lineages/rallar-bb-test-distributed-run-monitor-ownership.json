@@ -19,7 +19,7 @@
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-expectation-command-branch.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-preflight-service-badges.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-preflight/to-transport-command-details.ts",
-        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts",
+        "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/derive-distributed-world-fleet-target-gate.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts",
         "packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts",

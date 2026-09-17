@@ -1,4 +1,8 @@
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRolePattern,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type {
@@ -7,13 +11,11 @@ import type {
     RallarBlackBoxDistributedTargetResolution
 } from '../../../control-run-manager.ts';
 import {
-    buildDistributedRunManifest,
+    createDistributedRunManifest,
     deriveDistributedWorldFleetTargetGate,
     distributedRecipePreflight,
     distributedRecipeTargetRows,
     reconcileDistributedRecipeTargetIds,
-    type DistributedRecipeRolePattern,
-    type DistributedRecipeTargetPolicyMode,
     type DistributedRunAgentProgressRow
 } from '../../../distributed-recipes.ts';
 import {
@@ -68,8 +70,10 @@ export function useDistributedRecipeBuilder({
     const [rtcRealtimeDurationSeconds, setRtcRealtimeDurationSeconds] = useState(
         RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS
     );
-    const [targetPolicyMode, setTargetPolicyMode] = useState<DistributedRecipeTargetPolicyMode>('selected-agents');
-    const [rolePattern, setRolePattern] = useState<DistributedRecipeRolePattern>('all-agents');
+    const [targetPolicyMode, setTargetPolicyMode] = useState<RallarBlackBoxDistributedTargetPolicyMode>(
+        'selected-agents'
+    );
+    const [rolePattern, setRolePattern] = useState<RallarBlackBoxDistributedRolePattern>('all-agents');
     const [expectedParticipantCount, setExpectedParticipantCount] = useState(50);
     const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
     const [barrierEnabled, setBarrierEnabled] = useState(false);
@@ -172,7 +176,7 @@ export function useDistributedRecipeBuilder({
         ) {
             return undefined;
         }
-        return buildDistributedRunManifest({
+        return createDistributedRunManifest({
             distributedRunId,
             controlRunId: selectedRunId,
             displayName: `Distributed ${selectedRecipes.map((item) => item.title).join(', ')}`,

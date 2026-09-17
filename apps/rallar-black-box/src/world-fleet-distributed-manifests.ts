@@ -1,8 +1,8 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
-import type { DistributedRecipeRolePattern } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
+import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
@@ -49,7 +49,7 @@ type WorldFleetManifestInput = Readonly<{
     recipe?: RallarBlackBoxTestRecipe;
     recipes?: readonly RallarBlackBoxTestRecipe[];
     profiles: readonly string[];
-    rolePattern: DistributedRecipeRolePattern;
+    rolePattern: RallarBlackBoxDistributedRolePattern;
     diagnostic?: boolean;
     metadata: Readonly<Record<string, unknown>>;
 }>;
@@ -225,7 +225,7 @@ function allPeerEntry(
 
 function createWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFleetDistributedManifestEntry {
     const recipes = input.recipes ?? (input.recipe ? [input.recipe] : []);
-    const manifest = buildDistributedRunManifest({
+    const manifest = createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
         controlRunId: DEFAULT_CONTROL_RUN_ID,
         displayName: input.title,

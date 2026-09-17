@@ -2,33 +2,24 @@ import type { DistributedRecipeCatalogItem } from '../distributed-recipe-catalog
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
-    RallarBlackBoxDistributedScheduledRunManifest,
+    RallarBlackBoxDistributedRunStart,
     RallarBlackBoxDistributedTargetPolicy,
-    RallarBlackBoxDistributedUnscheduledRunManifest
+    RallarBlackBoxDistributedTargetPolicyMode
 } from '../distributed-run.ts';
 import type { RallarBlackBoxDistributedGroupAssertion } from '../distributed/group-assertions.ts';
 import {
-    DistributedRecipeRolePattern,
     toOrderedTargetRoleAssignmentPolicy,
     toRecipeRoleForPattern,
     toRoleAssignmentsForPattern,
     toRolesForPattern
 } from './distributed-recipe-role-pattern.ts';
 
-export type DistributedRecipeTargetPolicyMode =
-    | 'all-online-group-members'
-    | 'selected-agents'
-    | 'role-map';
+export type CreateDistributedRunManifestInput = CreateDistributedRunManifestFields & RallarBlackBoxDistributedRunStart;
 
-export type BuildDistributedRunManifestStart =
-    | Pick<RallarBlackBoxDistributedUnscheduledRunManifest, 'startMode'>
-    | Pick<RallarBlackBoxDistributedScheduledRunManifest, 'startMode' | 'startDeadlineEpochMs'>;
-
-export type BuildDistributedRunManifestInput = BuildDistributedRunManifestFields & BuildDistributedRunManifestStart;
-
-export interface BuildDistributedRunManifestFields {
+export interface CreateDistributedRunManifestFields {
     readonly distributedRunId: string;
     readonly controlRunId: string;
     /** Absent when the author gives the run no display name. */
@@ -36,8 +27,8 @@ export interface BuildDistributedRunManifestFields {
     readonly group: RallarBlackBoxDistributedGroupRef;
     readonly recipes: readonly DistributedRecipeCatalogItem[];
     readonly targetAgentIds: readonly string[];
-    readonly targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    readonly rolePattern: DistributedRecipeRolePattern;
+    readonly targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
+    readonly rolePattern: RallarBlackBoxDistributedRolePattern;
     readonly ackTimeoutMs: number;
     readonly barrier: RallarBlackBoxDistributedBarrierPolicy;
     /** Absent when staging should accept however many agents the target policy resolves. */
@@ -45,8 +36,16 @@ export interface BuildDistributedRunManifestFields {
     readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
 }
 
-export function buildDistributedRunManifest(
-    input: BuildDistributedRunManifestInput
+interface ToTargetPolicyInput {
+    readonly mode: RallarBlackBoxDistributedTargetPolicyMode;
+    readonly agentIds: readonly string[];
+    readonly roles: Readonly<Record<string, readonly string[]>>;
+    /** Absent when staging should accept however many agents the target policy resolves. */
+    readonly expectedParticipantCount?: number;
+}
+
+export function createDistributedRunManifest(
+    input: CreateDistributedRunManifestInput
 ): RallarBlackBoxDistributedRunManifest {
     const recipeSelections = input.recipes.map((item, index) => ({
         recipeId: item.recipe.recipeId,
@@ -96,14 +95,6 @@ export function buildDistributedRunManifest(
     return input.startMode === 'scheduled'
         ? { ...fields, startMode: input.startMode, startDeadlineEpochMs: input.startDeadlineEpochMs, ...settings }
         : { ...fields, startMode: input.startMode, ...settings };
-}
-
-interface ToTargetPolicyInput {
-    readonly mode: DistributedRecipeTargetPolicyMode;
-    readonly agentIds: readonly string[];
-    readonly roles: Readonly<Record<string, readonly string[]>>;
-    /** Absent when staging should accept however many agents the target policy resolves. */
-    readonly expectedParticipantCount?: number;
 }
 
 function toTargetPolicy(input: ToTargetPolicyInput): RallarBlackBoxDistributedTargetPolicy {

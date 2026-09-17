@@ -1,3 +1,4 @@
+import type { RallarBlackBoxDistributedRolePattern } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useEffect } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
@@ -11,8 +12,7 @@ import {
 } from '../../../control-run-manager.ts';
 import {
     defaultDistributedRecipeTargetIds,
-    reconcileDistributedRecipeTargetIds,
-    type DistributedRecipeRolePattern
+    reconcileDistributedRecipeTargetIds
 } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -327,7 +327,7 @@ export function useDistributedRecipesActions({
         );
     };
 
-    const selectRolePattern = (value: DistributedRecipeRolePattern): void => {
+    const selectRolePattern = (value: RallarBlackBoxDistributedRolePattern): void => {
         setRolePattern(value);
         if (
             value !== 'all-agents' &&

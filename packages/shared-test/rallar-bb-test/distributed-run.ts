@@ -257,6 +257,10 @@ export interface RallarBlackBoxDistributedRunManifestFields {
     readonly metadata: RallarBlackBoxTestRecord;
 }
 
+export type RallarBlackBoxDistributedRunStart =
+    | Pick<RallarBlackBoxDistributedUnscheduledRunManifest, 'startMode'>
+    | Pick<RallarBlackBoxDistributedScheduledRunManifest, 'startMode' | 'startDeadlineEpochMs'>;
+
 export interface RallarBlackBoxDistributedUnscheduledRunManifest extends RallarBlackBoxDistributedRunManifestFields {
     readonly startMode: 'manual' | 'auto-after-ready';
 }

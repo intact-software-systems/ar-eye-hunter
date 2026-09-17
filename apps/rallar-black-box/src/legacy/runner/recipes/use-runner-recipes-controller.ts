@@ -23,7 +23,7 @@ import {
     type ControlServerSnapshot
 } from '../../../control-run-manager.ts';
 import {
-    buildDistributedRunManifest,
+    createDistributedRunManifest,
     defaultDistributedRecipeTargetIds,
     distributedRecipePreflight,
     distributedRecipeTargetRows
@@ -537,7 +537,7 @@ export function useRunnerRecipesController({
                 throw new Error('No agents connected for this group.');
             }
             const distributedRunId = `dist-${safeIdSegment(groupRef.groupId || 'group')}-${Date.now()}`;
-            const manifest = buildDistributedRunManifest({
+            const manifest = createDistributedRunManifest({
                 distributedRunId,
                 controlRunId: nextRunId,
                 displayName: selectedRecipe.title,

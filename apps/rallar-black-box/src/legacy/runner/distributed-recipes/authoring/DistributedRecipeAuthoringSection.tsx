@@ -1,7 +1,9 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import type { DistributedRecipeTargetPolicyMode } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
-import type { DistributedRecipeRolePattern } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedRolePattern,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import {
     distributedRecipeSchemaContextText,
@@ -27,8 +29,8 @@ type DistributedRecipeAuthoringSectionProps = Readonly<{
     token: string;
     selectedRunId: string;
     distributedRunId: string;
-    targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    rolePattern: DistributedRecipeRolePattern;
+    targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
+    rolePattern: RallarBlackBoxDistributedRolePattern;
     ackTimeoutMs: number;
     barrierEnabled: boolean;
     barrierTimeoutMs: number;

@@ -3,11 +3,11 @@ import {
     type ControlClientEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { BuildDistributedRunManifestStart } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunManifestFields
+    RallarBlackBoxDistributedRunManifestFields,
+    RallarBlackBoxDistributedRunStart
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -151,7 +151,7 @@ export function toCommandResultEnvelope(
 }
 export function toDistributedManifest(
     overrides: Partial<RallarBlackBoxDistributedRunManifestFields> = {},
-    start: BuildDistributedRunManifestStart = { startMode: 'manual' }
+    start: RallarBlackBoxDistributedRunStart = { startMode: 'manual' }
 ): RallarBlackBoxDistributedRunManifest {
     return {
         schemaVersion: 1,

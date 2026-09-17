@@ -1,7 +1,7 @@
 import type {
     DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/build-distributed-run-manifest.ts';
+import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import {
     validateDistributedRunManifest,
     type DistributedRunManifestValidationIssue
@@ -82,7 +82,7 @@ export function deriveExecuteManifest(
     }>
 ): ExecuteManifestDraft {
     const selectedAgentIds = uniqueSorted(input.selectedAgentIds);
-    const manifest = buildDistributedRunManifest({
+    const manifest = createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         displayName: input.selectedRecipe.item.title,
