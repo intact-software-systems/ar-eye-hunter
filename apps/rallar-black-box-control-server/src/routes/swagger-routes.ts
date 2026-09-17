@@ -1983,7 +1983,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             },
             ControlHeartbeatEnvelope: {
                 type: 'object',
-                required: ['kind', 'protocolVersion', 'runId', 'agentId', 'atEpochMs', 'status'],
+                required: ['kind', 'protocolVersion', 'runId', 'agentId', 'atEpochMs', 'status', 'identity'],
                 properties: {
                     kind: { type: 'string', enum: ['heartbeat'] },
                     protocolVersion: { type: 'integer', enum: [1] },

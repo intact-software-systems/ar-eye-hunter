@@ -539,7 +539,9 @@ assertions or messaging block and for unknown transports, operators or
 carriers. decodeControlAgentIdentity returns a Left for a missing sessionLabel
 or updatedAtEpochMs, a present but unreadable fact, or a location without a
 precision, and the control protocol rejects a register or heartbeat envelope
-that carries such an identity.
+that carries such an identity or none at all. An agent leaves a configured fleet
+location that does not decode out of its identity and reports it as a
+rallar.bb.control.identity_invalid diagnostic.
 
 Migration:
 Rebuild agents from this checkout; every current agent build writes the full

@@ -243,8 +243,12 @@ the group is `defaults.groupId`, or else `roomId`; the provider mode is
 `control.providerMode`; `browserLabel` is the page's user agent; browser name,
 version, OS and the other fleet facts come from `fleet`.
 
-A register or heartbeat envelope whose identity is present but does not decode
-is rejected; nothing in it is read as absent.
+Every register and heartbeat envelope carries an identity. An envelope without
+one is rejected (`Control register requires identity.` / `Control heartbeat
+requires identity.`), and so is one whose identity does not decode; nothing in
+it is read as absent. A configured fleet location that does not decode is left
+out of the agent's identity and reported once, as a
+`rallar.bb.control.identity_invalid` diagnostic, until it changes.
 
 The operator target-row projection uses a normalized duplicate identity key of
 `applicationId`, `workspaceId`, `groupId`, the first reported

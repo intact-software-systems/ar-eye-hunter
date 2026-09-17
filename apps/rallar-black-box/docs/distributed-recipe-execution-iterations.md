@@ -581,7 +581,7 @@ Context:
 - These signals are important during live distributed testing because they can explain missing messages, confusing
   routing, or unexpected RTC lane behavior.
 - Shared-test Iteration 11 now provides
-  `normalizeRallarBlackBoxRuntimeDiagnostic(...)` and bridges the known WS/RTC warning patterns into browser-agent
+  `toRallarBlackBoxRuntimeDiagnostic(...)` and bridges the known WS/RTC warning patterns into browser-agent
   diagnostic events. This SPA iteration should consume that contract instead of inventing a separate diagnostic shape.
 
 Work:
