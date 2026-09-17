@@ -1,5 +1,10 @@
 import type { ControlRunSnapshotBounds, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { decodeArrayItems } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/artifact-json-value-guards.ts';
+import { decodeControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-distributed-run-snapshot.ts';
+import { decodeControlRunSnapshot } from '@shared-test/rallar-bb-test/distributed-artifact-analysis/decode-control-run-snapshot.ts';
+import { validateControlFleetRunReportCollection } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxControlService } from './control-service.ts';
 
@@ -111,11 +116,13 @@ async function restoreSnapshotFile(
     controlService: CreateControlSnapshotPersistenceInput['controlService']
 ): Promise<void> {
     try {
-        const snapshot = decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path)));
-        if (snapshot) {
-            controlService.restoreSnapshot(snapshot);
-            console.log(`Restored Rallar black-box control snapshot from ${path}`);
-        }
+        decodeSnapshotFile(JSON.parse(await Deno.readTextFile(path))).fold(
+            (issue) => console.warn(`Could not restore control snapshot from ${path}: ${issue}`),
+            (snapshot) => {
+                controlService.restoreSnapshot(snapshot);
+                console.log(`Restored Rallar black-box control snapshot from ${path}`);
+            }
+        );
     }
     catch (error) {
         if (error instanceof Deno.errors.NotFound) {
@@ -126,11 +133,33 @@ async function restoreSnapshotFile(
     }
 }
 
-// The file is this server's own persisted snapshot, so only the envelope and the presence of runs
-// are checked before the snapshot is trusted as written.
-function decodeSnapshotFile(value: unknown): ControlServerSnapshot | undefined {
-    if (!isJsonRecordValue(value) || !isJsonRecordValue(value.snapshot) || !value.snapshot.runs) {
-        return undefined;
+/** A snapshot written before one of its fields became required does not decode and is not loaded. */
+function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapshot> {
+    if (!isJsonRecordValue(value) || !isJsonRecordValue(value.snapshot)) {
+        return Either.ofLeft('the file holds no control snapshot object');
     }
-    return value.snapshot as ControlServerSnapshot;
+    const { runs, distributedRuns, fleetReports } = value.snapshot;
+    const fleet = validateControlFleetRunReportCollection(fleetReports ?? []);
+    const fleetIssue = fleet.issues[0];
+    if (!fleet.ok) {
+        return Either.ofLeft(`fleetReports${fleetIssue?.path.slice(1) ?? ''}: ${fleetIssue?.message ?? 'invalid'}`);
+    }
+    const decodedDistributedRuns = decodeArrayItems(
+        distributedRuns ?? [],
+        'distributedRuns',
+        (run, runPath) => decodeControlDistributedRunSnapshot(run).mapLeft((issue) => `${runPath}: ${issue}`)
+    );
+    return decodeArrayItems(
+        runs,
+        'runs',
+        (run, runPath) => decodeControlRunSnapshot(run).mapLeft((issue) => `${runPath}: ${issue}`)
+    ).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (restoredRuns) =>
+            decodedDistributedRuns.mapRight((restoredDistributedRuns) => ({
+                runs: restoredRuns,
+                distributedRuns: restoredDistributedRuns,
+                fleetReports: fleet.reports
+            }))
+    );
 }

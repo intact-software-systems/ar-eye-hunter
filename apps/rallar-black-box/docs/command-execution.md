@@ -286,7 +286,8 @@ RALLAR_BLACK_BOX_STORAGE_DIR=.artifacts/rallar-black-box-control \
 ```
 
 Persisted snapshots are restored as disconnected runs on startup. Agents need to reconnect before queued commands can be
-dispatched again.
+dispatched again. Restore decodes every run and distributed run strictly: a snapshot written before one of their fields
+became required is not loaded, the server logs why, and it starts empty.
 
 Limit retained local runs and apply cleanup explicitly:
 

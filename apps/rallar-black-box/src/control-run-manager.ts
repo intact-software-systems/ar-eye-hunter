@@ -29,6 +29,10 @@ import type {
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { ControlRunManagerHttpError } from './control-http-error.ts';
 import { inheritControlResponseDocument, rememberControlResponseDocument } from './control-response-document.ts';
+import {
+    decodeControlDistributedRunPlan,
+    decodeControlDistributedRunPlans
+} from './decode-control-distributed-run-plan.ts';
 
 export { ControlRunManagerHttpError };
 
@@ -434,6 +438,10 @@ export async function fetchDistributedRuns(
     input: FetchDistributedRunsInput
 ): Promise<readonly ControlDistributedRunSnapshot[]> {
     const document = await fetchDistributedRunsDocument(input);
+    const plans = decodeControlDistributedRunPlans(document.value.distributedRuns);
+    if (plans.left !== undefined) {
+        throw new Error(plans.left);
+    }
     rememberControlResponseDocument(document.value, document.text);
     inheritControlResponseDocument(
         document.value,
@@ -470,7 +478,7 @@ export async function fetchDistributedRun(
             headers: authorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlDistributedRunSnapshot>(response);
+    return readDistributedRunReply(response);
 }
 
 export async function createDistributedRun(
@@ -494,7 +502,7 @@ export async function createDistributedRun(
             })
         }
     );
-    return readJsonResponse<ControlDistributedRunSnapshot>(response);
+    return readDistributedRunReply(response);
 }
 
 export async function resolveDistributedTargets(
@@ -1001,7 +1009,7 @@ async function mutateDistributedRun(
                 : undefined
         }
     );
-    return readJsonResponse<ControlDistributedRunSnapshot>(response);
+    return readDistributedRunReply(response);
 }
 
 function normalizedBaseUrl(baseUrl: string): string {
@@ -1048,6 +1056,15 @@ function applyFleetReportFilter(url: URL, filter: ControlFleetReportFilter): voi
             url.searchParams.set(name, String(value));
         }
     });
+}
+
+async function readDistributedRunReply(response: Response): Promise<ControlDistributedRunSnapshot> {
+    const distributedRun = await readJsonResponse<ControlDistributedRunSnapshot>(response);
+    const plan = decodeControlDistributedRunPlan(distributedRun, 'distributedRun');
+    if (plan.left !== undefined) {
+        throw new Error(plan.left);
+    }
+    return distributedRun;
 }
 
 async function readJsonResponse<T>(response: Response): Promise<T> {

@@ -108,13 +108,7 @@ function protocolDistributedRun(
         updatedAtEpochMs: 1,
         targetAgentIds: [],
         commandLinks: [],
-        manifest: {
-            group: {
-                applicationId: 'app-a',
-                workspaceId: 'workspace-a',
-                groupId: 'group-a'
-            }
-        },
+        manifest: { ...DISTRIBUTED_MANIFEST, distributedRunId },
         rollup: { summary: { blockingFailures: 0 } },
         ...overrides
     };
@@ -140,6 +134,7 @@ function protocolTargetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -1345,24 +1340,27 @@ describe('Recipe Console control API', () => {
             'Control server snapshot distributedRuns[0].state must be a known distributed-run state.'
         ],
         [
-            [{
-                distributedRunId: 'distributed-target-resolution',
-                controlRunId: 'run-a',
-                state: 'running',
-                updatedAtEpochMs: 1,
+            [protocolDistributedRun('distributed-target-resolution', {
                 targetAgentIds: ['agent-a'],
-                commandLinks: [],
-                manifest: {
-                    group: {
-                        applicationId: 'app-a',
-                        workspaceId: 'workspace-a',
-                        groupId: 'group-a'
-                    }
-                },
-                rollup: { summary: { blockingFailures: 0 } },
                 targetResolution: {}
-            }],
-            'Control server snapshot distributedRuns[0].targetResolution.roleAssignments must be an array.'
+            })],
+            'Control server snapshot distributedRuns[0].targetResolution.group must name applicationId, workspaceId and groupId.'
+        ],
+        [
+            [protocolDistributedRun('distributed-old-manifest', {
+                manifest: { ...DISTRIBUTED_MANIFEST, groupAssertions: undefined }
+            })],
+            'Control server snapshot distributedRuns[0].manifest is not a distributed run manifest:\n' +
+            '$: Missing required property groupAssertions.'
+        ],
+        [
+            [protocolDistributedRun('distributed-old-resolution', {
+                targetAgentIds: ['agent-a'],
+                targetResolution: protocolTargetResolution({
+                    roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }]
+                })
+            })],
+            'Control server snapshot distributedRuns[0].targetResolution.roleAssignments[0].recipeIds must be an array of strings.'
         ]
     ])('retains usable runs when embedded optional distributed context is malformed %#', async (
         distributedRuns,

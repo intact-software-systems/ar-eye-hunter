@@ -2,6 +2,7 @@ import { assert, assertEquals } from '@std/assert';
 
 import { registerAgent, waitForPathMissing, waitForSocketClose, waitForSocketOpen } from './support/control-api-test-agent.ts';
 import { ADMIN_TOKEN, adminHeaders, canBindLoopback, getJson, startControlServer } from './support/control-api-test-server.ts';
+import { toDistributedManifest } from './support/control-service-test-fixtures.ts';
 
 Deno.test('retention preview is authorized, non-destructive, and guarded before cleanup', async () => {
     if (!(await canBindLoopback())) {
@@ -34,17 +35,15 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                 distributedRuns: [{
                     distributedRunId: 'retention-dist-old',
                     controlRunId: 'retention-old',
-                    manifest: {
+                    manifest: toDistributedManifest({
                         distributedRunId: 'retention-dist-old',
                         controlRunId: 'retention-old',
                         group: {
                             applicationId: 'rallar-server',
                             workspaceId: 'default',
                             groupId: 'retention-group'
-                        },
-                        recipes: [],
-                        targetPolicy: { mode: 'selected-agents', agentIds: [] }
-                    },
+                        }
+                    }),
                     state: 'failed',
                     createdAtEpochMs: 1_000,
                     updatedAtEpochMs: 1_000,
@@ -63,6 +62,9 @@ Deno.test('retention preview is authorized, non-destructive, and guarded before 
                             requiredRecipes: 0,
                             passedRecipes: 0,
                             failedRecipes: 0,
+                            groupAssertions: 0,
+                            passedGroupAssertions: 0,
+                            failedGroupAssertions: 0,
                             blockingFailures: 0
                         },
                         failures: []

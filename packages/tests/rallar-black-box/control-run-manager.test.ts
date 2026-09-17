@@ -318,6 +318,52 @@ describe('rallar-black-box control run manager', () => {
         expect(JSON.stringify(distributedRuns)).toBe('[]');
     });
 
+    it('rejects distributed run replies whose manifest or target resolution no longer decodes', async () => {
+        const manifest = {
+            schemaVersion: 1,
+            distributedRunId: 'dist-old',
+            controlRunId: 'run-1',
+            group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
+            recipes: [{ recipeId: 'health-only', variables: {}, secretRefs: [], required: true }],
+            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            variables: {},
+            secretRefs: [],
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            artifactPolicy: {
+                retainArtifacts: true,
+                includeEventJsonl: true,
+                includeResultJsonl: true,
+                includeFailureBundle: true,
+                includeDistributedMetadata: true
+            },
+            metadata: {}
+        };
+        const oldManifestRun = { distributedRunId: 'dist-old', controlRunId: 'run-1', manifest };
+
+        await expect(fetchDistributedRuns({
+            baseUrl: 'http://control.test',
+            fetchFn: async () => Response.json({ distributedRuns: [oldManifestRun] })
+        })).rejects.toThrow(
+            'Control server snapshot distributedRuns[0].manifest is not a distributed run manifest:\n' +
+                '$: Missing required property groupAssertions.'
+        );
+        await expect(fetchDistributedRun({
+            baseUrl: 'http://control.test',
+            distributedRunId: 'dist-old',
+            fetchFn: async () =>
+                Response.json({
+                    ...oldManifestRun,
+                    manifest: { ...manifest, groupAssertions: [] },
+                    targetResolution: { roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }] }
+                })
+        })).rejects.toThrow(
+            'Control server snapshot distributedRun.targetResolution.group must name applicationId, workspaceId and groupId.'
+        );
+    });
+
     it('preserves response status on HTTP errors without changing the server message', async () => {
         const request = fetchControlServerSnapshot({
             baseUrl: 'http://control.test',

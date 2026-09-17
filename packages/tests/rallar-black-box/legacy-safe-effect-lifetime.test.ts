@@ -538,10 +538,10 @@ function distributedRunSnapshot() {
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [],
+            recipes: [{ recipeId: 'recipe-a', variables: {}, secretRefs: [], required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: [],
+                agentIds: ['agent-a'],
                 includeOfflineExpectedAgents: false
             },
             variables: {},
