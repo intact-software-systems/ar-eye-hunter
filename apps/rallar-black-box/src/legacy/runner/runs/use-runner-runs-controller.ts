@@ -31,7 +31,7 @@ import {
 } from '../../../distributed-recipes.ts';
 import {
     createSyntheticDistributedRunSeed,
-    distributedRunSeedIdFromValue,
+    resolveDistributedRunSeedId,
     type DistributedRunSeedId,
     type SyntheticDistributedRunSeed
 } from '../../../distributed-run-seeds.ts';
@@ -395,7 +395,7 @@ export function useRunnerRunsController({
     };
 
     const selectSyntheticDistributedRunSeed = (value: string): void => {
-        const seedId = distributedRunSeedIdFromValue(value);
+        const seedId = resolveDistributedRunSeedId(value);
         if (seedId) {
             applySyntheticDistributedRunSeed(seedId);
             return;

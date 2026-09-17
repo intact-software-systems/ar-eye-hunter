@@ -29,8 +29,6 @@ export interface DistributedRunSeedMetadata {
     readonly id: DistributedRunSeedId;
     readonly label: string;
     readonly description: string;
-    readonly artifactIntentionallyMissing?: boolean;
-    readonly evidenceDegraded?: boolean;
 }
 
 export type SyntheticDistributedRunSeed =
@@ -40,7 +38,8 @@ export type SyntheticDistributedRunSeed =
         generatedAtEpochMs: number;
         distributedRun: ControlDistributedRunSnapshot;
         controlRun: ControlRunSnapshot;
-        artifactBundle?: ControlDistributedRunArtifactBundle;
+        /** Absent for the seed whose whole point is a run with no artifact bundle to analyze. */
+        artifactBundle: ControlDistributedRunArtifactBundle | undefined;
     }>;
 
 interface SeedAgentInput {
@@ -51,6 +50,7 @@ interface SeedAgentInput {
     readonly startDurationMs: number;
     readonly startOk: boolean;
     readonly eventCount: number;
+    /** Absent when the agent's start succeeds, so the seed carries no failure text for it. */
     readonly failureMessage?: string;
 }
 
@@ -58,13 +58,20 @@ type SeedShape = Readonly<{
     state: ControlDistributedRunSnapshot['state'];
     ok: boolean;
     agents: readonly SeedAgentInput[];
-    warningDiagnostic?: boolean;
-    omitArtifact?: boolean;
+    warningDiagnostic: boolean;
+    omitArtifact: boolean;
 }>;
 
 type SeedBuildInput = DistributedRunSeedMetadata & SeedShape;
 
+/** The outcome a seeded command reports; a failure always names the text its evidence shows. */
+type SeedCommandOutcome =
+    | Readonly<{ ok: true; }>
+    | Readonly<{ ok: false; errorMessage: string; }>;
+
 const SEED_BASE_EPOCH_MS = 1_900_000_000_000;
+const SYNTHETIC_COMMAND_FAILURE_MESSAGE = 'Synthetic command failed.';
+const SYNTHETIC_WARNING_DIAGNOSTIC_MESSAGE = 'Synthetic RTC evidence includes a warning diagnostic.';
 
 const SEED_RECIPE: RallarBlackBoxTestRecipe = {
     schemaVersion: 1,
@@ -94,43 +101,49 @@ const SEED_RECIPE: RallarBlackBoxTestRecipe = {
     ]
 };
 
-export const DISTRIBUTED_RUN_SEEDS: readonly DistributedRunSeedMetadata[] = [
-    {
+/** Every seed's operator-facing metadata, keyed so the compiler proves the catalog is total. */
+type SeedMetadataById = {
+    [Id in DistributedRunSeedId]: DistributedRunSeedMetadata & Readonly<{ id: Id; }>;
+};
+
+const SEED_METADATA_BY_ID: SeedMetadataById = {
+    'passed-clean': {
         id: 'passed-clean',
         label: 'Passed clean',
         description: 'Two synthetic agents complete the recipe with valid artifact evidence.'
     },
-    {
+    'passed-warnings': {
         id: 'passed-warnings',
         label: 'Passed with evidence warning',
-        description: 'The run passes, but includes a runtime warning diagnostic for review.',
-        evidenceDegraded: true
+        description: 'The run passes, but includes a runtime warning diagnostic for review.'
     },
-    {
+    'failed-command': {
         id: 'failed-command',
         label: 'Failed command',
         description: 'The receiver command fails after missing the expected RTC payload.'
     },
-    {
+    'high-latency-rtc': {
         id: 'high-latency-rtc',
         label: 'High latency RTC',
         description: 'Three agents pass with high per-agent RTC timing variance.'
     },
-    {
+    'artifact-missing': {
         id: 'artifact-missing',
         label: 'Artifact missing',
-        description: 'The run passes, but no distributed artifact bundle is loaded.',
-        artifactIntentionallyMissing: true,
-        evidenceDegraded: true
+        description: 'The run passes, but no distributed artifact bundle is loaded.'
     }
-];
+};
 
-const SEED_IDS = new Set(DISTRIBUTED_RUN_SEEDS.map((seed) => seed.id));
+/** The operator ordering of the seed picker: the declaration order of the table above. */
+export const DISTRIBUTED_RUN_SEEDS: readonly DistributedRunSeedMetadata[] = Object.values(
+    SEED_METADATA_BY_ID
+);
 
-export function distributedRunSeedIdFromValue(
+export function resolveDistributedRunSeedId(
     value: string | null | undefined
 ): DistributedRunSeedId | undefined {
-    return value && SEED_IDS.has(value as DistributedRunSeedId)
+    return value !== null && value !== undefined &&
+            Object.hasOwn(SEED_METADATA_BY_ID, value)
         ? value as DistributedRunSeedId
         : undefined;
 }
@@ -140,6 +153,8 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
     'passed-clean': {
         state: 'passed',
         ok: true,
+        warningDiagnostic: false,
+        omitArtifact: false,
         agents: [
             {
                 agentId: 'seed-agent-a',
@@ -165,6 +180,7 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
         state: 'passed',
         ok: true,
         warningDiagnostic: true,
+        omitArtifact: false,
         agents: [
             {
                 agentId: 'seed-agent-a',
@@ -189,6 +205,8 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
     'failed-command': {
         state: 'failed',
         ok: false,
+        warningDiagnostic: false,
+        omitArtifact: false,
         agents: [
             {
                 agentId: 'seed-agent-a',
@@ -214,6 +232,8 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
     'high-latency-rtc': {
         state: 'passed',
         ok: true,
+        warningDiagnostic: false,
+        omitArtifact: false,
         agents: [
             {
                 agentId: 'seed-agent-a',
@@ -247,6 +267,7 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
     'artifact-missing': {
         state: 'passed',
         ok: true,
+        warningDiagnostic: false,
         omitArtifact: true,
         agents: [
             {
@@ -274,12 +295,10 @@ const SEED_SHAPE_BY_ID: Readonly<Record<DistributedRunSeedId, SeedShape>> = {
 export function createSyntheticDistributedRunSeed(
     id: DistributedRunSeedId
 ): SyntheticDistributedRunSeed {
-    const metadata = DISTRIBUTED_RUN_SEEDS.find((seed) => seed.id === id);
-    if (!metadata) {
-        throw new Error(`Unknown distributed run seed: ${id}`);
-    }
-
-    return toSyntheticDistributedRunSeed({ ...metadata, ...SEED_SHAPE_BY_ID[id] });
+    return toSyntheticDistributedRunSeed({
+        ...SEED_METADATA_BY_ID[id],
+        ...SEED_SHAPE_BY_ID[id]
+    });
 }
 
 function toSyntheticDistributedRunSeed(input: SeedBuildInput): SyntheticDistributedRunSeed {
@@ -300,13 +319,13 @@ function toSyntheticDistributedRunSeed(input: SeedBuildInput): SyntheticDistribu
             phase: 'stage',
             agent: agent,
             queuedAtEpochMs: stagedAtEpochMs + toSeedAgentOffset(agent),
-            recipeId: manifest.recipes[0]?.recipeId
+            recipeId: SEED_RECIPE.recipeId
         }),
         toSeedCommandLink({
             phase: 'start',
             agent: agent,
             queuedAtEpochMs: startedAtEpochMs + toSeedAgentOffset(agent),
-            recipeId: manifest.recipes[0]?.recipeId
+            recipeId: SEED_RECIPE.recipeId
         })
     ]);
     const distributedRun: ControlDistributedRunSnapshot = {
@@ -395,7 +414,7 @@ function toSeedCommandLink(
         readonly phase: ControlDistributedRunCommandLink['phase'];
         readonly agent: SeedAgentInput;
         readonly queuedAtEpochMs: number;
-        readonly recipeId?: string;
+        readonly recipeId: string;
     }
 ): ControlDistributedRunCommandLink {
     const { phase, agent, queuedAtEpochMs, recipeId } = input;
@@ -443,15 +462,15 @@ function toSeedResultEnvelope(
         kind: RallarBlackBoxTestResult['kind'];
         startedAtEpochMs: number;
         durationMs: number;
-        ok: boolean;
-        errorMessage?: string;
+        outcome: SeedCommandOutcome;
     }>
 ): ControlResultEnvelope {
-    const error = input.ok
+    const { outcome } = input;
+    const error = outcome.ok
         ? undefined
         : {
             code: 'SYNTHETIC_ASSERTION_FAILED',
-            message: input.errorMessage ?? 'Synthetic command failed.'
+            message: outcome.errorMessage
         };
     return {
         kind: 'result',
@@ -459,13 +478,13 @@ function toSeedResultEnvelope(
         runId: input.runId,
         agentId: input.agent.agentId,
         commandId: input.commandId,
-        ok: input.ok,
+        ok: outcome.ok,
         ...(error ? { error } : {}),
         result: {
             commandId: input.commandId,
             kind: input.kind,
-            status: input.ok ? 'ok' : 'failed',
-            ok: input.ok,
+            status: outcome.ok ? 'ok' : 'failed',
+            ok: outcome.ok,
             startedAtEpochMs: input.startedAtEpochMs,
             endedAtEpochMs: input.startedAtEpochMs + input.durationMs,
             durationMs: input.durationMs,
@@ -509,11 +528,11 @@ function toSeedDiagnosticEnvelope(
         agent: SeedAgentInput;
         commandId: string;
         atEpochMs: number;
-        severity?: 'warning' | 'error';
-        message?: string;
+        severity: 'warning' | 'error';
+        message: string;
     }>
 ): ControlEventEnvelope {
-    const severity = input.severity ?? 'warning';
+    const severity = input.severity;
     return {
         kind: 'diagnostic',
         protocolVersion: 1,
@@ -526,7 +545,7 @@ function toSeedDiagnosticEnvelope(
             topic: 'rallar.browser.realtime.synthetic_seed',
             severity,
             transport: 'messages.rtc',
-            message: input.message ?? 'Synthetic RTC evidence includes a warning diagnostic.',
+            message: input.message,
             commandId: input.commandId,
             roomId: 'seed-room',
             source: 'distributed-run-seed',
@@ -668,6 +687,12 @@ function toSeedCommandId(
     return `seed-${phase}-${agent.role}`;
 }
 
+function toSeedStartOutcome(agent: SeedAgentInput): SeedCommandOutcome {
+    return agent.startOk
+        ? { ok: true }
+        : { ok: false, errorMessage: agent.failureMessage ?? SYNTHETIC_COMMAND_FAILURE_MESSAGE };
+}
+
 function toSeedAgentOffset(agent: SeedAgentInput): number {
     return agent.agentId.charCodeAt(agent.agentId.length - 1) * 5;
 }
@@ -734,7 +759,7 @@ function toSeedResults(evidence: SeedEvidenceInput): ControlRunSnapshot['results
             kind: 'recipe.load',
             startedAtEpochMs: stagedAtEpochMs + toSeedAgentOffset(agent) + 20,
             durationMs: agent.stageDurationMs,
-            ok: true
+            outcome: { ok: true }
         }),
         toSeedResultEnvelope({
             runId: controlRunId,
@@ -743,8 +768,7 @@ function toSeedResults(evidence: SeedEvidenceInput): ControlRunSnapshot['results
             kind: 'recipe.run',
             startedAtEpochMs: startedAtEpochMs + toSeedAgentOffset(agent) + 20,
             durationMs: agent.startDurationMs,
-            ok: agent.startOk,
-            errorMessage: agent.failureMessage
+            outcome: toSeedStartOutcome(agent)
         })
     ]);
     return results;
@@ -771,7 +795,9 @@ function toSeedEvents(evidence: SeedEvidenceInput): ControlRunSnapshot['events']
                 distributedRunId,
                 agent: input.agents[1] ?? input.agents[0],
                 commandId: toSeedCommandId('start', input.agents[1] ?? input.agents[0]),
-                atEpochMs: startedAtEpochMs + 240
+                atEpochMs: startedAtEpochMs + 240,
+                severity: 'warning',
+                message: SYNTHETIC_WARNING_DIAGNOSTIC_MESSAGE
             })]
             : []),
         ...input.agents
@@ -784,7 +810,7 @@ function toSeedEvents(evidence: SeedEvidenceInput): ControlRunSnapshot['events']
                     commandId: toSeedCommandId('start', agent),
                     atEpochMs: startedAtEpochMs + agent.startDurationMs,
                     severity: 'error',
-                    message: agent.failureMessage ?? 'Synthetic command failed.'
+                    message: agent.failureMessage ?? SYNTHETIC_COMMAND_FAILURE_MESSAGE
                 })
             )
     ];

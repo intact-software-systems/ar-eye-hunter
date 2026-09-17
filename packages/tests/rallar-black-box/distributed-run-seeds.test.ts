@@ -7,7 +7,7 @@ import {
 import {
     createSyntheticDistributedRunSeed,
     DISTRIBUTED_RUN_SEEDS,
-    distributedRunSeedIdFromValue
+    resolveDistributedRunSeedId
 } from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
 import { computeRtcDiagnostics, computeRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { computeDistributedRunArtifactAnalysis } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -73,8 +73,8 @@ describe('synthetic distributed run seeds', () => {
             'artifact-missing'
         ]);
 
-        expect(distributedRunSeedIdFromValue('failed-command')).toBe('failed-command');
-        expect(distributedRunSeedIdFromValue('unknown')).toBeUndefined();
+        expect(resolveDistributedRunSeedId('failed-command')).toBe('failed-command');
+        expect(resolveDistributedRunSeedId('unknown')).toBeUndefined();
 
         const first = createSyntheticDistributedRunSeed('failed-command');
         const second = createSyntheticDistributedRunSeed('failed-command');
