@@ -3,6 +3,7 @@ import type {
     DistributedRunArtifactFiles,
     DistributedRunArtifactSnapshots
 } from './distributed-artifact-analysis.ts';
+import type { ParsedDistributedArtifactPipeline } from './distributed-artifact-pipeline.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
 
 export type DistributedArtifactEvidenceKind =
@@ -144,25 +145,29 @@ export type DistributedArtifactEvidenceWindowResult =
         }>;
     }>;
 
-export type DeriveDistributedArtifactEvidenceInput = Readonly<{
-    files: DistributedRunArtifactFiles;
-    generatedAtEpochMs?: number;
-    indexLimit?: number;
-    summaryLimit?: number;
-    payloadSummaryLimit?: number;
-}>;
+/** Bounds of an evidence index: entries kept, and characters of each summary and payload summary; each is clamped to its maximum. */
+export interface DistributedArtifactEvidenceLimits {
+    readonly index: number;
+    readonly summary: number;
+    readonly payloadSummary: number;
+}
 
-export type DeriveDistributedArtifactEvidenceIndexInput = Readonly<{
-    analysis: DistributedRunAnalysis;
-    snapshots: DistributedRunArtifactSnapshots;
-    monitor?: DistributedRunMonitor;
-    parsedControlRun?: Readonly<Record<string, unknown>>;
-    sourceFileNames?: readonly string[];
-    sourceFiles?: DistributedRunArtifactFiles;
-    indexLimit?: number;
-    summaryLimit?: number;
-    payloadSummaryLimit?: number;
-}>;
+export interface ComputeDistributedArtifactEvidenceInput {
+    readonly files: DistributedRunArtifactFiles;
+    readonly generatedAtEpochMs: number;
+    readonly limits: DistributedArtifactEvidenceLimits;
+}
+
+export interface ComputeDistributedArtifactEvidenceIndexInput {
+    readonly analysis: DistributedRunAnalysis;
+    readonly snapshots: DistributedRunArtifactSnapshots;
+    readonly monitor: DistributedRunMonitor;
+    /** The parsed artifact files the analysis, snapshots and monitor were computed from. */
+    readonly parsed: ParsedDistributedArtifactPipeline;
+    /** The artifact files an entry may name as its source. */
+    readonly sourceFileNames: readonly string[];
+    readonly limits: DistributedArtifactEvidenceLimits;
+}
 
 export type ComposeDistributedArtifactIssueMarkdownInput = Readonly<{
     analysis: DistributedRunAnalysis;
@@ -182,3 +187,9 @@ export const MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT = 2_000;
 export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES = 20_000;
 export const DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 64;
 export const MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE = 100;
+
+export const DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS: DistributedArtifactEvidenceLimits = {
+    index: DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
+    summary: DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
+    payloadSummary: DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT
+};

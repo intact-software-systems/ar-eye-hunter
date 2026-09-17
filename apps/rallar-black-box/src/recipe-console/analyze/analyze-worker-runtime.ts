@@ -1,5 +1,5 @@
 import {
-    deriveDistributedArtifactEvidenceCollections,
+    computeDistributedArtifactEvidenceCollections,
     searchDistributedArtifactEvidenceWindow
 } from '@shared-test/rallar-bb-test/mod.ts';
 import { finalizeAnalyzeArtifactModel, prepareAnalyzeArtifactModel } from './analyze-artifact-model.ts';
@@ -194,7 +194,7 @@ export function createAnalyzeWorkerRuntime(
                 ignoredFiles: candidate.artifact.ignoredFiles
             });
             const parseDurationMs = analyzeWorkerDuration(now(), parseStartedAt);
-            const collections = await deriveDistributedArtifactEvidenceCollections(
+            const collections = await computeDistributedArtifactEvidenceCollections(
                 prepared.evidenceInput
             );
             const model = finalizeAnalyzeArtifactModel(

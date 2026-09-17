@@ -1,9 +1,9 @@
 import {
     composeDistributedArtifactIssueMarkdown,
+    computeDistributedArtifactEvidenceIndex,
     computeDistributedArtifactWorkspace,
-    deriveDistributedArtifactEvidenceIndex,
-    distributedArtifactPipelineJsonRecord,
-    type DeriveDistributedArtifactEvidenceIndexInput,
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
+    type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactPipelineTelemetry,
     type DistributedArtifactWorkspace,
@@ -87,7 +87,7 @@ export type PreparedAnalyzeArtifactModel = Readonly<{
     portableFiles: Readonly<Record<string, string>>;
     ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
     selectedArtifactFileCount: number;
-    evidenceInput: DeriveDistributedArtifactEvidenceIndexInput;
+    evidenceInput: ComputeDistributedArtifactEvidenceIndexInput;
     pipelineTelemetry: DistributedArtifactPipelineTelemetry;
 }>;
 
@@ -122,7 +122,7 @@ export function deriveAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput
 ): DerivedAnalyzeArtifactModel {
     const prepared = prepareAnalyzeArtifactModel(input);
-    const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+    const evidenceIndex = computeDistributedArtifactEvidenceIndex(
         prepared.evidenceInput
     );
     return {
@@ -144,7 +144,8 @@ export function prepareAnalyzeArtifactModel(
 
     const analysis = workspace.analysis;
     const snapshots = workspace.snapshots;
-    if (!analysis || !snapshots) {
+    const monitor = derived.monitor;
+    if (!analysis || !snapshots || !monitor) {
         throw new AnalyzeArtifactModelError(
             'unusable-distributed-artifact',
             `${input.label} does not contain usable distributed-run analysis and snapshots.`,
@@ -153,16 +154,13 @@ export function prepareAnalyzeArtifactModel(
     }
 
     const portableFiles = normalizedPortableFiles(derived.parsed.projectedFiles);
-    const evidenceInput: DeriveDistributedArtifactEvidenceIndexInput = {
+    const evidenceInput: ComputeDistributedArtifactEvidenceIndexInput = {
         analysis,
         snapshots,
-        monitor: derived.monitor,
-        parsedControlRun: distributedArtifactPipelineJsonRecord(
-            derived.parsed,
-            'control-run.json'
-        ),
+        monitor,
+        parsed: derived.parsed,
         sourceFileNames: Object.keys(portableFiles),
-        sourceFiles: derived.parsed.projectedFiles
+        limits: DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS
     };
     const ignoredFiles = normalizedIgnoredFiles(input.ignoredFiles ?? []);
     const selectedArtifactFileCount = selectedInputFileCount(derived.parsed);

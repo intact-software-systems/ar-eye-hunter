@@ -1,18 +1,18 @@
 import {
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
     MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT,
-    type DeriveDistributedArtifactEvidenceIndexInput,
+    type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceCatalog,
     type DistributedArtifactEvidenceCollections,
     type DistributedArtifactEvidenceEntry
 } from './distributed-artifact-evidence-contracts.ts';
 import {
-    deriveDistributedArtifactEvidenceSource,
-    projectDistributedArtifactEvidenceIndex
+    computeDistributedArtifactEvidenceIndexFromSource,
+    computeDistributedArtifactEvidenceSource
 } from './distributed-artifact-evidence-index.ts';
 import {
     compareEvidenceEntries,
-    selectPrimaryDistributedArtifactResultFailure
+    resolvePrimaryDistributedArtifactResultFailure
 } from './distributed-artifact-evidence-utils.ts';
 import { prepareDistributedArtifactEvidenceCatalogAuthority } from './distributed-artifact-evidence-window.ts';
 
@@ -43,23 +43,16 @@ export type DistributedArtifactEvidenceCatalogWork = Readonly<MutableCatalogWork
 
 const catalogWork = new WeakMap<object, DistributedArtifactEvidenceCatalogWork>();
 
-export async function deriveDistributedArtifactEvidenceCollections(
-    input: DeriveDistributedArtifactEvidenceIndexInput
+export async function computeDistributedArtifactEvidenceCollections(
+    input: ComputeDistributedArtifactEvidenceIndexInput
 ): Promise<DistributedArtifactEvidenceCollections> {
-    const source = deriveDistributedArtifactEvidenceSource(input);
-    const index = projectDistributedArtifactEvidenceIndex(input, source);
+    const source = computeDistributedArtifactEvidenceSource(input);
+    const index = computeDistributedArtifactEvidenceIndexFromSource(input, source);
     const catalog = await createDistributedArtifactEvidenceCatalog(
         input,
         source.rawEntries
     );
     return { index, catalog };
-}
-
-export async function deriveDistributedArtifactEvidenceCatalog(
-    input: DeriveDistributedArtifactEvidenceIndexInput
-): Promise<DistributedArtifactEvidenceCatalog> {
-    const source = deriveDistributedArtifactEvidenceSource(input);
-    return createDistributedArtifactEvidenceCatalog(input, source.rawEntries);
 }
 
 /** Test-only structural work snapshot; deliberately excluded from the public barrel. */
@@ -84,7 +77,7 @@ export async function resolveDistributedArtifactEvidenceCatalogEntryIds(
 }
 
 async function createDistributedArtifactEvidenceCatalog(
-    input: DeriveDistributedArtifactEvidenceIndexInput,
+    input: ComputeDistributedArtifactEvidenceIndexInput,
     sourceEntries: readonly DistributedArtifactEvidenceEntry[]
 ): Promise<DistributedArtifactEvidenceCatalog> {
     const work = emptyCatalogWork();
@@ -118,7 +111,7 @@ async function createDistributedArtifactEvidenceCatalog(
             if (entry.kind === 'diagnostic') {
                 latestDiagnostic = laterCandidate(latestDiagnostic, candidate);
             }
-            const selectedResultFailure = selectPrimaryDistributedArtifactResultFailure(
+            const selectedResultFailure = resolvePrimaryDistributedArtifactResultFailure(
                 [primaryResultFailure?.entry, entry].filter(
                     (value): value is DistributedArtifactEvidenceEntry => value !== undefined
                 ),
@@ -447,7 +440,7 @@ function canonicalEvidenceEntry(entry: DistributedArtifactEvidenceEntry): string
 }
 
 function createRawSearchValueResolver(
-    input: DeriveDistributedArtifactEvidenceIndexInput
+    input: ComputeDistributedArtifactEvidenceIndexInput
 ): (entry: DistributedArtifactEvidenceEntry) => unknown {
     type Queue = { values: unknown[]; offset: number; };
     const results = new Map<string, Queue>();

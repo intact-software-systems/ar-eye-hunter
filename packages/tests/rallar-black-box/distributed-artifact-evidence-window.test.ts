@@ -10,12 +10,13 @@ import {
     resetDistributedArtifactEvidenceWindowWorkForTest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
 import {
-    deriveDistributedArtifactEvidenceCollections,
-    deriveDistributedArtifactEvidenceIndex,
+    computeDistributedArtifactEvidenceCollections,
+    computeDistributedArtifactEvidenceIndex,
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
     searchDistributedArtifactEvidence,
     searchDistributedArtifactEvidenceWindow,
-    type DeriveDistributedArtifactEvidenceIndexInput,
+    type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceCatalog,
     type DistributedArtifactEvidenceCursor
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
@@ -28,27 +29,29 @@ import {
 
 function inputForFixture(
     fixture: RecipeConsoleScaleFixture
-): DeriveDistributedArtifactEvidenceIndexInput {
-    const { workspace } = computeDistributedArtifactWorkspace({
+): ComputeDistributedArtifactEvidenceIndexInput {
+    const { workspace, monitor, parsed } = computeDistributedArtifactWorkspace({
         files: fixture.files,
         generatedAtEpochMs: fixture.generatedAtEpochMs,
         artifactSchemaVersion: fixture.artifactSchemaVersion
     });
-    if (!workspace.analysis || !workspace.snapshots) {
+    if (!workspace.analysis || !workspace.snapshots || !monitor) {
         throw new Error('Expected a valid distributed scale workspace.');
     }
     return {
         analysis: workspace.analysis,
         snapshots: workspace.snapshots,
+        monitor,
+        parsed,
         sourceFileNames: Object.keys(fixture.files),
-        sourceFiles: fixture.files
+        limits: DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS
     };
 }
 
 async function catalogForFixture(
     fixture: RecipeConsoleScaleFixture
 ): Promise<DistributedArtifactEvidenceCatalog> {
-    return (await deriveDistributedArtifactEvidenceCollections(
+    return (await computeDistributedArtifactEvidenceCollections(
         inputForFixture(fixture)
     )).catalog;
 }
@@ -63,7 +66,7 @@ function decodeCursorBody(cursor: DistributedArtifactEvidenceCursor): JsonRecord
 describe('distributed artifact evidence catalog windows', () => {
     it('preserves the legacy index/search contract while traversing all 15k evidence without gaps', async () => {
         const fixture = createDefaultRecipeConsoleScaleFixture();
-        const { index, catalog } = await deriveDistributedArtifactEvidenceCollections(
+        const { index, catalog } = await computeDistributedArtifactEvidenceCollections(
             inputForFixture(fixture)
         );
 
@@ -310,7 +313,7 @@ describe('distributed artifact evidence catalog windows', () => {
     it('rejects malformed, tampered, foreign, stale, query-bound, and out-of-range cursors', async () => {
         const fixture = createRecipeConsoleScaleFixture({ artifactRowCount: 120 });
         const input = inputForFixture(fixture);
-        const firstCollections = await deriveDistributedArtifactEvidenceCollections(input);
+        const firstCollections = await computeDistributedArtifactEvidenceCollections(input);
         const first = await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
             query: { query: 'scale' },
             windowSize: 10
@@ -382,7 +385,7 @@ describe('distributed artifact evidence catalog windows', () => {
         expect(cursor).not.toContain('scale-command');
         expect(cursor).not.toContain('scale');
 
-        const staleCollections = await deriveDistributedArtifactEvidenceCollections(input);
+        const staleCollections = await computeDistributedArtifactEvidenceCollections(input);
         expect(
             await searchDistributedArtifactEvidenceWindow(staleCollections.catalog, {
                 cursor,
@@ -392,7 +395,7 @@ describe('distributed artifact evidence catalog windows', () => {
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-stale-model' } });
 
         const foreignInput = inputForFixture(fixture);
-        const foreignCollections = await deriveDistributedArtifactEvidenceCollections({
+        const foreignCollections = await computeDistributedArtifactEvidenceCollections({
             ...foreignInput,
             analysis: {
                 ...foreignInput.analysis,
@@ -522,8 +525,8 @@ describe('distributed artifact evidence catalog windows', () => {
             }
         };
         const input = inputForFixture(collisionFixture);
-        const collections = await deriveDistributedArtifactEvidenceCollections(input);
-        const legacy = deriveDistributedArtifactEvidenceIndex(input);
+        const collections = await computeDistributedArtifactEvidenceCollections(input);
+        const legacy = computeDistributedArtifactEvidenceIndex(input);
 
         expect(collections.index).toEqual(legacy);
         expect(searchDistributedArtifactEvidence(collections.index, {
@@ -617,9 +620,9 @@ describe('distributed artifact evidence catalog windows', () => {
             }
         };
         const input = inputForFixture(rawIdentityFixture);
-        const collections = await deriveDistributedArtifactEvidenceCollections(input);
+        const collections = await computeDistributedArtifactEvidenceCollections(input);
 
-        expect(collections.index).toEqual(deriveDistributedArtifactEvidenceIndex(input));
+        expect(collections.index).toEqual(computeDistributedArtifactEvidenceIndex(input));
         for (
             const token of [
                 'raw-identity-alphaunique',

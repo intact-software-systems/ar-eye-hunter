@@ -3,7 +3,7 @@ import type {
     DistributedArtifactEvidenceIndex,
     DistributedRunAnalysis
 } from '@shared-test/rallar-bb-test/mod.ts';
-import { selectPrimaryDistributedArtifactResultFailure } from '@shared-test/rallar-bb-test/mod.ts';
+import { resolvePrimaryDistributedArtifactResultFailure } from '@shared-test/rallar-bb-test/mod.ts';
 
 export type AnalyzePrimaryResultFailure = Readonly<{
     evidenceId: string;
@@ -15,7 +15,7 @@ export function deriveAnalyzePrimaryResultFailure(
     analysis: DistributedRunAnalysis,
     evidenceEntries: DistributedArtifactEvidenceIndex['entries']
 ): AnalyzePrimaryResultFailure | undefined {
-    const entry = selectPrimaryDistributedArtifactResultFailure(
+    const entry = resolvePrimaryDistributedArtifactResultFailure(
         evidenceEntries,
         analysis.ok ? undefined : analysis.failure.commandId
     );

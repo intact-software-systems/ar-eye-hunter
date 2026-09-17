@@ -8,7 +8,7 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import { deriveAnalyzePrimaryResultFailure } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-primary-result-failure.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import { deriveDistributedArtifactEvidenceIndex, type DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactEvidenceIndex, type DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T14:00:00.000Z');
@@ -575,7 +575,7 @@ describe('Recipe Console Analyze artifact model', () => {
         if (prepared.analysis.ok) {
             throw new Error('Expected failure.');
         }
-        const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+        const evidenceIndex = computeDistributedArtifactEvidenceIndex(
             prepared.evidenceInput
         );
         const primaryResultFailure = deriveAnalyzePrimaryResultFailure({

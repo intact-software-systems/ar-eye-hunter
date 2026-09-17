@@ -1,22 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import {
-    toDistributedArtifactSnapshots,
-    type DistributedRunArtifactFiles,
-    type DistributedRunArtifactSnapshots
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { resolveDistributedArtifactEvidenceCatalogEntryIds } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
-import type {
-    DeriveDistributedArtifactEvidenceInput,
-    DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceIndex
+import {
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
+    type ComputeDistributedArtifactEvidenceIndexInput,
+    type ComputeDistributedArtifactEvidenceInput,
+    type DistributedArtifactEvidenceEntry,
+    type DistributedArtifactEvidenceIndex,
+    type DistributedArtifactEvidenceLimits
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
 import {
     composeDistributedArtifactIssueMarkdown,
-    deriveDistributedArtifactEvidence,
-    deriveDistributedArtifactEvidenceIndex,
+    computeDistributedArtifactEvidence,
+    computeDistributedArtifactEvidenceIndex,
     searchDistributedArtifactEvidence
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
-import { computeDistributedArtifactWorkspace, distributedArtifactPipelineJsonRecord } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { computeDistributedRunAnalysis } from '../shared-test/distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T12:00:00.000Z');
@@ -231,20 +230,31 @@ function evidenceFilesWithoutCommandLinks(): DistributedRunArtifactFiles {
     };
 }
 
-function evidenceIndex(input: DeriveDistributedArtifactEvidenceInput): DistributedArtifactEvidenceIndex {
-    const derived = deriveDistributedArtifactEvidence(input);
+function evidenceIndex(input: ComputeDistributedArtifactEvidenceInput): DistributedArtifactEvidenceIndex {
+    const derived = computeDistributedArtifactEvidence(input);
     if (derived.right === undefined) {
         throw new Error(`Expected an evidence index, got ${JSON.stringify(derived.left)}`);
     }
     return derived.right;
 }
 
-function decodedSnapshots(files: DistributedRunArtifactFiles): DistributedRunArtifactSnapshots {
-    const snapshots = toDistributedArtifactSnapshots(files, GENERATED_AT_EPOCH_MS);
-    if (snapshots.right === undefined) {
-        throw new Error(`Expected decoded snapshots, got ${JSON.stringify(snapshots.left)}`);
+function toPrecomputedEvidenceInput(
+    files: DistributedRunArtifactFiles,
+    limits: DistributedArtifactEvidenceLimits
+): ComputeDistributedArtifactEvidenceIndexInput {
+    const derived = computeDistributedArtifactWorkspace({ files, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
+    const { analysis, snapshots } = derived.workspace;
+    if (!analysis || !snapshots || !derived.monitor) {
+        throw new Error('Expected derived evidence inputs.');
     }
-    return snapshots.right;
+    return {
+        analysis,
+        snapshots,
+        monitor: derived.monitor,
+        parsed: derived.parsed,
+        sourceFileNames: Object.keys(files),
+        limits
+    };
 }
 
 describe('distributed artifact evidence index', () => {
@@ -253,18 +263,11 @@ describe('distributed artifact evidence index', () => {
         const fromFiles = evidenceIndex({
             files,
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 4,
-            summaryLimit: 28,
-            payloadSummaryLimit: 32
+            limits: { index: 4, summary: 28, payloadSummary: 32 }
         });
-        const fromPrecomputed = deriveDistributedArtifactEvidenceIndex({
-            analysis: computeDistributedRunAnalysis(files, GENERATED_AT_EPOCH_MS),
-            snapshots: decodedSnapshots(files),
-            sourceFileNames: Object.keys(files),
-            indexLimit: 4,
-            summaryLimit: 28,
-            payloadSummaryLimit: 32
-        });
+        const fromPrecomputed = computeDistributedArtifactEvidenceIndex(
+            toPrecomputedEvidenceInput(files, { index: 4, summary: 28, payloadSummary: 32 })
+        );
 
         expect(fromFiles).toEqual(fromPrecomputed);
         expect(fromFiles.totalEntries).toBeGreaterThan(fromFiles.entries.length);
@@ -286,10 +289,6 @@ describe('distributed artifact evidence index', () => {
         if (!analysis || !snapshots || !derived.monitor) {
             throw new Error('Expected derived evidence inputs.');
         }
-        const parsedControlRun = distributedArtifactPipelineJsonRecord(
-            derived.parsed,
-            'control-run.json'
-        );
         const controlRunText = files['control-run.json'];
         const originalParse = JSON.parse;
         let controlRunParseCount = 0;
@@ -300,14 +299,13 @@ describe('distributed artifact evidence index', () => {
             return originalParse(text, reviver);
         }) as typeof JSON.parse;
         try {
-            const index = deriveDistributedArtifactEvidenceIndex({
+            const index = computeDistributedArtifactEvidenceIndex({
                 analysis,
                 snapshots,
                 monitor: derived.monitor,
-                parsedControlRun,
+                parsed: derived.parsed,
                 sourceFileNames: Object.keys(derived.parsed.projectedFiles),
-                sourceFiles: derived.parsed.projectedFiles,
-                indexLimit: 100
+                limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
             });
 
             expect(index.monitor).toBe(derived.monitor);
@@ -326,7 +324,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
 
         expect(new Set(index.entries.map((entry) => entry.kind))).toEqual(
@@ -372,9 +370,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100,
-            summaryLimit: 600,
-            payloadSummaryLimit: 600
+            limits: { index: 100, summary: 600, payloadSummary: 600 }
         });
         const failedResult = index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc');
 
@@ -418,9 +414,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100,
-            summaryLimit: 24,
-            payloadSummaryLimit: 48
+            limits: { index: 100, summary: 24, payloadSummary: 48 }
         });
         const details = index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc')?.failureDetails;
 
@@ -446,7 +440,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
 
         expect(index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc')?.failureDetails).toEqual(
@@ -458,7 +452,7 @@ describe('distributed artifact evidence index', () => {
         const missing = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         expect(missing.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc')).not.toHaveProperty('failureDetails');
     });
@@ -489,7 +483,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: evidenceFilesWithoutCommandLinks(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
 
         expect(index.entries).toEqual(expect.arrayContaining([
@@ -536,7 +530,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         const collisions = index.entries.filter((entry) => entry.topic === 'collision');
 
@@ -568,7 +562,7 @@ describe('distributed artifact evidence index', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 2
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 2 }
         });
 
         expect(index.entries).toEqual(expect.arrayContaining([
@@ -593,7 +587,7 @@ describe('distributed artifact evidence index', () => {
                 'events.jsonl': `${JSON.stringify(event)}\n`
             },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
 
         expect(index.entries.find((entry) => entry.kind === 'result'))
@@ -608,7 +602,7 @@ describe('distributed artifact evidence search', () => {
         const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         for (
             const query of [
@@ -639,7 +633,7 @@ describe('distributed artifact evidence search', () => {
         const index = evidenceIndex({
             files: { ...files, 'control-run.json': JSON.stringify(controlRun) },
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         const result = index.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc');
         if (!result) {
@@ -676,7 +670,7 @@ describe('distributed artifact evidence search', () => {
         const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         const result = searchDistributedArtifactEvidence(index, {
             agentId: 'agent-a',
@@ -710,7 +704,7 @@ describe('distributed artifact evidence search', () => {
         const maximums = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: Number.MAX_SAFE_INTEGER
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: Number.MAX_SAFE_INTEGER }
         });
         expect(maximums.limit).toBe(2_000);
         expect(
@@ -722,7 +716,7 @@ describe('distributed artifact evidence search', () => {
         const boundedIndex = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 1
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 1 }
         });
         expect(searchDistributedArtifactEvidence(boundedIndex, {
             query: 'definitely-not-in-retained-evidence'
@@ -739,17 +733,15 @@ describe('distributed artifact evidence search', () => {
         if (analysis.ok) {
             throw new Error('Expected deterministic failure.');
         }
-        const index = deriveDistributedArtifactEvidenceIndex({
+        const index = computeDistributedArtifactEvidenceIndex({
+            ...toPrecomputedEvidenceInput(files, { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }),
             analysis: {
                 ...analysis,
                 failure: {
                     ...analysis.failure,
                     affectedAgents: ['agent-a', 'agent-b']
                 }
-            },
-            snapshots: decodedSnapshots(files),
-            sourceFileNames: Object.keys(files),
-            indexLimit: 100
+            }
         });
 
         expect(
@@ -777,7 +769,7 @@ describe('distributed artifact issue markdown', () => {
         const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
-            indexLimit: 100
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS, index: 100 }
         });
         const result = searchDistributedArtifactEvidence(index, {
             query: 'no route',

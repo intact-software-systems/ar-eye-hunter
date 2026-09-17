@@ -51,7 +51,7 @@ export function compareEvidenceEntries(
         left.id.localeCompare(right.id);
 }
 
-export function selectPrimaryDistributedArtifactResultFailure<Entry extends DistributedArtifactEvidenceEntry>(
+export function resolvePrimaryDistributedArtifactResultFailure<Entry extends DistributedArtifactEvidenceEntry>(
     entries: readonly Entry[],
     failureCommandId: string | undefined
 ): Entry | undefined {

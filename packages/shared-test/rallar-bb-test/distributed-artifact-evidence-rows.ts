@@ -1,10 +1,10 @@
-import type { DistributedRunArtifactFiles, DistributedRunArtifactSnapshots } from './distributed-artifact-analysis.ts';
+import type { DistributedRunArtifactSnapshots } from './distributed-artifact-analysis.ts';
 import type { DistributedRunAnalysis } from './distributed-artifact-analysis.ts';
 import type {
     DistributedArtifactEvidenceEntry,
     DistributedArtifactEvidenceKind
 } from './distributed-artifact-evidence-contracts.ts';
-import { distributedArtifactEvidenceSourceFile } from './distributed-artifact-evidence-provenance.ts';
+
 import {
     boundedEvidenceEntry,
     deduplicateArtifactEvidenceEntries,
@@ -16,7 +16,9 @@ import {
     summarizeEvidenceValue,
     transportFromCommandKind
 } from './distributed-artifact-evidence-utils.ts';
+import type { ParsedDistributedArtifactPipeline } from './distributed-artifact-pipeline.ts';
 import type { DistributedRunMonitor } from './distributed-run-monitor.ts';
+import { resolveDistributedArtifactEvidenceSourceFile } from './resolve-distributed-artifact-evidence-source-file.ts';
 
 export function distributedArtifactEvidenceRows(
     input: Readonly<{
@@ -24,8 +26,7 @@ export function distributedArtifactEvidenceRows(
         snapshots: DistributedRunArtifactSnapshots;
         monitor: DistributedRunMonitor;
         sourceFileNames: ReadonlySet<string>;
-        sourceFiles?: DistributedRunArtifactFiles;
-        parsedControlRun?: Readonly<Record<string, unknown>>;
+        parsed: ParsedDistributedArtifactPipeline;
         summaryLimit: number;
         payloadSummaryLimit: number;
         deduplicate?: boolean;
@@ -133,7 +134,7 @@ function addResults(
     recipeByCommandId: ReadonlyMap<string, string | undefined>,
     linkedCommandIds: ReadonlySet<string>
 ): void {
-    const sourceFile = distributedArtifactEvidenceSourceFile(
+    const sourceFile = resolveDistributedArtifactEvidenceSourceFile(
         input,
         'results',
         'results.jsonl'
@@ -218,7 +219,7 @@ function addMonitorEvents(
     const diagnosticKeys = new Set(
         input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey)
     );
-    const sourceFile = distributedArtifactEvidenceSourceFile(
+    const sourceFile = resolveDistributedArtifactEvidenceSourceFile(
         input,
         'events',
         'events.jsonl'
@@ -291,7 +292,7 @@ function addRawFallbackEvents(
         ...input.monitor.events.map(diagnosticArtifactEventKey),
         ...input.monitor.runtimeDiagnostics.map(diagnosticArtifactEventKey)
     ]);
-    const sourceFile = distributedArtifactEvidenceSourceFile(
+    const sourceFile = resolveDistributedArtifactEvidenceSourceFile(
         input,
         'events',
         'events.jsonl'
