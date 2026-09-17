@@ -8,6 +8,7 @@ export type {
     RallarBlackBoxBootstrapRegister,
     RallarBlackBoxBootstrapTransport
 } from './browser-control-agent/compute-rallar-black-box-bootstrap-launch.ts';
+export * from './browser-control-agent/read-browser-auth-session-presence.ts';
 export type { RallarBlackBoxBootstrapEnvironment } from './browser-control-agent/resolve-launch-value.ts';
 export * from './browser-control-agent/to-remote-control-config.ts';
 export * from './browser-control-agent/validate-rallar-black-box-provider-config.ts';

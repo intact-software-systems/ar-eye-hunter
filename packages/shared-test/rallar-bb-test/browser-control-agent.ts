@@ -7,11 +7,9 @@ import {
     toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from './browser-control-agent-config.ts';
+import { readBrowserAuthSessionPresence } from './browser-control-agent/read-browser-auth-session-presence.ts';
 import type { RallarBlackBoxBootstrapEnvironment } from './browser-control-agent/resolve-launch-value.ts';
-import {
-    readBrowserAuthSessionPresence,
-    toRemoteControlConfig
-} from './browser-control-agent/to-remote-control-config.ts';
+import { toRemoteControlConfig } from './browser-control-agent/to-remote-control-config.ts';
 import { validateRallarBlackBoxProviderConfig } from './browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import {
     createBrowserWebSocketFactory,

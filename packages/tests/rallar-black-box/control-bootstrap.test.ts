@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import viteConfig from '../../../apps/rallar-black-box/vite.config.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import {
-    resolveRallarBlackBoxConfigProviderMode,
-    validateRallarBlackBoxProviderConfig
-} from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import { resolveRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('rallar-black-box control bootstrap', () => {
     it('enables remote control mode from URL autoConnect params', () => {

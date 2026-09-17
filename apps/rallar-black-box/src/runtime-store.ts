@@ -4,22 +4,22 @@ import {
     toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import { readBrowserAuthSessionPresence } from '@shared-test/rallar-bb-test/browser-control-agent/read-browser-auth-session-presence.ts';
 import {
-    readBrowserAuthSessionPresence,
     toRallarBlackBoxFleetConfig,
     toRallarBlackBoxRallarConfig,
     toRemoteControlConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent/to-remote-control-config.ts';
-import {
-    resolveRallarBlackBoxConfigProviderMode,
-    validateRallarBlackBoxProviderConfig
-} from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import { validateRallarBlackBoxProviderConfig } from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import {
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    resolveRallarBlackBoxConfigProviderMode
+} from '@shared-test/rallar-bb-test/client-defaults.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
     type RallarBlackBoxControlClient,

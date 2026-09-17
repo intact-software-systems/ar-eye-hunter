@@ -1,4 +1,5 @@
-import type { RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
+import { decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
 
 export const RALLAR_BLACK_BOX_PROVIDER_MODES = ['simulated', 'browser-rallar'] as const;
 
@@ -47,6 +48,16 @@ export function resolveRallarBlackBoxProviderMode(
     return value !== undefined && isRallarBlackBoxProviderMode(value)
         ? value
         : RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode;
+}
+
+export function resolveRallarBlackBoxConfigProviderMode(
+    config: RallarBlackBoxTestConfig | undefined
+): RallarBlackBoxProviderMode {
+    const control = decodeRecord(config?.control);
+    const defaults = decodeRecord(config?.defaults);
+    return resolveRallarBlackBoxProviderMode(
+        decodeNonBlankText(control.providerMode) ?? decodeNonBlankText(defaults.providerMode)
+    );
 }
 
 export function isRallarBlackBoxProviderMode(value: string): value is RallarBlackBoxProviderMode {

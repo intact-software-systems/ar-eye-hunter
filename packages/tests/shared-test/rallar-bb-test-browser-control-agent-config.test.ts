@@ -5,11 +5,12 @@ import {
     toRallarBlackBoxRallarConfig,
     toRemoteControlConfig
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/to-remote-control-config.ts';
+import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import {
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     resolveRallarBlackBoxConfigProviderMode,
-    validateRallarBlackBoxProviderConfig
-} from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS, resolveRallarBlackBoxProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
+    resolveRallarBlackBoxProviderMode
+} from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
     it('parses URL params into a browser-rallar control-agent bootstrap config', () => {
