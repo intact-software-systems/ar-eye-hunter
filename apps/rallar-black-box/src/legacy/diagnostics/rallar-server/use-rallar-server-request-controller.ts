@@ -1,5 +1,5 @@
 import {
-    resolveRallarBlackBoxConfigProviderMode,
+    decodeRallarBlackBoxConfigProviderMode,
     type RallarBlackBoxProviderMode
 } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -66,7 +66,8 @@ export function useRallarServerRequestController(
     input: UseRallarServerControllerInput,
     defaults: RallarServerDefaults
 ): RallarServerRequestController {
-    const providerMode = resolveRallarBlackBoxConfigProviderMode(defaults.config);
+    const providerMode = decodeRallarBlackBoxConfigProviderMode(defaults.config)
+        .fold(() => input.bootstrap.providerMode, (mode) => mode);
     const { draft, setDraft, setters } = useRallarServerRequestDraft(input, defaults);
     const controls = useRallarServerRequestControls();
     const requestInput = toRallarServerRequestInput(draft, input.authSession, providerMode);

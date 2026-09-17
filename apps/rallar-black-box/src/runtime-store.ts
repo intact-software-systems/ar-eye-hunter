@@ -17,8 +17,8 @@ import {
     installSpaBrowserRallarEventBridge
 } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
-    resolveRallarBlackBoxConfigProviderMode
+    decodeRallarBlackBoxConfigProviderMode,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS
 } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
@@ -125,7 +125,7 @@ function commandString(value: unknown, fallback: string): string {
     return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
 }
 
-function browserRallarProviderNotReadyOutcome(
+function recordProviderRefusal(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
     context: RallarBlackBoxTestCommandContext
 ): RallarBlackBoxTestCommandOutcome {
@@ -179,9 +179,10 @@ async function providerCommandExecutor(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
     context: RallarBlackBoxTestCommandContext
 ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
-    const providerMode = resolveRallarBlackBoxConfigProviderMode(context.config());
-    if (providerMode === 'browser-rallar' && command.kind !== 'reset') {
-        return browserRallarProviderNotReadyOutcome(command, context);
+    const runsSimulatedProvider = decodeRallarBlackBoxConfigProviderMode(context.config())
+        .fold(() => false, (providerMode) => providerMode === 'simulated');
+    if (!runsSimulatedProvider && command.kind !== 'reset') {
+        return recordProviderRefusal(command, context);
     }
 
     await delay(runtimeDelayFor(command));
@@ -269,7 +270,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     connected: true,
                     connection: command.connection,
                     actor: command.actor,
@@ -364,7 +365,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     sent: true,
                     connection: command.connection,
                     transport: command.transport,
@@ -396,7 +397,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     opened: false,
                     simulated: true,
                     connection: command.connection,
@@ -420,7 +421,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     sent: true,
                     simulated: true,
                     connection: command.connection,
@@ -444,7 +445,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     closed: true,
                     simulated: true,
                     connection: command.connection
@@ -473,7 +474,7 @@ async function providerCommandExecutor(
             return {
                 status: 'ok',
                 value: {
-                    providerMode,
+                    providerMode: 'simulated',
                     status: 200,
                     ok: true,
                     simulated: true,

@@ -6,11 +6,7 @@ import {
     toRemoteControlConfig
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/to-remote-control-config.ts';
 import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
-import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
-    resolveRallarBlackBoxConfigProviderMode,
-    resolveRallarBlackBoxProviderMode
-} from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
     it('parses URL params into a browser-rallar control-agent bootstrap config', () => {
@@ -114,11 +110,23 @@ describe('browser control-agent bootstrap config', () => {
         expect(bootstrap.source).toBe('default');
     });
 
-    it('reads a runtime config provider mode only from control or defaults providerMode', () => {
-        expect(resolveRallarBlackBoxConfigProviderMode({
-            control: { provider: 'browser-rallar' },
-            defaults: { provider: 'browser-rallar' }
-        })).toBe('simulated');
+    it('decodes a runtime config provider mode only from control.providerMode and refuses one that names no mode', () => {
+        expect(decodeRallarBlackBoxConfigProviderMode({ control: { providerMode: 'browser-rallar' } }).right)
+            .toBe('browser-rallar');
+        expect(
+            decodeRallarBlackBoxConfigProviderMode({
+                control: { provider: 'browser-rallar' },
+                defaults: { providerMode: 'browser-rallar' }
+            }).right
+        ).toBe('simulated');
+        expect(decodeRallarBlackBoxConfigProviderMode(undefined).right).toBe('simulated');
+        expect(decodeRallarBlackBoxConfigProviderMode({ control: { providerMode: 'anything' } }).left)
+            .toBe('control.providerMode must be one of simulated, browser-rallar, not \'anything\'.');
+        expect(validateRallarBlackBoxProviderConfig({ control: { providerMode: 'anything' } })).toEqual([{
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            message: 'control.providerMode must be one of simulated, browser-rallar, not \'anything\'.',
+            details: { providerMode: 'anything' }
+        }]);
     });
 
     it('writes the heartbeat, stats and runner agent count defaults explicitly', () => {
@@ -243,11 +251,6 @@ describe('browser control-agent bootstrap config', () => {
     });
 
     it('rejects browser-rallar config without usable API and credentials', () => {
-        expect(resolveRallarBlackBoxProviderMode('browser-rallar')).toBe('browser-rallar');
-        expect(resolveRallarBlackBoxProviderMode('anything')).toBe(
-            RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode
-        );
-
         const config = toRemoteControlConfig({
             bootstrap: resolveRallarBlackBoxBootstrapConfig(
                 '?mode=control&provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.invalid',

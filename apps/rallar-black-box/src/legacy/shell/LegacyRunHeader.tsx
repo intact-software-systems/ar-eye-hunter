@@ -1,4 +1,7 @@
-import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import {
+    decodeRallarBlackBoxConfigProviderMode,
+    type RallarBlackBoxProviderMode
+} from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     getRallarBlackBoxActiveCommand,
@@ -7,6 +10,7 @@ import {
     getRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
@@ -46,9 +50,11 @@ export function Header({
     const stats = getRallarBlackBoxLatestStats(state);
     const activeCommand = getRallarBlackBoxActiveCommand(state);
     const firstFailure = getRallarBlackBoxFirstFailure(state);
-    const providerMode = config
-        ? resolveRallarBlackBoxConfigProviderMode(config)
-        : bootstrap.providerMode;
+    const configuredProviderMode = config === undefined
+        ? Either.ofRight<string, RallarBlackBoxProviderMode>(bootstrap.providerMode)
+        : decodeRallarBlackBoxConfigProviderMode(config);
+    const providerMode = configuredProviderMode.fold(() => 'unreadable', (mode) => mode);
+    const providerTone = configuredProviderMode.fold(() => 'bad', (mode) => mode === 'simulated' ? 'warn' : 'active');
     const rallarValue = providerMode === 'simulated'
         ? 'simulated'
         : browserStatus.rallarConnected || stats?.rallar?.connected
@@ -94,7 +100,7 @@ export function Header({
                 <Metric
                     label="Provider"
                     value={providerMode}
-                    tone={providerMode === 'simulated' ? 'warn' : 'active'}
+                    tone={providerTone}
                 />
                 <Metric
                     label="Control"

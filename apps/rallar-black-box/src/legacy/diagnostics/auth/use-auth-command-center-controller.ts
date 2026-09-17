@@ -1,5 +1,5 @@
 import {
-    resolveRallarBlackBoxConfigProviderMode,
+    decodeRallarBlackBoxConfigProviderMode,
     type RallarBlackBoxProviderMode
 } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -51,7 +51,8 @@ interface AuthCommandCenterTexts {
 
 export function useAuthCommandCenterController(props: AuthCommandCenterPanelProps): AuthCommandCenterModel {
     const { state, authSession } = props;
-    const providerMode = resolveRallarBlackBoxConfigProviderMode(getRallarBlackBoxCurrentConfig(state));
+    const providerMode = decodeRallarBlackBoxConfigProviderMode(getRallarBlackBoxCurrentConfig(state))
+        .fold(() => props.bootstrap.providerMode, (mode) => mode);
     const draft = useAuthCommandCenterDraft(props);
     const controls = useAuthCommandCenterControls();
     const { ticket, actions } = controls;

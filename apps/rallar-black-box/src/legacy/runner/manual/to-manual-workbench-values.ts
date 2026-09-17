@@ -1,4 +1,4 @@
-import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestState,
@@ -34,9 +34,12 @@ export function toManualWorkbenchValues(input: ManualWorkbenchValuesInput): Manu
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
         ...toManualTargetValues(input, config),
         transport: toManualTransport(config?.transport ?? input.bootstrap.transport),
-        providerMode: config
-            ? resolveRallarBlackBoxConfigProviderMode(config)
-            : input.bootstrap.providerMode,
+        providerMode: config === undefined
+            ? input.bootstrap.providerMode
+            : decodeRallarBlackBoxConfigProviderMode(config).fold(
+                () => input.bootstrap.providerMode,
+                (providerMode) => providerMode
+            ),
         ...toManualRallarSessionValues(input, recordValue(config?.rallar))
     };
 }

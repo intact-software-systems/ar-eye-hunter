@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import viteConfig from '../../../apps/rallar-black-box/vite.config.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
-import { resolveRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('rallar-black-box control bootstrap', () => {
     it('enables remote control mode from URL autoConnect params', () => {
@@ -349,10 +349,25 @@ describe('rallar-black-box control bootstrap', () => {
             }
         })).toEqual([]);
 
-        expect(resolveRallarBlackBoxConfigProviderMode({
-            defaults: {
-                providerMode: 'browser-rallar'
+        expect(
+            decodeRallarBlackBoxConfigProviderMode({
+                defaults: {
+                    providerMode: 'browser-rallar'
+                }
+            }).right
+        ).toBe('simulated');
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            rallar: {
+                username: 'alice',
+                password: 'secret'
+            },
+            control: {
+                providerMode: 'browser-rallr'
             }
-        })).toBe('browser-rallar');
+        })).toEqual([expect.objectContaining({
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            message: 'control.providerMode must be one of simulated, browser-rallar, not \'browser-rallr\'.'
+        })]);
     });
 });

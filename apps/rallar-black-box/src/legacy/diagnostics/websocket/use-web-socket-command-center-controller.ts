@@ -1,4 +1,4 @@
-import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -127,7 +127,9 @@ export function useWebSocketCommandCenterController(
     input: UseWebSocketCommandCenterControllerInput
 ): WebSocketCommandCenterViewModel {
     const config = getRallarBlackBoxCurrentConfig(input.state);
-    const providerMode = config ? resolveRallarBlackBoxConfigProviderMode(config) : input.bootstrap.providerMode;
+    const providerMode = config === undefined
+        ? input.bootstrap.providerMode
+        : decodeRallarBlackBoxConfigProviderMode(config).fold(() => input.bootstrap.providerMode, (mode) => mode);
     const defaultContext = defaultWebSocketValuesFromContext(input.globalValues, config, input.bootstrap);
     const controls = useWebSocketCommandCenterControls(defaultContext);
     const lifecycle = useWebSocketCommandCenterLifecycle(input, controls, defaultContext);

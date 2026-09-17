@@ -1,12 +1,13 @@
-import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
 function createReportSnapshot(state: RallarBlackBoxTestState): unknown {
-    const providerMode = resolveRallarBlackBoxConfigProviderMode(
-        state.currentConfig
+    const providerMode = decodeRallarBlackBoxConfigProviderMode(state.currentConfig).fold(
+        (issue) => issue,
+        (mode) => mode
     );
     return {
         reportId: `local-report-${state.currentConfig?.runId ?? 'unconfigured'}`,
