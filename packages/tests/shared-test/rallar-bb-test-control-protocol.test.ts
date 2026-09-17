@@ -23,7 +23,7 @@ function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand
     };
 }
 
-function toRegisterMessage(identity: Readonly<Record<string, unknown>>): string {
+function toRegisterMessage(identity: object): string {
     return JSON.stringify({
         kind: 'register',
         protocolVersion: 1,

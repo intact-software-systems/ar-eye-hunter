@@ -41,7 +41,7 @@ const EXPLICIT_ARTIFACT_POLICY = {
     includeDistributedMetadata: true
 };
 
-function toExplicitDistributedManifest(fields: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+function toExplicitDistributedManifest(fields: object): object {
     return {
         schemaVersion: 1,
         variables: {},

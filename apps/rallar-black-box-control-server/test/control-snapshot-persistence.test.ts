@@ -34,7 +34,7 @@ function toStagedService(): RallarBlackBoxControlService {
 }
 
 async function restoreSnapshotText(
-    snapshot: unknown
+    snapshot: object
 ): Promise<Readonly<{ service: RallarBlackBoxControlService; warnings: readonly string[]; }>> {
     const storageDir = await Deno.makeTempDir({ prefix: 'rallar-control-snapshot-restore-' });
     const service = createRallarBlackBoxControlService(toControlServiceInput());
