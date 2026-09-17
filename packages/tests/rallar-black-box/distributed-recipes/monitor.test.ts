@@ -142,7 +142,6 @@ describe('distributed recipes monitor', () => {
                         kind: 'participant',
                         key: 'agent-a',
                         state: 'failed',
-                        required: true,
                         error: {
                             code: 'PARTICIPANT_FAILED',
                             message: 'Sender disconnected.'
@@ -152,7 +151,6 @@ describe('distributed recipes monitor', () => {
                         kind: 'participant',
                         key: 'start-b',
                         state: 'failed',
-                        required: true,
                         error: {
                             code: 'PARTICIPANT_ID_COLLISION',
                             message: 'A participant ID collides with another failure key.'
@@ -162,7 +160,6 @@ describe('distributed recipes monitor', () => {
                         kind: 'recipe',
                         key: 'start-b',
                         state: 'failed',
-                        required: true,
                         error: {
                             code: 'RECIPE_ID_COLLISION',
                             message: 'A recipe ID collides with another failure key.'
@@ -462,7 +459,6 @@ describe('distributed recipes monitor', () => {
                                 kind: 'participant',
                                 key: 'agent-a',
                                 state: 'timed-out',
-                                required: true,
                                 error: {
                                     code: testCase.code,
                                     message: testCase.message
@@ -568,7 +564,6 @@ describe('distributed recipes monitor', () => {
                     kind: 'recipe',
                     key: 'composite-evidence',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RECIPE_FAILED',
                         message: 'Composite recipe failed.'

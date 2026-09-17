@@ -158,7 +158,6 @@ describe('distributed run artifact failure resolution', () => {
                             kind: 'participant',
                             key: 'controller-03',
                             state: 'timed-out',
-                            required: true,
                             error: {
                                 code: 'ACK_TIMEOUT',
                                 message: 'Missing stage ACK before timeout.'
@@ -256,7 +255,6 @@ describe('distributed run artifact failure resolution', () => {
                 kind: 'participant',
                 key: 'agent-a',
                 state: 'failed',
-                required: true,
                 error: { code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT', message: 'Missing ACK.' }
             }]),
             ANALYSIS_GENERATED_AT_EPOCH_MS

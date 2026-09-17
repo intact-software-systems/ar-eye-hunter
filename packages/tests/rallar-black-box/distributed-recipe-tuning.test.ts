@@ -36,12 +36,10 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
                 failures: [],
                 summary: {
                     participants: 1,
-                    requiredParticipants: 1,
                     readyParticipants: 1,
                     passedParticipants: 1,
                     failedParticipants: 0,
                     recipes: 2,
-                    requiredRecipes: 2,
                     passedRecipes: 2,
                     failedRecipes: 0,
                     groupAssertions: 0,

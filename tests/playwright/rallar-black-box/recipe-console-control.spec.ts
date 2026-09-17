@@ -134,12 +134,10 @@ function activeDistributedRun(
             ok: false,
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: targetAgentIds.length,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 blockingFailures: 0

@@ -660,12 +660,10 @@ describe('Hetzner distributed manifest catalog', () => {
                 ok: true,
                 summary: {
                     participants: 2,
-                    requiredParticipants: 2,
                     readyParticipants: 2,
                     passedParticipants: 2,
                     failedParticipants: 0,
                     recipes: 1,
-                    requiredRecipes: 1,
                     passedRecipes: 2,
                     failedRecipes: 0,
                     groupAssertions: 0,

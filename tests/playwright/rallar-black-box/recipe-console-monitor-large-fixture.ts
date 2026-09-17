@@ -340,12 +340,10 @@ function createLargeDistributedRun(
             ok: false,
             summary: {
                 participants: agentIds.length,
-                requiredParticipants: agentIds.length,
                 readyParticipants: agentIds.length,
                 passedParticipants: Math.max(0, agentIds.length - 1),
                 failedParticipants: 1,
                 recipes: LARGE_MONITOR_COUNTS.recipes,
-                requiredRecipes: LARGE_MONITOR_COUNTS.recipes,
                 passedRecipes: LARGE_MONITOR_COUNTS.recipes - 1,
                 failedRecipes: 1,
                 blockingFailures: LARGE_MONITOR_FAILURE_COUNT

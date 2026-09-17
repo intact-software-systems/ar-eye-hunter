@@ -357,7 +357,6 @@ function createDistributedRun(
             ok: state === 'passed',
             summary: {
                 participants: participantCount,
-                requiredParticipants: participantCount,
                 readyParticipants: participantCount,
                 passedParticipants: state === 'passed'
                     ? participantCount
@@ -366,7 +365,6 @@ function createDistributedRun(
                     : 0,
                 failedParticipants: terminalFailure ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: terminalFailure ? 1 : 0,
                 blockingFailures: terminalFailure ? 1 : 0

@@ -179,14 +179,12 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: state === 'running' || state === 'passed'
                     ? targetAgentIds.length
                     : 0,
                 passedParticipants: state === 'passed' ? targetAgentIds.length : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,
@@ -199,7 +197,6 @@ function distributedRun(
                     kind: 'recipe',
                     key: 'health-only',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RECIPE_FAILED',
                         message: 'Recipe failed.'

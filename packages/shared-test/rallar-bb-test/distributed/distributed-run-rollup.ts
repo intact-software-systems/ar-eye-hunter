@@ -27,7 +27,6 @@ export type RallarBlackBoxDistributedRunRollupFailure = Readonly<{
     kind: 'participant' | 'recipe' | 'group-assertion';
     key: string;
     state: RallarBlackBoxDistributedRunItemState;
-    required: boolean;
     error?: RallarBlackBoxTestError;
 }>;
 
@@ -36,12 +35,10 @@ export type RallarBlackBoxDistributedRunRollup = Readonly<{
     ok: boolean;
     summary: Readonly<{
         participants: number;
-        requiredParticipants: number;
         readyParticipants: number;
         passedParticipants: number;
         failedParticipants: number;
         recipes: number;
-        requiredRecipes: number;
         passedRecipes: number;
         failedRecipes: number;
         groupAssertions: number;
@@ -82,7 +79,6 @@ export function rollupDistributedRunResult(
                 kind,
                 key,
                 state: item.state,
-                required: true,
                 error: item.error
             })),
         ...groupAssertions
@@ -91,7 +87,6 @@ export function rollupDistributedRunResult(
                 kind: 'group-assertion' as const,
                 key: result.groupAssertionId,
                 state: 'failed' as const,
-                required: true,
                 error: result.error
             }))
     ];
@@ -108,7 +103,6 @@ export function rollupDistributedRunResult(
         ok: state === 'passed',
         summary: {
             participants: participants.length,
-            requiredParticipants: participants.length,
             readyParticipants:
                 participants.filter((item) =>
                     item.state === 'ready' || item.state === 'running' || item.state === 'passed'
@@ -116,7 +110,6 @@ export function rollupDistributedRunResult(
             passedParticipants: participants.filter((item) => item.state === 'passed').length,
             failedParticipants: participants.filter(isBlockingItemFailure).length,
             recipes: recipes.length,
-            requiredRecipes: recipes.length,
             passedRecipes: recipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
             failedRecipes: recipes.filter(isBlockingItemFailure).length,
             groupAssertions: groupAssertions.length,

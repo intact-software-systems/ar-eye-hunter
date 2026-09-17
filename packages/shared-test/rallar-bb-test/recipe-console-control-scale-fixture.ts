@@ -228,12 +228,10 @@ function distributedRun(
             failures: [],
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: targetAgentIds.length,
                 passedParticipants: targetAgentIds.length,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 1,
                 failedRecipes: 0,
                 groupAssertions: 0,

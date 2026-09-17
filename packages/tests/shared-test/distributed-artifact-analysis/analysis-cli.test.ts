@@ -51,7 +51,6 @@ describe('distributed run artifact analysis CLI', () => {
                         kind: 'participant',
                         key: 'agent-a',
                         state: 'failed',
-                        required: true,
                         error: { code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT', message: 'Missing ACK.' }
                     }]
                 }),
@@ -177,7 +176,6 @@ describe('distributed run artifact analysis CLI', () => {
                         kind: 'group-assertion',
                         key: 'members-converge',
                         state: 'failed',
-                        required: true,
                         error: {
                             code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
                             message: 'Group assertion members-converge failed: 2 distinct values across 2 participants.',

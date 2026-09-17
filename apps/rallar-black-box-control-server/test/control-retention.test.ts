@@ -101,12 +101,10 @@ Deno.test('immediate prune remains available beyond bounded preview candidate li
 
 const EMPTY_ROLLUP_SUMMARY: ControlDistributedRunSnapshot['rollup']['summary'] = {
     participants: 0,
-    requiredParticipants: 0,
     readyParticipants: 0,
     passedParticipants: 0,
     failedParticipants: 0,
     recipes: 0,
-    requiredRecipes: 0,
     passedRecipes: 0,
     failedRecipes: 0,
     groupAssertions: 0,

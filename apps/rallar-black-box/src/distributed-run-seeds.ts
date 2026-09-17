@@ -604,12 +604,10 @@ function toSeedRollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup
         ok: input.ok,
         summary: {
             participants: input.agents.length,
-            requiredParticipants: input.agents.length,
             readyParticipants: input.agents.length,
             passedParticipants: input.agents.length - failedAgents.length,
             failedParticipants: failedAgents.length,
             recipes: 1,
-            requiredRecipes: 1,
             passedRecipes: input.ok ? 1 : 0,
             failedRecipes: input.ok ? 0 : 1,
             groupAssertions: 0,
@@ -621,7 +619,6 @@ function toSeedRollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup
             kind: 'recipe',
             key: SEED_RECIPE.recipeId,
             state: 'failed',
-            required: true,
             error: {
                 code: 'SYNTHETIC_RECIPE_FAILED',
                 message: agent.failureMessage ?? 'Synthetic recipe failed.'

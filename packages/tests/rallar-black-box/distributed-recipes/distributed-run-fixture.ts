@@ -177,12 +177,10 @@ export const distributedRun: ControlDistributedRunSnapshot = {
         ok: false,
         summary: {
             participants: 2,
-            requiredParticipants: 2,
             readyParticipants: 2,
             passedParticipants: 1,
             failedParticipants: 1,
             recipes: 1,
-            requiredRecipes: 1,
             passedRecipes: 0,
             failedRecipes: 1,
             groupAssertions: 0,
@@ -194,7 +192,6 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             kind: 'recipe',
             key: 'health-only',
             state: 'failed',
-            required: true,
             error: {
                 code: 'RECIPE_FAILED',
                 message: 'Receiver did not observe payload.'

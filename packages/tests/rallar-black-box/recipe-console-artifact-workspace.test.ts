@@ -47,17 +47,14 @@ function serverV2Files(
                 kind: 'participant',
                 key: 'agent-eu',
                 state: 'failed',
-                required: true,
                 error: { code: 'rtc-timeout', message: 'Receiver timed out.' }
             }],
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 0,
-                requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 groupAssertions: 0,

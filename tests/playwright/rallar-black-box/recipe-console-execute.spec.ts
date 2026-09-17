@@ -141,12 +141,10 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: ready,
                 passedParticipants: state === 'passed' ? targetAgentIds.length : 0,
                 failedParticipants: state === 'failed' ? targetAgentIds.length : 0,
                 recipes: manifest.recipes.length,
-                requiredRecipes: manifest.recipes.length,
                 passedRecipes: state === 'passed' ? manifest.recipes.length : 0,
                 failedRecipes: state === 'failed' ? manifest.recipes.length : 0,
                 blockingFailures: state === 'failed' ? 1 : 0

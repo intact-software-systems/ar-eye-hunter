@@ -88,7 +88,6 @@ function distributedRun(
             kind: 'recipe' as const,
             key: recipeId,
             state: 'failed' as const,
-            required: true,
             error: {
                 code: input.failureCode,
                 message: `${input.failureCode} happened`
@@ -139,12 +138,10 @@ function distributedRun(
             failures: failure,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: state === 'passed' ? 1 : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,

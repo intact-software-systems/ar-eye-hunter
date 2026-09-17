@@ -1089,13 +1089,11 @@ describe('distributed run monitor indexed derivation', () => {
             failures: [{
                 kind: 'participant',
                 key: 'duplicate-key',
-                state: 'failed',
-                required: true
+                state: 'failed'
             }, {
                 kind: 'recipe',
                 key: 'duplicate-key',
-                state: 'failed',
-                required: true
+                state: 'failed'
             }],
             events: [
                 focusedDiagnostic({
@@ -1449,12 +1447,10 @@ function adversarialScaleInput(): Readonly<{
             ok: false,
             summary: {
                 participants: SCALE,
-                requiredParticipants: SCALE,
                 readyParticipants: Math.ceil(SCALE / phases.length),
                 passedParticipants: SCALE - 6,
                 failedParticipants: 6,
                 recipes: recipeIds.length,
-                requiredRecipes: recipeIds.length,
                 passedRecipes: recipeIds.length - 1,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -1466,13 +1462,11 @@ function adversarialScaleInput(): Readonly<{
                 kind: 'participant',
                 key: agentIds[0]!,
                 state: 'failed',
-                required: true,
                 error: { code: 'PARTICIPANT_FAILED', message: 'Adversarial agent failed.' }
             }, {
                 kind: 'recipe',
                 key: recipeIds[0],
                 state: 'failed',
-                required: true,
                 error: { code: 'RECIPE_FAILED', message: 'Adversarial recipe failed.' }
             }]
         }
@@ -1549,12 +1543,10 @@ function focusedInput(
             ok: false,
             summary: {
                 participants: input.agentIds.length,
-                requiredParticipants: input.agentIds.length,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: failed ? 1 : 0,
                 recipes: input.recipeIds.length,
-                requiredRecipes: input.recipeIds.length,
                 passedRecipes: 0,
                 failedRecipes: failed ? 1 : 0,
                 groupAssertions: 0,

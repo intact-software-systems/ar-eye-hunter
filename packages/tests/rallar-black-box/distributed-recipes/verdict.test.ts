@@ -222,7 +222,6 @@ describe('distributed recipes verdict', () => {
                     kind: 'recipe',
                     key: 'rtc-realtime-stability',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                         message: 'RTC stream did not satisfy configured thresholds.'
@@ -371,7 +370,6 @@ describe('distributed recipes verdict', () => {
                     kind: 'recipe',
                     key: 'health-only',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'HTTP_REQUEST_FAILED',
                         message: 'Request already in-flight for this user.'

@@ -725,7 +725,6 @@ describe('distributed run artifact stream performance', () => {
                         kind: 'participant',
                         key: 'controller-01',
                         state: 'failed',
-                        required: true,
                         error: { code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED', message: 'RTC stream did not satisfy configured thresholds.' }
                     }]
                 }),

@@ -94,12 +94,10 @@ function snapshot(
             ok: state === 'passed',
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: state === 'ready' || state === 'running' || state === 'passed' ? 1 : 0,
                 passedParticipants: state === 'passed' ? 1 : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,

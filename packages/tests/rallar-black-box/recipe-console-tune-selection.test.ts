@@ -78,17 +78,14 @@ function run(
                 kind: 'recipe',
                 key: input.failure,
                 state: 'failed',
-                required: true,
                 error: { code: input.failure, message: `${input.failure} failed` }
             }],
             summary: {
                 participants: input.agents.length,
-                requiredParticipants: input.agents.length,
                 readyParticipants: input.agents.length,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: input.recipes.length,
-                requiredRecipes: input.recipes.length,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,

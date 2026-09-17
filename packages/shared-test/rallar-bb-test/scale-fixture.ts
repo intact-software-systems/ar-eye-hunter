@@ -271,7 +271,6 @@ function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest, c
                 kind: 'participant',
                 key: AGENT_ID,
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'SCALE_UPSTREAM_UNAVAILABLE',
                     message: 'Scale fixture upstream returned 503.'
@@ -279,12 +278,10 @@ function toScaleDistributedRun(manifest: RallarBlackBoxDistributedRunManifest, c
             }],
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,

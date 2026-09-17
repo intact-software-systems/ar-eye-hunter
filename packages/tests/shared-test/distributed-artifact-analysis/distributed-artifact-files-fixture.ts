@@ -178,12 +178,10 @@ export function createDistributedRunSnapshot(
             ok,
             summary: {
                 participants: input.agentIds.length,
-                requiredParticipants: input.agentIds.length,
                 readyParticipants: input.agentIds.length,
                 passedParticipants: ok ? input.agentIds.length : 0,
                 failedParticipants: ok ? 0 : input.agentIds.length,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: ok ? 1 : 0,
                 failedRecipes: ok ? 0 : 1,
                 groupAssertions: 0,

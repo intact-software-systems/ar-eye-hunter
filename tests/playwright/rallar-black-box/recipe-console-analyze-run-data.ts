@@ -94,12 +94,10 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
             ok: false,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -111,7 +109,6 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
                 kind: 'participant',
                 key: ANALYZE_AGENT_ID,
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RTC_NO_RELAY',
                     message: ANALYZE_FAILURE_MESSAGE

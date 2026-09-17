@@ -36,12 +36,10 @@ function distributedRun(): ControlDistributedRunSnapshot {
             ok: false,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -53,7 +51,6 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 kind: 'recipe',
                 key: 'rtc-stream',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                     message: 'RTC stream pacing exceeded its threshold.'

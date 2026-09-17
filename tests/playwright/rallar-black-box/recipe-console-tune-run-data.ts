@@ -149,12 +149,10 @@ export function createTuneDistributedRun(
             ok: !right,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 2,
                 passedParticipants: right ? 1 : 2,
                 failedParticipants: right ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: right ? 0 : 1,
                 failedRecipes: right ? 1 : 0,
                 groupAssertions: 0,
@@ -167,7 +165,6 @@ export function createTuneDistributedRun(
                     kind: 'recipe',
                     key: `${TUNE_STREAM_RECIPE_ID}:${TUNE_SLOW_AGENT_ID}`,
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                         message: 'RTC stream exceeded pacing and backlog thresholds.'

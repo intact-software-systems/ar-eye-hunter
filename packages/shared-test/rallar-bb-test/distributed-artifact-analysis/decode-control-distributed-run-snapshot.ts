@@ -79,12 +79,10 @@ const ROLLUP_FAILURE_KINDS = Object.keys(
 const ROLLUP_SUMMARY_COUNTERS = Object.keys(
     {
         participants: true,
-        requiredParticipants: true,
         readyParticipants: true,
         passedParticipants: true,
         failedParticipants: true,
         recipes: true,
-        requiredRecipes: true,
         passedRecipes: true,
         failedRecipes: true,
         groupAssertions: true,
@@ -291,7 +289,6 @@ function decodeRollupFailure(
         [isOneOf(value.kind, ROLLUP_FAILURE_KINDS), `${path}.kind must be participant, recipe or group-assertion`],
         [isNonEmptyText(value.key), `${path}.key must be a non-empty string`],
         [isOneOf(value.state, RUN_ITEM_STATES), `${path}.state must be a distributed run item state`],
-        [typeof value.required === 'boolean', `${path}.required must be a boolean`],
         [isAbsentOrRunError(value.error), `${path}.error must carry a code and message when present`]
     ]);
     return issue === undefined

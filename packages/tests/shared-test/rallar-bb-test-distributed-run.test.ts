@@ -389,7 +389,7 @@ describe('rallar-bb-test distributed run contract', () => {
         expect(participantFailure.state).toBe('failed');
         expect(participantFailure.summary.blockingFailures).toBe(1);
 
-        const requiredFailure = rollupDistributedRunResult({
+        const recipeFailure = rollupDistributedRunResult({
             recipes: [
                 {
                     recipeKey: 'bob:health',
@@ -403,13 +403,14 @@ describe('rallar-bb-test distributed run contract', () => {
                 }
             ]
         });
-        expect(requiredFailure.state).toBe('failed');
-        expect(requiredFailure.failures[0]).toMatchObject({
+        expect(recipeFailure.state).toBe('failed');
+        expect(recipeFailure.failures[0]).toEqual({
             kind: 'recipe',
             key: 'bob:health',
-            required: true,
+            state: 'failed',
             error: {
-                code: 'recipe-failed'
+                code: 'recipe-failed',
+                message: 'Health recipe failed.'
             }
         });
 
@@ -548,15 +549,24 @@ describe('rallar-bb-test distributed run contract', () => {
 
         expect(rollup.state).toBe('failed');
         expect(rollup.ok).toBe(false);
-        expect(rollup.summary.groupAssertions).toBe(2);
-        expect(rollup.summary.passedGroupAssertions).toBe(1);
-        expect(rollup.summary.failedGroupAssertions).toBe(1);
+        expect(rollup.summary).toEqual({
+            participants: 2,
+            readyParticipants: 2,
+            passedParticipants: 2,
+            failedParticipants: 0,
+            recipes: 2,
+            passedRecipes: 2,
+            failedRecipes: 0,
+            groupAssertions: 2,
+            passedGroupAssertions: 1,
+            failedGroupAssertions: 1,
+            blockingFailures: 1
+        });
         expect(rollup.failures).toEqual([
             {
                 kind: 'group-assertion',
                 key: 'members-agree',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
                     message: 'Group assertion members-agree failed.'

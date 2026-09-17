@@ -2345,12 +2345,10 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             ok: false,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 groupAssertions: 0,
@@ -2809,12 +2807,10 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             ok: false,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 2,
                 passedParticipants: 1,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -2826,7 +2822,6 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 kind: 'recipe',
                 key: 'diagnostic-recipe',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RECIPE_FAILED',
                     message: 'Receiver did not observe payload.'

@@ -195,7 +195,6 @@ describe('distributed recipes history', () => {
                     kind: 'participant',
                     key: 'agent-a',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT',
                         message: 'Barrier timed out.'
@@ -213,7 +212,6 @@ describe('distributed recipes history', () => {
                     kind: 'participant',
                     key: 'agent-b',
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RALLAR_BB_DISTRIBUTED_ACK_TIMEOUT',
                         message: 'Agent ACK timeout.'

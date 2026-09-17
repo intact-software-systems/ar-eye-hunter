@@ -263,12 +263,10 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
             ok: false,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -280,7 +278,6 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
                 kind: 'recipe',
                 key: 'http-failure',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'HTTP_FAILED',
                     message: 'HTTP request failed.',

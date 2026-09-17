@@ -429,12 +429,10 @@ describe('rallar-black-box control run manager', () => {
                 ok: false,
                 summary: {
                     participants: 1,
-                    requiredParticipants: 1,
                     readyParticipants: 0,
                     passedParticipants: 0,
                     failedParticipants: 0,
                     recipes: 0,
-                    requiredRecipes: 0,
                     passedRecipes: 0,
                     failedRecipes: 0,
                     blockingFailures: 0
