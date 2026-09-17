@@ -110,3 +110,26 @@ Deno.test('control snapshot restore rejects an agent identity without its sessio
     assertEquals(warnings.length, 1);
     assert(warnings[0].includes('agents[0].identity.sessionLabel must be a non-empty string'), warnings[0]);
 });
+
+Deno.test('control snapshot restore rejects a snapshot without its fleet reports instead of restoring none', async () => {
+    const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
+    delete persisted.fleetReports;
+
+    const { service, warnings } = await restoreSnapshotText(persisted);
+
+    assertEquals(service.snapshotRun('run-1'), undefined);
+    assertEquals(service.listDistributedRuns(), []);
+    assertEquals(warnings.length, 1);
+    assert(warnings[0].endsWith(': fleetReports must be an array'), warnings[0]);
+});
+
+Deno.test('control snapshot restore rejects a snapshot without its distributed runs instead of restoring none', async () => {
+    const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
+    delete persisted.distributedRuns;
+
+    const { service, warnings } = await restoreSnapshotText(persisted);
+
+    assertEquals(service.snapshotRun('run-1'), undefined);
+    assertEquals(warnings.length, 1);
+    assert(warnings[0].endsWith(': distributedRuns must be an array'), warnings[0]);
+});

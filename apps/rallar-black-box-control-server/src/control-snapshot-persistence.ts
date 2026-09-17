@@ -139,13 +139,16 @@ function decodeSnapshotFile(value: unknown): Either<string, ControlServerSnapsho
         return Either.ofLeft('the file holds no control snapshot object');
     }
     const { runs, distributedRuns, fleetReports } = value.snapshot;
-    const fleet = validateControlFleetRunReportCollection(fleetReports ?? []);
+    if (!Array.isArray(fleetReports)) {
+        return Either.ofLeft('fleetReports must be an array');
+    }
+    const fleet = validateControlFleetRunReportCollection(fleetReports);
     const fleetIssue = fleet.issues[0];
     if (!fleet.ok) {
         return Either.ofLeft(`fleetReports${fleetIssue?.path.slice(1) ?? ''}: ${fleetIssue?.message ?? 'invalid'}`);
     }
     const decodedDistributedRuns = decodeArrayItems(
-        distributedRuns ?? [],
+        distributedRuns,
         'distributedRuns',
         (run, runPath) => decodeControlDistributedRunSnapshot(run).mapLeft((issue) => `${runPath}: ${issue}`)
     );
