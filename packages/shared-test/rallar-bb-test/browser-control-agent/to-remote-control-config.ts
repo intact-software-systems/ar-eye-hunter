@@ -8,11 +8,6 @@ export interface ToRemoteControlConfigInput {
     readonly hasStoredAuthSession: boolean;
 }
 
-export interface ToRallarBlackBoxRallarConfigInput {
-    readonly bootstrap: RallarBlackBoxBootstrapConfig;
-    readonly hasStoredAuthSession: boolean;
-}
-
 export function toRemoteControlConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestConfig {
     const { bootstrap } = input;
     return {
@@ -47,7 +42,7 @@ export function toRemoteControlConfig(input: ToRemoteControlConfigInput): Rallar
 }
 
 /** A simulated agent signs in with the local demo credentials; a real agent signs in, registers or restores. */
-export function toRallarBlackBoxRallarConfig(input: ToRallarBlackBoxRallarConfigInput): RallarBlackBoxTestRecord {
+export function toRallarBlackBoxRallarConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestRecord {
     const { bootstrap } = input;
     if (bootstrap.providerMode === 'simulated') {
         return {
