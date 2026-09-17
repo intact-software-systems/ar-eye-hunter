@@ -83,12 +83,7 @@ function computeGroupAssertionResult(
     const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
     const brokenEvidence = rows.filter((row) => row.status === 'duplicate' || row.status === 'unresolved');
-    const missingAgentIds = rows
-        .filter((row) => row.status === 'missing')
-        .map((row) => row.agentId);
-    const evidenceOk = brokenEvidence.length === 0 && resolved.length >= requiredParticipants;
     const verdict = evaluateGroupAssertionAggregate(assertion, resolved);
-    const perAgent = toRedactedAgentRows(rows, verdict, input.redaction);
 
     return toGroupAssertionResult({
         assertion,
@@ -97,24 +92,27 @@ function computeGroupAssertionResult(
             required: requiredParticipants,
             withEvidence: resolved.length
         },
-        outcome: {
-            ok: evidenceOk && verdict.ok,
-            missingAgentIds,
-            violatingAgentIds: verdict.violatingAgentIds,
-            perAgent,
-            error: evidenceOk && verdict.ok
-                ? undefined
-                : toGroupAssertionError({
-                    assertion,
-                    perAgent,
-                    verdict,
-                    evidenceOk,
-                    missingAgentIds,
-                    brokenEvidence,
-                    redaction: input.redaction
-                })
-        }
+        outcome: toGroupAssertionOutcome({
+            assertion,
+            perAgent: toRedactedAgentRows(rows, verdict, input.redaction),
+            verdict,
+            evidenceOk: brokenEvidence.length === 0 && resolved.length >= requiredParticipants,
+            missingAgentIds: rows.filter((row) => row.status === 'missing').map((row) => row.agentId),
+            brokenEvidence,
+            redaction: input.redaction
+        })
     });
+}
+
+function toGroupAssertionOutcome(input: ToGroupAssertionOutcomeInput): GroupAssertionOutcome {
+    const ok = input.evidenceOk && input.verdict.ok;
+    return {
+        ok,
+        missingAgentIds: input.missingAgentIds,
+        violatingAgentIds: input.verdict.violatingAgentIds,
+        perAgent: input.perAgent,
+        error: ok ? undefined : toGroupAssertionError(input)
+    };
 }
 
 function toGroupAssertionResult(input: ToGroupAssertionResultInput): RallarBlackBoxDistributedGroupAssertionResult {
@@ -164,16 +162,18 @@ function toRedactedAgentRows(
     );
 }
 
+type GroupAssertionOutcome = Pick<
+    RallarBlackBoxMatchingGroupAssertionResult,
+    'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
+>;
+
 interface ToGroupAssertionResultInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
     readonly counts: RallarBlackBoxGroupAssertionParticipantCounts;
-    readonly outcome: Pick<
-        RallarBlackBoxMatchingGroupAssertionResult,
-        'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
-    >;
+    readonly outcome: GroupAssertionOutcome;
 }
 
-interface ToGroupAssertionErrorInput {
+interface ToGroupAssertionOutcomeInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
     readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
     readonly verdict: GroupAssertionVerdict;
@@ -184,7 +184,7 @@ interface ToGroupAssertionErrorInput {
 }
 
 function toGroupAssertionError(
-    input: ToGroupAssertionErrorInput
+    input: ToGroupAssertionOutcomeInput
 ): RallarBlackBoxDistributedGroupAssertionResult['error'] {
     const assertion = input.assertion;
     const details = redactRallarBlackBoxValue({
