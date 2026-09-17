@@ -35,7 +35,6 @@ type RallarBlackBoxRtcClientCloseListener = (
 interface RtcClientEventSubscriptionInput {
     readonly runtime: RallarBlackBoxTestRuntime;
     readonly connection: string;
-    readonly seenEventIds: Set<string>;
     readonly matches: (event: RallarBlackBoxTestEvent) => boolean;
     readonly deliver: (event: RallarBlackBoxTestEvent) => void;
 }
@@ -76,8 +75,6 @@ class RallarBlackBoxRtcClientAdapter implements RtcClient {
     private readonly request: RallarBlackBoxTestRecord;
     private readonly options: RallarBlackBoxRtcClientAdapterOptions;
     private readonly connection: string;
-    private readonly seenMessageEventIds = new Set<string>();
-    private readonly seenCloseEventIds = new Set<string>();
     private sequence = 1;
     private unsubscribeMessages: (() => void) | undefined;
     private unsubscribeClose: (() => void) | undefined;
@@ -144,7 +141,6 @@ class RallarBlackBoxRtcClientAdapter implements RtcClient {
         this.unsubscribeMessages = subscribeToRtcClientEvents({
             runtime: this.runtime,
             connection: this.connection,
-            seenEventIds: this.seenMessageEventIds,
             matches: (event) => event.kind === 'message',
             deliver: (event) => listener(toRtcMessage(event))
         });
@@ -155,7 +151,6 @@ class RallarBlackBoxRtcClientAdapter implements RtcClient {
         this.unsubscribeClose = subscribeToRtcClientEvents({
             runtime: this.runtime,
             connection: this.connection,
-            seenEventIds: this.seenCloseEventIds,
             matches: (event) => event.kind === 'event' && event.topic.includes('close'),
             deliver: (event) => listener(decodeRtcMessagePayload(event.payload) ?? event)
         });
@@ -197,21 +192,20 @@ function toRtcMessage(event: RallarBlackBoxTestEvent): RallarBlackBoxTestJsonVal
     return decodeRtcMessagePayload(Object.hasOwn(payload, 'data') ? payload.data : event.payload);
 }
 
+/** Events already recorded when the listener subscribes are not delivered to it. */
 function subscribeToRtcClientEvents(input: RtcClientEventSubscriptionInput): () => void {
-    input.runtime.state().events.forEach((event) => {
-        input.seenEventIds.add(event.eventId);
-    });
+    const seenEventIds = new Set(input.runtime.state().events.map((event) => event.eventId));
     return input.runtime.subscribe((state) => {
         state.events.forEach((event) => {
             if (
-                input.seenEventIds.has(event.eventId) ||
+                seenEventIds.has(event.eventId) ||
                 !input.matches(event) ||
                 (event.connection && event.connection !== input.connection)
             ) {
                 return;
             }
 
-            input.seenEventIds.add(event.eventId);
+            seenEventIds.add(event.eventId);
             input.deliver(event);
         });
     });
