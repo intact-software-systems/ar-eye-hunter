@@ -1,4 +1,5 @@
 import type { DistributedArtifactEvidenceEntry } from '../distributed-artifact-evidence-contracts.ts';
+import { computeCanonicalDigest } from './compute-canonical-digest.ts';
 import type { RawSearchValueReader } from './create-raw-search-value-reader.ts';
 
 /** A source entry the catalog keeps, with the digest of its canonical form. */
@@ -127,13 +128,4 @@ function toCanonicalEvidenceEntry(entry: DistributedArtifactEvidenceEntry): stri
             ]
             : null
     ]);
-}
-
-async function computeCanonicalDigest(value: string): Promise<string> {
-    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
-    let binary = '';
-    for (const byte of digest) {
-        binary += String.fromCharCode(byte);
-    }
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }

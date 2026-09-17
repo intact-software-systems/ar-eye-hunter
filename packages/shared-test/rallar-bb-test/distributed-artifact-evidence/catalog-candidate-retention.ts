@@ -1,9 +1,7 @@
 import { MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES } from '../distributed-artifact-evidence-contracts.ts';
-import {
-    compareEvidenceEntries,
-    resolvePrimaryDistributedArtifactResultFailure
-} from './distributed-artifact-evidence-order.ts';
+import { compareEvidenceEntries } from './compare-evidence-entries.ts';
 import type { CatalogCandidate } from './resolve-distinct-catalog-candidates.ts';
+import { resolvePrimaryDistributedArtifactResultFailure } from './resolve-primary-distributed-artifact-result-failure.ts';
 
 /** The candidates a full catalog keeps before its newest entries; each is undefined when the artifact has none. */
 export interface CatalogAnchors {

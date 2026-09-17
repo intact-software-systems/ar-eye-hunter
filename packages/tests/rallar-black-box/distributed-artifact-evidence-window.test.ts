@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { parseBlackBoxRunnerArtifactIndex } from '../../../packages/shared-test/black-box-runner/artifacts/artifact-reader.ts';
-import { computeDistributedArtifactEvidenceCollections } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-artifact-evidence-collections.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
@@ -9,17 +8,13 @@ import {
     type DistributedArtifactEvidenceCatalog,
     type DistributedArtifactEvidenceCursor
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
-import {
-    computeDistributedArtifactEvidenceIndex,
-    computeDistributedArtifactEvidenceSource
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
+import { computeDistributedArtifactEvidenceIndex } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
 import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
 import {
-    distributedArtifactEvidenceWindowWorkForTest,
-    issueDistributedArtifactEvidenceCursorForTest,
-    resetDistributedArtifactEvidenceWindowWorkForTest,
+    computeDistributedArtifactEvidenceCollections,
     searchDistributedArtifactEvidenceWindow
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
+import { computeDistributedArtifactEvidenceSource } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/compute-distributed-artifact-evidence-source.ts';
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import {
     createDefaultRecipeConsoleScaleFixture,
@@ -61,6 +56,45 @@ type JsonRecord = Record<string, unknown>;
 interface DigestWatch {
     calls: number;
     peakInFlight: number;
+}
+
+interface WindowWork {
+    cursorVerifications: number;
+    entryReads: number;
+}
+
+interface WindowWorkWatch {
+    readonly work: WindowWork;
+    readonly stop: () => void;
+}
+
+/** Counts cursor signature checks and reads of the catalog's entries until the watch stops. */
+function startWindowWorkWatch(catalog: DistributedArtifactEvidenceCatalog): WindowWorkWatch {
+    const work: WindowWork = { cursorVerifications: 0, entryReads: 0 };
+    const entries = catalog.entries;
+    const verify = crypto.subtle.verify.bind(crypto.subtle);
+    const spy = vi.spyOn(crypto.subtle, 'verify').mockImplementation((algorithm, key, signature, data) => {
+        work.cursorVerifications += 1;
+        return verify(algorithm, key, signature, data);
+    });
+    Object.defineProperty(catalog, 'entries', {
+        configurable: true,
+        value: new Proxy(entries, {
+            get(target, property, receiver) {
+                if (typeof property === 'string' && /^\d+$/.test(property)) {
+                    work.entryReads += 1;
+                }
+                return Reflect.get(target, property, receiver);
+            }
+        })
+    });
+    return {
+        work,
+        stop: () => {
+            spy.mockRestore();
+            Object.defineProperty(catalog, 'entries', { configurable: true, value: entries });
+        }
+    };
 }
 
 /** Counts SHA-256 digests and the most that run at once while the catalog is computed. */
@@ -152,8 +186,10 @@ describe('distributed artifact evidence catalog windows', () => {
         let cursor: DistributedArtifactEvidenceCursor | undefined;
         let firstWindow: Awaited<ReturnType<typeof searchDistributedArtifactEvidenceWindow>> | undefined;
         let lastWindow: Awaited<ReturnType<typeof searchDistributedArtifactEvidenceWindow>> | undefined;
-        resetDistributedArtifactEvidenceWindowWorkForTest(catalog);
+        const pagingWatch = startWindowWorkWatch(catalog);
+        let cursorSearches = 0;
         do {
+            cursorSearches += cursor ? 1 : 0;
             const result = await searchDistributedArtifactEvidenceWindow(catalog, {
                 cursor,
                 windowSize: 64
@@ -195,6 +231,7 @@ describe('distributed artifact evidence catalog windows', () => {
                 : []
         );
         while (previousCursor) {
+            cursorSearches += 1;
             const result = await searchDistributedArtifactEvidenceWindow(catalog, {
                 cursor: previousCursor,
                 windowSize: 64
@@ -205,16 +242,12 @@ describe('distributed artifact evidence catalog windows', () => {
             backwardPages.push(result.window.entries.map((entry) => entry.id));
             previousCursor = result.window.previousCursor;
         }
+        pagingWatch.stop();
         expect(backwardPages.reverse().flat()).toEqual(collected);
-        expect(distributedArtifactEvidenceWindowWorkForTest(catalog)).toEqual({
-            cursorVerificationAttempts: 468,
-            queryBuildCount: 1,
-            queryCacheHits: 468,
-            matchEvaluations: 15_003,
-            matchIndexWrites: 15_003,
-            windowIndexReads: 29_979,
-            peakMatchIndexCapacity: 15_003
-        });
+        // Each cursor is verified once, and paging matches the catalog once rather than once per window.
+        expect(cursorSearches).toBe(468);
+        expect(pagingWatch.work.cursorVerifications).toBe(cursorSearches);
+        expect(pagingWatch.work.entryReads).toBeLessThan(4 * catalog.entries.length);
 
         for (
             const [windowSize, expected] of [
@@ -356,24 +389,19 @@ describe('distributed artifact evidence catalog windows', () => {
         const signatureBytes = Buffer.from(cursorSignature ?? '', 'base64url');
         signatureBytes[0] = (signatureBytes[0] ?? 0) ^ 0xff;
         const tamperedSignature = `${cursorBody}.${signatureBytes.toString('base64url')}`;
-        resetDistributedArtifactEvidenceWindowWorkForTest(firstCollections.catalog);
-        expect(
-            await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
-                cursor: tamperedSignature,
-                query: { query: 'scale' },
-                windowSize: 10
-            })
-        ).toMatchObject({ ok: false, rejection: { code: 'cursor-tampered' } });
-        expect(distributedArtifactEvidenceWindowWorkForTest(firstCollections.catalog))
-            .toEqual({
-                cursorVerificationAttempts: 1,
-                queryBuildCount: 0,
-                queryCacheHits: 0,
-                matchEvaluations: 0,
-                matchIndexWrites: 0,
-                windowIndexReads: 0,
-                peakMatchIndexCapacity: 0
-            });
+        const tamperedWatch = startWindowWorkWatch(firstCollections.catalog);
+        // A query no earlier window matched, so any matching before the signature check would read the catalog.
+        const tampered = await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
+            cursor: tamperedSignature,
+            query: { query: 'scale unmatched probe' },
+            windowSize: 10
+        });
+        tamperedWatch.stop();
+        expect(tampered).toMatchObject({ ok: false, rejection: { code: 'cursor-tampered' } });
+        expect(tamperedWatch.work, 'a tampered cursor is refused before any evidence is matched').toEqual({
+            cursorVerifications: 1,
+            entryReads: 0
+        });
         expect(
             await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
                 cursor,
@@ -381,16 +409,24 @@ describe('distributed artifact evidence catalog windows', () => {
                 windowSize: 10
             })
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-query-mismatch' } });
-        const outOfRange = await issueDistributedArtifactEvidenceCursorForTest(
-            firstCollections.catalog,
-            { query: { query: 'scale' }, windowSize: 10, offset: Number.MAX_SAFE_INTEGER }
-        );
+        const shrinking = await computeDistributedArtifactEvidenceCollections(input);
+        const shrinkingFirst = await searchDistributedArtifactEvidenceWindow(shrinking.catalog, {
+            query: { query: 'scale' },
+            windowSize: 10
+        });
+        if (!shrinkingFirst.ok || !shrinkingFirst.window.nextCursor) {
+            throw new Error('Expected a next cursor.');
+        }
+        Object.defineProperty(shrinking.catalog, 'entries', { value: shrinking.catalog.entries.slice(0, 5) });
+        // Another query replaces the single cached match index, so the cursor's query is matched again.
+        await searchDistributedArtifactEvidenceWindow(shrinking.catalog, { query: { query: 'other' } });
         expect(
-            await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
-                cursor: outOfRange,
+            await searchDistributedArtifactEvidenceWindow(shrinking.catalog, {
+                cursor: shrinkingFirst.window.nextCursor,
                 query: { query: 'scale' },
                 windowSize: 10
-            })
+            }),
+            'a signed cursor past the matches of a catalog whose entries changed under it'
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-out-of-range' } });
 
         expect(Object.keys(decodeCursorBody(cursor)).sort()).toEqual([

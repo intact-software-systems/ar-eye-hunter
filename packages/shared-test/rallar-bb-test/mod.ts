@@ -33,7 +33,6 @@ export * from './companion-coverage.ts';
 export * from './composite-conformance.ts';
 export * from './composite-result-paths.ts';
 export * from './composite-results.ts';
-export { computeDistributedArtifactEvidenceCollections } from './compute-distributed-artifact-evidence-collections.ts';
 export * from './compute-distributed-run-tuning-inventory.ts';
 export * from './conformance/assertion-outcome-parity.ts';
 export * from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
@@ -48,45 +47,12 @@ export * from './diagnostics.ts';
 export * from './distributed-artifact-analysis.ts';
 export type { DistributedRunControlPostRequest } from './distributed-artifact-analysis/decode-control-post-request.ts';
 export type { DistributedRunRunnerSummary } from './distributed-artifact-analysis/decode-distributed-run-runner-summary.ts';
-export type {
-    ComputeDistributedArtifactEvidenceIndexInput,
-    ComputeDistributedArtifactEvidenceInput,
-    DistributedArtifactEvidenceCatalog,
-    DistributedArtifactEvidenceCollections,
-    DistributedArtifactEvidenceCursor,
-    DistributedArtifactEvidenceCursorRejectionCode,
-    DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceFailureDetails,
-    DistributedArtifactEvidenceIndex,
-    DistributedArtifactEvidenceKind,
-    DistributedArtifactEvidenceLimits,
-    DistributedArtifactEvidenceSearchQuery,
-    DistributedArtifactEvidenceSearchResult,
-    DistributedArtifactEvidenceWindow,
-    DistributedArtifactEvidenceWindowCounts,
-    DistributedArtifactEvidenceWindowQuery,
-    DistributedArtifactEvidenceWindowRequest,
-    DistributedArtifactEvidenceWindowResult
-} from './distributed-artifact-evidence-contracts.ts';
-export {
-    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
-    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE,
-    MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
-    MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_WINDOW_SIZE
-} from './distributed-artifact-evidence-contracts.ts';
-export {
-    computeDistributedArtifactEvidence,
-    computeDistributedArtifactEvidenceIndex
-} from './distributed-artifact-evidence-index.ts';
-export { searchDistributedArtifactEvidence } from './distributed-artifact-evidence-search.ts';
-export { searchDistributedArtifactEvidenceWindow } from './distributed-artifact-evidence-window.ts';
-export { resolvePrimaryDistributedArtifactResultFailure } from './distributed-artifact-evidence/distributed-artifact-evidence-order.ts';
-export {
-    DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
-    type DistributedArtifactIssueMarkdownLimits,
-    toDistributedArtifactIssueMarkdown,
-    type ToDistributedArtifactIssueMarkdownInput
-} from './distributed-artifact-evidence/to-distributed-artifact-issue-markdown.ts';
+export * from './distributed-artifact-evidence-contracts.ts';
+export * from './distributed-artifact-evidence-index.ts';
+export * from './distributed-artifact-evidence-search.ts';
+export * from './distributed-artifact-evidence-window.ts';
+export * from './distributed-artifact-evidence/resolve-primary-distributed-artifact-result-failure.ts';
+export * from './distributed-artifact-evidence/to-distributed-artifact-issue-markdown.ts';
 export * from './distributed-artifact-pipeline.ts';
 export type {
     DistributedArtifactFamily,

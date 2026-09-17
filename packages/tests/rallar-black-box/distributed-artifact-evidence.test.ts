@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { computeDistributedArtifactEvidenceCollections } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-artifact-evidence-collections.ts';
 import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
@@ -13,6 +12,7 @@ import {
     computeDistributedArtifactEvidenceIndex
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
 import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
+import { computeDistributedArtifactEvidenceCollections } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
     toDistributedArtifactIssueMarkdown
