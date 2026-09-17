@@ -793,19 +793,24 @@ export interface RallarBlackBoxTestLoopResultValue {
     readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
 }
 
+/** Every scheduled frame records its timing; a dropped frame starts and completes at the moment it was dropped. */
 export interface RallarBlackBoxTestRtcStreamFrameObservation {
     readonly index: number;
     readonly iteration: number;
     readonly commandId: string;
     readonly scheduledAtEpochMs: number;
-    readonly startedAtEpochMs?: number;
-    readonly completedAtEpochMs?: number;
-    readonly startDriftMs?: number;
-    readonly durationMs?: number;
+    readonly startedAtEpochMs: number;
+    readonly completedAtEpochMs: number;
+    readonly startDriftMs: number;
+    readonly durationMs: number;
     readonly ok: boolean;
-    readonly dropped?: boolean;
+    /** Present only when the in-flight limit dropped the frame before it was sent. */
+    readonly dropped?: true;
+    /** Absent when no send result was decoded for the frame. */
     readonly backpressured?: boolean;
+    /** Absent when the send result did not decode. */
     readonly status?: string;
+    /** Absent when the frame completed without an error. */
     readonly errorCode?: string;
 }
 
@@ -813,12 +818,13 @@ export interface RallarBlackBoxTestRtcStreamThresholdFailure {
     readonly name: keyof RallarBlackBoxTestRtcStreamThresholds;
     readonly category: 'pacing' | 'delivery' | 'backpressure';
     readonly threshold: number | boolean;
-    readonly actual?: number | boolean;
+    readonly actual: number | boolean;
     readonly message: string;
 }
 
 export interface RallarBlackBoxTestRtcStreamResultValue {
     readonly commandId: string;
+    /** Absent when the stream command names no transport. */
     readonly transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
     readonly plannedFrames: number;
     readonly scheduledFrames: number;
@@ -830,9 +836,13 @@ export interface RallarBlackBoxTestRtcStreamResultValue {
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly elapsedMs: number;
+    /** Absent when the command sets no rate and no positive interval. */
     readonly requestedRateHz?: number;
+    /** Absent when no time elapsed. */
     readonly achievedScheduleHz?: number;
+    /** Absent when no time elapsed. */
     readonly achievedCompletionHz?: number;
+    /** Each drift and jitter statistic is absent when too few frames were scheduled to compute it. */
     readonly pacing: Readonly<{
         intervalMs: number;
         maxStartDriftMs?: number;
@@ -840,6 +850,7 @@ export interface RallarBlackBoxTestRtcStreamResultValue {
         maxJitterMs?: number;
         lateFrameCount: number;
     }>;
+    /** Each statistic is absent when no frame was attempted. */
     readonly duration: Readonly<{
         minMs?: number;
         p50Ms?: number;

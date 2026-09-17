@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-    planRallarBlackBoxRtcStreamFrames,
-    replaceRallarBlackBoxRtcStreamPlaceholders,
-    summarizeRallarBlackBoxRtcStreamObservations
+    computeRallarBlackBoxRtcStreamPlan,
+    computeRallarBlackBoxRtcStreamResultValue,
+    toRallarBlackBoxRtcStreamFramePayload
 } from '../../shared-test/rallar-bb-test/rtc-stream.ts';
 
 describe('rallar-bb-test rtc stream helpers', () => {
     it('plans count, duration, and rate based frame schedules', () => {
-        expect(planRallarBlackBoxRtcStreamFrames({ count: 3, intervalMs: 50 })).toEqual({
+        expect(computeRallarBlackBoxRtcStreamPlan({ count: 3, intervalMs: 50 })).toEqual({
             intervalMs: 50,
             requestedRateHz: 20,
             frames: [
@@ -17,13 +17,13 @@ describe('rallar-bb-test rtc stream helpers', () => {
             ]
         });
 
-        expect(planRallarBlackBoxRtcStreamFrames({ durationMs: 125, intervalMs: 50 }).frames).toEqual([
+        expect(computeRallarBlackBoxRtcStreamPlan({ durationMs: 125, intervalMs: 50 }).frames).toEqual([
             { index: 0, iteration: 1, scheduledElapsedMs: 0 },
             { index: 1, iteration: 2, scheduledElapsedMs: 50 },
             { index: 2, iteration: 3, scheduledElapsedMs: 100 }
         ]);
 
-        const twentyHz = planRallarBlackBoxRtcStreamFrames({ durationMs: 5_000, rateHz: 20 });
+        const twentyHz = computeRallarBlackBoxRtcStreamPlan({ durationMs: 5_000, rateHz: 20 });
         expect(twentyHz.intervalMs).toBe(50);
         expect(twentyHz.requestedRateHz).toBe(20);
         expect(twentyHz.frames).toHaveLength(100);
@@ -35,7 +35,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
     });
 
     it('replaces stream placeholders inside nested send payloads', () => {
-        const resolved = replaceRallarBlackBoxRtcStreamPlaceholders({
+        const resolved = toRallarBlackBoxRtcStreamFramePayload({
             data: {
                 commandId: '{stream.commandId}',
                 index: '{stream.index}',
@@ -65,7 +65,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
     });
 
     it('summarizes stream observations with percentiles, pacing, and threshold failures', () => {
-        const summary = summarizeRallarBlackBoxRtcStreamObservations({
+        const summary = computeRallarBlackBoxRtcStreamResultValue({
             commandId: 'stream-position',
             transport: 'realtime',
             startedAtEpochMs: 1_000,

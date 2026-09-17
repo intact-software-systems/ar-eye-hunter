@@ -9,11 +9,12 @@ import type {
     RallarBlackBoxTestRtcStreamResultValue
 } from '../rallar-black-box-test-contracts.ts';
 import {
-    planRallarBlackBoxRtcStreamFrames,
-    replaceRallarBlackBoxRtcStreamPlaceholders,
-    sampleRallarBlackBoxRtcStreamObservations,
-    summarizeRallarBlackBoxRtcStreamObservations,
-    type RallarBlackBoxRtcStreamPlaceholderContext
+    computeRallarBlackBoxRtcStreamPlan,
+    computeRallarBlackBoxRtcStreamResultValue,
+    toRallarBlackBoxRtcStreamFramePayload,
+    toRallarBlackBoxRtcStreamObservationSample,
+    type RallarBlackBoxRtcStreamPlaceholderContext,
+    type RallarBlackBoxRtcStreamPlan
 } from '../rtc-stream.ts';
 
 import {
@@ -80,7 +81,7 @@ export class BrowserRtcStream {
     private readonly environment: BrowserCommandEnvironment;
     private readonly command: RtcStreamCommand;
     private readonly context: RallarBlackBoxTestCommandContext;
-    private readonly plan: ReturnType<typeof planRallarBlackBoxRtcStreamFrames>;
+    private readonly plan: RallarBlackBoxRtcStreamPlan;
     private readonly rallarRuntime: RallarBlackBoxBrowserRallarRuntime;
     private readonly abort: BrowserCommandAbortScope;
     private readonly streamStartedAtEpochMs: number;
@@ -97,7 +98,7 @@ export class BrowserRtcStream {
         this.command = command;
         this.context = context;
         this.environment = environment;
-        this.plan = planRallarBlackBoxRtcStreamFrames({
+        this.plan = computeRallarBlackBoxRtcStreamPlan({
             count: command.count,
             durationMs: command.durationMs,
             intervalMs: command.intervalMs,
@@ -191,7 +192,7 @@ export class BrowserRtcStream {
         });
         const scopedSend = toScopedRtcSend(
             this.command,
-            replaceRallarBlackBoxRtcStreamPlaceholders(resolvedSend, streamContext)
+            toRallarBlackBoxRtcStreamFramePayload(resolvedSend, streamContext)
         );
         this.active.set(frame.commandId, frame);
         const sending = this.sendFrame(frame, scopedSend);
@@ -269,7 +270,7 @@ export class BrowserRtcStream {
     }
 
     private toOutcome(): RallarBlackBoxTestCommandOutcome {
-        const summarized = summarizeRallarBlackBoxRtcStreamObservations({
+        const summarized = computeRallarBlackBoxRtcStreamResultValue({
             commandId: this.command.commandId,
             transport: this.command.transport,
             startedAtEpochMs: this.streamStartedAtEpochMs,
@@ -282,7 +283,7 @@ export class BrowserRtcStream {
         });
         const outcome = toStreamOutcome(this.command, {
             ...summarized,
-            observations: sampleRallarBlackBoxRtcStreamObservations(
+            observations: toRallarBlackBoxRtcStreamObservationSample(
                 summarized.observations,
                 toPositiveInteger(this.command.sampleEvery, 1)
             )
