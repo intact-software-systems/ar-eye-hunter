@@ -1,8 +1,4 @@
 import type { WaitObservationSource } from '../expectations/wait-observation-source.ts';
-import {
-    runWithRemoteBrowserEventSync,
-    type RemoteBrowserObservationSync
-} from '../remote-browser/remote-browser-observation-sync.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
     toWsExpectedConnectionName,
@@ -18,6 +14,10 @@ import {
     type WsInteractionResult,
     type WsWaitInput
 } from '../ws/ws-wait-expectations.ts';
+import {
+    runWithRemoteBrowserEventSync,
+    type RemoteBrowserObservationSync
+} from './remote-browser-observation-sync.ts';
 import type { RemoteWsContext } from './remote-ws-connection.ts';
 
 export interface RemoteWsWaitInput extends RemoteBrowserObservationSync.Connection {

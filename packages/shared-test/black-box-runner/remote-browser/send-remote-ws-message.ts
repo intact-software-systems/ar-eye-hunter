@@ -3,12 +3,11 @@ import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestWsSendCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import {
-    runRallarRemoteBrowserCommand,
-    syncRallarRemoteBrowserEvents
-} from '../remote-browser/rallar-remote-browser-control-client.ts';
-import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
-import type { RallarRemoteBrowserConfig } from '../remote-browser/resolve-rallar-remote-browser-config.ts';
+    resolveRemoteBrowserFetch,
+    toRemoteResultValue
+} from '../execution/remote-browser-execution.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
     toWsConnectionName,
@@ -19,17 +18,18 @@ import type {
     WsInteraction,
     WsInteractionResult
 } from '../ws/ws-wait-expectations.ts';
-import type { BlackBoxFetch } from './black-box-scenario-context.ts';
 import {
-    resolveRemoteBrowserFetch,
-    toRemoteResultValue
-} from './remote-browser-execution.ts';
+    runRallarRemoteBrowserCommand,
+    syncRallarRemoteBrowserEvents
+} from './rallar-remote-browser-control-client.ts';
+import { toRallarRemoteBrowserCommandId } from './remote-browser-commands.ts';
 import {
     resolveRemoteWsConfig,
     toRemoteWsPayload,
     toRemoteWsSendCommand,
     type RemoteWsContext
 } from './remote-ws-connection.ts';
+import type { RallarRemoteBrowserConfig } from './resolve-rallar-remote-browser-config.ts';
 import { waitWithRemoteWsEventSync } from './wait-with-remote-ws-event-sync.ts';
 
 interface RemoteWsSendTarget {

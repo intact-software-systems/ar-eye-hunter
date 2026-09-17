@@ -6,6 +6,17 @@ import {
     syncRallarRemoteBrowserEvents
 } from '../remote-browser/rallar-remote-browser-control-client.ts';
 import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
+import {
+    RemoteWsConnection,
+    resetRemoteWsObservations,
+    resolveRemoteWsConfig,
+    toRemoteWsCloseCommand,
+    toRemoteWsOpenCommand,
+    toWsUrl,
+    type RemoteWsContext
+} from '../remote-browser/remote-ws-connection.ts';
+import { sendRemoteWsMessage } from '../remote-browser/send-remote-ws-message.ts';
+import { waitWithRemoteWsEventSync } from '../remote-browser/wait-with-remote-ws-event-sync.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
     toWsConnectionName,
@@ -22,17 +33,6 @@ import {
     resolveRemoteBrowserFetch,
     toRemoteResultValue
 } from './remote-browser-execution.ts';
-import {
-    RemoteWsConnection,
-    resetRemoteWsObservations,
-    resolveRemoteWsConfig,
-    toRemoteWsCloseCommand,
-    toRemoteWsOpenCommand,
-    toWsUrl,
-    type RemoteWsContext
-} from './remote-ws-connection.ts';
-import { sendRemoteWsMessage } from './send-remote-ws-message.ts';
-import { waitWithRemoteWsEventSync } from './wait-with-remote-ws-event-sync.ts';
 
 interface RemoteWsCommandInput extends Omit<RemoteWsConnection.Input, 'url'> {
     readonly config: WsInteractionConfig;

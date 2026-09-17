@@ -5,11 +5,12 @@ import type {
     RallarBlackBoxTestWsOpenCommand,
     RallarBlackBoxTestWsSendCommand
 } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { runRallarRemoteBrowserCommand } from '../remote-browser/rallar-remote-browser-control-client.ts';
+import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import {
-    resolveRallarRemoteBrowserConfig,
-    type RallarRemoteBrowserConfig
-} from '../remote-browser/resolve-rallar-remote-browser-config.ts';
+    getRemoteBrowserRunnerOptions,
+    validateRemoteDestination,
+    validateRemotePayloadSize
+} from '../execution/remote-browser-execution.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import { toWsConnectionName } from '../ws/ws-interaction-statuses.ts';
 import type {
@@ -17,12 +18,11 @@ import type {
     WsInteractionRequest,
     WsWaitContext
 } from '../ws/ws-wait-expectations.ts';
-import type { BlackBoxFetch } from './black-box-scenario-context.ts';
+import { runRallarRemoteBrowserCommand } from './rallar-remote-browser-control-client.ts';
 import {
-    getRemoteBrowserRunnerOptions,
-    validateRemoteDestination,
-    validateRemotePayloadSize
-} from './remote-browser-execution.ts';
+    resolveRallarRemoteBrowserConfig,
+    type RallarRemoteBrowserConfig
+} from './resolve-rallar-remote-browser-config.ts';
 
 export interface RemoteWsContext extends WsWaitContext {
     readonly wsConnections: Record<string, RemoteWsConnection | WebSocket | undefined>;
