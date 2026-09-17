@@ -27,6 +27,8 @@ import type {
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { ControlRunManagerHttpError } from './control-http-error.ts';
 import { inheritControlResponseDocument, rememberControlResponseDocument } from './control-response-document.ts';
 import {
@@ -378,7 +380,7 @@ export async function deleteControlRun(
             headers: authorizationHeaders(input.token)
         }
     );
-    await readJsonResponse<unknown>(response);
+    await readAcknowledgedJsonResponse(response);
 }
 
 export async function fetchControlRunArtifactBundle(
@@ -426,14 +428,14 @@ export async function fetchControlRunFailureBundle(
         token?: string;
         fetchFn?: ControlRunManagerFetch;
     }>
-): Promise<unknown> {
+): Promise<ApiJsonValue> {
     const response = await (input.fetchFn ?? fetch)(
         new URL(`/runs/${encodeURIComponent(input.runId)}/failure-bundle`, normalizedBaseUrl(input.baseUrl)),
         {
             headers: authorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<unknown>(response);
+    return readJsonResponse<ApiJsonValue>(response);
 }
 
 export async function fetchDistributedRuns(
@@ -699,25 +701,37 @@ type ResizableControlArtifactBuffer =
         transferToFixedLength(): ArrayBuffer;
     };
 
+/**
+ * `ArrayBuffer` as the resizable-buffer proposal declares it. The repository's DOM lib predates
+ * that constructor overload, so the runtime's own `ArrayBuffer` is read through this contract
+ * after the prototype probe below proves the feature is present.
+ */
+type ResizableArrayBufferConstructor =
+    & (new(
+        byteLength: number,
+        options: Readonly<{ maxByteLength: number; }>
+    ) => ResizableControlArtifactBuffer)
+    & ArrayBufferConstructor;
+
+function resolveResizableArrayBufferConstructor(): ResizableArrayBufferConstructor | undefined {
+    const prototype = ArrayBuffer.prototype as Partial<
+        Pick<ResizableControlArtifactBuffer, 'resize' | 'transferToFixedLength'>
+    >;
+    return typeof prototype.resize === 'function' &&
+            typeof prototype.transferToFixedLength === 'function'
+        ? ArrayBuffer as ResizableArrayBufferConstructor
+        : undefined;
+}
+
 function createResizableControlArtifactBuffer(
     initialBytes: number,
     maxBytes: number
 ): ResizableControlArtifactBuffer | undefined {
-    const prototype = ArrayBuffer.prototype as {
-        resize?: unknown;
-        transferToFixedLength?: unknown;
-    };
-    if (
-        typeof prototype.resize !== 'function' ||
-        typeof prototype.transferToFixedLength !== 'function'
-    ) {
+    const ResizableArrayBuffer = resolveResizableArrayBufferConstructor();
+    if (!ResizableArrayBuffer) {
         return undefined;
     }
     try {
-        const ResizableArrayBuffer = ArrayBuffer as unknown as new(
-            byteLength: number,
-            options: { maxByteLength: number; }
-        ) => ResizableControlArtifactBuffer;
         const buffer = new ResizableArrayBuffer(initialBytes, {
             maxByteLength: maxBytes
         });
@@ -865,18 +879,8 @@ function throwControlArtifactHttpError(
     bytes?: ArrayBuffer
 ): never {
     const text = bytes ? new TextDecoder().decode(bytes) : '';
-    let value: unknown;
-    try {
-        value = text.length > 0 ? JSON.parse(text) : undefined;
-    }
-    catch {
-        value = undefined;
-    }
-    const message = value && typeof value === 'object' && 'error' in value
-        ? String((value as { error: unknown; }).error)
-        : `Control server request failed: ${response.status} ${response.statusText}`;
     throw new ControlRunManagerHttpError(
-        message,
+        toControlErrorMessage(response, decodeControlReplyBody(text)),
         response.status,
         response.statusText
     );
@@ -1069,6 +1073,45 @@ async function readDistributedRunReply(response: Response): Promise<ControlDistr
     return distributedRun;
 }
 
+/** A control reply body as it arrived: empty, valid JSON, or text the JSON parser rejected. */
+type ControlReplyBody =
+    | Readonly<{ kind: 'absent'; }>
+    | Readonly<{ kind: 'json'; value: ApiJsonValue; }>
+    | Readonly<{ kind: 'unparsed'; error: Error; }>;
+
+function decodeControlReplyBody(text: string): ControlReplyBody {
+    if (text.length === 0) {
+        return { kind: 'absent' };
+    }
+    try {
+        return { kind: 'json', value: JSON.parse(text) as ApiJsonValue };
+    }
+    catch (error) {
+        return { kind: 'unparsed', error: toError(error) };
+    }
+}
+
+/** The message a failed reply carries in its own `error` field, else the HTTP status line. */
+function toControlErrorMessage(response: Response, body: ControlReplyBody): string {
+    const carried = body.kind === 'json' ? toControlReplyErrorText(body.value) : undefined;
+    return carried ?? toControlStatusMessage(response);
+}
+
+function toControlReplyErrorText(value: ApiJsonValue): string | undefined {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) &&
+            'error' in value
+        ? String(value.error)
+        : undefined;
+}
+
+function toControlStatusMessage(response: Response): string {
+    return `Control server request failed: ${response.status} ${response.statusText}`;
+}
+
+async function readAcknowledgedJsonResponse(response: Response): Promise<void> {
+    await readJsonResponseDocument<ApiJsonValue>(response);
+}
+
 async function readJsonResponse<T>(response: Response): Promise<T> {
     const document = await readJsonResponseDocument<T>(response);
     return document.value;
@@ -1078,55 +1121,32 @@ async function readJsonResponseDocument<T>(
     response: Response
 ): Promise<ControlResponseDocument<T>> {
     const text = await response.text();
-    let value: unknown = {};
-    let parseError: unknown;
-    if (text.length > 0) {
-        try {
-            value = JSON.parse(text);
-        }
-        catch (error) {
-            parseError = error;
-        }
-    }
+    const body = decodeControlReplyBody(text);
     if (!response.ok) {
-        const message = value && typeof value === 'object' && 'error' in value
-            ? String((value as { error: unknown; }).error)
-            : `Control server request failed: ${response.status} ${response.statusText}`;
         throw new ControlRunManagerHttpError(
-            message,
+            toControlErrorMessage(response, body),
             response.status,
             response.statusText
         );
     }
-    if (parseError) {
-        throw parseError;
+    if (body.kind === 'unparsed') {
+        throw body.error;
     }
     return {
-        value: value as T,
+        value: (body.kind === 'json' ? body.value : {}) as T,
         text
     };
 }
 
 async function readTextResponse(response: Response): Promise<string> {
     const text = await response.text();
-    if (!response.ok) {
-        let message = `Control server request failed: ${response.status} ${response.statusText}`;
-        try {
-            const value = JSON.parse(text) as unknown;
-            if (value && typeof value === 'object' && 'error' in value) {
-                message = String((value as { error: unknown; }).error);
-            }
-        }
-        catch (_error) {
-            if (text.length > 0) {
-                message = text;
-            }
-        }
-        throw new ControlRunManagerHttpError(
-            message,
-            response.status,
-            response.statusText
-        );
+    if (response.ok) {
+        return text;
     }
-    return text;
+    const body = decodeControlReplyBody(text);
+    throw new ControlRunManagerHttpError(
+        body.kind === 'unparsed' ? text : toControlErrorMessage(response, body),
+        response.status,
+        response.statusText
+    );
 }

@@ -9,6 +9,7 @@ import {
     ControlRunManagerHttpError as ReexportedControlRunManagerHttpError,
     controlRunManagerStats,
     createDistributedRun,
+    deleteControlRun,
     enqueueBulkControlCommand,
     fetchControlRunArtifactBundle,
     fetchControlRunFailureBundle,
@@ -378,6 +379,47 @@ describe('rallar-black-box control run manager', () => {
         await expect(request).rejects.toBeInstanceOf(
             CanonicalControlRunManagerHttpError
         );
+    });
+
+    it.each([
+        {
+            label: 'JSON without an error field',
+            reply: () => Response.json({ detail: 'nope' }, { status: 500, statusText: 'Server Error' }),
+            message: 'Control server request failed: 500 Server Error'
+        },
+        {
+            label: 'a body the JSON parser rejects',
+            reply: () => new Response('log stream unavailable', { status: 503, statusText: 'Unavailable' }),
+            message: 'log stream unavailable'
+        },
+        {
+            label: 'an empty body',
+            reply: () => new Response('', { status: 502, statusText: 'Bad Gateway' }),
+            message: 'Control server request failed: 502 Bad Gateway'
+        },
+        {
+            label: 'JSON carrying an error field',
+            reply: () => Response.json({ error: 'Run is gone.' }, { status: 404, statusText: 'Not Found' }),
+            message: 'Run is gone.'
+        }
+    ])('names a failed JSONL reply from $label', async ({ reply, message }) => {
+        await expect(fetchControlRunJsonl({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            kind: 'events',
+            fetchFn: async () => reply()
+        })).rejects.toMatchObject({
+            name: 'ControlRunManagerHttpError',
+            message
+        });
+    });
+
+    it('accepts a run deletion whose reply carries no body', async () => {
+        await expect(deleteControlRun({
+            baseUrl: 'http://control.test',
+            runId: 'run-1',
+            fetchFn: async () => new Response('', { status: 200, statusText: 'OK' })
+        })).resolves.toBeUndefined();
     });
 
     it('calls distributed-run lifecycle endpoints', async () => {
