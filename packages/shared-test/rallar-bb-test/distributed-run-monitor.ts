@@ -18,7 +18,11 @@ import {
 } from './distributed-run-observation/distributed-run-event-rows.ts';
 import { toDistributedRunFailureRows } from './distributed-run-observation/distributed-run-failure-rows.ts';
 import { computeDistributedRunLatencySummary } from './distributed-run-observation/distributed-run-latency-summary.ts';
-import { recordDistributedRunMonitorDerivation } from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
+import {
+    computeDistributedRunMonitorDerivationWork,
+    recordDistributedRunMonitorDerivation,
+    type DistributedRunMonitorDerivationWork
+} from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 import { createDistributedRunMonitorFailureIndex } from './distributed-run-observation/distributed-run-monitor-failure-index.ts';
 import type {
     DistributedRunAgentProgressRow,
@@ -74,6 +78,16 @@ export type DistributedRunMonitor = Readonly<{
     compositeDrilldowns: readonly DistributedRunCompositeDrilldown[];
 }>;
 
+interface MonitorEvidence {
+    readonly events: readonly DistributedRunEventRow[];
+    readonly eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
+    readonly compositeDrilldowns: readonly DistributedRunCompositeDrilldown[];
+    readonly failures: readonly DistributedRunFailureRow[];
+    readonly runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+    readonly timeline: readonly DistributedRunTimelineItem[];
+    readonly work: readonly Partial<DistributedRunMonitorDerivationWork>[];
+}
+
 export function deriveDistributedRunMonitor(
     input: Readonly<{
         distributedRun: ControlDistributedRunSnapshot;
@@ -83,53 +97,86 @@ export function deriveDistributedRunMonitor(
     }>
 ): DistributedRunMonitor {
     const index = createDistributedRunMonitorIndex(input);
-    const linkedEvents = toDistributedRunEventRows(index.linkedControlEvents);
-    const eventsByAgentId = toDistributedRunEventsByAgent(linkedEvents, index);
-    const compositeDrilldowns = toDistributedRunCompositeDrilldowns(
-        index.linkedResults,
-        index.commandsById,
-        index.linksByCommandId
-    );
-    const failures = toMonitorFailures(input.distributedRun, index, compositeDrilldowns);
-    const failureIndex = createDistributedRunMonitorFailureIndex(failures);
-    const correlatedDiagnostics = toCorrelatedDistributedRunRuntimeDiagnostics(
-        toDistributedRunRuntimeDiagnosticRows(index.linkedControlEvents),
-        failureIndex
-    );
-    index.work.failureIndexVisitCount += failureIndex.failureVisitCount;
-    index.work.diagnosticFailureCandidateVisitCount += correlatedDiagnostics.failureCandidateVisitCount;
-    const runtimeDiagnostics = correlatedDiagnostics.rows;
-    const artifact = input.artifactValidation ??
-        validateDistributedRunArtifact(input.artifactBundle);
+    const evidence = toMonitorEvidence(input.distributedRun, index);
+    const agentProgress = computeDistributedRunAgentProgress({ index, eventsByAgentId: evidence.eventsByAgentId });
+    const recipeProgress = computeDistributedRunRecipeProgress(index);
+    const readiness = computeDistributedRunReadiness(index);
 
     const monitor: DistributedRunMonitor = {
         distributedRunId: input.distributedRun.distributedRunId,
         state: input.distributedRun.state,
         commandCounts: index.commandCounts,
         resultCounts: index.resultCounts,
-        compositeCounts: computeDistributedRunCompositeCounts(compositeDrilldowns),
-        diagnosticCounts: computeDistributedRunRuntimeDiagnosticCounts(runtimeDiagnostics),
+        compositeCounts: computeDistributedRunCompositeCounts(evidence.compositeDrilldowns),
+        diagnosticCounts: computeDistributedRunRuntimeDiagnosticCounts(evidence.runtimeDiagnostics),
         latency: computeDistributedRunLatencySummary(index.latencies),
-        artifact,
-        timeline: toDistributedRunTimeline({
-            distributedRun: input.distributedRun,
-            index,
-            commands: index.commandsById,
-            results: index.linkedResults,
-            events: linkedEvents,
-            runtimeDiagnostics,
-            failures
-        }),
-        agentProgress: computeDistributedRunAgentProgress({ index, eventsByAgentId }),
-        recipeProgress: computeDistributedRunRecipeProgress({ index }),
-        readiness: computeDistributedRunReadiness({ index }),
-        failures,
-        events: linkedEvents,
-        runtimeDiagnostics,
-        compositeDrilldowns
+        artifact: input.artifactValidation ?? validateDistributedRunArtifact(input.artifactBundle),
+        timeline: evidence.timeline,
+        agentProgress: agentProgress.rows,
+        recipeProgress: recipeProgress.rows,
+        readiness: readiness.rows,
+        failures: evidence.failures,
+        events: evidence.events,
+        runtimeDiagnostics: evidence.runtimeDiagnostics,
+        compositeDrilldowns: evidence.compositeDrilldowns
     };
-    recordDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
+    recordDistributedRunMonitorDerivation({
+        monitor,
+        distributedRun: input.distributedRun,
+        firstCommandPhasesById: index.firstCommandPhasesById,
+        work: computeDistributedRunMonitorDerivationWork([
+            { monitorDerivationCount: 1 },
+            index.work,
+            ...evidence.work,
+            agentProgress.work,
+            recipeProgress.work,
+            readiness.work
+        ])
+    });
     return monitor;
+}
+
+/** The linked events, failures, diagnostics and timeline the monitor shows, with the visits each projection made. */
+function toMonitorEvidence(
+    distributedRun: ControlDistributedRunSnapshot,
+    index: DistributedRunMonitorIndex
+): MonitorEvidence {
+    const events = toDistributedRunEventRows(index.linkedControlEvents);
+    const eventsByAgent = toDistributedRunEventsByAgent(events);
+    const compositeDrilldowns = toDistributedRunCompositeDrilldowns(
+        index.linkedResults,
+        index.commandsById,
+        index.linksByCommandId
+    );
+    const failures = toMonitorFailures(distributedRun, index, compositeDrilldowns);
+    const failureIndex = createDistributedRunMonitorFailureIndex(failures);
+    const diagnostics = toCorrelatedDistributedRunRuntimeDiagnostics(
+        toDistributedRunRuntimeDiagnosticRows(index.linkedControlEvents),
+        failureIndex
+    );
+    const timeline = toDistributedRunTimeline({
+        distributedRun,
+        commandLinks: index.commandLinks,
+        commands: index.commandsById,
+        results: index.linkedResults,
+        events,
+        runtimeDiagnostics: diagnostics.rows,
+        failures
+    });
+    return {
+        events,
+        eventsByAgentId: eventsByAgent.eventsByAgentId,
+        compositeDrilldowns,
+        failures,
+        runtimeDiagnostics: diagnostics.rows,
+        timeline: timeline.items,
+        work: [
+            eventsByAgent.work,
+            { failureIndexVisitCount: failureIndex.failureVisitCount },
+            { diagnosticFailureCandidateVisitCount: diagnostics.failureCandidateVisitCount },
+            timeline.work
+        ]
+    };
 }
 
 /** Recorded rollup failures and composite child failures share one newest-first order. */

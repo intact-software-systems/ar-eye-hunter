@@ -1,5 +1,4 @@
 import type { ControlDistributedRunCommandPhase, ControlDistributedRunSnapshot } from '../control-snapshots.ts';
-import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
 
 export interface DistributedRunMonitorDerivationWork {
     readonly monitorDerivationCount: number;
@@ -54,94 +53,102 @@ export interface DistributedRunAnalysisReportWork {
     readonly reportFallbackCommandPhaseLookupCount: number;
 }
 
-export type MutableDistributedRunMonitorDerivationWork = {
-    -readonly [Key in keyof DistributedRunMonitorDerivationWork]: DistributedRunMonitorDerivationWork[Key];
-};
-
 export interface DistributedRunMonitorAnalysisReuse {
-    readonly work: MutableDistributedRunMonitorDerivationWork;
     readonly firstCommandPhasesById: ReadonlyMap<string, ControlDistributedRunCommandPhase>;
     readonly distributedRunAuthority: WeakSet<object>;
     readonly commandLinksAuthority: WeakSet<object>;
 }
 
+export interface RecordDistributedRunMonitorDerivationInput {
+    readonly monitor: object;
+    readonly distributedRun: ControlDistributedRunSnapshot;
+    readonly firstCommandPhasesById: ReadonlyMap<string, ControlDistributedRunCommandPhase>;
+    readonly work: DistributedRunMonitorDerivationWork;
+}
+
+type DistributedRunMonitorDerivationCounter = keyof DistributedRunMonitorDerivationWork;
+
+const EMPTY_DERIVATION_WORK: DistributedRunMonitorDerivationWork = Object.freeze({
+    monitorDerivationCount: 0,
+    reportDerivationCount: 0,
+    commandLinkIndexPassCount: 0,
+    commandLinkVisitCount: 0,
+    controlCommandIndexPassCount: 0,
+    controlCommandVisitCount: 0,
+    controlResultIndexPassCount: 0,
+    controlResultVisitCount: 0,
+    controlEventIndexPassCount: 0,
+    controlEventVisitCount: 0,
+    linkedEventAgentIndexVisitCount: 0,
+    failureIndexVisitCount: 0,
+    targetAgentIndexPassCount: 0,
+    targetAgentVisitCount: 0,
+    recipeSelectionIndexPassCount: 0,
+    recipeSelectionVisitCount: 0,
+    roleAssignmentIndexPassCount: 0,
+    roleAssignmentVisitCount: 0,
+    targetPolicyRoleMembershipVisitCount: 0,
+    membershipDescriptorBuildCount: 0,
+    membershipInvertedIndexWriteCount: 0,
+    membershipIntersectionCandidateVisitCount: 0,
+    recipeTargetCountProjectionVisitCount: 0,
+    retainedMembershipDescriptorCount: 0,
+    retainedRecipeTargetCountCount: 0,
+    commandLinkCompletionProbeCount: 0,
+    agentLinkBucketLookupCount: 0,
+    agentEventBucketLookupCount: 0,
+    agentRoleLookupCount: 0,
+    agentLinkProjectionVisitCount: 0,
+    agentEventProjectionVisitCount: 0,
+    recipeLinkBucketLookupCount: 0,
+    recipeLinkProjectionVisitCount: 0,
+    recipeTargetCountLookupCount: 0,
+    linkedAgentExpectedMembershipProbeCount: 0,
+    readinessLinkBucketLookupCount: 0,
+    readinessStageLinkProjectionVisitCount: 0,
+    timelineCommandLinkProjectionVisitCount: 0,
+    diagnosticFailureCandidateVisitCount: 0,
+    reportCommandLinkLookupCount: 0,
+    reportFallbackCommandLinkIndexPassCount: 0,
+    reportFallbackCommandLinkVisitCount: 0,
+    reportFallbackCommandPhaseLookupCount: 0
+});
+
+const DERIVATION_COUNTERS = Object.keys(EMPTY_DERIVATION_WORK) as readonly DistributedRunMonitorDerivationCounter[];
+
 const derivationWorkByObservable = new WeakMap<object, DistributedRunMonitorDerivationWork>();
 const analysisReuseByObservable = new WeakMap<object, DistributedRunMonitorAnalysisReuse>();
 
-export function createEmptyDistributedRunMonitorDerivationWork(
-    monitorDerivationCount: number
-): MutableDistributedRunMonitorDerivationWork {
-    return {
-        monitorDerivationCount,
-        reportDerivationCount: 0,
-        commandLinkIndexPassCount: 0,
-        commandLinkVisitCount: 0,
-        controlCommandIndexPassCount: 0,
-        controlCommandVisitCount: 0,
-        controlResultIndexPassCount: 0,
-        controlResultVisitCount: 0,
-        controlEventIndexPassCount: 0,
-        controlEventVisitCount: 0,
-        linkedEventAgentIndexVisitCount: 0,
-        failureIndexVisitCount: 0,
-        targetAgentIndexPassCount: 0,
-        targetAgentVisitCount: 0,
-        recipeSelectionIndexPassCount: 0,
-        recipeSelectionVisitCount: 0,
-        roleAssignmentIndexPassCount: 0,
-        roleAssignmentVisitCount: 0,
-        targetPolicyRoleMembershipVisitCount: 0,
-        membershipDescriptorBuildCount: 0,
-        membershipInvertedIndexWriteCount: 0,
-        membershipIntersectionCandidateVisitCount: 0,
-        recipeTargetCountProjectionVisitCount: 0,
-        retainedMembershipDescriptorCount: 0,
-        retainedRecipeTargetCountCount: 0,
-        commandLinkCompletionProbeCount: 0,
-        agentLinkBucketLookupCount: 0,
-        agentEventBucketLookupCount: 0,
-        agentRoleLookupCount: 0,
-        agentLinkProjectionVisitCount: 0,
-        agentEventProjectionVisitCount: 0,
-        recipeLinkBucketLookupCount: 0,
-        recipeLinkProjectionVisitCount: 0,
-        recipeTargetCountLookupCount: 0,
-        linkedAgentExpectedMembershipProbeCount: 0,
-        readinessLinkBucketLookupCount: 0,
-        readinessStageLinkProjectionVisitCount: 0,
-        timelineCommandLinkProjectionVisitCount: 0,
-        diagnosticFailureCandidateVisitCount: 0,
-        reportCommandLinkLookupCount: 0,
-        reportFallbackCommandLinkIndexPassCount: 0,
-        reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0
-    };
+/** A derivation's total work: every counter summed over the visit counts its steps returned (each step names only its own). */
+export function computeDistributedRunMonitorDerivationWork(
+    stepWorks: readonly Partial<DistributedRunMonitorDerivationWork>[]
+): DistributedRunMonitorDerivationWork {
+    const work: Record<DistributedRunMonitorDerivationCounter, number> = { ...EMPTY_DERIVATION_WORK };
+    for (const stepWork of stepWorks) {
+        for (const counter of DERIVATION_COUNTERS) {
+            work[counter] += stepWork[counter] ?? 0;
+        }
+    }
+    return work;
 }
 
-/** Records a monitor derivation's work and the index a report derived from that monitor may reuse. */
-export function recordDistributedRunMonitorDerivation(
-    monitor: object,
-    index: DistributedRunMonitorIndex,
-    distributedRun: ControlDistributedRunSnapshot
-): void {
-    analysisReuseByObservable.set(monitor, {
-        work: index.work,
-        firstCommandPhasesById: index.firstCommandPhasesById,
-        distributedRunAuthority: new WeakSet([distributedRun]),
-        commandLinksAuthority: new WeakSet([distributedRun.commandLinks])
+/** Records a monitor derivation's work and the command phases a report derived from that monitor may reuse. */
+export function recordDistributedRunMonitorDerivation(input: RecordDistributedRunMonitorDerivationInput): void {
+    analysisReuseByObservable.set(input.monitor, {
+        firstCommandPhasesById: input.firstCommandPhasesById,
+        distributedRunAuthority: new WeakSet([input.distributedRun]),
+        commandLinksAuthority: new WeakSet([input.distributedRun.commandLinks])
     });
-    derivationWorkByObservable.set(monitor, Object.freeze({ ...index.work }));
+    derivationWorkByObservable.set(input.monitor, Object.freeze({ ...input.work }));
 }
 
-/** Records one more report derivation on top of the work its monitor recorded. */
+/** Records one more report derivation on top of the work its monitor recorded (none for a monitor no derivation recorded). */
 export function recordDistributedRunAnalysisReportDerivation(
     report: object,
     monitor: object,
     reportWork: DistributedRunAnalysisReportWork
 ): void {
-    const monitorWork = analysisReuseByObservable.get(monitor)?.work ??
-        derivationWorkByObservable.get(monitor) ??
-        createEmptyDistributedRunMonitorDerivationWork(0);
+    const monitorWork = derivationWorkByObservable.get(monitor) ?? EMPTY_DERIVATION_WORK;
     derivationWorkByObservable.set(
         report,
         Object.freeze({

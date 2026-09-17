@@ -12,12 +12,10 @@ import type {
 import { payloadReferencesDistributedRun } from './distributed-artifact-evidence-utils.ts';
 import {
     createDistributedRunMonitorMembershipIndex,
-    type DistributedRunMonitorMembershipIndex
+    type DistributedRunMonitorMembershipIndex,
+    type DistributedRunMonitorMembershipIndexWork
 } from './distributed-run-monitor-membership-index.ts';
-import {
-    createEmptyDistributedRunMonitorDerivationWork,
-    type MutableDistributedRunMonitorDerivationWork
-} from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
+import type { DistributedRunMonitorDerivationWork } from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 
 export interface DistributedRunMonitorAgentLinks {
     readonly all: readonly ControlDistributedRunCommandLink[];
@@ -65,9 +63,24 @@ export interface DistributedRunMonitorIndex {
     readonly commandCounts: DistributedRunMonitorCommandCounts;
     readonly resultCounts: DistributedRunMonitorResultCounts;
     readonly latencies: readonly number[];
-    /** The derivation's work ledger: every step that derives monitor rows from this index records its visits here. */
-    readonly work: MutableDistributedRunMonitorDerivationWork;
+    /** The visits building this index made; a monitor derivation adds the visits of the steps that read it. */
+    readonly work: DistributedRunMonitorIndexWork;
 }
+
+export type DistributedRunMonitorIndexWork =
+    & DistributedRunMonitorMembershipIndexWork
+    & Pick<
+        DistributedRunMonitorDerivationWork,
+        | 'commandLinkIndexPassCount'
+        | 'commandLinkVisitCount'
+        | 'controlCommandIndexPassCount'
+        | 'controlCommandVisitCount'
+        | 'controlResultIndexPassCount'
+        | 'controlResultVisitCount'
+        | 'controlEventIndexPassCount'
+        | 'controlEventVisitCount'
+        | 'commandLinkCompletionProbeCount'
+    >;
 
 export interface CreateDistributedRunMonitorIndexInput {
     readonly distributedRun: ControlDistributedRunSnapshot;
@@ -84,7 +97,7 @@ interface MutableRecipeProgressLinks {
     stage: ControlDistributedRunCommandLink[];
 }
 
-interface CommandLinkIndex {
+interface CommandLinkEntries {
     readonly commandLinks: readonly ControlDistributedRunCommandLink[];
     readonly agentIds: ReadonlySet<string>;
     readonly linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>;
@@ -96,7 +109,11 @@ interface CommandLinkIndex {
     readonly phaseCounts: Readonly<Record<ControlDistributedRunCommandPhase, number>>;
 }
 
-interface MutableCommandLinkIndex extends CommandLinkIndex {
+interface CommandLinkIndex extends CommandLinkEntries {
+    readonly work: Pick<DistributedRunMonitorIndexWork, 'commandLinkIndexPassCount' | 'commandLinkVisitCount'>;
+}
+
+interface MutableCommandLinkEntries extends CommandLinkEntries {
     readonly commandLinks: ControlDistributedRunCommandLink[];
     readonly agentIds: Set<string>;
     readonly linksByCommandId: Map<string, ControlDistributedRunCommandLink>;
@@ -108,60 +125,70 @@ interface MutableCommandLinkIndex extends CommandLinkIndex {
     readonly phaseCounts: Record<ControlDistributedRunCommandPhase, number>;
 }
 
+interface ControlCommandIndex {
+    readonly commandsById: ReadonlyMap<string, ControlQueuedCommandSnapshot>;
+    readonly work: Pick<DistributedRunMonitorIndexWork, 'controlCommandIndexPassCount' | 'controlCommandVisitCount'>;
+}
+
 interface LinkedResultIndex {
     readonly linkedResults: readonly ControlResultEnvelope[];
     readonly resultsByCommandId: ReadonlyMap<string, ControlResultEnvelope>;
     readonly latencies: readonly number[];
     readonly ok: number;
     readonly failed: number;
+    readonly work: Pick<DistributedRunMonitorIndexWork, 'controlResultIndexPassCount' | 'controlResultVisitCount'>;
 }
 
-interface LinkCompletion {
-    readonly completed: number;
-    readonly failed: number;
+interface LinkedControlEvents {
+    readonly events: readonly ControlEventEnvelope[];
+    readonly work: Pick<DistributedRunMonitorIndexWork, 'controlEventIndexPassCount' | 'controlEventVisitCount'>;
 }
 
-interface LinkCompletionInput {
+interface CommandCountsProjection {
+    readonly counts: DistributedRunMonitorCommandCounts;
+    readonly work: Pick<DistributedRunMonitorIndexWork, 'commandLinkCompletionProbeCount'>;
+}
+
+interface CommandCountsInput {
     readonly links: CommandLinkIndex;
     readonly results: LinkedResultIndex;
     readonly commandsById: ReadonlyMap<string, ControlQueuedCommandSnapshot>;
-    readonly work: MutableDistributedRunMonitorDerivationWork;
 }
 
 export function createDistributedRunMonitorIndex(
     input: CreateDistributedRunMonitorIndexInput
 ): DistributedRunMonitorIndex {
-    const work = createEmptyDistributedRunMonitorDerivationWork(1);
-    const membership = createDistributedRunMonitorMembershipIndex(input.distributedRun, work);
-    const links = indexCommandLinks(input.distributedRun, membership, work);
-    const commandsById = indexControlCommands(input.controlRun, work);
-    const results = indexLinkedResults(input.controlRun, links, work);
-    const completion = computeLinkCompletion({ links, results, commandsById, work });
-    const total = input.distributedRun.commandLinks.length;
+    const membership = createDistributedRunMonitorMembershipIndex(input.distributedRun);
+    const links = toCommandLinkIndex(input.distributedRun, membership);
+    const commands = toControlCommandIndex(input.controlRun);
+    const results = toLinkedResultIndex(input.controlRun, links);
+    const events = toLinkedControlEvents(input, links);
+    const commandCounts = computeCommandCounts({ links, results, commandsById: commands.commandsById });
 
     return {
         agentIds: [...links.agentIds].sort(),
         commandLinks: links.commandLinks,
-        commandsById,
+        commandsById: commands.commandsById,
         linkedResults: results.linkedResults,
         resultsByCommandId: results.resultsByCommandId,
-        linkedControlEvents: toLinkedControlEvents(input, links, work),
+        linkedControlEvents: events.events,
         linksByCommandId: links.linksByCommandId,
         firstCommandPhasesById: links.firstCommandPhasesById,
         linksByAgentId: links.linksByAgentId,
         linksByRecipeId: links.linksByRecipeId,
         progressLinksByRecipeId: links.progressLinksByRecipeId,
         membership,
-        commandCounts: {
-            total,
-            ...links.phaseCounts,
-            completed: completion.completed,
-            failed: completion.failed,
-            pending: Math.max(0, total - completion.completed)
-        },
+        commandCounts: commandCounts.counts,
         resultCounts: { total: results.linkedResults.length, ok: results.ok, failed: results.failed },
         latencies: results.latencies,
-        work
+        work: {
+            ...membership.work,
+            ...links.work,
+            ...commands.work,
+            ...results.work,
+            ...events.work,
+            ...commandCounts.work
+        }
     };
 }
 
@@ -192,23 +219,22 @@ export function getDistributedRunMonitorReadinessStageLinks(
     return index.linksByAgentId.get(agentId)?.stage ?? [];
 }
 
-function indexCommandLinks(
+function toCommandLinkIndex(
     distributedRun: ControlDistributedRunSnapshot,
-    membership: DistributedRunMonitorMembershipIndex,
-    work: MutableDistributedRunMonitorDerivationWork
+    membership: DistributedRunMonitorMembershipIndex
 ): CommandLinkIndex {
-    work.commandLinkIndexPassCount = 1;
-    const index = createCommandLinkIndex(membership);
+    const entries = createEmptyCommandLinkEntries(membership);
     // A link without a recipe belongs to the only recipe of a single-recipe run and to no recipe otherwise.
     const soleRecipeId = membership.recipeIds.length === 1 ? membership.recipeIds[0] : undefined;
+    let visitCount = 0;
     for (const link of distributedRun.commandLinks) {
-        work.commandLinkVisitCount += 1;
-        addCommandLink(index, link, link.recipeId ?? soleRecipeId);
+        visitCount += 1;
+        addCommandLink(entries, link, link.recipeId ?? soleRecipeId);
     }
-    return index;
+    return { ...entries, work: { commandLinkIndexPassCount: 1, commandLinkVisitCount: visitCount } };
 }
 
-function createCommandLinkIndex(membership: DistributedRunMonitorMembershipIndex): MutableCommandLinkIndex {
+function createEmptyCommandLinkEntries(membership: DistributedRunMonitorMembershipIndex): MutableCommandLinkEntries {
     return {
         commandLinks: [],
         agentIds: new Set(membership.targetAgentIds),
@@ -223,7 +249,7 @@ function createCommandLinkIndex(membership: DistributedRunMonitorMembershipIndex
 }
 
 function addCommandLink(
-    index: MutableCommandLinkIndex,
+    index: MutableCommandLinkEntries,
     link: ControlDistributedRunCommandLink,
     recipeId: string | undefined
 ): void {
@@ -249,33 +275,30 @@ function addCommandLink(
     }
 }
 
-function indexControlCommands(
-    controlRun: ControlRunSnapshot | undefined,
-    work: MutableDistributedRunMonitorDerivationWork
-): ReadonlyMap<string, ControlQueuedCommandSnapshot> {
+function toControlCommandIndex(controlRun: ControlRunSnapshot | undefined): ControlCommandIndex {
     const commandsById = new Map<string, ControlQueuedCommandSnapshot>();
-    if (controlRun) {
-        work.controlCommandIndexPassCount = 1;
-        for (const command of controlRun.commands) {
-            work.controlCommandVisitCount += 1;
-            commandsById.set(command.envelope.commandId, command);
-        }
+    let visitCount = 0;
+    for (const command of controlRun?.commands ?? []) {
+        visitCount += 1;
+        commandsById.set(command.envelope.commandId, command);
     }
-    return commandsById;
+    return {
+        commandsById,
+        work: { controlCommandIndexPassCount: controlRun ? 1 : 0, controlCommandVisitCount: visitCount }
+    };
 }
 
-function indexLinkedResults(
+function toLinkedResultIndex(
     controlRun: ControlRunSnapshot | undefined,
-    links: CommandLinkIndex,
-    work: MutableDistributedRunMonitorDerivationWork
+    links: CommandLinkIndex
 ): LinkedResultIndex {
     const linkedResults: ControlResultEnvelope[] = [];
     const resultsByCommandId = new Map<string, ControlResultEnvelope>();
     const latencies: number[] = [];
+    let visitCount = 0;
     if (controlRun) {
-        work.controlResultIndexPassCount = 1;
         for (const result of controlRun.results) {
-            work.controlResultVisitCount += 1;
+            visitCount += 1;
             if (!links.linksByCommandId.has(result.commandId)) {
                 continue;
             }
@@ -288,14 +311,23 @@ function indexLinkedResults(
         }
     }
     const ok = linkedResults.filter((result) => result.ok).length;
-    return { linkedResults, resultsByCommandId, latencies, ok, failed: linkedResults.length - ok };
+    return {
+        linkedResults,
+        resultsByCommandId,
+        latencies,
+        ok,
+        failed: linkedResults.length - ok,
+        work: { controlResultIndexPassCount: controlRun ? 1 : 0, controlResultVisitCount: visitCount }
+    };
 }
 
-function computeLinkCompletion(input: LinkCompletionInput): LinkCompletion {
+/** Link-weighted command counts: a command linked twice counts twice. */
+function computeCommandCounts(input: CommandCountsInput): CommandCountsProjection {
     let completed = 0;
     let failed = 0;
+    let probeCount = 0;
     input.links.linkCountByCommandId.forEach((linkCount, commandId) => {
-        input.work.commandLinkCompletionProbeCount += 1;
+        probeCount += 1;
         const result = input.results.resultsByCommandId.get(commandId);
         if (result !== undefined || input.commandsById.get(commandId)?.completedAtEpochMs !== undefined) {
             completed += linkCount;
@@ -304,24 +336,39 @@ function computeLinkCompletion(input: LinkCompletionInput): LinkCompletion {
             failed += linkCount;
         }
     });
-    return { completed, failed };
+    const total = input.links.commandLinks.length;
+    return {
+        counts: {
+            total,
+            ...input.links.phaseCounts,
+            completed,
+            failed,
+            pending: Math.max(0, total - completed)
+        },
+        work: { commandLinkCompletionProbeCount: probeCount }
+    };
 }
 
 function toLinkedControlEvents(
     input: CreateDistributedRunMonitorIndexInput,
-    links: CommandLinkIndex,
-    work: MutableDistributedRunMonitorDerivationWork
-): readonly ControlEventEnvelope[] {
-    if (!input.controlRun) {
-        return [];
-    }
-    work.controlEventIndexPassCount = 1;
+    links: CommandLinkIndex
+): LinkedControlEvents {
     const distributedRunId = input.distributedRun.distributedRunId;
-    return input.controlRun.events.filter((event) => {
-        work.controlEventVisitCount += 1;
-        return (event.commandId !== undefined && links.linksByCommandId.has(event.commandId)) ||
-            (Boolean(event.payload) && payloadReferencesDistributedRun(event.payload, distributedRunId));
-    });
+    const events: ControlEventEnvelope[] = [];
+    let visitCount = 0;
+    for (const event of input.controlRun?.events ?? []) {
+        visitCount += 1;
+        if (
+            (event.commandId !== undefined && links.linksByCommandId.has(event.commandId)) ||
+            (Boolean(event.payload) && payloadReferencesDistributedRun(event.payload, distributedRunId))
+        ) {
+            events.push(event);
+        }
+    }
+    return {
+        events,
+        work: { controlEventIndexPassCount: input.controlRun ? 1 : 0, controlEventVisitCount: visitCount }
+    };
 }
 
 function createEmptyAgentLinks(): MutableAgentLinks {

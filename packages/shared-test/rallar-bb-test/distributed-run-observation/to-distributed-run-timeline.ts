@@ -1,6 +1,10 @@
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../control-snapshots.ts';
-import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
+import type {
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '../control-snapshots.ts';
 import { distributedRecipeStateTone } from './distributed-recipe-state-tone.ts';
+import type { DistributedRunMonitorDerivationWork } from './distributed-run-monitor-derivation-work.ts';
 import type {
     DistributedRunEventRow,
     DistributedRunFailureRow,
@@ -9,27 +13,34 @@ import type {
 } from './distributed-run-row-contracts.ts';
 import { toDiagnosticSeverityTone } from './distributed-run-runtime-diagnostic-rows.ts';
 
+export interface ToDistributedRunTimelineInput {
+    readonly distributedRun: ControlDistributedRunSnapshot;
+    readonly commandLinks: readonly ControlDistributedRunCommandLink[];
+    readonly commands: ReadonlyMap<string, ControlCommandSnapshot>;
+    readonly results: readonly ControlResultSnapshot[];
+    readonly events: readonly DistributedRunEventRow[];
+    readonly runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
+    readonly failures: readonly DistributedRunFailureRow[];
+}
+
+export interface DistributedRunTimeline {
+    readonly items: readonly DistributedRunTimelineItem[];
+    readonly work: Pick<DistributedRunMonitorDerivationWork, 'timelineCommandLinkProjectionVisitCount'>;
+}
+
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
 /** A timeline item whose time is still unknown; the projection drops those. */
 type TimedTimelineItem = Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; };
 
-export function toDistributedRunTimeline(
-    input: Readonly<{
-        distributedRun: ControlDistributedRunSnapshot;
-        index: DistributedRunMonitorIndex;
-        commands: ReadonlyMap<string, ControlCommandSnapshot>;
-        results: readonly ControlResultSnapshot[];
-        events: readonly DistributedRunEventRow[];
-        runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
-        failures: readonly DistributedRunFailureRow[];
-    }>
-): readonly DistributedRunTimelineItem[] {
-    const commandLinkItems = input.index.commandLinks.flatMap((link) => {
-        input.index.work.timelineCommandLinkProjectionVisitCount += 1;
-        return toCommandLinkItems(link, input.commands.get(link.commandId));
-    });
+export function toDistributedRunTimeline(input: ToDistributedRunTimelineInput): DistributedRunTimeline {
+    const commandLinkItems: TimedTimelineItem[] = [];
+    let commandLinkVisitCount = 0;
+    for (const link of input.commandLinks) {
+        commandLinkVisitCount += 1;
+        commandLinkItems.push(...toCommandLinkItems(link, input.commands.get(link.commandId)));
+    }
     const candidates: readonly TimedTimelineItem[] = [
         ...toLifecycleItems(input.distributedRun),
         ...commandLinkItems,
@@ -39,9 +50,12 @@ export function toDistributedRunTimeline(
         ...input.runtimeDiagnostics.map(toDiagnosticItem)
     ];
 
-    return candidates
-        .filter(isTimedTimelineItem)
-        .sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id));
+    return {
+        items: candidates
+            .filter(isTimedTimelineItem)
+            .sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id)),
+        work: { timelineCommandLinkProjectionVisitCount: commandLinkVisitCount }
+    };
 }
 
 function isTimedTimelineItem(candidate: TimedTimelineItem): candidate is DistributedRunTimelineItem {
@@ -105,7 +119,7 @@ function toLifecycleItems(
 }
 
 function toCommandLinkItems(
-    link: DistributedRunMonitorIndex['commandLinks'][number],
+    link: ControlDistributedRunCommandLink,
     command: ControlCommandSnapshot | undefined
 ): readonly TimedTimelineItem[] {
     return [
@@ -122,7 +136,7 @@ function toCommandLinkItems(
 }
 
 interface CommandLinkItemInput {
-    readonly link: DistributedRunMonitorIndex['commandLinks'][number];
+    readonly link: ControlDistributedRunCommandLink;
     readonly command: ControlCommandSnapshot | undefined;
     readonly stage: 'queued' | 'dispatched' | 'completed';
     readonly atEpochMs: number | undefined;

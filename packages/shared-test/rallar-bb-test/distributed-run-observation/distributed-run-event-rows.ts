@@ -1,6 +1,6 @@
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
-import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import type { DistributedRunMonitorDerivationWork } from './distributed-run-monitor-derivation-work.ts';
 import {
     decodeFirstNonBlankText,
     toDistributedRunEventSummary,
@@ -8,6 +8,11 @@ import {
     toDistributedRunPayloadTopic
 } from './distributed-run-payload-summary.ts';
 import type { DistributedRunEventRow } from './distributed-run-row-contracts.ts';
+
+export interface DistributedRunEventsByAgent {
+    readonly eventsByAgentId: ReadonlyMap<string, readonly DistributedRunEventRow[]>;
+    readonly work: Pick<DistributedRunMonitorDerivationWork, 'linkedEventAgentIndexVisitCount'>;
+}
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
@@ -28,20 +33,18 @@ export function toDistributedRunEventRows(
         }));
 }
 
-export function toDistributedRunEventsByAgent(
-    events: readonly DistributedRunEventRow[],
-    index: DistributedRunMonitorIndex
-): ReadonlyMap<string, readonly DistributedRunEventRow[]> {
+export function toDistributedRunEventsByAgent(events: readonly DistributedRunEventRow[]): DistributedRunEventsByAgent {
     const eventsByAgentId = new Map<string, DistributedRunEventRow[]>();
-    events.forEach((event) => {
-        index.work.linkedEventAgentIndexVisitCount += 1;
+    let visitCount = 0;
+    for (const event of events) {
+        visitCount += 1;
         const agentEvents = eventsByAgentId.get(event.agentId) ?? [];
         if (!eventsByAgentId.has(event.agentId)) {
             eventsByAgentId.set(event.agentId, agentEvents);
         }
         agentEvents.push(event);
-    });
-    return eventsByAgentId;
+    }
+    return { eventsByAgentId, work: { linkedEventAgentIndexVisitCount: visitCount } };
 }
 
 function toDistributedRunEventPayloadSummary(payload: unknown): string {
