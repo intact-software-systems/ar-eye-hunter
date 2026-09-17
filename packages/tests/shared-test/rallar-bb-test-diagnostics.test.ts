@@ -118,6 +118,41 @@ describe('rallar-bb-test runtime diagnostics', () => {
         });
     });
 
+    it('records browser event evidence in the JSON form the control connection carries, all the way down', () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const cyclic: { self?: unknown; } = {};
+        cyclic.self = cyclic;
+
+        runtime.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.lane_state',
+            connection: 'aliceRtc',
+            data: {
+                lane: {
+                    changedAt: new Date(0),
+                    unset: undefined,
+                    retry: () => 'not evidence',
+                    peers: ['bob-session', undefined]
+                }
+            }
+        });
+        runtime.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.lane_cycle',
+            connection: 'aliceRtc',
+            data: cyclic
+        });
+
+        const [recorded, unrepresentable] = toRallarBlackBoxDiagnostics(runtime.state());
+        expect(recorded?.payload).toHaveProperty('data', {
+            lane: {
+                changedAt: '1970-01-01T00:00:00.000Z',
+                peers: ['bob-session', null]
+            }
+        });
+        expect(unrepresentable?.payload).not.toHaveProperty('data.self');
+    });
+
     it('normalizes browser-adapter RTC send failures as structured diagnostics', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {

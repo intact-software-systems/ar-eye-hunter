@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import {
     computeRallarBlackBoxDiagnosticSeverity,
     decodeRallarBlackBoxRuntimeDiagnosticEvidence,
@@ -11,24 +13,27 @@ import type {
 
 import type { RallarBlackBoxBrowserRallarEvent } from './browser-command-contracts.ts';
 
-type RallarBrowserEventPayload = Pick<
-    RallarBlackBoxBrowserRallarEvent,
-    | 'roomId'
-    | 'roomRef'
-    | 'scope'
-    | 'applicationId'
-    | 'workspaceId'
-    | 'laneId'
-    | 'peerId'
-    | 'remotePeerId'
-    | 'senderId'
-    | 'typeId'
-    | 'topicId'
-    | 'contextId'
-    | 'resourceId'
-    | 'data'
-    | 'error'
->;
+interface RallarBrowserEventPayload extends
+    Pick<
+        RallarBlackBoxBrowserRallarEvent,
+        | 'roomId'
+        | 'roomRef'
+        | 'scope'
+        | 'applicationId'
+        | 'workspaceId'
+        | 'laneId'
+        | 'peerId'
+        | 'remotePeerId'
+        | 'senderId'
+        | 'typeId'
+        | 'topicId'
+        | 'contextId'
+        | 'resourceId'
+        | 'error'
+    > {
+    /** Absent when the event carries no data with a JSON form. */
+    readonly data: ApiJsonValue | undefined;
+}
 
 const DEFAULT_RALLAR_BROWSER_EVENT_TOPIC = 'rallar.browser.event';
 
@@ -48,14 +53,20 @@ export function toRallarBrowserEventInput(
         topic,
         severity: event.severity,
         error: event.error,
-        detail: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
+        detail: payload.data,
         payload
     });
-    return { ...base, kind: 'diagnostic', severity, payload: toRallarBrowserDiagnosticPayload(event, severity) };
+    return {
+        ...base,
+        kind: 'diagnostic',
+        severity,
+        payload: toRallarBrowserDiagnosticPayload(event, payload, severity)
+    };
 }
 
 function toRallarBrowserDiagnosticPayload(
     event: RallarBlackBoxBrowserRallarEvent,
+    payload: RallarBrowserEventPayload,
     severity: RallarBlackBoxTestSeverity
 ): RallarBlackBoxRuntimeDiagnosticPayload {
     return toRallarBlackBoxRuntimeDiagnostic({
@@ -74,9 +85,9 @@ function toRallarBrowserDiagnosticPayload(
         contextId: event.contextId,
         resourceId: event.resourceId,
         atEpochMs: event.atEpochMs,
-        detail: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
+        detail: payload.data,
         error: event.error,
-        payload: toRallarBrowserEventPayload(event),
+        payload,
         source: 'browser-rallar-runtime'
     });
 }
@@ -96,7 +107,7 @@ function toRallarBrowserEventPayload(event: RallarBlackBoxBrowserRallarEvent): R
         topicId: event.topicId,
         contextId: event.contextId,
         resourceId: event.resourceId,
-        data: event.data,
+        data: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
         error: event.error
     };
 }

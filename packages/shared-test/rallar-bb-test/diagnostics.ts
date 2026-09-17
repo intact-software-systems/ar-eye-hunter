@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity,
@@ -164,15 +166,18 @@ export function toRallarBlackBoxRuntimeDiagnostic(
     });
 }
 
-export function decodeRallarBlackBoxRuntimeDiagnosticEvidence(
-    value: unknown
-): RallarBlackBoxRuntimeDiagnosticEvidence | undefined {
-    return typeof value === 'object' ||
-            typeof value === 'string' ||
-            typeof value === 'number' ||
-            typeof value === 'boolean'
-        ? value
-        : undefined;
+/**
+ * Evidence in the JSON form the control connection carries it, all the way down: absent members and functions drop
+ * out, dates become text, and a value with no JSON form (undefined, a cycle, a bigint) is absent.
+ */
+export function decodeRallarBlackBoxRuntimeDiagnosticEvidence(value: unknown): ApiJsonValue | undefined {
+    try {
+        const text = JSON.stringify(value);
+        return text === undefined ? undefined : JSON.parse(text) as ApiJsonValue;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 /** A null detail is reported evidence, so only an absent detail falls back to the payload's data and then the payload. */
