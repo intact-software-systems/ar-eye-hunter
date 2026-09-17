@@ -70,6 +70,8 @@ export type RallarBlackBoxControlSocketEventType = 'open' | 'message' | 'close' 
 export interface RallarBlackBoxControlSocketEvent {
     /** Absent on open, close and error events. */
     readonly data?: string | ArrayBuffer | Blob;
+    /** Absent unless an error event carries a message, as Deno and ws socket errors do; browser error events carry none. */
+    readonly message?: string;
 }
 
 export type RallarBlackBoxControlSocketListener = (event: RallarBlackBoxControlSocketEvent) => void;
@@ -308,7 +310,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     };
 
     private readonly onSocketError = (event: RallarBlackBoxControlSocketEvent): void => {
-        this.setSnapshot({ lastError: toError(event).message });
+        this.setSnapshot({ lastError: event.message ?? String(event) });
         this.recordDiagnostic({ topic: 'rallar.bb.control.socket_error', severity: 'error', payload: { event } });
     };
 

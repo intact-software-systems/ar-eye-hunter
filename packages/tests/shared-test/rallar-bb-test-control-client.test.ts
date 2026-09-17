@@ -64,6 +64,10 @@ class FakeControlSocket {
         this.publishEvent('message', { data: messageText });
     }
 
+    publishError(event: RallarBlackBoxControlSocketEvent): void {
+        this.publishEvent('error', event);
+    }
+
     private publishEvent(type: RallarBlackBoxControlSocketEventType, event: RallarBlackBoxControlSocketEvent): void {
         this.listeners.get(type)?.forEach((listener) => listener(event));
     }
@@ -158,6 +162,21 @@ describe('shared rallar black-box control client', () => {
             receivedCount: 0
         };
         expect(snapshot.state).toBe('idle');
+    });
+
+    it('records the message a socket error event carries as the last error', () => {
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient(toClientOptions(createRallarBlackBoxTestRuntime(), () => socket));
+
+        try {
+            connectToRunOne(client);
+            socket.publishError({ message: 'connect ECONNREFUSED 127.0.0.1:8787' });
+
+            expect(client.getSnapshot().lastError).toBe('connect ECONNREFUSED 127.0.0.1:8787');
+        }
+        finally {
+            client.dispose();
+        }
     });
 
     it('validates control command envelopes', () => {
