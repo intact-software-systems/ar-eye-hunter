@@ -183,8 +183,8 @@ function toDiagnosticDetail(
     if (input.detail !== undefined) {
         return input.detail;
     }
-    const payloadData = decodeRallarBlackBoxRuntimeDiagnosticEvidence(payloadRecord.data);
-    return payloadData !== undefined ? payloadData : input.payload;
+    const payloadDetail = decodeRallarBlackBoxRuntimeDiagnosticEvidence(payloadRecord.data);
+    return payloadDetail !== undefined ? payloadDetail : input.payload;
 }
 
 function toDefinedSubject(

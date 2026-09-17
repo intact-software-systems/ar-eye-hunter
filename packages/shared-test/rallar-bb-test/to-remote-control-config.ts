@@ -5,7 +5,7 @@ import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from './ralla
 
 export interface ToRemoteControlConfigInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
-    /** Numbers the fallback run id when the bootstrap names no run. */
+    /** Numbers the run id a bootstrap without a run id connects to. */
     readonly runNumber: number;
     readonly hasStoredAuthSession: boolean;
 }

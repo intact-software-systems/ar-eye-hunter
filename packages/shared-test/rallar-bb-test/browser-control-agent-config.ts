@@ -71,6 +71,11 @@ export interface RallarBlackBoxBootstrapConfig {
     readonly source: 'url' | 'environment' | 'default';
 }
 
+interface ViteImportMeta {
+    /** Absent outside a Vite build. */
+    readonly env?: RallarBlackBoxBootstrapEnvironment;
+}
+
 interface BootstrapSources {
     readonly params: URLSearchParams;
     readonly env: RallarBlackBoxBootstrapEnvironment;
@@ -167,7 +172,7 @@ const BOOTSTRAP_ENV_KEYS = [
 export function readRallarBlackBoxBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     return resolveRallarBlackBoxBootstrapConfig(
         globalThis.window?.location?.search ?? '',
-        (import.meta as { env?: RallarBlackBoxBootstrapEnvironment; }).env ?? {},
+        (import.meta as ViteImportMeta).env ?? {},
         globalThis.window?.location?.hash ?? ''
     );
 }

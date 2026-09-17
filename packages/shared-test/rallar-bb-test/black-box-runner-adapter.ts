@@ -25,9 +25,9 @@ export interface RallarBlackBoxRtcClientAdapterOptions {
 }
 
 /** An RTC message a runner interaction observes: the JSON a send carried, or absent when the event carried none. */
-type RallarBlackBoxRtcClientMessageHandler = (message: RallarBlackBoxTestJsonValue | undefined) => void;
+type RallarBlackBoxRtcClientMessageListener = (message: RallarBlackBoxTestJsonValue | undefined) => void;
 
-type RallarBlackBoxRtcClientCloseHandler = (
+type RallarBlackBoxRtcClientCloseListener = (
     event: RallarBlackBoxTestJsonValue | RallarBlackBoxTestEvent
 ) => void;
 
@@ -138,25 +138,25 @@ class RallarBlackBoxRtcClientAdapter implements RtcClient {
         this.unsubscribeClose?.();
     }
 
-    onMessage(handler: RallarBlackBoxRtcClientMessageHandler): void {
+    onMessage(listener: RallarBlackBoxRtcClientMessageListener): void {
         this.unsubscribeMessages?.();
         this.unsubscribeMessages = subscribeToRtcClientEvents({
             runtime: this.runtime,
             connection: this.connection,
             seenEventIds: this.seenMessageEventIds,
             matches: (event) => event.kind === 'message',
-            deliver: (event) => handler(toRtcMessage(event))
+            deliver: (event) => listener(toRtcMessage(event))
         });
     }
 
-    onClose(handler: RallarBlackBoxRtcClientCloseHandler): void {
+    onClose(listener: RallarBlackBoxRtcClientCloseListener): void {
         this.unsubscribeClose?.();
         this.unsubscribeClose = subscribeToRtcClientEvents({
             runtime: this.runtime,
             connection: this.connection,
             seenEventIds: this.seenCloseEventIds,
             matches: (event) => event.kind === 'event' && event.topic.includes('close'),
-            deliver: (event) => handler(decodeRtcMessagePayload(event.payload) ?? event)
+            deliver: (event) => listener(decodeRtcMessagePayload(event.payload) ?? event)
         });
     }
 

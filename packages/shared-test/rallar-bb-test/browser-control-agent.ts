@@ -159,7 +159,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
             return Either.ofLeft(DISPOSED_AGENT_FAILURE);
         }
         return configured.flatMap(
-            (failure) => this.failBootstrap(failure),
+            (failure) => this.recordBootstrapFailure(failure),
             () => Either.ofRight(this.connectConfiguredAgent(runId, completedCommandIds))
         );
     }
@@ -234,7 +234,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         return 'connecting';
     }
 
-    private failBootstrap(failure: string): Either<string, BrowserControlAgentStartOutcome> {
+    private recordBootstrapFailure(failure: string): Either<string, BrowserControlAgentStartOutcome> {
         this.setSnapshot({
             bootstrapping: false,
             busy: false,

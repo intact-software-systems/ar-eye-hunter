@@ -49,7 +49,7 @@ function toRedactedValue<T>(value: T, key: string | undefined, policy: Redaction
         return policy.replacement as T;
     }
     if (typeof value === 'string') {
-        return containsSecretValue(value, policy) ? policy.replacement as T : value;
+        return hasSecretValue(value, policy) ? policy.replacement as T : value;
     }
     if (Array.isArray(value)) {
         return value.map((item) => toRedactedValue(item, undefined, policy)) as T;
@@ -72,6 +72,6 @@ function isRedactedKey(key: string, policy: RedactionPolicy): boolean {
         policy.keySubstrings.some((substring) => normalized.includes(substring));
 }
 
-function containsSecretValue(value: string, policy: RedactionPolicy): boolean {
+function hasSecretValue(value: string, policy: RedactionPolicy): boolean {
     return policy.secretValues.some((secret) => value.includes(secret));
 }
