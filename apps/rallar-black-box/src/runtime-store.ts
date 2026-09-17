@@ -40,6 +40,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 
@@ -52,8 +53,11 @@ type RuntimeStoreSnapshot = Readonly<{
     bootstrapping: boolean;
     busy: boolean;
     runState: 'waiting' | 'running' | 'passed' | 'failed' | 'cancelled' | 'reset';
+    /** Absent before the operator has run anything in this session. */
     lastAction?: string;
+    /** Absent while the last action carried no failure. */
     lastError?: string;
+    /** Absent when no fixture is loaded — a hand-written recipe, or a workbench that was reset. */
     loadedFixtureId?: string;
 }>;
 
@@ -65,7 +69,7 @@ function resolveInitialBootstrapConfig(): RallarBlackBoxBootstrapConfig {
     return bootstrap;
 }
 
-function initialControlSnapshot(
+function createInitialControlSnapshot(
     bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxControlSnapshot {
     return {
@@ -77,17 +81,21 @@ function initialControlSnapshot(
     };
 }
 
-function delay(ms: number): Promise<void> {
+function startDelay(ms: number): Promise<void> {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function recordAndThrowProviderConfigError(
+/**
+ * Reports the configuration the provider accepted, or the message an invalid one earns after its
+ * diagnostic is recorded.
+ */
+function recordValidatedProviderConfig(
     runtime: RallarBlackBoxTestRuntime,
     config: RallarBlackBoxTestConfig
-): void {
+): Either<string, RallarBlackBoxTestConfig> {
     const [configError] = validateRallarBlackBoxProviderConfig(config);
     if (!configError) {
-        return;
+        return Either.ofRight(config);
     }
 
     runtime.recordEvent({
@@ -96,10 +104,10 @@ function recordAndThrowProviderConfigError(
         severity: 'error',
         payload: configError
     });
-    throw new Error(configError.message);
+    return Either.ofLeft(configError.message);
 }
 
-function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
+function resolveRuntimeDelayMs(command: RallarBlackBoxTestCommand): number {
     const configuredDelay = command.metadata?.localDelayMs;
     if (typeof configuredDelay === 'number' && Number.isFinite(configuredDelay)) {
         return Math.max(0, configuredDelay);
@@ -123,6 +131,8 @@ function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
 
 const FAKE_RUNTIME_SESSION_ID = 'visible-session-alice';
 const FAKE_RUNTIME_DELIVERY_MODE = 'direct';
+/** The code the runtime itself stamps on a failed command, kept so a returned failure reads alike. */
+const FAKE_RUNTIME_COMMAND_FAILED_CODE = 'RALLAR_BLACK_BOX_COMMAND_FAILED';
 
 /** The manual-workbench facts a command carries; the operator sets each one or leaves it out. */
 interface ManualCommandMetadata {
@@ -207,7 +217,7 @@ function canInstallSpaBrowserRallarRuntime(): boolean {
     return typeof window !== 'undefined';
 }
 
-async function providerCommandExecutor(
+async function runProviderCommand(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
     context: RallarBlackBoxTestCommandContext
 ): Promise<RallarBlackBoxTestCommandOutcome | undefined> {
@@ -217,7 +227,7 @@ async function providerCommandExecutor(
         return recordProviderRefusal(command, context);
     }
 
-    await delay(runtimeDelayFor(command));
+    await startDelay(resolveRuntimeDelayMs(command));
 
     switch (command.kind) {
         case 'rtc.connect': {
@@ -371,7 +381,7 @@ async function providerCommandExecutor(
                     activePeerIds: targets,
                     peerCount: targets.length,
                     laneHealth: negativeCase ? 'degraded' : 'open',
-                    firstPayloadMs: runtimeDelayFor(command)
+                    firstPayloadMs: resolveRuntimeDelayMs(command)
                 }
             });
             context.recordEvent({
@@ -481,7 +491,14 @@ async function providerCommandExecutor(
             };
         case 'http.request':
             if (!command.request.url && !command.request.path) {
-                throw new Error('Local HTTP command requires request.url or request.path.');
+                return {
+                    status: 'failed',
+                    error: {
+                        code: FAKE_RUNTIME_COMMAND_FAILED_CODE,
+                        message: 'Local HTTP command requires request.url or request.path.'
+                    },
+                    nextStatus: 'failed'
+                };
             }
             context.recordEvent({
                 kind: 'event',
@@ -542,12 +559,12 @@ class RallarBlackBoxRuntimeStore {
         }
         else {
             this.runtime = createRallarBlackBoxTestRuntime({
-                commandExecutor: providerCommandExecutor
+                commandExecutor: runProviderCommand
             });
         }
         this.snapshot = {
             state: this.runtime.state(),
-            control: initialControlSnapshot(this.bootstrapConfig),
+            control: createInitialControlSnapshot(this.bootstrapConfig),
             bootstrap: this.bootstrapConfig,
             bootstrapping: false,
             busy: false,
@@ -597,7 +614,7 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
-    ensureBootstrapped(): void {
+    startBootstrapOnce(): void {
         if (this.bootstrapStarted) {
             return;
         }
@@ -645,6 +662,7 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
+    /** An absent `lastAction` records the event without changing what the panel says it last did. */
     recordRuntimeEvent(
         event: RallarBlackBoxTestRuntimeEventInput,
         lastAction?: string
@@ -661,7 +679,11 @@ class RallarBlackBoxRuntimeStore {
 
     async runSample(): Promise<void> {
         try {
-            await this.resetForRun('Loading local scaffold recipe');
+            const configured = await this.resetForRun('Loading local scaffold recipe');
+            if (configured.left !== undefined) {
+                this.setFailedRunState('Local sample failed', configured.left);
+                return;
+            }
             await this.loadRecipe(
                 RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].recipe,
                 RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId
@@ -669,15 +691,7 @@ class RallarBlackBoxRuntimeStore {
             await this.runLoadedRecipe();
         }
         catch (error) {
-            this.snapshot = {
-                ...this.snapshot,
-                bootstrapping: false,
-                busy: false,
-                runState: 'failed',
-                lastAction: 'Local sample failed',
-                lastError: decodeErrorMessage(error)
-            };
-            this.emit();
+            this.setFailedRunState('Local sample failed', decodeErrorMessage(error));
         }
     }
 
@@ -694,7 +708,11 @@ class RallarBlackBoxRuntimeStore {
             };
             this.emit();
 
-            await this.configureRuntime(runNumber);
+            const configured = await this.configureRuntime(runNumber);
+            if (configured.left !== undefined) {
+                this.setLocalWorkbenchConfigurationFailure(configured.left);
+                return;
+            }
             this.snapshot = {
                 ...this.snapshot,
                 bootstrapping: false,
@@ -706,15 +724,8 @@ class RallarBlackBoxRuntimeStore {
             };
         }
         catch (error) {
-            this.snapshot = {
-                ...this.snapshot,
-                bootstrapping: false,
-                busy: false,
-                runState: 'failed',
-                loadedFixtureId: undefined,
-                lastAction: 'Local browser-rallar workbench configuration failed',
-                lastError: decodeErrorMessage(error)
-            };
+            this.setLocalWorkbenchConfigurationFailure(decodeErrorMessage(error));
+            return;
         }
 
         this.emit();
@@ -761,7 +772,11 @@ class RallarBlackBoxRuntimeStore {
                 commandId: `configure-control-${runNumber}`,
                 config
             });
-            recordAndThrowProviderConfigError(this.runtime, config);
+            const configured = recordValidatedProviderConfig(this.runtime, config);
+            if (configured.left !== undefined) {
+                this.setFailedRunState('Remote control bootstrap failed', configured.left);
+                return;
+            }
 
             this.snapshot = {
                 ...this.snapshot,
@@ -784,24 +799,25 @@ class RallarBlackBoxRuntimeStore {
             }
         }
         catch (error) {
-            this.snapshot = {
-                ...this.snapshot,
-                bootstrapping: false,
-                busy: false,
-                runState: 'failed',
-                lastAction: 'Remote control bootstrap failed',
-                lastError: decodeErrorMessage(error)
-            };
-            this.emit();
+            this.setFailedRunState('Remote control bootstrap failed', decodeErrorMessage(error));
         }
     }
 
-    async loadRecipeFromJson(recipeJson: string, fixtureId?: string): Promise<void> {
-        const parsed = this.parseJson<RallarBlackBoxTestRecipe>(
+    /** An absent `fixtureId` means the operator wrote this recipe instead of picking a fixture. */
+    async loadRecipeFromJson(
+        recipeJson: string,
+        fixtureId?: string
+    ): Promise<Either<string, RallarBlackBoxTestRecipe>> {
+        const decoded = this.decodeJsonText<RallarBlackBoxTestRecipe>(
             recipeJson,
             'Recipe JSON is invalid'
         );
-        await this.loadRecipe(parsed, fixtureId);
+        const recipe = decoded.right;
+        if (recipe === undefined) {
+            return Either.ofLeft(decoded.left ?? 'Recipe JSON is invalid');
+        }
+        await this.loadRecipe(recipe, fixtureId);
+        return Either.ofRight(recipe);
     }
 
     async runLoadedRecipe(): Promise<void> {
@@ -849,12 +865,19 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
-    async runCommandFromJsonText(commandJson: string): Promise<void> {
-        const command = this.parseJson<RallarBlackBoxTestCommand>(
+    async runCommandFromJsonText(
+        commandJson: string
+    ): Promise<Either<string, RallarBlackBoxTestCommand>> {
+        const decoded = this.decodeJsonText<RallarBlackBoxTestCommand>(
             commandJson,
             'Command JSON is invalid'
         );
+        const command = decoded.right;
+        if (command === undefined) {
+            return Either.ofLeft(decoded.left ?? 'Command JSON is invalid');
+        }
         await this.runManualCommand(command, `Executing ${command.kind}`);
+        return Either.ofRight(command);
     }
 
     async runManualCommand(
@@ -940,7 +963,11 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async resetWorkbench(): Promise<void> {
-        await this.resetForRun('Workbench reset');
+        const configured = await this.resetForRun('Workbench reset');
+        if (configured.left !== undefined) {
+            this.setFailedRunState('Workbench reset failed', configured.left);
+            return;
+        }
         this.snapshot = {
             ...this.snapshot,
             busy: false,
@@ -951,7 +978,9 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
-    private async resetForRun(lastAction: string): Promise<void> {
+    private async resetForRun(
+        lastAction: string
+    ): Promise<Either<string, RallarBlackBoxTestConfig>> {
         const runNumber = this.runSequence++;
         this.snapshot = {
             ...this.snapshot,
@@ -967,10 +996,12 @@ class RallarBlackBoxRuntimeStore {
             kind: 'reset',
             commandId: `reset-local-${runNumber}`
         });
-        await this.configureRuntime(runNumber);
+        return await this.configureRuntime(runNumber);
     }
 
-    private async configureRuntime(runNumber: number): Promise<void> {
+    private async configureRuntime(
+        runNumber: number
+    ): Promise<Either<string, RallarBlackBoxTestConfig>> {
         const rallar = toRallarBlackBoxRallarConfig({
             bootstrap: this.bootstrapConfig,
             hasStoredAuthSession: readBrowserAuthSessionPresence()
@@ -1003,9 +1034,10 @@ class RallarBlackBoxRuntimeStore {
             commandId: `configure-local-${runNumber}`,
             config
         });
-        recordAndThrowProviderConfigError(this.runtime, config);
+        return recordValidatedProviderConfig(this.runtime, config);
     }
 
+    /** An absent `fixtureId` means the operator wrote this recipe instead of picking a fixture. */
     private async loadRecipe(
         recipe: RallarBlackBoxTestRecipe,
         fixtureId?: string
@@ -1049,22 +1081,49 @@ class RallarBlackBoxRuntimeStore {
         this.emit();
     }
 
-    private parseJson<T>(input: string, message: string): T {
+    private decodeJsonText<T>(input: string, failedAction: string): Either<string, T> {
         try {
-            return JSON.parse(input) as T;
+            return Either.ofRight(JSON.parse(input) as T);
         }
         catch (error) {
+            const message = decodeErrorMessage(error);
             this.snapshot = {
                 ...this.snapshot,
                 runState: 'failed',
-                lastAction: message,
-                lastError: decodeErrorMessage(error)
+                lastAction: failedAction,
+                lastError: message
             };
             this.emit();
-            throw error;
+            return Either.ofLeft(message);
         }
     }
 
+    private setFailedRunState(lastAction: string, lastError: string): void {
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrapping: false,
+            busy: false,
+            runState: 'failed',
+            lastAction,
+            lastError
+        };
+        this.emit();
+    }
+
+    private setLocalWorkbenchConfigurationFailure(lastError: string): void {
+        this.snapshot = {
+            ...this.snapshot,
+            bootstrapping: false,
+            busy: false,
+            runState: 'failed',
+            loadedFixtureId: undefined,
+            lastAction: 'Local browser-rallar workbench configuration failed',
+            lastError
+        };
+        this.emit();
+    }
+
+    /** `emit` is the external-store vocabulary React's `useSyncExternalStore` subscribers read. */
     private emit(): void {
         this.listeners.forEach((listener) => listener());
     }

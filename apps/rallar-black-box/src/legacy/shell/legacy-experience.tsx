@@ -42,7 +42,7 @@ export default function LegacyExperience({
 
     useEffect(() => {
         if (canBootstrap && navigation.activeMode === 'black-box-runner') {
-            rallarBlackBoxRuntimeStore.ensureBootstrapped();
+            rallarBlackBoxRuntimeStore.startBootstrapOnce();
         }
     }, [canBootstrap, navigation.activeMode]);
 

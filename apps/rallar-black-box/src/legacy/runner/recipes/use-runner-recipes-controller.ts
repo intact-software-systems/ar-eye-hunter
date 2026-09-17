@@ -453,10 +453,16 @@ export function useRunnerRecipesController({
         setLaunchError(undefined);
         setLaunchMessage(`Loading ${selectedRecipe.title}.`);
         try {
-            await rallarBlackBoxRuntimeStore.loadRecipeFromJson(
+            const loaded = await rallarBlackBoxRuntimeStore.loadRecipeFromJson(
                 json(selectedRecipe.recipe),
                 selectedRecipe.id
             );
+            if (loaded.left !== undefined) {
+                setLaunchState('failed');
+                setLaunchError(runnerFriendlyErrorMessage(loaded.left));
+                setLaunchMessage('Local recipe failed.');
+                return;
+            }
             setLaunchState('running');
             setLaunchMessage(`Running ${selectedRecipe.title} in this browser.`);
             await rallarBlackBoxRuntimeStore.runLoadedRecipe();

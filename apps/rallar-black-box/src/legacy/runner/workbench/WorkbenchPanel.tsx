@@ -1,3 +1,4 @@
+import type { Either } from '@shared/resilience/Either.ts';
 import { useMemo, useState } from 'react';
 import {
     RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
@@ -51,6 +52,14 @@ export function WorkbenchPanel({
         }
     };
 
+    const runDecodedAction = async <T,>(
+        action: () => Promise<Either<string, T>>
+    ): Promise<void> => {
+        setLocalError(undefined);
+        const outcome = await action();
+        setLocalError(outcome.left);
+    };
+
     const selectFixture = (nextFixtureId: string): void => {
         setFixtureId(nextFixtureId);
         setRecipeText(toRecipeFixtureText(nextFixtureId));
@@ -96,7 +105,7 @@ export function WorkbenchPanel({
                         <button
                             type="button"
                             onClick={() =>
-                                runAction(() =>
+                                runDecodedAction(() =>
                                     rallarBlackBoxRuntimeStore.loadRecipeFromJson(
                                         recipeText,
                                         fixtureId
@@ -156,7 +165,7 @@ export function WorkbenchPanel({
                     <button
                         type="button"
                         onClick={() =>
-                            runAction(() =>
+                            runDecodedAction(() =>
                                 rallarBlackBoxRuntimeStore.runCommandFromJsonText(
                                     commandText
                                 )
