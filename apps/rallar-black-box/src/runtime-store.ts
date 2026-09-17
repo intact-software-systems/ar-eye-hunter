@@ -4,6 +4,16 @@ import {
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
+    readBrowserAuthSessionPresence,
+    toRallarBlackBoxFleetConfig,
+    toRallarBlackBoxRallarConfig,
+    toRemoteControlConfig
+} from '@shared-test/rallar-bb-test/browser-control-agent/to-remote-control-config.ts';
+import {
+    resolveRallarBlackBoxConfigProviderMode,
+    validateRallarBlackBoxProviderConfig
+} from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
@@ -28,16 +38,6 @@ import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-import {
-    readBrowserAuthSessionPresence,
-    toRallarBlackBoxFleetConfig,
-    toRallarBlackBoxRallarConfig,
-    toRemoteControlConfig
-} from '@shared-test/rallar-bb-test/to-remote-control-config.ts';
-import {
-    resolveRallarBlackBoxConfigProviderMode,
-    validateRallarBlackBoxProviderConfig
-} from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';

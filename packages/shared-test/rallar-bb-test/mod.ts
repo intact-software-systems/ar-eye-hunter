@@ -3,6 +3,8 @@ export * from './assert/assert-value-operators.ts';
 export * from './black-box-runner-adapter.ts';
 export * from './browser-control-agent-config.ts';
 export * from './browser-control-agent.ts';
+export * from './browser-control-agent/to-remote-control-config.ts';
+export * from './browser-control-agent/validate-rallar-black-box-provider-config.ts';
 export * from './browser-rallar-runtime-bridge.ts';
 export type {
     CreateRallarBlackBoxBrowserTestRuntimeOptions,
@@ -142,6 +144,4 @@ export {
 } from './schema/json-schema-validation.ts';
 export * from './schema/rallar-black-box-command-capabilities.ts';
 export * from './selectors.ts';
-export * from './to-remote-control-config.ts';
-export * from './validate-rallar-black-box-provider-config.ts';
 export * from './wait/wait-for-event.ts';

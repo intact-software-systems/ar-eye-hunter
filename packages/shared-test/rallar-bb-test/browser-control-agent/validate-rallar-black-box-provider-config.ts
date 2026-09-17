@@ -2,9 +2,9 @@ import {
     RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     resolveRallarBlackBoxProviderMode,
     type RallarBlackBoxProviderMode
-} from './client-defaults.ts';
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from './rallar-black-box-test-contracts.ts';
-import { decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
+} from '../client-defaults.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from '../rallar-black-box-test-contracts.ts';
+import { decodeNonBlankText, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 
 const PROVIDER_CONFIG_INVALID = 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID';
 

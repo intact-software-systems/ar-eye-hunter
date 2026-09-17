@@ -1,7 +1,7 @@
 import { readSession } from '@shared/api/auth.ts';
-import type { RallarBlackBoxBootstrapConfig } from './browser-control-agent-config.ts';
-import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
-import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from './rallar-black-box-test-contracts.ts';
+import type { RallarBlackBoxBootstrapConfig } from '../browser-control-agent-config.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../client-defaults.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
 
 export interface ToRemoteControlConfigInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;

@@ -1,3 +1,4 @@
+import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import type {
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestState,
@@ -8,7 +9,6 @@ import {
     decodeFiniteNumber
 } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/validate-rallar-black-box-provider-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,

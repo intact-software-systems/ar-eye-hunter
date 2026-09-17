@@ -8,6 +8,11 @@ import {
     type RallarBlackBoxBootstrapEnvironment
 } from './browser-control-agent-config.ts';
 import {
+    readBrowserAuthSessionPresence,
+    toRemoteControlConfig
+} from './browser-control-agent/to-remote-control-config.ts';
+import { validateRallarBlackBoxProviderConfig } from './browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
@@ -25,8 +30,6 @@ import type {
     RallarBlackBoxTestState
 } from './rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
-import { readBrowserAuthSessionPresence, toRemoteControlConfig } from './to-remote-control-config.ts';
-import { validateRallarBlackBoxProviderConfig } from './validate-rallar-black-box-provider-config.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'
