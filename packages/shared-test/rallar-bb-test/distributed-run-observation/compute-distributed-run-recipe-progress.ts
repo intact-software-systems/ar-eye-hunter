@@ -3,50 +3,42 @@ import {
     resolveDistributedRunMonitorRecipeLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
-import {
-    distributedRunMonitorExpectedTargetMultiplicity,
-    distributedRunMonitorRecipeTargetCount
-} from '../distributed-run-monitor-membership-index.ts';
-import type { RallarBlackBoxDistributedRunRecipeSelection } from '../distributed-run.ts';
+import { computeDistributedRunMonitorExpectedTargetMultiplicity } from '../distributed-run-monitor-membership-index.ts';
+import type { DistributedRunMonitorRecipeMembership } from './compute-distributed-run-monitor-target-membership.ts';
 import { computeAverage, isFiniteDurationMs } from './distributed-run-latency-summary.ts';
 import type { DistributedRunRecipeProgressRow } from './distributed-run-row-contracts.ts';
 
-type RecipeLinkTotals = Readonly<{
-    targetAgentsWithLinks: ReadonlySet<string>;
-    latencies: readonly number[];
-    queuedCount: number;
-    runningCount: number;
-    passedCount: number;
-    failedCount: number;
-}>;
+interface RecipeLinkTotals {
+    readonly targetAgentsWithLinks: ReadonlySet<string>;
+    readonly latencies: readonly number[];
+    readonly queuedCount: number;
+    readonly runningCount: number;
+    readonly passedCount: number;
+    readonly failedCount: number;
+}
 
 export function computeDistributedRunRecipeProgress(
     index: DistributedRunMonitorIndex
 ): readonly DistributedRunRecipeProgressRow[] {
-    return index.membership.recipeSelections.map((selection, recipeIndex) =>
-        toRecipeProgressRow(index, selection, recipeIndex)
-    );
+    return index.membership.recipes.map((recipe) => toRecipeProgressRow(index, recipe));
 }
 
 function toRecipeProgressRow(
     index: DistributedRunMonitorIndex,
-    selection: RallarBlackBoxDistributedRunRecipeSelection,
-    recipeIndex: number
+    recipe: DistributedRunMonitorRecipeMembership
 ): DistributedRunRecipeProgressRow {
-    const recipeId = index.membership.recipeIds[recipeIndex]!;
-    const targetCount = distributedRunMonitorRecipeTargetCount(index.membership, recipeIndex);
-    const totals = toRecipeLinkTotals(index, resolveDistributedRunMonitorRecipeLinks(index, recipeId));
+    const totals = toRecipeLinkTotals(index, resolveDistributedRunMonitorRecipeLinks(index, recipe.recipeId));
 
-    let missingCount = targetCount;
+    let missingCount = recipe.targetCount;
     for (const agentId of totals.targetAgentsWithLinks) {
-        missingCount -= distributedRunMonitorExpectedTargetMultiplicity(index.membership, recipeIndex, agentId);
+        missingCount -= computeDistributedRunMonitorExpectedTargetMultiplicity(index.membership, recipe, agentId);
     }
 
     return {
-        recipeId,
-        profile: selection.profile,
-        role: selection.role,
-        targetCount,
+        recipeId: recipe.recipeId,
+        profile: recipe.selection.profile,
+        role: recipe.selection.role,
+        targetCount: recipe.targetCount,
         queuedCount: totals.queuedCount,
         runningCount: totals.runningCount,
         passedCount: totals.passedCount,

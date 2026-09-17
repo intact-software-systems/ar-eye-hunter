@@ -3,7 +3,6 @@ import {
     getDistributedRunMonitorAgentLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
-import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
 import {
     computeAverage,
     computeMaxFiniteNumber,
@@ -43,7 +42,7 @@ function toAgentProgressRow(
 
     return {
         agentId,
-        role: distributedRunMonitorAgentRole(input.index.membership, agentId),
+        role: input.index.membership.roleByAgentId.get(agentId),
         readiness: toLinkProgressStatus(totals.phaseProgress.stage, 'ready'),
         barrier: toLinkProgressStatus(totals.phaseProgress.barrier, 'ready'),
         execution: toLinkProgressStatus(totals.phaseProgress.start, 'passed'),

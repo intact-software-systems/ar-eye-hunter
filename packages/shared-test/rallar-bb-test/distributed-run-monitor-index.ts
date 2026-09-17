@@ -176,7 +176,7 @@ function toCommandLinkIndex(
 ): CommandLinkIndex {
     const index = createEmptyCommandLinkIndex(membership);
     // A link without a recipe belongs to the only recipe of a single-recipe run and to no recipe otherwise.
-    const soleRecipeId = membership.recipeIds.length === 1 ? membership.recipeIds[0] : undefined;
+    const soleRecipeId = membership.recipes.length === 1 ? membership.recipes[0]?.recipeId : undefined;
     for (const link of distributedRun.commandLinks) {
         addCommandLink(index, link, link.recipeId ?? soleRecipeId);
     }
@@ -191,8 +191,10 @@ function createEmptyCommandLinkIndex(membership: DistributedRunMonitorMembership
         firstCommandPhasesById: new Map(),
         linkCountByCommandId: new Map(),
         linksByAgentId: new Map(membership.targetAgentIds.map((agentId) => [agentId, createEmptyAgentLinks()])),
-        linksByRecipeId: new Map(membership.recipeIds.map((recipeId) => [recipeId, []])),
-        progressLinksByRecipeId: new Map(membership.recipeIds.map((recipeId) => [recipeId, { start: [], stage: [] }])),
+        linksByRecipeId: new Map(membership.recipes.map((recipe) => [recipe.recipeId, []])),
+        progressLinksByRecipeId: new Map(
+            membership.recipes.map((recipe) => [recipe.recipeId, { start: [], stage: [] }])
+        ),
         phaseCounts: { stage: 0, barrier: 0, start: 0, cancel: 0 }
     };
 }

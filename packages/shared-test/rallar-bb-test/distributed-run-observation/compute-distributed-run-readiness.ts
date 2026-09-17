@@ -3,7 +3,6 @@ import {
     getDistributedRunMonitorReadinessStageLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
-import { distributedRunMonitorAgentRole } from '../distributed-run-monitor-membership-index.ts';
 import { computeDurationBetween } from './distributed-run-latency-summary.ts';
 import type { DistributedRunReadinessRow } from './distributed-run-row-contracts.ts';
 
@@ -15,7 +14,7 @@ export function computeDistributedRunReadiness(
 
 function toReadinessRow(index: DistributedRunMonitorIndex, agentId: string): DistributedRunReadinessRow {
     const stageLinks = getDistributedRunMonitorReadinessStageLinks(index, agentId);
-    const role = distributedRunMonitorAgentRole(index.membership, agentId);
+    const role = index.membership.roleByAgentId.get(agentId);
     if (stageLinks.length === 0) {
         return { agentId, role, status: 'missing', error: 'No stage command was queued for this target.' };
     }
