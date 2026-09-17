@@ -282,6 +282,14 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             files: serverV2Files({ 'control-run.json': undefined }),
             generatedAtEpochMs: 9_191
         });
+        const missingManifest = computeWorkspace({
+            files: serverV2Files({ 'manifest.json': undefined }),
+            generatedAtEpochMs: 9_191
+        });
+        const notASnapshot = computeWorkspace({
+            files: serverV2Files({ 'distributed-run.json': JSON.stringify({ distributedRunId: 'distributed-import' }) }),
+            generatedAtEpochMs: 9_193
+        });
         const malformed = computeWorkspace({
             files: serverV2Files({ 'distributed-run.json': '{bad' }),
             generatedAtEpochMs: 9_192
@@ -293,6 +301,19 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
 
         expect(missing.support).toBe('incomplete');
         expect(inventoryStatus(missing, 'control-run.json')).toBe('missing-core');
+        expect(missing.inventory).toContainEqual({
+            fileName: 'control-run.json',
+            status: 'missing-core',
+            requirement: 'core',
+            message:
+                'control-run.json was not included, so the workspace holds no control run snapshot, monitor or verdict; the analysis covers what distributed-run.json records.'
+        });
+        expect(missingManifest.inventory).toContainEqual({
+            fileName: 'manifest.json',
+            status: 'missing-core',
+            requirement: 'core',
+            message: 'manifest.json was not included, so the artifacts form no artifact bundle.'
+        });
         expect(missing.analysis?.parseWarnings).toContainEqual({
             fileName: 'control-run.json',
             message: 'control-run.json is missing or empty, so the artifacts hold no control run snapshot.'
@@ -308,6 +329,13 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             code: 'analysis-failed',
             fileName: 'distributed-run.json'
         }));
+        expect(notASnapshot.support).toBe('incompatible');
+        expect(notASnapshot.inventory).toContainEqual({
+            fileName: 'distributed-run.json',
+            status: 'incompatible',
+            requirement: 'core',
+            message: 'distributed-run.json is not a distributed run snapshot: controlRunId must be a non-empty string.'
+        });
         expect(incompatible.support).toBe('incompatible');
         expect(inventoryStatus(incompatible, 'distributed-run.json')).toBe('incompatible');
         expect(incompatible.analysis).toBeUndefined();
@@ -336,7 +364,12 @@ describe('Recipe Console distributed artifact workspace compatibility', () => {
             const workspace = computeWorkspace({ files, generatedAtEpochMs: 9_194 });
 
             expect(workspace.support, controlRunCase.name).toBe('incompatible');
-            expect(inventoryStatus(workspace, 'control-run.json'), controlRunCase.name).toBe('loaded');
+            expect(workspace.inventory, controlRunCase.name).toContainEqual({
+                fileName: 'control-run.json',
+                status: 'incompatible',
+                requirement: 'core',
+                message: controlRunCase.message
+            });
             expect(workspace.issues, controlRunCase.name).toContainEqual({
                 code: 'incompatible-file',
                 severity: 'error',

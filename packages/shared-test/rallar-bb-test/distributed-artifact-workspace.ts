@@ -75,6 +75,8 @@ interface WorkspaceAnalysisInput {
 interface WorkspaceAnalysis {
     readonly support: DistributedArtifactWorkspaceSupport;
     readonly issues: readonly DistributedArtifactWorkspaceIssue[];
+    /** Files the inventory loaded as JSON that the analysis could not read as their contract. */
+    readonly unreadableFiles: readonly DistributedRunArtifactRejection[];
     /** Absent when the artifacts hold no analyzable distributed run. */
     readonly pipelineAnalysis?: DistributedRunArtifactPipelineAnalysisResult;
 }
@@ -95,7 +97,7 @@ export function computeDistributedArtifactWorkspace(
     const identityIssues = family === 'distributed-run' ? distributedArtifactIdentityIssuesFromParsed(parsed) : [];
     const generatedAtEpochMs = input.generatedAtEpochMs ?? projection.generatedAtEpochMs ??
         distributedArtifactGeneratedAtFromParsed(parsed);
-    const analysis = toWorkspaceAnalysis({
+    const analysis = computeWorkspaceAnalysis({
         parsed,
         family,
         schema,
@@ -112,7 +114,7 @@ export function computeDistributedArtifactWorkspace(
         artifactSchemaVersion: schema.artifactSchemaVersion,
         distributedRunId: pipelineAnalysis?.analysis.distributedRunId ?? projection.distributedRunId,
         files: projection.files,
-        inventory: schema.inventory,
+        inventory: toAnalyzedInventory(schema.inventory, analysis.unreadableFiles),
         issues: [
             ...schema.issues,
             ...toEnvelopeIssues(parsed, family),
@@ -198,7 +200,7 @@ function toAssessedWorkspaceSupport(
         inventory: schema.inventory,
         hasSchemaConflict: schema.hasSchemaConflict,
         hasInvalidEnvelopeSchema: projection.invalidSchemaMessage !== undefined,
-        hasFatalEnvelopeIssue: projection.fatalMessage !== undefined,
+        hasFatalEnvelopeIssue: projection.fatal !== undefined,
         artifactSchemaVersion: schema.artifactSchemaVersion
     });
 }
@@ -208,11 +210,11 @@ function toEnvelopeIssues(
     family: DistributedArtifactFamily
 ): readonly DistributedArtifactWorkspaceIssue[] {
     const { projection } = parsed;
-    const fatalIssues: readonly DistributedArtifactWorkspaceIssue[] = projection.fatalMessage
+    const fatalIssues: readonly DistributedArtifactWorkspaceIssue[] = projection.fatal
         ? [{
-            code: projection.fatalCode ?? 'incompatible-file',
+            code: projection.fatal.code,
             severity: 'error',
-            message: projection.fatalMessage,
+            message: projection.fatal.message,
             fileName: projection.envelopeFileName
         }]
         : [];
@@ -232,27 +234,28 @@ function toEnvelopeIssues(
  * Only a distributed-run family with a consistent schema and envelope is analyzed; analysis then needs a
  * generation time and content that holds a distributed run rather than a failed request.
  */
-function toWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAnalysis {
+function computeWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAnalysis {
     const { parsed, family, schema, generatedAtEpochMs, support } = analysisInput;
     const { projection } = parsed;
     if (
         family !== 'distributed-run' || schema.hasSchemaConflict || projection.invalidSchemaMessage ||
-        projection.fatalMessage
+        projection.fatal
     ) {
-        return { support, issues: [] };
+        return { support, issues: [], unreadableFiles: [] };
     }
     if (generatedAtEpochMs === undefined) {
-        return { support: 'incompatible', issues: [MISSING_GENERATION_TIME_ISSUE] };
+        return { support: 'incompatible', issues: [MISSING_GENERATION_TIME_ISSUE], unreadableFiles: [] };
     }
     return toDistributedRunArtifactContent(parsed).fold(
         (rejection): WorkspaceAnalysis => ({
             support: support === 'incomplete' ? 'incomplete' : 'incompatible',
-            issues: [toAnalysisFailedIssue(rejection)]
+            issues: [toAnalysisFailedIssue(rejection)],
+            unreadableFiles: toLoadedFileRejections(schema, [rejection])
         }),
         (content) =>
             content.variant === 'distributed-run'
-                ? toDistributedRunWorkspaceAnalysis(analysisInput, content, generatedAtEpochMs)
-                : { support: 'incompatible', issues: [toControlRequestFailureIssue(content)] }
+                ? computeDistributedRunWorkspaceAnalysis(analysisInput, content, generatedAtEpochMs)
+                : { support: 'incompatible', issues: [toControlRequestFailureIssue(content)], unreadableFiles: [] }
     );
 }
 
@@ -260,7 +263,7 @@ function toWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAn
  * A loaded control-run.json that is not a control run snapshot, or an envelope that names a different run
  * than distributed-run.json, makes the analyzed workspace incompatible.
  */
-function toDistributedRunWorkspaceAnalysis(
+function computeDistributedRunWorkspaceAnalysis(
     analysisInput: WorkspaceAnalysisInput,
     content: DistributedRunBundleContent,
     generatedAtEpochMs: number
@@ -272,11 +275,40 @@ function toDistributedRunWorkspaceAnalysis(
         generatedAtEpochMs,
         artifactSchemaVersion: schema.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
     });
+    const unreadableFiles = pipelineAnalysis.controlRunStatus === 'recorded'
+        ? []
+        : toLoadedFileRejections(schema, [pipelineAnalysis.reason]);
     const issues = [
-        toUndecodedControlRunIssue(schema, pipelineAnalysis),
+        ...unreadableFiles.map(toUnreadableFileIssue),
         toIdentityConflictIssue(parsed, pipelineAnalysis.analysis)
     ].filter((issue): issue is DistributedArtifactWorkspaceIssue => issue !== undefined);
-    return { support: issues.length === 0 ? support : 'incompatible', issues, pipelineAnalysis };
+    return { support: issues.length === 0 ? support : 'incompatible', issues, unreadableFiles, pipelineAnalysis };
+}
+
+/**
+ * The inventory checks a file only as JSON; a loaded file the analysis cannot read as its contract is named
+ * here, while a missing or malformed one already carries its inventory status and issue.
+ */
+function toLoadedFileRejections(
+    schema: WorkspaceSchema,
+    rejections: readonly DistributedRunArtifactRejection[]
+): readonly DistributedRunArtifactRejection[] {
+    return rejections.filter((rejection) =>
+        schema.inventory.some((item) => item.fileName === rejection.fileName && item.status === 'loaded')
+    );
+}
+
+/** A loaded file the analysis could not read is incompatible, with the reason the analysis gave. */
+function toAnalyzedInventory(
+    inventory: readonly DistributedArtifactInventoryItem[],
+    unreadableFiles: readonly DistributedRunArtifactRejection[]
+): readonly DistributedArtifactInventoryItem[] {
+    return inventory.map((item) => {
+        const unreadable = unreadableFiles.find((rejection) => rejection.fileName === item.fileName);
+        return unreadable === undefined || item.status !== 'loaded'
+            ? item
+            : { ...item, status: 'incompatible', message: unreadable.message };
+    });
 }
 
 function toAnalysisFailedIssue(rejection: DistributedRunArtifactRejection): DistributedArtifactWorkspaceIssue {
@@ -300,22 +332,8 @@ function toControlRequestFailureIssue(
     };
 }
 
-/**
- * The inventory checks control-run.json only as JSON; a loaded file the analysis cannot read as a control
- * run snapshot is named here, while a missing or malformed one already carries its inventory issue.
- */
-function toUndecodedControlRunIssue(
-    schema: WorkspaceSchema,
-    pipelineAnalysis: DistributedRunArtifactPipelineAnalysisResult
-): DistributedArtifactWorkspaceIssue | undefined {
-    if (pipelineAnalysis.controlRunStatus === 'recorded') {
-        return undefined;
-    }
-    const { reason } = pipelineAnalysis;
-    const inventoryItem = schema.inventory.find((item) => item.fileName === reason.fileName);
-    return inventoryItem?.status === 'loaded'
-        ? { code: 'incompatible-file', severity: 'error', fileName: reason.fileName, message: reason.message }
-        : undefined;
+function toUnreadableFileIssue(rejection: DistributedRunArtifactRejection): DistributedArtifactWorkspaceIssue {
+    return { code: 'incompatible-file', severity: 'error', fileName: rejection.fileName, message: rejection.message };
 }
 
 function toIdentityConflictIssue(

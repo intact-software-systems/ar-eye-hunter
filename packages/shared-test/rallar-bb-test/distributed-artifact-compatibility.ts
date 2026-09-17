@@ -31,6 +31,16 @@ const NULLABLE_JSON_FILE_NAMES = new Set([
     'target-resolution.json'
 ]);
 
+type DistributedArtifactCoreFileName = typeof DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES[number];
+
+/** What a workspace loses without each core file; analysis itself needs only distributed-run.json. */
+const MISSING_CORE_FILE_MESSAGES: Readonly<Record<DistributedArtifactCoreFileName, string>> = {
+    'distributed-run.json': 'distributed-run.json is required for distributed-run analysis.',
+    'manifest.json': 'manifest.json was not included, so the artifacts form no artifact bundle.',
+    'control-run.json':
+        'control-run.json was not included, so the workspace holds no control run snapshot, monitor or verdict; the analysis covers what distributed-run.json records.'
+};
+
 type FileValidation = Readonly<{
     status: 'loaded' | 'malformed' | 'incompatible';
     message?: string;
@@ -269,7 +279,7 @@ function addExpected(
     if (text === undefined) {
         const status = requirement === 'core' ? 'missing-core' : 'missing-optional';
         const message = requirement === 'core'
-            ? `${fileName} is required for distributed-run analysis.`
+            ? MISSING_CORE_FILE_MESSAGES[fileName as DistributedArtifactCoreFileName]
             : `${fileName} was not included; available evidence remains usable.`;
         inventory.push({ fileName, status, requirement, message });
         issues.push({
