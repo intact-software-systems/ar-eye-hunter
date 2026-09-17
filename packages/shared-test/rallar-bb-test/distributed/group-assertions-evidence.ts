@@ -129,44 +129,37 @@ function toGroupAssertionEvidenceRow(
     source: RallarBlackBoxGroupAssertionSource,
     recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[]
 ): GroupAssertionEvidenceRow {
-    const role = participant.roles[0];
+    const fields: GroupAssertionEvidenceRowFields = { agentId: participant.agentId, role: participant.roles[0] };
     const recipeRows = recipeEvidence.filter((evidence) =>
         evidence.agentId === participant.agentId && evidence.recipeId === source.recipeId
     );
-    if (recipeRows.length === 0) {
-        return { agentId: participant.agentId, role, status: 'missing' };
-    }
     if (recipeRows.length > 1) {
-        return { agentId: participant.agentId, role, status: 'duplicate' };
+        return { ...fields, status: 'duplicate' };
     }
-
     const recipeRow = recipeRows[0];
-    if (!recipeRow.hasResult) {
-        return { agentId: participant.agentId, role, status: 'missing' };
-    }
+    return recipeRow?.hasResult === true
+        ? toRecordedGroupAssertionEvidenceRow(fields, source, recipeRow.resultValue)
+        : { ...fields, status: 'missing' };
+}
 
-    const commandResults = toRecipeCommandResults(recipeRow.resultValue);
+/** The addressed command must appear exactly once among the recipe's decodable results and reach a value at the path. */
+function toRecordedGroupAssertionEvidenceRow(
+    fields: GroupAssertionEvidenceRowFields,
+    source: RallarBlackBoxGroupAssertionSource,
+    resultValue: RallarBlackBoxGroupAssertionValue
+): GroupAssertionEvidenceRow {
+    const commandResults = toRecipeCommandResults(resultValue);
     const matches = commandResults.decoded.filter((entry) =>
         entry.commandId === source.commandId || entry.originalCommandId === source.commandId
     );
     if (matches.length === 0) {
-        const status = commandResults.hasUndecodableResults ? 'undecodable' : 'missing';
-        return { agentId: participant.agentId, role, status };
+        return { ...fields, status: commandResults.hasUndecodableResults ? 'undecodable' : 'missing' };
     }
     if (matches.length > 1) {
-        return { agentId: participant.agentId, role, status: 'duplicate' };
+        return { ...fields, status: 'duplicate' };
     }
-
     const lookup = decodePayloadPathValue(matches[0].result.value, source.path);
-    if (!lookup.exists) {
-        return { agentId: participant.agentId, role, status: 'unresolved' };
-    }
-    return {
-        agentId: participant.agentId,
-        role,
-        status: 'resolved',
-        value: lookup.value
-    };
+    return lookup.exists ? { ...fields, status: 'resolved', value: lookup.value } : { ...fields, status: 'unresolved' };
 }
 
 function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue): RecipeCommandResults {
