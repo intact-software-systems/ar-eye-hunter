@@ -1,10 +1,11 @@
 import type {
     RallarBlackBoxControlAgentCandidate,
-    RallarBlackBoxDistributedResolvedRoleAssignment,
+    RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRecipeSelection,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { computeDistributedTargetResolutionSummary } from '@shared-test/rallar-bb-test/distributed/resolve-distributed-run-targets.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
 
@@ -62,7 +63,14 @@ export function toExplicitDistributedTargetResolution(
         targetAgentIds,
         roleAssignments,
         blockers: [],
-        summary: toExplicitTargetSummary({ manifest, targetAgentIds, roleAssignments, candidates })
+        summary: computeDistributedTargetResolutionSummary({
+            manifest,
+            agents: candidates,
+            targetableAgentIds: targetAgentIds,
+            targetAgentIds,
+            roleAssignments,
+            blockers: []
+        })
     };
 }
 
@@ -99,7 +107,7 @@ export function toRecipeSelectionsForAgent(
     const manifest = distributedRun.manifest;
     const roles = toRolesForAgent(distributedRun, agentId);
     const assignedRecipeIds = new Set(
-        toRoleAssignmentsForAgent(distributedRun, agentId).flatMap((assignment) => assignment.recipeIds ?? [])
+        toRoleAssignmentsForAgent(distributedRun, agentId).flatMap((assignment) => assignment.recipeIds)
     );
     const selections = manifest.recipes.filter((selection) => {
         const recipeId = toDistributedRecipeKey(selection);
@@ -180,41 +188,10 @@ function toTrimmedIdentifier(value: string | undefined): string | undefined {
     return trimmed ? trimmed : undefined;
 }
 
-interface ExplicitTargetSummaryInput {
-    readonly manifest: RallarBlackBoxDistributedRunManifest;
-    readonly targetAgentIds: readonly string[];
-    readonly roleAssignments: readonly RallarBlackBoxDistributedResolvedRoleAssignment[];
-    readonly candidates: readonly RallarBlackBoxControlAgentCandidate[];
-}
-
-function toExplicitTargetSummary(
-    { manifest, targetAgentIds, roleAssignments, candidates }: ExplicitTargetSummaryInput
-): RallarBlackBoxDistributedTargetResolution['summary'] {
-    const candidateById = new Map(candidates.map((candidate) => [candidate.agentId, candidate]));
-    const selectedCandidates = targetAgentIds
-        .map((agentId) => candidateById.get(agentId))
-        .filter((candidate): candidate is RallarBlackBoxControlAgentCandidate => Boolean(candidate));
-    const expected = manifest.targetPolicy.expectedParticipantCount;
-    return {
-        agents: candidates.length,
-        targetable: targetAgentIds.length,
-        selected: targetAgentIds.length,
-        expectedParticipantCount: expected,
-        missingExpectedParticipants: expected === undefined ? 0 : Math.max(0, expected - targetAgentIds.length),
-        staleAgents: 0,
-        offlineAgents: 0,
-        wrongGroupAgents: 0,
-        agentsWithoutIdentity: 0,
-        roleCounts: toSortedCounts(roleAssignments.map((assignment) => assignment.role)),
-        regions: toSortedCounts(selectedCandidates.map((candidate) => candidate.identity?.region)),
-        providers: toSortedCounts(selectedCandidates.map((candidate) => candidate.identity?.provider))
-    };
-}
-
 function toExplicitRoleAssignments(
     manifest: RallarBlackBoxDistributedRunManifest,
     targetAgentIds: readonly string[]
-): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const selected = new Set(targetAgentIds);
     const explicitAssignments = manifest.roleAssignments;
     if (explicitAssignments.length > 0) {
@@ -227,14 +204,14 @@ function toExplicitRoleAssignments(
         .flatMap(([role, agentIds]) =>
             agentIds
                 .filter((agentId) => selected.has(agentId))
-                .map((agentId) => ({ role, agentId, required: true }))
+                .map((agentId) => ({ role, agentId, recipeIds: [], required: true, variables: {} }))
         );
 }
 
 function toRoleAssignmentsForAgent(
     distributedRun: ControlDistributedRunState,
     agentId: string
-): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const assignments = distributedRun.targetResolution?.roleAssignments ??
         distributedRun.manifest.roleAssignments;
     return assignments.filter((assignment) => assignment.agentId === agentId);
@@ -244,17 +221,4 @@ function toUniqueIdentifiers(values: readonly string[]): string[] {
     return [
         ...new Set(values.map(toTrimmedIdentifier).filter((value): value is string => value !== undefined))
     ];
-}
-
-function toSortedCounts(values: readonly (string | undefined)[]): Readonly<Record<string, number>> {
-    const counts: Record<string, number> = {};
-    for (const value of values) {
-        const key = toTrimmedIdentifier(value);
-        if (key !== undefined) {
-            counts[key] = (counts[key] ?? 0) + 1;
-        }
-    }
-    return Object.fromEntries(
-        Object.entries(counts).sort(([left], [right]) => left.localeCompare(right))
-    );
 }

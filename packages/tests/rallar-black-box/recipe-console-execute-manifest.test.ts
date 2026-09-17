@@ -71,6 +71,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},

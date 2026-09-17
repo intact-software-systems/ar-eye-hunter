@@ -91,7 +91,7 @@ describe('rallar-bb-test group assertion conformance', () => {
         expect(result.violatingAgentIds).toEqual(['agent-b']);
         expect(result.error?.code).toBe('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING');
         const rows = Object.fromEntries(result.perAgent.map((row) => [row.agentId, row]));
-        expect(rows['agent-b'].verdict).toBe('not-matching');
+        expect(rows['agent-b']).toMatchObject({ evidence: 'resolved', verdict: 'not-matching' });
         expect(rows['agent-c'].evidence).toBe('missing');
     });
 

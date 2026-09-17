@@ -288,7 +288,9 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         );
         expect(pointers.some((pointer) => pointer.includes('recipe~/inline'))).toBe(false);
 
-        const duplicateRows = inventory.knobs.filter((knob) => knob.commandId === 'duplicate~/command' && knob.name === 'durationMs');
+        const duplicateRows = inventory.knobs.filter((knob) =>
+            knob.scope !== 'manifest' && knob.commandId === 'duplicate~/command' && knob.name === 'durationMs'
+        );
         expect(duplicateRows.map((row) => row.pointer)).toEqual([
             '/recipes/0/recipe/commands/0/durationMs',
             '/recipes/0/recipe/commands/0/commands/0/durationMs',

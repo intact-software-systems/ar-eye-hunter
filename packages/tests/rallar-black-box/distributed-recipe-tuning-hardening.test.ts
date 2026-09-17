@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     computeDistributedRunArtifactAnalysis,
     computeDistributedRunTuningInventory,
+    decodeDistributedRunManifest,
     toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles,
     type DistributedRunPerformanceAnalysis,
@@ -332,7 +333,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         });
     });
 
-    it('contains malformed and over-depth command trees without throwing', () => {
+    it('leaves malformed command trees to the manifest decoder and stops over-depth branches', () => {
         const malformed = manifest();
         Reflect.set(malformed, 'recipes', [{
             recipeId: 'malformed',
@@ -340,7 +341,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 schemaVersion: 1,
                 recipeId: 'malformed',
                 commands: [{ kind: 'loop' }]
-            }
+            },
+            variables: {},
+            secretRefs: [],
+            required: true
         }]);
         const nested = (depth: number): Record<string, unknown> =>
             depth === 0
@@ -349,14 +353,23 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         const tooDeep = manifest();
         Reflect.set(tooDeep, 'recipes', [{
             recipeId: 'too-deep',
-            recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] }
+            recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] },
+            variables: {},
+            secretRefs: [],
+            required: true
         }]);
 
-        expect(() => computeDistributedRunTuningInventory(malformed)).not.toThrow();
-        expect(computeDistributedRunTuningInventory(malformed).limitations)
-            .toContainEqual(expect.objectContaining({ code: 'malformed-command' }));
-        expect(computeDistributedRunTuningInventory(tooDeep).limitations)
-            .toContainEqual(expect.objectContaining({ code: 'depth-limit-exceeded' }));
+        expect(decodeDistributedRunManifest(malformed).left).toContainEqual({
+            source: 'schema',
+            path: '$.recipes[0].recipe.commands[0]',
+            message: 'Missing required property commands.'
+        });
+        const tooDeepLimitations = decodeDistributedRunManifest(tooDeep).fold<readonly unknown[]>(
+            (issues) => issues,
+            (decoded) => computeDistributedRunTuningInventory(decoded).limitations
+        );
+        expect(tooDeepLimitations)
+            .toContainEqual(expect.objectContaining({ code: 'depth-limit-exceeded', recipeId: 'too-deep' }));
     });
 
     it('stops wide group and recipe traversal at the shared command bound', () => {

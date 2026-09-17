@@ -4,17 +4,25 @@ import type { ResolvedGroupAssertionEvidenceRow } from './group-assertions-evide
 import type {
     RallarBlackBoxCountMatchingGroupAssertion,
     RallarBlackBoxDistributedGroupAssertion,
-    RallarBlackBoxGroupAssertionAgentRow,
     RallarBlackBoxPredicateGroupAssertion
 } from './group-assertions.ts';
 
-export interface GroupAssertionVerdict {
+export type GroupAssertionVerdict = PredicateGroupAssertionVerdict | EqualityGroupAssertionVerdict;
+
+interface GroupAssertionVerdictFields {
     readonly ok: boolean;
     readonly violatingAgentIds: readonly string[];
-    readonly matchingCount?: number;
     readonly reason: string;
     readonly detail?: any;
-    readonly verdictByAgentId: ReadonlyMap<string, RallarBlackBoxGroupAssertionAgentRow['verdict']>;
+}
+
+export interface PredicateGroupAssertionVerdict extends GroupAssertionVerdictFields {
+    readonly kind: 'predicate';
+    readonly matchingAgentIds: readonly string[];
+}
+
+export interface EqualityGroupAssertionVerdict extends GroupAssertionVerdictFields {
+    readonly kind: 'equality';
 }
 
 // Group agreement equality: object key order is irrelevant, array order is
@@ -60,20 +68,16 @@ export function evaluateGroupAssertionAggregate(
 function evaluatePredicateAggregate(
     assertion: RallarBlackBoxPredicateGroupAssertion | RallarBlackBoxCountMatchingGroupAssertion,
     resolved: readonly ResolvedGroupAssertionEvidenceRow[]
-): GroupAssertionVerdict {
-    const verdictByAgentId = new Map<string, RallarBlackBoxGroupAssertionAgentRow['verdict']>();
-    const matchingAgentIds: string[] = [];
-    for (const row of resolved) {
-        const matches = assertValueMatches(
-            { exists: true, value: row.value },
-            assertion.predicate.operator,
-            assertion.predicate.expected
-        );
-        verdictByAgentId.set(row.agentId, matches ? 'matching' : 'not-matching');
-        if (matches) {
-            matchingAgentIds.push(row.agentId);
-        }
-    }
+): PredicateGroupAssertionVerdict {
+    const matchingAgentIds = resolved
+        .filter((row) =>
+            assertValueMatches(
+                { exists: true, value: row.value },
+                assertion.predicate.operator,
+                assertion.predicate.expected
+            )
+        )
+        .map((row) => row.agentId);
     const matchingCount = matchingAgentIds.length;
 
     if (assertion.aggregate === 'countMatching') {
@@ -82,12 +86,12 @@ function evaluatePredicateAggregate(
             (bounds.gte === undefined || matchingCount >= bounds.gte) &&
             (bounds.lte === undefined || matchingCount <= bounds.lte);
         return {
+            kind: 'predicate',
             ok,
             violatingAgentIds: [],
-            matchingCount,
+            matchingAgentIds,
             reason: `matching count ${matchingCount} violates ${JSON.stringify(bounds)}`,
-            detail: { count: bounds },
-            verdictByAgentId
+            detail: { count: bounds }
         };
     }
     if (assertion.aggregate === 'allMatch') {
@@ -95,23 +99,23 @@ function evaluatePredicateAggregate(
             .map((row) => row.agentId)
             .filter((agentId) => !matchingAgentIds.includes(agentId));
         return {
+            kind: 'predicate',
             ok: violating.length === 0,
             violatingAgentIds: violating,
-            matchingCount,
-            reason: `${matchingCount} of ${resolved.length} participants matched the predicate`,
-            verdictByAgentId
+            matchingAgentIds,
+            reason: `${matchingCount} of ${resolved.length} participants matched the predicate`
         };
     }
     return {
+        kind: 'predicate',
         ok: matchingCount === 0,
         violatingAgentIds: matchingAgentIds,
-        matchingCount,
-        reason: `${matchingCount} participants matched a predicate none may match`,
-        verdictByAgentId
+        matchingAgentIds,
+        reason: `${matchingCount} participants matched a predicate none may match`
     };
 }
 
-function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]): GroupAssertionVerdict {
+function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]): EqualityGroupAssertionVerdict {
     const classes: { value: any; agentIds: string[]; }[] = [];
     for (const row of resolved) {
         const existing = classes.find((candidate) => deepEqualJson(candidate.value, row.value));
@@ -130,18 +134,18 @@ function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]
         .filter((candidate) => candidate !== reference)
         .flatMap((candidate) => candidate.agentIds);
     return {
+        kind: 'equality',
         ok: classes.length <= 1,
         violatingAgentIds: violating,
         reason: `${classes.length} distinct values across ${resolved.length} participants`,
-        detail: reference === undefined ? undefined : { referenceValue: reference.value },
-        verdictByAgentId: toEqualityVerdicts(resolved, violating)
+        detail: reference === undefined ? undefined : { referenceValue: reference.value }
     };
 }
 
 function evaluateAllEqualWithin(
     resolved: readonly ResolvedGroupAssertionEvidenceRow[],
     tolerance: number
-): GroupAssertionVerdict {
+): EqualityGroupAssertionVerdict {
     const nonNumeric = resolved.filter((row) => typeof row.value !== 'number');
     const numericRows = resolved.filter((row) => typeof row.value === 'number');
     const values = numericRows.map((row) => row.value as number);
@@ -156,28 +160,14 @@ function evaluateAllEqualWithin(
         .map((row) => row.agentId);
     const violating = [...nonNumeric.map((row) => row.agentId), ...extremeAgentIds];
     return {
+        kind: 'equality',
         ok: nonNumeric.length === 0 && withinTolerance,
         violatingAgentIds: violating,
         reason: nonNumeric.length > 0
             ? `${nonNumeric.length} participants reported non-numeric values`
             : `numeric spread ${spread} exceeds tolerance ${tolerance}`,
-        detail: { minValue, maxValue, spread, tolerance },
-        verdictByAgentId: toEqualityVerdicts(resolved, violating)
+        detail: { minValue, maxValue, spread, tolerance }
     };
-}
-
-function toEqualityVerdicts(
-    resolved: readonly ResolvedGroupAssertionEvidenceRow[],
-    violatingAgentIds: readonly string[]
-): ReadonlyMap<string, RallarBlackBoxGroupAssertionAgentRow['verdict']> {
-    const verdictByAgentId = new Map<string, RallarBlackBoxGroupAssertionAgentRow['verdict']>();
-    for (const row of resolved) {
-        verdictByAgentId.set(
-            row.agentId,
-            violatingAgentIds.includes(row.agentId) ? 'violating' : 'agreeing'
-        );
-    }
-    return verdictByAgentId;
 }
 
 function smallestAgentId(candidate: Readonly<{ agentIds: readonly string[]; }>): string {

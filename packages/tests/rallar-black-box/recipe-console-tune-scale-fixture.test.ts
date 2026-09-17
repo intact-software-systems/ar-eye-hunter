@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
     createRecipeConsoleTuneScaleFixture,

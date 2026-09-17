@@ -273,8 +273,8 @@ describe('control snapshot selection index', () => {
                         ]
                     },
                     targetResolution: targetResolution(agent, [
-                        { agentId: agent, role: 'resolution-first', required: true },
-                        { agentId: agent, role: 'resolution-later', required: true }
+                        { agentId: agent, role: 'resolution-first', recipeIds: [], required: true, variables: {} },
+                        { agentId: agent, role: 'resolution-later', recipeIds: [], required: true, variables: {} }
                     ])
                 },
                 {
@@ -778,6 +778,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},

@@ -691,6 +691,7 @@ function resolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
                 staleAgents: 0,
                 offlineAgents: count,
                 wrongGroupAgents: 0,
+                assertionCapabilityBlockedAgents: 0,
                 agentsWithoutIdentity: 0,
                 roleCounts: {},
                 regions: {},

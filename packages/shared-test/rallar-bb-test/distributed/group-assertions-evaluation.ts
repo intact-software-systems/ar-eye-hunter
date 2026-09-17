@@ -19,7 +19,10 @@ import {
     RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
     type RallarBlackBoxDistributedGroupAssertion,
     type RallarBlackBoxDistributedGroupAssertionResult,
-    type RallarBlackBoxGroupAssertionAgentRow
+    type RallarBlackBoxGroupAssertionAgentRow,
+    type RallarBlackBoxGroupAssertionAgentVerdict,
+    type RallarBlackBoxGroupAssertionParticipantCounts,
+    type RallarBlackBoxMatchingGroupAssertionResult
 } from './group-assertions.ts';
 
 const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] = [
@@ -85,31 +88,53 @@ function computeGroupAssertionResult(
         .map((row) => row.agentId);
     const evidenceOk = brokenEvidence.length === 0 && resolved.length >= requiredParticipants;
     const verdict = evaluateGroupAssertionAggregate(assertion, resolved);
+    const perAgent = toRedactedAgentRows(rows, verdict, input.redaction);
 
+    return toGroupAssertionResult({
+        assertion,
+        counts: {
+            expected: scopedParticipants.length,
+            required: requiredParticipants,
+            withEvidence: resolved.length
+        },
+        outcome: {
+            ok: evidenceOk && verdict.ok,
+            missingAgentIds,
+            violatingAgentIds: verdict.violatingAgentIds,
+            perAgent,
+            error: evidenceOk && verdict.ok
+                ? undefined
+                : toGroupAssertionError({
+                    assertion,
+                    perAgent,
+                    verdict,
+                    evidenceOk,
+                    missingAgentIds,
+                    brokenEvidence,
+                    redaction: input.redaction
+                })
+        }
+    });
+}
+
+function toGroupAssertionResult(input: ToGroupAssertionResultInput): RallarBlackBoxDistributedGroupAssertionResult {
+    const { assertion } = input;
+    if (assertion.aggregate === 'allEqual' || assertion.aggregate === 'allEqualWithin') {
+        return {
+            groupAssertionId: assertion.groupAssertionId,
+            aggregate: assertion.aggregate,
+            participants: input.counts,
+            ...input.outcome
+        };
+    }
+    const matching = input.outcome.perAgent
+        .filter((row) => row.evidence === 'resolved' && row.verdict === 'matching')
+        .length;
     return {
         groupAssertionId: assertion.groupAssertionId,
         aggregate: assertion.aggregate,
-        ok: evidenceOk && verdict.ok,
-        participants: {
-            expected: scopedParticipants.length,
-            required: requiredParticipants,
-            withEvidence: resolved.length,
-            matching: verdict.matchingCount
-        },
-        missingAgentIds,
-        violatingAgentIds: verdict.violatingAgentIds,
-        perAgent: toRedactedAgentRows(rows, verdict, input.redaction),
-        error: evidenceOk && verdict.ok
-            ? undefined
-            : toGroupAssertionError({
-                assertion,
-                rows,
-                verdict,
-                evidenceOk,
-                missingAgentIds,
-                brokenEvidence,
-                redaction: input.redaction
-            })
+        participants: { ...input.counts, matching },
+        ...input.outcome
     };
 }
 
@@ -118,20 +143,39 @@ function toRedactedAgentRows(
     verdict: GroupAssertionVerdict,
     redaction: RallarBlackBoxTestRedactionOptions | undefined
 ): readonly RallarBlackBoxGroupAssertionAgentRow[] {
-    return rows.map((row) => ({
-        agentId: row.agentId,
-        role: row.role,
-        evidence: row.status,
-        verdict: row.status === 'resolved' ? verdict.verdictByAgentId.get(row.agentId) : undefined,
-        value: row.status === 'resolved'
-            ? redactRallarBlackBoxValue(row.value, redaction)
-            : undefined
-    }));
+    const matchingAgentIds = new Set(verdict.kind === 'predicate' ? verdict.matchingAgentIds : []);
+    const violatingAgentIds = new Set(verdict.violatingAgentIds);
+    const toAgentVerdict = (agentId: string): RallarBlackBoxGroupAssertionAgentVerdict =>
+        verdict.kind === 'predicate'
+            ? matchingAgentIds.has(agentId) ? 'matching' : 'not-matching'
+            : violatingAgentIds.has(agentId)
+            ? 'violating'
+            : 'agreeing';
+    return rows.map((row) =>
+        row.status === 'resolved'
+            ? {
+                agentId: row.agentId,
+                role: row.role,
+                evidence: row.status,
+                verdict: toAgentVerdict(row.agentId),
+                value: redactRallarBlackBoxValue(row.value, redaction)
+            }
+            : { agentId: row.agentId, role: row.role, evidence: row.status }
+    );
+}
+
+interface ToGroupAssertionResultInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly counts: RallarBlackBoxGroupAssertionParticipantCounts;
+    readonly outcome: Pick<
+        RallarBlackBoxMatchingGroupAssertionResult,
+        'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
+    >;
 }
 
 interface ToGroupAssertionErrorInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly rows: readonly GroupAssertionEvidenceRow[];
+    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
     readonly verdict: GroupAssertionVerdict;
     readonly evidenceOk: boolean;
     readonly missingAgentIds: readonly string[];
@@ -152,7 +196,7 @@ function toGroupAssertionError(
         brokenEvidenceAgentIds: input.brokenEvidence.map((row) => row.agentId),
         violatingAgentIds: input.verdict.violatingAgentIds,
         aggregateDetail: input.verdict.detail,
-        perAgent: toRedactedAgentRows(input.rows, input.verdict, input.redaction)
+        perAgent: input.perAgent
     }, input.redaction);
 
     if (!input.evidenceOk) {
@@ -179,17 +223,18 @@ function toNoParticipantsResult(
     const scopeText = assertion.scope?.role === undefined
         ? 'the frozen participant set is empty'
         : `no frozen participant holds role ${assertion.scope.role}`;
-    return {
-        groupAssertionId: assertion.groupAssertionId,
-        aggregate: assertion.aggregate,
-        ok: false,
-        participants: { expected: 0, required: assertion.minParticipants ?? 0, withEvidence: 0 },
-        missingAgentIds: [],
-        violatingAgentIds: [],
-        perAgent: [],
-        error: {
-            code: RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
-            message: `Group assertion ${assertion.groupAssertionId} cannot evaluate: ${scopeText}.`
+    return toGroupAssertionResult({
+        assertion,
+        counts: { expected: 0, required: assertion.minParticipants ?? 0, withEvidence: 0 },
+        outcome: {
+            ok: false,
+            missingAgentIds: [],
+            violatingAgentIds: [],
+            perAgent: [],
+            error: {
+                code: RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
+                message: `Group assertion ${assertion.groupAssertionId} cannot evaluate: ${scopeText}.`
+            }
         }
-    };
+    });
 }

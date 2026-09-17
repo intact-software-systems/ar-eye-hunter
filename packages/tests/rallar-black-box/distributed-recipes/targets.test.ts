@@ -501,8 +501,8 @@ describe('distributed recipes targets', () => {
             targetPolicyMode: 'all-online-group-members' as const,
             targetAgentIds: ['agent-a', 'agent-b'],
             roleAssignments: [
-                { agentId: 'agent-a', role: 'sender', required: true },
-                { agentId: 'agent-b', role: 'receiver', required: true }
+                { agentId: 'agent-a', role: 'sender', recipeIds: [], required: true, variables: {} },
+                { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} }
             ],
             blockers: [],
             summary: {
@@ -514,6 +514,7 @@ describe('distributed recipes targets', () => {
                 staleAgents: 0,
                 offlineAgents: 0,
                 wrongGroupAgents: 0,
+                assertionCapabilityBlockedAgents: 0,
                 agentsWithoutIdentity: 0,
                 roleCounts: { receiver: 1, sender: 1 },
                 regions: {},
@@ -525,11 +526,13 @@ describe('distributed recipes targets', () => {
             resolvedAtEpochMs: 2_000,
             targetAgentIds: Array.from({ length: 50 }, (_, index) => `agent-${String(index + 1).padStart(2, '0')}`),
             roleAssignments: [
-                { agentId: 'agent-01', role: 'sender', required: true },
+                { agentId: 'agent-01', role: 'sender', recipeIds: [], required: true, variables: {} },
                 ...Array.from({ length: 49 }, (_, index) => ({
                     agentId: `agent-${String(index + 2).padStart(2, '0')}`,
                     role: 'receiver',
-                    required: true
+                    recipeIds: [],
+                    required: true,
+                    variables: {}
                 }))
             ],
             summary: {

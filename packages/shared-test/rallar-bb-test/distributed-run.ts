@@ -192,17 +192,6 @@ export interface RallarBlackBoxDistributedRoleAssignment {
     readonly variables: RallarBlackBoxTestRecord;
 }
 
-/** A role an agent holds after target resolution; authored assignments pass through with their recipe scope. */
-export interface RallarBlackBoxDistributedResolvedRoleAssignment {
-    readonly role: string;
-    readonly agentId: string;
-    readonly required: boolean;
-    /** Absent when the role came from targetPolicy.roles or a role pattern instead of an authored assignment. */
-    readonly recipeIds?: readonly string[];
-    /** Absent when the role came from targetPolicy.roles or a role pattern instead of an authored assignment. */
-    readonly variables?: RallarBlackBoxTestRecord;
-}
-
 export interface RallarBlackBoxDistributedRoleAssignmentPolicy {
     readonly mode: RallarBlackBoxDistributedRoleAssignmentPolicyMode;
     readonly pattern: RallarBlackBoxDistributedRolePattern;
@@ -319,7 +308,7 @@ export interface RallarBlackBoxDistributedTargetResolution {
     readonly staleAfterMs: number;
     readonly targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
     readonly targetAgentIds: readonly string[];
-    readonly roleAssignments: readonly RallarBlackBoxDistributedResolvedRoleAssignment[];
+    readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
     readonly blockers: readonly RallarBlackBoxDistributedTargetBlocker[];
     readonly summary: RallarBlackBoxDistributedTargetResolutionSummary;
 }
@@ -334,8 +323,7 @@ export interface RallarBlackBoxDistributedTargetResolutionSummary {
     readonly staleAgents: number;
     readonly offlineAgents: number;
     readonly wrongGroupAgents: number;
-    /** Absent from explicit target resolutions, which do not gate agents on assertion capabilities. */
-    readonly assertionCapabilityBlockedAgents?: number;
+    readonly assertionCapabilityBlockedAgents: number;
     readonly agentsWithoutIdentity: number;
     readonly roleCounts: Readonly<Record<string, number>>;
     readonly regions: Readonly<Record<string, number>>;

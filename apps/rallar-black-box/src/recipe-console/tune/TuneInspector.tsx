@@ -66,8 +66,8 @@ function inspectorContent(
                         ['Current', tuneNumber(knob.currentValue)],
                         ['Availability', knob.availability],
                         ['Effective', knob.effective ? 'Yes' : 'No'],
-                        ['Recipe', knob.recipeId ?? 'Manifest scope'],
-                        ['Command', knob.commandId ?? 'Manifest scope'],
+                        ['Recipe', knob.scope === 'manifest' ? 'Manifest scope' : knob.recipeId],
+                        ['Command', knob.scope === 'manifest' ? 'Manifest scope' : knob.commandId ?? 'No command ID'],
                         ['Reason', knob.reason ?? 'Inventory-approved numeric knob']
                     ]}
                 />

@@ -673,9 +673,9 @@ Deno.test('control service freezes global fleet target roles after staging', () 
     ));
     assertJsonEquals(staged.targetAgentIds, ['agent-01', 'agent-02', 'agent-03']);
     assertJsonEquals(staged.targetResolution?.roleAssignments, [
-        { role: 'sender', agentId: 'agent-01', required: true },
-        { role: 'receiver', agentId: 'agent-02', required: true },
-        { role: 'receiver', agentId: 'agent-03', required: true }
+        { role: 'sender', agentId: 'agent-01', recipeIds: [], required: true, variables: {} },
+        { role: 'receiver', agentId: 'agent-02', recipeIds: [], required: true, variables: {} },
+        { role: 'receiver', agentId: 'agent-03', recipeIds: [], required: true, variables: {} }
     ]);
 
     for (const agentId of staged.targetAgentIds) {
@@ -688,9 +688,9 @@ Deno.test('control service freezes global fleet target roles after staging', () 
     assertJsonEquals(started.state, 'running');
     assertJsonEquals(started.targetAgentIds, ['agent-01', 'agent-02', 'agent-03']);
     assertJsonEquals(started.targetResolution?.roleAssignments, [
-        { role: 'sender', agentId: 'agent-01', required: true },
-        { role: 'receiver', agentId: 'agent-02', required: true },
-        { role: 'receiver', agentId: 'agent-03', required: true }
+        { role: 'sender', agentId: 'agent-01', recipeIds: [], required: true, variables: {} },
+        { role: 'receiver', agentId: 'agent-02', recipeIds: [], required: true, variables: {} },
+        { role: 'receiver', agentId: 'agent-03', recipeIds: [], required: true, variables: {} }
     ]);
     assertJsonEquals(started.commandLinks.filter((link) => link.phase === 'start').map((link) => link.agentId), [
         'agent-01',

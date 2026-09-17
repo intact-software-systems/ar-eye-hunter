@@ -44,8 +44,8 @@ const WORLD_FLEET_TARGET_RESOLUTION: RallarBlackBoxDistributedTargetResolution =
     targetPolicyMode: 'selected-agents',
     targetAgentIds: ['agent-01', 'agent-02'],
     roleAssignments: [
-        { agentId: 'agent-01', role: 'sender', required: true },
-        { agentId: 'agent-02', role: 'receiver', required: true }
+        { agentId: 'agent-01', role: 'sender', recipeIds: [], required: true, variables: {} },
+        { agentId: 'agent-02', role: 'receiver', recipeIds: [], required: true, variables: {} }
     ],
     blockers: [
         { agentId: 'agent-03', status: 'stale-agent', reason: 'stale', identity: { principalId: 'agent-03' } }
@@ -59,11 +59,22 @@ const WORLD_FLEET_TARGET_RESOLUTION: RallarBlackBoxDistributedTargetResolution =
         staleAgents: 1,
         offlineAgents: 0,
         wrongGroupAgents: 0,
+        assertionCapabilityBlockedAgents: 0,
         agentsWithoutIdentity: 0,
         roleCounts: { sender: 1, receiver: 1 },
         regions: { 'eu-north': 2 },
         providers: { hetzner: 2 }
     }
+};
+
+const GROUP_ASSERTION_RESULT = {
+    groupAssertionId: 'members-match',
+    aggregate: 'allMatch',
+    ok: true,
+    participants: { expected: 1, required: 1, withEvidence: 1, matching: 1 },
+    missingAgentIds: [],
+    violatingAgentIds: [],
+    perAgent: [{ agentId: 'agent-a', evidence: 'resolved', verdict: 'matching', value: 1 }]
 };
 
 function worldFleetFiles(files: DistributedRunArtifactFiles): DistributedRunArtifactFiles {
@@ -347,6 +358,80 @@ describe('distributed run artifact decoding', () => {
                 expected: {
                     fileName: 'distributed-run.json',
                     message: 'distributed-run.json is not a distributed run snapshot: commandLinks[0].queuedAtEpochMs must be a finite number.'
+                }
+            },
+            {
+                name: 'derived role assignment without its recipe scope',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        targetResolution: {
+                            ...WORLD_FLEET_TARGET_RESOLUTION,
+                            roleAssignments: [{ agentId: 'agent-01', role: 'sender', required: true }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: targetResolution.roleAssignments[0].recipeIds must be an array of strings.'
+                }
+            },
+            {
+                name: 'target resolution summary without the assertion capability counter',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        targetResolution: {
+                            ...WORLD_FLEET_TARGET_RESOLUTION,
+                            summary: { ...WORLD_FLEET_TARGET_RESOLUTION.summary, assertionCapabilityBlockedAgents: undefined }
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: targetResolution.summary.assertionCapabilityBlockedAgents must be a finite number.'
+                }
+            },
+            {
+                name: 'resolved group assertion row without a verdict',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        rollup: {
+                            ...distributedRun.rollup,
+                            groupAssertions: [{
+                                ...GROUP_ASSERTION_RESULT,
+                                perAgent: [{ agentId: 'agent-a', evidence: 'resolved', value: 1 }]
+                            }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: rollup.groupAssertions[0].perAgent[0].verdict must be a group assertion verdict for resolved evidence.'
+                }
+            },
+            {
+                name: 'predicate group assertion counts without a matching count',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        rollup: {
+                            ...distributedRun.rollup,
+                            groupAssertions: [{
+                                ...GROUP_ASSERTION_RESULT,
+                                participants: { expected: 1, required: 1, withEvidence: 1 }
+                            }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: rollup.groupAssertions[0].participants.matching must be a finite number for a allMatch assertion.'
                 }
             },
             {

@@ -1,12 +1,12 @@
+import {
+    computeDistributedRunTuningInventory
+} from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import type {
     DistributedRunFailureAnalysis,
     DistributedRunPerformanceAnalysis,
     DistributedRunTargetResolutionAnalysis
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
-import {
-    computeDistributedRunTuningInventory
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
     RallarBlackBoxDistributedRunManifest

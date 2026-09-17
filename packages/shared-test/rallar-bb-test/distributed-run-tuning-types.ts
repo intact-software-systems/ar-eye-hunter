@@ -11,14 +11,16 @@ export const DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES = [
     'maxJitterMs'
 ] as const satisfies readonly (keyof RallarBlackBoxTestRtcStreamThresholds)[];
 
-export type DistributedRunTuningKnobName =
-    | 'ackTimeoutMs'
-    | 'barrier.timeoutMs'
+export type DistributedRunManifestTuningKnobName = 'ackTimeoutMs' | 'barrier.timeoutMs';
+
+export type DistributedRunCommandTuningKnobName =
     | 'durationMs'
     | 'intervalMs'
     | 'rateHz'
     | 'maxInFlight'
     | `thresholds.${typeof DISTRIBUTED_RUN_TUNING_STREAM_THRESHOLD_NAMES[number]}`;
+
+export type DistributedRunTuningKnobName = DistributedRunManifestTuningKnobName | DistributedRunCommandTuningKnobName;
 
 export interface DistributedRunTuningKnobConstraint {
     readonly type: 'integer' | 'number';
@@ -30,37 +32,42 @@ export interface DistributedRunTuningKnobConstraint {
     readonly maximum?: number;
 }
 
-/** One flat row per knob: Tune reads manifest and command knobs uniformly, so command identity is optional. */
-export interface DistributedRunTuningKnob {
-    readonly name: DistributedRunTuningKnobName;
+export type DistributedRunTuningKnob = DistributedRunManifestTuningKnob | DistributedRunCommandTuningKnob;
+
+interface DistributedRunTuningKnobFields {
     readonly pointer: string;
-    readonly scope: 'manifest' | 'command' | 'stream-threshold';
-    /** Absent when the manifest leaves the setting unset. */
+    /** Absent when the manifest or command leaves the setting unset. */
     readonly currentValue?: number;
     readonly availability: 'configured' | 'unset' | 'blocked';
     readonly effective: boolean;
     readonly constraint: DistributedRunTuningKnobConstraint;
-    /** Absent for manifest-scope knobs. */
-    readonly recipeIndex?: number;
-    /** Absent for manifest-scope knobs and for a recipe selection that names no recipe id. */
-    readonly recipeId?: string;
-    /** Absent for manifest-scope knobs and for a command that names no commandId. */
-    readonly commandId?: string;
-    /** Absent for manifest-scope knobs. */
-    readonly commandKind?: 'loop' | 'rtc.stream';
     /** Absent when nothing qualifies the knob's availability. */
     readonly reason?: string;
+}
+
+export interface DistributedRunManifestTuningKnob extends DistributedRunTuningKnobFields {
+    readonly scope: 'manifest';
+    readonly name: DistributedRunManifestTuningKnobName;
+}
+
+export interface DistributedRunCommandTuningKnob extends DistributedRunTuningKnobFields {
+    readonly scope: 'command' | 'stream-threshold';
+    readonly name: DistributedRunCommandTuningKnobName;
+    readonly recipeIndex: number;
+    readonly recipeId: string;
+    /** Absent when the command names no commandId. */
+    readonly commandId?: string;
+    readonly commandKind: 'loop' | 'rtc.stream';
 }
 
 export interface DistributedRunTuningInventoryLimitation {
     readonly code:
         | 'reference-only-recipe'
         | 'command-limit-exceeded'
-        | 'malformed-command'
         | 'depth-limit-exceeded';
     readonly message: string;
     readonly recipeIndex: number;
-    /** Absent when the limitation precedes reading the recipe selection or the selection names no recipe id. */
+    /** Absent when the limitation precedes reading the recipe selection. */
     readonly recipeId?: string;
 }
 

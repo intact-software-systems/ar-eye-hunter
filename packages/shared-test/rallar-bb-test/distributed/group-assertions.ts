@@ -1,6 +1,7 @@
-import { isRallarBlackBoxAssertOperator } from '../assert/assert-value-operators.ts';
-import type { RallarBlackBoxDistributedRunValidationIssue } from '../distributed-run-validation.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '../distributed-run.ts';
+import type {
+    DistributedRunManifestSchemaValue,
+    RallarBlackBoxDistributedRunValidationIssue
+} from '../distributed-run-validation.ts';
 import type {
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCommand,
@@ -97,30 +98,47 @@ export type RallarBlackBoxGroupAssertionEvidenceStatus =
     | 'duplicate'
     | 'unresolved';
 
-export interface RallarBlackBoxGroupAssertionAgentRow {
+export type RallarBlackBoxGroupAssertionAgentVerdict = 'matching' | 'not-matching' | 'violating' | 'agreeing';
+
+export type RallarBlackBoxGroupAssertionAgentRow =
+    | RallarBlackBoxResolvedGroupAssertionAgentRow
+    | RallarBlackBoxUnusableGroupAssertionAgentRow;
+
+interface RallarBlackBoxGroupAssertionAgentRowFields {
     readonly agentId: string;
     /** Absent when the participant holds no role. */
     readonly role?: string;
-    readonly evidence: RallarBlackBoxGroupAssertionEvidenceStatus;
-    /** Absent unless the participant's evidence resolved. */
-    readonly verdict?: 'matching' | 'not-matching' | 'violating' | 'agreeing';
-    /** Absent unless the participant's evidence resolved; redacted when it did. */
-    readonly value?: RallarBlackBoxGroupAssertionValue;
+}
+
+export interface RallarBlackBoxResolvedGroupAssertionAgentRow extends RallarBlackBoxGroupAssertionAgentRowFields {
+    readonly evidence: 'resolved';
+    readonly verdict: RallarBlackBoxGroupAssertionAgentVerdict;
+    /** The recorded value after redaction. */
+    readonly value: RallarBlackBoxGroupAssertionValue;
+}
+
+export interface RallarBlackBoxUnusableGroupAssertionAgentRow extends RallarBlackBoxGroupAssertionAgentRowFields {
+    readonly evidence: Exclude<RallarBlackBoxGroupAssertionEvidenceStatus, 'resolved'>;
 }
 
 export interface RallarBlackBoxGroupAssertionParticipantCounts {
     readonly expected: number;
     readonly required: number;
     readonly withEvidence: number;
-    /** Absent for equality aggregates and for assertions with no participants, which count no matches. */
-    readonly matching?: number;
 }
 
-export interface RallarBlackBoxDistributedGroupAssertionResult {
+export interface RallarBlackBoxMatchingGroupAssertionParticipantCounts
+    extends RallarBlackBoxGroupAssertionParticipantCounts {
+    readonly matching: number;
+}
+
+export type RallarBlackBoxDistributedGroupAssertionResult =
+    | RallarBlackBoxMatchingGroupAssertionResult
+    | RallarBlackBoxEqualityGroupAssertionResult;
+
+interface RallarBlackBoxDistributedGroupAssertionResultFields {
     readonly groupAssertionId: string;
-    readonly aggregate: RallarBlackBoxGroupAssertionAggregate;
     readonly ok: boolean;
-    readonly participants: RallarBlackBoxGroupAssertionParticipantCounts;
     readonly missingAgentIds: readonly string[];
     readonly violatingAgentIds: readonly string[];
     readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
@@ -128,13 +146,25 @@ export interface RallarBlackBoxDistributedGroupAssertionResult {
     readonly error?: RallarBlackBoxTestError;
 }
 
+export interface RallarBlackBoxMatchingGroupAssertionResult
+    extends RallarBlackBoxDistributedGroupAssertionResultFields {
+    readonly aggregate: 'allMatch' | 'noneMatch' | 'countMatching';
+    readonly participants: RallarBlackBoxMatchingGroupAssertionParticipantCounts;
+}
+
+export interface RallarBlackBoxEqualityGroupAssertionResult
+    extends RallarBlackBoxDistributedGroupAssertionResultFields {
+    readonly aggregate: 'allEqual' | 'allEqualWithin';
+    readonly participants: RallarBlackBoxGroupAssertionParticipantCounts;
+}
+
 export function validateDistributedGroupAssertions(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const recipeKeys = new Set(
         manifest.recipes
             .map((selection) => selection.recipeId)
-            .filter((key) => typeof key === 'string' && key.trim().length > 0)
+            .filter((key) => key.trim().length > 0)
     );
     const duplicatePositions = toDuplicateGroupAssertionIdPositions(manifest.groupAssertions);
 
@@ -156,7 +186,7 @@ function toDuplicateGroupAssertionIdPositions(
     const positions = new Set<number>();
     groupAssertions.forEach((assertion, index) => {
         const id = assertion.groupAssertionId;
-        if (typeof id !== 'string' || id.trim().length === 0) {
+        if (id.trim().length === 0) {
             return;
         }
         if (seenIds.has(id)) {
@@ -173,7 +203,7 @@ function validateGroupAssertionIdentity(
     duplicated: boolean
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const id = assertion.groupAssertionId;
-    if (typeof id !== 'string' || id.trim().length === 0) {
+    if (id.trim().length === 0) {
         return [{ path: `${path}.groupAssertionId`, message: 'A non-empty string is required.' }];
     }
     return duplicated
@@ -184,7 +214,7 @@ function validateGroupAssertionIdentity(
 interface GroupAssertionSourceValidationInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
     readonly path: string;
-    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly manifest: DistributedRunManifestSchemaValue;
     readonly recipeKeys: ReadonlySet<string>;
 }
 
@@ -193,9 +223,9 @@ function validateGroupAssertionSource(
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const source = input.assertion.source;
     const fieldIssues = (['recipeId', 'commandId', 'path'] as const)
-        .filter((field) => typeof source[field] !== 'string' || source[field].trim().length === 0)
+        .filter((field) => source[field].trim().length === 0)
         .map((field) => ({ path: `${input.path}.source.${field}`, message: 'A non-empty string is required.' }));
-    if (!source.recipeId || !input.recipeKeys.has(source.recipeId)) {
+    if (!input.recipeKeys.has(source.recipeId)) {
         return [
             ...fieldIssues,
             {
@@ -219,7 +249,7 @@ function validateGroupAssertionSource(
 interface GroupAssertionScopeValidationInput {
     readonly assertion: RallarBlackBoxDistributedGroupAssertion;
     readonly path: string;
-    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly manifest: DistributedRunManifestSchemaValue;
 }
 
 function validateGroupAssertionScope(
@@ -235,7 +265,7 @@ function validateGroupAssertionScope(
     if (role === undefined) {
         return minParticipantIssues;
     }
-    if (typeof role !== 'string' || role.trim().length === 0) {
+    if (role.trim().length === 0) {
         return [...minParticipantIssues, {
             path: `${input.path}.scope.role`,
             message: 'A non-empty string is required.'
@@ -244,7 +274,7 @@ function validateGroupAssertionScope(
     const targetPolicy = input.manifest.targetPolicy;
     const declaredRoles = new Set([
         ...input.manifest.roleAssignments.map((assignment) => assignment.role),
-        ...Object.keys(targetPolicy.mode === 'role-map' ? targetPolicy.roles : {})
+        ...Object.keys(targetPolicy.mode === 'role-map' ? targetPolicy.roles ?? {} : {})
     ]);
     // Pattern policies produce derived roles at target resolution; the frozen
     // participant set enforces unknown roles there as a no-participants failure.
@@ -265,19 +295,13 @@ function validateGroupAssertionAggregate(
     path: string
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     if (assertion.aggregate === 'allEqualWithin') {
-        return typeof assertion.tolerance !== 'number' || !(assertion.tolerance >= 0)
-            ? [{ path: `${path}.tolerance`, message: 'allEqualWithin requires a finite tolerance >= 0.' }]
-            : [];
+        return Number.isFinite(assertion.tolerance) && assertion.tolerance >= 0
+            ? []
+            : [{ path: `${path}.tolerance`, message: 'allEqualWithin requires a finite tolerance >= 0.' }];
     }
-    if (assertion.aggregate === 'allEqual') {
-        return [];
-    }
-    const operatorIssues = isRallarBlackBoxAssertOperator(assertion.predicate?.operator)
-        ? []
-        : [{ path: `${path}.predicate.operator`, message: 'Predicate operator is not a supported assert operator.' }];
     return assertion.aggregate === 'countMatching'
-        ? [...operatorIssues, ...validateGroupAssertionCountBounds(assertion.count, path)]
-        : operatorIssues;
+        ? validateGroupAssertionCountBounds(assertion.count, path)
+        : [];
 }
 
 function validateGroupAssertionCountBounds(
@@ -285,7 +309,7 @@ function validateGroupAssertionCountBounds(
     path: string
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const bounds = ['equals', 'gte', 'lte'] as const;
-    if (!count || bounds.every((bound) => count[bound] === undefined)) {
+    if (bounds.every((bound) => count[bound] === undefined)) {
         return [{
             path: `${path}.count`,
             message: 'countMatching requires at least one of count.equals, count.gte, count.lte.'
@@ -300,7 +324,7 @@ function validateGroupAssertionCountBounds(
 }
 
 function toInlineRecipeCommandIds(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: DistributedRunManifestSchemaValue,
     recipeKey: string
 ): ReadonlySet<string> | undefined {
     const selection = manifest.recipes.find((candidate) => candidate.recipeId === recipeKey);
@@ -310,7 +334,7 @@ function toInlineRecipeCommandIds(
     const commandIds = new Set<string>();
     const pending: RallarBlackBoxTestCommand[] = [...selection.recipe.commands];
     for (let command = pending.shift(); command !== undefined; command = pending.shift()) {
-        if (typeof command.commandId === 'string') {
+        if (command.commandId !== undefined) {
             commandIds.add(command.commandId);
         }
         pending.push(...toNestedCommands(command));
@@ -320,10 +344,10 @@ function toInlineRecipeCommandIds(
 
 function toNestedCommands(command: RallarBlackBoxTestCommand): readonly RallarBlackBoxTestCommand[] {
     if (command.kind === 'loop') {
-        return command.commands ?? [];
+        return command.commands;
     }
     if (command.kind === 'parallel') {
-        return (command.groups ?? []).flatMap((group) => group?.commands ?? []);
+        return command.groups.flatMap((group) => group.commands);
     }
     if (command.kind === 'recipe.load' || command.kind === 'recipe.run') {
         return command.recipe?.commands ?? [];

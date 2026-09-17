@@ -1,4 +1,4 @@
-import { validateDistributedRunManifestContract } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
+import { decodeDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxCommandCapability,
@@ -92,14 +92,13 @@ export function validateSchemaAuthoringValue(
     target: SchemaAuthoringTarget,
     value: unknown
 ): SchemaAuthoringValidation {
-    const schemaResult = validateJsonSchema(SCHEMAS[target], value);
-    const errors: JsonSchemaValidationIssue[] = schemaResult.ok ? [] : [...schemaResult.errors];
-
-    if (target === 'distributed-run-manifest' && schemaResult.ok) {
-        errors.push(...validateDistributedRunManifestContract(value as RallarBlackBoxDistributedRunManifest));
+    if (target === 'distributed-run-manifest') {
+        const issues = decodeDistributedRunManifest(value).left ?? [];
+        return validationFromErrors(target, true, issues.map(({ path, message }) => ({ path, message })), value);
     }
 
-    return validationFromErrors(target, true, errors, value);
+    const schemaResult = validateJsonSchema(SCHEMAS[target], value);
+    return validationFromErrors(target, true, schemaResult.ok ? [] : schemaResult.errors, value);
 }
 
 export function commandExampleSnippets(): readonly CommandExampleSnippet[] {

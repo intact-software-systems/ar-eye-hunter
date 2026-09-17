@@ -50,8 +50,8 @@ export function createTuneCandidateKnobIndex(
             knob.currentValue,
             knob.availability,
             knob.effective,
-            knob.commandId,
-            knob.recipeId,
+            knob.scope === 'manifest' ? undefined : knob.commandId,
+            knob.scope === 'manifest' ? undefined : knob.recipeId,
             knob.reason,
             knob.constraint
         ]);
@@ -93,10 +93,9 @@ export function createTuneCandidateKnobIndex(
                 knob.name,
                 knob.scope,
                 knob.availability,
-                knob.commandId ?? '',
-                knob.recipeId
+                ...(knob.scope === 'manifest' ? [] : [knob.commandId ?? '', knob.recipeId])
             ].join(' '),
-            detail: `${knob.scope} · recipe ${knob.recipeId}`
+            detail: knob.scope === 'manifest' ? knob.scope : `${knob.scope} · recipe ${knob.recipeId}`
         });
     }
     let hintRowsVisited = 0;

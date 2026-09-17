@@ -58,7 +58,7 @@ export function createDistributedRunMonitorMembershipIndex(
         work.roleAssignmentVisitCount += 1;
         appendMapValue(displayRolesByAgentId, assignment.agentId, assignment.role);
         addMapSetValue(expectedRolesByAgentId, assignment.agentId, assignment.role);
-        for (const recipeId of assignment.recipeIds ?? []) {
+        for (const recipeId of assignment.recipeIds) {
             addMapSetValue(assignedRecipeIdsByAgentId, assignment.agentId, recipeId);
         }
     }

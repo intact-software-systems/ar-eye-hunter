@@ -309,9 +309,9 @@ describe('rallar-bb-test distributed run contract', () => {
 
         expect(resolution.targetAgentIds).toEqual(['agent-01', 'agent-02', 'agent-03']);
         expect(resolution.roleAssignments).toEqual([
-            { role: 'sender', agentId: 'agent-01', required: true },
-            { role: 'receiver', agentId: 'agent-02', required: true },
-            { role: 'receiver', agentId: 'agent-03', required: true }
+            { role: 'sender', agentId: 'agent-01', recipeIds: [], required: true, variables: {} },
+            { role: 'receiver', agentId: 'agent-02', recipeIds: [], required: true, variables: {} },
+            { role: 'receiver', agentId: 'agent-03', recipeIds: [], required: true, variables: {} }
         ]);
         expect(resolution.summary).toMatchObject({
             agents: 7,
@@ -322,6 +322,7 @@ describe('rallar-bb-test distributed run contract', () => {
             staleAgents: 1,
             offlineAgents: 1,
             wrongGroupAgents: 1,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 1,
             roleCounts: {
                 sender: 1,
@@ -553,7 +554,7 @@ describe('rallar-bb-test distributed run contract', () => {
                     groupAssertionId: 'no-leaks',
                     aggregate: 'noneMatch',
                     ok: true,
-                    participants: { expected: 2, required: 2, withEvidence: 2 },
+                    participants: { expected: 2, required: 2, withEvidence: 2, matching: 0 },
                     missingAgentIds: [],
                     violatingAgentIds: [],
                     perAgent: []

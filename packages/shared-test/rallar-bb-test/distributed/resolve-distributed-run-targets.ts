@@ -3,7 +3,7 @@ import type {
     RallarBlackBoxControlAgentCandidate,
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedGroupRef,
-    RallarBlackBoxDistributedResolvedRoleAssignment,
+    RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetBlocker,
     RallarBlackBoxDistributedTargetResolution,
@@ -31,11 +31,12 @@ interface ResolveDistributedTargetBlockerInput {
     readonly assertionFeatures: DistributedAssertionFeatures;
 }
 
-interface ComputeTargetResolutionSummaryInput {
-    readonly targets: ResolveDistributedRunTargetsInput;
+export interface ComputeDistributedTargetResolutionSummaryInput {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly agents: readonly RallarBlackBoxControlAgentCandidate[];
     readonly targetableAgentIds: readonly string[];
     readonly targetAgentIds: readonly string[];
-    readonly roleAssignments: readonly RallarBlackBoxDistributedResolvedRoleAssignment[];
+    readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
     readonly blockers: readonly RallarBlackBoxDistributedTargetBlocker[];
 }
 
@@ -73,13 +74,43 @@ export function resolveDistributedRunTargets(
         targetAgentIds,
         roleAssignments,
         blockers,
-        summary: computeTargetResolutionSummary({
-            targets: input,
+        summary: computeDistributedTargetResolutionSummary({
+            manifest: input.manifest,
+            agents: input.agents,
             targetableAgentIds,
             targetAgentIds,
             roleAssignments,
             blockers
         })
+    };
+}
+
+/** Every blocker counter counts the resolution's blockers, so a resolution that blocks no agent counts zero of each. */
+export function computeDistributedTargetResolutionSummary(
+    input: ComputeDistributedTargetResolutionSummaryInput
+): RallarBlackBoxDistributedTargetResolutionSummary {
+    const expected = input.manifest.targetPolicy.expectedParticipantCount;
+    const countBlockers = (status: RallarBlackBoxDistributedTargetBlocker['status']): number =>
+        input.blockers.filter((blocker) => blocker.status === status).length;
+    const selectedAgentIds = new Set(input.targetAgentIds);
+    const selectedAgents = input.agents.filter((agent) => selectedAgentIds.has(agent.agentId));
+
+    return {
+        agents: input.agents.length,
+        targetable: input.targetableAgentIds.length,
+        selected: input.targetAgentIds.length,
+        expectedParticipantCount: expected,
+        missingExpectedParticipants: expected === undefined
+            ? 0
+            : Math.max(0, expected - input.targetAgentIds.length),
+        staleAgents: countBlockers('stale-agent'),
+        offlineAgents: countBlockers('offline-agent'),
+        wrongGroupAgents: countBlockers('different-group'),
+        assertionCapabilityBlockedAgents: countBlockers('missing-assertion-capability'),
+        agentsWithoutIdentity: countBlockers('agent-without-identity'),
+        roleCounts: computeSortedCounts(input.roleAssignments.map((assignment) => assignment.role)),
+        regions: computeSortedCounts(toNonEmptyTexts(selectedAgents.map((agent) => agent.identity?.region))),
+        providers: computeSortedCounts(toNonEmptyTexts(selectedAgents.map((agent) => agent.identity?.provider)))
     };
 }
 
@@ -145,7 +176,7 @@ function resolveDistributedSelectedAgentIds(
 function resolveDistributedRoleAssignments(
     manifest: RallarBlackBoxDistributedRunManifest,
     targetAgentIds: readonly string[]
-): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     const selected = new Set(targetAgentIds);
     if (manifest.roleAssignments.length > 0) {
         return manifest.roleAssignments
@@ -167,38 +198,11 @@ function resolveDistributedRoleAssignments(
 
 function toResolvedRoleAssignments(
     roles: Readonly<Record<string, readonly string[]>>
-): readonly RallarBlackBoxDistributedResolvedRoleAssignment[] {
+): readonly RallarBlackBoxDistributedRoleAssignment[] {
     return Object.entries(roles)
-        .flatMap(([role, agentIds]) => agentIds.map((agentId) => ({ role, agentId, required: true })));
-}
-
-function computeTargetResolutionSummary(
-    input: ComputeTargetResolutionSummaryInput
-): RallarBlackBoxDistributedTargetResolutionSummary {
-    const { manifest, agents } = input.targets;
-    const expected = manifest.targetPolicy.expectedParticipantCount;
-    const countBlockers = (status: RallarBlackBoxDistributedTargetBlocker['status']): number =>
-        input.blockers.filter((blocker) => blocker.status === status).length;
-    const selectedAgentIds = new Set(input.targetAgentIds);
-    const selectedAgents = agents.filter((agent) => selectedAgentIds.has(agent.agentId));
-
-    return {
-        agents: agents.length,
-        targetable: input.targetableAgentIds.length,
-        selected: input.targetAgentIds.length,
-        expectedParticipantCount: expected,
-        missingExpectedParticipants: expected === undefined
-            ? 0
-            : Math.max(0, expected - input.targetAgentIds.length),
-        staleAgents: countBlockers('stale-agent'),
-        offlineAgents: countBlockers('offline-agent'),
-        wrongGroupAgents: countBlockers('different-group'),
-        assertionCapabilityBlockedAgents: countBlockers('missing-assertion-capability'),
-        agentsWithoutIdentity: countBlockers('agent-without-identity'),
-        roleCounts: computeSortedCounts(input.roleAssignments.map((assignment) => assignment.role)),
-        regions: computeSortedCounts(toNonEmptyTexts(selectedAgents.map((agent) => agent.identity?.region))),
-        providers: computeSortedCounts(toNonEmptyTexts(selectedAgents.map((agent) => agent.identity?.provider)))
-    };
+        .flatMap(([role, agentIds]) =>
+            agentIds.map((agentId) => ({ role, agentId, recipeIds: [], required: true, variables: {} }))
+        );
 }
 
 function computeSortedCounts(values: readonly string[]): Readonly<Record<string, number>> {

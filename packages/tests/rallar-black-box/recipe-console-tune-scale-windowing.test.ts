@@ -14,12 +14,12 @@ import type { TuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-
 import { TuneKnobInventory } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobInventory.tsx';
 import { TuneKnobPicker } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobPicker.tsx';
 import { TuneRunPicker } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneRunPicker.tsx';
+import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
 import { createRecipeConsoleTuneScaleFixture } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
@@ -344,6 +344,7 @@ describe('Recipe Console Tune pressure UI', () => {
         } as unknown as TuneSourceModel;
         const index = createTuneCandidateKnobIndex(source);
         const pointer = inventory.knobs.find((knob) =>
+            knob.scope !== 'manifest' &&
             knob.commandId === fixture.needles.commandIds.longBidi &&
             knob.name === 'maxInFlight'
         )?.pointer;
@@ -390,6 +391,7 @@ describe('Recipe Console Tune pressure UI', () => {
             decisions: undefined
         } as unknown as TuneSourceModel;
         const selectedPointer = inventory.knobs.find((knob) =>
+            knob.scope !== 'manifest' &&
             knob.commandId === fixture.needles.commandIds.longBidi &&
             knob.name === 'maxInFlight'
         )?.pointer;

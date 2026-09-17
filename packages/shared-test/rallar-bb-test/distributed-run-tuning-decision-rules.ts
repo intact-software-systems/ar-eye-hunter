@@ -7,6 +7,7 @@ import type {
 import { tuningDecisionIssue as decisionIssue } from './distributed-run-tuning-decision-types.ts';
 import type { DistributedRunTuningAnalysisEvidence } from './distributed-run-tuning-decisions.ts';
 import type {
+    DistributedRunCommandTuningKnob,
     DistributedRunTuningInventory,
     DistributedRunTuningKnob,
     DistributedRunTuningKnobName
@@ -126,7 +127,7 @@ export function thresholdHints(
     if (thresholdKnobs.length === 0) {
         return [];
     }
-    const streams = inventory.knobs.filter((row) => row.commandKind === 'rtc.stream' && row.name === 'durationMs');
+    const streams = inventory.knobs.filter(isRtcStreamDurationKnob);
     if (stream.streamCount !== 1) {
         issues.push(decisionIssue(
             'aggregate-threshold-evidence',
@@ -248,7 +249,7 @@ function cadenceKnobs(inventory: DistributedRunTuningInventory): DistributedRunT
     const groups = new Map<string, DistributedRunTuningKnob[]>();
     for (
         const row of inventory.knobs.filter((candidate) =>
-            candidate.commandKind === 'rtc.stream' && candidate.effective &&
+            isRtcStreamKnob(candidate) && candidate.effective &&
             (candidate.name === 'intervalMs' || candidate.name === 'rateHz')
         )
     ) {
@@ -267,7 +268,7 @@ function exactKnob(
     inventory: DistributedRunTuningInventory,
     issues: DistributedRunTuningDecisionIssue[]
 ): DistributedRunTuningHint['knob'] {
-    const streams = inventory.knobs.filter((row) => row.commandKind === 'rtc.stream' && row.name === 'durationMs');
+    const streams = inventory.knobs.filter(isRtcStreamDurationKnob);
     addStreamAmbiguityIssues(streams, candidates, issues);
     return inventory.limitations.length === 0 && streams.length === 1 && candidates.length === 1
         ? editableKnob(candidates[0])
@@ -275,7 +276,7 @@ function exactKnob(
 }
 
 function addStreamAmbiguityIssues(
-    streams: readonly DistributedRunTuningKnob[],
+    streams: readonly DistributedRunCommandTuningKnob[],
     candidates: readonly DistributedRunTuningKnob[],
     issues: DistributedRunTuningDecisionIssue[]
 ): void {
@@ -305,6 +306,14 @@ function addStreamAmbiguityIssues(
             )
         );
     }
+}
+
+function isRtcStreamKnob(knob: DistributedRunTuningKnob): knob is DistributedRunCommandTuningKnob {
+    return knob.scope !== 'manifest' && knob.commandKind === 'rtc.stream';
+}
+
+function isRtcStreamDurationKnob(knob: DistributedRunTuningKnob): knob is DistributedRunCommandTuningKnob {
+    return isRtcStreamKnob(knob) && knob.name === 'durationMs';
 }
 
 function editableKnob(knob: DistributedRunTuningKnob | undefined): DistributedRunTuningHint['knob'] {

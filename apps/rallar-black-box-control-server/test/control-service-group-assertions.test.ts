@@ -211,7 +211,7 @@ Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
     assert(result);
     assertJsonEquals(result.violatingAgentIds, ['agent-2']);
     const violatingRow = result.perAgent.find((row) => row.agentId === 'agent-2');
-    assertJsonEquals(violatingRow?.verdict, 'violating');
+    assertJsonEquals(violatingRow?.evidence === 'resolved' ? violatingRow.verdict : undefined, 'violating');
 });
 
 Deno.test('missing evidence at the source address fails the assertion by default', () => {

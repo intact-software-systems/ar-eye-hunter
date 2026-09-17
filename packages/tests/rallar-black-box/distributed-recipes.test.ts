@@ -1114,6 +1114,7 @@ describe('distributed recipes catalog', () => {
                     staleAgents: 0,
                     offlineAgents: 0,
                     wrongGroupAgents: 0,
+                    assertionCapabilityBlockedAgents: 0,
                     agentsWithoutIdentity: 0,
                     roleCounts: { sender: 1, receiver: 1, observer: 1 },
                     regions: {},

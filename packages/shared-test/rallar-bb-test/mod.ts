@@ -23,6 +23,7 @@ export * from './client-defaults.ts';
 export * from './companion-coverage.ts';
 export * from './composite-conformance.ts';
 export * from './composite-results.ts';
+export * from './compute-distributed-run-tuning-inventory.ts';
 export * from './conformance/assertion-outcome-parity.ts';
 export * from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
 export * from './control-client.ts';
@@ -104,7 +105,6 @@ export * from './distributed-run-performance/compute-distributed-run-snapshot-pe
 export * from './distributed-run-tuning-candidate.ts';
 export * from './distributed-run-tuning-decisions.ts';
 export * from './distributed-run-tuning-types.ts';
-export * from './distributed-run-tuning.ts';
 export * from './distributed-run-validation.ts';
 export * from './distributed-run.ts';
 export * from './distributed/control-agent-capabilities.ts';

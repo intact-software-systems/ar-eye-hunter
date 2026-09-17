@@ -684,8 +684,8 @@ describe('control agent board derivation', () => {
                 targetPolicyMode: 'all-online-group-members',
                 targetAgentIds: ['agent-a', 'agent-b'],
                 roleAssignments: [
-                    { agentId: 'agent-a', role: 'sender', required: true },
-                    { agentId: 'agent-b', role: 'receiver', required: true }
+                    { agentId: 'agent-a', role: 'sender', recipeIds: [], required: true, variables: {} },
+                    { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} }
                 ],
                 blockers: [],
                 summary: {
@@ -697,6 +697,7 @@ describe('control agent board derivation', () => {
                     staleAgents: 0,
                     offlineAgents: 0,
                     wrongGroupAgents: 0,
+                    assertionCapabilityBlockedAgents: 0,
                     agentsWithoutIdentity: 0,
                     roleCounts: { receiver: 1, sender: 1 },
                     regions: {},

@@ -1,13 +1,18 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
-    RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS,
-    type RallarBlackBoxDistributedRoleAssignment,
-    type RallarBlackBoxDistributedRoleMapTargetPolicy,
-    type RallarBlackBoxDistributedRunManifest
+import type {
+    RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRoleAssignment,
+    RallarBlackBoxDistributedRoleAssignmentPolicy,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedRunRecipeSelection,
+    RallarBlackBoxDistributedStartMode,
+    RallarBlackBoxDistributedTargetPolicyMode
 } from './distributed-run.ts';
-import { validateDistributedGroupAssertions } from './distributed/group-assertions.ts';
+import {
+    validateDistributedGroupAssertions,
+    type RallarBlackBoxDistributedGroupAssertion
+} from './distributed/group-assertions.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from './schema.ts';
 import { validateJsonSchema } from './schema/json-schema-validation.ts';
 
@@ -23,8 +28,47 @@ export interface RallarBlackBoxDistributedRunValidationIssue {
 }
 
 /**
+ * A manifest the schema accepted before its variant rules ran: the schema admits a variant-only field on any
+ * variant, so the contract rules read those fields as optional here and the domain manifest type applies only
+ * once they pass.
+ */
+export interface DistributedRunManifestSchemaValue {
+    readonly distributedRunId: string;
+    readonly controlRunId: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[];
+    readonly targetPolicy: DistributedRunTargetPolicySchemaValue;
+    readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
+    /** Absent when roles come from targetPolicy.roles or roleAssignments instead of a pattern. */
+    readonly roleAssignmentPolicy?: RallarBlackBoxDistributedRoleAssignmentPolicy;
+    readonly ackTimeoutMs: number;
+    readonly barrier: DistributedRunBarrierSchemaValue;
+    readonly startMode: RallarBlackBoxDistributedStartMode;
+    /** Absent unless the author set a start deadline; the contract accepts one only on a scheduled start. */
+    readonly startDeadlineEpochMs?: number;
+    readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
+}
+
+export interface DistributedRunTargetPolicySchemaValue {
+    readonly mode: RallarBlackBoxDistributedTargetPolicyMode;
+    /** Absent when staging accepts however many agents the policy resolves. */
+    readonly expectedParticipantCount?: number;
+    readonly includeOfflineExpectedAgents: boolean;
+    /** Absent unless the author listed agents; the contract accepts them only on a selected-agents policy. */
+    readonly agentIds?: readonly string[];
+    /** Absent unless the author mapped roles; the contract accepts them only on a role-map policy. */
+    readonly roles?: Readonly<Record<string, readonly string[]>>;
+}
+
+export interface DistributedRunBarrierSchemaValue {
+    readonly enabled: boolean;
+    /** Absent unless the author set a barrier timeout; the contract requires one exactly when enabled. */
+    readonly timeoutMs?: number;
+}
+
+/**
  * A manifest from JSON: the schema checks its shape and every author setting, and the contract checks
- * the cross-field rules only once that shape holds.
+ * the cross-field and variant rules only once that shape holds.
  */
 export function decodeDistributedRunManifest(
     value: unknown
@@ -38,10 +82,9 @@ export function decodeDistributedRunManifest(
         })));
     }
 
-    const manifest = value as RallarBlackBoxDistributedRunManifest;
-    const contractIssues = validateDistributedRunManifestContract(manifest);
+    const contractIssues = validateDistributedRunManifestContract(value as DistributedRunManifestSchemaValue);
     return contractIssues.length === 0
-        ? Either.ofRight(manifest)
+        ? Either.ofRight(value as RallarBlackBoxDistributedRunManifest)
         : Either.ofLeft(contractIssues.map((issue) => ({
             source: 'contract' as const,
             path: issue.path,
@@ -62,14 +105,13 @@ export function toDistributedRunManifestValidationText(
     return issues.map((issue) => `${issue.path}: ${issue.message}`).join('\n');
 }
 
-/** Cross-field rules a schema-valid manifest must also satisfy; empty when it does. */
+/** Cross-field and variant rules a schema-valid manifest must also satisfy; empty when it does. */
 export function validateDistributedRunManifestContract(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     return [
         ...validateManifestIdentity(manifest),
         ...validateTargetPolicy(manifest),
-        ...validateRoleAssignmentPolicy(manifest),
         ...validateStart(manifest),
         ...validateTimeouts(manifest),
         ...validateDistributedGroupAssertions(manifest)
@@ -77,7 +119,7 @@ export function validateDistributedRunManifestContract(
 }
 
 function validateManifestIdentity(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     return [
         ...validateNonEmptyText(manifest.distributedRunId, '$.distributedRunId'),
@@ -95,7 +137,7 @@ function validateManifestIdentity(
 }
 
 function validateTargetPolicy(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const policy = manifest.targetPolicy;
     const errors: RallarBlackBoxDistributedRunValidationIssue[] = [];
@@ -109,111 +151,81 @@ function validateTargetPolicy(
             message: 'Expected participant count must be an integer >= 1.'
         });
     }
-    if (policy.mode !== 'selected-agents' && 'agentIds' in policy) {
+    if (policy.mode !== 'selected-agents' && policy.agentIds !== undefined) {
         errors.push({
             path: '$.targetPolicy.agentIds',
             message: 'Only selected-agents target policies accept agentIds.'
         });
     }
-    if (policy.mode !== 'role-map' && 'roles' in policy) {
+    if (policy.mode !== 'role-map' && policy.roles !== undefined) {
         errors.push({ path: '$.targetPolicy.roles', message: 'Only role-map target policies accept roles.' });
     }
-    if (policy.mode === 'selected-agents' && (!('agentIds' in policy) || policy.agentIds.length === 0)) {
+    if (policy.mode === 'selected-agents' && (policy.agentIds === undefined || policy.agentIds.length === 0)) {
         errors.push({
             path: '$.targetPolicy.agentIds',
             message: 'selected-agents target policy requires at least one agent ID.'
         });
     }
     if (policy.mode === 'role-map') {
-        errors.push(...validateRoleMap(policy, manifest.roleAssignments));
+        errors.push(...validateRoleMap(policy.roles, manifest.roleAssignments));
     }
     return errors;
 }
 
 function validateRoleMap(
-    policy: RallarBlackBoxDistributedRoleMapTargetPolicy,
+    roles: DistributedRunTargetPolicySchemaValue['roles'],
     roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[]
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    if (!('roles' in policy)) {
+    if (roles === undefined) {
         return [{ path: '$.targetPolicy.roles', message: 'A role-map target policy requires roles.' }];
     }
-    const roleMapCount = Object.values(policy.roles).reduce((count, agentIds) => count + agentIds.length, 0);
+    const roleMapCount = Object.values(roles).reduce((count, agentIds) => count + agentIds.length, 0);
     return roleMapCount === 0 && roleAssignments.length === 0
         ? [{ path: '$.targetPolicy.roles', message: 'role-map target policy requires roles or roleAssignments.' }]
         : [];
 }
 
-function validateRoleAssignmentPolicy(
-    manifest: RallarBlackBoxDistributedRunManifest
-): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    const policy = manifest.roleAssignmentPolicy;
-    if (policy === undefined) {
-        return [];
-    }
-    return [
-        ...(policy.mode === 'ordered-targets'
-            ? []
-            : [{
-                path: '$.roleAssignmentPolicy.mode',
-                message: 'Role assignment policy mode must be ordered-targets.'
-            }]),
-        ...(RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS.includes(policy.pattern)
-            ? []
-            : [{
-                path: '$.roleAssignmentPolicy.pattern',
-                message: 'Role assignment policy pattern is not supported.'
-            }]),
-        ...(RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS.includes(policy.orderBy)
-            ? []
-            : [{
-                path: '$.roleAssignmentPolicy.orderBy',
-                message: 'Role assignment policy ordering is not supported.'
-            }])
-    ];
-}
-
 function validateStart(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    if (manifest.startMode === 'scheduled') {
-        return 'startDeadlineEpochMs' in manifest
-            ? []
-            : [{ path: '$.startDeadlineEpochMs', message: 'Scheduled distributed runs require startDeadlineEpochMs.' }];
-    }
-    return 'startDeadlineEpochMs' in manifest
-        ? [{
+    const scheduled = manifest.startMode === 'scheduled';
+    if (scheduled && manifest.startDeadlineEpochMs === undefined) {
+        return [{
             path: '$.startDeadlineEpochMs',
-            message: 'Only scheduled distributed runs accept startDeadlineEpochMs.'
-        }]
+            message: 'Scheduled distributed runs require startDeadlineEpochMs.'
+        }];
+    }
+    return !scheduled && manifest.startDeadlineEpochMs !== undefined
+        ? [{ path: '$.startDeadlineEpochMs', message: 'Only scheduled distributed runs accept startDeadlineEpochMs.' }]
         : [];
 }
 
 function validateTimeouts(
-    manifest: RallarBlackBoxDistributedRunManifest
+    manifest: DistributedRunManifestSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    const errors: RallarBlackBoxDistributedRunValidationIssue[] = [];
-    if (!Number.isInteger(manifest.ackTimeoutMs) || manifest.ackTimeoutMs < 1) {
-        errors.push({ path: '$.ackTimeoutMs', message: 'ACK timeout must be an integer >= 1.' });
-    }
-    const barrier = manifest.barrier;
-    if (barrier.enabled && !('timeoutMs' in barrier)) {
-        errors.push({ path: '$.barrier.timeoutMs', message: 'An enabled barrier requires timeoutMs.' });
-    }
-    else if (barrier.enabled && (!Number.isInteger(barrier.timeoutMs) || barrier.timeoutMs < 1)) {
-        errors.push({ path: '$.barrier.timeoutMs', message: 'Barrier timeout must be an integer >= 1.' });
-    }
-    else if (!barrier.enabled && 'timeoutMs' in barrier) {
-        errors.push({ path: '$.barrier.timeoutMs', message: 'A disabled barrier accepts no timeoutMs.' });
-    }
-    return errors;
+    return [
+        ...(Number.isInteger(manifest.ackTimeoutMs) && manifest.ackTimeoutMs >= 1
+            ? []
+            : [{ path: '$.ackTimeoutMs', message: 'ACK timeout must be an integer >= 1.' }]),
+        ...validateBarrier(manifest.barrier)
+    ];
 }
 
-// A validator reports issues and never throws, so it stays total for a value that bypassed the schema.
-function validateNonEmptyText(
-    value: string,
-    path: string
+function validateBarrier(
+    barrier: DistributedRunBarrierSchemaValue
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
-    return typeof value === 'string' && value.trim().length > 0
+    const path = '$.barrier.timeoutMs';
+    if (!barrier.enabled) {
+        return barrier.timeoutMs === undefined ? [] : [{ path, message: 'A disabled barrier accepts no timeoutMs.' }];
+    }
+    if (barrier.timeoutMs === undefined) {
+        return [{ path, message: 'An enabled barrier requires timeoutMs.' }];
+    }
+    return Number.isInteger(barrier.timeoutMs) && barrier.timeoutMs >= 1
         ? []
-        : [{ path, message: 'A non-empty string is required.' }];
+        : [{ path, message: 'Barrier timeout must be an integer >= 1.' }];
+}
+
+function validateNonEmptyText(value: string, path: string): readonly RallarBlackBoxDistributedRunValidationIssue[] {
+    return value.trim().length > 0 ? [] : [{ path, message: 'A non-empty string is required.' }];
 }

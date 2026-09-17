@@ -17,27 +17,29 @@ import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-
 export function projectTuningKnob(
     knob: DistributedRunTuningKnob
 ): DistributedRunTuningKnob {
-    return {
-        name: knob.name,
+    const fields = {
         pointer: boundedText(knob.pointer, MAX_METADATA_BYTES),
-        scope: knob.scope,
         ...(knob.currentValue !== undefined
             ? { currentValue: finiteNumber(knob.currentValue) }
             : {}),
         availability: knob.availability,
         effective: knob.effective,
         constraint: { ...knob.constraint },
-        ...(knob.recipeIndex !== undefined
-            ? { recipeIndex: finiteNumber(knob.recipeIndex) }
-            : {}),
-        ...(knob.recipeId
-            ? { recipeId: projectOpaqueIdentifier(knob.recipeId) }
-            : {}),
+        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {})
+    };
+    if (knob.scope === 'manifest') {
+        return { name: knob.name, scope: knob.scope, ...fields };
+    }
+    return {
+        name: knob.name,
+        scope: knob.scope,
+        ...fields,
+        recipeIndex: finiteNumber(knob.recipeIndex),
+        recipeId: projectOpaqueIdentifier(knob.recipeId),
         ...(knob.commandId
             ? { commandId: projectOpaqueIdentifier(knob.commandId) }
             : {}),
-        ...(knob.commandKind ? { commandKind: knob.commandKind } : {}),
-        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {})
+        commandKind: knob.commandKind
     };
 }
 

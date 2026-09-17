@@ -9,7 +9,7 @@ import { decodeDistributedRunManifest, toDistributedRunManifestValidationText } 
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
-    type RallarBlackBoxDistributedResolvedRoleAssignment,
+    type RallarBlackBoxDistributedRoleAssignment,
     type RallarBlackBoxDistributedRunItemState,
     type RallarBlackBoxDistributedTargetBlocker,
     type RallarBlackBoxDistributedTargetBlockerStatus,
@@ -21,10 +21,12 @@ import type {
     RallarBlackBoxDistributedRunRollupFailure
 } from '../distributed/distributed-run-rollup.ts';
 import {
-    RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES,
     type RallarBlackBoxDistributedGroupAssertionResult,
+    type RallarBlackBoxEqualityGroupAssertionResult,
     type RallarBlackBoxGroupAssertionAgentRow,
-    type RallarBlackBoxGroupAssertionParticipantCounts
+    type RallarBlackBoxGroupAssertionAgentVerdict,
+    type RallarBlackBoxGroupAssertionEvidenceStatus,
+    type RallarBlackBoxMatchingGroupAssertionResult
 } from '../distributed/group-assertions.ts';
 import type { RallarBlackBoxTestError } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
@@ -110,17 +112,17 @@ const TARGET_SUMMARY_COUNTERS = [
     'staleAgents',
     'offlineAgents',
     'wrongGroupAgents',
+    'assertionCapabilityBlockedAgents',
     'agentsWithoutIdentity'
 ] as const;
 
-const GROUP_ASSERTION_EVIDENCE_STATUSES = Object.keys(
+const UNUSABLE_GROUP_ASSERTION_EVIDENCE_STATUSES = Object.keys(
     {
-        resolved: true,
         missing: true,
         duplicate: true,
         unresolved: true
-    } satisfies Record<RallarBlackBoxGroupAssertionAgentRow['evidence'], true>
-) as readonly RallarBlackBoxGroupAssertionAgentRow['evidence'][];
+    } satisfies Record<Exclude<RallarBlackBoxGroupAssertionEvidenceStatus, 'resolved'>, true>
+) as readonly Exclude<RallarBlackBoxGroupAssertionEvidenceStatus, 'resolved'>[];
 
 const GROUP_ASSERTION_VERDICTS = Object.keys(
     {
@@ -128,8 +130,16 @@ const GROUP_ASSERTION_VERDICTS = Object.keys(
         'not-matching': true,
         violating: true,
         agreeing: true
-    } satisfies Record<NonNullable<RallarBlackBoxGroupAssertionAgentRow['verdict']>, true>
-) as readonly NonNullable<RallarBlackBoxGroupAssertionAgentRow['verdict']>[];
+    } satisfies Record<RallarBlackBoxGroupAssertionAgentVerdict, true>
+) as readonly RallarBlackBoxGroupAssertionAgentVerdict[];
+
+const MATCHING_GROUP_ASSERTION_AGGREGATES = ['allMatch', 'noneMatch', 'countMatching'] as const;
+
+const EQUALITY_GROUP_ASSERTION_AGGREGATES = ['allEqual', 'allEqualWithin'] as const;
+
+type GroupAssertionAggregateCounts =
+    | Pick<RallarBlackBoxMatchingGroupAssertionResult, 'aggregate' | 'participants'>
+    | Pick<RallarBlackBoxEqualityGroupAssertionResult, 'aggregate' | 'participants'>;
 
 const OPTIONAL_PHASE_TIMESTAMPS = [
     'stagedAtEpochMs',
@@ -296,19 +306,12 @@ function decodeGroupAssertionResult(
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const { groupAssertionId, aggregate, ok, participants, missingAgentIds, violatingAgentIds, error } = value;
+    const { groupAssertionId, ok, missingAgentIds, violatingAgentIds, error } = value;
     if (!isNonEmptyText(groupAssertionId)) {
         return Either.ofLeft(`${path}.groupAssertionId must be a non-empty string`);
     }
-    if (!isOneOf(aggregate, RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES)) {
-        return Either.ofLeft(`${path}.aggregate must be a group assertion aggregate`);
-    }
     if (typeof ok !== 'boolean') {
         return Either.ofLeft(`${path}.ok must be a boolean`);
-    }
-    const counts = decodeGroupAssertionParticipantCounts(participants);
-    if (counts === undefined) {
-        return Either.ofLeft(`${path}.participants must count expected, required and withEvidence participants`);
     }
     if (!isTextArray(missingAgentIds)) {
         return Either.ofLeft(`${path}.missingAgentIds must be an array of strings`);
@@ -319,30 +322,47 @@ function decodeGroupAssertionResult(
     if (!isAbsentOrRunError(error)) {
         return Either.ofLeft(`${path}.error must carry a code and message when present`);
     }
-    return decodeArrayItems(value.perAgent, `${path}.perAgent`, decodeGroupAssertionAgentRow)
-        .mapRight((perAgent) => ({
-            groupAssertionId,
-            aggregate,
-            ok,
-            participants: counts,
-            missingAgentIds,
-            violatingAgentIds,
-            perAgent,
-            ...(error === undefined ? {} : { error })
-        }));
+    return decodeGroupAssertionAggregateCounts(value, path).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (aggregateCounts) =>
+            decodeArrayItems(value.perAgent, `${path}.perAgent`, decodeGroupAssertionAgentRow)
+                .mapRight((perAgent) => ({
+                    groupAssertionId,
+                    ok,
+                    missingAgentIds,
+                    violatingAgentIds,
+                    perAgent,
+                    ...(error === undefined ? {} : { error }),
+                    ...aggregateCounts
+                }))
+    );
 }
 
-function decodeGroupAssertionParticipantCounts(
-    value: unknown
-): RallarBlackBoxGroupAssertionParticipantCounts | undefined {
+function decodeGroupAssertionAggregateCounts(
+    value: unknown,
+    path: string
+): Either<string, GroupAssertionAggregateCounts> {
     if (!isJsonRecordValue(value)) {
-        return undefined;
+        return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const { expected, required, withEvidence, matching } = value;
-    return isFiniteNumber(expected) && isFiniteNumber(required) && isFiniteNumber(withEvidence) &&
-            isAbsentOrFiniteNumber(matching)
-        ? { expected, required, withEvidence, ...(matching === undefined ? {} : { matching }) }
-        : undefined;
+    const { aggregate, participants } = value;
+    if (!isJsonRecordValue(participants)) {
+        return Either.ofLeft(`${path}.participants must be a JSON object`);
+    }
+    const { expected, required, withEvidence, matching } = participants;
+    if (!isFiniteNumber(expected) || !isFiniteNumber(required) || !isFiniteNumber(withEvidence)) {
+        return Either.ofLeft(`${path}.participants must count expected, required and withEvidence participants`);
+    }
+    const counts = { expected, required, withEvidence };
+    if (isOneOf(aggregate, EQUALITY_GROUP_ASSERTION_AGGREGATES)) {
+        return Either.ofRight({ aggregate, participants: counts });
+    }
+    if (!isOneOf(aggregate, MATCHING_GROUP_ASSERTION_AGGREGATES)) {
+        return Either.ofLeft(`${path}.aggregate must be a group assertion aggregate`);
+    }
+    return isFiniteNumber(matching)
+        ? Either.ofRight({ aggregate, participants: { ...counts, matching } })
+        : Either.ofLeft(`${path}.participants.matching must be a finite number for a ${aggregate} assertion`);
 }
 
 function decodeGroupAssertionAgentRow(
@@ -359,19 +379,18 @@ function decodeGroupAssertionAgentRow(
     if (!isAbsentOrNonEmptyText(role)) {
         return Either.ofLeft(`${path}.role must be a non-empty string when present`);
     }
-    if (!isOneOf(evidence, GROUP_ASSERTION_EVIDENCE_STATUSES)) {
+    const fields = { agentId, ...(role === undefined ? {} : { role }) };
+    if (evidence === 'resolved') {
+        return isOneOf(verdict, GROUP_ASSERTION_VERDICTS)
+            ? Either.ofRight({ ...fields, evidence, verdict, value: value.value })
+            : Either.ofLeft(`${path}.verdict must be a group assertion verdict for resolved evidence`);
+    }
+    if (!isOneOf(evidence, UNUSABLE_GROUP_ASSERTION_EVIDENCE_STATUSES)) {
         return Either.ofLeft(`${path}.evidence must be a group assertion evidence status`);
     }
-    if (verdict !== undefined && !isOneOf(verdict, GROUP_ASSERTION_VERDICTS)) {
-        return Either.ofLeft(`${path}.verdict must be a group assertion verdict when present`);
-    }
-    return Either.ofRight({
-        agentId,
-        ...(role === undefined ? {} : { role }),
-        evidence,
-        ...(verdict === undefined ? {} : { verdict }),
-        ...('value' in value ? { value: value.value } : {})
-    });
+    return verdict === undefined && !('value' in value)
+        ? Either.ofRight({ ...fields, evidence })
+        : Either.ofLeft(`${path} must carry no verdict or value for ${evidence} evidence`);
 }
 
 function decodeOptionalTargetResolution(value: unknown): Either<string, OptionalTargetResolution> {
@@ -393,9 +412,8 @@ function decodeTargetResolutionSummaryChecks(summary: unknown): readonly (readon
             [isFiniteNumber(summary[key]), `targetResolution.summary.${key} must be a finite number`] as const
         ),
         [
-            isAbsentOrFiniteNumber(summary.expectedParticipantCount) &&
-            isAbsentOrFiniteNumber(summary.assertionCapabilityBlockedAgents),
-            'targetResolution.summary optional counters must be finite numbers when present'
+            isAbsentOrFiniteNumber(summary.expectedParticipantCount),
+            'targetResolution.summary.expectedParticipantCount must be a finite number when present'
         ],
         [
             isFiniteNumberRecord(summary.roleCounts) &&
@@ -409,33 +427,27 @@ function decodeTargetResolutionSummaryChecks(summary: unknown): readonly (readon
 function decodeRoleAssignment(
     value: unknown,
     path: string
-): Either<string, RallarBlackBoxDistributedResolvedRoleAssignment> {
+): Either<string, RallarBlackBoxDistributedRoleAssignment> {
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const { role, agentId, required, recipeIds, variables } = value;
+    const { role, agentId, recipeIds, required, variables } = value;
     if (!isNonEmptyText(role)) {
         return Either.ofLeft(`${path}.role must be a non-empty string`);
     }
     if (!isNonEmptyText(agentId)) {
         return Either.ofLeft(`${path}.agentId must be a non-empty string`);
     }
-    if (recipeIds !== undefined && !isTextArray(recipeIds)) {
-        return Either.ofLeft(`${path}.recipeIds must be an array of strings when present`);
+    if (!isTextArray(recipeIds)) {
+        return Either.ofLeft(`${path}.recipeIds must be an array of strings`);
     }
     if (typeof required !== 'boolean') {
         return Either.ofLeft(`${path}.required must be a boolean`);
     }
-    if (variables !== undefined && !isJsonRecordValue(variables)) {
-        return Either.ofLeft(`${path}.variables must be a JSON object when present`);
+    if (!isJsonRecordValue(variables)) {
+        return Either.ofLeft(`${path}.variables must be a JSON object`);
     }
-    return Either.ofRight({
-        role,
-        agentId,
-        required,
-        ...(recipeIds === undefined ? {} : { recipeIds }),
-        ...(variables === undefined ? {} : { variables })
-    });
+    return Either.ofRight({ role, agentId, recipeIds, required, variables });
 }
 
 function decodeTargetBlocker(
