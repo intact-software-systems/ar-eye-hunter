@@ -696,10 +696,9 @@ class RallarBlackBoxRuntimeStore {
         const runNumber = this.runSequence++;
         const config = toRemoteControlConfig({
             bootstrap: this.bootstrapConfig,
-            runNumber,
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
-        const resumed = takeAgentResumeRecord(config.runId ?? this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
+        const resumed = takeAgentResumeRecord(this.bootstrapConfig.runId, this.bootstrapConfig.agentId);
         this.resumedCommandIds = resumed?.completedCommandIds ?? [];
         this.snapshot = {
             ...this.snapshot,

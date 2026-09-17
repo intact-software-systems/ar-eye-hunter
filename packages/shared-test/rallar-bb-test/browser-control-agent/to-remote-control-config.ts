@@ -5,8 +5,6 @@ import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from '../rall
 
 export interface ToRemoteControlConfigInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
-    /** Numbers the run id a bootstrap without a run id connects to. */
-    readonly runNumber: number;
     readonly hasStoredAuthSession: boolean;
 }
 
@@ -18,7 +16,7 @@ export interface ToRallarBlackBoxRallarConfigInput {
 export function toRemoteControlConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestConfig {
     const { bootstrap } = input;
     return {
-        runId: bootstrap.runId || `${RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId}-${input.runNumber}`,
+        runId: bootstrap.runId,
         agentId: bootstrap.agentId,
         environment: bootstrap.environment,
         apiBaseUrl: bootstrap.apiBaseUrl,

@@ -144,11 +144,10 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
 
         const config = toRemoteControlConfig({
             bootstrap: this.bootstrap,
-            runNumber: 1,
             hasStoredAuthSession: readBrowserAuthSessionPresence()
         });
-        const runId = config.runId ?? this.bootstrap.runId;
-        const completedCommandIds = takeAgentResumeRecord(runId, this.bootstrap.agentId)?.completedCommandIds ?? [];
+        const resumeRecord = takeAgentResumeRecord(this.bootstrap.runId, this.bootstrap.agentId);
+        const completedCommandIds = resumeRecord?.completedCommandIds ?? [];
         this.setSnapshot({
             bootstrapping: true,
             busy: true,
@@ -163,7 +162,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         }
         return configured.flatMap(
             (failure) => this.recordBootstrapFailure(failure),
-            () => Either.ofRight(this.connectConfiguredAgent(runId, completedCommandIds))
+            () => Either.ofRight(this.connectConfiguredAgent(completedCommandIds))
         );
     }
 
@@ -209,10 +208,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
         return configError ? Either.ofLeft(configError.message) : Either.ofRight(config);
     }
 
-    private connectConfiguredAgent(
-        runId: string,
-        completedCommandIds: readonly string[]
-    ): BrowserControlAgentStartOutcome {
+    private connectConfiguredAgent(completedCommandIds: readonly string[]): BrowserControlAgentStartOutcome {
         this.setSnapshot({
             bootstrapping: false,
             busy: false,
@@ -228,7 +224,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
 
         this.controlClient.connect({
             url: this.bootstrap.controlUrl,
-            runId,
+            runId: this.bootstrap.runId,
             agentId: this.bootstrap.agentId,
             token: this.bootstrap.controlToken,
             finalReportUploadUrl: this.bootstrap.finalReportUploadUrl,

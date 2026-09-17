@@ -65,7 +65,7 @@ describe('browser control-agent bootstrap config', () => {
             ''
         );
 
-        const runtimeConfig = toRemoteControlConfig({ bootstrap, runNumber: 7, hasStoredAuthSession: false });
+        const runtimeConfig = toRemoteControlConfig({ bootstrap, hasStoredAuthSession: false });
 
         expect(runtimeConfig.runId).toBe('run-2');
         expect(runtimeConfig.agentId).toBe('agent-2');
@@ -100,7 +100,7 @@ describe('browser control-agent bootstrap config', () => {
             ''
         );
 
-        const runtimeConfig = toRemoteControlConfig({ bootstrap, runNumber: 1, hasStoredAuthSession: false });
+        const runtimeConfig = toRemoteControlConfig({ bootstrap, hasStoredAuthSession: false });
 
         expect(bootstrap.rallarRegister).toBe('if-needed');
         expect(runtimeConfig.rallar?.register).toBe('if-needed');
@@ -113,7 +113,7 @@ describe('browser control-agent bootstrap config', () => {
             '#agentSessionTicket=one-time-ticket'
         );
 
-        const runtimeConfig = toRemoteControlConfig({ bootstrap, runNumber: 3, hasStoredAuthSession: false });
+        const runtimeConfig = toRemoteControlConfig({ bootstrap, hasStoredAuthSession: false });
 
         expect(bootstrap.rallarAuthStorage).toBe('session');
         expect(bootstrap.rallarAgentSessionTicket).toBe('one-time-ticket');
@@ -143,7 +143,7 @@ describe('browser control-agent bootstrap config', () => {
             {},
             ''
         );
-        const runtimeConfig = toRemoteControlConfig({ bootstrap, runNumber: 1, hasStoredAuthSession: false });
+        const runtimeConfig = toRemoteControlConfig({ bootstrap, hasStoredAuthSession: false });
 
         expect(bootstrap.fleetLocation).toEqual({
             latitude: 52.5333,
@@ -183,7 +183,6 @@ describe('browser control-agent bootstrap config', () => {
                 {},
                 ''
             ),
-            runNumber: 1,
             hasStoredAuthSession: false
         });
 
