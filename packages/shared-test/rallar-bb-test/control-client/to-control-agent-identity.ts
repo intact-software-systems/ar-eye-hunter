@@ -1,10 +1,10 @@
-import { Either } from '@shared/resilience/Either.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from '../distributed-run.ts';
 import { toControlAgentCapabilities } from '../distributed/control-agent-capabilities.ts';
-import { decodeRallarBlackBoxGeoLocation } from '../distributed/decode-control-agent-identity.ts';
+import { decodeOptionalGeoLocation } from '../distributed/decode-control-agent-identity.ts';
 import type { RallarBlackBoxTestConfig, RallarBlackBoxTestRecord } from '../rallar-black-box-test-contracts.ts';
-import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
+import { decodeRecord, decodeTrimmedText } from '../runtime/decode-runtime-result-values.ts';
 
 export interface ToControlAgentIdentityInput {
     /** Absent before the agent loads a test configuration. */
@@ -57,10 +57,7 @@ type FleetIdentityFacts = Pick<
 export function decodeControlAgentFleetLocation(
     config: RallarBlackBoxTestConfig | undefined
 ): Either<string, Pick<RallarBlackBoxControlAgentIdentity, 'location'>> {
-    const location = decodeRecord(config?.fleet).location;
-    return location === undefined
-        ? Either.ofRight({})
-        : decodeRallarBlackBoxGeoLocation(location).mapRight((decoded) => ({ location: decoded }));
+    return decodeOptionalGeoLocation(decodeRecord(config?.fleet).location);
 }
 
 /** Reads only the keys configuration producers write; the principal is the configured actor. */
@@ -124,10 +121,6 @@ function toFleetIdentityFacts(fleet: RallarBlackBoxTestRecord): FleetIdentityFac
 
 function toPrincipalSessionLabel(facts: RallarIdentityFacts): string | undefined {
     return facts.sessionId && facts.principalId ? `${facts.principalId}:${facts.sessionId}` : undefined;
-}
-
-function decodeTrimmedText(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function decodeTags(value: unknown): readonly string[] | undefined {

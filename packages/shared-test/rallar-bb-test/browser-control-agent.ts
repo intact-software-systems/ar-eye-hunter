@@ -41,7 +41,6 @@ export type BrowserControlAgentRunState =
     | 'cancelled'
     | 'reset';
 
-/** Where a successful start leaves the agent: configured, and connecting when the bootstrap asks to auto-connect. */
 export type BrowserControlAgentStartOutcome = 'configured' | 'connecting';
 
 export interface RallarBlackBoxBrowserControlAgentSnapshot {
@@ -94,7 +93,6 @@ export function createRallarBlackBoxBrowserControlAgent(
     return new BrowserControlAgent(input);
 }
 
-/** The agent page composition: the launch bootstrap, the runtime its provider selects, and the page control client. */
 export function createDefaultRallarBlackBoxBrowserControlAgent(
     input: CreateDefaultRallarBlackBoxBrowserControlAgentInput
 ): RallarBlackBoxBrowserControlAgent {

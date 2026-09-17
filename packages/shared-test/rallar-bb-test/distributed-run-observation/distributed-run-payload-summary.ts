@@ -1,4 +1,5 @@
 import type { ControlRunSnapshot } from '../control-snapshots.ts';
+import { decodeNonBlankText } from '../runtime/decode-runtime-result-values.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
 
@@ -44,10 +45,6 @@ export function toDistributedRunEventSummary(event: ControlEventSnapshot): strin
 
 export function decodeFirstNonBlankText(...values: readonly unknown[]): string | undefined {
     return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-}
-
-export function decodeNonBlankText(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
 export function isPayloadRecord(value: unknown): value is Record<string, unknown> {

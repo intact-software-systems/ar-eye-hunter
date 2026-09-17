@@ -43,6 +43,10 @@ export function decodeNonBlankText(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+export function decodeTrimmedText(value: unknown): string | undefined {
+    return decodeNonBlankText(value)?.trim();
+}
+
 export function decodeTransport(value: unknown): RallarBlackBoxTestTransport | undefined {
     return typeof value === 'string' && RUNTIME_TRANSPORTS.some((transport) => transport === value)
         ? value as RallarBlackBoxTestTransport

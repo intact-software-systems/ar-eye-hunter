@@ -36,6 +36,7 @@ export * from './compute-distributed-run-tuning-inventory.ts';
 export * from './conformance/assertion-outcome-parity.ts';
 export * from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
 export * from './control-client.ts';
+export type { RallarBlackBoxControlFetch } from './control-client/write-control-final-report.ts';
 export * from './control-protocol.ts';
 export * from './control-retention.ts';
 export * from './control-snapshots.ts';

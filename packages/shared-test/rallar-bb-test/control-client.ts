@@ -7,7 +7,10 @@ import {
     toControlAgentIdentity
 } from './control-client/to-control-agent-identity.ts';
 import { toControlAgentReport } from './control-client/to-control-agent-report.ts';
-import { writeControlFinalReport } from './control-client/write-control-final-report.ts';
+import {
+    writeControlFinalReport,
+    type RallarBlackBoxControlFetch
+} from './control-client/write-control-final-report.ts';
 import {
     parseControlServerMessage,
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -91,8 +94,6 @@ export type RallarBlackBoxControlWebSocketFactory = (url: string) => RallarBlack
 
 export type RallarBlackBoxControlSnapshotListener = (snapshot: RallarBlackBoxControlSnapshot) => void;
 
-export type RallarBlackBoxControlFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-
 export interface RallarBlackBoxControlClientOptions {
     readonly runtime: RallarBlackBoxTestRuntime;
     readonly webSocketFactory: RallarBlackBoxControlWebSocketFactory;
@@ -115,7 +116,6 @@ export interface RallarBlackBoxControlConnectOptions {
     readonly completedCommandIds: readonly string[];
 }
 
-/** The control client an agent drives: it publishes snapshots, connects once configured and disposes with the agent. */
 export interface RallarBlackBoxAgentControlClient {
     subscribe(listener: RallarBlackBoxControlSnapshotListener): () => void;
     connect(connection: RallarBlackBoxControlConnectOptions): void;
@@ -141,7 +141,6 @@ const DEFAULT_RECONNECT_BASE_MS = 600;
 const DEFAULT_RECONNECT_MAX_MS = 5_000;
 const TERMINAL_RUNTIME_STATUSES: readonly RallarBlackBoxTestRuntimeStatus[] = ['completed', 'failed', 'cancelled'];
 
-/** The browser composition: page WebSockets, page fetch and the default reconnect backoff. */
 export function createDefaultRallarBlackBoxControlClient(
     input: Pick<RallarBlackBoxControlClientOptions, 'runtime' | 'heartbeatIntervalMs' | 'statsIntervalMs'>
 ): RallarBlackBoxControlClient {
@@ -388,7 +387,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
     private sendRegister(): void {
         const connection = this.assertConnection();
         const atEpochMs = Date.now();
-        const identity = this.toIdentity(connection.agentId, atEpochMs);
+        const identity = this.readAgentIdentity(connection.agentId, atEpochMs);
         this.setSnapshot({ identity: identity.identity });
         this.sendEnvelope({
             kind: 'register',
@@ -407,7 +406,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         const connection = this.assertConnection();
         const state = this.options.runtime.state();
         const atEpochMs = Date.now();
-        const identity = this.toIdentity(connection.agentId, atEpochMs);
+        const identity = this.readAgentIdentity(connection.agentId, atEpochMs);
         this.sendEnvelope({
             kind: 'heartbeat',
             protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -423,7 +422,7 @@ export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlCl
         this.recordIdentityIssue(identity.locationIssue);
     }
 
-    private toIdentity(agentId: string, atEpochMs: number): ControlAgentIdentityReading {
+    private readAgentIdentity(agentId: string, atEpochMs: number): ControlAgentIdentityReading {
         const config = this.options.runtime.state().currentConfig;
         const location = decodeControlAgentFleetLocation(config);
         return {

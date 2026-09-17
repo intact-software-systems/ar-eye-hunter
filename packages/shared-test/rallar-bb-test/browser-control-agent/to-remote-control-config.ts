@@ -41,7 +41,6 @@ export function toRemoteControlConfig(input: ToRemoteControlConfigInput): Rallar
     };
 }
 
-/** A simulated agent signs in with the local demo credentials; a real agent signs in, registers or restores. */
 export function toRallarBlackBoxRallarConfig(input: ToRemoteControlConfigInput): RallarBlackBoxTestRecord {
     const { bootstrap } = input;
     if (bootstrap.providerMode === 'simulated') {

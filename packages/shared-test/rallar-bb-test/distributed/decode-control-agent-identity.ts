@@ -105,7 +105,7 @@ export function decodeRallarBlackBoxGeoLocation(value: unknown): Either<string, 
         : Either.ofLeft(GEO_LOCATION_ISSUE);
 }
 
-function decodeOptionalGeoLocation(
+export function decodeOptionalGeoLocation(
     value: unknown
 ): Either<string, Pick<RallarBlackBoxControlAgentIdentity, 'location'>> {
     return value === undefined

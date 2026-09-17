@@ -1,8 +1,9 @@
 import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
-import type { RallarBlackBoxControlFetch } from '../control-client.ts';
 import type { ControlEventEnvelope } from '../control-protocol.ts';
+
+export type RallarBlackBoxControlFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export interface WriteControlFinalReportInput {
     readonly fetch: RallarBlackBoxControlFetch;
@@ -12,7 +13,6 @@ export interface WriteControlFinalReportInput {
     readonly envelope: ControlEventEnvelope;
 }
 
-/** Uploads the final report envelope; the right value is the accepted HTTP status. */
 export async function writeControlFinalReport(input: WriteControlFinalReportInput): Promise<Either<string, number>> {
     try {
         const response = await input.fetch(input.uploadUrl, {
