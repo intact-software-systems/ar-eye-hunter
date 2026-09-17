@@ -2364,6 +2364,36 @@ moved or changed test.
         "requiredConstraint": "Switching views must not start a second poll loop, and unmount must clear the loop.",
         "failureRationale": "Rendered control state looks the same with duplicate or leaked poll loops; only the active timer registry shows the extra control-server traffic and the leak."
       }
+    },
+    {
+      "id": "recipe-console-fleet-render-without-actions",
+      "domain": "Recipe Console fleet workspace",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Composing the Fleet workspace from root query truth renders its sections without navigating, replacing the URL, opening an inspection or refreshing the control connection. Executable assertion: \"composes the lazy workspace from root query truth without actions during render\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#composes the lazy workspace from root query truth without actions during render",
+      "coverageRelation": "The test renders FleetWorkspace with spied navigation, URL, inspection and refresh ports; the rendered headings are the composed view and the untouched ports are the render purity the workspace owns.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Fleet workspace navigation, URL replacement, inspection and control refresh callbacks",
+        "observableEffect": "No call to any of the four callbacks while the workspace renders.",
+        "requiredConstraint": "Rendering the workspace from query truth must not start an operator action.",
+        "failureRationale": "The rendered sections are identical when render also navigates or refreshes, so only the absent callback calls show that render triggered no URL change or extra control request."
+      }
+    },
+    {
+      "id": "recipe-console-fleet-deep-link-selection-label",
+      "domain": "Recipe Console fleet workspace",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Restoring the evidence inspector for a unique control-run-only deep link announces the fleet run selection as the latest selection label. Executable assertion: \"restores the evidence inspector for a unique control-run-only deep link\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#restores the evidence inspector for a unique control-run-only deep link",
+      "coverageRelation": "The test renders FleetWorkspace from a control-run-only deep link; the inspector element passed out and the selection label callback are the only views of what the shell shows and announces.",
+      "interactionRequirement": {
+        "interactionKind": "order",
+        "ownedPort": "Fleet workspace selection label callback",
+        "observableEffect": "The last selection label announced after the deep link restores is 'Fleet run selected'.",
+        "requiredConstraint": "A restored deep link must leave the shell announcing the restored fleet run selection, not an earlier interim label.",
+        "failureRationale": "The inspector detail is the same whichever label was announced last, so only the last callback value shows the operator hears the restored selection."
+      }
     }
   ],
   "entries": [
@@ -5336,6 +5366,61 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The instrumented setTimeout and clearTimeout registry is the only witness of how many poll timers are active before and after unmount.",
       "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-control.spec.ts#owns one poll timer across views and clears it when Recipe Console unmounts"
+    },
+    {
+      "id": "test-structure-coupling-4b8b3124eb09a084",
+      "path": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-fleet-render-without-actions",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent navigation call is the only witness that render changed no view.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#composes the lazy workspace from root query truth without actions during render"
+    },
+    {
+      "id": "test-structure-coupling-16192f23a2cd8719",
+      "path": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-fleet-render-without-actions",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent URL replacement call is the only witness that render rewrote no URL state.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#composes the lazy workspace from root query truth without actions during render"
+    },
+    {
+      "id": "test-structure-coupling-e4677baec59139eb",
+      "path": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-fleet-render-without-actions",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent inspection call is the only witness that render opened no inspection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#composes the lazy workspace from root query truth without actions during render"
+    },
+    {
+      "id": "test-structure-coupling-d71bef5d358ad80d",
+      "path": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-fleet-render-without-actions",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent refresh call is the only witness that render issued no control request.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#composes the lazy workspace from root query truth without actions during render"
+    },
+    {
+      "id": "test-structure-coupling-be8e9be7545b0431",
+      "path": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "recipe-console-fleet-deep-link-selection-label",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The last selection label call is the only witness of what the shell announces after the deep link restores.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-fleet-ui.test.ts#restores the evidence inspector for a unique control-run-only deep link"
     }
   ]
 }
