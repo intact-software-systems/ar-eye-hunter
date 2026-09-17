@@ -255,13 +255,15 @@ export function controlRunCommandRows(
         }));
 }
 
-export function controlRunSnapshotUrl(
+function toControlRunSnapshotUrl(
     baseUrl: string,
     runId: string | undefined,
-    bounds: ControlSnapshotBounds = {}
+    bounds: ControlSnapshotBounds | undefined
 ): string {
     const url = new URL(runId ? `/runs/${encodeURIComponent(runId)}` : '/runs', normalizedBaseUrl(baseUrl));
-    applySnapshotBounds(url, bounds);
+    if (bounds) {
+        applySnapshotBounds(url, bounds);
+    }
     return url.toString();
 }
 
@@ -277,7 +279,7 @@ async function fetchControlServerSnapshotDocument(
     input: FetchControlServerSnapshotInput
 ): Promise<ControlResponseDocument<ControlServerSnapshot>> {
     const response = await (input.fetchFn ?? fetch)(
-        controlRunSnapshotUrl(
+        toControlRunSnapshotUrl(
             input.baseUrl,
             undefined,
             input.bounds
@@ -299,7 +301,7 @@ export async function fetchControlRunSnapshot(
     }>
 ): Promise<ControlRunSnapshot> {
     const response = await (input.fetchFn ?? fetch)(
-        controlRunSnapshotUrl(
+        toControlRunSnapshotUrl(
             input.baseUrl,
             input.runId,
             input.bounds
