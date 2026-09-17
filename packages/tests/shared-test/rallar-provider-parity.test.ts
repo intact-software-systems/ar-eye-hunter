@@ -21,6 +21,8 @@ import {
     normalizeRallarBlackBoxRuntimeParityReport,
     toRallarBlackBoxRunnerParityInteractions,
     type RallarBlackBoxTestCommand,
+    type RallarBlackBoxTestEvent,
+    type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
@@ -395,8 +397,8 @@ describe('rallar provider parity helpers', () => {
     it('hands a message listener no message and a close listener the event when the event carries no JSON payload', () => {
         const runtime = createRallarBlackBoxTestRuntime();
         const client = createRallarBlackBoxRtcClient(runtime, { name: 'alice' }, { commandIdPrefix: 'rallar-bb' });
-        const messages: unknown[] = [];
-        const closes: unknown[] = [];
+        const messages: Array<RallarBlackBoxTestJsonValue | undefined> = [];
+        const closes: Array<RallarBlackBoxTestJsonValue | RallarBlackBoxTestEvent> = [];
         client.onMessage?.((message) => messages.push(message));
         client.onClose?.((event) => closes.push(event));
 
