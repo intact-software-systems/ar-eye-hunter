@@ -5,7 +5,11 @@ import {
     computeControlAgentBoardSummary,
     type ComputeControlAgentBoardRowsInput
 } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
@@ -225,28 +229,28 @@ function distributedRun(
     };
 }
 
-type ObservedDistributedRuns = Readonly<{
-    runs: readonly ControlDistributedRunSnapshot[];
+type ObservedSnapshotCollection<Value> = Readonly<{
+    values: readonly Value[];
     getOrdinalReadCount: () => number;
 }>;
 
 /**
- * The snapshot's distributed runs as the board sees them: whole-array traversal throws, so only a
+ * One of the snapshot's collections as the board sees it: whole-array traversal throws, so only a
  * derivation that reads ordinals from a selection index survives, and each ordinal read is counted
- * so a case can bound how much of the snapshot the board touches.
+ * so a case can bound how much of the snapshot the board touches — or prove it read none of it.
  */
-function observeDistributedRuns(
-    runs: readonly ControlDistributedRunSnapshot[]
-): ObservedDistributedRuns {
+function observeSnapshotCollection<Value>(
+    values: readonly Value[]
+): ObservedSnapshotCollection<Value> {
     let ordinalReadCount = 0;
-    const observed = new Proxy(runs, {
+    const observed = new Proxy(values, {
         get(target, property, receiver) {
             if (
                 property === Symbol.iterator || property === 'forEach' ||
                 property === 'filter' || property === 'map' ||
                 property === 'find' || property === 'some'
             ) {
-                throw new Error('global distributed traversal is forbidden');
+                throw new Error('global snapshot traversal is forbidden');
             }
             if (typeof property === 'string' && /^\d+$/.test(property)) {
                 ordinalReadCount += 1;
@@ -254,7 +258,7 @@ function observeDistributedRuns(
             return Reflect.get(target, property, receiver);
         }
     });
-    return { runs: observed, getOrdinalReadCount: () => ordinalReadCount };
+    return { values: observed, getOrdinalReadCount: () => ordinalReadCount };
 }
 
 describe('control agent board derivation', () => {
@@ -265,8 +269,8 @@ describe('control agent board derivation', () => {
                 distributedRunId: `distributed-${ordinal}`
             }));
         const first = { runs: [], distributedRuns };
-        const observed = observeDistributedRuns(structuredClone(distributedRuns));
-        const currentRuns = observed.runs;
+        const observed = observeSnapshotCollection(structuredClone(distributedRuns));
+        const currentRuns = observed.values;
         const current = { runs: [], distributedRuns: currentRuns };
 
         const rows = computeControlAgentBoardRows(toBoardInput({
@@ -312,17 +316,17 @@ describe('control agent board derivation', () => {
         }));
 
         const selectedDistributedRun = current.distributedRuns[0];
-        const observed = observeDistributedRuns(current.distributedRuns);
+        const observed = observeSnapshotCollection(current.distributedRuns);
         Object.defineProperty(current, 'distributedRuns', {
             configurable: true,
-            value: observed.runs
+            value: observed.values
         });
         const indexed = computeControlAgentBoardRows(toBoardInput({
             run: current.runs[0],
             group,
             snapshot: current,
             selectionIndex,
-            distributedRuns: observed.runs,
+            distributedRuns: observed.values,
             selectedDistributedRun,
             nowEpochMs: 2_500
         }));
@@ -428,17 +432,17 @@ describe('control agent board derivation', () => {
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
         }));
-        const observed = observeDistributedRuns(distributedRuns);
+        const observed = observeSnapshotCollection(distributedRuns);
         Object.defineProperty(snapshot, 'distributedRuns', {
             configurable: true,
-            value: observed.runs
+            value: observed.values
         });
         const indexed = computeControlAgentBoardRows(toBoardInput({
             run,
             group,
             snapshot,
             selectionIndex,
-            distributedRuns: observed.runs,
+            distributedRuns: observed.values,
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
         }));
@@ -473,6 +477,54 @@ describe('control agent board derivation', () => {
 
         expect(rows.map((row) => row.agentId)).toEqual(['agent-a', 'ghost']);
         expect(rows[1]!.selectedRun?.distributedRunId).toBe(external.distributedRunId);
+    });
+
+    it('rebinds through the index when a partial snapshot carries no distributed-run collection', () => {
+        const run = controlRun([agent('agent-a')]);
+        const first: ControlServerSnapshot = { runs: [run] };
+        const observed = observeSnapshotCollection([run]);
+        const current: ControlServerSnapshot = { runs: observed.values };
+
+        const rows = computeControlAgentBoardRows(toBoardInput({
+            run,
+            group,
+            snapshot: current,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                current,
+                createControlSnapshotSelectionIndex(first)
+            ),
+            distributedRuns: [],
+            nowEpochMs: 2_500
+        }));
+
+        expect(rows.map((row) => row.agentId)).toEqual(['agent-a']);
+        expect(rows[0]!.activeRuns).toEqual([]);
+        expect(observed.getOrdinalReadCount()).toBeGreaterThan(0);
+    });
+
+    it('reads the caller distributed runs directly when a partial snapshot carries none of them', () => {
+        const run = controlRun([agent('agent-a')]);
+        const callerRun = distributedRun('running', ['agent-a']);
+        const first: ControlServerSnapshot = { runs: [run] };
+        const observed = observeSnapshotCollection([run]);
+        const current: ControlServerSnapshot = { runs: observed.values };
+
+        const rows = computeControlAgentBoardRows(toBoardInput({
+            run,
+            group,
+            snapshot: current,
+            selectionIndex: bindControlSelectionIndexToSnapshot(
+                current,
+                createControlSnapshotSelectionIndex(first)
+            ),
+            distributedRuns: [callerRun],
+            nowEpochMs: 2_500
+        }));
+
+        expect(rows.map((row) => row.agentId)).toEqual(['agent-a']);
+        expect(rows[0]!.activeRuns.map((participation) => participation.distributedRunId))
+            .toEqual([callerRun.distributedRunId]);
+        expect(observed.getOrdinalReadCount()).toBe(0);
     });
 
     it('marks connected matching agents as targetable and summarizes them', () => {

@@ -300,6 +300,9 @@ describe('Recipe Console control selection', () => {
             distributedRuns: terminalRuns
         };
         const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+        Object.defineProperty(snapshot, 'distributedRuns', {
+            value: forbidGlobalTraversal(snapshot.distributedRuns!)
+        });
 
         const selection = deriveRecipeConsoleControlSelection({
             urlState: { ...baseUrlState, controlRunId: 'run-a' },
