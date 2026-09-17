@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
+
 import {
     validateJsonSchema,
     type JsonSchema,
@@ -183,6 +185,6 @@ export const BLACK_BOX_RUNNER_SCHEMA_CATALOG = {
     scenarioRecipe: BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA
 } as const;
 
-export function validateBlackBoxRunnerScenarioRecipe(value: unknown): JsonSchemaValidationResult {
-    return validateJsonSchema(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, value);
+export function validateBlackBoxRunnerScenarioRecipe(recipe: ApiJsonValue): JsonSchemaValidationResult {
+    return validateJsonSchema(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, recipe);
 }

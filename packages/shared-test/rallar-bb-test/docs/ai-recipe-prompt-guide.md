@@ -69,7 +69,7 @@ as its Left, or, once the schema holds, the manifest contract issues.
 
 For black-box-runner scenarios, validate with:
 
-- `validateBlackBoxRunnerScenarioRecipe(value)`
+- `validateBlackBoxRunnerScenarioRecipe(recipe)` on the parsed JSON recipe
 
 ## Prompt: Distributed RTC Smoke
 
