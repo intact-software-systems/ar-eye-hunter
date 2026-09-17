@@ -397,6 +397,58 @@ describe('distributed run artifact decoding', () => {
                 }
             },
             {
+                name: 'role assignment without its required flag',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        targetResolution: {
+                            ...WORLD_FLEET_TARGET_RESOLUTION,
+                            roleAssignments: [{ agentId: 'agent-01', role: 'sender', recipeIds: [], variables: {} }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message: 'distributed-run.json is not a distributed run snapshot: targetResolution.roleAssignments[0].required must be a boolean.'
+                }
+            },
+            {
+                name: 'agent-without-identity blocker that carries an identity',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        targetResolution: {
+                            ...WORLD_FLEET_TARGET_RESOLUTION,
+                            blockers: [{
+                                ...WORLD_FLEET_TARGET_RESOLUTION.blockers[0],
+                                status: 'agent-without-identity'
+                            }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: targetResolution.blockers[0].identity must be absent for an agent without identity.'
+                }
+            },
+            {
+                name: 'identified blocker without its identity',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        targetResolution: {
+                            ...WORLD_FLEET_TARGET_RESOLUTION,
+                            blockers: [{ agentId: 'agent-03', status: 'stale-agent', reason: 'stale' }]
+                        }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message: 'distributed-run.json is not a distributed run snapshot: targetResolution.blockers[0].identity must be a JSON object.'
+                }
+            },
+            {
                 name: 'target resolution summary without the assertion capability counter',
                 files: {
                     'distributed-run.json': JSON.stringify({

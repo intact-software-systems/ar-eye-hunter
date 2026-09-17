@@ -199,11 +199,6 @@ export type RallarBlackBoxDistributedTargetPolicy =
     | RallarBlackBoxDistributedSelectedAgentsTargetPolicy
     | RallarBlackBoxDistributedRoleMapTargetPolicy;
 
-interface RallarBlackBoxDistributedTargetPolicyFields {
-    /** Absent when staging accepts however many agents the policy resolves. */
-    readonly expectedParticipantCount?: number;
-}
-
 export interface RallarBlackBoxDistributedAllOnlineTargetPolicy extends RallarBlackBoxDistributedTargetPolicyFields {
     readonly mode: 'all-online-group-members';
 }
@@ -370,4 +365,9 @@ export interface RallarBlackBoxDistributedRecipeResult {
     readonly endedAtEpochMs?: number;
     /** Absent unless the recipe's start command failed. */
     readonly error?: RallarBlackBoxTestError;
+}
+
+interface RallarBlackBoxDistributedTargetPolicyFields {
+    /** Absent when staging accepts however many agents the policy resolves. */
+    readonly expectedParticipantCount?: number;
 }

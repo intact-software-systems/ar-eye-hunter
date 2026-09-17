@@ -22,26 +22,6 @@ import {
     decodeControlAgentMessagingCapability
 } from './control-agent-messaging-capability.ts';
 
-const CONTROL_AGENT_CRDT_TRANSPORTS: readonly RallarBlackBoxTestCrdtTransport[] = [
-    'local-only',
-    'ws',
-    'rtc',
-    'ws-then-rtc',
-    'rtc-with-ws-fallback'
-];
-
-const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
-    'equals',
-    'notEquals',
-    'contains',
-    'exists',
-    'gte',
-    'lte'
-];
-
-const EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
-    .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
-
 export interface DistributedAssertionFeatures {
     readonly absence: boolean;
     readonly untilLoop: boolean;
@@ -62,6 +42,26 @@ interface DecodedCapabilityBlocks {
     readonly assertions: Either<string, RallarBlackBoxControlAgentAssertionsCapability>;
     readonly messaging: Either<string, RallarBlackBoxControlAgentCapabilities['messaging']>;
 }
+
+const CONTROL_AGENT_CRDT_TRANSPORTS: readonly RallarBlackBoxTestCrdtTransport[] = [
+    'local-only',
+    'ws',
+    'rtc',
+    'ws-then-rtc',
+    'rtc-with-ws-fallback'
+];
+
+const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
+    'equals',
+    'notEquals',
+    'contains',
+    'exists',
+    'gte',
+    'lte'
+];
+
+const EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
+    .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
 
 // The advertisement is a build-time truth: an agent built from this checkout
 // evaluates absence waits, until loops, and the full operator set, so the

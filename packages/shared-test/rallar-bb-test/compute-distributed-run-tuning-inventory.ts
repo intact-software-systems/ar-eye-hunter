@@ -143,7 +143,7 @@ class TuningInventoryWalk {
 
     addRecipes(recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[]): void {
         for (let recipeIndex = 0; recipeIndex < recipes.length && !this.stopped; recipeIndex += 1) {
-            if (!this.claimStructure({ recipeIndex })) {
+            if (!this.addStructureVisit({ recipeIndex })) {
                 break;
             }
             this.addRecipe(recipes[recipeIndex], recipeIndex, recipeIndex < recipes.length - 1);
@@ -173,7 +173,7 @@ class TuningInventoryWalk {
             depth: 0
         });
         if (!this.stopped && this.visitedCommands >= MAX_EXPANDED_COMMANDS && hasLaterRecipes) {
-            this.reportCommandLimit(context);
+            this.stopAtCommandLimit(context);
         }
     }
 
@@ -193,7 +193,7 @@ class TuningInventoryWalk {
         const nested = { context: list.context, depth: list.depth + 1 };
         for (let index = 0; index < list.commands.length; index += 1) {
             if (this.visitedCommands >= MAX_EXPANDED_COMMANDS) {
-                this.reportCommandLimit(list.context);
+                this.stopAtCommandLimit(list.context);
                 return;
             }
             this.visitedCommands += 1;
@@ -237,8 +237,8 @@ class TuningInventoryWalk {
 
     private addParallelGroups(command: RallarBlackBoxTestParallelCommand, scope: TuningCommandScope): void {
         for (let groupIndex = 0; groupIndex < command.groups.length && !this.stopped; groupIndex += 1) {
-            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS || !this.claimStructure(scope.context)) {
-                this.reportCommandLimit(scope.context);
+            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS || !this.addStructureVisit(scope.context)) {
+                this.stopAtCommandLimit(scope.context);
                 break;
             }
             this.addCommands({
@@ -249,16 +249,16 @@ class TuningInventoryWalk {
         }
     }
 
-    private claimStructure(position: TuningLimitationPosition): boolean {
+    private addStructureVisit(position: TuningLimitationPosition): boolean {
         if (this.visitedStructures >= MAX_EXPANDED_COMMANDS) {
-            this.reportCommandLimit(position);
+            this.stopAtCommandLimit(position);
             return false;
         }
         this.visitedStructures += 1;
         return true;
     }
 
-    private reportCommandLimit(position: TuningLimitationPosition): void {
+    private stopAtCommandLimit(position: TuningLimitationPosition): void {
         this.stopped = true;
         if (this.limitReported) {
             return;

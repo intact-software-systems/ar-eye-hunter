@@ -23,14 +23,6 @@ export interface ResolveDistributedRunTargetsInput {
     readonly staleAfterMs: number;
 }
 
-interface ResolveDistributedTargetBlockerInput {
-    readonly agent: RallarBlackBoxControlAgentCandidate;
-    readonly group: RallarBlackBoxDistributedGroupRef;
-    readonly nowEpochMs: number;
-    readonly staleAfterMs: number;
-    readonly assertionFeatures: DistributedAssertionFeatures;
-}
-
 export interface ComputeDistributedTargetResolutionSummaryInput {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
     readonly agents: readonly RallarBlackBoxControlAgentCandidate[];
@@ -38,6 +30,14 @@ export interface ComputeDistributedTargetResolutionSummaryInput {
     readonly targetAgentIds: readonly string[];
     readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
     readonly blockers: readonly RallarBlackBoxDistributedTargetBlocker[];
+}
+
+interface ResolveDistributedTargetBlockerInput {
+    readonly agent: RallarBlackBoxControlAgentCandidate;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly nowEpochMs: number;
+    readonly staleAfterMs: number;
+    readonly assertionFeatures: DistributedAssertionFeatures;
 }
 
 export function resolveDistributedRunTargets(

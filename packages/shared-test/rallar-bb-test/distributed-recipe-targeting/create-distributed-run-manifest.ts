@@ -47,54 +47,54 @@ interface ToTargetPolicyInput {
 export function createDistributedRunManifest(
     input: CreateDistributedRunManifestInput
 ): RallarBlackBoxDistributedRunManifest {
-    const recipeSelections = input.recipes.map((item, index) => ({
-        recipeId: item.recipe.recipeId,
-        recipe: item.recipe,
-        role: toRecipeRoleForPattern(input.rolePattern, index, input.recipes.length),
-        profile: item.profiles[0],
-        required: true,
-        variables: {}
-    } satisfies RallarBlackBoxDistributedRunRecipeSelection));
-    const roles = toRolesForPattern(input.rolePattern, input.targetAgentIds);
-    const targetPolicy = toTargetPolicy({
-        mode: input.targetPolicyMode,
-        agentIds: input.targetAgentIds,
-        roles,
-        expectedParticipantCount: input.expectedParticipantCount
-    });
     const useOrderedTargetRoles = input.targetPolicyMode === 'all-online-group-members' &&
         input.rolePattern !== 'all-agents';
-    const roleAssignments = useOrderedTargetRoles
-        ? []
-        : toRoleAssignmentsForPattern(input.rolePattern, input.targetAgentIds);
-    const roleAssignmentPolicy = useOrderedTargetRoles
-        ? toOrderedTargetRoleAssignmentPolicy(input.rolePattern)
-        : undefined;
-    const fields = {
+    const start: RallarBlackBoxDistributedRunStart = input.startMode === 'scheduled'
+        ? { startMode: input.startMode, startDeadlineEpochMs: input.startDeadlineEpochMs }
+        : { startMode: input.startMode };
+
+    return {
         schemaVersion: 1,
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         displayName: input.displayName,
         group: input.group,
-        recipes: recipeSelections,
-        targetPolicy,
+        recipes: toRecipeSelections(input),
+        targetPolicy: toTargetPolicy({
+            mode: input.targetPolicyMode,
+            agentIds: input.targetAgentIds,
+            roles: toRolesForPattern(input.rolePattern, input.targetAgentIds),
+            expectedParticipantCount: input.expectedParticipantCount
+        }),
         variables: {},
-        roleAssignments,
-        roleAssignmentPolicy,
+        roleAssignments: useOrderedTargetRoles
+            ? []
+            : toRoleAssignmentsForPattern(input.rolePattern, input.targetAgentIds),
+        roleAssignmentPolicy: useOrderedTargetRoles
+            ? toOrderedTargetRoleAssignmentPolicy(input.rolePattern)
+            : undefined,
         ackTimeoutMs: input.ackTimeoutMs,
-        barrier: input.barrier
-    } as const;
-    const settings = {
+        barrier: input.barrier,
+        ...start,
         groupAssertions: input.groupAssertions,
         metadata: {
             createdBy: 'rallar-black-box-spa',
             rolePattern: input.rolePattern
         }
     };
+}
 
-    return input.startMode === 'scheduled'
-        ? { ...fields, startMode: input.startMode, startDeadlineEpochMs: input.startDeadlineEpochMs, ...settings }
-        : { ...fields, startMode: input.startMode, ...settings };
+function toRecipeSelections(
+    input: CreateDistributedRunManifestInput
+): readonly RallarBlackBoxDistributedRunRecipeSelection[] {
+    return input.recipes.map((item, index) => ({
+        recipeId: item.recipe.recipeId,
+        recipe: item.recipe,
+        role: toRecipeRoleForPattern(input.rolePattern, index, input.recipes.length),
+        profile: item.profiles[0],
+        required: true,
+        variables: {}
+    }));
 }
 
 function toTargetPolicy(input: ToTargetPolicyInput): RallarBlackBoxDistributedTargetPolicy {

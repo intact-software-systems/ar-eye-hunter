@@ -5,7 +5,7 @@ import type {
 } from '../distributed-run.ts';
 import type { RallarBlackBoxTestRedactionOptions } from '../rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
-import { evaluateGroupAssertionAggregate, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
+import { computeGroupAssertionVerdict, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
 import {
     computeGroupAssertionEvidenceRows,
     type DistributedGroupAssertionParticipant,
@@ -25,6 +25,15 @@ import {
     type RallarBlackBoxMatchingGroupAssertionResult
 } from './group-assertions.ts';
 
+export interface ComputeDistributedGroupAssertionResultsInput {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly participants: readonly DistributedGroupAssertionParticipant[];
+    readonly recipeResults: readonly RallarBlackBoxDistributedRecipeResult[];
+    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
+    /** Absent when recorded evidence values are reported without redaction. */
+    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+}
+
 const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] = [
     'passed',
     'failed',
@@ -34,13 +43,25 @@ const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] 
     'skipped'
 ];
 
-export interface ComputeDistributedGroupAssertionResultsInput {
-    readonly manifest: RallarBlackBoxDistributedRunManifest;
-    readonly participants: readonly DistributedGroupAssertionParticipant[];
-    readonly recipeResults: readonly RallarBlackBoxDistributedRecipeResult[];
-    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
-    /** Absent when recorded evidence values are reported without redaction. */
-    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+type GroupAssertionOutcome = Pick<
+    RallarBlackBoxMatchingGroupAssertionResult,
+    'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
+>;
+
+interface ToGroupAssertionResultInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly counts: RallarBlackBoxGroupAssertionParticipantCounts;
+    readonly outcome: GroupAssertionOutcome;
+}
+
+interface ToGroupAssertionOutcomeInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
+    readonly verdict: GroupAssertionVerdict;
+    readonly evidenceOk: boolean;
+    readonly missingAgentIds: readonly string[];
+    readonly brokenEvidence: readonly GroupAssertionEvidenceRow[];
+    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
 }
 
 // Coordinator-side evaluation over the frozen participant set. Returns
@@ -83,7 +104,7 @@ function computeGroupAssertionResult(
     const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
     const brokenEvidence = rows.filter((row) => row.status === 'duplicate' || row.status === 'unresolved');
-    const verdict = evaluateGroupAssertionAggregate(assertion, resolved);
+    const verdict = computeGroupAssertionVerdict(assertion, resolved);
 
     return toGroupAssertionResult({
         assertion,
@@ -160,27 +181,6 @@ function toRedactedAgentRows(
             }
             : { agentId: row.agentId, role: row.role, evidence: row.status }
     );
-}
-
-type GroupAssertionOutcome = Pick<
-    RallarBlackBoxMatchingGroupAssertionResult,
-    'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
->;
-
-interface ToGroupAssertionResultInput {
-    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly counts: RallarBlackBoxGroupAssertionParticipantCounts;
-    readonly outcome: GroupAssertionOutcome;
-}
-
-interface ToGroupAssertionOutcomeInput {
-    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
-    readonly verdict: GroupAssertionVerdict;
-    readonly evidenceOk: boolean;
-    readonly missingAgentIds: readonly string[];
-    readonly brokenEvidence: readonly GroupAssertionEvidenceRow[];
-    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
 }
 
 function toGroupAssertionError(

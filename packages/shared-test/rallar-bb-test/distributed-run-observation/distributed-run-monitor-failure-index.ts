@@ -3,17 +3,10 @@ import type {
     DistributedRunRuntimeDiagnosticRow
 } from './distributed-run-row-contracts.ts';
 
-const DIAGNOSTIC_FAILURE_CORRELATION_WINDOW_MS = 15_000;
-
-interface TimedFailurePosition {
-    readonly atEpochMs: number;
-    readonly position: number;
-}
-
 export interface DistributedRunMonitorFailureIndex {
     readonly failures: readonly DistributedRunFailureRow[];
     readonly positionsByCommandKey: ReadonlyMap<string, readonly number[]>;
-    readonly timedPositionsByAgentId: ReadonlyMap<string, readonly TimedFailurePosition[]>;
+    readonly timedPositionsByAgentId: ReadonlyMap<string, readonly DistributedRunMonitorTimedFailurePosition[]>;
     readonly failureVisitCount: number;
 }
 
@@ -22,11 +15,18 @@ export interface DistributedRunCorrelatedFailures {
     readonly candidateVisitCount: number;
 }
 
+export interface DistributedRunMonitorTimedFailurePosition {
+    readonly atEpochMs: number;
+    readonly position: number;
+}
+
+const DIAGNOSTIC_FAILURE_CORRELATION_WINDOW_MS = 15_000;
+
 export function createDistributedRunMonitorFailureIndex(
     failures: readonly DistributedRunFailureRow[]
 ): DistributedRunMonitorFailureIndex {
     const positionsByCommandKey = new Map<string, number[]>();
-    const timedPositionsByAgentId = new Map<string, TimedFailurePosition[]>();
+    const timedPositionsByAgentId = new Map<string, DistributedRunMonitorTimedFailurePosition[]>();
     let failureVisitCount = 0;
     failures.forEach((failure, position) => {
         failureVisitCount += 1;
@@ -80,7 +80,7 @@ export function computeDistributedRunCorrelatedFailures(
 }
 
 function computeTimedFailureLowerBound(
-    values: readonly TimedFailurePosition[],
+    values: readonly DistributedRunMonitorTimedFailurePosition[],
     minimum: number
 ): number {
     let low = 0;

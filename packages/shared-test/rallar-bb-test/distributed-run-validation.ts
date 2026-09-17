@@ -91,7 +91,7 @@ export function decodeDistributedRunManifest(
         })));
 }
 
-/** Every issue a typed manifest still has against the schema and contract; empty when it is valid. */
+/** The schema issues a typed manifest has, or its contract issues once the schema holds; empty when it is valid. */
 export function validateDistributedRunManifest(
     manifest: RallarBlackBoxDistributedRunManifest
 ): readonly DistributedRunManifestValidationIssue[] {

@@ -19,14 +19,6 @@ export type DistributedGroupAssertionRecipeEvidence =
     | DistributedGroupAssertionRecordedRecipeEvidence
     | DistributedGroupAssertionPendingRecipeEvidence;
 
-interface DistributedGroupAssertionRecipeEvidenceFields {
-    readonly agentId: string;
-    /** Absent when the start command link names no recipe. */
-    readonly recipeId?: string;
-    /** Absent when the start command link names no role. */
-    readonly role?: string;
-}
-
 export interface DistributedGroupAssertionRecordedRecipeEvidence extends DistributedGroupAssertionRecipeEvidenceFields {
     readonly hasResult: true;
     readonly resultValue: RallarBlackBoxGroupAssertionValue;
@@ -38,12 +30,6 @@ export interface DistributedGroupAssertionPendingRecipeEvidence extends Distribu
 
 export type GroupAssertionEvidenceRow = ResolvedGroupAssertionEvidenceRow | UnusableGroupAssertionEvidenceRow;
 
-interface GroupAssertionEvidenceRowFields {
-    readonly agentId: string;
-    /** Absent when the participant holds no role. */
-    readonly role?: string;
-}
-
 export interface ResolvedGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
     readonly status: 'resolved';
     readonly value: RallarBlackBoxGroupAssertionValue;
@@ -51,6 +37,31 @@ export interface ResolvedGroupAssertionEvidenceRow extends GroupAssertionEvidenc
 
 export interface UnusableGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
     readonly status: 'missing' | 'duplicate' | 'unresolved';
+}
+
+export interface ToDistributedGroupAssertionRecipeEvidenceInput {
+    readonly commandLinks: readonly ControlDistributedRunCommandLink[];
+    readonly resultByCommandId: ReadonlyMap<string, ControlResultEnvelope>;
+}
+
+export interface ComputeGroupAssertionEvidenceRowsInput {
+    readonly source: RallarBlackBoxGroupAssertionSource;
+    readonly participants: readonly DistributedGroupAssertionParticipant[];
+    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
+}
+
+interface DistributedGroupAssertionRecipeEvidenceFields {
+    readonly agentId: string;
+    /** Absent when the start command link names no recipe. */
+    readonly recipeId?: string;
+    /** Absent when the start command link names no role. */
+    readonly role?: string;
+}
+
+interface GroupAssertionEvidenceRowFields {
+    readonly agentId: string;
+    /** Absent when the participant holds no role. */
+    readonly role?: string;
 }
 
 interface RecipeCommandResult {
@@ -77,11 +88,6 @@ export function toDistributedGroupAssertionParticipants(
     }));
 }
 
-export interface ToDistributedGroupAssertionRecipeEvidenceInput {
-    readonly commandLinks: readonly ControlDistributedRunCommandLink[];
-    readonly resultByCommandId: ReadonlyMap<string, ControlResultEnvelope>;
-}
-
 export function toDistributedGroupAssertionRecipeEvidence(
     input: ToDistributedGroupAssertionRecipeEvidenceInput
 ): readonly DistributedGroupAssertionRecipeEvidence[] {
@@ -99,12 +105,6 @@ export function toDistributedGroupAssertionRecipeEvidence(
                     resultValue: result.result?.value
                 };
         });
-}
-
-export interface ComputeGroupAssertionEvidenceRowsInput {
-    readonly source: RallarBlackBoxGroupAssertionSource;
-    readonly participants: readonly DistributedGroupAssertionParticipant[];
-    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
 }
 
 export function computeGroupAssertionEvidenceRows(

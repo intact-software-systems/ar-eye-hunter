@@ -19,11 +19,6 @@ export type DistributedRunFailureEvidenceDestination =
     | DistributedRunEventEvidenceDestination
     | DistributedRunArtifactEvidenceDestination;
 
-interface DistributedRunEvidenceDestinationFields {
-    readonly id: string;
-    readonly label: string;
-}
-
 export interface DistributedRunAgentEvidenceDestination extends DistributedRunEvidenceDestinationFields {
     readonly kind: 'agent';
     readonly agentId: string;
@@ -82,6 +77,26 @@ export interface ComputeDistributedRunFailureEvidenceDestinationsInput {
     readonly monitor: DistributedRunMonitor;
 }
 
+interface DistributedRunEvidenceDestinationFields {
+    readonly id: string;
+    readonly label: string;
+}
+
+interface FailureEvidenceScope {
+    readonly commandIds: readonly string[];
+    readonly agentIds: readonly string[];
+    readonly recipeIds: readonly string[];
+    readonly matchingTimeline: readonly DistributedRunTimelineItem[];
+    readonly recipeCommandIds: ReadonlySet<string>;
+}
+
+interface EventFailureMatchInput {
+    readonly event: DistributedRunEventRow;
+    readonly failure: DistributedRunFailureRow;
+    readonly commandIds: readonly string[];
+    readonly recipeCommandIds: ReadonlySet<string>;
+}
+
 /** The recipe key a selection contributes to command links, progress rows and group assertion sources. */
 export function resolveDistributedRunRecipeSelectionKey(
     selection: RallarBlackBoxDistributedRunRecipeSelection
@@ -128,14 +143,6 @@ export function computeDistributedRunFailureEvidenceDestinations(
         ...toArtifactDestinations(input.monitor)
     ];
     return toUniqueDestinations(destinations);
-}
-
-interface FailureEvidenceScope {
-    readonly commandIds: readonly string[];
-    readonly agentIds: readonly string[];
-    readonly recipeIds: readonly string[];
-    readonly matchingTimeline: readonly DistributedRunTimelineItem[];
-    readonly recipeCommandIds: ReadonlySet<string>;
 }
 
 /**
@@ -310,13 +317,6 @@ function isDirectFailureTimeline(
         item.agentId === failure.agentId &&
         item.recipeId === failure.recipeId &&
         item.commandId === failure.commandId;
-}
-
-interface EventFailureMatchInput {
-    readonly event: DistributedRunEventRow;
-    readonly failure: DistributedRunFailureRow;
-    readonly commandIds: readonly string[];
-    readonly recipeCommandIds: ReadonlySet<string>;
 }
 
 function isEventMatchingFailure({ event, failure, commandIds, recipeCommandIds }: EventFailureMatchInput): boolean {

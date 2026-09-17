@@ -55,17 +55,6 @@ export interface RallarBlackBoxGroupAssertionCountBounds {
     readonly lte?: number;
 }
 
-interface RallarBlackBoxGroupAssertionFields {
-    readonly groupAssertionId: string;
-    /** Absent when the author gives the assertion no description. */
-    readonly description?: string;
-    readonly source: RallarBlackBoxGroupAssertionSource;
-    /** Absent when the assertion covers every frozen participant regardless of role. */
-    readonly scope?: RallarBlackBoxGroupAssertionScope;
-    /** Absent when every scoped participant must report usable evidence. */
-    readonly minParticipants?: number;
-}
-
 export type RallarBlackBoxDistributedGroupAssertion =
     | RallarBlackBoxPredicateGroupAssertion
     | RallarBlackBoxCountMatchingGroupAssertion
@@ -104,12 +93,6 @@ export type RallarBlackBoxGroupAssertionAgentRow =
     | RallarBlackBoxResolvedGroupAssertionAgentRow
     | RallarBlackBoxUnusableGroupAssertionAgentRow;
 
-interface RallarBlackBoxGroupAssertionAgentRowFields {
-    readonly agentId: string;
-    /** Absent when the participant holds no role. */
-    readonly role?: string;
-}
-
 export interface RallarBlackBoxResolvedGroupAssertionAgentRow extends RallarBlackBoxGroupAssertionAgentRowFields {
     readonly evidence: 'resolved';
     readonly verdict: RallarBlackBoxGroupAssertionAgentVerdict;
@@ -136,16 +119,6 @@ export type RallarBlackBoxDistributedGroupAssertionResult =
     | RallarBlackBoxMatchingGroupAssertionResult
     | RallarBlackBoxEqualityGroupAssertionResult;
 
-interface RallarBlackBoxDistributedGroupAssertionResultFields {
-    readonly groupAssertionId: string;
-    readonly ok: boolean;
-    readonly missingAgentIds: readonly string[];
-    readonly violatingAgentIds: readonly string[];
-    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
-    /** Absent when the assertion passed. */
-    readonly error?: RallarBlackBoxTestError;
-}
-
 export interface RallarBlackBoxMatchingGroupAssertionResult
     extends RallarBlackBoxDistributedGroupAssertionResultFields {
     readonly aggregate: 'allMatch' | 'noneMatch' | 'countMatching';
@@ -156,6 +129,46 @@ export interface RallarBlackBoxEqualityGroupAssertionResult
     extends RallarBlackBoxDistributedGroupAssertionResultFields {
     readonly aggregate: 'allEqual' | 'allEqualWithin';
     readonly participants: RallarBlackBoxGroupAssertionParticipantCounts;
+}
+
+interface RallarBlackBoxGroupAssertionFields {
+    readonly groupAssertionId: string;
+    /** Absent when the author gives the assertion no description. */
+    readonly description?: string;
+    readonly source: RallarBlackBoxGroupAssertionSource;
+    /** Absent when the assertion covers every frozen participant regardless of role. */
+    readonly scope?: RallarBlackBoxGroupAssertionScope;
+    /** Absent when every scoped participant must report usable evidence. */
+    readonly minParticipants?: number;
+}
+
+interface RallarBlackBoxGroupAssertionAgentRowFields {
+    readonly agentId: string;
+    /** Absent when the participant holds no role. */
+    readonly role?: string;
+}
+
+interface RallarBlackBoxDistributedGroupAssertionResultFields {
+    readonly groupAssertionId: string;
+    readonly ok: boolean;
+    readonly missingAgentIds: readonly string[];
+    readonly violatingAgentIds: readonly string[];
+    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
+    /** Absent when the assertion passed. */
+    readonly error?: RallarBlackBoxTestError;
+}
+
+interface GroupAssertionSourceValidationInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly path: string;
+    readonly manifest: DistributedRunManifestSchemaValue;
+    readonly recipeKeys: ReadonlySet<string>;
+}
+
+interface GroupAssertionScopeValidationInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly path: string;
+    readonly manifest: DistributedRunManifestSchemaValue;
 }
 
 export function validateDistributedGroupAssertions(
@@ -211,13 +224,6 @@ function validateGroupAssertionIdentity(
         : [];
 }
 
-interface GroupAssertionSourceValidationInput {
-    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly path: string;
-    readonly manifest: DistributedRunManifestSchemaValue;
-    readonly recipeKeys: ReadonlySet<string>;
-}
-
 function validateGroupAssertionSource(
     input: GroupAssertionSourceValidationInput
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
@@ -244,12 +250,6 @@ function validateGroupAssertionSource(
             }
         ]
         : fieldIssues;
-}
-
-interface GroupAssertionScopeValidationInput {
-    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly path: string;
-    readonly manifest: DistributedRunManifestSchemaValue;
 }
 
 function validateGroupAssertionScope(

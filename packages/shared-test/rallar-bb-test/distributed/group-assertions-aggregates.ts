@@ -49,7 +49,7 @@ export function deepEqualJson(left: any, right: any): boolean {
         );
 }
 
-export function evaluateGroupAssertionAggregate(
+export function computeGroupAssertionVerdict(
     assertion: RallarBlackBoxDistributedGroupAssertion,
     resolved: readonly ResolvedGroupAssertionEvidenceRow[]
 ): GroupAssertionVerdict {
@@ -57,15 +57,15 @@ export function evaluateGroupAssertionAggregate(
         case 'allMatch':
         case 'noneMatch':
         case 'countMatching':
-            return evaluatePredicateAggregate(assertion, resolved);
+            return computePredicateVerdict(assertion, resolved);
         case 'allEqual':
-            return evaluateAllEqual(resolved);
+            return computeAllEqualVerdict(resolved);
         case 'allEqualWithin':
-            return evaluateAllEqualWithin(resolved, assertion.tolerance);
+            return computeAllEqualWithinVerdict(resolved, assertion.tolerance);
     }
 }
 
-function evaluatePredicateAggregate(
+function computePredicateVerdict(
     assertion: RallarBlackBoxPredicateGroupAssertion | RallarBlackBoxCountMatchingGroupAssertion,
     resolved: readonly ResolvedGroupAssertionEvidenceRow[]
 ): PredicateGroupAssertionVerdict {
@@ -115,7 +115,7 @@ function evaluatePredicateAggregate(
     };
 }
 
-function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]): EqualityGroupAssertionVerdict {
+function computeAllEqualVerdict(resolved: readonly ResolvedGroupAssertionEvidenceRow[]): EqualityGroupAssertionVerdict {
     const classes: { value: any; agentIds: string[]; }[] = [];
     for (const row of resolved) {
         const existing = classes.find((candidate) => deepEqualJson(candidate.value, row.value));
@@ -142,7 +142,7 @@ function evaluateAllEqual(resolved: readonly ResolvedGroupAssertionEvidenceRow[]
     };
 }
 
-function evaluateAllEqualWithin(
+function computeAllEqualWithinVerdict(
     resolved: readonly ResolvedGroupAssertionEvidenceRow[],
     tolerance: number
 ): EqualityGroupAssertionVerdict {

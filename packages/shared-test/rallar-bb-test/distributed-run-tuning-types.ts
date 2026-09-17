@@ -34,17 +34,6 @@ export interface DistributedRunTuningKnobConstraint {
 
 export type DistributedRunTuningKnob = DistributedRunManifestTuningKnob | DistributedRunCommandTuningKnob;
 
-interface DistributedRunTuningKnobFields {
-    readonly pointer: string;
-    /** Absent when the manifest or command leaves the setting unset. */
-    readonly currentValue?: number;
-    readonly availability: 'configured' | 'unset' | 'blocked';
-    readonly effective: boolean;
-    readonly constraint: DistributedRunTuningKnobConstraint;
-    /** Absent when nothing qualifies the knob's availability. */
-    readonly reason?: string;
-}
-
 export interface DistributedRunManifestTuningKnob extends DistributedRunTuningKnobFields {
     readonly scope: 'manifest';
     readonly name: DistributedRunManifestTuningKnobName;
@@ -74,4 +63,15 @@ export interface DistributedRunTuningInventoryLimitation {
 export interface DistributedRunTuningInventory {
     readonly knobs: readonly DistributedRunTuningKnob[];
     readonly limitations: readonly DistributedRunTuningInventoryLimitation[];
+}
+
+interface DistributedRunTuningKnobFields {
+    readonly pointer: string;
+    /** Absent when the manifest or command leaves the setting unset. */
+    readonly currentValue?: number;
+    readonly availability: 'configured' | 'unset' | 'blocked';
+    readonly effective: boolean;
+    readonly constraint: DistributedRunTuningKnobConstraint;
+    /** Absent when nothing qualifies the knob's availability. */
+    readonly reason?: string;
 }
