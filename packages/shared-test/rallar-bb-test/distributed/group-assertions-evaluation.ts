@@ -103,7 +103,7 @@ function computeGroupAssertionResult(
     });
     const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
-    const brokenEvidence = rows.filter((row) => row.status === 'duplicate' || row.status === 'unresolved');
+    const brokenEvidence = rows.filter((row) => row.status !== 'resolved' && row.status !== 'missing');
     const verdict = computeGroupAssertionVerdict(assertion, resolved);
 
     return toGroupAssertionResult({

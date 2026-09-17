@@ -85,7 +85,8 @@ export type RallarBlackBoxGroupAssertionEvidenceStatus =
     | 'resolved'
     | 'missing'
     | 'duplicate'
-    | 'unresolved';
+    | 'unresolved'
+    | 'undecodable';
 
 export type RallarBlackBoxGroupAssertionAgentVerdict = 'matching' | 'not-matching' | 'violating' | 'agreeing';
 

@@ -118,7 +118,8 @@ const UNUSABLE_GROUP_ASSERTION_EVIDENCE_STATUSES = Object.keys(
     {
         missing: true,
         duplicate: true,
-        unresolved: true
+        unresolved: true,
+        undecodable: true
     } satisfies Record<Exclude<RallarBlackBoxGroupAssertionEvidenceStatus, 'resolved'>, true>
 ) as readonly Exclude<RallarBlackBoxGroupAssertionEvidenceStatus, 'resolved'>[];
 

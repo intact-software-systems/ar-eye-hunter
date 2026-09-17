@@ -664,6 +664,7 @@ function compositeRow(index: number): DistributedRunCompositeDrilldown {
             leaf: 1
         },
         groupSummaries: [],
+        childDecodeIssues: [],
         rows: []
     };
 }

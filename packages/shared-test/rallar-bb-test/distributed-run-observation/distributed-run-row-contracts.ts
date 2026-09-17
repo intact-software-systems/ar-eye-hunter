@@ -1,3 +1,4 @@
+import type { RallarBlackBoxCompositeChildDecodeIssue } from '../composite-results.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type {
     RallarBlackBoxTestCommandKind,
@@ -209,6 +210,12 @@ export type DistributedRunCompositeGroupSummary = Readonly<{
     status: 'passed' | 'failed' | 'cancelled' | 'empty';
 }>;
 
+export interface DistributedRunCompositeChildDecodeIssueRow extends RallarBlackBoxCompositeChildDecodeIssue {
+    readonly parentPath: string;
+    readonly parentCommandId: string;
+    readonly parentEndedAtEpochMs: number;
+}
+
 export type DistributedRunCompositeDrilldown = Readonly<{
     key: string;
     commandId: string;
@@ -221,5 +228,6 @@ export type DistributedRunCompositeDrilldown = Readonly<{
     summary: DistributedRunCompositeSummary;
     firstFailure?: DistributedRunCompositeRow;
     groupSummaries: readonly DistributedRunCompositeGroupSummary[];
+    childDecodeIssues: readonly DistributedRunCompositeChildDecodeIssueRow[];
     rows: readonly DistributedRunCompositeRow[];
 }>;

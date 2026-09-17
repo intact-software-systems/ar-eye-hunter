@@ -8,6 +8,7 @@
     "skipped": 0,
     "composite": 2,
     "leaf": 4,
+    "childDecodeIssueCount": 0,
     "firstFailure": {
       "path": "$.groups[0=left].commands[0].iterations[2].commands[0]",
       "sourceRecipePath": "$.groups[0].commands[0].commands[0]",

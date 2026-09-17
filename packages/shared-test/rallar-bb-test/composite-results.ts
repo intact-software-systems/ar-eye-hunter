@@ -1,3 +1,4 @@
+import { Either } from '@shared/resilience/Either.ts';
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH
@@ -36,6 +37,14 @@ export interface RallarBlackBoxCompositeParallelChildPosition extends RallarBlac
     readonly groupIndex: number;
 }
 
+/** A recorded part of a composite result value that does not decode, so the children it holds are not walked. */
+export interface RallarBlackBoxCompositeChildDecodeIssue {
+    /** The recorded object, such as `value.results[1]` or `value.groups[0]`. */
+    readonly valuePath: string;
+    /** Every field of that object that is missing or records an invalid value. */
+    readonly invalidFields: readonly string[];
+}
+
 export type RallarBlackBoxCompositeResultPosition =
     | Readonly<{ kind: 'root'; }>
     | RallarBlackBoxCompositeLoopChildPosition
@@ -53,6 +62,7 @@ export interface RallarBlackBoxCompositeResultFlatEntry {
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly durationMs: number;
+    readonly childDecodeIssues: readonly RallarBlackBoxCompositeChildDecodeIssue[];
     readonly result: RallarBlackBoxTestResult;
 }
 
@@ -80,6 +90,7 @@ export interface RallarBlackBoxCompositeResultSummary {
     readonly skipped: number;
     readonly composite: number;
     readonly leaf: number;
+    readonly childDecodeIssueCount: number;
     /** Absent when no entry failed. */
     readonly firstFailure?: RallarBlackBoxCompositeResultFirstFailure;
 }
@@ -109,14 +120,27 @@ interface EntryPlacement {
     readonly position: RallarBlackBoxCompositeResultPosition;
 }
 
-interface ParallelGroupChildResults {
-    readonly results: readonly RallarBlackBoxTestParallelChildResult[];
-}
-
-interface ChildPlacement {
-    readonly child: RallarBlackBoxTestCompositeChildResult;
+interface PlacedChild {
+    readonly result: RallarBlackBoxTestResult;
     readonly placement: EntryPlacement;
 }
+
+type ChildDecoding<Child> = Either<RallarBlackBoxCompositeChildDecodeIssue, Child>;
+
+const COMPOSITE_CHILD_FIELD_GUARDS = {
+    commandId: isText,
+    originalCommandId: isOptionalText,
+    parentCommandId: isText,
+    path: isNonEmptyText,
+    sourceRecipePath: isNonEmptyText,
+    childIndex: isIndex,
+    commandIndex: isIndex,
+    result: isRallarBlackBoxTestResult
+};
+
+const LOOP_CHILD_FIELD_GUARDS = { ...COMPOSITE_CHILD_FIELD_GUARDS, iteration: isIndex };
+
+const PARALLEL_CHILD_FIELD_GUARDS = { ...COMPOSITE_CHILD_FIELD_GUARDS, groupId: isText, groupIndex: isIndex };
 
 export function toRallarBlackBoxCompositeResultFlatEntries(
     roots: readonly RallarBlackBoxTestResult[]
@@ -184,6 +208,7 @@ export function computeRallarBlackBoxCompositeResultSummary(
         skipped: entries.filter((entry) => entry.status === 'skipped').length,
         composite: entries.filter((entry) => isCompositeResult(entry.result)).length,
         leaf: entries.filter((entry) => !isCompositeResult(entry.result)).length,
+        childDecodeIssueCount: entries.reduce((count, entry) => count + entry.childDecodeIssues.length, 0),
         firstFailure: firstFailure
             ? {
                 path: firstFailure.path,
@@ -231,6 +256,7 @@ function toFlatEntries(
     result: RallarBlackBoxTestResult,
     placement: EntryPlacement
 ): readonly RallarBlackBoxCompositeResultFlatEntry[] {
+    const childDecodings = toChildDecodings(result, placement);
     const entry: RallarBlackBoxCompositeResultFlatEntry = {
         ...placement,
         commandId: result.commandId,
@@ -240,41 +266,49 @@ function toFlatEntries(
         startedAtEpochMs: result.startedAtEpochMs,
         endedAtEpochMs: result.endedAtEpochMs,
         durationMs: result.durationMs,
+        childDecodeIssues: childDecodings.flatMap((decoding) => decoding.fold((issue) => [issue], () => [])),
         result
     };
     return [
         entry,
-        ...toChildPlacements(entry).flatMap((child) => toFlatEntries(child.child.result, child.placement))
+        ...childDecodings.flatMap((decoding) =>
+            decoding.fold(() => [], (child) => toFlatEntries(child.result, child.placement))
+        )
     ];
 }
 
-function toChildPlacements(parent: RallarBlackBoxCompositeResultFlatEntry): readonly ChildPlacement[] {
+function toChildDecodings(
+    parent: RallarBlackBoxTestResult,
+    placement: EntryPlacement
+): readonly ChildDecoding<PlacedChild>[] {
     if (parent.kind === 'loop') {
-        return decodeLoopChildResults(parent.result.value).map((child) => ({
-            child,
-            placement: toChildPlacement(parent, child, {
-                kind: 'loop-child',
-                ...toChildPosition(parent, child),
-                iteration: child.iteration
-            })
-        }));
+        return decodeLoopChildResults(parent.value).map((decoding) =>
+            decoding.mapRight((child) =>
+                toPlacedChild(placement, child, {
+                    kind: 'loop-child',
+                    ...toChildPosition(placement, child),
+                    iteration: child.iteration
+                })
+            )
+        );
     }
     if (parent.kind === 'parallel') {
-        return decodeParallelChildResults(parent.result.value).map((child) => ({
-            child,
-            placement: toChildPlacement(parent, child, {
-                kind: 'parallel-child',
-                ...toChildPosition(parent, child),
-                groupId: child.groupId,
-                groupIndex: child.groupIndex
-            })
-        }));
+        return decodeParallelChildResults(parent.value).map((decoding) =>
+            decoding.mapRight((child) =>
+                toPlacedChild(placement, child, {
+                    kind: 'parallel-child',
+                    ...toChildPosition(placement, child),
+                    groupId: child.groupId,
+                    groupIndex: child.groupIndex
+                })
+            )
+        );
     }
     return [];
 }
 
 function toChildPosition(
-    parent: RallarBlackBoxCompositeResultFlatEntry,
+    parent: EntryPlacement,
     child: RallarBlackBoxTestCompositeChildResult
 ): RallarBlackBoxCompositeChildPosition {
     return {
@@ -286,16 +320,19 @@ function toChildPosition(
     };
 }
 
-function toChildPlacement(
-    parent: RallarBlackBoxCompositeResultFlatEntry,
+function toPlacedChild(
+    parent: EntryPlacement,
     child: RallarBlackBoxTestCompositeChildResult,
     position: RallarBlackBoxCompositeResultPosition
-): EntryPlacement {
+): PlacedChild {
     return {
-        path: toNestedResultPath(parent.path, child.path),
-        sourceRecipePath: toNestedResultPath(parent.sourceRecipePath, child.sourceRecipePath),
-        depth: parent.depth + 1,
-        position
+        result: child.result,
+        placement: {
+            path: toNestedResultPath(parent.path, child.path),
+            sourceRecipePath: toNestedResultPath(parent.sourceRecipePath, child.sourceRecipePath),
+            depth: parent.depth + 1,
+            position
+        }
     };
 }
 
@@ -313,51 +350,69 @@ function isCompositeResult(result: RallarBlackBoxTestResult): boolean {
     return result.kind === 'loop' || result.kind === 'parallel';
 }
 
-/** A loop value whose children do not all decode contributes no child entries. */
-function decodeLoopChildResults(value: unknown): readonly RallarBlackBoxTestLoopChildResult[] {
-    if (!isJsonRecordValue(value) || !Array.isArray(value.results) || !value.results.every(isLoopChildResult)) {
+/**
+ * A loop without a recorded value, or whose value the control server compacted with `resultsOmitted`, holds no
+ * children; a recorded value without its child list is one issue.
+ */
+function decodeLoopChildResults(value: unknown): readonly ChildDecoding<RallarBlackBoxTestLoopChildResult>[] {
+    if (value === undefined || (isJsonRecordValue(value) && value.resultsOmitted === true)) {
         return [];
     }
-    return value.results;
+    if (!isJsonRecordValue(value) || !Array.isArray(value.results)) {
+        return [Either.ofLeft({ valuePath: 'value', invalidFields: ['results'] })];
+    }
+    return value.results.map((child, index) => decodeLoopChildResult(child, `value.results[${index}]`));
 }
 
-/** A parallel value whose groups or children do not all decode contributes no child entries. */
-function decodeParallelChildResults(value: unknown): readonly RallarBlackBoxTestParallelChildResult[] {
-    if (!isJsonRecordValue(value) || !Array.isArray(value.groups) || !value.groups.every(isParallelGroupChildResults)) {
+/** A composite without a recorded value holds no children; a value or group without its child list is one issue. */
+function decodeParallelChildResults(value: unknown): readonly ChildDecoding<RallarBlackBoxTestParallelChildResult>[] {
+    if (value === undefined) {
         return [];
     }
-    return value.groups.flatMap((group) => group.results);
+    if (!isJsonRecordValue(value) || !Array.isArray(value.groups)) {
+        return [Either.ofLeft({ valuePath: 'value', invalidFields: ['groups'] })];
+    }
+    return value.groups.flatMap((group, groupIndex) =>
+        decodeParallelGroupChildResults(group, `value.groups[${groupIndex}]`)
+    );
 }
 
-function isParallelGroupChildResults(value: unknown): value is ParallelGroupChildResults {
-    return isJsonRecordValue(value) && Array.isArray(value.results) && value.results.every(isParallelChildResult);
+function decodeParallelGroupChildResults(
+    group: unknown,
+    valuePath: string
+): readonly ChildDecoding<RallarBlackBoxTestParallelChildResult>[] {
+    if (!isJsonRecordValue(group) || !Array.isArray(group.results)) {
+        return [Either.ofLeft({ valuePath, invalidFields: ['results'] })];
+    }
+    return group.results.map((child, index) => decodeParallelChildResult(child, `${valuePath}.results[${index}]`));
 }
 
-function isLoopChildResult(value: unknown): value is RallarBlackBoxTestLoopChildResult {
-    return isCompositeChildResult(value) && 'iteration' in value && isIndex(value.iteration);
+/** A recorded child that is not a JSON object lacks every required field. */
+function decodeLoopChildResult(value: unknown, valuePath: string): ChildDecoding<RallarBlackBoxTestLoopChildResult> {
+    const child = isJsonRecordValue(value) ? value : {};
+    const invalidFields = Object.entries(LOOP_CHILD_FIELD_GUARDS)
+        .filter(([field, isValidField]) => !isValidField(child[field]))
+        .map(([field]) => field);
+    return invalidFields.length === 0
+        ? Either.ofRight(value as RallarBlackBoxTestLoopChildResult)
+        : Either.ofLeft({ valuePath, invalidFields });
 }
 
-function isParallelChildResult(value: unknown): value is RallarBlackBoxTestParallelChildResult {
-    return isCompositeChildResult(value) &&
-        'groupId' in value &&
-        typeof value.groupId === 'string' &&
-        'groupIndex' in value &&
-        isIndex(value.groupIndex);
+/** A recorded child that is not a JSON object lacks every required field. */
+function decodeParallelChildResult(
+    value: unknown,
+    valuePath: string
+): ChildDecoding<RallarBlackBoxTestParallelChildResult> {
+    const child = isJsonRecordValue(value) ? value : {};
+    const invalidFields = Object.entries(PARALLEL_CHILD_FIELD_GUARDS)
+        .filter(([field, isValidField]) => !isValidField(child[field]))
+        .map(([field]) => field);
+    return invalidFields.length === 0
+        ? Either.ofRight(value as RallarBlackBoxTestParallelChildResult)
+        : Either.ofLeft({ valuePath, invalidFields });
 }
 
-function isCompositeChildResult(value: unknown): value is RallarBlackBoxTestCompositeChildResult {
-    return isJsonRecordValue(value) &&
-        typeof value.commandId === 'string' &&
-        (value.originalCommandId === undefined || typeof value.originalCommandId === 'string') &&
-        typeof value.parentCommandId === 'string' &&
-        isNonEmptyText(value.path) &&
-        isNonEmptyText(value.sourceRecipePath) &&
-        isIndex(value.childIndex) &&
-        isIndex(value.commandIndex) &&
-        isRallarBlackBoxTestResult(value.result);
-}
-
-function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
+export function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
     return isJsonRecordValue(value) &&
         typeof value.commandId === 'string' &&
         RALLAR_BLACK_BOX_TEST_COMMAND_KINDS.some((kind) => kind === value.kind) &&
@@ -372,6 +427,14 @@ function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTest
 
 function isRallarBlackBoxTestError(value: unknown): value is RallarBlackBoxTestError {
     return isJsonRecordValue(value) && typeof value.code === 'string' && typeof value.message === 'string';
+}
+
+function isText(value: unknown): value is string {
+    return typeof value === 'string';
+}
+
+function isOptionalText(value: unknown): value is string | undefined {
+    return value === undefined || typeof value === 'string';
 }
 
 function isNonEmptyText(value: unknown): value is string {

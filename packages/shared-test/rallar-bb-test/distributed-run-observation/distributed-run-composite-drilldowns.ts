@@ -3,18 +3,23 @@ import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../co
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
+    toDistributedRunCompositeChildDecodeIssues,
     toDistributedRunCompositeGroupSummaries,
     toDistributedRunCompositeRows
 } from './distributed-run-composite-rows.ts';
 import { isFiniteDurationMs } from './distributed-run-latency-summary.ts';
 import type {
+    DistributedRunCompositeChildDecodeIssueRow,
     DistributedRunCompositeCounts,
     DistributedRunCompositeDrilldown,
+    DistributedRunCompositeRow,
     DistributedRunFailureRow
 } from './distributed-run-row-contracts.ts';
 
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
+
+const COMPOSITE_CHILD_UNDECODABLE_CODE = 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE';
 
 export function toDistributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
@@ -64,6 +69,7 @@ export function toDistributedRunCompositeDrilldowns(
             },
             firstFailure,
             groupSummaries: toDistributedRunCompositeGroupSummaries(roots),
+            childDecodeIssues: toDistributedRunCompositeChildDecodeIssues(roots),
             rows
         }];
     });
@@ -82,25 +88,47 @@ export function computeDistributedRunCompositeCounts(
     };
 }
 
+/** Each drilldown reports its first failure and every recorded child that does not decode. */
 export function toDistributedRunCompositeFailures(
     drilldowns: readonly DistributedRunCompositeDrilldown[]
 ): readonly DistributedRunFailureRow[] {
-    return drilldowns.flatMap((drilldown): DistributedRunFailureRow[] => {
-        if (!drilldown.firstFailure) {
-            return [];
-        }
-        return [{
-            kind: 'command',
-            key: `${drilldown.commandId}:${drilldown.firstFailure.path}`,
-            commandId: drilldown.firstFailure.commandId,
-            agentId: drilldown.agentId,
-            recipeId: drilldown.recipeId,
-            code: drilldown.firstFailure.errorSummary ? undefined : drilldown.firstFailure.status,
-            message: drilldown.firstFailure.errorSummary ??
-                `${drilldown.firstFailure.kind} ${drilldown.firstFailure.status} at ${drilldown.firstFailure.path}.`,
-            atEpochMs: drilldown.firstFailure.endedAtEpochMs
-        }];
-    });
+    return drilldowns.flatMap((drilldown) => [
+        ...(drilldown.firstFailure ? [toFirstFailureRow(drilldown, drilldown.firstFailure)] : []),
+        ...drilldown.childDecodeIssues.map((issue) => toChildDecodeIssueFailureRow(drilldown, issue))
+    ]);
+}
+
+function toFirstFailureRow(
+    drilldown: DistributedRunCompositeDrilldown,
+    firstFailure: DistributedRunCompositeRow
+): DistributedRunFailureRow {
+    return {
+        kind: 'command',
+        key: `${drilldown.commandId}:${firstFailure.path}`,
+        commandId: firstFailure.commandId,
+        agentId: drilldown.agentId,
+        recipeId: drilldown.recipeId,
+        code: firstFailure.errorSummary ? undefined : firstFailure.status,
+        message: firstFailure.errorSummary ?? `${firstFailure.kind} ${firstFailure.status} at ${firstFailure.path}.`,
+        atEpochMs: firstFailure.endedAtEpochMs
+    };
+}
+
+function toChildDecodeIssueFailureRow(
+    drilldown: DistributedRunCompositeDrilldown,
+    issue: DistributedRunCompositeChildDecodeIssueRow
+): DistributedRunFailureRow {
+    return {
+        kind: 'command',
+        key: `${drilldown.commandId}:${issue.parentPath}:${issue.valuePath}`,
+        commandId: issue.parentCommandId,
+        agentId: drilldown.agentId,
+        recipeId: drilldown.recipeId,
+        code: COMPOSITE_CHILD_UNDECODABLE_CODE,
+        message: `Composite result ${issue.parentPath} records ${issue.valuePath} that does not decode ` +
+            `(invalid ${issue.invalidFields.join(', ')}); it is not shown.`,
+        atEpochMs: issue.parentEndedAtEpochMs
+    };
 }
 
 function toDistributedRunCompositeRoots(

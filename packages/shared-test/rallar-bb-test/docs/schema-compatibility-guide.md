@@ -481,8 +481,8 @@ insensitive, array-order sensitive), allEqualWithin (absolute tolerance).
 Typed sources { recipeId, commandId, path }; predicates reuse
 assert/assert-value-operators.ts; scope.role narrows participants and
 minParticipants is the only explicit relaxation of the participant set
-frozen at target resolution. Missing, duplicate, or unresolved evidence
-fails by default. Failure codes
+frozen at target resolution. Missing, duplicate, unresolved, or undecodable
+evidence fails by default. Failure codes
 RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED /
 _EVIDENCE_MISSING / _NO_PARTICIPANTS carry redacted per-agent value tables
 into failures.json and the artifact analyzer. Correctness-only in v1: no

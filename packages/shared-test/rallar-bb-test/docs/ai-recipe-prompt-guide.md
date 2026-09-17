@@ -410,10 +410,10 @@ Constraints:
 - When the expected value is known, use allMatch equals X — allEqual alone
   passes when every agent agrees on the same wrong value; compose the two
   for convergence claims.
-- The participant set freezes at target resolution; missing, duplicate, or
-  unresolved evidence fails by default. scope.role narrows to a declared
-  role; minParticipants (integer >= 1) is the only explicit relaxation and
-  only excuses missing agents.
+- The participant set freezes at target resolution; missing, duplicate,
+  unresolved, or undecodable evidence fails by default. scope.role narrows
+  to a declared role; minParticipants (integer >= 1) is the only explicit
+  relaxation and only excuses missing agents.
 - Address commands must carry explicit authored commandIds; a command inside
   a loop yields duplicate evidence and fails, so give the assertion its own
   single-shot read command after the polling loop.

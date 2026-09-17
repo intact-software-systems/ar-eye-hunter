@@ -6,6 +6,7 @@ import {
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeParallelResultValue } from './decode-composite-result-values.ts';
 import type {
+    DistributedRunCompositeChildDecodeIssueRow,
     DistributedRunCompositeGroupSummary,
     DistributedRunCompositeRow
 } from './distributed-run-row-contracts.ts';
@@ -90,6 +91,20 @@ export function toDistributedRunCompositeGroupSummaries(
                 status: toCompositeGroupStatus(group)
             }));
         });
+}
+
+export function toDistributedRunCompositeChildDecodeIssues(
+    roots: readonly RallarBlackBoxTestResult[]
+): readonly DistributedRunCompositeChildDecodeIssueRow[] {
+    return toRallarBlackBoxCompositeResultFlatEntries(roots).flatMap((entry) =>
+        entry.childDecodeIssues.map((issue) => ({
+            parentPath: entry.path,
+            parentCommandId: entry.commandId,
+            parentEndedAtEpochMs: entry.endedAtEpochMs,
+            valuePath: issue.valuePath,
+            invalidFields: issue.invalidFields
+        }))
+    );
 }
 
 function toCompositeRowPosition(position: RallarBlackBoxCompositeResultPosition): CompositeRowPosition {

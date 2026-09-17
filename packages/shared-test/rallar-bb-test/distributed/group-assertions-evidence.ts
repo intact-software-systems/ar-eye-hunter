@@ -1,4 +1,4 @@
-import { toRallarBlackBoxCompositeResultFlatEntries } from '../composite-results.ts';
+import { isRallarBlackBoxTestResult, toRallarBlackBoxCompositeResultFlatEntries } from '../composite-results.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
@@ -36,7 +36,7 @@ export interface ResolvedGroupAssertionEvidenceRow extends GroupAssertionEvidenc
 }
 
 export interface UnusableGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
-    readonly status: 'missing' | 'duplicate' | 'unresolved';
+    readonly status: 'missing' | 'duplicate' | 'unresolved' | 'undecodable';
 }
 
 export interface ToDistributedGroupAssertionRecipeEvidenceInput {
@@ -69,6 +69,12 @@ interface RecipeCommandResult {
     /** Absent when the command result is not a composite child. */
     readonly originalCommandId?: string;
     readonly result: RallarBlackBoxTestResult;
+}
+
+interface RecipeCommandResults {
+    readonly decoded: readonly RecipeCommandResult[];
+    /** True when a recorded command result or composite child does not decode, so it may hide the addressed command. */
+    readonly hasUndecodableResults: boolean;
 }
 
 // The participant set is frozen at target resolution: evaluation reads the
@@ -137,11 +143,12 @@ function toGroupAssertionEvidenceRow(
     }
 
     const commandResults = toRecipeCommandResults(recipeRow.resultValue);
-    const matches = commandResults.filter((entry) =>
+    const matches = commandResults.decoded.filter((entry) =>
         entry.commandId === source.commandId || entry.originalCommandId === source.commandId
     );
     if (matches.length === 0) {
-        return { agentId: participant.agentId, role, status: 'missing' };
+        const status = commandResults.hasUndecodableResults ? 'undecodable' : 'missing';
+        return { agentId: participant.agentId, role, status };
     }
     if (matches.length > 1) {
         return { agentId: participant.agentId, role, status: 'duplicate' };
@@ -159,18 +166,19 @@ function toGroupAssertionEvidenceRow(
     };
 }
 
-function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue): readonly RecipeCommandResult[] {
-    const results = isJsonRecordValue(resultValue) && Array.isArray(resultValue.results) ? resultValue.results : [];
-    const rootResults = results.filter(isCommandResult);
-    return toRallarBlackBoxCompositeResultFlatEntries(rootResults).map((entry) => ({
-        commandId: entry.commandId,
-        originalCommandId: entry.position.kind === 'root' ? undefined : entry.position.originalCommandId,
-        result: entry.result
-    }));
-}
-
-function isCommandResult(candidate: unknown): candidate is RallarBlackBoxTestResult {
-    return isJsonRecordValue(candidate) &&
-        typeof candidate.commandId === 'string' &&
-        typeof candidate.kind === 'string';
+function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue): RecipeCommandResults {
+    const recordedResults = isJsonRecordValue(resultValue) && Array.isArray(resultValue.results)
+        ? resultValue.results
+        : [];
+    const rootResults = recordedResults.filter(isRallarBlackBoxTestResult);
+    const entries = toRallarBlackBoxCompositeResultFlatEntries(rootResults);
+    return {
+        decoded: entries.map((entry) => ({
+            commandId: entry.commandId,
+            originalCommandId: entry.position.kind === 'root' ? undefined : entry.position.originalCommandId,
+            result: entry.result
+        })),
+        hasUndecodableResults: rootResults.length < recordedResults.length ||
+            entries.some((entry) => entry.childDecodeIssues.length > 0)
+    };
 }

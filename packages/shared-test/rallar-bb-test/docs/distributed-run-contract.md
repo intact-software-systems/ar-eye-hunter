@@ -188,13 +188,18 @@ Participation rules, mandatory on every group assertion:
 - The participant set is **frozen at target resolution** from the run
   snapshot's `targetResolution`; late joins and drops never change the
   denominator.
-- Missing, duplicate, or unresolved evidence at the address **fails by
-  default** with `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING`;
-  absence of evidence is never a pass.
+- Missing, duplicate, unresolved, or undecodable evidence at the address
+  **fails by default** with
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING`; absence of evidence
+  is never a pass. Evidence is `undecodable` when the addressed command is not
+  among the agent's decodable command results and one of its recorded command
+  results or composite children does not decode, so the command may be hidden
+  there.
 - `scope.role` narrows participants to a manifest role; `minParticipants` is
-  the only explicit relaxation and only excuses missing agents — duplicate or
-  unresolved evidence still fails. A scope no frozen participant holds fails
-  with `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS`.
+  the only explicit relaxation and only excuses missing agents — duplicate,
+  unresolved, or undecodable evidence still fails. A scope no frozen
+  participant holds fails with
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS`.
 - Aggregate violations fail with
   `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED`; failure details carry a
   redacted per-agent value table identifying missing and violating agents by

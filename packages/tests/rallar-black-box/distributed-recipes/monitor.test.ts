@@ -694,6 +694,70 @@ describe('distributed recipes monitor', () => {
         expect(evidenceDestinations.some((destination) => destination.kind === 'artifact')).toBe(false);
     });
 
+    it('lists composite children that do not decode and reports each as a monitor failure', () => {
+        const loopResult = {
+            commandId: 'start-b',
+            kind: 'loop',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 1_600,
+            endedAtEpochMs: 1_700,
+            durationMs: 100,
+            value: {
+                commandId: 'start-b',
+                iterations: 1,
+                childResultCount: 2,
+                passed: 2,
+                failed: 0,
+                cancelled: false,
+                results: [
+                    {
+                        commandId: 'start-b:i1:c1:send',
+                        parentCommandId: 'start-b',
+                        path: '$.iterations[1].commands[0]',
+                        sourceRecipePath: '$.commands[0]',
+                        childIndex: 0,
+                        commandIndex: 0,
+                        iteration: 1,
+                        result: {
+                            commandId: 'start-b:i1:c1:send',
+                            kind: 'rtc.send',
+                            status: 'ok',
+                            ok: true,
+                            startedAtEpochMs: 1_610,
+                            endedAtEpochMs: 1_620,
+                            durationMs: 10
+                        }
+                    },
+                    { commandId: 'start-b:i1:c2:send', commandIndex: 1, iteration: 1 }
+                ]
+            }
+        } satisfies ControlRunSnapshot['results'][number]['result'];
+        const results = distributedControlRun.results.map((result) => result.commandId === 'start-b' ? { ...result, result: loopResult } : result);
+        const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun: { ...distributedControlRun, results } });
+        const drilldown = monitor.compositeDrilldowns.find((candidate) => candidate.commandId === 'start-b');
+
+        expect(drilldown?.rows.map((row) => row.path)).toEqual(['$', '$.iterations[1].commands[0]']);
+        expect(drilldown?.childDecodeIssues).toEqual([{
+            parentPath: '$',
+            parentCommandId: 'start-b',
+            parentEndedAtEpochMs: 1_700,
+            valuePath: 'value.results[1]',
+            invalidFields: ['parentCommandId', 'path', 'sourceRecipePath', 'childIndex', 'result']
+        }]);
+        expect(monitor.failures).toContainEqual({
+            kind: 'command',
+            key: 'start-b:$:value.results[1]',
+            commandId: 'start-b',
+            agentId: 'agent-b',
+            recipeId: 'health-only',
+            code: 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE',
+            message: 'Composite result $ records value.results[1] that does not decode ' +
+                '(invalid parentCommandId, path, sourceRecipePath, childIndex, result); it is not shown.',
+            atEpochMs: 1_700
+        });
+    });
+
     it('builds a live-warning regression report from visible monitor and artifact evidence', () => {
         const liveMessageId = 'live-message-visible-in-monitor';
         const controlRunWithLiveWarning: ControlRunSnapshot = {

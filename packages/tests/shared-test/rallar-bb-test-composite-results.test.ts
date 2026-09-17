@@ -13,6 +13,7 @@ import {
     toRallarBlackBoxCompositeResultTree,
     type RallarBlackBoxCompositeResultSummary,
     type RallarBlackBoxCompositeResultTreeNode,
+    type RallarBlackBoxTestParallelChildResult,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
@@ -21,6 +22,17 @@ interface CompositeResultTreeShape {
     readonly path: string;
     readonly children: readonly CompositeResultTreeShape[];
 }
+
+/** A recorded parallel child whose result may lack the fields a command result requires. */
+interface RecordedParallelChild {
+    readonly commandId: string;
+    readonly commandIndex: number;
+    readonly result: RallarBlackBoxTestResult | Pick<RallarBlackBoxTestResult, 'commandId' | 'kind'>;
+}
+
+type RecordedParallelChildPosition = Omit<RallarBlackBoxTestParallelChildResult, keyof RecordedParallelChild>;
+
+interface RecordedParallelChildWithPosition extends RecordedParallelChild, RecordedParallelChildPosition {}
 
 interface CompositeResultFixture {
     readonly summary: RallarBlackBoxCompositeResultSummary;
@@ -70,6 +82,18 @@ function toLeafResult(commandId: string): RallarBlackBoxTestResult {
         startedAtEpochMs: 1_000,
         endedAtEpochMs: 1_001,
         durationMs: 1
+    };
+}
+
+function toParallelChild(child: RecordedParallelChild): RecordedParallelChildWithPosition {
+    return {
+        ...child,
+        parentCommandId: 'parallel-partly-decodable',
+        path: `$.groups[0=g].commands[${child.commandIndex}]`,
+        sourceRecipePath: `$.groups[0].commands[${child.commandIndex}]`,
+        childIndex: child.commandIndex,
+        groupId: 'g',
+        groupIndex: 0
     };
 }
 
@@ -261,61 +285,107 @@ describe('rallar-bb-test composite result helpers', () => {
         expect(firstFailure?.depth).toBe(1);
     });
 
-    it('walks no loop child that does not record its path, parent and index', () => {
+    it('walks the loop children that decode and reports each child that does not record its position', () => {
         const loop: RallarBlackBoxTestResult = {
-            ...toLeafResult('loop-without-positions'),
+            ...toLeafResult('loop-partly-positioned'),
             kind: 'loop',
             value: {
-                commandId: 'loop-without-positions',
+                commandId: 'loop-partly-positioned',
                 iterations: 1,
-                childResultCount: 1,
-                passed: 1,
+                childResultCount: 2,
+                passed: 2,
                 failed: 0,
                 cancelled: false,
-                results: [{
-                    commandId: 'loop-without-positions:i1:c1:send',
-                    commandIndex: 0,
-                    result: toLeafResult('loop-without-positions:i1:c1:send')
-                }]
-            }
-        };
-
-        expect(toRallarBlackBoxCompositeResultFlatEntries([loop]).map((entry) => entry.path)).toEqual(['$']);
-    });
-
-    it('walks no parallel child whose result does not decode', () => {
-        const parallel: RallarBlackBoxTestResult = {
-            ...toLeafResult('parallel-undecodable-child'),
-            kind: 'parallel',
-            value: {
-                commandId: 'parallel-undecodable-child',
-                groupCount: 1,
-                maxConcurrency: 1,
-                passed: 1,
-                failed: 0,
-                cancelled: false,
-                groups: [{
-                    groupId: 'g',
-                    commandCount: 1,
-                    passed: 1,
-                    failed: 0,
-                    cancelled: false,
-                    durationMs: 1,
-                    results: [{
-                        commandId: 'c',
-                        parentCommandId: 'parallel-undecodable-child',
-                        path: '$.groups[0=g].commands[0]',
-                        sourceRecipePath: '$.groups[0].commands[0]',
+                results: [
+                    {
+                        commandId: 'loop-partly-positioned:i1:c1:send',
+                        parentCommandId: 'loop-partly-positioned',
+                        path: '$.iterations[1].commands[0]',
+                        sourceRecipePath: '$.commands[0]',
                         childIndex: 0,
                         commandIndex: 0,
-                        groupId: 'g',
-                        groupIndex: 0,
-                        result: { commandId: 'c', kind: 'rtc.send' }
-                    }]
-                }]
+                        iteration: 1,
+                        result: toLeafResult('loop-partly-positioned:i1:c1:send')
+                    },
+                    {
+                        commandId: 'loop-partly-positioned:i1:c2:send',
+                        commandIndex: 1,
+                        iteration: 1,
+                        result: toLeafResult('loop-partly-positioned:i1:c2:send')
+                    }
+                ]
             }
         };
 
-        expect(toRallarBlackBoxCompositeResultFlatEntries([parallel]).map((entry) => entry.path)).toEqual(['$']);
+        const entries = toRallarBlackBoxCompositeResultFlatEntries([loop]);
+
+        expect(entries.map((entry) => entry.path)).toEqual(['$', '$.iterations[1].commands[0]']);
+        expect(entries[0].childDecodeIssues).toEqual([{
+            valuePath: 'value.results[1]',
+            invalidFields: ['parentCommandId', 'path', 'sourceRecipePath', 'childIndex']
+        }]);
+        expect(entries[1].childDecodeIssues).toEqual([]);
+        expect(computeRallarBlackBoxCompositeResultSummary([loop], {}).childDecodeIssueCount).toBe(1);
+    });
+
+    it('walks the parallel children that decode and reports an undecodable child result and a group without children', () => {
+        const parallel: RallarBlackBoxTestResult = {
+            ...toLeafResult('parallel-partly-decodable'),
+            kind: 'parallel',
+            value: {
+                commandId: 'parallel-partly-decodable',
+                groupCount: 2,
+                maxConcurrency: 1,
+                passed: 2,
+                failed: 0,
+                cancelled: false,
+                groups: [
+                    {
+                        groupId: 'g',
+                        commandCount: 2,
+                        passed: 2,
+                        failed: 0,
+                        cancelled: false,
+                        durationMs: 1,
+                        results: [
+                            toParallelChild({ commandId: 'c', commandIndex: 0, result: toLeafResult('c') }),
+                            toParallelChild({ commandId: 'd', commandIndex: 1, result: { commandId: 'd', kind: 'rtc.send' } })
+                        ]
+                    },
+                    { groupId: 'h', commandCount: 0, passed: 0, failed: 0, cancelled: false, durationMs: 0 }
+                ]
+            }
+        };
+
+        const entries = toRallarBlackBoxCompositeResultFlatEntries([parallel]);
+
+        expect(entries.map((entry) => entry.path)).toEqual(['$', '$.groups[0=g].commands[0]']);
+        expect(entries[0].childDecodeIssues).toEqual([
+            { valuePath: 'value.groups[0].results[1]', invalidFields: ['result'] },
+            { valuePath: 'value.groups[1]', invalidFields: ['results'] }
+        ]);
+        expect(computeRallarBlackBoxCompositeResultSummary([parallel], {}).childDecodeIssueCount).toBe(2);
+    });
+
+    it('reports a composite value that records no child list, but not one without a value or with compacted children', () => {
+        const recordedWithoutChildren: RallarBlackBoxTestResult = {
+            ...toLeafResult('loop-without-results'),
+            kind: 'loop',
+            value: { commandId: 'loop-without-results', iterations: 1 }
+        };
+        const withoutValue: RallarBlackBoxTestResult = { ...toLeafResult('parallel-without-value'), kind: 'parallel' };
+        const compacted: RallarBlackBoxTestResult = {
+            ...toLeafResult('loop-compacted'),
+            kind: 'loop',
+            value: { commandId: 'loop-compacted', iterations: 1, resultCount: 2, failureCount: 0, resultsOmitted: true }
+        };
+
+        const entries = toRallarBlackBoxCompositeResultFlatEntries([recordedWithoutChildren, withoutValue, compacted]);
+
+        expect(entries.map((entry) => [entry.path, entry.childDecodeIssues])).toEqual([
+            ['$.results[0]', [{ valuePath: 'value', invalidFields: ['results'] }]],
+            ['$.results[1]', []],
+            ['$.results[2]', []]
+        ]);
     });
 });

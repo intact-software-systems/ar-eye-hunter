@@ -49,9 +49,25 @@ Every loop child records `commandId`, `parentCommandId`, `path`,
 every parallel child records the same fields plus `groupId` and `groupIndex`.
 `originalCommandId` is present when the recipe template names a command id.
 Paths are recorded relative to the composite root (`$`) and rebased under the
-parent path when nested composites are walked. A loop or parallel value whose
-children do not all carry these fields and a decodable command result
-contributes no child entries.
+parent path when nested composites are walked.
+
+Each child decodes on its own. A child that lacks one of these fields or a
+decodable command result is not walked, and its parent entry records a child
+decode issue: the recorded object (`value.results[1]`,
+`value.groups[0].results[2]`) and every field of it that is missing or
+invalid. Its decodable siblings are still walked. A recorded loop or parallel
+value without its child list, or a parallel group without its `results`,
+records one issue for that object (`value` or `value.groups[0]`). A composite
+result that records no value holds no children, and neither does a loop value
+the control server compacted (`resultsOmitted: true` beside `resultCount` and
+`failureCount`). Undecodable children are never dropped silently:
+
+- the summary counts the issues in `childDecodeIssueCount`;
+- the distributed run monitor lists them on each composite drilldown and
+  reports each one as a `RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE` failure;
+- a group assertion whose addressed command is not among an agent's decodable
+  results reports that agent's evidence as `undecodable` instead of `missing`
+  when any of the agent's recorded results or children did not decode.
 
 ## Helpers
 
@@ -67,10 +83,12 @@ Use:
 - `toRallarBlackBoxCompositeDisplayResults(...)` for redacted UI/artifact
   summaries.
 
-The flat entries include both `path` and `sourceRecipePath`, the depth, and a
+The flat entries include both `path` and `sourceRecipePath`, the depth, a
 `position`: `root`, or a `loop-child` (parent path and command ID, child and
 command index, iteration, original command ID) or `parallel-child` (the same
-with group ID and group index instead of the iteration), plus the raw result.
+with group ID and group index instead of the iteration), the entry's
+`childDecodeIssues` (empty unless it is a composite holding undecodable
+children), plus the raw result.
 Display entries omit the raw result object and expose only redacted `value` and
 `error` fields.
 
@@ -100,7 +118,8 @@ composite result contract.
 ## Compatibility
 
 Adding optional fields to composite child results is compatible. Child results
-missing a field listed under Child Results no longer decode.
+missing a field listed under Child Results no longer decode; they are reported
+as child decode issues, as described there.
 
 Changing path syntax, source path syntax, summary field names, or redacted
 display-entry semantics is a contract change. Update this document, the fixture

@@ -15,7 +15,108 @@ import {
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-assertions-aggregates.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import type { DistributedGroupAssertionRecipeEvidence } from '@shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
+import type { RallarBlackBoxGroupAssertionValue } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
+import type {
+    RallarBlackBoxTestLoopChildResult,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isSameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
+
+const PROBE_LOOP_COMMAND_ID = 'probe-loop';
+
+function toGroupAssertionManifest(): RallarBlackBoxDistributedRunManifest {
+    return {
+        schemaVersion: 1,
+        distributedRunId: 'group-assertion-run',
+        controlRunId: 'group-assertion-run',
+        group: {
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'conformance-room'
+        },
+        recipes: [{
+            recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+            variables: {}
+        }],
+        targetPolicy: { mode: 'all-online-group-members' },
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [{
+            groupAssertionId: 'every-probe-observed-seven',
+            aggregate: 'allMatch',
+            predicate: { operator: 'equals', expected: 7 },
+            source: {
+                recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+                commandId: GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
+                path: 'observed'
+            }
+        }],
+        metadata: {}
+    };
+}
+
+function toProbeResult(commandId: string, observed: number): RallarBlackBoxTestResult {
+    return {
+        commandId,
+        kind: 'health',
+        status: 'ok',
+        ok: true,
+        startedAtEpochMs: 1_000,
+        endedAtEpochMs: 1_001,
+        durationMs: 1,
+        value: { observed }
+    };
+}
+
+function toProbeLoopChild(originalCommandId: string, commandIndex: number): RallarBlackBoxTestLoopChildResult {
+    const commandId = `${PROBE_LOOP_COMMAND_ID}:i1:c${commandIndex + 1}:${originalCommandId}`;
+    return {
+        commandId,
+        originalCommandId,
+        parentCommandId: PROBE_LOOP_COMMAND_ID,
+        path: `$.iterations[1].commands[${commandIndex}]`,
+        sourceRecipePath: `$.commands[${commandIndex}]`,
+        childIndex: commandIndex,
+        commandIndex,
+        iteration: 1,
+        result: toProbeResult(commandId, 7)
+    };
+}
+
+function toProbeLoopEvidence(
+    agentId: string,
+    children: readonly RallarBlackBoxGroupAssertionValue[]
+): DistributedGroupAssertionRecipeEvidence {
+    return toRecipeEvidence(agentId, {
+        ...toProbeResult(PROBE_LOOP_COMMAND_ID, 7),
+        kind: 'loop',
+        value: {
+            commandId: PROBE_LOOP_COMMAND_ID,
+            iterations: 1,
+            childResultCount: children.length,
+            passed: children.length,
+            failed: 0,
+            cancelled: false,
+            results: children
+        }
+    });
+}
+
+function toRecipeEvidence(
+    agentId: string,
+    rootResult: RallarBlackBoxGroupAssertionValue
+): DistributedGroupAssertionRecipeEvidence {
+    return {
+        agentId,
+        recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+        hasResult: true,
+        resultValue: { results: [rootResult] }
+    };
+}
 
 describe('rallar-bb-test group assertion conformance', () => {
     it('covers every aggregate with a passing case and a deliberately-broken control', () => {
@@ -99,36 +200,7 @@ describe('rallar-bb-test group assertion conformance', () => {
     });
 
     it('does not evaluate until every dispatched recipe result completed', () => {
-        const manifest: RallarBlackBoxDistributedRunManifest = {
-            schemaVersion: 1,
-            distributedRunId: 'pending-run',
-            controlRunId: 'pending-run',
-            group: {
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'conformance-room'
-            },
-            recipes: [{
-                recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
-                variables: {}
-            }],
-            targetPolicy: { mode: 'all-online-group-members' },
-            variables: {},
-            roleAssignments: [],
-            ackTimeoutMs: 30_000,
-            barrier: { enabled: false },
-            startMode: 'manual',
-            groupAssertions: [{
-                groupAssertionId: 'pending',
-                aggregate: 'allEqual',
-                source: {
-                    recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
-                    commandId: GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
-                    path: 'observed'
-                }
-            }],
-            metadata: {}
-        };
+        const manifest = toGroupAssertionManifest();
         const pending = computeDistributedGroupAssertionResults({
             manifest,
             participants: [{ agentId: 'agent-a', roles: [] }],
@@ -152,6 +224,41 @@ describe('rallar-bb-test group assertion conformance', () => {
             recipeEvidence: []
         });
         expect(noAssertions).toBeUndefined();
+    });
+
+    it('reports evidence inside command results that do not decode as undecodable and keeps decodable sibling evidence', () => {
+        const agentIds = ['agent-a', 'agent-b', 'agent-c'];
+        const probeChild = toProbeLoopChild(GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, 0);
+        const results = computeDistributedGroupAssertionResults({
+            manifest: toGroupAssertionManifest(),
+            participants: agentIds.map((agentId) => ({ agentId, roles: [] })),
+            recipeResults: agentIds.map((agentId) => ({
+                recipeKey: `${agentId}:${GROUP_ASSERTION_CONFORMANCE_RECIPE_ID}`,
+                recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
+                agentId,
+                state: 'passed',
+                ok: true
+            })),
+            recipeEvidence: [
+                toProbeLoopEvidence('agent-a', [
+                    probeChild,
+                    { ...toProbeLoopChild('other-read', 1), result: { ...probeChild.result, error: { code: 'X' } } }
+                ]),
+                toProbeLoopEvidence('agent-b', [{ ...probeChild, path: undefined }]),
+                toRecipeEvidence('agent-c', { commandId: GROUP_ASSERTION_CONFORMANCE_COMMAND_ID, kind: 'health' })
+            ]
+        });
+
+        const result = results?.[0];
+        expect(result?.ok).toBe(false);
+        expect(result?.missingAgentIds).toEqual([]);
+        expect(result?.perAgent).toEqual([
+            { agentId: 'agent-a', evidence: 'resolved', verdict: 'matching', value: 7 },
+            { agentId: 'agent-b', evidence: 'undecodable' },
+            { agentId: 'agent-c', evidence: 'undecodable' }
+        ]);
+        expect(result?.error?.code).toBe('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING');
+        expect(result?.error?.message).toContain('from: agent-b (undecodable), agent-c (undecodable).');
     });
 
     it('redacts sensitive values in per-agent tables and error details', () => {
