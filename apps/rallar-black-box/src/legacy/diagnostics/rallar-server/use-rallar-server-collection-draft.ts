@@ -2,10 +2,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useEffect, useState } from 'react';
 import {
-    readRallarServerRestCollectionDraft,
-    writeRallarServerRestCollectionDraft,
+    readStoredRallarServerRestCollectionDraft,
+    writeStoredRallarServerRestCollectionDraft,
     type RallarServerRestCollectionDraft
-} from '../../../ui-persistence.ts';
+} from '../../../stored-rallar-server-drafts.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
@@ -25,16 +25,14 @@ export function useRallarServerCollectionDraft(
     defaultDraft: RallarServerRestCollectionDraft,
     authSession: AuthSession | undefined
 ): RallarServerCollectionDraft {
-    const [initial] = useState(() =>
-        readRallarServerRestCollectionDraft(browserUiStorage(), defaultDraft) ?? defaultDraft
-    );
+    const [initial] = useState(() => readStoredRallarServerRestCollectionDraft(browserUiStorage()) ?? defaultDraft);
     const [selectedCollectionId, setSelectedCollectionId] = useState(initial.selectedCollectionId);
     const [collectionText, setCollectionText] = useState(() => json(initial.collection));
     const [collectionVariablesText, setCollectionVariablesText] = useState(() => json(initial.variables));
     useEffect(() => {
         decodeRallarServerCollectionDraftText(collectionText, collectionVariablesText).foldRight(
             ({ collection, variables }) =>
-                writeRallarServerRestCollectionDraft(
+                writeStoredRallarServerRestCollectionDraft(
                     browserUiStorage(),
                     { selectedCollectionId, collection, variables },
                     uiSecretValues(undefined, authSession)

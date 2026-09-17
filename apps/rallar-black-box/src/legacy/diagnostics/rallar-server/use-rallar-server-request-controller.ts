@@ -18,7 +18,7 @@ import {
 } from '../../../rallar-server-workbench/redact-rallar-server-value.ts';
 import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerBlackBoxCommand } from '../../../rallar-server-workbench/to-rallar-server-black-box-command.ts';
-import type { RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
+import type { RallarServerWorkbenchDraft } from '../../../stored-rallar-server-drafts.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { findStringDeep } from '../shared/deep-string-value.ts';
 import type {

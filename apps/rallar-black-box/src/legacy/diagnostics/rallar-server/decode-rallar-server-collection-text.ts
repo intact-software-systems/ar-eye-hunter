@@ -1,5 +1,6 @@
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import { decodeRallarServerRestCollection } from '../../../rallar-server-workbench/decode-rallar-server-rest-collection.ts';
 import type {
     RallarServerRestCollection,
     RallarServerRestCollectionVariables
@@ -12,13 +13,7 @@ export interface RallarServerCollectionDraftValues {
 
 export function decodeRallarServerCollectionText(text: string): Either<string, RallarServerRestCollection> {
     try {
-        const value = JSON.parse(text);
-        if (!isJsonRecordValue(value)) {
-            return Either.ofLeft('Collection JSON must be an object.');
-        }
-        return isRallarServerRestCollection(value)
-            ? Either.ofRight(value)
-            : Either.ofLeft('Collection JSON requires collectionId, name, and steps.');
+        return decodeRallarServerRestCollection(JSON.parse(text));
     }
     catch (error) {
         return Either.ofLeft(error instanceof Error ? error.message : String(error));
@@ -51,8 +46,4 @@ export function decodeRallarServerCollectionDraftText(
                 variables
             }))
     );
-}
-
-function isRallarServerRestCollection(value: unknown): value is RallarServerRestCollection {
-    return isJsonRecordValue(value) && Boolean(value.collectionId) && Boolean(value.name) && Array.isArray(value.steps);
 }

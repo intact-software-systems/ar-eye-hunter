@@ -5,7 +5,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { readEventFilters, writeEventFilters } from '../../../ui-persistence.ts';
+import { readStoredEventFilters, writeStoredEventFilters } from '../../../stored-event-filters.ts';
 import { FilterSelect } from '../../shared/FilterSelect.tsx';
 import { formatTime } from '../../shared/time-format.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
@@ -25,10 +25,7 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState; })
     const events = getRallarBlackBoxEvents(state);
     const [eventLimit, setEventLimit] = useState(40);
     const [filters, setFilters] = useState<EventFilters>(() => {
-        const stored = readEventFilters(
-            browserUiStorage(),
-            DEFAULT_EVENT_FILTERS
-        );
+        const stored = readStoredEventFilters(browserUiStorage()) ?? DEFAULT_EVENT_FILTERS;
         return {
             ...stored,
             kind: eventFilterFromValue(stored.kind)
@@ -62,7 +59,7 @@ export function EventStreamPanel({ state }: { state: RallarBlackBoxTestState; })
     );
 
     useEffect(() => {
-        writeEventFilters(browserUiStorage(), filters);
+        writeStoredEventFilters(browserUiStorage(), filters);
     }, [filters]);
 
     return (

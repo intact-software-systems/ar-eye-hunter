@@ -11,7 +11,10 @@ import type {
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { toRallarServerEndpointDraft } from '../../../rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
 import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workbench/to-rallar-server-workbench-variables.ts';
-import type { RallarServerRestCollectionDraft, RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
+import type {
+    RallarServerRestCollectionDraft,
+    RallarServerWorkbenchDraft
+} from '../../../stored-rallar-server-drafts.ts';
 import type { UseRallarServerControllerInput } from './rallar-server-contracts.ts';
 
 export interface RallarServerDefaults {

@@ -18,7 +18,7 @@ import { toRallarServerCurl } from '../../../rallar-server-workbench/to-rallar-s
 import { toRallarServerEndpointDraft } from '../../../rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
 import { toRallarServerRestRequest } from '../../../rallar-server-workbench/to-rallar-server-rest-request.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
-import type { RallarServerWorkbenchDraft } from '../../../ui-persistence.ts';
+import type { RallarServerWorkbenchDraft } from '../../../stored-rallar-server-drafts.ts';
 import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';
 import type { RallarServerRequestFeedback, RallarServerRequestOperations } from './rallar-server-contracts.ts';
 

@@ -1,10 +1,10 @@
 import type * as React from 'react';
 import { useEffect, useState } from 'react';
 import {
-    readRallarServerWorkbenchDraft,
-    writeRallarServerWorkbenchDraft,
+    readStoredRallarServerWorkbenchDraft,
+    writeStoredRallarServerWorkbenchDraft,
     type RallarServerWorkbenchDraft
-} from '../../../ui-persistence.ts';
+} from '../../../stored-rallar-server-drafts.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import type { RallarServerRequestDraftModel, UseRallarServerControllerInput } from './rallar-server-contracts.ts';
@@ -21,7 +21,7 @@ export function useRallarServerRequestDraft(
     defaults: RallarServerDefaults
 ): RallarServerRequestDraft {
     const [initial] = useState(() => {
-        const stored = readRallarServerWorkbenchDraft(browserUiStorage(), defaults.defaultDraft);
+        const stored = readStoredRallarServerWorkbenchDraft(browserUiStorage());
         return { draft: stored ?? defaults.defaultDraft, restored: Boolean(stored) };
     });
     const [draft, setDraft] = useState(initial.draft);
@@ -33,7 +33,7 @@ export function useRallarServerRequestDraft(
         }
     }, [defaults.defaultDraft.apiBaseUrl, serverDraftEdited]);
     useEffect(() => {
-        writeRallarServerWorkbenchDraft(browserUiStorage(), draft, uiSecretValues(undefined, input.authSession));
+        writeStoredRallarServerWorkbenchDraft(browserUiStorage(), draft, uiSecretValues(undefined, input.authSession));
     }, [draft, input.authSession?.accessToken]);
     return { draft, setDraft, setters: toRallarServerDraftSetters(setDraft, setServerDraftEdited) };
 }

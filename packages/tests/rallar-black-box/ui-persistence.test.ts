@@ -1,17 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
 import {
-    readManualWorkbenchDraft,
-    readRallarServerWorkbenchDraft,
     readStoredAppMode,
     readStoredAppTab,
-    sanitizeManualWorkbenchDraft,
-    sanitizeRallarServerWorkbenchDraft,
-    UI_STORAGE_KEYS,
-    writeManualWorkbenchDraft,
-    writeRallarServerWorkbenchDraft,
     writeStoredAppMode,
-    writeStoredAppTab,
+    writeStoredAppTab
+} from '../../../apps/rallar-black-box/src/stored-app-shell-preferences.ts';
+import {
+    readStoredEventFilters,
+    writeStoredEventFilters
+} from '../../../apps/rallar-black-box/src/stored-event-filters.ts';
+import {
+    readStoredManualWorkbenchDraft,
+    toStoredManualWorkbenchDraft,
+    writeStoredManualWorkbenchDraft
+} from '../../../apps/rallar-black-box/src/stored-manual-workbench-draft.ts';
+import {
+    readStoredRallarServerRestCollectionDraft,
+    readStoredRallarServerWorkbenchDraft,
+    toStoredRallarServerWorkbenchDraft,
+    writeStoredRallarServerRestCollectionDraft,
+    writeStoredRallarServerWorkbenchDraft
+} from '../../../apps/rallar-black-box/src/stored-rallar-server-drafts.ts';
+import {
+    UI_STORAGE_KEYS,
     type RallarBlackBoxUiStorage
 } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
 
@@ -30,6 +42,36 @@ class MemoryStorage implements RallarBlackBoxUiStorage {
         this.values.delete(key);
     }
 }
+
+const SESSION_VALUES = {
+    providerMode: DEFAULT_MANUAL_WORKBENCH_VALUES.providerMode,
+    rallarPassword: 'bootstrap-password'
+};
+
+const RALLAR_SERVER_DRAFT = {
+    apiBaseUrl: 'http://localhost:8080',
+    selectedPresetId: 'custom',
+    method: 'POST' as const,
+    path: '/api/example',
+    headersText: JSON.stringify({ authorization: 'Bearer secret-token' }),
+    queryText: JSON.stringify({ access_token: 'query-token' }),
+    bodyText: JSON.stringify({ password: 'body-password', nested: { apiKey: 'body-key' } }),
+    responseBodyMode: 'json' as const,
+    attachAuth: true,
+    timeoutMs: 5000
+};
+
+const REST_COLLECTION = {
+    collectionId: 'demo',
+    name: 'Demo collection',
+    steps: [
+        {
+            stepId: 'health',
+            label: 'Health',
+            request: { method: 'GET' as const, path: '/health' }
+        }
+    ]
+};
 
 describe('rallar-black-box UI persistence', () => {
     it('stores the active tab as a small non-secret preference', () => {
@@ -67,16 +109,16 @@ describe('rallar-black-box UI persistence', () => {
             })
         };
 
-        const sanitized = sanitizeManualWorkbenchDraft(draft, ['payload-token']);
+        const stored = toStoredManualWorkbenchDraft(draft, ['payload-token']);
 
-        expect(JSON.stringify(sanitized)).not.toContain('manual-password');
-        expect(JSON.stringify(sanitized)).not.toContain('payload-token');
-        expect(sanitized.payloadText).toContain('<redacted>');
+        expect(JSON.stringify(stored)).not.toContain('manual-password');
+        expect(JSON.stringify(stored)).not.toContain('payload-token');
+        expect(JSON.stringify(stored)).toContain('<redacted>');
     });
 
     it('restores Manual Rallar drafts without taking passwords from storage', () => {
         const storage = new MemoryStorage();
-        writeManualWorkbenchDraft(storage, {
+        writeStoredManualWorkbenchDraft(storage, {
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
                 groupId: 'persisted-room',
@@ -84,47 +126,46 @@ describe('rallar-black-box UI persistence', () => {
             },
             payloadPresetId: 'custom',
             payloadText: '{"kind":"ping"}'
-        });
+        }, []);
 
-        const restored = readManualWorkbenchDraft(storage, {
-            values: {
-                ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                rallarPassword: 'bootstrap-password'
-            },
-            payloadPresetId: 'ping',
-            payloadText: '{"kind":"default"}'
-        });
+        const restored = readStoredManualWorkbenchDraft(storage, SESSION_VALUES);
 
         expect(storage.getItem(UI_STORAGE_KEYS.manualDraft)).not.toContain('persisted-password');
         expect(restored?.values.groupId).toBe('persisted-room');
         expect(restored?.values.rallarPassword).toBe('bootstrap-password');
+        expect(restored?.values.providerMode).toBe(DEFAULT_MANUAL_WORKBENCH_VALUES.providerMode);
+    });
+
+    it('discards a Manual Rallar entry whose cached value has the wrong type', () => {
+        const storage = new MemoryStorage();
+        writeStoredManualWorkbenchDraft(storage, {
+            values: { ...DEFAULT_MANUAL_WORKBENCH_VALUES, groupId: 'persisted-room' },
+            payloadPresetId: 'custom',
+            payloadText: '{"kind":"ping"}'
+        }, []);
+        const stored = JSON.parse(storage.getItem(UI_STORAGE_KEYS.manualDraft) ?? '{}');
+        storage.setItem(
+            UI_STORAGE_KEYS.manualDraft,
+            JSON.stringify({ ...stored, values: { ...stored.values, timeoutMs: 'not-a-number' } })
+        );
+
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toBeUndefined();
+    });
+
+    it('discards a Manual Rallar entry that is missing a cached value', () => {
+        const storage = new MemoryStorage();
+        storage.setItem(
+            UI_STORAGE_KEYS.manualDraft,
+            JSON.stringify({ values: { groupId: 'persisted-room' }, payloadPresetId: 'custom', payloadText: '{}' })
+        );
+
+        expect(readStoredManualWorkbenchDraft(storage, SESSION_VALUES)).toBeUndefined();
     });
 
     it('redacts Rallar Server request draft headers, query, and body before storage', () => {
         const storage = new MemoryStorage();
-        const draft = {
-            apiBaseUrl: 'http://localhost:8080',
-            selectedPresetId: 'custom',
-            method: 'POST' as const,
-            path: '/api/example',
-            headersText: JSON.stringify({
-                authorization: 'Bearer secret-token'
-            }),
-            queryText: JSON.stringify({
-                access_token: 'query-token'
-            }),
-            bodyText: JSON.stringify({
-                password: 'body-password',
-                nested: {
-                    apiKey: 'body-key'
-                }
-            }),
-            responseBodyMode: 'json' as const,
-            attachAuth: true,
-            timeoutMs: 5000
-        };
 
-        writeRallarServerWorkbenchDraft(storage, draft, ['secret-token']);
+        writeStoredRallarServerWorkbenchDraft(storage, RALLAR_SERVER_DRAFT, ['secret-token']);
 
         const raw = storage.getItem(UI_STORAGE_KEYS.rallarServerDraft) ?? '';
         expect(raw).not.toContain('secret-token');
@@ -133,27 +174,74 @@ describe('rallar-black-box UI persistence', () => {
         expect(raw).not.toContain('body-key');
         expect(raw).toContain('<redacted>');
 
-        const restored = readRallarServerWorkbenchDraft(storage, draft);
+        const restored = readStoredRallarServerWorkbenchDraft(storage);
         expect(restored?.path).toBe('/api/example');
         expect(restored?.bodyText).toContain('<redacted>');
     });
 
+    it('discards a Rallar Server request entry whose method is not a known method', () => {
+        const storage = new MemoryStorage();
+        writeStoredRallarServerWorkbenchDraft(storage, RALLAR_SERVER_DRAFT, []);
+        const stored = JSON.parse(storage.getItem(UI_STORAGE_KEYS.rallarServerDraft) ?? '{}');
+        storage.setItem(
+            UI_STORAGE_KEYS.rallarServerDraft,
+            JSON.stringify({ ...stored, method: 'PATCH' })
+        );
+
+        expect(readStoredRallarServerWorkbenchDraft(storage)).toBeUndefined();
+    });
+
+    it('restores a Rallar Server collection entry and discards one whose collection is not a collection', () => {
+        const storage = new MemoryStorage();
+        writeStoredRallarServerRestCollectionDraft(storage, {
+            selectedCollectionId: 'demo',
+            collection: REST_COLLECTION,
+            variables: { baseUrl: 'http://localhost:8080' }
+        }, []);
+
+        expect(readStoredRallarServerRestCollectionDraft(storage)?.collection.collectionId).toBe('demo');
+
+        storage.setItem(
+            UI_STORAGE_KEYS.rallarServerCollectionDraft,
+            JSON.stringify({ selectedCollectionId: 'demo', collection: { name: 'no id' }, variables: {} })
+        );
+
+        expect(readStoredRallarServerRestCollectionDraft(storage)).toBeUndefined();
+    });
+
     it('drops invalid JSON editor text instead of persisting possible secrets', () => {
-        const sanitized = sanitizeRallarServerWorkbenchDraft({
-            apiBaseUrl: 'http://localhost:8080',
-            selectedPresetId: 'custom',
-            method: 'POST',
-            path: '/api/example',
+        const stored = toStoredRallarServerWorkbenchDraft({
+            ...RALLAR_SERVER_DRAFT,
             headersText: 'authorization: Bearer secret-token',
             queryText: '{',
-            bodyText: 'password=secret',
-            responseBodyMode: 'json',
-            attachAuth: true,
-            timeoutMs: 5000
+            bodyText: 'password=secret'
         }, ['secret-token']);
 
-        expect(sanitized.headersText).toBe('');
-        expect(sanitized.queryText).toBe('');
-        expect(sanitized.bodyText).toBe('');
+        expect(stored.headersText).toBe('');
+        expect(stored.queryText).toBe('');
+        expect(stored.bodyText).toBe('');
+    });
+
+    it('restores event filters and discards an entry whose filter is not text', () => {
+        const storage = new MemoryStorage();
+        const filters = {
+            kind: 'rtc',
+            commandId: 'all',
+            connection: 'all',
+            actor: 'all',
+            transport: 'all',
+            group: 'all',
+            peer: 'all',
+            selector: 'all',
+            topic: 'all',
+            severity: 'all'
+        };
+        writeStoredEventFilters(storage, filters);
+
+        expect(readStoredEventFilters(storage)).toEqual(filters);
+
+        storage.setItem(UI_STORAGE_KEYS.eventFilters, JSON.stringify({ ...filters, severity: 3 }));
+
+        expect(readStoredEventFilters(storage)).toBeUndefined();
     });
 });

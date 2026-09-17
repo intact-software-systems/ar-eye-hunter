@@ -5,10 +5,10 @@ import {
     type ManualWorkbenchValues
 } from '../../../manual-workbench.ts';
 import {
-    readManualWorkbenchDraft,
-    writeManualWorkbenchDraft,
+    readStoredManualWorkbenchDraft,
+    writeStoredManualWorkbenchDraft,
     type ManualWorkbenchDraft
-} from '../../../ui-persistence.ts';
+} from '../../../stored-manual-workbench-draft.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import { toManualWorkbenchValues } from './to-manual-workbench-values.ts';
@@ -67,7 +67,10 @@ interface RestoredManualDraft extends ManualWorkbenchDraft {
 }
 function useRestoredManualDraft(defaultDraft: ManualWorkbenchDraft): RestoredManualDraft {
     const [initialDraft] = useState(() => {
-        const stored = readManualWorkbenchDraft(browserUiStorage(), defaultDraft);
+        const stored = readStoredManualWorkbenchDraft(browserUiStorage(), {
+            providerMode: defaultDraft.values.providerMode,
+            rallarPassword: defaultDraft.values.rallarPassword
+        });
         return {
             draft: stored ?? defaultDraft,
             restored: Boolean(stored)
@@ -199,7 +202,7 @@ function useManualDraftPersistence(
     { state, authSession, values, payloadPresetId, payloadText }: ManualDraftPersistence
 ): void {
     useEffect(() => {
-        writeManualWorkbenchDraft(
+        writeStoredManualWorkbenchDraft(
             browserUiStorage(),
             {
                 values,
