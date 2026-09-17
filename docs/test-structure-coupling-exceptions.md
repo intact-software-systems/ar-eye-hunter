@@ -3128,7 +3128,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the 404 body was disposed of exactly once, and the assertion sits beside the proof that the wait did not await that cancellation.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling 404 response body cancellation"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-0d24c8cc95a7addd",
@@ -3139,7 +3139,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent sleep proves the retryable status did not restart the poll loop after the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not log or retry a 503 response that arrives after the logical deadline"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
     },
     {
       "id": "test-structure-coupling-12a33fb22185bf7f",
@@ -3150,7 +3150,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent sleep proves shutdown ended the loop immediately instead of costing the worker another poll interval.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#propagates external shutdown during registration without retrying"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
     },
     {
       "id": "test-structure-coupling-1d61181008c02174",
@@ -3161,7 +3161,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The single fetch proves the shutdown stopped further polling, so the late rejection belongs to the one request already in flight.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes a late registration fetch rejection after shutdown"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
     },
     {
       "id": "test-structure-coupling-243cac8e8238a3fa",
@@ -3172,7 +3172,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The single json read proves the wait read the body once before the abort, so the cancel that follows is disposal rather than a second read.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#cancels an active response body when JSON is aborted"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-32b5b21ab3a55a05",
@@ -3183,7 +3183,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel is the only witness that an aborted JSON read still disposes of the response body it opened.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#cancels an active response body when JSON is aborted"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-3d8da3b9501414c2",
@@ -3194,7 +3194,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the rejected 401 body was disposed of while the 401 still reached the caller.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not let a never-settling body cancellation mask a 401"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-3f737d5b0125cee4",
@@ -3205,7 +3205,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the late 200 body was disposed of rather than left open once the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a terminal 200 response that arrives after the logical deadline"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-410ed2379e883103",
@@ -3216,7 +3216,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the late 401 body was disposed of once the deadline had won.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a 401 response that arrives after the logical deadline"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-44d1f427a9662bd8",
@@ -3238,7 +3238,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent json read proves the wait rejected the late response instead of reading a body it had already given up on.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#rejects a terminal 200 response that arrives after the logical deadline"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-707b0044e59f7b2a",
@@ -3249,7 +3249,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the retryable response body was disposed of before the retry, without the retry waiting on it.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not await a never-settling retryable response body cancellation"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-904dfdf8ebc63b7a",
@@ -3260,7 +3260,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The one cancel proves the late 503 body was disposed of rather than left open for a retry that will not happen.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#does not log or retry a 503 response that arrives after the logical deadline"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#observes late response disposal failures after an aborted fetch"
     },
     {
       "id": "test-structure-coupling-a0d2ab559e00440f",
@@ -3282,7 +3282,7 @@ moved or changed test.
       "boundary": "interaction",
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent sleep proves the deadline, not a further poll, decided the outcome once a connected snapshot arrived too late.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#lets the registration deadline win over a late connected snapshot"
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#hard-times out a never-settling registration fetch with detailed state"
     },
     {
       "id": "test-structure-coupling-8657bc752452053f",
