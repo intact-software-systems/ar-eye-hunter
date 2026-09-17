@@ -1,7 +1,8 @@
+import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot
+    ControlQueuedCommandSnapshot
 } from '../control-snapshots.ts';
 import { distributedRecipeStateTone } from './distributed-recipe-state-tone.ts';
 import type {
@@ -15,18 +16,24 @@ import { toDiagnosticSeverityTone } from './distributed-run-runtime-diagnostic-r
 export interface ToDistributedRunTimelineInput {
     readonly distributedRun: ControlDistributedRunSnapshot;
     readonly commandLinks: readonly ControlDistributedRunCommandLink[];
-    readonly commands: ReadonlyMap<string, ControlCommandSnapshot>;
-    readonly results: readonly ControlResultSnapshot[];
+    readonly commands: ReadonlyMap<string, ControlQueuedCommandSnapshot>;
+    readonly results: readonly ControlResultEnvelope[];
     readonly events: readonly DistributedRunEventRow[];
     readonly runtimeDiagnostics: readonly DistributedRunRuntimeDiagnosticRow[];
     readonly failures: readonly DistributedRunFailureRow[];
 }
 
-type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
-type ControlResultSnapshot = ControlRunSnapshot['results'][number];
-
 /** A timeline item that may not have a time yet; the projection drops those. */
 type TimedTimelineItem = Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; };
+
+interface CommandLinkItemInput {
+    readonly link: ControlDistributedRunCommandLink;
+    /** Absent when the control run snapshot holds no queued command for the link. */
+    readonly command: ControlQueuedCommandSnapshot | undefined;
+    readonly stage: 'queued' | 'dispatched' | 'completed';
+    readonly atEpochMs: number | undefined;
+    readonly tone: string;
+}
 
 export function toDistributedRunTimeline(input: ToDistributedRunTimelineInput): readonly DistributedRunTimelineItem[] {
     const candidates: readonly TimedTimelineItem[] = [
@@ -105,7 +112,7 @@ function toLifecycleItems(
 
 function toCommandLinkItems(
     link: ControlDistributedRunCommandLink,
-    command: ControlCommandSnapshot | undefined
+    command: ControlQueuedCommandSnapshot | undefined
 ): readonly TimedTimelineItem[] {
     return [
         toCommandLinkItem({ link, command, stage: 'queued', atEpochMs: link.queuedAtEpochMs, tone: 'muted' }),
@@ -118,14 +125,6 @@ function toCommandLinkItems(
         }),
         toCommandLinkItem({ link, command, stage: 'completed', atEpochMs: command?.completedAtEpochMs, tone: 'good' })
     ];
-}
-
-interface CommandLinkItemInput {
-    readonly link: ControlDistributedRunCommandLink;
-    readonly command: ControlCommandSnapshot | undefined;
-    readonly stage: 'queued' | 'dispatched' | 'completed';
-    readonly atEpochMs: number | undefined;
-    readonly tone: string;
 }
 
 function toCommandLinkItem(input: CommandLinkItemInput): TimedTimelineItem {
@@ -144,7 +143,7 @@ function toCommandLinkItem(input: CommandLinkItemInput): TimedTimelineItem {
     };
 }
 
-function toResultItem(result: ControlResultSnapshot): TimedTimelineItem {
+function toResultItem(result: ControlResultEnvelope): TimedTimelineItem {
     return {
         id: `result-${result.commandId}`,
         atEpochMs: result.result?.endedAtEpochMs,
