@@ -1083,7 +1083,7 @@ function distributedRunSnapshot(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: 'recipe-a', variables: {}, required: true }],
+            recipes: [{ recipeId: 'recipe-a', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a']

@@ -262,7 +262,6 @@
       },
       "role": "sender",
       "profile": "alm",
-      "required": true,
       "variables": {}
     },
     {
@@ -493,7 +492,6 @@
       },
       "role": "receiver",
       "profile": "alm",
-      "required": true,
       "variables": {}
     }
   ],
@@ -527,105 +525,90 @@
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-03",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-04",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-05",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-06",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-07",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-08",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-09",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-10",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-11",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-12",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-13",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-14",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-15",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     }

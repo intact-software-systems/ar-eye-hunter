@@ -19,8 +19,7 @@ Deno.test('manifest request decoding rejects an unversioned inline recipe at the
         recipes: [{
             recipeId: 'api-health',
             recipe: { recipeId: 'api-health', commands: [] },
-            variables: {},
-            required: true
+            variables: {}
         }]
     };
 
@@ -28,6 +27,19 @@ Deno.test('manifest request decoding rejects an unversioned inline recipe at the
 
     assertEquals(decoded.right, undefined);
     assertEquals(decoded.left, '$.recipes[0].recipe: Missing required property schemaVersion.');
+});
+
+Deno.test('manifest request decoding rejects the removed recipe selection required flag', () => {
+    const manifest = distributedManifest();
+    const flagged = {
+        ...manifest,
+        recipes: manifest.recipes.map((selection) => ({ ...selection, required: true }))
+    };
+
+    const decoded = decodeDistributedRunManifestRequest({ manifest: flagged });
+
+    assertEquals(decoded.right, undefined);
+    assertEquals(decoded.left, '$.recipes[0].required: Unexpected property.');
 });
 
 Deno.test('manifest request decoding reports contract issues after the schema passes', () => {

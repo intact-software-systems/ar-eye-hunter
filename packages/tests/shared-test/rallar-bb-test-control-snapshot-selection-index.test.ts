@@ -268,13 +268,13 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...resolution.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true, variables: {}, recipeIds: [] },
-                            { agentId: agent, role: 'manifest-later', required: true, variables: {}, recipeIds: [] }
+                            { agentId: agent, role: 'manifest-first', variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', variables: {}, recipeIds: [] }
                         ]
                     },
                     targetResolution: targetResolution(agent, [
-                        { agentId: agent, role: 'resolution-first', recipeIds: [], required: true, variables: {} },
-                        { agentId: agent, role: 'resolution-later', recipeIds: [], required: true, variables: {} }
+                        { agentId: agent, role: 'resolution-first', recipeIds: [], variables: {} },
+                        { agentId: agent, role: 'resolution-later', recipeIds: [], variables: {} }
                     ])
                 },
                 {
@@ -282,8 +282,8 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...manifest.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true, variables: {}, recipeIds: [] },
-                            { agentId: agent, role: 'manifest-later', required: true, variables: {}, recipeIds: [] }
+                            { agentId: agent, role: 'manifest-first', variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', variables: {}, recipeIds: [] }
                         ]
                     }
                 },
@@ -336,12 +336,10 @@ describe('control snapshot selection index', () => {
                     ...manifestNullish.manifest,
                     roleAssignments: [{
                         agentId: agent,
-                        role: undefined,
-                        required: true
+                        role: undefined
                     }, {
                         agentId: agent,
-                        role: 'manifest-later-must-not-win',
-                        required: true
+                        role: 'manifest-later-must-not-win'
                     }] as unknown as NonNullable<ControlDistributedRunSnapshot['manifest']['roleAssignments']>
                 }
             }, {
@@ -351,7 +349,6 @@ describe('control snapshot selection index', () => {
                     roleAssignments: [{
                         agentId: agent,
                         role: 'manifest-fallback',
-                        required: true,
                         variables: {},
                         recipeIds: []
                     }]
@@ -360,12 +357,10 @@ describe('control snapshot selection index', () => {
                     agent,
                     [{
                         agentId: agent,
-                        role: null,
-                        required: true
+                        role: null
                     }, {
                         agentId: agent,
-                        role: 'resolution-later-must-not-win',
-                        required: true
+                        role: 'resolution-later-must-not-win'
                     }] as unknown as NonNullable<ControlDistributedRunSnapshot['targetResolution']>['roleAssignments']
                 )
             }]

@@ -50,7 +50,6 @@ export type DistributedRunRecipeProgressRow = Readonly<{
     recipeId: string;
     profile?: string;
     role?: string;
-    required: boolean;
     targetCount: number;
     queuedCount: number;
     runningCount: number;

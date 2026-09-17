@@ -256,7 +256,6 @@
       },
       "role": "sender",
       "profile": "rtc",
-      "required": true,
       "variables": {}
     },
     {
@@ -481,7 +480,6 @@
       },
       "role": "receiver",
       "profile": "rtc",
-      "required": true,
       "variables": {}
     }
   ],
@@ -510,70 +508,60 @@
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-03",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-04",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-05",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-06",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-07",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-08",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-09",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-10",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     }

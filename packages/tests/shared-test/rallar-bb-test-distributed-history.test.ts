@@ -22,7 +22,7 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 groupId: 'group-a'
             },
             targetPolicy: { mode: 'selected-agents', agentIds: [] },
-            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender', variables: {}, required: true }],
+            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender', variables: {} }],
             variables: {},
             roleAssignments: [],
             ackTimeoutMs: 30_000,

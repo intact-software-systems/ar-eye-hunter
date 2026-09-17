@@ -20,11 +20,13 @@ const LINEAR_GROWTH_LIMIT = 2.5;
 // Whole-object ratchets, originally captured from the pre-index implementation before Task 6A and
 // recaptured when strict version-1 diagnostic decoding removed the expectedLaneId, observedLaneId,
 // and accepted diagnostic row fields. The report embeds correlated diagnostic rows and the verdict
-// embeds their summaries, so all four digests moved with that row contract.
-const SCALE_MONITOR_SHA256 = 'c518d6afd9c618b1d437d297edf122e3d9b489266676ca61a00e00ed0e89f22d';
-const SCALE_REPORT_SHA256 = '56eb604376089569ba84f9b54d271756b16ed0d46df0854b1f51c4d08a1852bb';
+// embeds their summaries, so all four digests moved with that row contract. The monitor, membership
+// and report digests were recaptured again when recipe progress rows dropped the manifest's removed
+// required flag; re-inserting it reproduces the previous digests and the verdict digest is unchanged.
+const SCALE_MONITOR_SHA256 = '0e0e4ddf08de46d0b726eab462c649b948ee739d6881d460dd1e31b20be3a61e';
+const SCALE_REPORT_SHA256 = '2411c1128b0fac55394ae7789232b87a1308c0b0f73eaa774d238ffdd191a0a9';
 const SCALE_VERDICT_SHA256 = '7543e629a454ed1e871d15547998a359a1761cc878dd85b88a2325f86661119c';
-const SCALE_MEMBERSHIP_MONITOR_SHA256 = '22adefedec7e3b9131c975bd691e80799cb5bccc779264d57775770db755cb35';
+const SCALE_MEMBERSHIP_MONITOR_SHA256 = 'ddaa1988ae0367fc951f4c7231a9d43e8670541156012253704ce2034dc373ea';
 
 describe('distributed run monitor indexed derivation', () => {
     it('preserves the complete monitor, report, and verdict observables at 5,000 scale', () => {
@@ -99,7 +101,6 @@ describe('distributed run monitor indexed derivation', () => {
                     : index % 3 === 1
                     ? []
                     : ['unknown:recipe|界'],
-                required: true,
                 variables: {}
             })
         ));
@@ -186,23 +187,19 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'manifest-role',
                     role: 'role:manifest|界',
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: 'resolved-role',
                     role: 'role:resolved|界',
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: 'unroled',
-                    required: true,
                     variables: {}
                 }],
                 roleAssignments: [{
                     agentId: 'agent:duplicate|\u202E界',
                     role: 'role:manifest|界',
                     recipeIds: ['manifest-role'],
-                    required: true,
                     variables: {}
                 }]
             },
@@ -239,8 +236,7 @@ describe('distributed run monitor indexed derivation', () => {
                         agentId: 'agent:duplicate|\u202E界',
                         role: 'role:resolved|界',
                         recipeIds: [],
-                        variables: {},
-                        required: true
+                        variables: {}
                     }]
                 })
             },
@@ -279,25 +275,20 @@ describe('distributed run monitor indexed derivation', () => {
                 recipes: [{
                     recipeId: 'recipe:id-only|\u202E界',
                     role: 'role:not-assigned',
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: 'recipe:duplicate|界',
                     role: matchingRole,
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: '',
-                    required: true,
                     variables: {}
                 }, {
                     recipeId: 'recipe:fallback|界',
-                    required: true,
                     variables: {}
                 }],
                 targetPolicy: {
@@ -309,32 +300,27 @@ describe('distributed run monitor indexed derivation', () => {
                     agentId: assignedAgentId,
                     role: matchingRole,
                     recipeIds: ['recipe:id-only|\u202E界'],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }, {
                     agentId: assignedAgentId,
                     role: matchingRole,
                     recipeIds: [],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }, {
                     agentId: assignedAgentId,
                     role: 'role:third|界',
                     variables: {},
-                    recipeIds: [],
-                    required: true
+                    recipeIds: []
                 }, {
                     agentId: emptyAgentId,
                     role: '',
                     recipeIds: ['recipe:unknown|界'],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }, {
                     agentId: fallbackAgentId,
                     role: 'role:no-match|界',
                     recipeIds: ['recipe:unknown|界'],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }]
             }
         };
@@ -377,30 +363,26 @@ describe('distributed run monitor indexed derivation', () => {
             ...input.distributedRun,
             manifest: {
                 ...input.distributedRun.manifest,
-                recipes: [{ recipeId: 'shared-recipe', role, variables: {}, required: true }, {
+                recipes: [{ recipeId: 'shared-recipe', role, variables: {} }, {
                     recipeId: 'shared-recipe',
                     role,
-                    variables: {},
-                    required: true
+                    variables: {}
                 }],
                 roleAssignments: [{
                     agentId: 'overlap-agent',
                     role,
                     recipeIds: ['shared-recipe'],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }, {
                     agentId: 'role-agent',
                     role,
                     recipeIds: [],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }, {
                     agentId: 'direct-agent',
                     role: 'role:other',
                     recipeIds: ['shared-recipe'],
-                    variables: {},
-                    required: true
+                    variables: {}
                 }]
             }
         };
@@ -449,13 +431,11 @@ describe('distributed run monitor indexed derivation', () => {
             agentId: 'agent-a',
             role: 'role-a',
             recipeIds: ['recipe-a'],
-            required: true,
             variables: {}
         }, {
             agentId: 'agent-b',
             role: 'role-b',
             recipeIds: ['recipe-b'],
-            required: true,
             variables: {}
         }];
         const distributedRun: ControlDistributedRunSnapshot = {
@@ -1310,7 +1290,6 @@ function adversarialScaleInput(scale: number): Readonly<{
             recipes: recipeIds.map((recipeId, index) => ({
                 recipeId,
                 profile: index === 0 ? 'profile:a|b' : `profile-${index}`,
-                required: true,
                 variables: {}
             })),
             targetPolicy: {
@@ -1408,7 +1387,7 @@ function focusedInput(
                 workspaceId: 'default',
                 groupId: 'focused-group'
             },
-            recipes: input.recipeIds.map((recipeId) => ({ recipeId, required: true, variables: {} })),
+            recipes: input.recipeIds.map((recipeId) => ({ recipeId, variables: {} })),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: input.agentIds,
@@ -1663,7 +1642,6 @@ function sameRoleMatrixInput(dimension: number, role: string): DerivationInput {
                     agentId,
                     role,
                     recipeIds: [],
-                    required: true,
                     variables: {}
                 }))
             }
@@ -1685,14 +1663,12 @@ function duplicateOverlapInput(size: number): DerivationInput {
                 recipes: Array.from({ length: size }, () => ({
                     recipeId: 'shared-recipe',
                     role,
-                    required: true,
                     variables: {}
                 })),
                 roleAssignments: agentIds.map((agentId) => ({
                     agentId,
                     role,
                     recipeIds: ['shared-recipe'],
-                    required: true,
                     variables: {}
                 }))
             }

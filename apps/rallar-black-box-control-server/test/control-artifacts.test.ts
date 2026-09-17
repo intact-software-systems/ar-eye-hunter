@@ -232,7 +232,7 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'http-failure', required: true, variables: {} }],
+            recipes: [{ recipeId: 'http-failure', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-1']

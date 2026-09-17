@@ -91,7 +91,7 @@ Deno.test('control snapshot restore rejects a distributed run whose manifest omi
 Deno.test('control snapshot restore rejects a resolved role assignment without its recipe scope', async () => {
     const persisted = JSON.parse(JSON.stringify(toStagedService().snapshotForPersistence({})));
     const resolution = persisted.distributedRuns[0].targetResolution;
-    resolution.roleAssignments = [{ role: 'sender', agentId: 'agent-1', required: true }];
+    resolution.roleAssignments = [{ role: 'sender', agentId: 'agent-1' }];
 
     const { service, warnings } = await restoreSnapshotText(persisted);
 

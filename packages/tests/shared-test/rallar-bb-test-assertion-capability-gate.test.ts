@@ -84,7 +84,6 @@ function manifestWith(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxDistribut
         recipes: [
             {
                 recipeId: recipe.recipeId,
-                required: true,
                 recipe,
                 variables: {}
             }

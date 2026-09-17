@@ -836,14 +836,13 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             type: 'array',
             items: {
                 type: 'object',
-                required: ['recipeId', 'variables', 'required'],
+                required: ['recipeId', 'variables'],
                 properties: {
                     recipeId: stringSchema,
                     role: stringSchema,
                     profile: stringSchema,
                     recipe: RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-                    variables: recordSchema,
-                    required: booleanSchema
+                    variables: recordSchema
                 },
                 additionalProperties: false
             }
@@ -873,12 +872,11 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             type: 'array',
             items: {
                 type: 'object',
-                required: ['role', 'agentId', 'recipeIds', 'required', 'variables'],
+                required: ['role', 'agentId', 'recipeIds', 'variables'],
                 properties: {
                     role: stringSchema,
                     agentId: stringSchema,
                     recipeIds: { type: 'array', items: stringSchema },
-                    required: booleanSchema,
                     variables: recordSchema
                 },
                 additionalProperties: false

@@ -109,7 +109,7 @@ function activeDistributedRun(
             controlRunId,
             displayName: 'Canonical live run',
             group: GROUP,
-            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,

@@ -228,7 +228,6 @@ function toScaleManifest(): RallarBlackBoxDistributedRunManifest {
                 recipeId: RECIPE_ID,
                 commands: []
             },
-            required: true,
             variables: {}
         }],
         targetPolicy: {
@@ -237,7 +236,7 @@ function toScaleManifest(): RallarBlackBoxDistributedRunManifest {
             agentIds: [AGENT_ID]
         },
         variables: {},
-        roleAssignments: [{ agentId: AGENT_ID, role: 'worker', required: true, recipeIds: [], variables: {} }],
+        roleAssignments: [{ agentId: AGENT_ID, role: 'worker', recipeIds: [], variables: {} }],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',

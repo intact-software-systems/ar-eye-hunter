@@ -344,7 +344,6 @@ describe('Recipe Console Execute manifest', () => {
                 roleAssignments: [{
                     agentId: 'agent-a',
                     role: 'changed-role',
-                    required: true,
                     variables: {},
                     recipeIds: []
                 }]

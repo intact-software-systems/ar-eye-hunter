@@ -60,8 +60,7 @@ function run(
                 recipeId: recipe.id,
                 profile: recipe.profile,
                 recipe: { schemaVersion: 1, recipeId: recipe.id, commands: [{ kind: 'health' }] },
-                variables: {},
-                required: true
+                variables: {}
             })),
             variables: {},
             roleAssignments: [],

@@ -244,7 +244,7 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     mode: 'selected-agents',
                     agentIds: ['agent-a']
                 },
-                recipes: [{ recipeId: REPORT.recipeIds[0], variables: {}, required: true }],
+                recipes: [{ recipeId: REPORT.recipeIds[0], variables: {} }],
                 variables: {},
                 roleAssignments: [],
                 ackTimeoutMs: 30_000,

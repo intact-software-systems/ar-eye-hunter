@@ -44,8 +44,8 @@ const WORLD_FLEET_TARGET_RESOLUTION: RallarBlackBoxDistributedTargetResolution =
     targetPolicyMode: 'selected-agents',
     targetAgentIds: ['agent-01', 'agent-02'],
     roleAssignments: [
-        { agentId: 'agent-01', role: 'sender', recipeIds: [], required: true, variables: {} },
-        { agentId: 'agent-02', role: 'receiver', recipeIds: [], required: true, variables: {} }
+        { agentId: 'agent-01', role: 'sender', recipeIds: [], variables: {} },
+        { agentId: 'agent-02', role: 'receiver', recipeIds: [], variables: {} }
     ],
     blockers: [
         {
@@ -386,7 +386,7 @@ describe('distributed run artifact decoding', () => {
                         ...distributedRun,
                         targetResolution: {
                             ...WORLD_FLEET_TARGET_RESOLUTION,
-                            roleAssignments: [{ agentId: 'agent-01', role: 'sender', required: true }]
+                            roleAssignments: [{ agentId: 'agent-01', role: 'sender' }]
                         }
                     })
                 },
@@ -397,19 +397,20 @@ describe('distributed run artifact decoding', () => {
                 }
             },
             {
-                name: 'role assignment without its required flag',
+                name: 'manifest recipe selection that still carries the removed required flag',
                 files: {
                     'distributed-run.json': JSON.stringify({
                         ...distributedRun,
-                        targetResolution: {
-                            ...WORLD_FLEET_TARGET_RESOLUTION,
-                            roleAssignments: [{ agentId: 'agent-01', role: 'sender', recipeIds: [], variables: {} }]
+                        manifest: {
+                            ...distributedRun.manifest,
+                            recipes: distributedRun.manifest.recipes.map((selection) => ({ ...selection, required: true }))
                         }
                     })
                 },
                 expected: {
                     fileName: 'distributed-run.json',
-                    message: 'distributed-run.json is not a distributed run snapshot: targetResolution.roleAssignments[0].required must be a boolean.'
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: manifest is not a valid distributed run manifest:\n$.recipes[0].required: Unexpected property.'
                 }
             },
             {

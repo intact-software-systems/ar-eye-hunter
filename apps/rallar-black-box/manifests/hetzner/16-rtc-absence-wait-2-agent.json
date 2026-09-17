@@ -184,7 +184,6 @@
         ]
       },
       "profile": "rtc",
-      "required": true,
       "variables": {}
     }
   ],

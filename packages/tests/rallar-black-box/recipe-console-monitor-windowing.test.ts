@@ -587,7 +587,6 @@ function recipeRow(index: number, recipeId = `recipe-${index}`): DistributedRunR
     return {
         recipeId,
         role: `role-${index % 2}`,
-        required: true,
         targetCount: 1,
         queuedCount: 0,
         runningCount: 0,

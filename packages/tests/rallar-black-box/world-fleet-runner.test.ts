@@ -26,7 +26,6 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         recipes: [
             {
                 recipeId: 'health-recipe',
-                required: true,
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'health-recipe',

@@ -50,7 +50,7 @@ function distributedRun(
                 groupId: 'group-a'
             },
             targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
-            recipes: [{ recipeId: 'recipe-a', variables: {}, required: true }],
+            recipes: [{ recipeId: 'recipe-a', variables: {} }],
             variables: {},
             roleAssignments: [],
             ackTimeoutMs: 30_000,

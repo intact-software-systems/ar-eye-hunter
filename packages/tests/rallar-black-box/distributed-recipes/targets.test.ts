@@ -442,7 +442,7 @@ describe('distributed recipes targets', () => {
         expect(manifest).toMatchObject({
             schemaVersion: 1,
             controlRunId: 'run-explicit',
-            recipes: [{ recipeId: recipe.recipe.recipeId, variables: {}, required: true }],
+            recipes: [{ recipeId: recipe.recipe.recipeId, variables: {} }],
             targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             variables: {},
             roleAssignments: [],
@@ -504,8 +504,8 @@ describe('distributed recipes targets', () => {
             targetPolicyMode: 'all-online-group-members' as const,
             targetAgentIds: ['agent-a', 'agent-b'],
             roleAssignments: [
-                { agentId: 'agent-a', role: 'sender', recipeIds: [], required: true, variables: {} },
-                { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} }
+                { agentId: 'agent-a', role: 'sender', recipeIds: [], variables: {} },
+                { agentId: 'agent-b', role: 'receiver', recipeIds: [], variables: {} }
             ],
             blockers: [],
             summary: {
@@ -529,12 +529,11 @@ describe('distributed recipes targets', () => {
             resolvedAtEpochMs: 2_000,
             targetAgentIds: Array.from({ length: 50 }, (_, index) => `agent-${String(index + 1).padStart(2, '0')}`),
             roleAssignments: [
-                { agentId: 'agent-01', role: 'sender', recipeIds: [], required: true, variables: {} },
+                { agentId: 'agent-01', role: 'sender', recipeIds: [], variables: {} },
                 ...Array.from({ length: 49 }, (_, index) => ({
                     agentId: `agent-${String(index + 2).padStart(2, '0')}`,
                     role: 'receiver',
                     recipeIds: [],
-                    required: true,
                     variables: {}
                 }))
             ],

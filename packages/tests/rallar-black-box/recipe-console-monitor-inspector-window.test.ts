@@ -262,6 +262,27 @@ describe('Recipe Console Monitor inspector windows', () => {
         expect(container.textContent).not.toContain(lateRow.role!);
     });
 
+    it('shows a recipe rollup as its progress facts, with no Required fact', async () => {
+        await render(model({ recipes: recipeRows('recipe-single', 1) }), {
+            kind: 'recipe',
+            id: 'recipe-single'
+        });
+
+        const rollup = [...container.querySelectorAll('section')]
+            .find((section) => section.querySelector('h3')?.textContent === 'Recipe rollup');
+        expect([...rollup?.querySelectorAll('dt') ?? []].map((term) => term.textContent)).toEqual([
+            'Profile',
+            'Role',
+            'Targets',
+            'Queued',
+            'Running',
+            'Passed',
+            'Failed',
+            'Missing',
+            'Average latency'
+        ]);
+    });
+
     it('does not render window controls at or below an inspector budget', async () => {
         const commandId = 'command-budget';
         await render(
@@ -469,7 +490,6 @@ function recipeRows(recipeId: string, count: number): DistributedRunRecipeProgre
         recipeId,
         profile: `profile-${index}`,
         role: index === count - 1 ? 'role::last\u2067|\u2069' : `role-${index}`,
-        required: true,
         targetCount: 1,
         queuedCount: 0,
         runningCount: 0,

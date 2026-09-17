@@ -324,7 +324,6 @@ function createLargeDistributedRun(
                 agentId,
                 role: largeMonitorRole(index),
                 recipeIds: [LARGE_MONITOR_COMMON_RECIPE_ID],
-                required: true,
                 variables: {}
             })),
             variables: {},
@@ -361,7 +360,6 @@ function largeMonitorRecipeSelections() {
             recipe: LARGE_MONITOR_RECIPE,
             role: largeMonitorRole(index),
             profile: `large-profile-${String(index).padStart(3, '0')}`,
-            required: true,
             variables: {}
         })
     );
@@ -379,7 +377,6 @@ function largeMonitorRecipeSelections() {
                     name: `Large unique recipe ${index + 1}`,
                     commands: [{ kind: 'health' as const }]
                 },
-                required: true,
                 variables: {}
             };
         }

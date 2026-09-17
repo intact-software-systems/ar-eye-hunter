@@ -159,13 +159,11 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
                 recipeId: 'recipe~/inline',
                 commands: tuningCommands()
             },
-            variables: {},
-            required: true
+            variables: {}
         }, {
             recipeId: 'reference-only~/recipe',
             profile: 'remote-catalog',
-            variables: {},
-            required: true
+            variables: {}
         }],
         roleAssignments: [],
         startMode: 'manual',
@@ -326,8 +324,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             recipes: [{
                 recipeId: 'bounded',
                 recipe: { schemaVersion: 1, recipeId: 'bounded', commands },
-                variables: {},
-                required: true
+                variables: {}
             }]
         };
 

@@ -1647,7 +1647,6 @@
       },
       "role": "sender",
       "profile": "alm",
-      "required": true,
       "variables": {}
     },
     {
@@ -2771,7 +2770,6 @@
       },
       "role": "receiver",
       "profile": "alm",
-      "required": true,
       "variables": {}
     }
   ],
@@ -2792,14 +2790,12 @@
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true,
       "recipeIds": [],
       "variables": {}
     }

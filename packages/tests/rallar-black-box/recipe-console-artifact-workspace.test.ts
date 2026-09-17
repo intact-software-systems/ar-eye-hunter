@@ -30,7 +30,7 @@ function serverV2Files(
             distributedRunId: 'distributed-import',
             controlRunId: 'control-import',
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-import' },
-            recipes: [{ recipeId: 'ci-import-recipe', variables: {}, required: true }],
+            recipes: [{ recipeId: 'ci-import-recipe', variables: {} }],
             targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'] },
             variables: {},
             roleAssignments: [],

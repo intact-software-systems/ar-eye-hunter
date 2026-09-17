@@ -108,8 +108,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                     recipes: [{
                         recipeId: 'api-health',
                         recipe: { recipeId: 'api-health', commands: [] },
-                        variables: {},
-                        required: true
+                        variables: {}
                     }]
                 }
             })

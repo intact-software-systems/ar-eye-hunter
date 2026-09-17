@@ -60,7 +60,6 @@ export function MonitorRecipeEvidence({
             <dl className={styles.facts}>
                 <Fact label="Profile" value={recipe.profile ?? 'Default'} />
                 <Fact label="Role" value={recipe.role ?? 'All assigned roles'} />
-                <Fact label="Required" value={recipe.required ? 'Yes' : 'No'} />
                 <Fact label="Targets" value={String(recipe.targetCount)} />
                 <Fact label="Queued" value={String(recipe.queuedCount)} />
                 <Fact label="Running" value={String(recipe.runningCount)} />

@@ -30,7 +30,6 @@
         ]
       },
       "profile": "health",
-      "required": true,
       "variables": {}
     }
   ],

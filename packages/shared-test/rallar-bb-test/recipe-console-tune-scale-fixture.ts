@@ -62,7 +62,6 @@ export function createRecipeConsoleTuneScaleFixture(
             recipeId: recipe.recipeId,
             profile: 'scale',
             recipe,
-            required: true,
             variables: {}
         }],
         targetPolicy: {

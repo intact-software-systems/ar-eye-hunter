@@ -40,7 +40,6 @@ export function toRoleAssignmentsForPattern(
         ids.map((agentId) => ({
             role,
             agentId,
-            required: true,
             recipeIds: [],
             variables: {}
         }))

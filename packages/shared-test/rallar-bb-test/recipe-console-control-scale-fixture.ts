@@ -188,7 +188,7 @@ function distributedManifest(
         controlRunId,
         displayName: `Scale run ${distributedRunId}`,
         group: GROUP,
-        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE, required: true, variables: {} }],
+        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE, variables: {} }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: agentIds.length,

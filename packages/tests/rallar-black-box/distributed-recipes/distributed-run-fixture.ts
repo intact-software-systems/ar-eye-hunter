@@ -145,7 +145,6 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             recipeId: 'health-only',
             recipe: recipe.recipe,
             profile: 'smoke',
-            required: true,
             variables: {}
         }],
         targetPolicy: {
@@ -154,8 +153,8 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             expectedParticipantCount: 2
         },
         roleAssignments: [
-            { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
-            { agentId: 'agent-b', role: 'receiver', required: true, variables: {}, recipeIds: [] }
+            { agentId: 'agent-a', role: 'sender', variables: {}, recipeIds: [] },
+            { agentId: 'agent-b', role: 'receiver', variables: {}, recipeIds: [] }
         ],
         metadata: {
             createdBy: 'alice'

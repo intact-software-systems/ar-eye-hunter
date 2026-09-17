@@ -200,9 +200,7 @@ function toResolvedRoleAssignments(
     roles: Readonly<Record<string, readonly string[]>>
 ): readonly RallarBlackBoxDistributedRoleAssignment[] {
     return Object.entries(roles)
-        .flatMap(([role, agentIds]) =>
-            agentIds.map((agentId) => ({ role, agentId, recipeIds: [], required: true, variables: {} }))
-        );
+        .flatMap(([role, agentIds]) => agentIds.map((agentId) => ({ role, agentId, recipeIds: [], variables: {} })));
 }
 
 function computeSortedCounts(values: readonly string[]): Readonly<Record<string, number>> {

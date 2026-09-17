@@ -35,8 +35,7 @@ function run(id: string, controlRunId: string, updated = 2_000): ControlDistribu
                     recipeId: 'recipe-a',
                     commands: [{ kind: 'health', commandId: `health-${id}` }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }],
             variables: {},
             roleAssignments: [],

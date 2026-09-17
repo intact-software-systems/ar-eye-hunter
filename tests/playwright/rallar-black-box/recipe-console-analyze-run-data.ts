@@ -45,7 +45,6 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
                 name: 'Analyze RTC relay',
                 commands: [{ kind: 'health', commandId: ANALYZE_COMMAND_ID }]
             },
-            required: true,
             variables: {}
         }],
         targetPolicy: {
@@ -57,7 +56,6 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
             agentId: ANALYZE_AGENT_ID,
             role: 'receiver',
             recipeIds: [ANALYZE_RECIPE_ID],
-            required: true,
             variables: {}
         }],
         startMode: 'manual',

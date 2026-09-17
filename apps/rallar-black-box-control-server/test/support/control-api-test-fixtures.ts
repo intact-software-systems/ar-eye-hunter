@@ -51,8 +51,7 @@ export function distributedManifest() {
                         }
                     ]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }
         ],
         targetPolicy: {

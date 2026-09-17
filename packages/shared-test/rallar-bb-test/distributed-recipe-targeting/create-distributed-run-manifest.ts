@@ -92,7 +92,6 @@ function toRecipeSelections(
         recipe: item.recipe,
         role: toRecipeRoleForPattern(input.rolePattern, index, input.recipes.length),
         profile: item.profiles[0],
-        required: true,
         variables: {}
     }));
 }

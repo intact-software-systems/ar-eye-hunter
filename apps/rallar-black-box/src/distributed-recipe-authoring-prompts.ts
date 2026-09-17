@@ -179,7 +179,6 @@ const DISTRIBUTED_RUN_MANIFEST_SKELETON = {
         {
             recipeId: '{{recipeId}}',
             role: '{{optional-role}}',
-            required: true,
             recipe: BROWSER_AGENT_RECIPE_SKELETON,
             variables: {}
         }

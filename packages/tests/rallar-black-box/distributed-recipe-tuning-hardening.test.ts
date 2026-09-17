@@ -22,8 +22,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         recipes: [{
             recipeId: 'tune-inline',
             recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] },
-            variables: {},
-            required: true
+            variables: {}
         }],
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         variables: {},
@@ -331,8 +330,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 recipeId: 'malformed',
                 commands: [{ kind: 'loop' }]
             },
-            variables: {},
-            required: true
+            variables: {}
         }]);
         const nested = (depth: number): Record<string, unknown> =>
             depth === 0
@@ -342,8 +340,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         Reflect.set(tooDeep, 'recipes', [{
             recipeId: 'too-deep',
             recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] },
-            variables: {},
-            required: true
+            variables: {}
         }]);
 
         expect(decodeDistributedRunManifest(malformed).left).toContainEqual({
@@ -378,8 +375,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                     recipeId: 'wide',
                     commands: [{ kind: 'parallel', groups }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }]
         };
 
@@ -394,8 +390,7 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         const later: RallarBlackBoxDistributedRunManifest['recipes'][number] = {
             recipeId: 'later',
             recipe: { schemaVersion: 1, recipeId: 'later', commands: [] },
-            variables: {},
-            required: true
+            variables: {}
         };
         Object.defineProperty(later, 'recipe', {
             get: () => {
@@ -407,16 +402,14 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             recipes: [{
                 recipeId: 'first',
                 recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands },
-                variables: {},
-                required: true
+                variables: {}
             }, later]
         };
         expect(() => computeDistributedRunTuningInventory(wideRecipes)).not.toThrow();
 
         const references = Array.from({ length: 2_100 }, (_, index) => ({
             recipeId: `reference-${index}`,
-            variables: {},
-            required: true
+            variables: {}
         }));
         Object.defineProperty(references, 2_000, {
             get: () => {

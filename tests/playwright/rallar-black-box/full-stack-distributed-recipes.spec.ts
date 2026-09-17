@@ -1376,7 +1376,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 recipes: [{
                     recipeId: recipe.recipeId,
                     recipe,
-                    required: true,
                     profile: 'full-stack',
                     variables: {}
                 }],
@@ -1461,7 +1460,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 recipes: [{
                     recipeId: `missing-health-${suffix}`,
                     recipe: healthRecipe(`missing-health-${suffix}`),
-                    required: true,
                     variables: {}
                 }],
                 targetPolicy: {
@@ -1490,7 +1488,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 recipes: [{
                     recipeId: `timeout-health-${suffix}`,
                     recipe: healthRecipe(`timeout-health-${suffix}`),
-                    required: true,
                     variables: {}
                 }],
                 targetPolicy: {
@@ -1539,7 +1536,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                         recipeId: `role-pass-${suffix}`,
                         role: 'passer',
                         recipe: healthRecipe(`role-pass-${suffix}`),
-                        required: true,
                         variables: {}
                     },
                     {
@@ -1557,7 +1553,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                                 }
                             }]
                         },
-                        required: true,
                         variables: {}
                     }
                 ],
@@ -1585,7 +1580,6 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                 recipes: [{
                     recipeId: `disconnect-health-${suffix}`,
                     recipe: healthRecipe(`disconnect-health-${suffix}`),
-                    required: true,
                     variables: {}
                 }],
                 targetPolicy: {
@@ -1692,7 +1686,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     recipes: [{
                         recipeId: ackRecipe.recipeId,
                         recipe: ackRecipe,
-                        required: true,
                         profile: 'live',
                         variables: {}
                     }],
@@ -1722,7 +1715,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     recipes: [{
                         recipeId: wsPrimerRecipe.recipeId,
                         recipe: wsPrimerRecipe,
-                        required: true,
                         profile: 'live-ws',
                         variables: {}
                     }],
@@ -1753,7 +1745,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipeId: wsSenderRecipe.recipeId,
                         role: 'sender',
                         recipe: wsSenderRecipe,
-                        required: true,
                         profile: 'live-ws',
                         variables: {}
                     }],
@@ -1805,7 +1796,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     recipes: [{
                         recipeId: rtcConnect.recipeId,
                         recipe: rtcConnect,
-                        required: true,
                         profile: 'live-rtc',
                         variables: {}
                     }],
@@ -1830,7 +1820,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipeId: rtcSender.recipeId,
                         role: 'sender',
                         recipe: rtcSender,
-                        required: true,
                         profile: 'live-rtc',
                         variables: {}
                     }],
@@ -1889,7 +1878,6 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                     recipes: [{
                         recipeId: realtimeRecipe.recipeId,
                         recipe: realtimeRecipe,
-                        required: true,
                         profile: 'live-rtc-realtime',
                         variables: {}
                     }],

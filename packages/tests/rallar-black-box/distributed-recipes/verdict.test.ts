@@ -203,7 +203,6 @@ describe('distributed recipes verdict', () => {
                         readyPeerCount: 1
                     }),
                     profile: 'rtc',
-                    required: true,
                     variables: {}
                 }]
             },

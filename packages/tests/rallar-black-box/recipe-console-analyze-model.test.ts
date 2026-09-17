@@ -26,7 +26,7 @@ function coreFiles(
         distributedRunId: 'distributed-analyze',
         controlRunId: 'control-analyze',
         group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-analyze' },
-        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, required: true }],
+        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {} }],
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'] },
         variables: {},
         roleAssignments: [],

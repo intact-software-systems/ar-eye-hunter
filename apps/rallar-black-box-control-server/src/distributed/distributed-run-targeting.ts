@@ -204,7 +204,7 @@ function toExplicitRoleAssignments(
         .flatMap(([role, agentIds]) =>
             agentIds
                 .filter((agentId) => selected.has(agentId))
-                .map((agentId) => ({ role, agentId, recipeIds: [], required: true, variables: {} }))
+                .map((agentId) => ({ role, agentId, recipeIds: [], variables: {} }))
         );
 }
 

@@ -37,15 +37,15 @@ export function tuningManifest(input: Readonly<{
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true, variables: {} }],
+        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', variables: {} }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
             expectedParticipantCount: 2
         },
         roleAssignments: [
-            { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
-            { agentId: 'agent-b', role: 'receiver', required: true, variables: {}, recipeIds: [] }
+            { agentId: 'agent-a', role: 'sender', variables: {}, recipeIds: [] },
+            { agentId: 'agent-b', role: 'receiver', variables: {}, recipeIds: [] }
         ],
         ackTimeoutMs: input.ackTimeoutMs ?? 5_000,
         barrier: input.barrier ?? { enabled: true, timeoutMs: 7_500 },

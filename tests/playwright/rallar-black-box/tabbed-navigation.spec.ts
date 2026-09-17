@@ -2199,7 +2199,6 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         },
         recipes: [{
             recipeId: 'ai-health-recipe',
-            required: true,
             variables: {},
             recipe: {
                 schemaVersion: 1,
@@ -2326,7 +2325,6 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             group,
             recipes: [{
                 recipeId: 'stale-health',
-                required: true,
                 variables: {},
                 recipe: {
                     schemaVersion: 1,
@@ -2779,7 +2777,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'diagnostic-recipe', required: true, variables: {} }],
+            recipes: [{ recipeId: 'diagnostic-recipe', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],

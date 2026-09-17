@@ -56,7 +56,6 @@ recipes.
     {
       "recipeId": "health-all-agents-v1",
       "role": "all-agents",
-      "required": true,
       "recipe": {
         "schemaVersion": 1,
         "recipeId": "health-all-agents-v1",
@@ -100,7 +99,6 @@ recipes.
   "recipes": [
     {
       "recipeId": "probe-v1",
-      "required": true,
       "recipe": {
         "schemaVersion": 1,
         "recipeId": "probe-v1",
@@ -613,5 +611,54 @@ Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/rallar-black-box/world-fleet-distributed-manifests.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```
+
+```text
+Title: Distributed manifest recipe selections and role assignments drop the required flag
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batch B6b3
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+- RallarBlackBoxDistributedRunRecipeSelection and
+  RallarBlackBoxDistributedRoleAssignment
+- DistributedRunRecipeProgressRow
+
+Old shape:
+Each recipe selection and role assignment carried a required boolean. It never
+changed the verdict: the snapshot decoder checked it, recipe progress rows
+copied it, and the Recipe Console Monitor showed it as a "Required" fact.
+
+New shape:
+Neither carries required, and every recipe selection and role assignment still
+counts toward the verdict. The schema rejects the flag as "Unexpected
+property."; recipe progress rows and the Monitor recipe rollup no longer carry
+or show it.
+
+Migration:
+Regenerate checked-in manifests with
+apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts and
+write-world-fleet-distributed-manifests.ts. A hand-authored manifest, a
+persisted control snapshot or an artifact bundle whose manifest still carries
+the flag is rejected.
+
+Golden corpus updates:
+Valid and invalid manifest cases drop the flag. Added the invalid
+removed-required-flag case.
+
+Prompt/documentation updates:
+distributed-run-contract.md and ai-recipe-prompt-guide.md no longer ask for the
+flag; this guide's examples follow the contract.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts
+npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check
+npx tsx apps/rallar-black-box/scripts/write-world-fleet-distributed-manifests.ts --check
 cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```

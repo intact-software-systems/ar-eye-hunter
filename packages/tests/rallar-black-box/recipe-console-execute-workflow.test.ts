@@ -51,7 +51,7 @@ function distributedRun(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: DEFAULT_EXECUTE_RECIPE_ID, variables: {}, required: true }],
+            recipes: [{ recipeId: DEFAULT_EXECUTE_RECIPE_ID, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],

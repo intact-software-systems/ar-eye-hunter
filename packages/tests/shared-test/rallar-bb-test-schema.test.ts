@@ -689,7 +689,6 @@ describe('rallar-bb-test capability and schema contract', () => {
                 {
                     recipeId: 'health-only',
                     role: 'all-agents',
-                    required: true,
                     variables: {}
                 }
             ],
@@ -746,7 +745,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             distributedRunId: 'published-schema',
             controlRunId: 'published-schema',
             group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe, variables: {} }],
+            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', recipe, variables: {} }],
             targetPolicy: { mode: 'all-online-group-members' },
             variables: {},
             roleAssignments: [],

@@ -1027,8 +1027,7 @@ describe('distributed recipes catalog', () => {
                     recipeId: 'sender-recipe',
                     commands: [{ kind: 'health' }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             },
             {
                 recipeId: 'receiver-recipe',
@@ -1038,8 +1037,7 @@ describe('distributed recipes catalog', () => {
                     recipeId: 'receiver-recipe',
                     commands: [{ kind: 'health' }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             },
             {
                 recipeId: 'shared-recipe',
@@ -1048,14 +1046,13 @@ describe('distributed recipes catalog', () => {
                     recipeId: 'shared-recipe',
                     commands: [{ kind: 'health' }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }
         ] satisfies ControlDistributedRunSnapshot['manifest']['recipes'];
         const resolvedAssignments = [
-            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'], required: true, variables: {} },
-            { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} },
-            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'], required: true, variables: {} }
+            { agentId: 'agent-a', role: 'sender', recipeIds: ['sender-recipe'], variables: {} },
+            { agentId: 'agent-b', role: 'receiver', recipeIds: [], variables: {} },
+            { agentId: 'agent-c', role: 'observer', recipeIds: ['shared-recipe'], variables: {} }
         ] as const;
         const commandLinks = [
             {
@@ -1092,8 +1089,8 @@ describe('distributed recipes catalog', () => {
                     }
                 },
                 roleAssignments: [
-                    { agentId: 'agent-a', role: 'receiver', variables: {}, recipeIds: [], required: true },
-                    { agentId: 'agent-b', role: 'sender', variables: {}, recipeIds: [], required: true }
+                    { agentId: 'agent-a', role: 'receiver', variables: {}, recipeIds: [] },
+                    { agentId: 'agent-b', role: 'sender', variables: {}, recipeIds: [] }
                 ]
             },
             targetResolution: {
@@ -1132,6 +1129,16 @@ describe('distributed recipes catalog', () => {
             ['receiver-recipe', 1, 0],
             ['shared-recipe', 2, 0]
         ]);
+        expect(resolvedProgress[0]).toEqual({
+            recipeId: 'sender-recipe',
+            role: 'sender',
+            targetCount: 1,
+            queuedCount: 1,
+            runningCount: 0,
+            passedCount: 0,
+            failedCount: 0,
+            missingCount: 0
+        });
 
         const manifestProgress = deriveDistributedRunMonitor({
             distributedRun: {

@@ -121,8 +121,7 @@ function distributedRun(
                     recipeId,
                     commands: [{ kind: 'health', commandId: `command-${input.id}` }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }],
             variables: {},
             roleAssignments: [],

@@ -175,8 +175,7 @@ export function toDistributedManifest(
                         }
                     ]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }
         ],
         targetPolicy: {
@@ -241,8 +240,7 @@ export function toPrincipalWorldFleetManifest(
                     recipeId: 'sender-recipe',
                     commands: [{ kind: 'health', commandId: 'sender-health' }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             },
             {
                 recipeId: 'receiver-recipe',
@@ -252,8 +250,7 @@ export function toPrincipalWorldFleetManifest(
                     recipeId: 'receiver-recipe',
                     commands: [{ kind: 'health', commandId: 'receiver-health' }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }
         ],
         targetPolicy: {

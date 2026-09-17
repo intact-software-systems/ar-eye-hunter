@@ -92,7 +92,7 @@ function distributedRun(
             distributedRunId,
             controlRunId,
             group,
-            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: [],

@@ -88,7 +88,7 @@ function evidenceFiles(): DistributedRunArtifactFiles {
                 schemaVersion: 1,
                 distributedRunId: 'dist-evidence-search',
                 controlRunId: 'run-evidence-search',
-                recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, required: true }],
+                recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {} }],
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',

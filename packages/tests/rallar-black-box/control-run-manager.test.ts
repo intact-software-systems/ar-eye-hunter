@@ -324,7 +324,7 @@ describe('rallar-black-box control run manager', () => {
             distributedRunId: 'dist-old',
             controlRunId: 'run-1',
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
-            recipes: [{ recipeId: 'health-only', variables: {}, required: true }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: { mode: 'all-online-group-members' },
             variables: {},
             roleAssignments: [],
@@ -349,7 +349,7 @@ describe('rallar-black-box control run manager', () => {
                 Response.json({
                     ...oldManifestRun,
                     manifest: { ...manifest, groupAssertions: [] },
-                    targetResolution: { roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }] }
+                    targetResolution: { roleAssignments: [{ role: 'sender', agentId: 'agent-a' }] }
                 })
         })).rejects.toThrow(
             'Control server snapshot distributedRun.targetResolution.group must name applicationId, workspaceId and groupId.'
@@ -399,8 +399,7 @@ describe('rallar-black-box control run manager', () => {
                         recipeId: 'health-only',
                         commands: [{ kind: 'health' }]
                     },
-                    variables: {},
-                    required: true
+                    variables: {}
                 }
             ],
             targetPolicy: {
@@ -451,7 +450,7 @@ describe('rallar-black-box control run manager', () => {
                         staleAfterMs: 30_000,
                         targetPolicyMode: 'all-online-group-members',
                         targetAgentIds: ['agent-a'],
-                        roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }],
+                        roleAssignments: [{ role: 'sender', agentId: 'agent-a' }],
                         blockers: [],
                         summary: {
                             agents: 1,

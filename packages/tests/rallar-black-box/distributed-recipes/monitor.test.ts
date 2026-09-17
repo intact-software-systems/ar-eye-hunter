@@ -41,8 +41,8 @@ describe('distributed recipes monitor', () => {
                     targetPolicyMode: 'all-online-group-members',
                     targetAgentIds: ['agent-a', 'agent-b'],
                     roleAssignments: [
-                        { agentId: 'agent-a', role: 'sender', recipeIds: [], required: true, variables: {} },
-                        { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} }
+                        { agentId: 'agent-a', role: 'sender', recipeIds: [], variables: {} },
+                        { agentId: 'agent-b', role: 'receiver', recipeIds: [], variables: {} }
                     ],
                     blockers: [],
                     summary: {
@@ -550,7 +550,6 @@ describe('distributed recipes monitor', () => {
                     recipeId: 'composite-evidence',
                     recipe: compositeRecipe,
                     profile: 'composite',
-                    required: true,
                     variables: {}
                 }]
             },

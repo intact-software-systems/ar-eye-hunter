@@ -36,9 +36,9 @@ Useful constraints:
 - Output JSON only. No Markdown.
 - Write every distributed manifest author setting explicitly (`controlRunId`,
   `variables`, `roleAssignments`, `ackTimeoutMs`, `barrier`, `startMode`,
-  `groupAssertions`, `metadata`, and each recipe selection's `variables` and
-  `required`); the schema rejects a manifest that omits one or adds a field it
-  does not define.
+  `groupAssertions`, `metadata`, and each recipe selection's `variables`); the
+  schema rejects a manifest that omits one or adds a field it does not define,
+  including a `required` flag on a recipe selection or role assignment.
 - Use `schemaVersion: 1` on distributed manifests and every inline
   `rallar-bb-test` recipe.
 - Use stable, descriptive `distributedRunId`, `recipeId`, and `commandId`
@@ -173,7 +173,6 @@ Constraints:
 - Set expectedParticipantCount to 2.
 - Set ackTimeoutMs to 5000.
 - Inline recipe should only contain a health command.
-- Use required: true.
 ```
 
 ## Prompt: Distributed Absence Wait

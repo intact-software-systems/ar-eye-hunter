@@ -71,7 +71,6 @@ export function createTuneManifest(
                     }
                 }]
             },
-            required: true,
             variables: {}
         }],
         targetPolicy: {

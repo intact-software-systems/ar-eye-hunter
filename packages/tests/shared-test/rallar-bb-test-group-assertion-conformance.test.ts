@@ -107,8 +107,7 @@ describe('rallar-bb-test group assertion conformance', () => {
             },
             recipes: [{
                 recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
-                variables: {},
-                required: true
+                variables: {}
             }],
             targetPolicy: { mode: 'all-online-group-members' },
             variables: {},

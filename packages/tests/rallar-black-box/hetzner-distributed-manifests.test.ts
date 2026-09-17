@@ -185,8 +185,8 @@ describe('Hetzner distributed manifest catalog', () => {
                     }
                 });
                 expect(manifest.roleAssignments).toEqual([
-                    { role: 'sender', agentId: 'controller-01', required: true, recipeIds: [], variables: {} },
-                    { role: 'receiver', agentId: 'controller-02', required: true, recipeIds: [], variables: {} }
+                    { role: 'sender', agentId: 'controller-01', recipeIds: [], variables: {} },
+                    { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
                 ]);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
             }
@@ -208,7 +208,6 @@ describe('Hetzner distributed manifest catalog', () => {
                 expect(manifest.roleAssignments.at(0)).toEqual({
                     role: 'sender',
                     agentId: 'controller-01',
-                    required: true,
                     recipeIds: [],
                     variables: {}
                 });
@@ -1017,8 +1016,8 @@ describe('Hetzner distributed manifest catalog', () => {
             roles: { sender: ['controller-01'], receiver: ['controller-02'] }
         });
         expect(entry?.manifest.roleAssignments).toEqual([
-            { role: 'sender', agentId: 'controller-01', required: true, recipeIds: [], variables: {} },
-            { role: 'receiver', agentId: 'controller-02', required: true, recipeIds: [], variables: {} }
+            { role: 'sender', agentId: 'controller-01', recipeIds: [], variables: {} },
+            { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
         ]);
         expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
         expect(entry?.manifest.metadata).toMatchObject({

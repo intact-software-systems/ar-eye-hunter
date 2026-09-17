@@ -27,8 +27,8 @@ fills it in with a default. Required fields:
   control-server run; write the `distributedRunId` when the run has no separate
   control run).
 - `group.applicationId`, `group.workspaceId`, and `group.groupId`.
-- `recipes`: at least one selection. Each selection writes `recipeId`,
-  `variables` (`{}` when none), and `required`.
+- `recipes`: at least one selection. Each selection writes `recipeId` and
+  `variables` (`{}` when none).
 - `targetPolicy`: a tagged union on `mode`. `selected-agents` writes `agentIds`,
   and `role-map` writes `roles`. A policy carrying the other mode's field is
   rejected.
@@ -36,7 +36,7 @@ fills it in with a default. Required fields:
 - `roleAssignments`: per-agent role and recipe assignment (`[]` when roles come
   from `targetPolicy.roles` or a pattern). Each assignment writes `role`,
   `agentId`, `recipeIds` (`[]` when the agent runs every selection for its role),
-  `required`, and `variables`.
+  and `variables`.
 - `ackTimeoutMs`: readiness/ACK timeout before the run is considered failed or
   timed out.
 - `barrier`: `{ "enabled": false }`, or `{ "enabled": true, "timeoutMs": ... }`
@@ -67,7 +67,10 @@ Fields that stay optional, each absent only with the stated meaning:
 The schema rejects every other field as `Unexpected property.`, including the
 removed `secretRefs` (manifest and recipe selection),
 `targetPolicy.includeOfflineExpectedAgents`, and `artifactPolicy`: no reader
-ever acted on them.
+ever acted on them. The removed `recipes[].required` and
+`roleAssignments[].required` flags are rejected the same way: they never
+changed the verdict, and every recipe selection and role assignment counts
+toward it.
 
 Use `decodeDistributedRunManifest(value)` from `distributed-run-validation.ts`
 to decode JSON: it runs the schema, then

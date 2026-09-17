@@ -40,7 +40,7 @@ const DISTRIBUTED_MANIFEST = {
         workspaceId: 'workspace-a',
         groupId: 'group-a'
     },
-    recipes: [{ recipeId: 'recipe-a', variables: {}, required: true }],
+    recipes: [{ recipeId: 'recipe-a', variables: {} }],
     targetPolicy: {
         mode: 'selected-agents',
         agentIds: ['agent-a'],
@@ -1348,7 +1348,7 @@ describe('Recipe Console control API', () => {
             [protocolDistributedRun('distributed-old-resolution', {
                 targetAgentIds: ['agent-a'],
                 targetResolution: protocolTargetResolution({
-                    roleAssignments: [{ role: 'sender', agentId: 'agent-a', required: true }]
+                    roleAssignments: [{ role: 'sender', agentId: 'agent-a' }]
                 })
             })],
             'Control server snapshot distributedRuns[0].targetResolution.roleAssignments[0].recipeIds must be an array of strings.'

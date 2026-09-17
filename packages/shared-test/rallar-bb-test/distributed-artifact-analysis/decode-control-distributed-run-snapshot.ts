@@ -428,7 +428,7 @@ function decodeRoleAssignment(
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const { role, agentId, recipeIds, required, variables } = value;
+    const { role, agentId, recipeIds, variables } = value;
     if (!isNonEmptyText(role)) {
         return Either.ofLeft(`${path}.role must be a non-empty string`);
     }
@@ -438,13 +438,10 @@ function decodeRoleAssignment(
     if (!isTextArray(recipeIds)) {
         return Either.ofLeft(`${path}.recipeIds must be an array of strings`);
     }
-    if (typeof required !== 'boolean') {
-        return Either.ofLeft(`${path}.required must be a boolean`);
-    }
     if (!isJsonRecordValue(variables)) {
         return Either.ofLeft(`${path}.variables must be a JSON object`);
     }
-    return Either.ofRight({ role, agentId, recipeIds, required, variables });
+    return Either.ofRight({ role, agentId, recipeIds, variables });
 }
 
 function decodeTargetBlocker(

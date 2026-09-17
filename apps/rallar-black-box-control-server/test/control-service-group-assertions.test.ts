@@ -125,8 +125,7 @@ function groupAssertionManifest(
                         }
                     ]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }
         ],
         targetPolicy: {

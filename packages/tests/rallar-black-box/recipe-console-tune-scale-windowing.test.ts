@@ -608,8 +608,7 @@ function distributedRun(index: number): ControlDistributedRunSnapshot {
                     recipeId: 'recipe-a',
                     commands: [{ kind: 'health', commandId }]
                 },
-                variables: {},
-                required: true
+                variables: {}
             }],
             variables: {},
             roleAssignments: [],

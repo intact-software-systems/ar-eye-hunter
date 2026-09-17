@@ -90,7 +90,7 @@ function distributedRun(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
@@ -626,7 +626,6 @@ describe('Recipe Console Monitor selection', () => {
             recipeId: 'recipe-a',
             profile: 'rtc',
             role: 'sender',
-            required: true,
             targetCount: 1,
             queuedCount: 0,
             runningCount: 0,
@@ -638,7 +637,6 @@ describe('Recipe Console Monitor selection', () => {
             recipeId: 'recipe-a',
             profile: 'rtc',
             role: 'receiver',
-            required: true,
             targetCount: 1,
             queuedCount: 0,
             runningCount: 0,

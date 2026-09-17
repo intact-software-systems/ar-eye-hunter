@@ -46,7 +46,6 @@ function toRecipeProgressRow(
         recipeId,
         profile: selection.profile,
         role: selection.role,
-        required: selection.required,
         targetCount,
         queuedCount: totals.queuedCount,
         runningCount: totals.runningCount,

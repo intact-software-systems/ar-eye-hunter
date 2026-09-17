@@ -125,7 +125,6 @@ function distributedRun(
                     name: 'Legacy Monitor handoff health',
                     commands: [{ kind: 'health', commandId: 'legacy-monitor-health' }]
                 },
-                required: true,
                 variables: {}
             }],
             targetPolicy: {

@@ -37,7 +37,6 @@ function validManifest(
             {
                 recipeId: 'health-only',
                 role: 'all-agents',
-                required: true,
                 variables: {
                     payload: {
                         text: 'hello'
@@ -58,14 +57,12 @@ function validManifest(
                 role: 'sender',
                 agentId: 'alice-agent',
                 recipeIds: ['health-only'],
-                required: true,
                 variables: {}
             },
             {
                 role: 'receiver',
                 agentId: 'bob-agent',
                 recipeIds: ['health-only'],
-                required: true,
                 variables: {}
             }
         ],
@@ -200,8 +197,7 @@ describe('rallar-bb-test distributed run contract', () => {
             recipes: [{
                 recipeId: ' ',
                 role: 'sender',
-                variables: {},
-                required: true
+                variables: {}
             }],
             targetPolicy: {
                 mode: 'selected-agents',
@@ -294,9 +290,9 @@ describe('rallar-bb-test distributed run contract', () => {
 
         expect(resolution.targetAgentIds).toEqual(['agent-01', 'agent-02', 'agent-03']);
         expect(resolution.roleAssignments).toEqual([
-            { role: 'sender', agentId: 'agent-01', recipeIds: [], required: true, variables: {} },
-            { role: 'receiver', agentId: 'agent-02', recipeIds: [], required: true, variables: {} },
-            { role: 'receiver', agentId: 'agent-03', recipeIds: [], required: true, variables: {} }
+            { role: 'sender', agentId: 'agent-01', recipeIds: [], variables: {} },
+            { role: 'receiver', agentId: 'agent-02', recipeIds: [], variables: {} },
+            { role: 'receiver', agentId: 'agent-03', recipeIds: [], variables: {} }
         ]);
         expect(resolution.summary).toMatchObject({
             agents: 7,
@@ -468,8 +464,7 @@ describe('rallar-bb-test distributed run contract', () => {
                         recipeId: 'inline-probe',
                         commands: [{ kind: 'health', commandId: 'probe-health' }]
                     },
-                    variables: {},
-                    required: true
+                    variables: {}
                 }
             ],
             groupAssertions: [
@@ -597,14 +592,13 @@ function createExplicitManifest(): RallarBlackBoxDistributedRunManifest {
         distributedRunId: 'explicit-run',
         controlRunId: 'explicit-control-run',
         group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
-        recipes: [{ recipeId: 'health-only', variables: {}, required: true }],
+        recipes: [{ recipeId: 'health-only', variables: {} }],
         targetPolicy: { mode: 'selected-agents', agentIds: ['alice-agent'] },
         variables: {},
         roleAssignments: [{
             role: 'sender',
             agentId: 'alice-agent',
             recipeIds: [],
-            required: true,
             variables: {}
         }],
         ackTimeoutMs: 5_000,
@@ -644,14 +638,14 @@ describe('distributed run manifest author settings', () => {
         ]);
     });
 
-    it.each(['recipeId', 'variables', 'required'])('rejects a recipe selection without %s', (key) => {
+    it.each(['recipeId', 'variables'])('rejects a recipe selection without %s', (key) => {
         const manifest = createExplicitManifest();
         expect(toManifestIssueTexts({ ...manifest, recipes: [toValueWithoutKey(manifest.recipes[0]!, key)] })).toEqual([
             `$.recipes[0] Missing required property ${key}.`
         ]);
     });
 
-    it.each(['recipeIds', 'required', 'variables'])('rejects a role assignment without %s', (key) => {
+    it.each(['recipeIds', 'variables'])('rejects a role assignment without %s', (key) => {
         const manifest = createExplicitManifest();
         expect(
             toManifestIssueTexts({ ...manifest, roleAssignments: [toValueWithoutKey(manifest.roleAssignments[0]!, key)] })
@@ -669,6 +663,16 @@ describe('distributed run manifest author settings', () => {
             ...manifest,
             targetPolicy: { ...manifest.targetPolicy, includeOfflineExpectedAgents: false }
         })).toEqual(['$.targetPolicy.includeOfflineExpectedAgents Unexpected property.']);
+    });
+
+    it('rejects a manifest that still carries the removed recipe selection or role assignment required flag', () => {
+        const manifest = createExplicitManifest();
+        expect(toManifestIssueTexts({ ...manifest, recipes: [{ ...manifest.recipes[0], required: true }] }))
+            .toEqual(['$.recipes[0].required Unexpected property.']);
+        expect(toManifestIssueTexts({
+            ...manifest,
+            roleAssignments: [{ ...manifest.roleAssignments[0], required: false }]
+        })).toEqual(['$.roleAssignments[0].required Unexpected property.']);
     });
 
     it('rejects a role assignment policy without orderBy', () => {

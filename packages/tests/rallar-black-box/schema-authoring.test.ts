@@ -73,7 +73,7 @@ describe('schema authoring helpers', () => {
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: recipe.recipeId, recipe, variables: {}, required: true }],
+            recipes: [{ recipeId: recipe.recipeId, recipe, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a']

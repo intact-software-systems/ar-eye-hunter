@@ -42,8 +42,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     rateHz: 20
                 }]
             },
-            variables: {},
-            required: true
+            variables: {}
         }],
         variables: {},
         roleAssignments: [],

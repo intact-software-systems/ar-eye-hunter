@@ -144,8 +144,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                     response: { acceptedStatusCodes: [200] }
                                                 }]
                                             },
-                                            variables: {},
-                                            required: true
+                                            variables: {}
                                         }],
                                         targetPolicy: {
                                             mode: 'all-online-group-members',

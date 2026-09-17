@@ -177,7 +177,6 @@ function targetResolution(
                     (recipe) => recipe.recipeId ?? recipe.recipe?.recipeId ?? ''
                 )
                 .filter(Boolean),
-            required: true,
             variables: {}
         })),
         blockers: [],
@@ -1029,7 +1028,6 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
             {
                 recipeId: catalogItem.recipe.recipeId,
                 recipe: catalogItem.recipe,
-                required: true,
                 variables: {}
             }
         ],

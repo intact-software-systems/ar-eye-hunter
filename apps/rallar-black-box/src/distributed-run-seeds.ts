@@ -363,7 +363,6 @@ function toSeedManifest(
             recipeId: SEED_RECIPE.recipeId,
             recipe: SEED_RECIPE,
             profile: 'synthetic',
-            required: true,
             variables: {}
         }],
         targetPolicy: {
@@ -377,7 +376,6 @@ function toSeedManifest(
         roleAssignments: input.agents.map((agent) => ({
             agentId: agent.agentId,
             role: agent.role,
-            required: true,
             recipeIds: [],
             variables: {}
         })),

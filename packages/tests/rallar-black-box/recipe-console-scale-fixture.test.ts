@@ -43,8 +43,8 @@ describe('Recipe Console deterministic scale fixture', () => {
         ).toBe(true);
         expect(fixture.bytes).toEqual({
             byFile: {
-                'distributed-run.json': 463_570,
-                'manifest.json': 795,
+                'distributed-run.json': 463_538,
+                'manifest.json': 763,
                 'control-run.json': 443,
                 'report.json': 363,
                 'results.jsonl': 1_224_367,
@@ -52,7 +52,7 @@ describe('Recipe Console deterministic scale fixture', () => {
                 'failures.json': 334,
                 'metadata.json': 383
             },
-            total: 5_338_565
+            total: 5_338_501
         });
     });
 

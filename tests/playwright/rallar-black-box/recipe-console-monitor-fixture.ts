@@ -322,7 +322,6 @@ function createDistributedRun(
             recipes: [{
                 recipeId: MONITOR_FAILURE_RECIPE_ID,
                 recipe: RECIPE,
-                required: true,
                 variables: {}
             }],
             targetPolicy: {
@@ -334,7 +333,6 @@ function createDistributedRun(
                 agentId,
                 role: agentId === SENDER_ID ? 'sender' : 'receiver',
                 recipeIds: [MONITOR_FAILURE_RECIPE_ID],
-                required: true,
                 variables: {}
             })),
             variables: {},

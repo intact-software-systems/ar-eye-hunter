@@ -176,7 +176,6 @@ export interface RallarBlackBoxDistributedRunRecipeSelection {
     /** Absent when the selection names no catalog profile. */
     readonly profile?: string;
     readonly variables: RallarBlackBoxTestRecord;
-    readonly required: boolean;
 }
 
 export interface RallarBlackBoxDistributedRoleAssignment {
@@ -184,7 +183,6 @@ export interface RallarBlackBoxDistributedRoleAssignment {
     readonly agentId: string;
     /** Empty when the agent runs every recipe selection for its role. */
     readonly recipeIds: readonly string[];
-    readonly required: boolean;
     readonly variables: RallarBlackBoxTestRecord;
 }
 

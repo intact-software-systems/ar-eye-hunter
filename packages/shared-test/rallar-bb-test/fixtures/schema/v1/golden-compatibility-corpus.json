@@ -620,7 +620,6 @@
           "recipeId": "golden-ai-generated-rtc-smoke-v1",
           "role": "sender",
           "profile": "ai-generated-example",
-          "required": true,
           "recipe": {
             "schemaVersion": 1,
             "recipeId": "golden-ai-generated-rtc-smoke-v1",
@@ -733,7 +732,6 @@
       "recipes": [
         {
           "recipeId": "golden-group-assertion-probe-v1",
-          "required": true,
           "recipe": {
             "schemaVersion": 1,
             "recipeId": "golden-group-assertion-probe-v1",
@@ -1024,7 +1022,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1059,7 +1056,6 @@
         "recipes": [
           {
             "recipeId": "broken-inline",
-            "required": true,
             "recipe": {
               "schemaVersion": 1,
               "recipeId": "broken-inline",
@@ -1107,7 +1103,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1152,7 +1147,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1197,7 +1191,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1246,7 +1239,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1280,7 +1272,6 @@
         "recipes": [
           {
             "recipeId": "health-only",
-            "required": true,
             "variables": {}
           }
         ],
@@ -1299,6 +1290,41 @@
         "artifactPolicy": {
           "retainArtifacts": true
         }
+      }
+    },
+    {
+      "caseId": "removed-required-flag",
+      "expectedErrors": [
+        "$.recipes[0].required: Unexpected property."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-manifest-required-flag",
+        "controlRunId": "invalid-manifest-required-flag",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only",
+            "variables": {},
+            "required": true
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
+        "groupAssertions": [],
+        "metadata": {}
       }
     }
   ]

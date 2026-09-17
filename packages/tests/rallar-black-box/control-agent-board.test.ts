@@ -136,7 +136,7 @@ function distributedRun(
             controlRunId,
             displayName: `Distributed ${state}`,
             group,
-            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
@@ -145,7 +145,6 @@ function distributedRun(
             roleAssignments: targetAgentIds.map((agentId, index) => ({
                 agentId,
                 role: index === 0 ? 'sender' : 'receiver',
-                required: true,
                 recipeIds: [],
                 variables: {}
             })),
@@ -682,8 +681,8 @@ describe('control agent board derivation', () => {
                 targetPolicyMode: 'all-online-group-members',
                 targetAgentIds: ['agent-a', 'agent-b'],
                 roleAssignments: [
-                    { agentId: 'agent-a', role: 'sender', recipeIds: [], required: true, variables: {} },
-                    { agentId: 'agent-b', role: 'receiver', recipeIds: [], required: true, variables: {} }
+                    { agentId: 'agent-a', role: 'sender', recipeIds: [], variables: {} },
+                    { agentId: 'agent-b', role: 'receiver', recipeIds: [], variables: {} }
                 ],
                 blockers: [],
                 summary: {
