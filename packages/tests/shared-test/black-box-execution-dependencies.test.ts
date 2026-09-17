@@ -71,15 +71,13 @@ describe('black-box execution dependencies', () => {
     });
 
     it('captures the global fetch once at the default composition root', async () => {
-        const captured = vi.fn(async () => Response.json({ captured: true }));
-        vi.stubGlobal('fetch', captured);
+        vi.stubGlobal('fetch', async (input: RequestInfo | URL) => Response.json({ capturedUrl: String(input) }));
         const dependencies = createDefaultExecutionDependencies();
         vi.unstubAllGlobals();
 
         const response = await dependencies.fetch('http://runner.invalid/captured');
 
-        expect(captured).toHaveBeenCalledTimes(1);
-        expect(await response.json()).toEqual({ captured: true });
+        expect(await response.json()).toEqual({ capturedUrl: 'http://runner.invalid/captured' });
     });
 
     it('uses the supplied clock to measure the polling stability window', async () => {
