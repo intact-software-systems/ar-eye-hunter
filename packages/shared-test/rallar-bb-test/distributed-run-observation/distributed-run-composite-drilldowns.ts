@@ -1,4 +1,9 @@
-import { computeRallarBlackBoxCompositeResultSummary } from '../composite-results.ts';
+import { RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH } from '../composite-result-paths.ts';
+import {
+    computeRallarBlackBoxCompositeResultSummary,
+    decodeRallarBlackBoxTestResult,
+    type RallarBlackBoxCompositeResultSummary
+} from '../composite-results.ts';
 import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
@@ -7,7 +12,6 @@ import {
     toDistributedRunCompositeGroupSummaries,
     toDistributedRunCompositeRows
 } from './distributed-run-composite-rows.ts';
-import { isFiniteDurationMs } from './distributed-run-latency-summary.ts';
 import type {
     DistributedRunCompositeChildDecodeIssueRow,
     DistributedRunCompositeCounts,
@@ -19,7 +23,13 @@ import type {
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
+interface DistributedRunCompositeRoots {
+    readonly roots: readonly RallarBlackBoxTestResult[];
+    readonly rootDecodeIssues: readonly DistributedRunCompositeChildDecodeIssueRow[];
+}
+
 const COMPOSITE_CHILD_UNDECODABLE_CODE = 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE';
+const NO_COMPOSITE_ROOTS: DistributedRunCompositeRoots = { roots: [], rootDecodeIssues: [] };
 
 export function toDistributedRunCompositeDrilldowns(
     results: readonly ControlResultSnapshot[],
@@ -27,28 +37,14 @@ export function toDistributedRunCompositeDrilldowns(
     linksByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink>
 ): readonly DistributedRunCompositeDrilldown[] {
     return results.flatMap((result) => {
-        const roots = toDistributedRunCompositeRoots(result.result);
-        if (roots.length === 0) {
+        const { roots, rootDecodeIssues } = toDistributedRunCompositeRoots(result.result);
+        const rows = toDistributedRunCompositeRows(roots);
+        if (rows.length === 0 && rootDecodeIssues.length === 0) {
             return [];
         }
 
         const link = linksByCommandId.get(result.commandId);
         const command = commands.get(result.commandId);
-        const rows = toDistributedRunCompositeRows(roots);
-        if (rows.length === 0) {
-            return [];
-        }
-
-        const summary = computeRallarBlackBoxCompositeResultSummary(roots, {});
-        const failedRows = [...rows]
-            .filter((row) => !row.ok)
-            .sort((left, right) =>
-                left.startedAtEpochMs - right.startedAtEpochMs ||
-                left.endedAtEpochMs - right.endedAtEpochMs ||
-                left.path.localeCompare(right.path)
-            );
-        const firstFailure = failedRows.find((row) => row.depth > 0) ?? failedRows[0];
-
         return [{
             key: `${result.agentId}:${result.commandId}`,
             commandId: result.commandId,
@@ -58,18 +54,10 @@ export function toDistributedRunCompositeDrilldowns(
             phase: link?.phase,
             commandKind: command?.envelope.command.kind ?? result.result?.kind,
             artifactRef: `control-run.json#results[commandId=${result.commandId}]`,
-            summary: {
-                total: summary.total,
-                passed: summary.passed,
-                failed: summary.failed,
-                cancelled: summary.cancelled,
-                skipped: summary.skipped,
-                composite: summary.composite,
-                leaf: summary.leaf
-            },
-            firstFailure,
+            summary: toDrilldownSummary(computeRallarBlackBoxCompositeResultSummary(roots, {})),
+            firstFailure: resolveFirstFailedRow(rows),
             groupSummaries: toDistributedRunCompositeGroupSummaries(roots),
-            childDecodeIssues: toDistributedRunCompositeChildDecodeIssues(roots),
+            childDecodeIssues: [...rootDecodeIssues, ...toDistributedRunCompositeChildDecodeIssues(roots)],
             rows
         }];
     });
@@ -131,19 +119,21 @@ function toChildDecodeIssueFailureRow(
     };
 }
 
-function toDistributedRunCompositeRoots(
-    result: RallarBlackBoxTestResult | undefined
-): readonly RallarBlackBoxTestResult[] {
+/** The recorded results a drilldown walks, and every recipe.run result item that does not decode as a result. */
+function toDistributedRunCompositeRoots(result: RallarBlackBoxTestResult | undefined): DistributedRunCompositeRoots {
     if (!result) {
-        return [];
+        return NO_COMPOSITE_ROOTS;
     }
 
-    const recipeResults = toRecipeRunChildResults(result);
-    if (recipeResults.length > 0) {
-        return recipeResults.some(isCompositeMonitorRelevantResult) ? recipeResults : [];
+    const recipeRun = toRecipeRunChildResults(result);
+    if (recipeRun.roots.length > 0 || recipeRun.rootDecodeIssues.length > 0) {
+        return {
+            roots: recipeRun.roots.some(isCompositeMonitorRelevantResult) ? recipeRun.roots : [],
+            rootDecodeIssues: recipeRun.rootDecodeIssues
+        };
     }
 
-    return isCompositeMonitorRelevantResult(result) ? [result] : [];
+    return { roots: isCompositeMonitorRelevantResult(result) ? [result] : [], rootDecodeIssues: [] };
 }
 
 function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boolean {
@@ -155,28 +145,53 @@ function isCompositeMonitorRelevantResult(result: RallarBlackBoxTestResult): boo
     ) {
         return true;
     }
-    return toRecipeRunChildResults(result).some(isCompositeMonitorRelevantResult);
+    return toRecipeRunChildResults(result).roots.some(isCompositeMonitorRelevantResult);
 }
 
-function toRecipeRunChildResults(result: RallarBlackBoxTestResult): readonly RallarBlackBoxTestResult[] {
-    if (result.kind !== 'recipe.run') {
-        return [];
+function toRecipeRunChildResults(result: RallarBlackBoxTestResult): DistributedRunCompositeRoots {
+    const recorded = result.kind === 'recipe.run' ? decodeRecord(result.value).results : undefined;
+    if (!Array.isArray(recorded)) {
+        return NO_COMPOSITE_ROOTS;
     }
-    const value = decodeRecord(result.value);
-    return Array.isArray(value.results)
-        ? value.results.filter(isRallarBlackBoxTestResult)
-        : [];
+    const decoded = recorded.map((item) => decodeRallarBlackBoxTestResult(item));
+    return {
+        roots: decoded.flatMap((root) => root.right === undefined ? [] : [root.right]),
+        rootDecodeIssues: decoded.flatMap((root, index) =>
+            root.left === undefined ? [] : [{
+                parentPath: RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                parentCommandId: result.commandId,
+                parentEndedAtEpochMs: result.endedAtEpochMs,
+                valuePath: `value.results[${index}]`,
+                invalidFields: root.left
+            }]
+        )
+    };
 }
 
-function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
-    const candidate = decodeRecord(value);
-    return typeof candidate.commandId === 'string' &&
-        typeof candidate.kind === 'string' &&
-        typeof candidate.status === 'string' &&
-        typeof candidate.ok === 'boolean' &&
-        isFiniteDurationMs(candidate.startedAtEpochMs) &&
-        isFiniteDurationMs(candidate.endedAtEpochMs) &&
-        isFiniteDurationMs(candidate.durationMs);
+function toDrilldownSummary(
+    summary: RallarBlackBoxCompositeResultSummary
+): DistributedRunCompositeDrilldown['summary'] {
+    return {
+        total: summary.total,
+        passed: summary.passed,
+        failed: summary.failed,
+        cancelled: summary.cancelled,
+        skipped: summary.skipped,
+        composite: summary.composite,
+        leaf: summary.leaf
+    };
+}
+
+/** The earliest failed child, or else the earliest failed row. */
+function resolveFirstFailedRow(rows: readonly DistributedRunCompositeRow[]): DistributedRunCompositeRow | undefined {
+    const failedRows = rows
+        .filter((row) => !row.ok)
+        .sort((left, right) =>
+            left.startedAtEpochMs - right.startedAtEpochMs ||
+            left.endedAtEpochMs - right.endedAtEpochMs ||
+            left.path.localeCompare(right.path)
+        );
+    return failedRows.find((row) => row.depth > 0) ?? failedRows[0];
 }
 
 export function resolveCommandRecipeId(command: ControlCommandSnapshot | undefined): string | undefined {

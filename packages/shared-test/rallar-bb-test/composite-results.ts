@@ -127,6 +127,18 @@ interface PlacedChild {
 
 type ChildDecoding<Child> = Either<RallarBlackBoxCompositeChildDecodeIssue, Child>;
 
+const RESULT_FIELD_GUARDS = {
+    commandId: isText,
+    kind: isCommandKind,
+    status: isResultStatus,
+    ok: isBoolean,
+    startedAtEpochMs: isFiniteNumber,
+    endedAtEpochMs: isFiniteNumber,
+    durationMs: isFiniteNumber,
+    error: isOptionalTestError,
+    replayed: isOptionalBoolean
+};
+
 const COMPOSITE_CHILD_FIELD_GUARDS = {
     commandId: isText,
     originalCommandId: isOptionalText,
@@ -413,20 +425,46 @@ function decodeParallelChildResult(
 }
 
 export function isRallarBlackBoxTestResult(value: unknown): value is RallarBlackBoxTestResult {
-    return isJsonRecordValue(value) &&
-        typeof value.commandId === 'string' &&
-        RALLAR_BLACK_BOX_TEST_COMMAND_KINDS.some((kind) => kind === value.kind) &&
-        RALLAR_BLACK_BOX_TEST_RESULT_STATUSES.some((status) => status === value.status) &&
-        typeof value.ok === 'boolean' &&
-        Number.isFinite(value.startedAtEpochMs) &&
-        Number.isFinite(value.endedAtEpochMs) &&
-        Number.isFinite(value.durationMs) &&
-        (value.error === undefined || isRallarBlackBoxTestError(value.error)) &&
-        (value.replayed === undefined || typeof value.replayed === 'boolean');
+    return decodeRallarBlackBoxTestResult(value).right !== undefined;
+}
+
+/** The left names every field that is missing or records an invalid value; a value that is not a JSON object lacks them all. */
+export function decodeRallarBlackBoxTestResult(value: unknown): Either<readonly string[], RallarBlackBoxTestResult> {
+    const result = isJsonRecordValue(value) ? value : {};
+    const invalidFields = Object.entries(RESULT_FIELD_GUARDS)
+        .filter(([field, isValidField]) => !isValidField(result[field]))
+        .map(([field]) => field);
+    return invalidFields.length === 0
+        ? Either.ofRight(value as RallarBlackBoxTestResult)
+        : Either.ofLeft(invalidFields);
 }
 
 function isRallarBlackBoxTestError(value: unknown): value is RallarBlackBoxTestError {
     return isJsonRecordValue(value) && typeof value.code === 'string' && typeof value.message === 'string';
+}
+
+function isOptionalTestError(value: unknown): value is RallarBlackBoxTestError | undefined {
+    return value === undefined || isRallarBlackBoxTestError(value);
+}
+
+function isCommandKind(value: unknown): value is RallarBlackBoxTestResult['kind'] {
+    return typeof value === 'string' && RALLAR_BLACK_BOX_TEST_COMMAND_KINDS.some((kind) => kind === value);
+}
+
+function isResultStatus(value: unknown): value is RallarBlackBoxTestResultStatus {
+    return typeof value === 'string' && RALLAR_BLACK_BOX_TEST_RESULT_STATUSES.some((status) => status === value);
+}
+
+function isBoolean(value: unknown): value is boolean {
+    return typeof value === 'boolean';
+}
+
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+    return value === undefined || typeof value === 'boolean';
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
 }
 
 function isText(value: unknown): value is string {

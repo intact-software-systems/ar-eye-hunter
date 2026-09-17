@@ -758,6 +758,56 @@ describe('distributed recipes monitor', () => {
         });
     });
 
+    it('decodes recipe.run roots with the strict result guard and reports each root that does not decode', () => {
+        const loopRoot = {
+            commandId: 'start-b:loop',
+            kind: 'loop',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 1_600,
+            endedAtEpochMs: 1_650,
+            durationMs: 50,
+            value: { commandId: 'start-b:loop', iterations: 0, childResultCount: 0, passed: 0, failed: 0, cancelled: false, results: [] }
+        };
+        const recipeRunResult = {
+            commandId: 'start-b',
+            kind: 'recipe.run',
+            status: 'ok',
+            ok: true,
+            startedAtEpochMs: 1_600,
+            endedAtEpochMs: 1_700,
+            durationMs: 100,
+            value: {
+                results: [
+                    loopRoot,
+                    { ...loopRoot, commandId: 'start-b:custom', kind: 'custom.kind', error: { code: 'NO_MESSAGE' } }
+                ]
+            }
+        } satisfies ControlRunSnapshot['results'][number]['result'];
+        const results = distributedControlRun.results.map((result) => result.commandId === 'start-b' ? { ...result, result: recipeRunResult } : result);
+        const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun: { ...distributedControlRun, results } });
+        const drilldown = monitor.compositeDrilldowns.find((candidate) => candidate.commandId === 'start-b');
+
+        expect(drilldown?.rows.map((row) => row.commandId)).toEqual(['start-b:loop']);
+        expect(drilldown?.childDecodeIssues).toEqual([{
+            parentPath: '$',
+            parentCommandId: 'start-b',
+            parentEndedAtEpochMs: 1_700,
+            valuePath: 'value.results[1]',
+            invalidFields: ['kind', 'error']
+        }]);
+        expect(monitor.failures).toContainEqual({
+            kind: 'command',
+            key: 'start-b:$:value.results[1]',
+            commandId: 'start-b',
+            agentId: 'agent-b',
+            recipeId: 'health-only',
+            code: 'RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE',
+            message: 'Composite result $ records value.results[1] that does not decode (invalid kind, error); it is not shown.',
+            atEpochMs: 1_700
+        });
+    });
+
     it('builds a live-warning regression report from visible monitor and artifact evidence', () => {
         const liveMessageId = 'live-message-visible-in-monitor';
         const controlRunWithLiveWarning: ControlRunSnapshot = {

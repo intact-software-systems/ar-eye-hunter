@@ -65,6 +65,8 @@ the control server compacted (`resultsOmitted: true` beside `resultCount` and
 - the summary counts the issues in `childDecodeIssueCount`;
 - the distributed run monitor lists them on each composite drilldown and
   reports each one as a `RALLAR_BLACK_BOX_COMPOSITE_CHILD_UNDECODABLE` failure;
+  a `recipe.run` result item that does not decode as a command result is
+  listed and reported the same way, at `value.results[N]` under the `$` path;
 - a group assertion whose addressed command is not among an agent's decodable
   results reports that agent's evidence as `undecodable` instead of `missing`
   when any of the agent's recorded results or children did not decode.
@@ -82,6 +84,9 @@ Use:
 - `resolveRallarBlackBoxCompositeFirstFailure(...)` for failure focus.
 - `toRallarBlackBoxCompositeDisplayResults(...)` for redacted UI/artifact
   summaries.
+- `decodeRallarBlackBoxTestResult(...)` to decode one recorded command result,
+  naming every missing or invalid field when it does not decode;
+  `isRallarBlackBoxTestResult(...)` is the same check as a type guard.
 
 The flat entries include both `path` and `sourceRecipePath`, the depth, a
 `position`: `root`, or a `loop-child` (parent path and command ID, child and
