@@ -51,22 +51,13 @@ function distributedRun(
             recipes: [],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: [],
-                includeOfflineExpectedAgents: false
+                agentIds: []
             },
             startMode: 'manual',
             ackTimeoutMs: 15_000,
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             barrier: { enabled: false },
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

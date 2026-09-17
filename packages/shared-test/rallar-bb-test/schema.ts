@@ -809,12 +809,10 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         'recipes',
         'targetPolicy',
         'variables',
-        'secretRefs',
         'roleAssignments',
         'ackTimeoutMs',
         'barrier',
         'startMode',
-        'artifactPolicy',
         'groupAssertions',
         'metadata'
     ],
@@ -838,14 +836,13 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             type: 'array',
             items: {
                 type: 'object',
-                required: ['recipeId', 'variables', 'secretRefs', 'required'],
+                required: ['recipeId', 'variables', 'required'],
                 properties: {
                     recipeId: stringSchema,
                     role: stringSchema,
                     profile: stringSchema,
                     recipe: RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
                     variables: recordSchema,
-                    secretRefs: { type: 'array', items: stringSchema },
                     required: booleanSchema
                 },
                 additionalProperties: false
@@ -853,7 +850,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
         },
         targetPolicy: {
             type: 'object',
-            required: ['mode', 'includeOfflineExpectedAgents'],
+            required: ['mode'],
             properties: {
                 mode: {
                     type: 'string',
@@ -867,13 +864,11 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                         type: 'array',
                         items: stringSchema
                     }
-                },
-                includeOfflineExpectedAgents: booleanSchema
+                }
             },
             additionalProperties: false
         },
         variables: recordSchema,
-        secretRefs: { type: 'array', items: stringSchema },
         roleAssignments: {
             type: 'array',
             items: {
@@ -923,25 +918,6 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             enum: RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES
         },
         startDeadlineEpochMs: integerSchema,
-        artifactPolicy: {
-            type: 'object',
-            required: [
-                'retainArtifacts',
-                'includeEventJsonl',
-                'includeResultJsonl',
-                'includeFailureBundle',
-                'includeDistributedMetadata'
-            ],
-            properties: {
-                retainArtifacts: booleanSchema,
-                includeEventJsonl: booleanSchema,
-                includeResultJsonl: booleanSchema,
-                includeFailureBundle: booleanSchema,
-                includeDistributedMetadata: booleanSchema,
-                retentionDays: { type: 'integer', minimum: 1 }
-            },
-            additionalProperties: false
-        },
         groupAssertions: RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
         metadata: recordSchema
     },

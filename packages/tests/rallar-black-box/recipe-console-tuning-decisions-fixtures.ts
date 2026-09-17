@@ -37,12 +37,11 @@ export function tuningManifest(input: Readonly<{
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true, variables: {}, secretRefs: [] }],
+        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true, variables: {} }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
-            expectedParticipantCount: 2,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 2
         },
         roleAssignments: [
             { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
@@ -52,14 +51,6 @@ export function tuningManifest(input: Readonly<{
         barrier: input.barrier ?? { enabled: true, timeoutMs: 7_500 },
         startMode: 'manual',
         variables: {},
-        secretRefs: [],
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

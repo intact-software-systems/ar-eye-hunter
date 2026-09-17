@@ -145,7 +145,7 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         ackTimeoutMs: 12_000,
         barrier: { enabled: true, timeoutMs: 18_000 },
         variables: { payloadSize: 128 },
@@ -162,25 +162,15 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
                 commands: tuningCommands()
             },
             variables: {},
-            secretRefs: [],
             required: true
         }, {
             recipeId: 'reference-only~/recipe',
             profile: 'remote-catalog',
             variables: {},
-            secretRefs: [],
             required: true
         }],
-        secretRefs: [],
         roleAssignments: [],
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };
@@ -339,7 +329,6 @@ describe('distributed recipe tuning Task 2 contracts', () => {
                 recipeId: 'bounded',
                 recipe: { schemaVersion: 1, recipeId: 'bounded', commands },
                 variables: {},
-                secretRefs: [],
                 required: true
             }]
         };

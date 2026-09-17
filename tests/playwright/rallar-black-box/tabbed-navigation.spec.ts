@@ -33,24 +33,14 @@ const RUNNER_SURFACE_TARGETS: Readonly<
     'flow-builder': { visibleTab: 'Builder' }
 };
 
-const EXPLICIT_ARTIFACT_POLICY = {
-    retainArtifacts: true,
-    includeEventJsonl: true,
-    includeResultJsonl: true,
-    includeFailureBundle: true,
-    includeDistributedMetadata: true
-};
-
 function toExplicitDistributedManifest(fields: object): object {
     return {
         schemaVersion: 1,
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: EXPLICIT_ARTIFACT_POLICY,
         groupAssertions: [],
         metadata: {},
         ...fields
@@ -2211,7 +2201,6 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
             recipeId: 'ai-health-recipe',
             required: true,
             variables: {},
-            secretRefs: [],
             recipe: {
                 schemaVersion: 1,
                 recipeId: 'ai-health-recipe',
@@ -2223,16 +2212,13 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         }],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 1
         },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: EXPLICIT_ARTIFACT_POLICY,
         groupAssertions: [],
         metadata: {}
     };
@@ -2342,7 +2328,6 @@ test('uses fresh world-fleet target previews after loading an older distributed 
                 recipeId: 'stale-health',
                 required: true,
                 variables: {},
-                secretRefs: [],
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'stale-health',
@@ -2351,8 +2336,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             }],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 2
             }
         }),
         commandLinks: [],
@@ -2797,12 +2781,11 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'diagnostic-recipe', required: true, variables: {}, secretRefs: [] }],
+            recipes: [{ recipeId: 'diagnostic-recipe', required: true, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],
-                expectedParticipantCount: 2,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 2
             }
         }),
         commandLinks: [

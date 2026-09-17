@@ -364,19 +364,16 @@ function toSeedManifest(
             recipe: SEED_RECIPE,
             profile: 'synthetic',
             required: true,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }],
         targetPolicy: {
             mode: 'role-map',
             expectedParticipantCount: input.agents.length,
             roles: Object.fromEntries(
                 input.agents.map((agent) => [agent.role, [agent.agentId]])
-            ),
-            includeOfflineExpectedAgents: false
+            )
         },
         variables: {},
-        secretRefs: [],
         roleAssignments: input.agents.map((agent) => ({
             agentId: agent.agentId,
             role: agent.role,
@@ -387,13 +384,6 @@ function toSeedManifest(
         ackTimeoutMs: 5_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {
             synthetic: true,

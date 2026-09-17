@@ -221,13 +221,6 @@ describe('Hetzner distributed manifest catalog', () => {
                     expectedParticipantCount: entry.agentCount
                 });
             }
-            expect(manifest.artifactPolicy).toMatchObject({
-                retainArtifacts: true,
-                includeDistributedMetadata: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true
-            });
             expect(manifest.recipes.length).toBeGreaterThan(0);
             expect(manifest.recipes.every((selection) => Boolean(selection.recipe))).toBe(true);
         }

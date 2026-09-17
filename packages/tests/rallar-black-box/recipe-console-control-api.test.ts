@@ -40,26 +40,17 @@ const DISTRIBUTED_MANIFEST = {
         workspaceId: 'workspace-a',
         groupId: 'group-a'
     },
-    recipes: [{ recipeId: 'recipe-a', variables: {}, secretRefs: [], required: true }],
+    recipes: [{ recipeId: 'recipe-a', variables: {}, required: true }],
     targetPolicy: {
         mode: 'selected-agents',
         agentIds: ['agent-a'],
-        expectedParticipantCount: 1,
-        includeOfflineExpectedAgents: false
+        expectedParticipantCount: 1
     },
     variables: {},
-    secretRefs: [],
     roleAssignments: [],
     ackTimeoutMs: 15_000,
     barrier: { enabled: false },
     startMode: 'manual',
-    artifactPolicy: {
-        retainArtifacts: true,
-        includeEventJsonl: true,
-        includeResultJsonl: true,
-        includeFailureBundle: true,
-        includeDistributedMetadata: true
-    },
     groupAssertions: [],
     metadata: {}
 } as const;

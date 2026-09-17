@@ -324,21 +324,13 @@ describe('rallar-black-box control run manager', () => {
             distributedRunId: 'dist-old',
             controlRunId: 'run-1',
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
-            recipes: [{ recipeId: 'health-only', variables: {}, secretRefs: [], required: true }],
-            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            recipes: [{ recipeId: 'health-only', variables: {}, required: true }],
+            targetPolicy: { mode: 'all-online-group-members' },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             metadata: {}
         };
         const oldManifestRun = { distributedRunId: 'dist-old', controlRunId: 'run-1', manifest };
@@ -408,28 +400,18 @@ describe('rallar-black-box control run manager', () => {
                         commands: [{ kind: 'health' }]
                     },
                     variables: {},
-                    secretRefs: [],
                     required: true
                 }
             ],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-a'],
-                includeOfflineExpectedAgents: false
+                agentIds: ['agent-a']
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         };
@@ -531,8 +513,7 @@ describe('rallar-black-box control run manager', () => {
                 ...distributedRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 1,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 1
                 },
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',
@@ -577,8 +558,7 @@ describe('rallar-black-box control run manager', () => {
                 ...distributedRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 1,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 1
                 },
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',

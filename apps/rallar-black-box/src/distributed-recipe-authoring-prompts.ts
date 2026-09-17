@@ -181,28 +181,18 @@ const DISTRIBUTED_RUN_MANIFEST_SKELETON = {
             role: '{{optional-role}}',
             required: true,
             recipe: BROWSER_AGENT_RECIPE_SKELETON,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }
     ],
     targetPolicy: {
         mode: 'all-online-group-members',
-        expectedParticipantCount: 2,
-        includeOfflineExpectedAgents: false
+        expectedParticipantCount: 2
     },
     variables: {},
-    secretRefs: [],
     roleAssignments: [],
     ackTimeoutMs: 30_000,
     barrier: { enabled: false },
     startMode: 'manual',
-    artifactPolicy: {
-        retainArtifacts: true,
-        includeEventJsonl: true,
-        includeResultJsonl: true,
-        includeFailureBundle: true,
-        includeDistributedMetadata: true
-    },
     groupAssertions: [],
     metadata: {}
 };

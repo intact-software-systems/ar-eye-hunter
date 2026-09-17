@@ -59,8 +59,7 @@ describe('distributed run artifact receiver delivery', () => {
                             },
                             role: 'receiver',
                             required: true,
-                            variables: {},
-                            secretRefs: []
+                            variables: {}
                         }]
                     })
                 }),
@@ -200,7 +199,7 @@ describe('distributed run artifact receiver delivery', () => {
                         distributedRunId: 'dist-all-peer-settle-only',
                         controlRunId: 'run-all-peer-settle-only',
                         agentIds: ['controller-01'],
-                        recipes: [{ recipeId: recipe.recipeId, recipe, required: true, variables: {}, secretRefs: [] }]
+                        recipes: [{ recipeId: recipe.recipeId, recipe, required: true, variables: {} }]
                     })
                 }),
                 controlRun: createControlRunSnapshot({

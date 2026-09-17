@@ -109,7 +109,6 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                         recipeId: 'api-health',
                         recipe: { recipeId: 'api-health', commands: [] },
                         variables: {},
-                        secretRefs: [],
                         required: true
                     }]
                 }
@@ -130,8 +129,7 @@ Deno.test('distributed and fleet APIs validate auth, artifacts, filters, and per
                         ...distributedManifest(),
                         targetPolicy: {
                             mode: 'all-online-group-members',
-                            expectedParticipantCount: 1,
-                            includeOfflineExpectedAgents: false
+                            expectedParticipantCount: 1
                         },
                         roleAssignmentPolicy: {
                             mode: 'ordered-targets',

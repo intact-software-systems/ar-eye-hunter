@@ -32,28 +32,18 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     recipeId: 'health-recipe',
                     commands: [{ kind: 'health', commandId: 'health' }]
                 },
-                variables: {},
-                secretRefs: []
+                variables: {}
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 1
         },
         startMode: 'manual',
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

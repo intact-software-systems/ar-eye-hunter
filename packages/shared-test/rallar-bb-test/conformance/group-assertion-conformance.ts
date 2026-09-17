@@ -393,21 +393,13 @@ function toConformanceManifest(conformanceCase: GroupAssertionConformanceCase): 
             workspaceId: 'default',
             groupId: 'conformance-room'
         },
-        recipes: [{ recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID, variables: {}, secretRefs: [], required: true }],
-        targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+        recipes: [{ recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID, variables: {}, required: true }],
+        targetPolicy: { mode: 'all-online-group-members' },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [conformanceCase.assertion],
         metadata: {}
     };

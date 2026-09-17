@@ -26,21 +26,13 @@ function coreFiles(
         distributedRunId: 'distributed-analyze',
         controlRunId: 'control-analyze',
         group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-analyze' },
-        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, secretRefs: [], required: true }],
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'], includeOfflineExpectedAgents: false },
+        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {}, required: true }],
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'] },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

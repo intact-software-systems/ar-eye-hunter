@@ -53,7 +53,6 @@ export interface DistributedRunTargetPolicySchemaValue {
     readonly mode: RallarBlackBoxDistributedTargetPolicyMode;
     /** Absent when staging accepts however many agents the policy resolves. */
     readonly expectedParticipantCount?: number;
-    readonly includeOfflineExpectedAgents: boolean;
     /** Absent unless the author listed agents; the contract accepts them only on a selected-agents policy. */
     readonly agentIds?: readonly string[];
     /** Absent unless the author mapped roles; the contract accepts them only on a role-map policy. */

@@ -63,28 +63,18 @@ export function createRecipeConsoleTuneScaleFixture(
             profile: 'scale',
             recipe,
             required: true,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 1,
-            agentIds: ['recipe-console-tune-scale-agent'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['recipe-console-tune-scale-agent']
         },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 15_000,
         barrier: { enabled: true, timeoutMs: 20_000 },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

@@ -229,28 +229,18 @@ function toScaleManifest(): RallarBlackBoxDistributedRunManifest {
                 commands: []
             },
             required: true,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 1,
-            agentIds: [AGENT_ID],
-            includeOfflineExpectedAgents: false
+            agentIds: [AGENT_ID]
         },
         variables: {},
-        secretRefs: [],
         roleAssignments: [{ agentId: AGENT_ID, role: 'worker', required: true, recipeIds: [], variables: {} }],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

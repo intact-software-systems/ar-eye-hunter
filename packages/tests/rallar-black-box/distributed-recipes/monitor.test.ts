@@ -555,8 +555,7 @@ describe('distributed recipes monitor', () => {
                     recipe: compositeRecipe,
                     profile: 'composite',
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }]
             },
             commandLinks: distributedRun.commandLinks.map((link) => ({

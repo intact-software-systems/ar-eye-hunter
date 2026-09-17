@@ -126,29 +126,19 @@ function groupAssertionManifest(
                     ]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1', 'agent-2'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1', 'agent-2']
         },
         startMode: 'manual',
         groupAssertions,
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         metadata: {}
     };
 }

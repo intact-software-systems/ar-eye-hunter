@@ -54,8 +54,7 @@ export function buildDistributedRunManifest(
         role: toRecipeRoleForPattern(input.rolePattern, index, input.recipes.length),
         profile: item.profiles[0],
         required: true,
-        variables: {},
-        secretRefs: []
+        variables: {}
     } satisfies RallarBlackBoxDistributedRunRecipeSelection));
     const roles = toRolesForPattern(input.rolePattern, input.targetAgentIds);
     const targetPolicy = toTargetPolicy({
@@ -81,20 +80,12 @@ export function buildDistributedRunManifest(
         recipes: recipeSelections,
         targetPolicy,
         variables: {},
-        secretRefs: [],
         roleAssignments,
         roleAssignmentPolicy,
         ackTimeoutMs: input.ackTimeoutMs,
         barrier: input.barrier
     } as const;
     const settings = {
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeDistributedMetadata: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true
-        },
         groupAssertions: input.groupAssertions,
         metadata: {
             createdBy: 'rallar-black-box-spa',
@@ -122,22 +113,19 @@ function toTargetPolicy(input: ToTargetPolicyInput): RallarBlackBoxDistributedTa
     if (input.mode === 'all-online-group-members') {
         return {
             mode: input.mode,
-            ...expected,
-            includeOfflineExpectedAgents: false
+            ...expected
         };
     }
     if (input.mode === 'role-map') {
         return {
             mode: input.mode,
             roles: input.roles,
-            ...expected,
-            includeOfflineExpectedAgents: false
+            ...expected
         };
     }
     return {
         mode: input.mode,
         agentIds: input.agentIds,
-        ...expected,
-        includeOfflineExpectedAgents: false
+        ...expected
     };
 }

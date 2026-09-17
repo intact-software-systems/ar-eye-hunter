@@ -23,23 +23,14 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
             recipeId: 'tune-inline',
             recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] },
             variables: {},
-            secretRefs: [],
             required: true
         }],
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };
@@ -343,7 +334,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 commands: [{ kind: 'loop' }]
             },
             variables: {},
-            secretRefs: [],
             required: true
         }]);
         const nested = (depth: number): Record<string, unknown> =>
@@ -355,7 +345,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             recipeId: 'too-deep',
             recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] },
             variables: {},
-            secretRefs: [],
             required: true
         }]);
 
@@ -392,7 +381,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                     commands: [{ kind: 'parallel', groups }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }]
         };
@@ -409,7 +397,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             recipeId: 'later',
             recipe: { schemaVersion: 1, recipeId: 'later', commands: [] },
             variables: {},
-            secretRefs: [],
             required: true
         };
         Object.defineProperty(later, 'recipe', {
@@ -423,7 +410,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 recipeId: 'first',
                 recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands },
                 variables: {},
-                secretRefs: [],
                 required: true
             }, later]
         };
@@ -432,7 +418,6 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         const references = Array.from({ length: 2_100 }, (_, index) => ({
             recipeId: `reference-${index}`,
             variables: {},
-            secretRefs: [],
             required: true
         }));
         Object.defineProperty(references, 2_000, {

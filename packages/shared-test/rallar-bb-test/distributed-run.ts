@@ -176,7 +176,6 @@ export interface RallarBlackBoxDistributedRunRecipeSelection {
     /** Absent when the selection names no catalog profile. */
     readonly profile?: string;
     readonly variables: RallarBlackBoxTestRecord;
-    readonly secretRefs: readonly string[];
     readonly required: boolean;
 }
 
@@ -203,7 +202,6 @@ export type RallarBlackBoxDistributedTargetPolicy =
 interface RallarBlackBoxDistributedTargetPolicyFields {
     /** Absent when staging accepts however many agents the policy resolves. */
     readonly expectedParticipantCount?: number;
-    readonly includeOfflineExpectedAgents: boolean;
 }
 
 export interface RallarBlackBoxDistributedAllOnlineTargetPolicy extends RallarBlackBoxDistributedTargetPolicyFields {
@@ -219,16 +217,6 @@ export interface RallarBlackBoxDistributedSelectedAgentsTargetPolicy
 export interface RallarBlackBoxDistributedRoleMapTargetPolicy extends RallarBlackBoxDistributedTargetPolicyFields {
     readonly mode: 'role-map';
     readonly roles: Readonly<Record<string, readonly string[]>>;
-}
-
-export interface RallarBlackBoxDistributedArtifactPolicy {
-    readonly retainArtifacts: boolean;
-    readonly includeEventJsonl: boolean;
-    readonly includeResultJsonl: boolean;
-    readonly includeFailureBundle: boolean;
-    readonly includeDistributedMetadata: boolean;
-    /** Absent when the author requests no retention period. */
-    readonly retentionDays?: number;
 }
 
 export type RallarBlackBoxDistributedBarrierPolicy =
@@ -260,13 +248,11 @@ export interface RallarBlackBoxDistributedRunManifestFields {
     readonly recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[];
     readonly targetPolicy: RallarBlackBoxDistributedTargetPolicy;
     readonly variables: RallarBlackBoxTestRecord;
-    readonly secretRefs: readonly string[];
     readonly roleAssignments: readonly RallarBlackBoxDistributedRoleAssignment[];
     /** Absent when roles come from targetPolicy.roles or roleAssignments instead of a pattern. */
     readonly roleAssignmentPolicy?: RallarBlackBoxDistributedRoleAssignmentPolicy;
     readonly ackTimeoutMs: number;
     readonly barrier: RallarBlackBoxDistributedBarrierPolicy;
-    readonly artifactPolicy: RallarBlackBoxDistributedArtifactPolicy;
     readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
     readonly metadata: RallarBlackBoxTestRecord;
 }

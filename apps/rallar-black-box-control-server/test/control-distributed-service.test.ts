@@ -467,8 +467,7 @@ Deno.test('control service cancels distributed runs and queues cancel commands',
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1']
         }
     }));
 
@@ -532,8 +531,7 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
 
     const created = assertRight(service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
-            mode: 'all-online-group-members',
-            includeOfflineExpectedAgents: false
+            mode: 'all-online-group-members'
         }
     })));
 
@@ -558,7 +556,6 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
                     commands: [{ kind: 'health', commandId: 'sender-health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             },
             {
@@ -570,7 +567,6 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
                     commands: [{ kind: 'health', commandId: 'receiver-health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }
         ],
@@ -580,8 +576,7 @@ Deno.test('control service keeps explicit role-map target resolution aligned wit
             roles: {
                 sender: ['agent-1'],
                 receiver: ['agent-2']
-            },
-            includeOfflineExpectedAgents: false
+            }
         },
         roleAssignments: [
             { role: 'sender', agentId: 'agent-1', required: true, variables: {}, recipeIds: [] },
@@ -720,8 +715,7 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-1'],
-            expectedParticipantCount: 2,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 2
         }
     }));
     const mismatched = assertRight(service.stageDistributedRun('dist-1'));
@@ -736,8 +730,7 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
         distributedRunId: 'dist-timeout',
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1']
         },
         ackTimeoutMs: 10
     }));
@@ -764,7 +757,7 @@ Deno.test('control service defers a refused automatic start to a later refresh i
     }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'], includeOfflineExpectedAgents: false }
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
     }, { startMode: 'auto-after-ready' }));
     service.stageDistributedRun('dist-1');
     const [stageCommand] = service.takeDispatchableCommands('run-1', 'agent-1');
@@ -789,7 +782,7 @@ Deno.test('control service returns lifecycle failures as values without changing
     const service = createRallarBlackBoxControlService(toControlServiceInput({ allowedCommandKinds: ['recipe.cancel'] }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
     service.createDistributedRun(toDistributedManifest({
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'], includeOfflineExpectedAgents: false }
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
     }));
 
     assertJsonEquals(service.stageDistributedRun('missing').left, {

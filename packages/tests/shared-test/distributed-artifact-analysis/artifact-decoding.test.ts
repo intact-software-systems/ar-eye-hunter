@@ -366,6 +366,20 @@ describe('distributed run artifact decoding', () => {
                 }
             },
             {
+                name: 'manifest that still carries a removed author setting',
+                files: {
+                    'distributed-run.json': JSON.stringify({
+                        ...distributedRun,
+                        manifest: { ...distributedRun.manifest, artifactPolicy: { retainArtifacts: true } }
+                    })
+                },
+                expected: {
+                    fileName: 'distributed-run.json',
+                    message:
+                        'distributed-run.json is not a distributed run snapshot: manifest is not a valid distributed run manifest:\n$.artifactPolicy: Unexpected property.'
+                }
+            },
+            {
                 name: 'derived role assignment without its recipe scope',
                 files: {
                     'distributed-run.json': JSON.stringify({

@@ -33,30 +33,20 @@
       },
       "profile": "negative",
       "required": true,
-      "variables": {},
-      "secretRefs": []
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 1,
-    "includeOfflineExpectedAgents": false
+    "expectedParticipantCount": 1
   },
   "variables": {},
-  "secretRefs": [],
   "roleAssignments": [],
   "ackTimeoutMs": 30000,
   "barrier": {
     "enabled": false
   },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
-  },
   "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",

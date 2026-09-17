@@ -35,11 +35,10 @@ Useful constraints:
 
 - Output JSON only. No Markdown.
 - Write every distributed manifest author setting explicitly (`controlRunId`,
-  `variables`, `secretRefs`, `roleAssignments`, `ackTimeoutMs`, `barrier`,
-  `startMode`, `artifactPolicy`, `groupAssertions`, `metadata`, each recipe
-  selection's `variables`, `secretRefs`, and `required`, and
-  `targetPolicy.includeOfflineExpectedAgents`); the schema rejects a manifest
-  that omits one.
+  `variables`, `roleAssignments`, `ackTimeoutMs`, `barrier`, `startMode`,
+  `groupAssertions`, `metadata`, and each recipe selection's `variables` and
+  `required`); the schema rejects a manifest that omits one or adds a field it
+  does not define.
 - Use `schemaVersion: 1` on distributed manifests and every inline
   `rallar-bb-test` recipe.
 - Use stable, descriptive `distributedRunId`, `recipeId`, and `commandId`
@@ -63,10 +62,10 @@ Useful constraints:
 - Do not put credentials, bearer tokens, or long-lived secrets in generated
   recipes. Use variables or environment setup instead.
 
-After generation, validate the JSON with:
-
-- `validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, value)`
-- `validateDistributedRunManifestContract(value)`
+After generation, decode the JSON with
+`decodeDistributedRunManifest(value)`: it runs
+`RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and then the manifest contract
+rules, and returns every issue as its Left.
 
 For black-box-runner scenarios, validate with:
 
@@ -175,8 +174,6 @@ Constraints:
 - Set ackTimeoutMs to 5000.
 - Inline recipe should only contain a health command.
 - Use required: true.
-- Include artifactPolicy that keeps event JSONL, result JSONL, failure bundle,
-  and distributed metadata.
 ```
 
 ## Prompt: Distributed Absence Wait
@@ -527,8 +524,6 @@ JSON:
 Task:
 - Return JSON only.
 - Add labels and descriptions where supported by the schema.
-- Add artifactPolicy for event JSONL, result JSONL, failure bundle, and
-  distributed metadata.
 - Add command metadata that explains role, transport, and expected delivery.
 - Do not change the behavior of the test.
 ```

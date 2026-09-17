@@ -859,18 +859,10 @@ function distributedManifest(
         recipes: input.recipes,
         targetPolicy: input.targetPolicy,
         variables: {},
-        secretRefs: [],
         roleAssignments: input.roleAssignments ?? [],
         ackTimeoutMs: input.ackTimeoutMs ?? 10_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {
             source: 'full-stack-distributed-recipes'
@@ -1386,13 +1378,11 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                     recipe,
                     required: true,
                     profile: 'full-stack',
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }],
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 3,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 3
                 },
                 displayName: 'All-agent ACK smoke'
             });
@@ -1472,13 +1462,11 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                     recipeId: `missing-health-${suffix}`,
                     recipe: healthRecipe(`missing-health-${suffix}`),
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }],
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 4,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 4
                 }
             });
             await createDistributedRun(request, missingManifest);
@@ -1503,14 +1491,12 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                     recipeId: `timeout-health-${suffix}`,
                     recipe: healthRecipe(`timeout-health-${suffix}`),
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }],
                 targetPolicy: {
                     mode: 'selected-agents',
                     agentIds: [ackTimeoutAgentId],
-                    expectedParticipantCount: 1,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 1
                 },
                 ackTimeoutMs: 100
             });
@@ -1554,8 +1540,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                         role: 'passer',
                         recipe: healthRecipe(`role-pass-${suffix}`),
                         required: true,
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     },
                     {
                         recipeId: `role-fail-${suffix}`,
@@ -1573,8 +1558,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                             }]
                         },
                         required: true,
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }
                 ],
                 targetPolicy: {
@@ -1583,8 +1567,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                         passer: [handles[0].agentId],
                         breaker: [failureAgentId]
                     },
-                    expectedParticipantCount: 2,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 2
                 }
             });
             await createDistributedRun(request, failureManifest);
@@ -1603,14 +1586,12 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
                     recipeId: `disconnect-health-${suffix}`,
                     recipe: healthRecipe(`disconnect-health-${suffix}`),
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }],
                 targetPolicy: {
                     mode: 'selected-agents',
                     agentIds: [handles[0].agentId, handles[1].agentId],
-                    expectedParticipantCount: 2,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 2
                 }
             });
             await createDistributedRun(request, disconnectManifest);
@@ -1713,13 +1694,11 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: ackRecipe,
                         required: true,
                         profile: 'live',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'all-online-group-members',
-                        expectedParticipantCount: 3,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 3
                     }
                 })
             );
@@ -1745,14 +1724,12 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: wsPrimerRecipe,
                         required: true,
                         profile: 'live-ws',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'selected-agents',
                         agentIds: agents.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 3
                     }
                 })
             );
@@ -1778,16 +1755,14 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: wsSenderRecipe,
                         required: true,
                         profile: 'live-ws',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'role-map',
                         roles: {
                             sender: [agents[0].agentId]
                         },
-                        expectedParticipantCount: 1,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 1
                     }
                 })
             );
@@ -1832,14 +1807,12 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: rtcConnect,
                         required: true,
                         profile: 'live-rtc',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'selected-agents',
                         agentIds: agents.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 3
                     }
                 })
             );
@@ -1859,16 +1832,14 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: rtcSender,
                         required: true,
                         profile: 'live-rtc',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'role-map',
                         roles: {
                             sender: [agents[0].agentId]
                         },
-                        expectedParticipantCount: 1,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 1
                     }
                 })
             );
@@ -1920,14 +1891,12 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
                         recipe: realtimeRecipe,
                         required: true,
                         profile: 'live-rtc-realtime',
-                        variables: {},
-                        secretRefs: []
+                        variables: {}
                     }],
                     targetPolicy: {
                         mode: 'selected-agents',
                         agentIds: agents.map((agent) => agent.agentId),
-                        expectedParticipantCount: 3,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 3
                     }
                 })
             );

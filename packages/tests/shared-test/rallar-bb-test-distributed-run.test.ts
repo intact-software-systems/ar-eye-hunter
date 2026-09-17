@@ -42,20 +42,17 @@ function validManifest(
                     payload: {
                         text: 'hello'
                     }
-                },
-                secretRefs: []
+                }
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 2,
-            agentIds: ['alice-agent', 'bob-agent'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['alice-agent', 'bob-agent']
         },
         variables: {
             apiBaseUrl: 'http://localhost:8080'
         },
-        secretRefs: ['accessToken'],
         roleAssignments: [
             {
                 role: 'sender',
@@ -75,14 +72,6 @@ function validManifest(
         ackTimeoutMs: 5_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true,
-            retentionDays: 7
-        },
         groupAssertions: [],
         metadata: {},
         ...overrides
@@ -186,8 +175,7 @@ describe('rallar-bb-test distributed run contract', () => {
         const manifest = validManifest({
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 50,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 50
             },
             roleAssignments: [],
             roleAssignmentPolicy: {
@@ -213,14 +201,12 @@ describe('rallar-bb-test distributed run contract', () => {
                 recipeId: ' ',
                 role: 'sender',
                 variables: {},
-                secretRefs: [],
                 required: true
             }],
             targetPolicy: {
                 mode: 'selected-agents',
                 expectedParticipantCount: 0,
-                agentIds: [],
-                includeOfflineExpectedAgents: false
+                agentIds: []
             },
             ackTimeoutMs: 0,
             barrier: {
@@ -244,8 +230,7 @@ describe('rallar-bb-test distributed run contract', () => {
             targetPolicy: {
                 mode: 'role-map',
                 expectedParticipantCount: 2,
-                roles: {},
-                includeOfflineExpectedAgents: false
+                roles: {}
             },
             roleAssignments: []
         });
@@ -261,8 +246,7 @@ describe('rallar-bb-test distributed run contract', () => {
             targetPolicy: {
                 mode: 'role-map',
                 expectedParticipantCount: 2,
-                roles: {},
-                includeOfflineExpectedAgents: false
+                roles: {}
             },
             roleAssignments: [],
             roleAssignmentPolicy: {
@@ -294,8 +278,7 @@ describe('rallar-bb-test distributed run contract', () => {
             manifest: validManifest({
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 3,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 3
                 },
                 roleAssignments: [],
                 roleAssignmentPolicy: {
@@ -485,7 +468,6 @@ describe('rallar-bb-test distributed run contract', () => {
                         commands: [{ kind: 'health', commandId: 'probe-health' }]
                     },
                     variables: {},
-                    secretRefs: [],
                     required: true
                 }
             ],
@@ -605,10 +587,9 @@ function createExplicitManifest(): RallarBlackBoxDistributedRunManifest {
         distributedRunId: 'explicit-run',
         controlRunId: 'explicit-control-run',
         group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'bb-group' },
-        recipes: [{ recipeId: 'health-only', variables: {}, secretRefs: [], required: true }],
-        targetPolicy: { mode: 'selected-agents', agentIds: ['alice-agent'], includeOfflineExpectedAgents: false },
+        recipes: [{ recipeId: 'health-only', variables: {}, required: true }],
+        targetPolicy: { mode: 'selected-agents', agentIds: ['alice-agent'] },
         variables: {},
-        secretRefs: [],
         roleAssignments: [{
             role: 'sender',
             agentId: 'alice-agent',
@@ -619,13 +600,6 @@ function createExplicitManifest(): RallarBlackBoxDistributedRunManifest {
         ackTimeoutMs: 5_000,
         barrier: { enabled: true, timeoutMs: 5_000 },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };
@@ -648,12 +622,10 @@ describe('distributed run manifest author settings', () => {
         'schemaVersion',
         'controlRunId',
         'variables',
-        'secretRefs',
         'roleAssignments',
         'ackTimeoutMs',
         'barrier',
         'startMode',
-        'artifactPolicy',
         'groupAssertions',
         'metadata'
     ])('rejects a manifest without %s', (key) => {
@@ -662,7 +634,7 @@ describe('distributed run manifest author settings', () => {
         ]);
     });
 
-    it.each(['recipeId', 'variables', 'secretRefs', 'required'])('rejects a recipe selection without %s', (key) => {
+    it.each(['recipeId', 'variables', 'required'])('rejects a recipe selection without %s', (key) => {
         const manifest = createExplicitManifest();
         expect(toManifestIssueTexts({ ...manifest, recipes: [toValueWithoutKey(manifest.recipes[0]!, key)] })).toEqual([
             `$.recipes[0] Missing required property ${key}.`
@@ -676,11 +648,17 @@ describe('distributed run manifest author settings', () => {
         ).toEqual([`$.roleAssignments[0] Missing required property ${key}.`]);
     });
 
-    it('rejects a target policy without includeOfflineExpectedAgents', () => {
+    it('rejects a manifest that still carries the removed secretRefs, artifactPolicy or offline-agent settings', () => {
         const manifest = createExplicitManifest();
-        expect(
-            toManifestIssueTexts({ ...manifest, targetPolicy: toValueWithoutKey(manifest.targetPolicy, 'includeOfflineExpectedAgents') })
-        ).toEqual(['$.targetPolicy Missing required property includeOfflineExpectedAgents.']);
+        expect(toManifestIssueTexts({ ...manifest, secretRefs: [] })).toEqual(['$.secretRefs Unexpected property.']);
+        expect(toManifestIssueTexts({ ...manifest, artifactPolicy: { retainArtifacts: true } }))
+            .toEqual(['$.artifactPolicy Unexpected property.']);
+        expect(toManifestIssueTexts({ ...manifest, recipes: [{ ...manifest.recipes[0], secretRefs: [] }] }))
+            .toEqual(['$.recipes[0].secretRefs Unexpected property.']);
+        expect(toManifestIssueTexts({
+            ...manifest,
+            targetPolicy: { ...manifest.targetPolicy, includeOfflineExpectedAgents: false }
+        })).toEqual(['$.targetPolicy.includeOfflineExpectedAgents Unexpected property.']);
     });
 
     it('rejects a role assignment policy without orderBy', () => {
@@ -688,18 +666,6 @@ describe('distributed run manifest author settings', () => {
             ...createExplicitManifest(),
             roleAssignmentPolicy: { mode: 'ordered-targets', pattern: 'sender-receiver' }
         })).toEqual(['$.roleAssignmentPolicy Missing required property orderBy.']);
-    });
-
-    it.each([
-        'retainArtifacts',
-        'includeEventJsonl',
-        'includeResultJsonl',
-        'includeFailureBundle',
-        'includeDistributedMetadata'
-    ])('rejects an artifact policy without %s', (key) => {
-        const manifest = createExplicitManifest();
-        expect(toManifestIssueTexts({ ...manifest, artifactPolicy: toValueWithoutKey(manifest.artifactPolicy, key) }))
-            .toEqual([`$.artifactPolicy Missing required property ${key}.`]);
     });
 
     it('rejects a barrier without enabled, an enabled barrier without timeoutMs and a disabled barrier with one', () => {
@@ -721,24 +687,23 @@ describe('distributed run manifest author settings', () => {
     it('accepts agentIds only on selected-agents policies and roles only on role-map policies', () => {
         expect(toManifestIssueTexts({
             ...createExplicitManifest(),
-            targetPolicy: { mode: 'all-online-group-members', agentIds: ['alice-agent'], includeOfflineExpectedAgents: false }
+            targetPolicy: { mode: 'all-online-group-members', agentIds: ['alice-agent'] }
         })).toEqual(['$.targetPolicy.agentIds Only selected-agents target policies accept agentIds.']);
         expect(toManifestIssueTexts({
             ...createExplicitManifest(),
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['alice-agent'],
-                roles: { sender: ['alice-agent'] },
-                includeOfflineExpectedAgents: false
+                roles: { sender: ['alice-agent'] }
             }
         })).toEqual(['$.targetPolicy.roles Only role-map target policies accept roles.']);
         expect(toManifestIssueTexts({
             ...createExplicitManifest(),
-            targetPolicy: { mode: 'selected-agents', includeOfflineExpectedAgents: false }
+            targetPolicy: { mode: 'selected-agents' }
         })).toEqual(['$.targetPolicy.agentIds selected-agents target policy requires at least one agent ID.']);
         expect(toManifestIssueTexts({
             ...createExplicitManifest(),
-            targetPolicy: { mode: 'role-map', includeOfflineExpectedAgents: false }
+            targetPolicy: { mode: 'role-map' }
         })).toEqual(['$.targetPolicy.roles A role-map target policy requires roles.']);
     });
 });

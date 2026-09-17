@@ -30,21 +30,13 @@ function serverV2Files(
             distributedRunId: 'distributed-import',
             controlRunId: 'control-import',
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-import' },
-            recipes: [{ recipeId: 'ci-import-recipe', variables: {}, secretRefs: [], required: true }],
-            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'], includeOfflineExpectedAgents: false },
+            recipes: [{ recipeId: 'ci-import-recipe', variables: {}, required: true }],
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'] },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

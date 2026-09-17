@@ -146,14 +146,12 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             recipe: recipe.recipe,
             profile: 'smoke',
             required: true,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
-            expectedParticipantCount: 2,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 2
         },
         roleAssignments: [
             { agentId: 'agent-a', role: 'sender', required: true, variables: {}, recipeIds: [] },
@@ -163,17 +161,9 @@ export const distributedRun: ControlDistributedRunSnapshot = {
             createdBy: 'alice'
         },
         variables: {},
-        secretRefs: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: []
     },
     commandLinks: [

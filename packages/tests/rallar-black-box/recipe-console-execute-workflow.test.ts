@@ -51,26 +51,17 @@ function distributedRun(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: DEFAULT_EXECUTE_RECIPE_ID, variables: {}, secretRefs: [], required: true }],
+            recipes: [{ recipeId: DEFAULT_EXECUTE_RECIPE_ID, variables: {}, required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
-                expectedParticipantCount: 1,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 1
             },
             startMode: 'manual',
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

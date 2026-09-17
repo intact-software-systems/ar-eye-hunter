@@ -29,7 +29,7 @@ describe('Recipe Console tuning decision safety', () => {
         const inline = tuningManifest();
         const mixed = {
             ...inline,
-            recipes: [...inline.recipes, { recipeId: 'remote-reference', variables: {}, secretRefs: [], required: true }]
+            recipes: [...inline.recipes, { recipeId: 'remote-reference', variables: {}, required: true }]
         };
         const truncated = tuningManifest({
             commands: [

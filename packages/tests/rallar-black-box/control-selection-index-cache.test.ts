@@ -201,21 +201,13 @@ function distributedRun(
                 groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [], includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'selected-agents', agentIds: [] },
             schemaVersion: 1,
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

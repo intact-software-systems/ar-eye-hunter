@@ -108,23 +108,14 @@ describe('rallar-bb-test group assertion conformance', () => {
             recipes: [{
                 recipeId: GROUP_ASSERTION_CONFORMANCE_RECIPE_ID,
                 variables: {},
-                secretRefs: [],
                 required: true
             }],
-            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'all-online-group-members' },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [{
                 groupAssertionId: 'pending',
                 aggregate: 'allEqual',

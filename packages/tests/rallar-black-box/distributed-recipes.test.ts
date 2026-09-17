@@ -1028,7 +1028,6 @@ describe('distributed recipes catalog', () => {
                     commands: [{ kind: 'health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             },
             {
@@ -1040,7 +1039,6 @@ describe('distributed recipes catalog', () => {
                     commands: [{ kind: 'health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             },
             {
@@ -1051,7 +1049,6 @@ describe('distributed recipes catalog', () => {
                     commands: [{ kind: 'health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }
         ] satisfies ControlDistributedRunSnapshot['manifest']['recipes'];
@@ -1092,8 +1089,7 @@ describe('distributed recipes catalog', () => {
                     roles: {
                         sender: ['agent-c'],
                         receiver: ['agent-a']
-                    },
-                    includeOfflineExpectedAgents: false
+                    }
                 },
                 roleAssignments: [
                     { agentId: 'agent-a', role: 'receiver', variables: {}, recipeIds: [], required: true },
@@ -1145,8 +1141,7 @@ describe('distributed recipes catalog', () => {
                     ...roleScopedRun.manifest,
                     targetPolicy: {
                         mode: 'selected-agents',
-                        agentIds: ['agent-a', 'agent-b', 'agent-c'],
-                        includeOfflineExpectedAgents: false
+                        agentIds: ['agent-a', 'agent-b', 'agent-c']
                     },
                     roleAssignments: resolvedAssignments
                 }

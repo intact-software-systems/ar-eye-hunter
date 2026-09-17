@@ -696,8 +696,7 @@
               "source": "ai-generated-example"
             }
           },
-          "variables": {},
-          "secretRefs": []
+          "variables": {}
         }
       ],
       "targetPolicy": {
@@ -707,24 +706,15 @@
             "agent-alice"
           ]
         },
-        "expectedParticipantCount": 1,
-        "includeOfflineExpectedAgents": false
+        "expectedParticipantCount": 1
       },
       "variables": {},
-      "secretRefs": [],
       "roleAssignments": [],
       "ackTimeoutMs": 10000,
       "barrier": {
         "enabled": false
       },
       "startMode": "manual",
-      "artifactPolicy": {
-        "retainArtifacts": true,
-        "includeEventJsonl": true,
-        "includeResultJsonl": true,
-        "includeFailureBundle": true,
-        "includeDistributedMetadata": true
-      },
       "groupAssertions": [],
       "metadata": {
         "source": "golden-compatibility-corpus"
@@ -770,30 +760,20 @@
               "source": "golden-compatibility-corpus"
             }
           },
-          "variables": {},
-          "secretRefs": []
+          "variables": {}
         }
       ],
       "targetPolicy": {
         "mode": "all-online-group-members",
-        "expectedParticipantCount": 2,
-        "includeOfflineExpectedAgents": false
+        "expectedParticipantCount": 2
       },
       "variables": {},
-      "secretRefs": [],
       "roleAssignments": [],
       "ackTimeoutMs": 30000,
       "barrier": {
         "enabled": false
       },
       "startMode": "manual",
-      "artifactPolicy": {
-        "retainArtifacts": true,
-        "includeEventJsonl": true,
-        "includeResultJsonl": true,
-        "includeFailureBundle": true,
-        "includeDistributedMetadata": true
-      },
       "groupAssertions": [
         {
           "groupAssertionId": "golden-ga-all-match",
@@ -1035,6 +1015,7 @@
       "value": {
         "schemaVersion": 2,
         "distributedRunId": "invalid-manifest-v2",
+        "controlRunId": "invalid-manifest-v2",
         "group": {
           "applicationId": "rallar-server",
           "workspaceId": "default",
@@ -1042,12 +1023,23 @@
         },
         "recipes": [
           {
-            "recipeId": "health-only"
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
           }
         ],
         "targetPolicy": {
           "mode": "all-online-group-members"
-        }
+        },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
+        "groupAssertions": [],
+        "metadata": {}
       }
     },
     {
@@ -1058,6 +1050,7 @@
       "value": {
         "schemaVersion": 1,
         "distributedRunId": "invalid-inline-recipe",
+        "controlRunId": "invalid-inline-recipe",
         "group": {
           "applicationId": "rallar-server",
           "workspaceId": "default",
@@ -1066,6 +1059,7 @@
         "recipes": [
           {
             "recipeId": "broken-inline",
+            "required": true,
             "recipe": {
               "schemaVersion": 1,
               "recipeId": "broken-inline",
@@ -1074,7 +1068,8 @@
                   "kind": "http.request"
                 }
               ]
-            }
+            },
+            "variables": {}
           }
         ],
         "targetPolicy": {
@@ -1083,7 +1078,16 @@
             "agent-a"
           ],
           "expectedParticipantCount": 1
-        }
+        },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
+        "groupAssertions": [],
+        "metadata": {}
       }
     },
     {
@@ -1094,6 +1098,7 @@
       "value": {
         "schemaVersion": 1,
         "distributedRunId": "invalid-group-assertion-predicate",
+        "controlRunId": "invalid-group-assertion-predicate",
         "group": {
           "applicationId": "rallar-server",
           "workspaceId": "default",
@@ -1101,12 +1106,21 @@
         },
         "recipes": [
           {
-            "recipeId": "health-only"
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
           }
         ],
         "targetPolicy": {
           "mode": "all-online-group-members"
         },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
         "groupAssertions": [
           {
             "groupAssertionId": "missing-predicate",
@@ -1117,7 +1131,8 @@
               "path": "value.ok"
             }
           }
-        ]
+        ],
+        "metadata": {}
       }
     },
     {
@@ -1128,6 +1143,7 @@
       "value": {
         "schemaVersion": 1,
         "distributedRunId": "invalid-group-assertion-aggregate",
+        "controlRunId": "invalid-group-assertion-aggregate",
         "group": {
           "applicationId": "rallar-server",
           "workspaceId": "default",
@@ -1135,12 +1151,21 @@
         },
         "recipes": [
           {
-            "recipeId": "health-only"
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
           }
         ],
         "targetPolicy": {
           "mode": "all-online-group-members"
         },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
         "groupAssertions": [
           {
             "groupAssertionId": "sum-is-not-v1",
@@ -1151,7 +1176,8 @@
               "path": "value.total"
             }
           }
-        ]
+        ],
+        "metadata": {}
       }
     },
     {
@@ -1162,6 +1188,7 @@
       "value": {
         "schemaVersion": 1,
         "distributedRunId": "invalid-group-assertion-count",
+        "controlRunId": "invalid-group-assertion-count",
         "group": {
           "applicationId": "rallar-server",
           "workspaceId": "default",
@@ -1169,12 +1196,21 @@
         },
         "recipes": [
           {
-            "recipeId": "health-only"
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
           }
         ],
         "targetPolicy": {
           "mode": "all-online-group-members"
         },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
         "groupAssertions": [
           {
             "groupAssertionId": "count-without-bounds",
@@ -1189,7 +1225,80 @@
             },
             "count": {}
           }
-        ]
+        ],
+        "metadata": {}
+      }
+    },
+    {
+      "caseId": "missing-author-setting",
+      "expectedErrors": [
+        "$: Missing required property ackTimeoutMs."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-manifest-missing-ack-timeout",
+        "controlRunId": "invalid-manifest-missing-ack-timeout",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "variables": {},
+        "roleAssignments": [],
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
+        "groupAssertions": [],
+        "metadata": {}
+      }
+    },
+    {
+      "caseId": "removed-artifact-policy-setting",
+      "expectedErrors": [
+        "$.artifactPolicy: Unexpected property."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-manifest-artifact-policy",
+        "controlRunId": "invalid-manifest-artifact-policy",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only",
+            "required": true,
+            "variables": {}
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "variables": {},
+        "roleAssignments": [],
+        "ackTimeoutMs": 30000,
+        "barrier": {
+          "enabled": false
+        },
+        "startMode": "manual",
+        "groupAssertions": [],
+        "metadata": {},
+        "artifactPolicy": {
+          "retainArtifacts": true
+        }
       }
     }
   ]

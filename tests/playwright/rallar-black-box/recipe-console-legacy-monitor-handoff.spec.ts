@@ -126,26 +126,16 @@ function distributedRun(
                     commands: [{ kind: 'health', commandId: 'legacy-monitor-health' }]
                 },
                 required: true,
-                variables: {},
-                secretRefs: []
+                variables: {}
             }],
             targetPolicy: {
-                mode: 'all-online-group-members',
-                includeOfflineExpectedAgents: false
+                mode: 'all-online-group-members'
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

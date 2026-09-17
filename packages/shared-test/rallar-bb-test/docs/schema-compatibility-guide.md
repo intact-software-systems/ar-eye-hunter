@@ -67,28 +67,18 @@ recipes.
           }
         ]
       },
-      "variables": {},
-      "secretRefs": []
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 1,
-    "includeOfflineExpectedAgents": false
+    "expectedParticipantCount": 1
   },
   "variables": {},
-  "secretRefs": [],
   "roleAssignments": [],
   "ackTimeoutMs": 5000,
   "barrier": { "enabled": false },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true,
-    "includeDistributedMetadata": true
-  },
   "groupAssertions": [],
   "metadata": {}
 }
@@ -126,17 +116,14 @@ recipes.
           }
         ]
       },
-      "variables": {},
-      "secretRefs": []
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
-    "expectedParticipantCount": 2,
-    "includeOfflineExpectedAgents": false
+    "expectedParticipantCount": 2
   },
   "variables": {},
-  "secretRefs": [],
   "roleAssignments": [],
   "groupAssertions": [
     {
@@ -162,13 +149,6 @@ recipes.
   "ackTimeoutMs": 5000,
   "barrier": { "enabled": false },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true,
-    "includeDistributedMetadata": true
-  },
   "metadata": {}
 }
 ```
@@ -179,10 +159,9 @@ Use the lightweight schema validator before staging or executing generated
 JSON:
 
 - Recipes: `validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value)`
-- Distributed manifests:
-  `validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, value)`
-- Distributed manifest semantics:
-  `validateDistributedRunManifestContract(value)`
+- Distributed manifests: `decodeDistributedRunManifest(value)`, which runs
+  `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and then the manifest
+  contract rules and returns every issue as its Left
 
 Treat validation errors as blocking failures. Catalog schema results report
 `valid` or `invalid`; they do not expose a legacy status or compatibility warning.
@@ -579,5 +558,60 @@ required identity facts and the rejected envelopes.
 Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```
+
+```text
+Title: Distributed manifests write every author setting; unread settings are removed
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batches B6b and B6b2
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+- RallarBlackBoxDistributedRunManifest and its selection, target policy,
+  role assignment, barrier and start variants
+
+Old shape:
+controlRunId, variables, roleAssignments, ackTimeoutMs, barrier, startMode,
+groupAssertions, metadata, each recipe selection's variables and required,
+each role assignment's recipeIds, required and variables, and
+roleAssignmentPolicy.orderBy were optional, and readers filled defaults for
+them. An absent ackTimeoutMs meant no ACK deadline. The manifest also carried
+secretRefs (manifest level and per recipe selection),
+targetPolicy.includeOfflineExpectedAgents and artifactPolicy, which no reader
+ever acted on.
+
+New shape:
+Every author setting above is required. The target policy is a union on mode
+(agentIds only on selected-agents, roles only on role-map), the barrier is
+{ enabled: false } or { enabled: true, timeoutMs }, and only a scheduled start
+carries startDeadlineEpochMs. secretRefs, includeOfflineExpectedAgents and
+artifactPolicy are gone: the schema rejects each as "Unexpected property.".
+decodeDistributedRunManifest is the JSON entry point.
+
+Migration:
+Regenerate checked-in manifests with
+apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts and
+write-world-fleet-distributed-manifests.ts. Hand-authored manifests write the
+required settings and drop the three removed ones. A persisted control snapshot
+or artifact bundle whose manifest does not decode is rejected.
+
+Golden corpus updates:
+Every valid and invalid manifest case writes the full contract, so each invalid
+case fails only for the defect it pins. Added invalid missing-author-setting
+and removed-artifact-policy-setting cases.
+
+Prompt/documentation updates:
+distributed-run-contract.md lists the required and optional fields;
+ai-recipe-prompt-guide.md asks for explicit settings and points at
+decodeDistributedRunManifest; this guide's examples follow the contract.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/rallar-black-box/world-fleet-distributed-manifests.test.ts
 cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```

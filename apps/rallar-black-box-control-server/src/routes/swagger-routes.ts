@@ -145,16 +145,13 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                 }]
                                             },
                                             variables: {},
-                                            secretRefs: [],
                                             required: true
                                         }],
                                         targetPolicy: {
                                             mode: 'all-online-group-members',
-                                            expectedParticipantCount: 2,
-                                            includeOfflineExpectedAgents: false
+                                            expectedParticipantCount: 2
                                         },
                                         variables: {},
-                                        secretRefs: [],
                                         roleAssignments: [],
                                         ackTimeoutMs: 30_000,
                                         barrier: { enabled: false },
@@ -168,13 +165,6 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                             }
                                         }],
                                         startMode: 'manual',
-                                        artifactPolicy: {
-                                            retainArtifacts: true,
-                                            includeEventJsonl: true,
-                                            includeResultJsonl: true,
-                                            includeFailureBundle: true,
-                                            includeDistributedMetadata: true
-                                        },
                                         metadata: {}
                                     }
                                 }

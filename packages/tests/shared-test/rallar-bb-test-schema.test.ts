@@ -320,6 +320,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             const result = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, invalid.value);
             expect(result.ok, invalid.caseId).toBe(false);
             if (!result.ok) {
+                // Every invalid manifest writes the full contract, so it fails only for the defect it pins.
+                expect(result.errors, invalid.caseId).toHaveLength(invalid.expectedErrors.length);
                 const text = formatJsonSchemaValidationErrors(result.errors);
                 invalid.expectedErrors.forEach((expected) => {
                     expect(text, invalid.caseId).toContain(expected);
@@ -688,17 +690,14 @@ describe('rallar-bb-test capability and schema contract', () => {
                     recipeId: 'health-only',
                     role: 'all-agents',
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }
             ],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 2
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 5_000,
             barrier: {
@@ -706,13 +705,6 @@ describe('rallar-bb-test capability and schema contract', () => {
                 timeoutMs: 5_000
             },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         });
@@ -754,21 +746,13 @@ describe('rallar-bb-test capability and schema contract', () => {
             distributedRunId: 'published-schema',
             controlRunId: 'published-schema',
             group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
-            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe, variables: {}, secretRefs: [] }],
-            targetPolicy: { mode: 'all-online-group-members', includeOfflineExpectedAgents: false },
+            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', required: true, recipe, variables: {} }],
+            targetPolicy: { mode: 'all-online-group-members' },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         };

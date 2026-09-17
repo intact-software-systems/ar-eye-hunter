@@ -72,30 +72,20 @@ export function createTuneManifest(
                 }]
             },
             required: true,
-            variables: {},
-            secretRefs: []
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: right
                 ? [TUNE_SHARED_AGENT_ID, TUNE_SLOW_AGENT_ID]
                 : [TUNE_SHARED_AGENT_ID, TUNE_LEFT_AGENT_ID],
-            expectedParticipantCount: 2,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 2
         },
         ackTimeoutMs: right ? 12_000 : 8_000,
         barrier: { enabled: true, timeoutMs: right ? 16_000 : 10_000 },
         startMode: 'manual',
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

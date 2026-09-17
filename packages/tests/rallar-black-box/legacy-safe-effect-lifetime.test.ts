@@ -538,25 +538,16 @@ function distributedRunSnapshot() {
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: 'recipe-a', variables: {}, secretRefs: [], required: true }],
+            recipes: [{ recipeId: 'recipe-a', variables: {}, required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-a'],
-                includeOfflineExpectedAgents: false
+                agentIds: ['agent-a']
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

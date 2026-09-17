@@ -113,7 +113,7 @@ function distributedRun(
                 workspaceId: 'default',
                 groupId: input.group ?? 'group-a'
             },
-            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             recipes: [{
                 recipeId,
                 profile: input.profile,
@@ -123,22 +123,13 @@ function distributedRun(
                     commands: [{ kind: 'health', commandId: `command-${input.id}` }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }],
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

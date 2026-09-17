@@ -379,8 +379,7 @@ Deno.test('control service compacts recipe run results while preserving distribu
         ...toDistributedManifest(),
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1']
         }
     });
     service.stageDistributedRun('dist-1');
@@ -482,8 +481,7 @@ Deno.test('control service keeps terminal distributed rollups stable after runti
         ...toDistributedManifest(),
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1']
         }
     });
     service.stageDistributedRun('dist-1');

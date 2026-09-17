@@ -14,7 +14,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         ackTimeoutMs: 1_000,
         recipes: [{
             recipeId: 'candidate-recipe',
@@ -35,21 +35,12 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                 }]
             },
             variables: {},
-            secretRefs: [],
             required: true
         }],
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         barrier: { enabled: false },
         startMode: 'manual',
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

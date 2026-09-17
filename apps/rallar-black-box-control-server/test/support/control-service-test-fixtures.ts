@@ -176,27 +176,17 @@ export function toDistributedManifest(
                     ]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
-            agentIds: ['agent-1', 'agent-2'],
-            includeOfflineExpectedAgents: false
+            agentIds: ['agent-1', 'agent-2']
         },
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 1_000,
         barrier: { enabled: false },
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {},
         ...overrides,
@@ -252,7 +242,6 @@ export function toPrincipalWorldFleetManifest(
                     commands: [{ kind: 'health', commandId: 'sender-health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             },
             {
@@ -264,14 +253,12 @@ export function toPrincipalWorldFleetManifest(
                     commands: [{ kind: 'health', commandId: 'receiver-health' }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount
         },
         roleAssignmentPolicy: {
             mode: 'ordered-targets',

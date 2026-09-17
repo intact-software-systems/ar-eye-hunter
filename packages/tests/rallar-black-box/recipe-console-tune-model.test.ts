@@ -43,10 +43,10 @@ function distributedRun(
             distributedRunId,
             controlRunId,
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'group-a' },
-            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             ackTimeoutMs: 1_000,
             recipes: options.referenceOnly
-                ? [{ recipeId: 'recipe-a', variables: {}, secretRefs: [], required: true }]
+                ? [{ recipeId: 'recipe-a', variables: {}, required: true }]
                 : [{
                     recipeId: 'recipe-a',
                     recipe: {
@@ -55,21 +55,12 @@ function distributedRun(
                         commands: [{ kind: 'health', commandId }]
                     },
                     variables: {},
-                    secretRefs: [],
                     required: true
                 }],
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

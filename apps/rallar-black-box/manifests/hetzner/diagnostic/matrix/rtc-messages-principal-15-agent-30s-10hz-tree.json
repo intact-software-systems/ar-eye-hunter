@@ -257,8 +257,7 @@
       "role": "sender",
       "profile": "rtc",
       "required": true,
-      "variables": {},
-      "secretRefs": []
+      "variables": {}
     },
     {
       "recipeId": "rtc-messages-principal-multicast-receiver",
@@ -483,8 +482,7 @@
       "role": "receiver",
       "profile": "rtc",
       "required": true,
-      "variables": {},
-      "secretRefs": []
+      "variables": {}
     }
   ],
   "targetPolicy": {
@@ -510,11 +508,9 @@
         "controller-15"
       ]
     },
-    "expectedParticipantCount": 15,
-    "includeOfflineExpectedAgents": false
+    "expectedParticipantCount": 15
   },
   "variables": {},
-  "secretRefs": [],
   "roleAssignments": [
     {
       "role": "sender",
@@ -628,13 +624,6 @@
     "timeoutMs": 15000
   },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
-  },
   "groupAssertions": [],
   "metadata": {
     "createdBy": "rallar-black-box-spa",

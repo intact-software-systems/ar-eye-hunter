@@ -93,26 +93,17 @@ function distributedRun(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: 'health-only', required: true, variables: {}, secretRefs: [] }],
+            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
-                expectedParticipantCount: 1,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 1
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

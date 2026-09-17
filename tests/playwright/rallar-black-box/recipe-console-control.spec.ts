@@ -109,26 +109,17 @@ function activeDistributedRun(
             controlRunId,
             displayName: 'Canonical live run',
             group: GROUP,
-            recipes: [{ recipeId: 'health-only', required: true, variables: {}, secretRefs: [] }],
+            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
-                expectedParticipantCount: targetAgentIds.length,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: targetAgentIds.length
             },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

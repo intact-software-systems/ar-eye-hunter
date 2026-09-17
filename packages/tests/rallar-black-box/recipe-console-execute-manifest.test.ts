@@ -144,8 +144,7 @@ describe('Recipe Console Execute manifest', () => {
             targetPolicy: {
                 mode: 'selected-agents' as const,
                 agentIds: ['agent-b'],
-                expectedParticipantCount: 1,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: 1
             }
         };
 
@@ -237,8 +236,7 @@ describe('Recipe Console Execute manifest', () => {
                     targetPolicy: {
                         mode: 'selected-agents',
                         agentIds: ['agent-a', 'agent-a'],
-                        expectedParticipantCount: manifest.targetPolicy.expectedParticipantCount,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: manifest.targetPolicy.expectedParticipantCount
                     }
                 },
                 matching,
@@ -337,12 +335,10 @@ describe('Recipe Console Execute manifest', () => {
                 targetPolicy: {
                     mode: 'selected-agents',
                     agentIds: ['agent-a'],
-                    expectedParticipantCount: 1,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 1
                 }
             },
             { ...manifest, variables: { changed: true } },
-            { ...manifest, secretRefs: ['changed-secret'] },
             {
                 ...manifest,
                 roleAssignments: [{
@@ -365,13 +361,6 @@ describe('Recipe Console Execute manifest', () => {
             { ...manifest, barrier: { enabled: true, timeoutMs: 15_000 } },
             { ...manifest, startMode: 'auto-after-ready' },
             { ...manifest, startMode: 'scheduled', startDeadlineEpochMs: 123_456 },
-            {
-                ...manifest,
-                artifactPolicy: {
-                    ...manifest.artifactPolicy,
-                    retentionDays: 7
-                }
-            },
             { ...manifest, metadata: { ...manifest.metadata, changed: true } }
         ];
 

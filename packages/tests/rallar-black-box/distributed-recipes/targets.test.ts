@@ -442,22 +442,14 @@ describe('distributed recipes targets', () => {
         expect(manifest).toMatchObject({
             schemaVersion: 1,
             controlRunId: 'run-explicit',
-            recipes: [{ recipeId: recipe.recipe.recipeId, variables: {}, secretRefs: [], required: true }],
-            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+            recipes: [{ recipeId: recipe.recipe.recipeId, variables: {}, required: true }],
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 5_000,
             barrier: { enabled: false },
             startMode: 'scheduled',
             startDeadlineEpochMs: 20_000,
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: { createdBy: 'rallar-black-box-spa', rolePattern: 'all-agents' }
         });
@@ -486,8 +478,7 @@ describe('distributed recipes targets', () => {
 
         expect(manifest.targetPolicy).toEqual({
             mode: 'all-online-group-members',
-            expectedParticipantCount: 50,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 50
         });
         expect(manifest.roleAssignments).toEqual([]);
         expect(manifest.roleAssignmentPolicy).toEqual({
@@ -567,8 +558,7 @@ describe('distributed recipes targets', () => {
                     ...distributedRun.manifest,
                     targetPolicy: {
                         mode: 'all-online-group-members',
-                        expectedParticipantCount: 2,
-                        includeOfflineExpectedAgents: false
+                        expectedParticipantCount: 2
                     }
                 },
                 targetResolution: loadedRunResolution

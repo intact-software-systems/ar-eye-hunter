@@ -55,28 +55,19 @@ function run(
                 workspaceId: 'default',
                 groupId: input.group ?? 'group-a'
             },
-            targetPolicy: { mode: 'selected-agents', agentIds: input.agents, includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'selected-agents', agentIds: input.agents },
             recipes: input.recipes.map((recipe) => ({
                 recipeId: recipe.id,
                 profile: recipe.profile,
                 recipe: { schemaVersion: 1, recipeId: recipe.id, commands: [{ kind: 'health' }] },
                 variables: {},
-                secretRefs: [],
                 required: true
             })),
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

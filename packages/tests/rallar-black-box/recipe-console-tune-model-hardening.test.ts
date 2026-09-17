@@ -27,7 +27,7 @@ function run(id: string, controlRunId: string, updated = 2_000): ControlDistribu
             distributedRunId: id,
             controlRunId,
             group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'group-a' },
-            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'], includeOfflineExpectedAgents: false },
+            targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             recipes: [{
                 recipeId: 'recipe-a',
                 recipe: {
@@ -36,22 +36,13 @@ function run(id: string, controlRunId: string, updated = 2_000): ControlDistribu
                     commands: [{ kind: 'health', commandId: `health-${id}` }]
                 },
                 variables: {},
-                secretRefs: [],
                 required: true
             }],
             variables: {},
-            secretRefs: [],
             roleAssignments: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

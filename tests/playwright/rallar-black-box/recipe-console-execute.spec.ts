@@ -1032,29 +1032,19 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
                 recipeId: catalogItem.recipe.recipeId,
                 recipe: catalogItem.recipe,
                 required: true,
-                variables: {},
-                secretRefs: []
+                variables: {}
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['execute-agent-a', 'execute-agent-b'],
-            expectedParticipantCount: 2,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 2
         },
         ackTimeoutMs: 15_000,
         startMode: 'manual',
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         barrier: { enabled: false },
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };
@@ -1794,8 +1784,7 @@ test('preserves the complete 240-target manifest through pressure lifecycle muta
     expect(create?.manifest?.targetPolicy).toEqual({
         mode: 'selected-agents',
         agentIds: Array.from({ length: 240 }, (_unused, index) => `pressure-agent-${String(index).padStart(4, '0')}`),
-        expectedParticipantCount: 240,
-        includeOfflineExpectedAgents: false
+        expectedParticipantCount: 240
     });
     await actions.getByRole('button', { name: /Stage \d+ agents/ }).click();
     await expect(page.locator('[data-execute-run-status]')).toHaveAttribute(

@@ -28,12 +28,11 @@ fills it in with a default. Required fields:
   control run).
 - `group.applicationId`, `group.workspaceId`, and `group.groupId`.
 - `recipes`: at least one selection. Each selection writes `recipeId`,
-  `variables` (`{}` when none), `secretRefs` (`[]` when none), and `required`.
-- `targetPolicy`: a tagged union on `mode`. Every mode writes
-  `includeOfflineExpectedAgents`; `selected-agents` also writes `agentIds`, and
-  `role-map` also writes `roles`. A policy carrying the other mode's field is
+  `variables` (`{}` when none), and `required`.
+- `targetPolicy`: a tagged union on `mode`. `selected-agents` writes `agentIds`,
+  and `role-map` writes `roles`. A policy carrying the other mode's field is
   rejected.
-- `variables` and `secretRefs`: shared run-level inputs (`{}` and `[]` when none).
+- `variables`: shared run-level inputs (`{}` when none).
 - `roleAssignments`: per-agent role and recipe assignment (`[]` when roles come
   from `targetPolicy.roles` or a pattern). Each assignment writes `role`,
   `agentId`, `recipeIds` (`[]` when the agent runs every selection for its role),
@@ -47,8 +46,6 @@ fills it in with a default. Required fields:
   barrier carries no `timeoutMs`.
 - `startMode`: `manual`, `auto-after-ready`, or `scheduled`. Only `scheduled`
   carries `startDeadlineEpochMs`, and it must.
-- `artifactPolicy`: `retainArtifacts`, `includeEventJsonl`, `includeResultJsonl`,
-  `includeFailureBundle`, and `includeDistributedMetadata`.
 - `groupAssertions`: coordinator-evaluated invariants over the collected
   evidence of every targeted agent (`[]` when none). See "Group Assertions" below.
 - `metadata`: free-form author metadata (`{}` when none).
@@ -66,8 +63,11 @@ Fields that stay optional, each absent only with the stated meaning:
   `roleAssignments`. When present it writes `mode: "ordered-targets"`, a
   `pattern` (`all-agents`, `sender-receiver`, `one-sender-many-receivers`, or
   `three-browser-matrix`), and `orderBy: "agent-id"`.
-- `artifactPolicy.retentionDays`: absent when the author requests no retention
-  period.
+
+The schema rejects every other field as `Unexpected property.`, including the
+removed `secretRefs` (manifest and recipe selection),
+`targetPolicy.includeOfflineExpectedAgents`, and `artifactPolicy`: no reader
+ever acted on them.
 
 Use `decodeDistributedRunManifest(value)` from `distributed-run-validation.ts`
 to decode JSON: it runs the schema, then

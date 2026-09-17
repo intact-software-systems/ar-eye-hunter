@@ -204,8 +204,7 @@ describe('distributed recipes verdict', () => {
                     }),
                     profile: 'rtc',
                     required: true,
-                    variables: {},
-                    secretRefs: []
+                    variables: {}
                 }]
             },
             commandLinks: [

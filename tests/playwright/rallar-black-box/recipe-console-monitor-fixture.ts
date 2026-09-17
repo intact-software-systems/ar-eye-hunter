@@ -323,14 +323,12 @@ function createDistributedRun(
                 recipeId: MONITOR_FAILURE_RECIPE_ID,
                 recipe: RECIPE,
                 required: true,
-                variables: {},
-                secretRefs: []
+                variables: {}
             }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: participantCount,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: participantCount
             },
             roleAssignments: agentIds.map((agentId) => ({
                 agentId,
@@ -340,17 +338,9 @@ function createDistributedRun(
                 variables: {}
             })),
             variables: {},
-            secretRefs: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },

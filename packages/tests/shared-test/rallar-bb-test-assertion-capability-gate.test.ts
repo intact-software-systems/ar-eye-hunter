@@ -86,30 +86,20 @@ function manifestWith(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxDistribut
                 recipeId: recipe.recipeId,
                 required: true,
                 recipe,
-                variables: {},
-                secretRefs: []
+                variables: {}
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
-            includeOfflineExpectedAgents: false
+            expectedParticipantCount: 1
         },
         startMode: 'manual',
         schemaVersion: 1,
         controlRunId: `gate-${recipe.recipeId}`,
         variables: {},
-        secretRefs: [],
         roleAssignments: [],
         ackTimeoutMs: 30_000,
         barrier: { enabled: false },
-        artifactPolicy: {
-            retainArtifacts: true,
-            includeEventJsonl: true,
-            includeResultJsonl: true,
-            includeFailureBundle: true,
-            includeDistributedMetadata: true
-        },
         groupAssertions: [],
         metadata: {}
     };

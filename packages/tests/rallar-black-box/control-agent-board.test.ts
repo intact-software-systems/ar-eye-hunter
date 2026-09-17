@@ -136,12 +136,11 @@ function distributedRun(
             controlRunId,
             displayName: `Distributed ${state}`,
             group,
-            recipes: [{ recipeId: 'health-only', required: true, variables: {}, secretRefs: [] }],
+            recipes: [{ recipeId: 'health-only', required: true, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
-                expectedParticipantCount: targetAgentIds.length,
-                includeOfflineExpectedAgents: false
+                expectedParticipantCount: targetAgentIds.length
             },
             roleAssignments: targetAgentIds.map((agentId, index) => ({
                 agentId,
@@ -151,17 +150,9 @@ function distributedRun(
                 variables: {}
             })),
             variables: {},
-            secretRefs: [],
             ackTimeoutMs: 30_000,
             barrier: { enabled: false },
             startMode: 'manual',
-            artifactPolicy: {
-                retainArtifacts: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true,
-                includeDistributedMetadata: true
-            },
             groupAssertions: [],
             metadata: {}
         },
@@ -678,8 +669,7 @@ describe('control agent board derivation', () => {
                 ...baseRun.manifest,
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 2,
-                    includeOfflineExpectedAgents: false
+                    expectedParticipantCount: 2
                 },
                 roleAssignments: [],
                 roleAssignmentPolicy: {

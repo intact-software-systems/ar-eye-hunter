@@ -20,7 +20,6 @@ Deno.test('manifest request decoding rejects an unversioned inline recipe at the
             recipeId: 'api-health',
             recipe: { recipeId: 'api-health', commands: [] },
             variables: {},
-            secretRefs: [],
             required: true
         }]
     };
