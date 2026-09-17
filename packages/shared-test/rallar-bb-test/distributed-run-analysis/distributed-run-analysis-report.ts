@@ -11,9 +11,8 @@ import { resolveFirstDistributedFailure } from '../distributed-run-observation/d
 import {
     getDistributedRunMonitorAnalysisReuse,
     getDistributedRunMonitorFirstPhase,
-    recordDistributedRunAnalysisReportDerivation,
     type DistributedRunMonitorAnalysisReuse
-} from '../distributed-run-observation/distributed-run-monitor-derivation-work.ts';
+} from '../distributed-run-observation/distributed-run-monitor-analysis-reuse.ts';
 import type {
     DistributedRunArtifactValidationStatus,
     DistributedRunFailureRow,
@@ -98,11 +97,9 @@ export function deriveDistributedRunAnalysisReport(
         monitor,
         input.distributedRun
     );
-    const reportWork = createReportWork();
     const firstPhaseForCommand = createReportFirstPhaseLookup({
         analysisReuse,
-        commandLinks: input.distributedRun.commandLinks,
-        reportWork
+        commandLinks: input.distributedRun.commandLinks
     });
     const firstFailure = resolveFirstDistributedFailure(monitor.failures);
     const explanations = toDistributedFailureExplanations({
@@ -118,7 +115,7 @@ export function deriveDistributedRunAnalysisReport(
             explanations[0]
         : undefined;
 
-    const report: DistributedRunAnalysisReport = {
+    return {
         distributedRunId: input.distributedRun.distributedRunId,
         summary: toReportSummary({
             distributedRun: input.distributedRun,
@@ -132,8 +129,6 @@ export function deriveDistributedRunAnalysisReport(
         nextActions: explanations,
         rawEvidence: toReportRawEvidence(monitor)
     };
-    recordDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
-    return report;
 }
 
 function toReportDiagnostics(monitor: DistributedRunMonitor): DistributedRunAnalysisReport['diagnostics'] {
@@ -200,22 +195,6 @@ function toReportFirstFailure(
     };
 }
 
-interface ReportWork {
-    reportCommandLinkLookupCount: number;
-    reportFallbackCommandLinkIndexPassCount: number;
-    reportFallbackCommandLinkVisitCount: number;
-    reportFallbackCommandPhaseLookupCount: number;
-}
-
-function createReportWork(): ReportWork {
-    return {
-        reportCommandLinkLookupCount: 0,
-        reportFallbackCommandLinkIndexPassCount: 0,
-        reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0
-    };
-}
-
 /**
  * The fallback link index is built on the first command that needs a phase, so a
  * report without failures never walks the command links.
@@ -224,29 +203,18 @@ function createReportFirstPhaseLookup(
     input: Readonly<{
         analysisReuse: DistributedRunMonitorAnalysisReuse | undefined;
         commandLinks: readonly ControlDistributedRunCommandLink[];
-        reportWork: ReportWork;
     }>
 ): FirstDistributedRunPhaseForCommand {
-    const { analysisReuse, reportWork } = input;
+    const { analysisReuse } = input;
     let fallbackFirstPhasesByCommandId: ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> | undefined;
     return (commandId) => {
         if (analysisReuse !== undefined) {
-            if (commandId !== undefined) {
-                reportWork.reportCommandLinkLookupCount += 1;
-            }
             return getDistributedRunMonitorFirstPhase(analysisReuse, commandId);
         }
         if (commandId === undefined) {
             return undefined;
         }
-        reportWork.reportFallbackCommandPhaseLookupCount += 1;
-        if (fallbackFirstPhasesByCommandId === undefined) {
-            reportWork.reportFallbackCommandLinkIndexPassCount += 1;
-            fallbackFirstPhasesByCommandId = toFirstDistributedRunPhasesByCommandId(
-                input.commandLinks,
-                reportWork
-            );
-        }
+        fallbackFirstPhasesByCommandId ??= toFirstDistributedRunPhasesByCommandId(input.commandLinks);
         return fallbackFirstPhasesByCommandId.get(commandId);
     };
 }
@@ -272,12 +240,10 @@ function toReportAgentRows(
 }
 
 function toFirstDistributedRunPhasesByCommandId(
-    links: readonly ControlDistributedRunCommandLink[],
-    work: { reportFallbackCommandLinkVisitCount: number; }
+    links: readonly ControlDistributedRunCommandLink[]
 ): ReadonlyMap<string, ControlDistributedRunCommandLink['phase']> {
     const firstPhasesByCommandId = new Map<string, ControlDistributedRunCommandLink['phase']>();
     for (const link of links) {
-        work.reportFallbackCommandLinkVisitCount += 1;
         if (!firstPhasesByCommandId.has(link.commandId)) {
             firstPhasesByCommandId.set(link.commandId, link.phase);
         }

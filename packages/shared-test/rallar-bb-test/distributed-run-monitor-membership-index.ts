@@ -1,24 +1,6 @@
 import type { ControlDistributedRunSnapshot } from './control-snapshots.ts';
 import { resolveDistributedRunRecipeSelectionKey } from './distributed-run-evidence.ts';
-import type { DistributedRunMonitorDerivationWork } from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from './distributed-run.ts';
-
-export type DistributedRunMonitorMembershipIndexWork = Pick<
-    DistributedRunMonitorDerivationWork,
-    | 'targetAgentIndexPassCount'
-    | 'targetAgentVisitCount'
-    | 'recipeSelectionIndexPassCount'
-    | 'recipeSelectionVisitCount'
-    | 'roleAssignmentIndexPassCount'
-    | 'roleAssignmentVisitCount'
-    | 'targetPolicyRoleMembershipVisitCount'
-    | 'membershipDescriptorBuildCount'
-    | 'membershipInvertedIndexWriteCount'
-    | 'membershipIntersectionCandidateVisitCount'
-    | 'recipeTargetCountProjectionVisitCount'
-    | 'retainedMembershipDescriptorCount'
-    | 'retainedRecipeTargetCountCount'
->;
 
 type RecipeMembershipDescriptor = Readonly<{
     selectionKey?: string;
@@ -40,37 +22,11 @@ export type DistributedRunMonitorMembershipIndex = Readonly<{
     recipeMembershipDescriptors: readonly RecipeMembershipDescriptor[];
     targetMembershipByAgentId: ReadonlyMap<string, TargetMembershipDescriptor>;
     targetCountByRecipeIndex: readonly number[];
-    work: DistributedRunMonitorMembershipIndexWork;
 }>;
-
-const EMPTY_MEMBERSHIP_INDEX_WORK: DistributedRunMonitorMembershipIndexWork = {
-    targetAgentIndexPassCount: 0,
-    targetAgentVisitCount: 0,
-    recipeSelectionIndexPassCount: 0,
-    recipeSelectionVisitCount: 0,
-    roleAssignmentIndexPassCount: 0,
-    roleAssignmentVisitCount: 0,
-    targetPolicyRoleMembershipVisitCount: 0,
-    membershipDescriptorBuildCount: 0,
-    membershipInvertedIndexWriteCount: 0,
-    membershipIntersectionCandidateVisitCount: 0,
-    recipeTargetCountProjectionVisitCount: 0,
-    retainedMembershipDescriptorCount: 0,
-    retainedRecipeTargetCountCount: 0
-};
-
-interface IntersectionMultiplicity {
-    readonly multiplicity: number;
-    readonly candidateVisitCount: number;
-}
-
-const NO_INTERSECTION: IntersectionMultiplicity = { multiplicity: 0, candidateVisitCount: 0 };
 
 export function createDistributedRunMonitorMembershipIndex(
     distributedRun: ControlDistributedRunSnapshot
 ): DistributedRunMonitorMembershipIndex {
-    const work: Record<keyof DistributedRunMonitorMembershipIndexWork, number> = { ...EMPTY_MEMBERSHIP_INDEX_WORK };
-    work.roleAssignmentIndexPassCount += 1;
     const resolvedAssignments = distributedRun.targetResolution?.roleAssignments;
     const assignments = resolvedAssignments ?? distributedRun.manifest.roleAssignments;
     const displayRolesByAgentId = new Map<string, string[]>();
@@ -78,7 +34,6 @@ export function createDistributedRunMonitorMembershipIndex(
     const assignedRecipeIdsByAgentId = new Map<string, Set<string>>();
 
     for (const assignment of assignments) {
-        work.roleAssignmentVisitCount += 1;
         appendMapValue(displayRolesByAgentId, assignment.agentId, assignment.role);
         addMapSetValue(expectedRolesByAgentId, assignment.agentId, assignment.role);
         for (const recipeId of assignment.recipeIds) {
@@ -90,13 +45,11 @@ export function createDistributedRunMonitorMembershipIndex(
     if (resolvedAssignments === undefined && targetPolicy.mode === 'role-map') {
         for (const [role, agentIds] of Object.entries(targetPolicy.roles)) {
             for (const agentId of agentIds) {
-                work.targetPolicyRoleMembershipVisitCount += 1;
                 addMapSetValue(expectedRolesByAgentId, agentId, role);
             }
         }
     }
 
-    work.recipeSelectionIndexPassCount += 1;
     const recipeSelections: RallarBlackBoxDistributedRunRecipeSelection[] = [];
     const recipeIds: string[] = [];
     const recipeMembershipDescriptors: RecipeMembershipDescriptor[] = [];
@@ -105,7 +58,6 @@ export function createDistributedRunMonitorMembershipIndex(
     const selectedRoles = new Set<string>();
     let recipeIndex = 0;
     for (const selection of distributedRun.manifest.recipes) {
-        work.recipeSelectionVisitCount += 1;
         recipeSelections.push(selection);
         const selectionKey = resolveDistributedRunRecipeSelectionKey(selection) || undefined;
         const recipeId = selectionKey ?? `recipe-${recipeIndex + 1}`;
@@ -115,7 +67,6 @@ export function createDistributedRunMonitorMembershipIndex(
             role: selection.role
         });
         targetCountByRecipeIndex.push(0);
-        work.retainedRecipeTargetCountCount += 1;
         if (selectionKey) {
             selectedRecipeKeys.add(selectionKey);
         }
@@ -125,11 +76,9 @@ export function createDistributedRunMonitorMembershipIndex(
         recipeIndex += 1;
     }
 
-    work.targetAgentIndexPassCount += 1;
     const targetAgentIds: string[] = [];
     const targetMultiplicityByAgentId = new Map<string, number>();
     for (const agentId of distributedRun.targetAgentIds) {
-        work.targetAgentVisitCount += 1;
         targetAgentIds.push(agentId);
         targetMultiplicityByAgentId.set(
             agentId,
@@ -144,7 +93,6 @@ export function createDistributedRunMonitorMembershipIndex(
     const roleMultiplicityByRole = new Map<string, number>();
     let unroledFallbackTargetMultiplicity = 0;
     for (const [agentId, multiplicity] of targetMultiplicityByAgentId) {
-        work.membershipDescriptorBuildCount += 1;
         const assignedRecipeIds = assignedRecipeIdsByAgentId.get(agentId) ?? EMPTY_STRINGS;
         const roles = expectedRolesByAgentId.get(agentId) ?? EMPTY_STRINGS;
         const hasExplicitSelection = hasSelectedValue(
@@ -157,7 +105,6 @@ export function createDistributedRunMonitorMembershipIndex(
             roles,
             hasExplicitSelection
         });
-        work.retainedMembershipDescriptorCount += 1;
         if (assignedRecipeIds.size === 0 || !hasExplicitSelection) {
             unroledFallbackTargetMultiplicity += multiplicity;
         }
@@ -166,7 +113,6 @@ export function createDistributedRunMonitorMembershipIndex(
                 continue;
             }
             addInvertedTarget(targetAgentIdsByAssignedRecipeId, recipeId, agentId);
-            work.membershipInvertedIndexWriteCount += 1;
             incrementMultiplicity(
                 assignedRecipeMultiplicityById,
                 recipeId,
@@ -178,14 +124,12 @@ export function createDistributedRunMonitorMembershipIndex(
                 continue;
             }
             addInvertedTarget(targetAgentIdsByRole, role, agentId);
-            work.membershipInvertedIndexWriteCount += 1;
             incrementMultiplicity(roleMultiplicityByRole, role, multiplicity);
         }
     }
 
     const intersectionMultiplicityByRecipeIdAndRole = new Map<string, Map<string, number>>();
     for (let selectionIndex = 0; selectionIndex < recipeMembershipDescriptors.length; selectionIndex += 1) {
-        work.recipeTargetCountProjectionVisitCount += 1;
         const descriptor = recipeMembershipDescriptors[selectionIndex]!;
         const directMultiplicity = descriptor.selectionKey
             ? assignedRecipeMultiplicityById.get(descriptor.selectionKey) ?? 0
@@ -204,9 +148,8 @@ export function createDistributedRunMonitorMembershipIndex(
                 targetMultiplicityByAgentId,
                 intersectionMultiplicityByRecipeIdAndRole
             })
-            : NO_INTERSECTION;
-        work.membershipIntersectionCandidateVisitCount += overlap.candidateVisitCount;
-        targetCountByRecipeIndex[selectionIndex] = directMultiplicity + roleMultiplicity - overlap.multiplicity;
+            : 0;
+        targetCountByRecipeIndex[selectionIndex] = directMultiplicity + roleMultiplicity - overlap;
     }
 
     return {
@@ -219,8 +162,7 @@ export function createDistributedRunMonitorMembershipIndex(
         ])),
         recipeMembershipDescriptors,
         targetMembershipByAgentId,
-        targetCountByRecipeIndex,
-        work
+        targetCountByRecipeIndex
     };
 }
 
@@ -312,13 +254,13 @@ function cachedIntersectionMultiplicity(
         targetMultiplicityByAgentId: ReadonlyMap<string, number>;
         intersectionMultiplicityByRecipeIdAndRole: Map<string, Map<string, number>>;
     }>
-): IntersectionMultiplicity {
+): number {
     const cachedByRole = input.intersectionMultiplicityByRecipeIdAndRole.get(
         input.recipeId
     );
     const cached = cachedByRole?.get(input.role);
     if (cached !== undefined) {
-        return { multiplicity: cached, candidateVisitCount: 0 };
+        return cached;
     }
 
     const directTargets = input.targetAgentIdsByAssignedRecipeId.get(input.recipeId) ??
@@ -328,9 +270,7 @@ function cachedIntersectionMultiplicity(
         ? [directTargets, roleTargets]
         : [roleTargets, directTargets];
     let intersectionMultiplicity = 0;
-    let candidateVisitCount = 0;
     for (const agentId of candidates) {
-        candidateVisitCount += 1;
         if (membership.has(agentId)) {
             intersectionMultiplicity += input.targetMultiplicityByAgentId.get(agentId) ?? 0;
         }
@@ -340,7 +280,7 @@ function cachedIntersectionMultiplicity(
         input.intersectionMultiplicityByRecipeIdAndRole.set(input.recipeId, byRole);
     }
     byRole.set(input.role, intersectionMultiplicity);
-    return { multiplicity: intersectionMultiplicity, candidateVisitCount };
+    return intersectionMultiplicity;
 }
 
 function appendMapValue<Key, Value>(

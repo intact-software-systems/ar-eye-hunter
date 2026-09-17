@@ -4,7 +4,6 @@ import type {
     ControlRunSnapshot
 } from '../control-snapshots.ts';
 import { distributedRecipeStateTone } from './distributed-recipe-state-tone.ts';
-import type { DistributedRunMonitorDerivationWork } from './distributed-run-monitor-derivation-work.ts';
 import type {
     DistributedRunEventRow,
     DistributedRunFailureRow,
@@ -23,39 +22,25 @@ export interface ToDistributedRunTimelineInput {
     readonly failures: readonly DistributedRunFailureRow[];
 }
 
-export interface DistributedRunTimeline {
-    readonly items: readonly DistributedRunTimelineItem[];
-    readonly work: Pick<DistributedRunMonitorDerivationWork, 'timelineCommandLinkProjectionVisitCount'>;
-}
-
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
 
 /** A timeline item whose time is still unknown; the projection drops those. */
 type TimedTimelineItem = Omit<DistributedRunTimelineItem, 'atEpochMs'> & { atEpochMs?: number; };
 
-export function toDistributedRunTimeline(input: ToDistributedRunTimelineInput): DistributedRunTimeline {
-    const commandLinkItems: TimedTimelineItem[] = [];
-    let commandLinkVisitCount = 0;
-    for (const link of input.commandLinks) {
-        commandLinkVisitCount += 1;
-        commandLinkItems.push(...toCommandLinkItems(link, input.commands.get(link.commandId)));
-    }
+export function toDistributedRunTimeline(input: ToDistributedRunTimelineInput): readonly DistributedRunTimelineItem[] {
     const candidates: readonly TimedTimelineItem[] = [
         ...toLifecycleItems(input.distributedRun),
-        ...commandLinkItems,
+        ...input.commandLinks.flatMap((link) => toCommandLinkItems(link, input.commands.get(link.commandId))),
         ...input.results.map(toResultItem),
         ...input.failures.map(toFailureItem),
         ...input.events.map(toEventItem),
         ...input.runtimeDiagnostics.map(toDiagnosticItem)
     ];
 
-    return {
-        items: candidates
-            .filter(isTimedTimelineItem)
-            .sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id)),
-        work: { timelineCommandLinkProjectionVisitCount: commandLinkVisitCount }
-    };
+    return candidates
+        .filter(isTimedTimelineItem)
+        .sort((left, right) => left.atEpochMs - right.atEpochMs || left.id.localeCompare(right.id));
 }
 
 function isTimedTimelineItem(candidate: TimedTimelineItem): candidate is DistributedRunTimelineItem {

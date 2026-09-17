@@ -5,7 +5,7 @@ import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-
 import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
 import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
-    computeDistributedRunCorrelatedFailures,
+    computeDistributedRunCorrelatedFailureKeys,
     createDistributedRunMonitorFailureIndex
 } from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-failure-index.ts';
 import type {
@@ -1799,12 +1799,12 @@ function correlateLatestFailureWindow(failureCount: number): FailureWindowCorrel
     }));
     const index = createDistributedRunMonitorFailureIndex(failures);
     const bucket = witnessElementReads(index.timedPositionsByAgentId.get('history-agent') ?? []);
-    const correlated = computeDistributedRunCorrelatedFailures(windowDiagnostic((failureCount - 16) * 1_000), {
+    const failureKeys = computeDistributedRunCorrelatedFailureKeys(windowDiagnostic((failureCount - 16) * 1_000), {
         ...index,
         timedPositionsByAgentId: new Map([['history-agent', bucket.values]])
     });
     return {
-        failureKeys: correlated.failureKeys,
+        failureKeys,
         bucketReads: bucket.readsPerElement().reduce((total, reads) => total + reads, 0)
     };
 }
