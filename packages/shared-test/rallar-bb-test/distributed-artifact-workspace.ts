@@ -1,7 +1,6 @@
 import type { DistributedRunAnalysis, DistributedRunArtifactRejection } from './distributed-artifact-analysis.ts';
 import {
     computeDistributedRunArtifactPipelineAnalysis,
-    resolveArtifactSchemaVersion,
     type DistributedRunArtifactPipelineAnalysisResult
 } from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
 import {
@@ -70,6 +69,12 @@ interface WorkspaceAnalysisInput {
     /** Undefined when neither the caller, an artifact envelope nor metadata.json supplies a generation time. */
     readonly generatedAtEpochMs: number | undefined;
     readonly support: DistributedArtifactWorkspaceSupport;
+}
+
+/** The generation time and schema version an analyzable distributed-run workspace always has. */
+interface AnalyzedArtifactFacts {
+    readonly generatedAtEpochMs: number;
+    readonly artifactSchemaVersion: number;
 }
 
 interface WorkspaceAnalysis {
@@ -237,9 +242,10 @@ function toEnvelopeIssues(
 function computeWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): WorkspaceAnalysis {
     const { parsed, family, schema, generatedAtEpochMs, support } = analysisInput;
     const { projection } = parsed;
+    const { artifactSchemaVersion } = schema;
     if (
-        family !== 'distributed-run' || schema.hasSchemaConflict || projection.invalidSchemaMessage ||
-        projection.fatal
+        family !== 'distributed-run' || artifactSchemaVersion === undefined || schema.hasSchemaConflict ||
+        projection.invalidSchemaMessage || projection.fatal
     ) {
         return { support, issues: [], unreadableFiles: [] };
     }
@@ -254,7 +260,10 @@ function computeWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): Worksp
         }),
         (content) =>
             content.variant === 'distributed-run'
-                ? computeDistributedRunWorkspaceAnalysis(analysisInput, content, generatedAtEpochMs)
+                ? computeDistributedRunWorkspaceAnalysis(analysisInput, content, {
+                    generatedAtEpochMs,
+                    artifactSchemaVersion
+                })
                 : { support: 'incompatible', issues: [toControlRequestFailureIssue(content)], unreadableFiles: [] }
     );
 }
@@ -266,15 +275,10 @@ function computeWorkspaceAnalysis(analysisInput: WorkspaceAnalysisInput): Worksp
 function computeDistributedRunWorkspaceAnalysis(
     analysisInput: WorkspaceAnalysisInput,
     content: DistributedRunBundleContent,
-    generatedAtEpochMs: number
+    facts: AnalyzedArtifactFacts
 ): WorkspaceAnalysis {
     const { parsed, schema, support } = analysisInput;
-    const pipelineAnalysis = computeDistributedRunArtifactPipelineAnalysis({
-        parsed,
-        content,
-        generatedAtEpochMs,
-        artifactSchemaVersion: schema.artifactSchemaVersion ?? resolveArtifactSchemaVersion(parsed)
-    });
+    const pipelineAnalysis = computeDistributedRunArtifactPipelineAnalysis({ parsed, content, ...facts });
     const unreadableFiles = pipelineAnalysis.controlRunStatus === 'recorded'
         ? []
         : toLoadedFileRejections(schema, [pipelineAnalysis.reason]);
