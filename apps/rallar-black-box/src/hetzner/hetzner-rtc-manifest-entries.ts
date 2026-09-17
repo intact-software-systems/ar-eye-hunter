@@ -25,7 +25,7 @@ export function createDiagnosticRtcRealtime2Agent20hzStressEntry(): HetznerDistr
         title: 'RTC realtime 2-agent 20 Hz stress',
         description: 'Strict 20 Hz RTC realtime stress run for stream pacing and in-flight backlog diagnostics.',
         distributedRunId: 'hetzner-diagnostic-rtc-realtime-2-agent-20hz-stress',
-        recipe: createRallarBlackBoxRtcRealtimeRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 5,
             rateHz: 20,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -35,13 +35,20 @@ export function createDiagnosticRtcRealtime2Agent20hzStressEntry(): HetznerDistr
             stream: {
                 maxDroppedFrames: 20
             }
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'stress', 'diagnostic'],
         live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
         diagnostic: true,
         expectedFailure: false,
-        stress: true
+        stress: true,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -51,12 +58,20 @@ export function createDiagnosticExpectedFailure1AgentEntry(): HetznerDistributed
         title: 'Expected failure 1-agent',
         description: 'Diagnostic run that intentionally fails to verify artifact analyzer fix proposals.',
         distributedRunId: 'hetzner-diagnostic-expected-failure-1-agent',
-        recipe: toFixtureRecipe('expected-failure'),
+        recipes: [toFixtureRecipe('expected-failure')],
         agentCount: 1,
         profiles: ['negative', 'diagnostic'],
         live: false,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
         diagnostic: true,
-        expectedFailure: true
+        expectedFailure: true,
+        stress: false,
+        barrier: false,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -66,12 +81,20 @@ export function createDiagnosticBarrierHealth2AgentEntry(): HetznerDistributedMa
         title: 'Barrier health 2-agent',
         description: 'Diagnostic run that validates synchronized barrier orchestration before start.',
         distributedRunId: 'hetzner-diagnostic-barrier-health-2-agent',
-        recipe: createHealthRecipe('barrier-health'),
+        recipes: [createHealthRecipe('barrier-health')],
         agentCount: 2,
         profiles: ['health', 'barrier', 'diagnostic'],
         live: false,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
         diagnostic: true,
-        barrier: true
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -82,11 +105,20 @@ export function createGroupAssertions2AgentEntry(): HetznerDistributedManifestEn
         description: 'Coordinator-evaluated group assertions: allEqual convergence over the ' +
             'shared group snapshot and noneMatch isolation over per-agent absence windows.',
         distributedRunId: 'hetzner-group-assertions-2-agent',
-        recipe: createHetznerGroupAssertionsRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
+        recipes: [createHetznerGroupAssertionsRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP)],
         agentCount: 2,
         profiles: ['rtc', 'group-assertions', 'isolation', 'extended'],
         live: true,
-        groupAssertions: createHetznerGroupAssertions(2)
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: createHetznerGroupAssertions(2),
+        metadata: {}
     });
 }
 
@@ -97,10 +129,20 @@ export function createRtcAbsenceWait2AgentEntry(): HetznerDistributedManifestEnt
         description: 'Same-room positive control delivery followed by absence waits proving ' +
             'no leak-probe frame and no silent rtc send failure.',
         distributedRunId: 'hetzner-rtc-absence-wait-2-agent',
-        recipe: createHetznerRtcAbsenceWaitRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
+        recipes: [createHetznerRtcAbsenceWaitRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP)],
         agentCount: 2,
         profiles: ['rtc', 'absence', 'isolation', 'extended'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -110,7 +152,7 @@ export function createRtcRealtime3Agent15sEntry(): HetznerDistributedManifestEnt
         title: 'RTC realtime 3-agent 15s',
         description: 'Heavier 10 Hz RTC realtime run for three-agent load and percentile baselines.',
         distributedRunId: 'hetzner-rtc-realtime-3-agent-15s',
-        recipe: createRallarBlackBoxRtcRealtimeRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 15,
             rateHz: 10,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -120,10 +162,20 @@ export function createRtcRealtime3Agent15sEntry(): HetznerDistributedManifestEnt
             stream: {
                 maxDroppedFrames: 15
             }
-        }),
+        })],
         agentCount: 3,
         profiles: ['rtc', 'realtime', 'load'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -140,7 +192,14 @@ export function createRtcRealtimeStability2Agent30s20hzEntry(): HetznerDistribut
         live: true,
         targetAgentIds: ['controller-01', 'controller-02'],
         targetPolicyMode: 'role-map',
-        rolePattern: 'sender-receiver'
+        rolePattern: 'sender-receiver',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -150,7 +209,7 @@ export function createRtcRealtimeStability2Agent30s15hzEntry(): HetznerDistribut
         title: 'RTC realtime stability 2-agent 30s 15 Hz',
         description: 'Higher-rate 15 Hz RTC realtime stability stream for sustained pacing evidence.',
         distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-15hz',
-        recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeStabilityRecipe({
             durationSeconds: 30,
             rateHz: 15,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -162,10 +221,20 @@ export function createRtcRealtimeStability2Agent30s15hzEntry(): HetznerDistribut
                 maxP95SendDurationMs: 200,
                 maxP99SendDurationMs: 1000
             }
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'stability', 'extended'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -175,7 +244,7 @@ export function createRtcRealtimeStability2Agent30s10hzEntry(): HetznerDistribut
         title: 'RTC realtime stability 2-agent 30s 10 Hz',
         description: 'Longer 10 Hz RTC realtime stability stream for sustained pacing evidence.',
         distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s-10hz',
-        recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeStabilityRecipe({
             durationSeconds: 30,
             rateHz: 10,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -187,10 +256,20 @@ export function createRtcRealtimeStability2Agent30s10hzEntry(): HetznerDistribut
                 maxP95SendDurationMs: 200,
                 maxP99SendDurationMs: 1000
             }
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'stability', 'extended'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -200,15 +279,25 @@ export function createRtcRealtimeStability2Agent30sEntry(): HetznerDistributedMa
         title: 'RTC realtime stability 2-agent 30s',
         description: 'Longer 5 Hz RTC realtime stability stream for sustained pacing evidence.',
         distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-30s',
-        recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeStabilityRecipe({
             durationSeconds: 30,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
             readyPeerCount: 1,
             readyTimeoutMs: 10_000
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'stability', 'extended'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -218,7 +307,7 @@ export function createRtcRealtime2Agent5sEntry(): HetznerDistributedManifestEntr
         title: 'RTC realtime 2-agent 5s',
         description: 'Short 10 Hz RTC realtime run for first-pass RTT and event-rate performance baseline.',
         distributedRunId: 'hetzner-rtc-realtime-2-agent-5s',
-        recipe: createRallarBlackBoxRtcRealtimeRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeRecipe({
             durationSeconds: 5,
             rateHz: 10,
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
@@ -228,10 +317,20 @@ export function createRtcRealtime2Agent5sEntry(): HetznerDistributedManifestEntr
             stream: {
                 maxDroppedFrames: 5
             }
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'baseline'],
-        live: true
+        live: true,
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -241,15 +340,24 @@ export function createRtcRealtimeStability2Agent5sEntry(): HetznerDistributedMan
         title: 'RTC realtime stability 2-agent 5s',
         description: 'Lower-risk 5 Hz RTC realtime stream for green stability and first-pass pacing evidence.',
         distributedRunId: 'hetzner-rtc-realtime-stability-2-agent-5s',
-        recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
+        recipes: [createRallarBlackBoxRtcRealtimeStabilityRecipe({
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
             readyPeerCount: 1,
             readyTimeoutMs: 10_000
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'realtime', 'stability', 'green'],
         live: true,
-        mainline: true
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: true,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -260,11 +368,20 @@ export function createProviderParity2AgentEntry(): HetznerDistributedManifestEnt
         description:
             'Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset.',
         distributedRunId: 'hetzner-provider-parity-2-agent',
-        recipe: createHetznerProviderParityRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
+        recipes: [createHetznerProviderParityRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP)],
         agentCount: 2,
         profiles: ['rtc', 'parity'],
         live: true,
-        mainline: true
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: true,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -274,15 +391,24 @@ export function createRtcSmoke2AgentEntry(): HetznerDistributedManifestEntry {
         title: 'RTC smoke 2-agent',
         description: 'Live RTC connect/send/stats smoke against the Hetzner headless room.',
         distributedRunId: 'hetzner-rtc-smoke-2-agent',
-        recipe: createRallarBlackBoxRtcSmokeRecipe({
+        recipes: [createRallarBlackBoxRtcSmokeRecipe({
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
             readyPeerCount: 1,
             readyTimeoutMs: 10_000
-        }),
+        })],
         agentCount: 2,
         profiles: ['rtc', 'smoke'],
         live: true,
-        mainline: true
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: true,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -292,11 +418,20 @@ export function createCompositeEvidence2AgentEntry(): HetznerDistributedManifest
         title: 'Composite evidence 2-agent',
         description: 'Loop, parallel, wait, and assert evidence without relying on live RTC delivery.',
         distributedRunId: 'hetzner-composite-evidence-2-agent',
-        recipe: toFixtureRecipe('composite-evidence'),
+        recipes: [toFixtureRecipe('composite-evidence')],
         agentCount: 2,
         profiles: ['composite', 'smoke'],
         live: false,
-        mainline: true
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: true,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: false,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 
@@ -306,11 +441,20 @@ export function createHealth2AgentEntry(): HetznerDistributedManifestEntry {
         title: 'Health 2-agent',
         description: 'Cheap headless control-agent reachability check using health and stats commands.',
         distributedRunId: 'hetzner-health-2-agent',
-        recipe: createHealthRecipe(),
+        recipes: [createHealthRecipe()],
         agentCount: 2,
         profiles: ['health', 'smoke'],
         live: false,
-        mainline: true
+        targetAgentIds: [],
+        targetPolicyMode: 'all-online-group-members',
+        rolePattern: 'all-agents',
+        mainline: true,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: false,
+        groupAssertions: [],
+        metadata: {}
     });
 }
 

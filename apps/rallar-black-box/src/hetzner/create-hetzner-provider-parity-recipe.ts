@@ -12,20 +12,17 @@ const OMITTED_DEMO_CREDENTIAL_KEYS = new Set([
 export function createHetznerProviderParityRecipe(
     group: RallarBlackBoxDistributedGroupRef
 ): RallarBlackBoxTestRecipe {
-    const recipe = withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
+    const recipe = toRecipeWithoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
         group,
         readyPeerCount: 1,
         readyTimeoutMs: 10_000
     }));
-    const closeIndex = recipe.commands.findIndex((command) => command.kind === 'close');
-    if (closeIndex < 0) {
-        throw new Error('Provider parity recipe must close its browser runtime.');
-    }
+    const holdIndex = resolveOverlapHoldIndex(recipe);
 
     return {
         ...recipe,
         commands: [
-            ...recipe.commands.slice(0, closeIndex),
+            ...recipe.commands.slice(0, holdIndex),
             {
                 kind: 'loop',
                 commandId: 'parity-peer-overlap-hold',
@@ -42,12 +39,21 @@ export function createHetznerProviderParityRecipe(
                     }
                 ]
             },
-            ...recipe.commands.slice(closeIndex)
+            ...recipe.commands.slice(holdIndex)
         ]
     };
 }
 
-function withoutDemoCredentials(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
+/**
+ * The peers must stay online until the runtime closes, so the hold goes immediately before the
+ * close, or at the end of a recipe that does not close.
+ */
+function resolveOverlapHoldIndex(recipe: RallarBlackBoxTestRecipe): number {
+    const closeIndex = recipe.commands.findIndex((command) => command.kind === 'close');
+    return closeIndex < 0 ? recipe.commands.length : closeIndex;
+}
+
+function toRecipeWithoutDemoCredentials(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
     return {
         ...recipe,
         commands: recipe.commands.map((command) => {

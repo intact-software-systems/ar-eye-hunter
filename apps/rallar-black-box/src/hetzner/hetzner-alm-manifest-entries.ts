@@ -48,6 +48,12 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         targetAgentIds: ['controller-01', 'controller-02'],
         targetPolicyMode: 'role-map',
         rolePattern: 'sender-receiver',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
+        barrier: true,
+        groupAssertions: [],
         metadata: {
             family: 'alm-conformance',
             carriers: [...ALM_CONFORMANCE_CARRIERS],
@@ -121,7 +127,12 @@ function createAlmConformanceExtendedEntry(
         targetAgentIds: toControllerAgentIds(input.participantCount),
         targetPolicyMode: 'role-map',
         rolePattern: 'one-sender-many-receivers',
+        mainline: false,
+        diagnostic: false,
+        expectedFailure: false,
+        stress: false,
         barrier: true,
+        groupAssertions: [],
         metadata: toAlmConformanceExtendedMetadata(input.participantCount)
     });
 }
@@ -159,7 +170,8 @@ function toAlmConformanceExtendedMetadata(
         rateHz: 20,
         minReceiveRatio: 0.95,
         receiverExpectedFrames: 600,
-        recommendedTerminalTimeoutSeconds: 330
+        recommendedTerminalTimeoutSeconds: 330,
+        catalogProfiles: []
     });
 }
 

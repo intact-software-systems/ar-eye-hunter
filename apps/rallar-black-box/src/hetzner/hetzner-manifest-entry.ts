@@ -9,7 +9,11 @@ import type {
 import type {
     RallarBlackBoxDistributedGroupAssertion
 } from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecord
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
@@ -58,52 +62,55 @@ export interface HetznerDistributedManifestEntry {
     readonly manifest: RallarBlackBoxDistributedRunManifest;
 }
 
+/**
+ * One catalog entry as its author writes it. Every setting is explicit: the catalog is the
+ * audited source of the checked-in manifests, so a run's targeting, barrier and classification
+ * are read at the entry, not derived inside this factory.
+ */
 export interface ManifestCatalogInput {
     readonly filePath: string;
     readonly title: string;
     readonly description: string;
     readonly distributedRunId: string;
-    readonly recipe?: RallarBlackBoxTestRecipe;
-    readonly recipes?: readonly RallarBlackBoxTestRecipe[];
+    readonly recipes: readonly RallarBlackBoxTestRecipe[];
     readonly agentCount: number;
     readonly profiles: readonly string[];
     readonly live: boolean;
-    readonly targetAgentIds?: readonly string[];
-    readonly targetPolicyMode?: RallarBlackBoxDistributedTargetPolicyMode;
-    readonly rolePattern?: RallarBlackBoxDistributedRolePattern;
-    readonly mainline?: boolean;
-    readonly diagnostic?: boolean;
-    readonly expectedFailure?: boolean;
-    readonly stress?: boolean;
-    readonly barrier?: boolean;
-    readonly groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
-    readonly metadata?: Readonly<Record<string, unknown>>;
+    readonly targetAgentIds: readonly string[];
+    readonly targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
+    readonly rolePattern: RallarBlackBoxDistributedRolePattern;
+    readonly mainline: boolean;
+    readonly diagnostic: boolean;
+    readonly expectedFailure: boolean;
+    readonly stress: boolean;
+    readonly barrier: boolean;
+    readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
+    readonly metadata: RallarBlackBoxTestRecord;
 }
 
-const DEFAULT_ACK_TIMEOUT_MS = 30_000;
+const ACK_TIMEOUT_MS = 30_000;
 
-const DEFAULT_CONTROL_RUN_ID = 'hetzner-manifest-template-control-run';
+const BARRIER_TIMEOUT_MS = 15_000;
+
+const TEMPLATE_CONTROL_RUN_ID = 'hetzner-manifest-template-control-run';
 
 export function createManifestEntry(input: ManifestCatalogInput): HetznerDistributedManifestEntry {
     const manifest = createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
-        controlRunId: DEFAULT_CONTROL_RUN_ID,
+        controlRunId: TEMPLATE_CONTROL_RUN_ID,
         displayName: input.title,
         group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
         recipes: toCatalogItems(input),
-        targetAgentIds: input.targetAgentIds ?? [],
-        targetPolicyMode: input.targetPolicyMode ?? 'all-online-group-members',
-        rolePattern: input.rolePattern ?? 'all-agents',
-        ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
-        barrier: input.barrier || (input.live && input.agentCount >= 2)
-            ? {
-                enabled: true,
-                timeoutMs: 15_000
-            }
+        targetAgentIds: input.targetAgentIds,
+        targetPolicyMode: input.targetPolicyMode,
+        rolePattern: input.rolePattern,
+        ackTimeoutMs: ACK_TIMEOUT_MS,
+        barrier: input.barrier
+            ? { enabled: true, timeoutMs: BARRIER_TIMEOUT_MS }
             : { enabled: false },
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
-        groupAssertions: input.groupAssertions ?? [],
+        groupAssertions: input.groupAssertions,
         createdBy: 'rallar-black-box-hetzner-manifest-catalog'
     });
 
@@ -112,18 +119,18 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
         title: input.title,
         description: input.description,
         agentCount: input.agentCount,
-        mainline: input.mainline === true,
-        diagnostic: input.diagnostic === true,
+        mainline: input.mainline,
+        diagnostic: input.diagnostic,
         manifest: {
             ...manifest,
             description: input.description,
             metadata: {
                 ...manifest.metadata,
                 manifestSuite: 'hetzner-distributed',
-                diagnostic: input.diagnostic === true,
-                expectedFailure: input.expectedFailure === true,
-                ...(input.stress === true ? { stress: true } : {}),
-                ...(input.metadata ?? {})
+                diagnostic: input.diagnostic,
+                expectedFailure: input.expectedFailure,
+                ...(input.stress ? { stress: true } : {}),
+                ...input.metadata
             }
         }
     };
@@ -133,10 +140,20 @@ export function toControllerAgentIds(count: number): readonly string[] {
     return Array.from({ length: count }, (_value, index) => `controller-${String(index + 1).padStart(2, '0')}`);
 }
 
-export function toMulticastManifestMetadata(
-    input: Readonly<{
-        topologyProfile: 'tree' | 'mesh';
-        treeMeshMinSize?: number;
+/**
+ * A mesh threshold above every fleet size this catalog runs, so the topology planner keeps a tree.
+ * A run that wants the tree to depend on its own size writes its participant count plus one.
+ */
+export const TREE_ONLY_MESH_MIN_SIZE = 51;
+
+/** The RTC topology a multicast run pins, with the mesh threshold only the tree profile sets. */
+export type MulticastTopologySelection =
+    | Readonly<{ topologyProfile: 'tree'; treeMeshMinSize: number; }>
+    | Readonly<{ topologyProfile: 'mesh'; }>;
+
+export type MulticastManifestMetadataInput =
+    & MulticastTopologySelection
+    & Readonly<{
         participantCount: number;
         senderCount: number;
         durationSeconds: number;
@@ -144,9 +161,14 @@ export function toMulticastManifestMetadata(
         minReceiveRatio: number;
         receiverExpectedFrames: number;
         recommendedTerminalTimeoutSeconds: number;
-        catalogProfiles?: readonly string[];
-    }>
-): Readonly<Record<string, unknown>> {
+        catalogProfiles: readonly string[];
+    }>;
+
+const MESH_PROFILE_MESH_MIN_SIZE = '16';
+
+export function toMulticastManifestMetadata(
+    input: MulticastManifestMetadataInput
+): RallarBlackBoxTestRecord {
     const streamFrames = input.durationSeconds * input.rateHz * input.senderCount;
     return {
         topologyProfile: input.topologyProfile,
@@ -159,11 +181,11 @@ export function toMulticastManifestMetadata(
         rateHz: input.rateHz,
         expectedDurationSeconds: input.durationSeconds,
         recommendedTerminalTimeoutSeconds: input.recommendedTerminalTimeoutSeconds,
-        ...(input.catalogProfiles ? { catalogProfiles: input.catalogProfiles } : {}),
+        ...(input.catalogProfiles.length > 0 ? { catalogProfiles: input.catalogProfiles } : {}),
         rtcTopologyEnv: {
             RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE: input.topologyProfile === 'tree'
-                ? String(input.treeMeshMinSize ?? 51)
-                : '16'
+                ? String(input.treeMeshMinSize)
+                : MESH_PROFILE_MESH_MIN_SIZE
         },
         receiverDelivery: {
             expectedInboundMessages: input.receiverExpectedFrames,
@@ -178,12 +200,8 @@ export function toMulticastManifestMetadata(
 }
 
 function toCatalogItems(input: ManifestCatalogInput): readonly DistributedRecipeCatalogItem[] {
-    const recipes = input.recipes ?? (input.recipe === undefined ? [] : [input.recipe]);
-    if (recipes.length === 0) {
-        throw new Error(`Manifest ${input.distributedRunId} must define at least one recipe.`);
-    }
-    return recipes.map((recipe, index) =>
-        toCatalogItem({ input: input, recipe: recipe, index: index, total: recipes.length })
+    return input.recipes.map((recipe, index) =>
+        toCatalogItem({ input: input, recipe: recipe, index: index, total: input.recipes.length })
     );
 }
 
