@@ -1,8 +1,10 @@
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import {
     describe,
     expect,
     it
 } from 'vitest';
+
 import type { ControlResultEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
@@ -58,7 +60,7 @@ class CleanupControlServer {
     }
 }
 
-function rtcStep(action: string, number: number) {
+function toRtcStep(action: string, number: number): ApiJsonObject {
     return {
         RTC: {
             request: { action, connection: 'alice', provider: 'remote-test', interactionExecutionNumber: number },
@@ -77,7 +79,7 @@ async function runCleanupScenario(control: CleanupControlServer, explicitClose: 
         timeoutMs: 100
     });
     return executeBlackBox(
-        explicitClose ? [rtcStep('connect', 1), rtcStep('close', 2)] : [rtcStep('connect', 1)],
+        explicitClose ? [toRtcStep('connect', 1), toRtcStep('close', 2)] : [toRtcStep('connect', 1)],
         0,
         { rtcProviders: { 'remote-test': provider } }
     );
@@ -112,7 +114,7 @@ describe('remote-browser cleanup', () => {
     });
 });
 
-function wsStep(action: string, number: number) {
+function toWsStep(action: string, number: number): ApiJsonObject {
     return {
         WS: {
             request: {
@@ -130,7 +132,7 @@ function wsStep(action: string, number: number) {
 
 function runWsCleanupScenario(control: CleanupControlServer, explicitClose: boolean) {
     return executeBlackBox(
-        explicitClose ? [wsStep('open', 1), wsStep('close', 2)] : [wsStep('open', 1)],
+        explicitClose ? [toWsStep('open', 1), toWsStep('close', 2)] : [toWsStep('open', 1)],
         0,
         {
             rallarRemoteBrowser: {

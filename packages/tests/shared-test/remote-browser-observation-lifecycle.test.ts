@@ -11,7 +11,7 @@ import { runRemoteWsInteraction } from '../../shared-test/black-box-runner/execu
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import { decodeRemoteBrowserObservations } from '../../shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts';
 
-function emptySnapshot(): Response {
+function toEmptySnapshotResponse(): Response {
     return Response.json({ runId: 'observation-run', results: [], events: [] });
 }
 
@@ -34,7 +34,7 @@ describe('remote-browser observation lifecycle', () => {
             fetch: async () => {
                 if (initial) {
                     initial = false;
-                    return emptySnapshot();
+                    return toEmptySnapshotResponse();
                 }
                 throw new Error('Control polling disconnected');
             }
@@ -89,7 +89,7 @@ describe('remote-browser observation lifecycle', () => {
         };
 
         const result = await provider.send(interaction, { interaction }, {
-            dependencies: { now: Date.now, createUuid: () => 'unused', fetch: async () => emptySnapshot() },
+            dependencies: { now: Date.now, createUuid: () => 'unused', fetch: async () => toEmptySnapshotResponse() },
             rtcConnections: { alice: {} },
             rtcMessages: {},
             rtcCloseEvents: {}
@@ -112,7 +112,7 @@ describe('remote-browser observation lifecycle', () => {
             fetch: async () => {
                 if (initial) {
                     initial = false;
-                    return emptySnapshot();
+                    return toEmptySnapshotResponse();
                 }
                 return pendingRead.promise;
             }
@@ -131,7 +131,7 @@ describe('remote-browser observation lifecycle', () => {
             expect(settled).toBe(false);
         }
         finally {
-            pendingRead.resolve(emptySnapshot());
+            pendingRead.resolve(toEmptySnapshotResponse());
             await waiting;
         }
         expect(settled).toBe(true);
@@ -193,7 +193,7 @@ describe('remote-browser observation lifecycle', () => {
     });
 });
 
-function forbiddenSnapshot(transport: 'RTC' | 'WS'): Response {
+function toForbiddenSnapshotResponse(transport: 'RTC' | 'WS'): Response {
     return Response.json({
         runId: 'observation-run',
         results: [],
@@ -233,7 +233,7 @@ for (
                 runId: 'observation-run',
                 agentId: 'agent',
                 pollIntervalMs: 1,
-                fetch: async () => ++reads === 1 ? emptySnapshot() : pendingRead.promise
+                fetch: async () => ++reads === 1 ? toEmptySnapshotResponse() : pendingRead.promise
             };
             const context = {
                 dependencies: { now: Date.now, createUuid: () => 'unused', fetch: options.fetch },
@@ -264,7 +264,7 @@ for (
             }
             else {
                 pendingRead.resolve(
-                    outcome === 'empty' ? emptySnapshot() : forbiddenSnapshot(transport)
+                    outcome === 'empty' ? toEmptySnapshotResponse() : toForbiddenSnapshotResponse(transport)
                 );
             }
             const result = await waiting;

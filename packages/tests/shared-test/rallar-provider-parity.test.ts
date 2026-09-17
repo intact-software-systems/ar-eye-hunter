@@ -25,6 +25,7 @@ import {
     type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { toJsonResponse } from './fake-remote-browser-control-server.ts';
 
 class FakeRemoteControlServer {
     readonly commands: RallarBlackBoxTestCommand[] = [];
@@ -40,27 +41,27 @@ class FakeRemoteControlServer {
             const body = JSON.parse(String(init.body ?? '{}')) as {
                 command: RallarBlackBoxTestCommand;
             };
-            this.acceptCommand(runId, agentId, body.command);
-            return jsonResponse({ accepted: true }, 202);
+            this.recordCommand(runId, agentId, body.command);
+            return toJsonResponse({ accepted: true }, 202);
         }
 
         const runMatch = url.pathname.match(/^\/runs\/([^/]+)$/);
         if ((!init?.method || init.method === 'GET') && runMatch) {
-            return jsonResponse({
+            return toJsonResponse({
                 runId: decodeURIComponent(runMatch[1]),
                 results: this.results,
                 events: this.events
             });
         }
 
-        return jsonResponse({ error: 'Not found' }, 404);
+        return toJsonResponse({ error: 'Not found' }, 404);
     };
 
-    private acceptCommand(runId: string, agentId: string, command: RallarBlackBoxTestCommand): void {
+    private recordCommand(runId: string, agentId: string, command: RallarBlackBoxTestCommand): void {
         this.commands.push(command);
         const now = 1_000 + this.results.length;
         if (command.kind === 'rtc.send') {
-            this.emitSendEvents({ runId, agentId, now, command });
+            this.appendSendEvents({ runId, agentId, now, command });
         }
         this.results.push({
             protocolVersion: 1,
@@ -85,14 +86,14 @@ class FakeRemoteControlServer {
         });
     }
 
-    private emitSendEvents(input: {
+    private appendSendEvents(input: {
         readonly runId: string;
         readonly agentId: string;
         readonly now: number;
         readonly command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>;
     }): void {
         const { runId, agentId, now, command } = input;
-        const targets = expectedConnections(command);
+        const targets = toExpectedConnections(command);
         targets.forEach((connection, index) => {
             this.events.push({
                 protocolVersion: 1,
@@ -119,30 +120,15 @@ class FakeRemoteControlServer {
     }
 }
 
-function jsonResponse(value: unknown, status = 200): Response {
-    return new Response(JSON.stringify(value), {
-        status,
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    });
-}
-
-function expectedConnections(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>): readonly string[] {
+function toExpectedConnections(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>): readonly string[] {
     const parity = command.metadata?.parity;
-    if (
-        parity &&
-        typeof parity === 'object' &&
-        !Array.isArray(parity) &&
-        Array.isArray((parity as { expectedConnections?: unknown; }).expectedConnections)
-    ) {
-        return (parity as { expectedConnections: readonly unknown[]; }).expectedConnections
-            .map(String);
-    }
-    return [command.connection ?? 'default'];
+    const expectedConnections = parity !== null && typeof parity === 'object' && 'expectedConnections' in parity
+        ? parity.expectedConnections
+        : undefined;
+    return Array.isArray(expectedConnections) ? expectedConnections.map(String) : [command.connection ?? 'default'];
 }
 
-function commandById(
+function assertCommandById(
     commands: readonly RallarBlackBoxTestCommand[],
     commandId: string
 ): RallarBlackBoxTestCommand {
@@ -153,18 +139,18 @@ function commandById(
     return command;
 }
 
-function rtcSendById(
+function assertRtcSendById(
     commands: readonly RallarBlackBoxTestCommand[],
     commandId: string
 ): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
-    const command = commandById(commands, commandId);
+    const command = assertCommandById(commands, commandId);
     if (command.kind !== 'rtc.send') {
         throw new Error(`Command ${commandId} is not rtc.send`);
     }
     return command;
 }
 
-function result(
+function toResult(
     commandId: string,
     kind: RallarBlackBoxTestResult['kind'],
     status: RallarBlackBoxTestResult['status'] = 'ok'
@@ -283,8 +269,8 @@ describe('rallar provider parity helpers', () => {
             'rtc.send',
             'close'
         ]);
-        const recipeConnect = commandById(recipe.commands, 'parity-connect');
-        const actualConnect = commandById(executedCommands, 'parity-connect');
+        const recipeConnect = assertCommandById(recipe.commands, 'parity-connect');
+        const actualConnect = assertCommandById(executedCommands, 'parity-connect');
         expect(actualConnect).toMatchObject({
             kind: recipeConnect.kind,
             connection: 'aliceRtc',
@@ -292,16 +278,16 @@ describe('rallar provider parity helpers', () => {
             roomId: 'rallar-black-box-room',
             transport: 'realtime'
         });
-        expect(commandById(executedCommands, 'parity-send-direct')).toMatchObject({
+        expect(assertCommandById(executedCommands, 'parity-send-direct')).toMatchObject({
             kind: 'rtc.send',
-            send: rtcSendById(recipe.commands, 'parity-send-direct').send,
+            send: assertRtcSendById(recipe.commands, 'parity-send-direct').send,
             metadata: {
                 parity: {
                     operation: 'send.direct'
                 }
             }
         });
-        expect(commandById(executedCommands, 'parity-close')).toMatchObject({
+        expect(assertCommandById(executedCommands, 'parity-close')).toMatchObject({
             kind: 'close',
             metadata: {
                 parity: {
@@ -357,7 +343,7 @@ describe('rallar provider parity helpers', () => {
 
     it('forwards only text actors and rooms and a finite minimum snapshot version, reading past null request fields', async () => {
         const runtime = createRallarBlackBoxTestRuntime();
-        const execute = vi.spyOn(runtime, 'execute');
+        const runtimeCommands = vi.spyOn(runtime, 'execute');
         const requests = [
             {
                 name: 'alice',
@@ -381,7 +367,7 @@ describe('rallar provider parity helpers', () => {
                 .catch(() => undefined);
         }
 
-        const [alice, bob] = execute.mock.calls.map(([command]) => command);
+        const [alice, bob] = runtimeCommands.mock.calls.map(([command]) => command);
         expect(alice).toMatchObject({ kind: 'rtc.connect', actor: undefined, roomId: undefined, applicationId: 'app-1' });
         expect(alice).not.toHaveProperty('minSnapshotVersion');
         expect(bob).toMatchObject({
@@ -442,7 +428,7 @@ describe('rallar provider parity helpers', () => {
             'rtc.send',
             'close'
         ]);
-        expect(commandById(server.commands, 'parity-connect')).toMatchObject({
+        expect(assertCommandById(server.commands, 'parity-connect')).toMatchObject({
             kind: 'rtc.connect',
             connection: 'aliceRtc',
             actor: 'alice',
@@ -454,9 +440,9 @@ describe('rallar provider parity helpers', () => {
                 }
             }
         });
-        expect(commandById(server.commands, 'parity-send-multicast')).toMatchObject({
+        expect(assertCommandById(server.commands, 'parity-send-multicast')).toMatchObject({
             kind: 'rtc.send',
-            send: rtcSendById(recipe.commands, 'parity-send-multicast').send,
+            send: assertRtcSendById(recipe.commands, 'parity-send-multicast').send,
             metadata: {
                 parity: {
                     operation: 'send.multicast',
@@ -464,7 +450,7 @@ describe('rallar provider parity helpers', () => {
                 }
             }
         });
-        expect(commandById(server.commands, 'parity-close')).toMatchObject({
+        expect(assertCommandById(server.commands, 'parity-close')).toMatchObject({
             kind: 'close',
             metadata: {
                 parity: {
@@ -477,9 +463,9 @@ describe('rallar provider parity helpers', () => {
 
     it('normalizes SPA and runner reports while isolating provider-specific fields', () => {
         const runtimeReport = normalizeRallarBlackBoxRuntimeParityReport([
-            result('parity-connect', 'rtc.connect'),
-            result('parity-send-direct', 'rtc.send'),
-            result('parity-close', 'close')
+            toResult('parity-connect', 'rtc.connect'),
+            toResult('parity-send-direct', 'rtc.send'),
+            toResult('parity-close', 'close')
         ]);
         const runnerReport = normalizeBlackBoxRunnerParityReport({
             resultsList: [

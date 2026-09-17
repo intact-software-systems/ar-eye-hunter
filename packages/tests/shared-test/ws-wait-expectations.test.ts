@@ -90,7 +90,7 @@ it('matches ordered messages without mutating the retained observations until co
 });
 
 it('fails an interrupted absence window when a remotely observed socket close arrives', async () => {
-    const closeEvents: unknown[] = [];
+    const closeEvents: Array<Readonly<{ code: number; }>> = [];
     const context = {
         dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [] },
@@ -156,7 +156,7 @@ it('preserves explicit null payloads when sending through the local socket owner
 });
 
 it('keeps stale local close diagnostics from invalidating a healthy new generation window', async () => {
-    const closeEvents: unknown[] = [];
+    const closeEvents: Array<Readonly<{ code: number; }>> = [];
     const context = {
         dependencies: createDefaultExecutionDependencies(),
         wsMessages: { socket: [] },

@@ -14,6 +14,7 @@ import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
 import { computeBlackBoxRunnerPlanPreflight } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
 import { computeBlackBoxRunnerEnvRequirements } from '@shared-test/black-box-runner/preflight/preflight-env-variables.ts';
+import type { OutboxRow } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import { toExactPersistedEvidenceMatches } from '@shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
@@ -551,7 +552,7 @@ describe('API-v1 state-write recipe evidence', () => {
         const toPageOutbox = (
             category: AdminPruneCommand['categories'][number],
             overrides: Partial<AdminPrunePageWork> = {}
-        ) => {
+        ): OutboxRow => {
             const entry = toAdminPruneOutbox({
                 kind: 'page',
                 jobId: adminCommand.jobId,

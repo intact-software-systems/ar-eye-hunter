@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope
@@ -44,15 +46,15 @@ export class FakeRemoteBrowserControlServer {
         if (init?.method === 'POST' && commandMatch) {
             const runId = decodeURIComponent(commandMatch[1]);
             const agentId = decodeURIComponent(commandMatch[2]);
-            const body: unknown = JSON.parse(String(init.body ?? '{}'));
-            if (body === null || typeof body !== 'object' || !('command' in body)) {
+            const body: ApiJsonValue = JSON.parse(String(init.body ?? '{}'));
+            if (body === null || typeof body !== 'object' || Array.isArray(body) || !('command' in body)) {
                 return toJsonResponse({ error: 'Missing command' }, 400);
             }
             const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, body.command);
             if (!validation.ok) {
                 return toJsonResponse({ error: validation.errors }, 400);
             }
-            this.acceptCommand(runId, agentId, body.command as RallarBlackBoxTestCommand);
+            this.recordCommand(runId, agentId, body.command as RallarBlackBoxTestCommand);
             return toJsonResponse({
                 accepted: true
             }, 202);
@@ -72,7 +74,7 @@ export class FakeRemoteBrowserControlServer {
         }, 404);
     };
 
-    private acceptCommand(
+    private recordCommand(
         runId: string,
         agentId: string,
         command: RallarBlackBoxTestCommand
