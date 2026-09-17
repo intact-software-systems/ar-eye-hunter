@@ -21,11 +21,11 @@ function render(): void {
 agent.subscribe(render);
 render();
 
-void agent.start().catch((error) => {
-    agent.recordStatus(
-        error instanceof Error ? error.message : String(error)
-    );
-    render();
+void agent.start().then((started) => {
+    started.foldLeft((failure) => {
+        agent.recordStatus(failure);
+        render();
+    });
 });
 
 window.addEventListener('pagehide', () => {

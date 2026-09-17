@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRallarBlackBoxBrowserControlAgent, initialControlSnapshot } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createRallarBlackBoxBrowserControlAgent, toInitialControlSnapshot } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
 import { RallarBlackBoxControlClient } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 
 describe('browser control-agent lifecycle', () => {
@@ -14,7 +14,7 @@ describe('browser control-agent lifecycle', () => {
         expect(snapshot.bootstrap.mode).toBe('control-agent');
         expect(snapshot.bootstrap.runId).toBe('run-1');
         expect(snapshot.bootstrap.agentId).toBe('agent-1');
-        expect(snapshot.control).toEqual(initialControlSnapshot(snapshot.bootstrap));
+        expect(snapshot.control).toEqual(toInitialControlSnapshot(snapshot.bootstrap));
         expect(snapshot.runState).toBe('waiting');
 
         agent.dispose();
@@ -48,7 +48,7 @@ describe('browser control-agent lifecycle', () => {
             hash: ''
         });
 
-        await agent.start();
+        expect((await agent.start()).right).toBe('configured');
 
         expect(connectSpy).not.toHaveBeenCalled();
         expect(agent.getSnapshot().lastAction).toBe('Remote control agent configured');
@@ -67,7 +67,7 @@ describe('browser control-agent lifecycle', () => {
             hash: ''
         });
 
-        await agent.start();
+        expect((await agent.start()).right).toBe('connecting');
 
         expect(connectSpy).toHaveBeenCalledWith({
             url: 'ws://control.example.test/control',
@@ -77,6 +77,32 @@ describe('browser control-agent lifecycle', () => {
             completedCommandIds: []
         });
         expect(agent.getSnapshot().lastAction).toBe('Remote control agent configured; connecting');
+
+        connectSpy.mockRestore();
+        agent.dispose();
+    });
+
+    it('returns an invalid browser-rallar provider config as the start failure', async () => {
+        const connectSpy = vi
+            .spyOn(RallarBlackBoxControlClient.prototype, 'connect')
+            .mockImplementation(() => undefined);
+        const agent = createRallarBlackBoxBrowserControlAgent({
+            search: '?mode=control&provider=browser-rallar&autoConnect=1&runId=run-6&agentId=agent-6',
+            env: {},
+            hash: ''
+        });
+
+        const started = await agent.start();
+
+        expect(started.left).toBe('browser-rallar provider requires a real Rallar API base URL.');
+        expect(connectSpy).not.toHaveBeenCalled();
+        expect(agent.getSnapshot()).toMatchObject({
+            runState: 'failed',
+            lastAction: 'Remote control bootstrap failed',
+            lastError: 'browser-rallar provider requires a real Rallar API base URL.'
+        });
+        expect(agent.getSnapshot().state.events.map((event) => event.topic))
+            .toContain('rallar.bb.provider.browser_rallar.config_invalid');
 
         connectSpy.mockRestore();
         agent.dispose();
@@ -93,7 +119,7 @@ describe('browser control-agent lifecycle', () => {
         });
 
         agent.dispose();
-        await expect(agent.start()).rejects.toThrow('Browser control agent is disposed.');
+        expect((await agent.start()).left).toBe('Browser control agent is disposed.');
 
         expect(connectSpy).not.toHaveBeenCalled();
 
