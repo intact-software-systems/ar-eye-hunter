@@ -1,15 +1,14 @@
-// deno-lint-ignore-file no-explicit-any
-import type { JsonValue } from '../../json-compare/compare-json-values.ts';
+import type { JsonComparisonObject, JsonValue } from '../../json-compare/compare-json-values.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
 import type { AssertionOutcomeVerdict } from './assertion-outcome-parity.ts';
 
 export interface ComparatorParityFixture {
     readonly fixtureId: string;
-    readonly value: any;
-    readonly runnerComparator: Readonly<Record<string, any>> & Readonly<{ path: string; }>;
+    readonly value: JsonComparisonObject;
+    readonly runnerComparator: JsonComparisonObject & Readonly<{ path: string; }>;
     readonly runtimeOperator: RallarBlackBoxTestAssertOperator;
-    readonly runtimeExpected: any;
+    readonly runtimeExpected: JsonValue;
     readonly expectedVerdict: AssertionOutcomeVerdict;
 }
 

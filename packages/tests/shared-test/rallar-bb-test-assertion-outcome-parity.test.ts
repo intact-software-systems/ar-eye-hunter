@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import {
-    evaluateAbsenceOutcomeParityRows,
-    evaluateComparatorOutcomeParityRows,
-    evaluateCompleteArrayOutcomeParityRows,
-    evaluatePollingOutcomeParityRows,
+    computeComparatorOutcomeParityRows,
+    computeCompleteArrayOutcomeParityRows,
+    runAbsenceOutcomeParityRows,
+    runPollingOutcomeParityRows,
     type AssertionOutcomeParityRow
 } from '../../shared-test/rallar-bb-test/conformance/assertion-outcome-parity.ts';
 import type { DistributedRunArtifactFiles } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
@@ -65,19 +66,19 @@ function failingRunFiles(code: string, message: string): DistributedRunArtifactF
 
 describe('rallar-bb-test assertion outcome parity', () => {
     it('agrees with the runner comparator verdicts on shared fixtures', () => {
-        expectRowsHold(evaluateComparatorOutcomeParityRows());
+        expectRowsHold(computeComparatorOutcomeParityRows());
     });
 
     it('agrees with the runner compatible-complete verdicts including unexpected array elements', () => {
-        expectRowsHold(evaluateCompleteArrayOutcomeParityRows());
+        expectRowsHold(computeCompleteArrayOutcomeParityRows());
     });
 
     it('agrees with the runner absence verdicts on buffered and clean evidence', async () => {
-        expectRowsHold(await evaluateAbsenceOutcomeParityRows());
+        expectRowsHold(await runAbsenceOutcomeParityRows(createDefaultExecutionDependencies()));
     });
 
     it('agrees with the runner polling verdicts for convergence and exhaustion', async () => {
-        expectRowsHold(await evaluatePollingOutcomeParityRows({ fetch: pollingFetch }));
+        expectRowsHold(await runPollingOutcomeParityRows({ fetch: pollingFetch, now: Date.now }));
     });
 
     it('names absence violations in analysis and fix proposals', () => {
