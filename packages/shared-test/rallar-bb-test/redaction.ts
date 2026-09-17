@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestRedactionOptions } from './rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRedactionOptions
+} from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_REDACTED_VALUE = '<redacted>';
 
@@ -27,11 +30,15 @@ interface RedactionPolicy {
     readonly replacement: string;
 }
 
+/**
+ * The copy is typed as the value passed in although a redacted leaf becomes the replacement text: callers only
+ * serialize or display redacted evidence, and every container keeps its shape.
+ */
 export function redactRallarBlackBoxValue<T>(
     value: T,
     options: RallarBlackBoxTestRedactionOptions = {}
 ): T {
-    return toRedactedValue(value, undefined, toRedactionPolicy(options));
+    return toRedactedValue(value, toRedactionPolicy(options)) as T;
 }
 
 function toRedactionPolicy(options: RallarBlackBoxTestRedactionOptions): RedactionPolicy {
@@ -43,23 +50,28 @@ function toRedactionPolicy(options: RallarBlackBoxTestRedactionOptions): Redacti
     };
 }
 
-/** Redaction swaps a secret for the replacement text and rebuilds containers, so callers read the value they passed. */
-function toRedactedValue<T>(value: T, key: string | undefined, policy: RedactionPolicy): T {
-    if (key !== undefined && key.length > 0 && isRedactedKey(key, policy)) {
-        return policy.replacement as T;
-    }
+/** Evidence of any shape reaches redaction, so each level is narrowed before it is copied. */
+function toRedactedValue(value: unknown, policy: RedactionPolicy): unknown {
     if (typeof value === 'string') {
-        return hasSecretValue(value, policy) ? policy.replacement as T : value;
+        return hasSecretValue(value, policy) ? policy.replacement : value;
     }
     if (Array.isArray(value)) {
-        return value.map((item) => toRedactedValue(item, undefined, policy)) as T;
+        return value.map((item) => toRedactedValue(item, policy));
     }
-    if (value === null || typeof value !== 'object') {
+    if (!isRedactableRecord(value)) {
         return value;
     }
     return Object.fromEntries(
-        Object.entries(value).map(([childKey, child]) => [childKey, toRedactedValue(child, childKey, policy)])
-    ) as T;
+        Object.entries(value).map(([key, child]) => [
+            key,
+            isRedactedKey(key, policy) ? policy.replacement : toRedactedValue(child, policy)
+        ])
+    );
+}
+
+/** An error or class instance is copied by its own enumerable fields, like a plain record. */
+function isRedactableRecord(value: unknown): value is RallarBlackBoxTestRecord {
+    return typeof value === 'object' && value !== null;
 }
 
 function toNormalizedKey(key: string): string {
@@ -68,8 +80,10 @@ function toNormalizedKey(key: string): string {
 
 function isRedactedKey(key: string, policy: RedactionPolicy): boolean {
     const normalized = toNormalizedKey(key);
-    return policy.exactKeys.has(normalized) ||
-        policy.keySubstrings.some((substring) => normalized.includes(substring));
+    return key.length > 0 && (
+        policy.exactKeys.has(normalized) ||
+        policy.keySubstrings.some((substring) => normalized.includes(substring))
+    );
 }
 
 function hasSecretValue(value: string, policy: RedactionPolicy): boolean {

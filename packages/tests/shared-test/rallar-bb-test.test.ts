@@ -90,6 +90,27 @@ describe('rallar-bb runtime core', () => {
         });
     });
 
+    it('walks lists, replaces any value under a secret key and copies other objects by their own fields', () => {
+        const failure = Object.assign(new Error('upload failed'), { code: 'E_UPLOAD', token: 'token-123' });
+
+        expect(redactRallarBlackBoxValue(
+            {
+                entries: [{ password: 42 }, 'plain', 'has deploy-secret', 7, null],
+                failure,
+                attempts: 3,
+                retried: true
+            },
+            {
+                secretValues: ['deploy-secret']
+            }
+        )).toEqual({
+            entries: [{ password: '<redacted>' }, 'plain', '<redacted>', 7, null],
+            failure: { code: 'E_UPLOAD', token: '<redacted>' },
+            attempts: 3,
+            retried: true
+        });
+    });
+
     it('configures the runtime and exposes UI selectors with redacted config', async () => {
         const runtime = createDeterministicRuntime();
 
