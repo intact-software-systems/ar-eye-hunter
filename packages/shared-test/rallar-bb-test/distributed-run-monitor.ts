@@ -18,7 +18,7 @@ import {
 } from './distributed-run-observation/distributed-run-event-rows.ts';
 import { toDistributedRunFailureRows } from './distributed-run-observation/distributed-run-failure-rows.ts';
 import { computeDistributedRunLatencySummary } from './distributed-run-observation/distributed-run-latency-summary.ts';
-import { setDistributedRunMonitorDerivation } from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
+import { recordDistributedRunMonitorDerivation } from './distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 import { createDistributedRunMonitorFailureIndex } from './distributed-run-observation/distributed-run-monitor-failure-index.ts';
 import type {
     DistributedRunAgentProgressRow,
@@ -91,10 +91,14 @@ export function deriveDistributedRunMonitor(
         index.linksByCommandId
     );
     const failures = toMonitorFailures(input.distributedRun, index, compositeDrilldowns);
-    const runtimeDiagnostics = toCorrelatedDistributedRunRuntimeDiagnostics(
+    const failureIndex = createDistributedRunMonitorFailureIndex(failures);
+    const correlatedDiagnostics = toCorrelatedDistributedRunRuntimeDiagnostics(
         toDistributedRunRuntimeDiagnosticRows(index.linkedControlEvents),
-        createDistributedRunMonitorFailureIndex(failures, index)
+        failureIndex
     );
+    index.work.failureIndexVisitCount += failureIndex.failureVisitCount;
+    index.work.diagnosticFailureCandidateVisitCount += correlatedDiagnostics.failureCandidateVisitCount;
+    const runtimeDiagnostics = correlatedDiagnostics.rows;
     const artifact = input.artifactValidation ??
         validateDistributedRunArtifact(input.artifactBundle);
 
@@ -124,7 +128,7 @@ export function deriveDistributedRunMonitor(
         runtimeDiagnostics,
         compositeDrilldowns
     };
-    setDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
+    recordDistributedRunMonitorDerivation(monitor, index, input.distributedRun);
     return monitor;
 }
 

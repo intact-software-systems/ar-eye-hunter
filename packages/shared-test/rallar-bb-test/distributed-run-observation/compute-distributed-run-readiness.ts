@@ -13,6 +13,7 @@ export function computeDistributedRunReadiness(
     }>
 ): readonly DistributedRunReadinessRow[] {
     return input.index.membership.targetAgentIds.map((agentId) => {
+        input.index.work.readinessLinkBucketLookupCount += 1;
         const stageLinks = getDistributedRunMonitorReadinessStageLinks(
             input.index,
             agentId

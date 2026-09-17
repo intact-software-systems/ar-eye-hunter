@@ -6,7 +6,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { decodeFiniteNumber, decodeRecord } from '../runtime/decode-runtime-result-values.ts';
 import {
-    computeDistributedRunCorrelatedFailureKeys,
+    computeDistributedRunCorrelatedFailures,
     type DistributedRunMonitorFailureIndex
 } from './distributed-run-monitor-failure-index.ts';
 import {
@@ -21,6 +21,11 @@ import type {
 } from './distributed-run-row-contracts.ts';
 
 type ControlEventSnapshot = ControlRunSnapshot['events'][number];
+
+export interface CorrelatedDistributedRunRuntimeDiagnostics {
+    readonly rows: readonly DistributedRunRuntimeDiagnosticRow[];
+    readonly failureCandidateVisitCount: number;
+}
 
 export function toDistributedRunRuntimeDiagnosticRows(
     events: readonly ControlEventSnapshot[]
@@ -114,14 +119,14 @@ function toDiagnosticContextFields(
 export function toCorrelatedDistributedRunRuntimeDiagnostics(
     diagnostics: readonly Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>[],
     failureIndex: DistributedRunMonitorFailureIndex
-): readonly DistributedRunRuntimeDiagnosticRow[] {
-    return diagnostics.map((diagnostic) => ({
-        ...diagnostic,
-        correlatedFailureKeys: computeDistributedRunCorrelatedFailureKeys(
-            diagnostic,
-            failureIndex
-        )
-    }));
+): CorrelatedDistributedRunRuntimeDiagnostics {
+    let failureCandidateVisitCount = 0;
+    const rows = diagnostics.map((diagnostic) => {
+        const correlated = computeDistributedRunCorrelatedFailures(diagnostic, failureIndex);
+        failureCandidateVisitCount += correlated.candidateVisitCount;
+        return { ...diagnostic, correlatedFailureKeys: correlated.failureKeys };
+    });
+    return { rows, failureCandidateVisitCount };
 }
 
 export function computeDistributedRunRuntimeDiagnosticCounts(

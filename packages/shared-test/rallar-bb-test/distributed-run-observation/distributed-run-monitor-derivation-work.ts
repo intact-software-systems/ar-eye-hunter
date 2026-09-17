@@ -118,7 +118,8 @@ export function createEmptyDistributedRunMonitorDerivationWork(
     };
 }
 
-export function setDistributedRunMonitorDerivation(
+/** Records a monitor derivation's work and the index a report derived from that monitor may reuse. */
+export function recordDistributedRunMonitorDerivation(
     monitor: object,
     index: DistributedRunMonitorIndex,
     distributedRun: ControlDistributedRunSnapshot
@@ -132,7 +133,8 @@ export function setDistributedRunMonitorDerivation(
     derivationWorkByObservable.set(monitor, Object.freeze({ ...index.work }));
 }
 
-export function setDistributedRunAnalysisReportDerivation(
+/** Records one more report derivation on top of the work its monitor recorded. */
+export function recordDistributedRunAnalysisReportDerivation(
     report: object,
     monitor: object,
     reportWork: DistributedRunAnalysisReportWork
@@ -173,7 +175,7 @@ export function getDistributedRunMonitorFirstPhase(
         : reuse.firstCommandPhasesById.get(commandId);
 }
 
-/** Test-only structural work snapshot, deliberately excluded from the public barrel; absent for an underived value. */
+/** A copy of the work recorded for a derived monitor or report; absent for a value no derivation recorded. */
 export function getDistributedRunMonitorDerivationWork(
     observable: object
 ): DistributedRunMonitorDerivationWork | undefined {

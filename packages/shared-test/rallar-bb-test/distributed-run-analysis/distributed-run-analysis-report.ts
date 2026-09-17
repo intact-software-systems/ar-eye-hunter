@@ -11,7 +11,7 @@ import { resolveFirstDistributedFailure } from '../distributed-run-observation/d
 import {
     getDistributedRunMonitorAnalysisReuse,
     getDistributedRunMonitorFirstPhase,
-    setDistributedRunAnalysisReportDerivation,
+    recordDistributedRunAnalysisReportDerivation,
     type DistributedRunMonitorAnalysisReuse
 } from '../distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 import type {
@@ -132,7 +132,7 @@ export function deriveDistributedRunAnalysisReport(
         nextActions: explanations,
         rawEvidence: toReportRawEvidence(monitor)
     };
-    setDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
+    recordDistributedRunAnalysisReportDerivation(report, monitor, reportWork);
     return report;
 }
 

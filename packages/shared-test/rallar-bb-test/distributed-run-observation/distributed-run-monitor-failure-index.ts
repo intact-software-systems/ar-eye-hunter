@@ -1,5 +1,3 @@
-import type { DistributedRunMonitorIndex } from '../distributed-run-monitor-index.ts';
-import type { MutableDistributedRunMonitorDerivationWork } from './distributed-run-monitor-derivation-work.ts';
 import type {
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow
@@ -16,17 +14,22 @@ export interface DistributedRunMonitorFailureIndex {
     readonly failures: readonly DistributedRunFailureRow[];
     readonly positionsByCommandKey: ReadonlyMap<string, readonly number[]>;
     readonly timedPositionsByAgentId: ReadonlyMap<string, readonly TimedFailurePosition[]>;
-    readonly work: MutableDistributedRunMonitorDerivationWork;
+    readonly failureVisitCount: number;
+}
+
+export interface DistributedRunCorrelatedFailures {
+    readonly failureKeys: readonly string[];
+    readonly candidateVisitCount: number;
 }
 
 export function createDistributedRunMonitorFailureIndex(
-    failures: readonly DistributedRunFailureRow[],
-    monitorIndex: DistributedRunMonitorIndex
+    failures: readonly DistributedRunFailureRow[]
 ): DistributedRunMonitorFailureIndex {
     const positionsByCommandKey = new Map<string, number[]>();
     const timedPositionsByAgentId = new Map<string, TimedFailurePosition[]>();
+    let failureVisitCount = 0;
     failures.forEach((failure, position) => {
-        monitorIndex.work.failureIndexVisitCount += 1;
+        failureVisitCount += 1;
         new Set([failure.commandId, failure.key]).forEach((commandKey) => {
             if (commandKey !== undefined) {
                 appendToBucket(positionsByCommandKey, commandKey, position);
@@ -39,22 +42,18 @@ export function createDistributedRunMonitorFailureIndex(
     timedPositionsByAgentId.forEach((positions) => {
         positions.sort((left, right) => left.atEpochMs - right.atEpochMs || left.position - right.position);
     });
-    return {
-        failures,
-        positionsByCommandKey,
-        timedPositionsByAgentId,
-        work: monitorIndex.work
-    };
+    return { failures, positionsByCommandKey, timedPositionsByAgentId, failureVisitCount };
 }
 
-export function computeDistributedRunCorrelatedFailureKeys(
+export function computeDistributedRunCorrelatedFailures(
     diagnostic: Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>,
     index: DistributedRunMonitorFailureIndex
-): readonly string[] {
+): DistributedRunCorrelatedFailures {
     const positions = new Set<number>();
+    let candidateVisitCount = 0;
     if (diagnostic.commandId) {
         index.positionsByCommandKey.get(diagnostic.commandId)?.forEach((position) => {
-            index.work.diagnosticFailureCandidateVisitCount += 1;
+            candidateVisitCount += 1;
             positions.add(position);
         });
     }
@@ -68,13 +67,16 @@ export function computeDistributedRunCorrelatedFailureKeys(
             if (candidate.atEpochMs > maximum) {
                 break;
             }
-            index.work.diagnosticFailureCandidateVisitCount += 1;
+            candidateVisitCount += 1;
             positions.add(candidate.position);
         }
     }
-    return [...positions]
-        .sort((left, right) => left - right)
-        .map((position) => index.failures[position]!.key);
+    return {
+        failureKeys: [...positions]
+            .sort((left, right) => left - right)
+            .map((position) => index.failures[position]!.key),
+        candidateVisitCount
+    };
 }
 
 function computeTimedFailureLowerBound(

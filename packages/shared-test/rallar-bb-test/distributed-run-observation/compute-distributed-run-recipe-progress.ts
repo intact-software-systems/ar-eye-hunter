@@ -1,6 +1,6 @@
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import {
-    getDistributedRunMonitorRecipeLinks,
+    resolveDistributedRunMonitorRecipeLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
 import {
@@ -22,7 +22,8 @@ export function computeDistributedRunRecipeProgress(
             recipeIndex,
             input.index.work
         );
-        const progressLinks = getDistributedRunMonitorRecipeLinks(input.index, recipeId);
+        input.index.work.recipeLinkBucketLookupCount += 1;
+        const progressLinks = resolveDistributedRunMonitorRecipeLinks(input.index, recipeId);
         const totals = toRecipeLinkTotals(input.index, progressLinks);
 
         let missingCount = targetCount;

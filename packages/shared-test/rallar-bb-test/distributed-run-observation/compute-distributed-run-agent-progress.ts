@@ -1,6 +1,5 @@
 import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../control-snapshots.ts';
 import {
-    getDistributedRunMonitorAgentEvents,
     getDistributedRunMonitorAgentLinks,
     type DistributedRunMonitorIndex
 } from '../distributed-run-monitor-index.ts';
@@ -26,12 +25,10 @@ export function computeDistributedRunAgentProgress(
     }>
 ): readonly DistributedRunAgentProgressRow[] {
     return input.index.agentIds.map((agentId) => {
+        input.index.work.agentLinkBucketLookupCount += 1;
         const links = getDistributedRunMonitorAgentLinks(input.index, agentId);
-        const linkedEvents = getDistributedRunMonitorAgentEvents(
-            input.index,
-            input.eventsByAgentId,
-            agentId
-        );
+        input.index.work.agentEventBucketLookupCount += 1;
+        const linkedEvents = input.eventsByAgentId.get(agentId) ?? [];
         const totals = toAgentLinkTotals({ index: input.index, links: links.all });
         const lastActivityAtEpochMs = computeMaxFiniteNumber([
             totals.lastActivityAtEpochMs,

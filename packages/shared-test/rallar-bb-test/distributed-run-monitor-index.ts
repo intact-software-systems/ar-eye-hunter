@@ -65,6 +65,7 @@ export interface DistributedRunMonitorIndex {
     readonly commandCounts: DistributedRunMonitorCommandCounts;
     readonly resultCounts: DistributedRunMonitorResultCounts;
     readonly latencies: readonly number[];
+    /** The derivation's work ledger: every step that derives monitor rows from this index records its visits here. */
     readonly work: MutableDistributedRunMonitorDerivationWork;
 }
 
@@ -168,24 +169,14 @@ export function getDistributedRunMonitorAgentLinks(
     index: DistributedRunMonitorIndex,
     agentId: string
 ): DistributedRunMonitorAgentLinks {
-    index.work.agentLinkBucketLookupCount += 1;
     return index.linksByAgentId.get(agentId) ?? createEmptyAgentLinks();
 }
 
-export function getDistributedRunMonitorAgentEvents<Value>(
-    index: DistributedRunMonitorIndex,
-    eventsByAgentId: ReadonlyMap<string, readonly Value[]>,
-    agentId: string
-): readonly Value[] {
-    index.work.agentEventBucketLookupCount += 1;
-    return eventsByAgentId.get(agentId) ?? [];
-}
-
-export function getDistributedRunMonitorRecipeLinks(
+/** A recipe's start links once any were queued, otherwise its stage links. */
+export function resolveDistributedRunMonitorRecipeLinks(
     index: DistributedRunMonitorIndex,
     recipeId: string
 ): readonly ControlDistributedRunCommandLink[] {
-    index.work.recipeLinkBucketLookupCount += 1;
     const links = index.progressLinksByRecipeId.get(recipeId);
     return links === undefined
         ? []
@@ -198,7 +189,6 @@ export function getDistributedRunMonitorReadinessStageLinks(
     index: DistributedRunMonitorIndex,
     agentId: string
 ): readonly ControlDistributedRunCommandLink[] {
-    index.work.readinessLinkBucketLookupCount += 1;
     return index.linksByAgentId.get(agentId)?.stage ?? [];
 }
 
