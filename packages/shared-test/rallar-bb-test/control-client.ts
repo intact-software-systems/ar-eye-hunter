@@ -87,6 +87,8 @@ export interface RallarBlackBoxControlWebSocket {
 
 export type RallarBlackBoxControlWebSocketFactory = (url: string) => RallarBlackBoxControlWebSocket;
 
+export type RallarBlackBoxControlSnapshotListener = (snapshot: RallarBlackBoxControlSnapshot) => void;
+
 export type RallarBlackBoxControlFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export interface RallarBlackBoxControlClientOptions {
@@ -98,7 +100,6 @@ export interface RallarBlackBoxControlClientOptions {
     readonly statsIntervalMs: number;
     readonly reconnectBaseMs: number;
     readonly reconnectMaxMs: number;
-    readonly onSnapshot: (snapshot: RallarBlackBoxControlSnapshot) => void;
 }
 
 export interface RallarBlackBoxControlConnectOptions {
@@ -110,6 +111,13 @@ export interface RallarBlackBoxControlConnectOptions {
     /** Absent when the agent sends its final report only over the control socket. */
     readonly finalReportUploadUrl?: string;
     readonly completedCommandIds: readonly string[];
+}
+
+/** The control connection an agent drives: it publishes snapshots, connects once configured and disposes with the agent. */
+export interface RallarBlackBoxControlConnection {
+    subscribe(listener: RallarBlackBoxControlSnapshotListener): () => void;
+    connect(connection: RallarBlackBoxControlConnectOptions): void;
+    dispose(): void;
 }
 
 interface ControlAgentIdentityReading {
@@ -133,10 +141,7 @@ const TERMINAL_RUNTIME_STATUSES: readonly RallarBlackBoxTestRuntimeStatus[] = ['
 
 /** The browser composition: page WebSockets, page fetch and the default reconnect backoff. */
 export function createDefaultRallarBlackBoxControlClient(
-    input: Pick<
-        RallarBlackBoxControlClientOptions,
-        'runtime' | 'heartbeatIntervalMs' | 'statsIntervalMs' | 'onSnapshot'
-    >
+    input: Pick<RallarBlackBoxControlClientOptions, 'runtime' | 'heartbeatIntervalMs' | 'statsIntervalMs'>
 ): RallarBlackBoxControlClient {
     return new RallarBlackBoxControlClient({
         ...input,
@@ -147,9 +152,10 @@ export function createDefaultRallarBlackBoxControlClient(
     });
 }
 
-export class RallarBlackBoxControlClient {
+export class RallarBlackBoxControlClient implements RallarBlackBoxControlConnection {
     private readonly options: RallarBlackBoxControlClientOptions;
     private readonly unsubscribeRuntime: () => void;
+    private readonly snapshotListeners = new Set<RallarBlackBoxControlSnapshotListener>();
     private readonly sentEventIds = new Set<string>();
     private statsEventSequence = 1;
     private reportSequence = 1;
@@ -180,6 +186,13 @@ export class RallarBlackBoxControlClient {
 
     getSnapshot(): RallarBlackBoxControlSnapshot {
         return this.snapshot;
+    }
+
+    subscribe(listener: RallarBlackBoxControlSnapshotListener): () => void {
+        this.snapshotListeners.add(listener);
+        return () => {
+            this.snapshotListeners.delete(listener);
+        };
     }
 
     connect(connection: RallarBlackBoxControlConnectOptions): void {
@@ -637,7 +650,7 @@ export class RallarBlackBoxControlClient {
 
     private setSnapshot(patch: Partial<RallarBlackBoxControlSnapshot>): void {
         this.snapshot = { ...this.snapshot, ...patch };
-        this.options.onSnapshot(this.snapshot);
+        this.snapshotListeners.forEach((listener) => listener(this.snapshot));
     }
 }
 

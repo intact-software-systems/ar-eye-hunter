@@ -17,9 +17,10 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
+import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
-    type RallarBlackBoxControlClient,
+    type RallarBlackBoxControlConnection,
     type RallarBlackBoxControlSnapshot
 } from './control-client.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
@@ -63,25 +64,47 @@ export interface RallarBlackBoxBrowserControlAgent {
     recordStatus(message: string): void;
 }
 
-export interface CreateRallarBlackBoxBrowserControlAgentOptions {
-    readonly search: string;
-    readonly env: RallarBlackBoxBootstrapEnvironment;
-    readonly hash: string;
-}
-
-interface BrowserControlAgentRuntime {
+export interface BrowserControlAgentRuntime {
     readonly runtime: RallarBlackBoxTestRuntime;
     /** Absent when the simulated runtime installs no page event bridge. */
     readonly disposeBridge?: () => void;
 }
 
+/** The agent owns the runtime bridge and control connection it is given, and disposes both with itself. */
+export interface CreateRallarBlackBoxBrowserControlAgentInput {
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    readonly agentRuntime: BrowserControlAgentRuntime;
+    /** Drives the same runtime as `agentRuntime`. */
+    readonly controlClient: RallarBlackBoxControlConnection;
+}
+
+/** The launch URL, its fragment and the Vite environment of the agent page. */
+export interface CreateDefaultRallarBlackBoxBrowserControlAgentInput {
+    readonly search: string;
+    readonly env: RallarBlackBoxBootstrapEnvironment;
+    readonly hash: string;
+}
+
 const DISPOSED_AGENT_FAILURE = 'Browser control agent is disposed.';
 
 export function createRallarBlackBoxBrowserControlAgent(
-    options: CreateRallarBlackBoxBrowserControlAgentOptions
+    input: CreateRallarBlackBoxBrowserControlAgentInput
 ): RallarBlackBoxBrowserControlAgent {
-    const bootstrap = resolveRallarBlackBoxBootstrapConfig(options.search, options.env, options.hash);
-    return new BrowserControlAgent(bootstrap, createAgentRuntime(bootstrap));
+    return new BrowserControlAgent(input);
+}
+
+/** The agent page composition: the launch bootstrap, the runtime its provider selects, and the page control client. */
+export function createDefaultRallarBlackBoxBrowserControlAgent(
+    input: CreateDefaultRallarBlackBoxBrowserControlAgentInput
+): RallarBlackBoxBrowserControlAgent {
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(input.search, input.env, input.hash);
+    const agentRuntime = createDefaultBrowserControlAgentRuntime(bootstrap.providerMode);
+    const controlClient = createDefaultRallarBlackBoxControlClient({
+        runtime: agentRuntime.runtime,
+        heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
+        statsIntervalMs: bootstrap.statsIntervalMs
+    });
+    return createRallarBlackBoxBrowserControlAgent({ bootstrap, agentRuntime, controlClient });
 }
 
 export function toInitialControlSnapshot(bootstrap: RallarBlackBoxBootstrapConfig): RallarBlackBoxControlSnapshot {
@@ -97,15 +120,18 @@ export function toInitialControlSnapshot(bootstrap: RallarBlackBoxBootstrapConfi
 class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
     private readonly bootstrap: RallarBlackBoxBootstrapConfig;
     private readonly agentRuntime: BrowserControlAgentRuntime;
-    private readonly controlClient: RallarBlackBoxControlClient;
+    private readonly controlClient: RallarBlackBoxControlConnection;
+    private readonly unsubscribeControl: () => void;
     private readonly unsubscribeRuntime: () => void;
     private readonly listeners = new Set<() => void>();
     private disposed = false;
     private snapshot: RallarBlackBoxBrowserControlAgentSnapshot;
 
-    constructor(bootstrap: RallarBlackBoxBootstrapConfig, agentRuntime: BrowserControlAgentRuntime) {
+    constructor(input: CreateRallarBlackBoxBrowserControlAgentInput) {
+        const { bootstrap, agentRuntime, controlClient } = input;
         this.bootstrap = bootstrap;
         this.agentRuntime = agentRuntime;
+        this.controlClient = controlClient;
         this.snapshot = {
             state: agentRuntime.runtime.state(),
             control: toInitialControlSnapshot(bootstrap),
@@ -114,12 +140,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
             busy: false,
             runState: 'waiting'
         };
-        this.controlClient = createDefaultRallarBlackBoxControlClient({
-            runtime: agentRuntime.runtime,
-            heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
-            statsIntervalMs: bootstrap.statsIntervalMs,
-            onSnapshot: (control) => this.setSnapshot({ control })
-        });
+        this.unsubscribeControl = controlClient.subscribe((control) => this.setSnapshot({ control }));
         this.unsubscribeRuntime = agentRuntime.runtime.subscribe((state) => {
             this.setSnapshot({ state, runState: toRunState(state.status, this.snapshot.runState) });
         });
@@ -173,6 +194,7 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
 
         this.disposed = true;
         this.controlClient.dispose();
+        this.unsubscribeControl();
         this.unsubscribeRuntime();
         this.agentRuntime.disposeBridge?.();
         this.listeners.clear();
@@ -250,17 +272,17 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
     }
 }
 
-function createAgentRuntime(bootstrap: RallarBlackBoxBootstrapConfig): BrowserControlAgentRuntime {
-    if (bootstrap.providerMode === 'browser-rallar' && typeof window !== 'undefined') {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            rallarRuntime: createSpaBrowserRallarRuntime(),
-            fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
-            webSocketFactory: createBrowserWebSocketFactory()
-        });
-        return { runtime, disposeBridge: installSpaBrowserRallarEventBridge(runtime) };
+function createDefaultBrowserControlAgentRuntime(providerMode: RallarBlackBoxProviderMode): BrowserControlAgentRuntime {
+    if (providerMode === 'simulated') {
+        return { runtime: createRallarBlackBoxTestRuntime() };
     }
 
-    return { runtime: createRallarBlackBoxTestRuntime() };
+    const runtime = createRallarBlackBoxBrowserTestRuntime({
+        rallarRuntime: createSpaBrowserRallarRuntime(),
+        fetch: (request, init) => globalThis.fetch(request, init),
+        webSocketFactory: createBrowserWebSocketFactory()
+    });
+    return { runtime, disposeBridge: installSpaBrowserRallarEventBridge(runtime) };
 }
 
 function toRunState(

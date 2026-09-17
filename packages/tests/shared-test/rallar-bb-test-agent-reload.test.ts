@@ -5,14 +5,22 @@ import {
     writeAgentResumeRecord,
     type AgentResumeRecord
 } from '../../shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
-import { createRallarBlackBoxBrowserControlAgent } from '../../shared-test/rallar-bb-test/browser-control-agent.ts';
-import type { RallarBlackBoxControlSocketListener } from '../../shared-test/rallar-bb-test/control-client.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import {
+    createRallarBlackBoxBrowserControlAgent,
+    type RallarBlackBoxBrowserControlAgent
+} from '../../shared-test/rallar-bb-test/browser-control-agent.ts';
+import {
+    RallarBlackBoxControlClient,
+    type RallarBlackBoxControlSocketListener
+} from '../../shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlClientEnvelope,
     ControlCommandEnvelope,
     ControlRegisterEnvelope,
     ControlResultEnvelope
 } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 const RESUME_KEY = 'rallar-bb-agent-resume';
 const SEARCH = '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-reload&agentId=agent-reload';
@@ -50,14 +58,26 @@ class FakeControlSocket {
     }
 }
 
-function createStubbedWebSockets(): FakeControlSocket[] {
-    const sockets: FakeControlSocket[] = [];
-    vi.stubGlobal('WebSocket', function FakeWebSocket (_url: string) {
-        const socket = new FakeControlSocket();
-        sockets.push(socket);
-        return socket;
+function createReloadAgent(sockets: FakeControlSocket[]): RallarBlackBoxBrowserControlAgent {
+    const runtime = createRallarBlackBoxTestRuntime();
+    const controlClient = new RallarBlackBoxControlClient({
+        runtime,
+        webSocketFactory: () => {
+            const socket = new FakeControlSocket();
+            sockets.push(socket);
+            return socket;
+        },
+        fetch: () => Promise.reject(new Error('The reload agent uploads no final report.')),
+        heartbeatIntervalMs: 60_000,
+        statsIntervalMs: 0,
+        reconnectBaseMs: 600,
+        reconnectMaxMs: 5_000
     });
-    return sockets;
+    return createRallarBlackBoxBrowserControlAgent({
+        bootstrap: resolveRallarBlackBoxBootstrapConfig(SEARCH, {}, ''),
+        agentRuntime: { runtime },
+        controlClient
+    });
 }
 
 function toEnvelopes(sent: readonly string[]): ControlClientEnvelope[] {
@@ -97,14 +117,13 @@ describe('browser control-agent reload', () => {
     });
 
     afterEach(() => {
-        vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
 
     it('sends the agent.reload result before reloading and persists the resume record', async () => {
-        const sockets = createStubbedWebSockets();
+        const sockets: FakeControlSocket[] = [];
         const sentAtReload: ControlClientEnvelope[][] = [];
-        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
+        const agent = createReloadAgent(sockets);
         await agent.start();
         const socket = sockets[0];
         const reload = vi
@@ -142,8 +161,8 @@ describe('browser control-agent reload', () => {
             agentId: 'agent-reload',
             completedCommandIds: ['configure-control-1', 'reload-1']
         });
-        const sockets = createStubbedWebSockets();
-        const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
+        const sockets: FakeControlSocket[] = [];
+        const agent = createReloadAgent(sockets);
 
         await agent.start();
         sockets[0].open();

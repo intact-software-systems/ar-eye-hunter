@@ -1,4 +1,4 @@
-import { createRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createDefaultRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
 import { renderHeadlessStatus } from './status-view.ts';
 import './styles.css';
 
@@ -8,7 +8,7 @@ if (!root) {
 }
 const rootElement = root;
 
-const agent = createRallarBlackBoxBrowserControlAgent({
+const agent = createDefaultRallarBlackBoxBrowserControlAgent({
     search: window.location.search,
     env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {},
     hash: window.location.hash

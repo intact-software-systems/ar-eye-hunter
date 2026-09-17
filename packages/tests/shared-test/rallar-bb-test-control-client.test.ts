@@ -80,8 +80,7 @@ function toClientOptions(
         heartbeatIntervalMs: 60_000,
         statsIntervalMs: 5_000,
         reconnectBaseMs: 600,
-        reconnectMaxMs: 5_000,
-        onSnapshot: () => undefined
+        reconnectMaxMs: 5_000
     };
 }
 
@@ -393,6 +392,28 @@ describe('shared rallar black-box control client', () => {
                 state: 'registered',
                 receivedCount: 1
             });
+        }
+        finally {
+            client.dispose();
+        }
+    });
+
+    it('delivers each snapshot change to subscribers until they unsubscribe', () => {
+        const socket = new FakeControlSocket();
+        const client = new RallarBlackBoxControlClient(toClientOptions(createRallarBlackBoxTestRuntime(), () => socket));
+        const delivered: RallarBlackBoxControlSnapshot['state'][] = [];
+        const unsubscribe = client.subscribe((snapshot) => delivered.push(snapshot.state));
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+            unsubscribe();
+            client.disconnect();
+
+            expect(delivered[0]).toBe('connecting');
+            expect(delivered).toContain('registered');
+            expect(delivered).not.toContain('disconnected');
+            expect(client.getSnapshot().state).toBe('disconnected');
         }
         finally {
             client.dispose();
@@ -880,8 +901,7 @@ describe('shared rallar black-box control client', () => {
         const client = createDefaultRallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
-            statsIntervalMs: 0,
-            onSnapshot: () => undefined
+            statsIntervalMs: 0
         });
         vi.stubGlobal('WebSocket', function PageWebSocket () {
             return socket;
