@@ -6,14 +6,14 @@ import {
     type RallarBlackBoxBrowserControlAgent
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent.ts';
 import type {
-    RallarBlackBoxControlConnection,
+    RallarBlackBoxAgentControlClient,
     RallarBlackBoxControlConnectOptions,
     RallarBlackBoxControlSnapshot,
     RallarBlackBoxControlSnapshotListener
 } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import { createRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
-class FakeControlConnection implements RallarBlackBoxControlConnection {
+class FakeAgentControlClient implements RallarBlackBoxAgentControlClient {
     readonly connections: RallarBlackBoxControlConnectOptions[] = [];
     disposed = false;
     private readonly listeners = new Set<RallarBlackBoxControlSnapshotListener>();
@@ -40,11 +40,11 @@ class FakeControlConnection implements RallarBlackBoxControlConnection {
 
 interface TestControlAgent {
     readonly agent: RallarBlackBoxBrowserControlAgent;
-    readonly controlClient: FakeControlConnection;
+    readonly controlClient: FakeAgentControlClient;
 }
 
 function createTestControlAgent(search: string): TestControlAgent {
-    const controlClient = new FakeControlConnection();
+    const controlClient = new FakeAgentControlClient();
     const agent = createRallarBlackBoxBrowserControlAgent({
         bootstrap: resolveRallarBlackBoxBootstrapConfig(search, {}, ''),
         agentRuntime: { runtime: createRallarBlackBoxTestRuntime() },
@@ -148,6 +148,30 @@ describe('browser control-agent lifecycle', () => {
         });
         expect(agent.getSnapshot().state.events.map((event) => event.topic))
             .toContain('rallar.bb.provider.browser_rallar.config_invalid');
+
+        agent.dispose();
+    });
+
+    it('refuses to start on launch values it cannot read, before configuring the runtime or connecting', async () => {
+        const { agent, controlClient } = createTestControlAgent(
+            '?mode=control&provider=browser-rallr&autoConnect=1&runnerAgentCount=many&runId=run-8&agentId=agent-8'
+        );
+        const failure = 'The agent launch cannot be read: provider must be one of simulated, browser-rallar, not \'browser-rallr\'. ' +
+            'runnerAgentCount must be a positive integer, not \'many\'.';
+
+        const started = await agent.start();
+
+        expect(started.left).toBe(failure);
+        expect(controlClient.connections).toEqual([]);
+        expect(agent.getSnapshot()).toMatchObject({
+            runState: 'failed',
+            bootstrapping: false,
+            busy: false,
+            lastAction: 'Remote control bootstrap failed',
+            lastError: failure
+        });
+        expect(agent.getSnapshot().state.currentConfig).toBeUndefined();
+        expect(agent.getSnapshot().state.commandHistory).toEqual([]);
 
         agent.dispose();
     });

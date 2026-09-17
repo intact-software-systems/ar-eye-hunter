@@ -33,7 +33,8 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
             runnerAgentCount: 1,
-            source: 'url'
+            source: 'url',
+            issues: []
         },
         control: {
             state: 'registered',

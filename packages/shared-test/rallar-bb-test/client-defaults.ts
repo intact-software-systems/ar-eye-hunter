@@ -1,10 +1,11 @@
 import type { RallarBlackBoxTestTransport } from './rallar-black-box-test-contracts.ts';
 
-export type RallarBlackBoxProviderMode = 'simulated' | 'browser-rallar';
+export const RALLAR_BLACK_BOX_PROVIDER_MODES = ['simulated', 'browser-rallar'] as const;
+
+export type RallarBlackBoxProviderMode = typeof RALLAR_BLACK_BOX_PROVIDER_MODES[number];
 
 export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     mode: 'local-workbench',
-    autoConnect: false,
     providerMode: 'simulated' satisfies RallarBlackBoxProviderMode,
     controlUrl: 'ws://localhost:5180/control',
     localRunId: 'local-workbench-run',
@@ -29,6 +30,12 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     timeoutMs: 20_000,
     heartbeatIntervalMs: 10_000,
     statsIntervalMs: 5_000,
+    runnerAgentCount: 1,
+    rallarRegister: false,
+    rallarAuthStorage: 'local',
+    rallarRestoreSession: false,
+    rallarLogoutOnClose: false,
+    rallarLeaveRoomOnClose: true,
     demoUsername: 'alice',
     demoPassword: 'local-demo-password',
     demoToken: 'local-demo-token'
@@ -37,7 +44,11 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
 export function resolveRallarBlackBoxProviderMode(
     value: string | undefined
 ): RallarBlackBoxProviderMode {
-    return value === 'browser-rallar'
-        ? 'browser-rallar'
+    return value !== undefined && isRallarBlackBoxProviderMode(value)
+        ? value
         : RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode;
+}
+
+export function isRallarBlackBoxProviderMode(value: string): value is RallarBlackBoxProviderMode {
+    return RALLAR_BLACK_BOX_PROVIDER_MODES.some((providerMode) => providerMode === value);
 }

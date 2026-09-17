@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../../apps/rallar-black-box/src/runtime-store.ts';
 import viteConfig from '../../../apps/rallar-black-box/vite.config.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
     resolveRallarBlackBoxConfigProviderMode,
     validateRallarBlackBoxProviderConfig
@@ -129,7 +129,7 @@ describe('rallar-black-box control bootstrap', () => {
         });
     });
 
-    it('uses runner agent defaults from Vite env and lets URL params override them', () => {
+    it('uses runner agent settings from Vite env, lets URL params override them and reports an unreadable count', () => {
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
             VITE_RALLAR_RUNNER_AGENT_COUNT: '3'
@@ -149,10 +149,15 @@ describe('rallar-black-box control bootstrap', () => {
 
         expect(fromEnv.runnerAgentPrefix).toBe('controller');
         expect(fromEnv.runnerAgentCount).toBe(3);
+        expect(fromEnv.issues).toEqual([]);
         expect(fromUrl.runnerAgentPrefix).toBe('manual');
         expect(fromUrl.runnerAgentCount).toBe(2);
+        expect(fromUrl.issues).toEqual([]);
         expect(invalid.runnerAgentPrefix).toBe('controller');
-        expect(invalid.runnerAgentCount).toBe(1);
+        expect(invalid.issues).toEqual([{
+            launchKey: 'VITE_RALLAR_RUNNER_AGENT_COUNT',
+            message: 'VITE_RALLAR_RUNNER_AGENT_COUNT must be a positive integer, not \'not-a-number\'.'
+        }]);
     });
 
     it('lets URL fleet labels override environment labels', () => {
@@ -172,7 +177,7 @@ describe('rallar-black-box control bootstrap', () => {
         });
     });
 
-    it('parses explicit fleet coordinates and rejects unusable coordinate pairs', () => {
+    it('parses explicit fleet coordinates and reports unusable coordinates as launch issues', () => {
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_AGENT_LATITUDE: '59.9139',
             VITE_RALLAR_AGENT_LONGITUDE: '10.7522',
@@ -209,11 +214,27 @@ describe('rallar-black-box control bootstrap', () => {
             label: 'New York',
             precision: 'exact'
         });
+        expect(fromEnv.issues).toEqual([]);
+        expect(fromUrl.issues).toEqual([]);
         expect(invalid.fleetLocation).toBeUndefined();
+        expect(invalid.issues).toEqual([
+            {
+                launchKey: 'fleetLatitude',
+                message: 'fleetLatitude must be a decimal number from -90 to 90, not \'95\'.'
+            },
+            {
+                launchKey: 'fleetLongitude',
+                message: 'fleetLongitude must be a decimal number from -180 to 180, not \'not-a-number\'.'
+            }
+        ]);
         expect(malformed.fleetLocation).toBeUndefined();
+        expect(malformed.issues).toEqual([{
+            launchKey: 'fleetLatitude',
+            message: 'fleetLatitude must be a decimal number from -90 to 90, not \'52.5abc\'.'
+        }]);
     });
 
-    it('selects browser-rallar provider only when requested', () => {
+    it('selects browser-rallar provider only when requested and reports an unknown provider', () => {
         const fromUrl = resolveRallarBlackBoxBootstrapConfig(
             '?provider=browser-rallar&apiBaseUrl=https://api.example.test&rallarUsername=alice&rallarPassword=secret',
             {},
@@ -235,7 +256,11 @@ describe('rallar-black-box control bootstrap', () => {
         expect(fromEnv.rallarRestoreSession).toBe(true);
         expect(fromEnv.rallarLogoutOnClose).toBe(true);
         expect(fromEnv.rallarLeaveRoomOnClose).toBe(false);
-        expect(invalid.providerMode).toBe('simulated');
+        expect(fromEnv.issues).toEqual([]);
+        expect(invalid.issues).toEqual([{
+            launchKey: 'provider',
+            message: 'provider must be one of simulated, browser-rallar, not \'unknown\'.'
+        }]);
     });
 
     it('parses per-tab auth storage and agent session ticket handoff from launch links', () => {

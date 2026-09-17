@@ -3,6 +3,12 @@ export * from './assert/assert-value-operators.ts';
 export * from './black-box-runner-adapter.ts';
 export * from './browser-control-agent-config.ts';
 export * from './browser-control-agent.ts';
+export type {
+    RallarBlackBoxBootstrapIssue,
+    RallarBlackBoxBootstrapRegister,
+    RallarBlackBoxBootstrapTransport
+} from './browser-control-agent/compute-rallar-black-box-bootstrap-launch.ts';
+export type { RallarBlackBoxBootstrapEnvironment } from './browser-control-agent/resolve-launch-value.ts';
 export * from './browser-control-agent/to-remote-control-config.ts';
 export * from './browser-control-agent/validate-rallar-black-box-provider-config.ts';
 export * from './browser-rallar-runtime-bridge.ts';

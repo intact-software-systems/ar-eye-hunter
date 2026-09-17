@@ -43,6 +43,59 @@ describe('browser control-agent bootstrap config', () => {
             .toMatchObject({ providerMode: 'simulated', source: 'default' });
     });
 
+    it('carries no issues for a launch whose every value reads as its setting', () => {
+        expect(
+            resolveRallarBlackBoxBootstrapConfig(
+                '?mode=control&autoConnect=0&provider=browser-rallar&statsIntervalMs=0&transport=messages.rtc&rallarRegister=if-needed&rallarAuthStorage=session&rallarRestoreSession=off&rallarLogoutOnClose=YES&runnerAgentCount=4&fleetLatitude=-12.5&fleetLongitude=180&fleetLocationLabel=edge',
+                { VITE_RALLAR_HEARTBEAT_INTERVAL_MS: '250', VITE_RALLAR_LEAVE_ROOM_ON_CLOSE: 'false' },
+                ''
+            ).issues
+        ).toEqual([]);
+    });
+
+    it('reports every launch value it cannot read as its setting, naming the key that carried it', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?autoConnect=maybe&transport=ws&rallarRegister=sometimes&rallarAuthStorage=cookie&fleetLongitude=10',
+            {
+                VITE_RALLAR_HEARTBEAT_INTERVAL_MS: '250ms',
+                VITE_RALLAR_STATS_INTERVAL_MS: '-5',
+                VITE_RALLAR_LOGOUT_ON_CLOSE: 'sure'
+            },
+            ''
+        );
+
+        expect(bootstrap.issues).toEqual([
+            { launchKey: 'autoConnect', message: 'autoConnect must be one of 1, true, yes, on, 0, false, no, off, not \'maybe\'.' },
+            {
+                launchKey: 'VITE_RALLAR_HEARTBEAT_INTERVAL_MS',
+                message: 'VITE_RALLAR_HEARTBEAT_INTERVAL_MS must be a non-negative integer, not \'250ms\'.'
+            },
+            {
+                launchKey: 'VITE_RALLAR_STATS_INTERVAL_MS',
+                message: 'VITE_RALLAR_STATS_INTERVAL_MS must be a non-negative integer, not \'-5\'.'
+            },
+            { launchKey: 'transport', message: 'transport must be one of realtime, messages.rtc, not \'ws\'.' },
+            {
+                launchKey: 'rallarRegister',
+                message: 'rallarRegister must be one of if-needed, 1, true, yes, on, 0, false, no, off, not \'sometimes\'.'
+            },
+            { launchKey: 'rallarAuthStorage', message: 'rallarAuthStorage must be one of local, session, not \'cookie\'.' },
+            {
+                launchKey: 'VITE_RALLAR_LOGOUT_ON_CLOSE',
+                message: 'VITE_RALLAR_LOGOUT_ON_CLOSE must be one of 1, true, yes, on, 0, false, no, off, not \'sure\'.'
+            },
+            { launchKey: 'fleetLongitude', message: 'fleetLongitude needs fleetLatitude to place the agent.' }
+        ]);
+    });
+
+    it('reports a fleet location label without coordinates', () => {
+        expect(resolveRallarBlackBoxBootstrapConfig('', { VITE_RALLAR_AGENT_LOCATION_LABEL: 'rack 3' }, '').issues)
+            .toEqual([{
+                launchKey: 'VITE_RALLAR_AGENT_LOCATION_LABEL',
+                message: 'VITE_RALLAR_AGENT_LOCATION_LABEL needs a fleet latitude and longitude to place the agent.'
+            }]);
+    });
+
     it('takes no Rallar access token from the launch URL or the Vite environment', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?rallarToken=url-token',

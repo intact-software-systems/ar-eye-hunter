@@ -1,6 +1,7 @@
 import { takeAgentResumeRecord } from '@shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import {
     readRallarBlackBoxBootstrapConfig,
+    toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
@@ -693,6 +694,19 @@ class RallarBlackBoxRuntimeStore {
     }
 
     async bootstrapControlAgent(): Promise<void> {
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrapConfig);
+        if (refusal !== undefined) {
+            this.snapshot = {
+                ...this.snapshot,
+                bootstrapping: false,
+                busy: false,
+                runState: 'failed',
+                lastAction: 'Remote control bootstrap failed',
+                lastError: refusal
+            };
+            this.emit();
+            return;
+        }
         const runNumber = this.runSequence++;
         const config = toRemoteControlConfig({
             bootstrap: this.bootstrapConfig,

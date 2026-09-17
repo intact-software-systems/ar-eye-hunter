@@ -113,8 +113,8 @@ export interface RallarBlackBoxControlConnectOptions {
     readonly completedCommandIds: readonly string[];
 }
 
-/** The control connection an agent drives: it publishes snapshots, connects once configured and disposes with the agent. */
-export interface RallarBlackBoxControlConnection {
+/** The control client an agent drives: it publishes snapshots, connects once configured and disposes with the agent. */
+export interface RallarBlackBoxAgentControlClient {
     subscribe(listener: RallarBlackBoxControlSnapshotListener): () => void;
     connect(connection: RallarBlackBoxControlConnectOptions): void;
     dispose(): void;
@@ -152,7 +152,7 @@ export function createDefaultRallarBlackBoxControlClient(
     });
 }
 
-export class RallarBlackBoxControlClient implements RallarBlackBoxControlConnection {
+export class RallarBlackBoxControlClient implements RallarBlackBoxAgentControlClient {
     private readonly options: RallarBlackBoxControlClientOptions;
     private readonly unsubscribeRuntime: () => void;
     private readonly snapshotListeners = new Set<RallarBlackBoxControlSnapshotListener>();

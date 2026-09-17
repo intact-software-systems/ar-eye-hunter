@@ -4,9 +4,10 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
 import {
     resolveRallarBlackBoxBootstrapConfig,
-    type RallarBlackBoxBootstrapConfig,
-    type RallarBlackBoxBootstrapEnvironment
+    toRallarBlackBoxBootstrapRefusal,
+    type RallarBlackBoxBootstrapConfig
 } from './browser-control-agent-config.ts';
+import type { RallarBlackBoxBootstrapEnvironment } from './browser-control-agent/resolve-launch-value.ts';
 import {
     readBrowserAuthSessionPresence,
     toRemoteControlConfig
@@ -20,7 +21,7 @@ import {
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 import {
     createDefaultRallarBlackBoxControlClient,
-    type RallarBlackBoxControlConnection,
+    type RallarBlackBoxAgentControlClient,
     type RallarBlackBoxControlSnapshot
 } from './control-client.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
@@ -70,12 +71,12 @@ export interface BrowserControlAgentRuntime {
     readonly disposeBridge?: () => void;
 }
 
-/** The agent owns the runtime bridge and control connection it is given, and disposes both with itself. */
+/** The agent owns the runtime bridge and control client it is given, and disposes both with itself. */
 export interface CreateRallarBlackBoxBrowserControlAgentInput {
     readonly bootstrap: RallarBlackBoxBootstrapConfig;
     readonly agentRuntime: BrowserControlAgentRuntime;
     /** Drives the same runtime as `agentRuntime`. */
-    readonly controlClient: RallarBlackBoxControlConnection;
+    readonly controlClient: RallarBlackBoxAgentControlClient;
 }
 
 /** The launch URL, its fragment and the Vite environment of the agent page. */
@@ -120,7 +121,7 @@ export function toInitialControlSnapshot(bootstrap: RallarBlackBoxBootstrapConfi
 class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
     private readonly bootstrap: RallarBlackBoxBootstrapConfig;
     private readonly agentRuntime: BrowserControlAgentRuntime;
-    private readonly controlClient: RallarBlackBoxControlConnection;
+    private readonly controlClient: RallarBlackBoxAgentControlClient;
     private readonly unsubscribeControl: () => void;
     private readonly unsubscribeRuntime: () => void;
     private readonly listeners = new Set<() => void>();
@@ -161,6 +162,10 @@ class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
     async start(): Promise<Either<string, BrowserControlAgentStartOutcome>> {
         if (this.disposed) {
             return Either.ofLeft(DISPOSED_AGENT_FAILURE);
+        }
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrap);
+        if (refusal !== undefined) {
+            return this.recordBootstrapFailure(refusal);
         }
 
         const config = toRemoteControlConfig({
