@@ -34,8 +34,6 @@ export interface RallarBlackBoxBootstrapConfig {
     readonly rallarUsername?: string;
     /** Absent when the launch carries no Rallar password to sign in with. */
     readonly rallarPassword?: string;
-    /** Absent when the launch carries no Rallar access token. */
-    readonly rallarToken?: string;
     readonly rallarRegister: boolean | 'if-needed';
     readonly rallarAuthStorage: AuthSessionStorageKind;
     /** Absent when the launch fragment carries no one-time agent session ticket. */
@@ -102,7 +100,6 @@ const BOOTSTRAP_URL_KEYS = [
     'transport',
     'rallarUsername',
     'rallarPassword',
-    'rallarToken',
     'rallarRegister',
     'rallarAuthStorage',
     'rallarRestoreSession',
@@ -143,7 +140,6 @@ const BOOTSTRAP_ENV_KEYS = [
     'VITE_RALLAR_TRANSPORT',
     'VITE_RALLAR_USERNAME',
     'VITE_RALLAR_PASSWORD',
-    'VITE_RALLAR_TOKEN',
     'VITE_RALLAR_REGISTER',
     'VITE_RALLAR_AUTH_STORAGE',
     'VITE_RALLAR_RESTORE_SESSION',
@@ -274,7 +270,6 @@ function resolveRallarAuthBootstrap(
     RallarBlackBoxBootstrapConfig,
     | 'rallarUsername'
     | 'rallarPassword'
-    | 'rallarToken'
     | 'rallarRegister'
     | 'rallarAuthStorage'
     | 'rallarAgentSessionTicket'
@@ -287,7 +282,6 @@ function resolveRallarAuthBootstrap(
     return {
         rallarUsername: resolveLaunchText(sources, 'rallarUsername', 'VITE_RALLAR_USERNAME'),
         rallarPassword: resolveLaunchText(sources, 'rallarPassword', 'VITE_RALLAR_PASSWORD'),
-        rallarToken: resolveLaunchText(sources, 'rallarToken', 'VITE_RALLAR_TOKEN'),
         rallarRegister: register?.toLowerCase() === 'if-needed' ? 'if-needed' : toBoolean(register, false),
         rallarAuthStorage: authStorage?.toLowerCase() === 'session' ? 'session' : 'local',
         rallarAgentSessionTicket: fragment.get('agentSessionTicket')?.trim() || undefined,

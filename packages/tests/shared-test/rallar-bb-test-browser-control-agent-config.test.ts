@@ -43,6 +43,18 @@ describe('browser control-agent bootstrap config', () => {
             .toMatchObject({ providerMode: 'simulated', source: 'default' });
     });
 
+    it('takes no Rallar access token from the launch URL or the Vite environment', () => {
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig(
+            '?rallarToken=url-token',
+            { VITE_RALLAR_TOKEN: 'environment-token' },
+            ''
+        );
+
+        expect(bootstrap).not.toHaveProperty('rallarToken');
+        expect(JSON.stringify(bootstrap)).not.toMatch(/url-token|environment-token/);
+        expect(bootstrap.source).toBe('default');
+    });
+
     it('reads a runtime config provider mode only from control or defaults providerMode', () => {
         expect(resolveRallarBlackBoxConfigProviderMode({
             control: { provider: 'browser-rallar' },
