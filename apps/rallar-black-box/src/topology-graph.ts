@@ -2,6 +2,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { MultiDirectedGraph } from 'graphology';
 
 export type RallarTopologyNodeKind =
@@ -34,6 +35,7 @@ export type RallarTopologyNodeAttributes = Readonly<{
     x: number;
     y: number;
     eventCount: number;
+    /** Absent until an event reaches this node. */
     lastEventAtEpochMs?: number;
 }>;
 
@@ -44,12 +46,15 @@ export type RallarTopologyEdgeAttributes = Readonly<{
     color: string;
     size: number;
     eventCount: number;
+    /** Absent until an event reaches this edge. */
     lastEventAtEpochMs?: number;
 }>;
 
 export type RallarTopologyGraphAttributes = Readonly<{
     generatedAtEpochMs: number;
+    /** Absent when the runtime holds no configured run. */
     runId?: string;
+    /** Absent when the runtime holds no configured agent. */
     agentId?: string;
 }>;
 
@@ -104,33 +109,31 @@ const NODE_KIND_ORDER: Record<RallarTopologyNodeKind, number> = {
     message: 6
 };
 
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
+function isJsonObject(value: unknown): value is ApiJsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function asArray(value: unknown): readonly unknown[] {
-    return Array.isArray(value) ? value : [];
-}
-
-function stringValue(value: unknown): string | undefined {
+/** The non-blank text a payload field carries, or `undefined` when it carries none. */
+function decodeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value
         : undefined;
 }
 
-function stringArray(value: unknown): readonly string[] {
-    return asArray(value)
-        .map((entry) => stringValue(entry))
-        .filter((entry): entry is string => Boolean(entry));
+function decodeTexts(value: unknown): readonly string[] {
+    return Array.isArray(value)
+        ? value.flatMap((entry) => {
+            const text = decodeText(entry);
+            return text === undefined ? [] : [text];
+        })
+        : [];
 }
 
-function unique(values: readonly (string | undefined)[]): readonly string[] {
+function toSortedDistinctTexts(values: readonly (string | undefined)[]): readonly string[] {
     return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 }
 
-function statusFromEvent(event: RallarBlackBoxTestEvent): RallarTopologyStatus {
+function toStatusForEvent(event: RallarBlackBoxTestEvent): RallarTopologyStatus {
     const topic = event.topic.toLowerCase();
     if (
         event.severity === 'error' ||
@@ -150,7 +153,7 @@ function statusFromEvent(event: RallarBlackBoxTestEvent): RallarTopologyStatus {
     return 'active';
 }
 
-function mergeStatus(
+function toMergedStatus(
     left: RallarTopologyStatus,
     right: RallarTopologyStatus
 ): RallarTopologyStatus {
@@ -163,34 +166,34 @@ function mergeStatus(
     return 'active';
 }
 
-function nodeId(kind: RallarTopologyNodeKind, id: string): string {
+function toNodeKey(kind: RallarTopologyNodeKind, id: string): string {
     return `${kind}:${id}`;
 }
 
-function readableId(value: string): string {
+function toReadableId(value: string): string {
     return value.length > 28 ? `${value.slice(0, 25)}...` : value;
 }
 
-function payloadOf(event: RallarBlackBoxTestEvent): Record<string, unknown> {
-    return asRecord(event.payload);
+function toEventPayload(event: RallarBlackBoxTestEvent): ApiJsonObject {
+    return isJsonObject(event.payload) ? event.payload : {};
 }
 
-function nestedDataOf(event: RallarBlackBoxTestEvent): Record<string, unknown> {
-    return asRecord(payloadOf(event).data);
+/** The payload's own nested `data` object, which several runtime topics wrap their facts in. */
+function toNestedEventPayload(event: RallarBlackBoxTestEvent): ApiJsonObject {
+    const nested = toEventPayload(event).data;
+    return isJsonObject(nested) ? nested : {};
 }
 
-function roomIdFrom(
+function resolveRoomId(
     state: RallarBlackBoxTestState,
-    event?: RallarBlackBoxTestEvent
+    event: RallarBlackBoxTestEvent
 ): string | undefined {
-    const payload = event ? payloadOf(event) : {};
-    const data = event ? nestedDataOf(event) : {};
-    return stringValue(payload.roomId) ??
-        stringValue(data.roomId) ??
+    return decodeText(toEventPayload(event).roomId) ??
+        decodeText(toNestedEventPayload(event).roomId) ??
         state.currentConfig?.roomId;
 }
 
-function addOrUpdateNode(
+function appendOrMergeNode(
     graph: RallarTopologyGraph,
     id: string,
     attrs: Omit<RallarTopologyNodeAttributes, 'x' | 'y'>
@@ -205,7 +208,7 @@ function addOrUpdateNode(
     }
 
     const current = graph.getNodeAttributes(id);
-    const status = mergeStatus(current.status, attrs.status);
+    const status = toMergedStatus(current.status, attrs.status);
     graph.mergeNodeAttributes(id, {
         ...current,
         status,
@@ -218,51 +221,57 @@ function addOrUpdateNode(
     });
 }
 
-function addNode(
-    graph: RallarTopologyGraph,
-    kind: RallarTopologyNodeKind,
-    id: string | undefined,
-    options: Readonly<{
-        label?: string;
-        status?: RallarTopologyStatus;
-        eventAtEpochMs?: number;
-        eventCount?: number;
-    }> = {}
-): string | undefined {
+interface AppendTopologyNodeInput {
+    readonly graph: RallarTopologyGraph;
+    readonly kind: RallarTopologyNodeKind;
+    /** The node's id, or `undefined` when the runtime names none and no node is appended. */
+    readonly id: string | undefined;
+    /** The node's label, or `undefined` to shorten its id instead. */
+    readonly label: string | undefined;
+    readonly status: RallarTopologyStatus;
+    /** When the event that reached this node happened, or `undefined` for a configured node. */
+    readonly eventAtEpochMs: number | undefined;
+}
+
+/** The node's key, or `undefined` when the input names no id. */
+function appendTopologyNode(input: AppendTopologyNodeInput): string | undefined {
+    const { graph, kind, id, status } = input;
     if (!id) {
         return undefined;
     }
 
-    const key = nodeId(kind, id);
-    const status = options.status ?? 'active';
-    addOrUpdateNode(graph, key, {
-        label: options.label ?? readableId(id),
+    const key = toNodeKey(kind, id);
+    appendOrMergeNode(graph, key, {
+        label: input.label ?? toReadableId(id),
         kind,
         status,
         color: status === 'active' ? NODE_COLORS[kind] : STATUS_COLORS[status],
         size: kind === 'room' || kind === 'run' ? 12 : kind === 'message' ? 7 : 9,
-        eventCount: options.eventCount ?? 1,
-        lastEventAtEpochMs: options.eventAtEpochMs
+        eventCount: 1,
+        lastEventAtEpochMs: input.eventAtEpochMs
     });
     return key;
 }
 
-function addEdge(
-    graph: RallarTopologyGraph,
-    source: string | undefined,
-    target: string | undefined,
-    kind: RallarTopologyEdgeKind,
-    label: string,
-    options: Readonly<{
-        status?: RallarTopologyStatus;
-        eventAtEpochMs?: number;
-    }> = {}
-): void {
+interface AppendTopologyEdgeInput {
+    readonly graph: RallarTopologyGraph;
+    /** The source node key, or `undefined` when its node was not appended. */
+    readonly source: string | undefined;
+    /** The target node key, or `undefined` when its node was not appended. */
+    readonly target: string | undefined;
+    readonly kind: RallarTopologyEdgeKind;
+    readonly label: string;
+    readonly status: RallarTopologyStatus;
+    /** When the event that reached this edge happened, or `undefined` for a configured edge. */
+    readonly eventAtEpochMs: number | undefined;
+}
+
+function appendTopologyEdge(input: AppendTopologyEdgeInput): void {
+    const { graph, source, target, kind, label, status } = input;
     if (!source || !target || source === target) {
         return;
     }
 
-    const status = options.status ?? 'active';
     const key = `${kind}:${source}->${target}`;
     const attrs: RallarTopologyEdgeAttributes = {
         label,
@@ -271,7 +280,7 @@ function addEdge(
         color: STATUS_COLORS[status],
         size: kind === 'route' ? 2.4 : 1.4,
         eventCount: 1,
-        lastEventAtEpochMs: options.eventAtEpochMs
+        lastEventAtEpochMs: input.eventAtEpochMs
     };
 
     if (!graph.hasEdge(key)) {
@@ -280,7 +289,7 @@ function addEdge(
     }
 
     const current = graph.getEdgeAttributes(key);
-    const nextStatus = mergeStatus(current.status, status);
+    const nextStatus = toMergedStatus(current.status, status);
     graph.mergeEdgeWithKey(key, source, target, {
         ...current,
         status: nextStatus,
@@ -288,16 +297,16 @@ function addEdge(
         eventCount: current.eventCount + 1,
         lastEventAtEpochMs: Math.max(
             current.lastEventAtEpochMs ?? 0,
-            options.eventAtEpochMs ?? 0
+            input.eventAtEpochMs ?? 0
         ) || undefined
     });
 }
 
-function messageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
-    const payload = payloadOf(event);
-    const data = nestedDataOf(event);
-    const browserSender = stringValue(payload.senderId) ?? stringValue(payload.remotePeerId);
-    const browserReceiver = stringValue(payload.peerId);
+function toMessageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
+    const payload = toEventPayload(event);
+    const nested = toNestedEventPayload(event);
+    const browserSender = decodeText(payload.senderId) ?? decodeText(payload.remotePeerId);
+    const browserReceiver = decodeText(payload.peerId);
     if (
         event.topic.startsWith('rallar.browser.') &&
         browserSender &&
@@ -307,54 +316,54 @@ function messageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
         return [browserReceiver];
     }
 
-    return unique([
-        ...stringArray(payload.peerIds),
-        ...stringArray(payload.nextHopPeerIds),
-        ...stringArray(payload.observedClients),
-        ...stringArray(data.targets),
-        ...stringArray(data.peerIds),
-        ...stringArray(data.nextHopPeerIds),
-        stringValue(payload.remotePeerId)
+    return toSortedDistinctTexts([
+        ...decodeTexts(payload.peerIds),
+        ...decodeTexts(payload.nextHopPeerIds),
+        ...decodeTexts(payload.observedClients),
+        ...decodeTexts(nested.targets),
+        ...decodeTexts(nested.peerIds),
+        ...decodeTexts(nested.nextHopPeerIds),
+        decodeText(payload.remotePeerId)
     ]);
 }
 
-function senderId(event: RallarBlackBoxTestEvent): string | undefined {
-    const payload = payloadOf(event);
-    const data = nestedDataOf(event);
+function resolveSenderId(event: RallarBlackBoxTestEvent): string | undefined {
+    const payload = toEventPayload(event);
+    const nested = toNestedEventPayload(event);
     if (event.topic.startsWith('rallar.browser.')) {
-        return stringValue(payload.senderId) ??
-            stringValue(payload.remotePeerId) ??
-            stringValue(data.senderId) ??
-            stringValue(payload.peerId) ??
+        return decodeText(payload.senderId) ??
+            decodeText(payload.remotePeerId) ??
+            decodeText(nested.senderId) ??
+            decodeText(payload.peerId) ??
             event.actor ??
             event.connection;
     }
 
-    return stringValue(payload.senderId) ??
-        stringValue(payload.peerId) ??
-        stringValue(data.senderId) ??
+    return decodeText(payload.senderId) ??
+        decodeText(payload.peerId) ??
+        decodeText(nested.senderId) ??
         event.actor ??
         event.connection;
 }
 
-function collectSessionIds(event: RallarBlackBoxTestEvent): readonly string[] {
-    const payload = payloadOf(event);
-    const data = nestedDataOf(event);
-    return unique([
-        stringValue(payload.sessionId),
-        stringValue(payload.peerId),
-        stringValue(payload.remotePeerId),
-        stringValue(payload.senderId),
-        stringValue(data.senderId),
-        ...stringArray(payload.peerIds),
-        ...stringArray(payload.nextHopPeerIds),
-        ...stringArray(payload.expectedClients),
-        ...stringArray(payload.observedClients),
-        ...stringArray(payload.connectedClients)
+function toSessionIds(event: RallarBlackBoxTestEvent): readonly string[] {
+    const payload = toEventPayload(event);
+    const nested = toNestedEventPayload(event);
+    return toSortedDistinctTexts([
+        decodeText(payload.sessionId),
+        decodeText(payload.peerId),
+        decodeText(payload.remotePeerId),
+        decodeText(payload.senderId),
+        decodeText(nested.senderId),
+        ...decodeTexts(payload.peerIds),
+        ...decodeTexts(payload.nextHopPeerIds),
+        ...decodeTexts(payload.expectedClients),
+        ...decodeTexts(payload.observedClients),
+        ...decodeTexts(payload.connectedClients)
     ]);
 }
 
-function assignLayout(graph: RallarTopologyGraph): void {
+function setTopologyLayout(graph: RallarTopologyGraph): void {
     const byKind = new Map<RallarTopologyNodeKind, string[]>();
     graph.forEachNode((key, attrs) => {
         const list = byKind.get(attrs.kind) ?? [];
@@ -375,7 +384,7 @@ function assignLayout(graph: RallarTopologyGraph): void {
     });
 }
 
-function summarize(graph: RallarTopologyGraph): RallarTopologySummary {
+function toTopologySummary(graph: RallarTopologyGraph): RallarTopologySummary {
     let activeNodes = 0;
     let degradedNodes = 0;
     let failedNodes = 0;
@@ -433,118 +442,244 @@ function summarize(graph: RallarTopologyGraph): RallarTopologySummary {
     };
 }
 
-export function deriveRallarTopologyGraph(
-    state: RallarBlackBoxTestState
+export function computeRallarTopologyGraph(
+    state: RallarBlackBoxTestState,
+    nowEpochMs: number
 ): RallarTopologySnapshot {
     const graph: RallarTopologyGraph = new MultiDirectedGraph();
     const config = state.currentConfig;
     graph.replaceAttributes({
-        generatedAtEpochMs: Date.now(),
+        generatedAtEpochMs: nowEpochMs,
         runId: config?.runId,
         agentId: config?.agentId
     });
 
-    const run = addNode(graph, 'run', config?.runId, { label: config?.runId });
-    const agent = addNode(graph, 'agent', config?.agentId, { label: config?.agentId });
-    const actor = addNode(graph, 'actor', config?.actor, { label: config?.actor });
-    const room = addNode(graph, 'room', config?.roomId, { label: config?.roomId });
-    const session = addNode(graph, 'session', config?.sessionId, { label: config?.sessionId });
-    const connection = addNode(
-        graph,
-        'connection',
-        String(config?.defaults?.connection ?? '') || undefined
-    );
-    addEdge(graph, run, agent, 'control', 'agent');
-    addEdge(graph, agent, actor, 'identity', 'actor');
-    addEdge(graph, actor, session, 'identity', 'session');
-    addEdge(graph, connection, session, 'connection', 'uses');
-    addEdge(graph, session, room, 'membership', 'member');
-
+    appendConfiguredTopology(graph, state);
     for (const event of state.events) {
-        const status = statusFromEvent(event);
-        const eventRoom = addNode(graph, 'room', roomIdFrom(state, event), {
-            status,
-            eventAtEpochMs: event.atEpochMs
-        });
-        const eventActor = addNode(graph, 'actor', event.actor, {
-            status,
-            eventAtEpochMs: event.atEpochMs
-        });
-        const eventConnection = addNode(graph, 'connection', event.connection, {
-            status,
-            eventAtEpochMs: event.atEpochMs
-        });
-        if (eventActor && eventConnection) {
-            addEdge(graph, eventActor, eventConnection, 'connection', 'opens', {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-        }
-
-        for (const sessionId of collectSessionIds(event)) {
-            const eventSession = addNode(graph, 'session', sessionId, {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-            addEdge(graph, eventSession, eventRoom, 'membership', 'member', {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-            addEdge(graph, eventConnection, eventSession, 'connection', 'observed', {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-        }
-
-        if (event.kind === 'message') {
-            const sourceSession = addNode(graph, 'session', senderId(event), {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-            const targets = messageTargets(event);
-            if (targets.length === 0) {
-                addEdge(graph, sourceSession, eventRoom, 'route', 'broadcast', {
-                    status,
-                    eventAtEpochMs: event.atEpochMs
-                });
-            }
-            else {
-                for (const target of targets) {
-                    const targetSession = addNode(graph, 'session', target, {
-                        status,
-                        eventAtEpochMs: event.atEpochMs
-                    });
-                    addEdge(graph, sourceSession, targetSession, 'route', 'message', {
-                        status,
-                        eventAtEpochMs: event.atEpochMs
-                    });
-                }
-            }
-        }
-        else if (status !== 'active') {
-            const diagnostic = addNode(graph, 'message', event.eventId, {
-                label: event.topic,
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-            addEdge(graph, eventConnection ?? eventRoom, diagnostic, 'diagnostic', event.kind, {
-                status,
-                eventAtEpochMs: event.atEpochMs
-            });
-        }
+        appendEventTopology({ graph, state, event });
     }
 
-    assignLayout(graph);
+    setTopologyLayout(graph);
     return {
         graph,
-        summary: summarize(graph)
+        summary: toTopologySummary(graph)
     };
 }
 
-export function visibleTopologyCounts(
+function appendConfiguredTopology(
+    graph: RallarTopologyGraph,
+    state: RallarBlackBoxTestState
+): void {
+    const config = state.currentConfig;
+    const run = appendConfiguredNode(graph, 'run', config?.runId);
+    const agent = appendConfiguredNode(graph, 'agent', config?.agentId);
+    const actor = appendConfiguredNode(graph, 'actor', config?.actor);
+    const room = appendConfiguredNode(graph, 'room', config?.roomId);
+    const session = appendConfiguredNode(graph, 'session', config?.sessionId);
+    const connection = appendTopologyNode({
+        graph,
+        kind: 'connection',
+        id: String(config?.defaults?.connection ?? '') || undefined,
+        label: undefined,
+        status: 'active',
+        eventAtEpochMs: undefined
+    });
+    appendConfiguredEdge(graph, { source: run, target: agent, kind: 'control', label: 'agent' });
+    appendConfiguredEdge(graph, { source: agent, target: actor, kind: 'identity', label: 'actor' });
+    appendConfiguredEdge(graph, { source: actor, target: session, kind: 'identity', label: 'session' });
+    appendConfiguredEdge(graph, { source: connection, target: session, kind: 'connection', label: 'uses' });
+    appendConfiguredEdge(graph, { source: session, target: room, kind: 'membership', label: 'member' });
+}
+
+/** A node the current configuration names, labelled with the id the operator configured. */
+function appendConfiguredNode(
+    graph: RallarTopologyGraph,
+    kind: RallarTopologyNodeKind,
+    id: string | undefined
+): string | undefined {
+    return appendTopologyNode({
+        graph,
+        kind,
+        id,
+        label: id,
+        status: 'active',
+        eventAtEpochMs: undefined
+    });
+}
+
+/** One edge as its caller names it: which nodes it joins, and what kind of link it is. */
+type TopologyEdgeLink = Readonly<{
+    /** The source node key, or `undefined` when its node was not appended. */
+    source: string | undefined;
+    /** The target node key, or `undefined` when its node was not appended. */
+    target: string | undefined;
+    kind: RallarTopologyEdgeKind;
+    label: string;
+}>;
+
+function appendConfiguredEdge(graph: RallarTopologyGraph, edge: TopologyEdgeLink): void {
+    appendTopologyEdge({
+        graph,
+        source: edge.source,
+        target: edge.target,
+        kind: edge.kind,
+        label: edge.label,
+        status: 'active',
+        eventAtEpochMs: undefined
+    });
+}
+
+interface AppendEventTopologyInput {
+    readonly graph: RallarTopologyGraph;
+    readonly state: RallarBlackBoxTestState;
+    readonly event: RallarBlackBoxTestEvent;
+}
+
+function appendEventTopology(input: AppendEventTopologyInput): void {
+    const { graph, state, event } = input;
+    const observation: TopologyObservation = {
+        graph,
+        status: toStatusForEvent(event),
+        eventAtEpochMs: event.atEpochMs
+    };
+    const eventRoom = appendObservedNode(observation, 'room', resolveRoomId(state, event));
+    const eventActor = appendObservedNode(observation, 'actor', event.actor);
+    const eventConnection = appendObservedNode(observation, 'connection', event.connection);
+    if (eventActor && eventConnection) {
+        appendObservedEdge(observation, {
+            source: eventActor,
+            target: eventConnection,
+            kind: 'connection',
+            label: 'opens'
+        });
+    }
+
+    for (const sessionId of toSessionIds(event)) {
+        const eventSession = appendObservedNode(observation, 'session', sessionId);
+        appendObservedEdge(observation, {
+            source: eventSession,
+            target: eventRoom,
+            kind: 'membership',
+            label: 'member'
+        });
+        appendObservedEdge(observation, {
+            source: eventConnection,
+            target: eventSession,
+            kind: 'connection',
+            label: 'observed'
+        });
+    }
+
+    if (event.kind === 'message') {
+        appendMessageRoutes({ observation, event, eventRoom });
+        return;
+    }
+    if (observation.status !== 'active') {
+        appendDiagnosticNode({ observation, event, eventRoom, eventConnection });
+    }
+}
+
+/** What one event says about the graph: which graph, and when it was seen in what state. */
+type TopologyObservation = Readonly<{
+    graph: RallarTopologyGraph;
+    status: RallarTopologyStatus;
+    eventAtEpochMs: number;
+}>;
+
+function appendObservedNode(
+    observation: TopologyObservation,
+    kind: RallarTopologyNodeKind,
+    id: string | undefined
+): string | undefined {
+    return appendTopologyNode({
+        graph: observation.graph,
+        kind,
+        id,
+        label: undefined,
+        status: observation.status,
+        eventAtEpochMs: observation.eventAtEpochMs
+    });
+}
+
+function appendObservedEdge(observation: TopologyObservation, edge: TopologyEdgeLink): void {
+    appendTopologyEdge({
+        graph: observation.graph,
+        source: edge.source,
+        target: edge.target,
+        kind: edge.kind,
+        label: edge.label,
+        status: observation.status,
+        eventAtEpochMs: observation.eventAtEpochMs
+    });
+}
+
+interface AppendMessageRoutesInput {
+    readonly observation: TopologyObservation;
+    readonly event: RallarBlackBoxTestEvent;
+    /** The room node key, or `undefined` when the event names no room. */
+    readonly eventRoom: string | undefined;
+}
+
+function appendMessageRoutes(input: AppendMessageRoutesInput): void {
+    const { observation, event } = input;
+    const sourceSession = appendObservedNode(observation, 'session', resolveSenderId(event));
+    const targets = toMessageTargets(event);
+    if (targets.length === 0) {
+        appendObservedEdge(observation, {
+            source: sourceSession,
+            target: input.eventRoom,
+            kind: 'route',
+            label: 'broadcast'
+        });
+        return;
+    }
+
+    for (const target of targets) {
+        appendObservedEdge(observation, {
+            source: sourceSession,
+            target: appendObservedNode(observation, 'session', target),
+            kind: 'route',
+            label: 'message'
+        });
+    }
+}
+
+interface AppendDiagnosticNodeInput {
+    readonly observation: TopologyObservation;
+    readonly event: RallarBlackBoxTestEvent;
+    /** The room node key, or `undefined` when the event names no room. */
+    readonly eventRoom: string | undefined;
+    /** The connection node key, or `undefined` when the event names no connection. */
+    readonly eventConnection: string | undefined;
+}
+
+function appendDiagnosticNode(input: AppendDiagnosticNodeInput): void {
+    const { observation, event } = input;
+    const diagnostic = appendTopologyNode({
+        graph: observation.graph,
+        kind: 'message',
+        id: event.eventId,
+        label: event.topic,
+        status: observation.status,
+        eventAtEpochMs: observation.eventAtEpochMs
+    });
+    appendObservedEdge(observation, {
+        source: input.eventConnection ?? input.eventRoom,
+        target: diagnostic,
+        kind: 'diagnostic',
+        label: event.kind
+    });
+}
+
+export type RallarTopologyVisibleCounts = Readonly<{
+    nodes: number;
+    edges: number;
+}>;
+
+export function toVisibleTopologyCounts(
     graph: RallarTopologyGraph,
     filter: RallarTopologyFilter
-): Readonly<{ nodes: number; edges: number; }> {
+): RallarTopologyVisibleCounts {
     if (filter === 'all') {
         return {
             nodes: graph.order,

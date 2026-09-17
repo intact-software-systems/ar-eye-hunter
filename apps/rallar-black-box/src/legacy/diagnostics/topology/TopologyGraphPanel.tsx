@@ -2,8 +2,8 @@ import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Sigma from 'sigma';
 import {
-    deriveRallarTopologyGraph,
-    visibleTopologyCounts,
+    computeRallarTopologyGraph,
+    toVisibleTopologyCounts,
     type RallarTopologyFilter
 } from '../../../topology-graph.ts';
 import { Metric } from '../../shared/Metric.tsx';
@@ -25,9 +25,9 @@ export function TopologyGraphPanel({
     const [query, setQuery] = useState('');
     const [nodeLimit, setNodeLimit] = useState(18);
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const topology = useMemo(() => deriveRallarTopologyGraph(state), [state]);
+    const topology = useMemo(() => computeRallarTopologyGraph(state, Date.now()), [state]);
     const visibleCounts = useMemo(
-        () => visibleTopologyCounts(topology.graph, filter),
+        () => toVisibleTopologyCounts(topology.graph, filter),
         [filter, topology.graph]
     );
     const matchingNodes = useMemo(() => {
