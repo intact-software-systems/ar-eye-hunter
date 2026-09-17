@@ -31,6 +31,7 @@ interface CommandLinkItemInput {
     /** Absent when the control run snapshot holds no queued command for the link. */
     readonly command: ControlQueuedCommandSnapshot | undefined;
     readonly stage: 'queued' | 'dispatched' | 'completed';
+    /** Absent while the command has not reached the stage. */
     readonly atEpochMs: number | undefined;
     readonly tone: string;
 }
