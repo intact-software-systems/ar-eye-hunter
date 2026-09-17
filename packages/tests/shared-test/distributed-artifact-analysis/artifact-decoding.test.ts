@@ -602,6 +602,64 @@ describe('distributed run artifact decoding', () => {
         expect(analysis.summaryMarkdown).toContain('Artifact warnings: 2');
     });
 
+    it('warns about and omits optional fleet reports, failures and manifests that are not their contracts', () => {
+        const cases = [
+            {
+                name: 'fleet report that is not a JSON object',
+                files: { 'fleet-report.json': '[]' },
+                warning: { fileName: 'fleet-report.json', message: 'fleet-report.json is not a fleet report: the report must be a JSON object.' }
+            },
+            {
+                name: 'fleet report whose verdict and counts have other JSON types',
+                files: { 'fleet-report.json': JSON.stringify({ ok: 'no', summary: { agents: 'x' } }) },
+                warning: { fileName: 'fleet-report.json', message: 'fleet-report.json is not a fleet report: ok must be a boolean when present.' }
+            },
+            {
+                name: 'failures record that is text',
+                files: { 'failures.json': JSON.stringify('text') },
+                warning: { fileName: 'failures.json', message: 'failures.json is not a failures record: the record must be a JSON object.' }
+            },
+            {
+                name: 'failures record whose first failure is not a JSON object',
+                files: { 'failures.json': JSON.stringify({ failures: ['text'] }) },
+                warning: {
+                    fileName: 'failures.json',
+                    message: 'failures.json is not a failures record: failures[0] must be a JSON object whose error is a JSON object when present.'
+                }
+            },
+            {
+                name: 'manifest that is a JSON array',
+                files: { 'manifest.json': '[]' },
+                warning: {
+                    fileName: 'manifest.json',
+                    message: 'manifest.json is not a distributed run manifest: the manifest must be a JSON object.'
+                }
+            }
+        ];
+
+        for (const decodeCase of cases) {
+            const analysis = computeDistributedRunAnalysis(passedRunFiles(decodeCase.files), GENERATED_AT_EPOCH_MS);
+
+            expect(analysis.parseWarnings, decodeCase.name).toEqual([decodeCase.warning]);
+            expect(analysis.ok, decodeCase.name).toBe(true);
+            expect(analysis.summary.failureGroups, decodeCase.name).toBe(0);
+        }
+        const malformedManifest = computeDistributedRunAnalysis(
+            passedRunFiles({ 'manifest.json': '{oops' }),
+            GENERATED_AT_EPOCH_MS
+        );
+        expect(malformedManifest.parseWarnings).toEqual([{
+            fileName: 'manifest.json',
+            message: expect.stringMatching(/^manifest\.json is not valid JSON: /)
+        }]);
+        expect(
+            computeDistributedRunAnalysis(
+                passedRunFiles({ 'failures.json': JSON.stringify({ failures: [] }) }),
+                GENERATED_AT_EPOCH_MS
+            ).parseWarnings
+        ).toEqual([]);
+    });
+
     it('skips JSONL rows that are not JSON objects with a warning instead of counting them as evidence', () => {
         const analysis = computeDistributedRunAnalysis(
             passedRunFiles({

@@ -385,9 +385,13 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   malformed record is a parse warning and the failure focus ignores it.
 - `target-resolution.json` is decoded with the snapshot's target resolution
   decoder: `null` means no resolution and a non-conforming record is a parse
-  warning. The other optional evidence (`fleet-report.json`, `failures.json`,
-  `results.jsonl`, `events.jsonl`) is read leniently into typed evidence rows;
-  malformed files and rows that are not JSON objects become parse warnings.
+  warning. `fleet-report.json` must be a JSON object whose verdict, summary
+  counts, timing and group have the JSON types the analysis reads;
+  `failures.json` must list its failures as JSON objects; `manifest.json`
+  beside a distributed run must be a JSON object. A file that is not valid
+  JSON or not its contract is a parse warning and its evidence is left out.
+  `results.jsonl` and `events.jsonl` are read into typed evidence rows; rows
+  that are not JSON objects become parse warnings.
   A fact the artifacts do not record stays absent — without a fleet report the
   missing, stale and flaky agent counts are unknown, not zero. JSONL rows stand
   in for control-run results or events only when `control-run.json` holds
@@ -396,11 +400,12 @@ the clock and passes `generatedAtEpochMs`; the analysis never does.
   object row is a parse warning naming the file, the line and the missing field,
   except the `step-result` rows the recorder mirrors into `events.jsonl`, which
   stand in for no event.
-- `toDistributedArtifactBundle` and `toDistributedArtifactSnapshots` return the
-  same rejections. Snapshots and bundles need the control run, so both also
-  reject with the control-run.json warning when that file is unavailable.
-  Snapshots carry the same `parseWarnings` as the analysis, including the
-  rejection that explains a missing `artifactBundle`.
+- `toDistributedArtifactSnapshots` rejects when the files hold no readable
+  distributed run, and with the control-run.json warning when that file is
+  unavailable. `toDistributedArtifactBundle` rejects in the same cases and also
+  when `manifest.json` is missing, where the snapshots still form without an
+  `artifactBundle`. Snapshots carry the same `parseWarnings` as the analysis,
+  including the rejection that explains a missing `artifactBundle`.
   `computeDistributedArtifactWorkspace` reports rejections as workspace issues
   (`analysis-failed`, `control-request-failure`, `missing-generation-time`); a
   workspace without a usable `control-run.json` carries the analysis but no

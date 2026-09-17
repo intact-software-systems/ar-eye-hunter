@@ -60,22 +60,6 @@ export function toOptionalJsonFileValue<Decoded>(
     );
 }
 
-/** A missing, empty or malformed optional file is absent; a malformed one adds a warning. */
-export function toOptionalJsonFileEvidence<Evidence>(
-    parsed: ParsedDistributedArtifactPipeline,
-    fileName: string,
-    decodeFile: (value: unknown) => Evidence | undefined
-): ArtifactFileReading<Evidence | undefined> {
-    const file = distributedArtifactPipelineFile(parsed, fileName);
-    if (file.format === 'json' && file.status === 'parsed') {
-        return { value: decodeFile(file.value), warnings: [] };
-    }
-    const warnings = file.status === 'missing' || file.status === 'empty'
-        ? []
-        : [{ fileName, message: `${fileName} is not valid JSON: ${toJsonErrorDetail(fileName, file.message)}` }];
-    return { value: undefined, warnings };
-}
-
 /** Rows that are not valid JSON or not JSON objects are skipped with a warning each. */
 export function toJsonlEvidence<Evidence>(
     parsed: ParsedDistributedArtifactPipeline,

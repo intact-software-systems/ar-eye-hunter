@@ -15,7 +15,6 @@ import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-r
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     toJsonlEvidence,
-    toOptionalJsonFileEvidence,
     toOptionalJsonFileValue,
     toRequiredJsonFileValue,
     type ArtifactFileReading
@@ -33,7 +32,7 @@ import {
     type DistributedRunEventEvidence
 } from './decode-distributed-run-event-evidence.ts';
 import {
-    decodeBundledFailure,
+    decodeBundledFailures,
     decodeDistributedRunFleetReportEvidence,
     type DistributedRunBundledFailure,
     type DistributedRunFleetReportEvidence
@@ -47,6 +46,14 @@ import {
     type DistributedRunRunnerSummary
 } from './decode-distributed-run-runner-summary.ts';
 import { decodeJsonlControlEventEnvelope, decodeJsonlControlResultEnvelope } from './decode-jsonl-control-envelopes.ts';
+
+interface OptionalEvidenceReadings {
+    readonly recorded: ArtifactFileReading<ControlPostFailureArtifact | undefined>;
+    readonly manifestDistributedRunId: ArtifactFileReading<string | undefined>;
+    readonly fleetReport: ArtifactFileReading<DistributedRunFleetReportEvidence | undefined>;
+    readonly bundledFailures: ArtifactFileReading<readonly DistributedRunBundledFailure[] | undefined>;
+    readonly targetResolution: ArtifactFileReading<OptionalTargetResolution | undefined>;
+}
 
 export interface ControlPostFailureArtifact {
     readonly request: DistributedRunControlPostRequest;
@@ -119,6 +126,9 @@ const RESULT_MIRROR_ROW_KIND = 'step-result';
 const DISTRIBUTED_RUN_FILE = { fileName: 'distributed-run.json', contractName: 'a distributed run snapshot' } as const;
 
 const CONTROL_RUN_FILE = { fileName: 'control-run.json', contractName: 'a control run snapshot' } as const;
+const FLEET_REPORT_FILE = { fileName: 'fleet-report.json', contractName: 'a fleet report' } as const;
+const FAILURES_FILE = { fileName: 'failures.json', contractName: 'a failures record' } as const;
+const MANIFEST_FILE = { fileName: 'manifest.json', contractName: 'a distributed run manifest' } as const;
 
 const CONTROL_POST_REQUEST_FILE = {
     fileName: CONTROL_POST_ERROR_METADATA_FILE_NAME,
@@ -173,35 +183,40 @@ function toBundleContent(
 ): Either<DistributedRunArtifactRejection, DistributedRunArtifactContent> {
     return toRequiredJsonFileValue(parsed, DISTRIBUTED_RUN_FILE, decodeControlDistributedRunSnapshot)
         .mapRight((distributedRun) => {
-            const recorded = toOptionalControlPostFailure(parsed);
-            const fleetReport = toOptionalJsonFileEvidence(
-                parsed,
-                'fleet-report.json',
-                decodeDistributedRunFleetReportEvidence
-            );
-            const bundledFailure = toOptionalJsonFileEvidence(parsed, 'failures.json', decodeBundledFailure);
-            const targetResolution = toOptionalJsonFileValue(
-                parsed,
-                { fileName: 'target-resolution.json', contractName: 'a target resolution' },
-                decodeRecordedTargetResolution
-            );
+            const optional = toOptionalEvidenceReadings(parsed);
             const results = toJsonlEvidence(parsed, 'results.jsonl', decodeDistributedRunResultEvidence);
             const events = toJsonlEvidence(parsed, 'events.jsonl', decodeDistributedRunEventEvidence);
             const controlRun = toControlRunReading(parsed);
+            const { recorded, fleetReport, bundledFailures, targetResolution } = optional;
             return {
                 variant: 'distributed-run',
-                parseWarnings: [recorded, fleetReport, bundledFailure, targetResolution, results, events, controlRun]
+                parseWarnings: [...Object.values(optional), results, events, controlRun]
                     .flatMap((reading) => reading.warnings),
                 distributedRun,
                 controlRun: controlRun.value,
                 ...(fleetReport.value === undefined ? {} : { fleetReport: fleetReport.value }),
-                ...(bundledFailure.value === undefined ? {} : { bundledFailure: bundledFailure.value }),
+                ...(bundledFailures.value?.[0] === undefined ? {} : { bundledFailure: bundledFailures.value[0] }),
                 ...targetResolution.value,
                 ...(recorded.value === undefined ? {} : { controlPostFailure: recorded.value }),
                 results: results.value,
                 events: events.value
             };
         });
+}
+
+/** The optional evidence files beside a distributed run, in warning order; a malformed one is left out with a warning. */
+function toOptionalEvidenceReadings(parsed: ParsedDistributedArtifactPipeline): OptionalEvidenceReadings {
+    return {
+        recorded: toOptionalControlPostFailure(parsed),
+        manifestDistributedRunId: toOptionalJsonFileValue(parsed, MANIFEST_FILE, decodeManifestDistributedRunId),
+        fleetReport: toOptionalJsonFileValue(parsed, FLEET_REPORT_FILE, decodeDistributedRunFleetReportEvidence),
+        bundledFailures: toOptionalJsonFileValue(parsed, FAILURES_FILE, decodeBundledFailures),
+        targetResolution: toOptionalJsonFileValue(
+            parsed,
+            { fileName: 'target-resolution.json', contractName: 'a target resolution' },
+            decodeRecordedTargetResolution
+        )
+    };
 }
 
 function toControlRunReading(
@@ -301,7 +316,7 @@ function toControlRequestFailureContent(
 ): DistributedRunControlRequestFailureContent {
     const manifestDistributedRunId = toOptionalJsonFileValue(
         parsed,
-        { fileName: 'manifest.json', contractName: 'a distributed run manifest' },
+        MANIFEST_FILE,
         decodeManifestDistributedRunId
     );
     const runnerSummary = toOptionalJsonFileValue(
