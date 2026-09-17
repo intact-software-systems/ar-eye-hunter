@@ -1,12 +1,15 @@
 import type {
+    RallarBlackBoxTestCommandBase,
+    RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestEvent,
+    RallarBlackBoxTestRecord,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestWaitCommand,
     RallarBlackBoxTestWaitResultValue
 } from '../rallar-black-box-test-contracts.ts';
 
-import { findWaitEvent } from './wait-event-match.ts';
+import { resolveLatestWaitEvent } from './wait-event-match.ts';
 
 export const RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED = 'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED';
 
@@ -14,11 +17,15 @@ const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 
 type WaitCommandWithId = RallarBlackBoxTestWaitCommand & Readonly<{ commandId: string; }>;
 
+type WaitResultFacts = Omit<RallarBlackBoxTestWaitResultValue, 'commandId' | 'match'>;
+
+type WaitOutcomeListener = (outcome: RallarBlackBoxTestCommandOutcome) => void;
+
 /** The timeout and deadline bounds any windowed command shares with the wait command. */
-export type RallarBlackBoxTestWaitWindow = Readonly<{
-    timeoutMs?: number;
-    deadlineEpochMs?: number;
-}>;
+export type RallarBlackBoxTestWaitWindow = Pick<
+    RallarBlackBoxTestCommandBase<RallarBlackBoxTestCommandKind>,
+    'timeoutMs' | 'deadlineEpochMs'
+>;
 
 export interface WaitForEventInput {
     readonly command: WaitCommandWithId;
@@ -36,202 +43,181 @@ export async function waitForEvent(
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     if (!command.match || Object.keys(command.match).length === 0) {
-        return waitInvalid(command, 'Wait requires at least one match field.');
+        return toWaitInvalidOutcome(command, 'Wait requires at least one match field.', undefined);
     }
     if (command.absent !== undefined && command.absent !== true) {
-        return waitInvalid(command, 'Wait absent must be true when present.', {
-            absent: command.absent
-        });
+        return toWaitInvalidOutcome(command, 'Wait absent must be true when present.', { absent: command.absent });
     }
-
     if (input.cancelRequested()) {
-        return waitCancelled(command);
+        return toWaitCancelledOutcome(command);
     }
-
     if (command.absent === true) {
-        return await holdForEventAbsence(input);
+        return await waitForEventAbsence(input);
     }
 
-    const immediate = findWaitEvent(input.currentEvents(), command.match);
+    const immediate = resolveLatestWaitEvent(input.currentEvents(), command.match);
     if (immediate) {
-        return waitMatched(command, immediate, input.currentStatus());
+        return toWaitMatchedOutcome(command, immediate, input.currentStatus());
     }
-
-    const deadlineEpochMs = waitDeadlineEpochMs(command, input.now);
+    const deadlineEpochMs = computeWaitDeadlineEpochMs(command, input.now());
     if (input.now() >= deadlineEpochMs) {
-        return waitTimedOut(command, deadlineEpochMs);
+        return toWaitTimedOutOutcome(command, deadlineEpochMs);
     }
-
     return await new Promise<RallarBlackBoxTestCommandOutcome>((resolve) => {
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        let unsubscribe: (() => void) | undefined;
-        let cleanupAfterSubscribe = false;
-        const signal = input.cancellationSignal;
-
-        const cleanup = () => {
-            if (timeout) {
-                clearTimeout(timeout);
-                timeout = undefined;
-            }
-            signal.removeEventListener('abort', onAbort);
-            if (unsubscribe) {
-                unsubscribe();
-                unsubscribe = undefined;
-            }
-            else {
-                cleanupAfterSubscribe = true;
-            }
-        };
-
-        const settle = (outcome: RallarBlackBoxTestCommandOutcome) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            cleanup();
-            resolve(outcome);
-        };
-
-        const evaluate = () => {
-            if (input.cancelRequested()) {
-                settle(waitCancelled(command));
-                return;
-            }
-
-            const matched = findWaitEvent(input.currentEvents(), command.match);
-            if (matched) {
-                settle(waitMatched(command, matched, input.currentStatus()));
-                return;
-            }
-
-            if (input.now() >= deadlineEpochMs) {
-                settle(waitTimedOut(command, deadlineEpochMs));
-            }
-        };
-
-        const timeoutDelayMs = Math.max(0, deadlineEpochMs - input.now());
-        const onAbort = () => {
-            settle(waitCancelled(command));
-        };
-        if (signal.aborted) {
-            settle(waitCancelled(command));
-            return;
-        }
-        timeout = setTimeout(() => {
-            settle(waitTimedOut(command, deadlineEpochMs));
-        }, timeoutDelayMs);
-        signal.addEventListener('abort', onAbort, {
-            once: true
-        });
-        unsubscribe = input.subscribe(evaluate);
-        if (cleanupAfterSubscribe && unsubscribe) {
-            unsubscribe();
-            unsubscribe = undefined;
-        }
+        new WaitEventSubscription(input, deadlineEpochMs, resolve).start();
     });
 }
 
-// Parity with the runner's absence waits: the full window is always held —
+/** Without either bound the default five second timeout applies; with both, the earlier one wins. */
+export function computeWaitDeadlineEpochMs(window: RallarBlackBoxTestWaitWindow, nowEpochMs: number): number {
+    if (window.timeoutMs === undefined) {
+        return window.deadlineEpochMs ?? nowEpochMs + DEFAULT_WAIT_TIMEOUT_MS;
+    }
+    const timeoutDeadlineEpochMs = nowEpochMs + Math.max(0, window.timeoutMs);
+    return window.deadlineEpochMs === undefined
+        ? timeoutDeadlineEpochMs
+        : Math.min(timeoutDeadlineEpochMs, window.deadlineEpochMs);
+}
+
+/** Owns one pending wait: its timeout, abort listener and event subscription end together on the first outcome. */
+class WaitEventSubscription {
+    private readonly input: WaitForEventInput;
+    private readonly deadlineEpochMs: number;
+    private readonly onOutcome: WaitOutcomeListener;
+    private settled = false;
+    private timeout: ReturnType<typeof setTimeout> | undefined;
+    private unsubscribe: (() => void) | undefined;
+    private unsubscribeOnceSubscribed = false;
+
+    constructor(input: WaitForEventInput, deadlineEpochMs: number, onOutcome: WaitOutcomeListener) {
+        this.input = input;
+        this.deadlineEpochMs = deadlineEpochMs;
+        this.onOutcome = onOutcome;
+    }
+
+    private readonly onAbort = (): void => {
+        this.stopWithOutcome(toWaitCancelledOutcome(this.input.command));
+    };
+
+    private readonly onEventsChanged = (): void => {
+        const { command } = this.input;
+        if (this.input.cancelRequested()) {
+            this.stopWithOutcome(toWaitCancelledOutcome(command));
+            return;
+        }
+        const matched = resolveLatestWaitEvent(this.input.currentEvents(), command.match);
+        if (matched) {
+            this.stopWithOutcome(toWaitMatchedOutcome(command, matched, this.input.currentStatus()));
+            return;
+        }
+        if (this.input.now() >= this.deadlineEpochMs) {
+            this.stopWithOutcome(toWaitTimedOutOutcome(command, this.deadlineEpochMs));
+        }
+    };
+
+    start(): void {
+        const { command, cancellationSignal } = this.input;
+        const timeoutDelayMs = Math.max(0, this.deadlineEpochMs - this.input.now());
+        if (cancellationSignal.aborted) {
+            this.stopWithOutcome(toWaitCancelledOutcome(command));
+            return;
+        }
+        this.timeout = setTimeout(() => {
+            this.stopWithOutcome(toWaitTimedOutOutcome(command, this.deadlineEpochMs));
+        }, timeoutDelayMs);
+        cancellationSignal.addEventListener('abort', this.onAbort, { once: true });
+        this.unsubscribe = this.input.subscribe(this.onEventsChanged);
+        if (this.unsubscribeOnceSubscribed && this.unsubscribe) {
+            this.unsubscribe();
+            this.unsubscribe = undefined;
+        }
+    }
+
+    private stopWithOutcome(outcome: RallarBlackBoxTestCommandOutcome): void {
+        if (this.settled) {
+            return;
+        }
+        this.settled = true;
+        this.stopListening();
+        this.onOutcome(outcome);
+    }
+
+    /** A wait can settle while subscribe is still running, before its unsubscribe exists. */
+    private stopListening(): void {
+        if (this.timeout) {
+            clearTimeout(this.timeout);
+            this.timeout = undefined;
+        }
+        this.input.cancellationSignal.removeEventListener('abort', this.onAbort);
+        if (this.unsubscribe) {
+            this.unsubscribe();
+            this.unsubscribe = undefined;
+        }
+        else {
+            this.unsubscribeOnceSubscribed = true;
+        }
+    }
+}
+
+// Parity with runner absence waits: the full window is always held —
 // an absence claim is only as strong as the time the agent kept listening —
 // then the whole buffer is scanned once, so earlier events violate by design.
-async function holdForEventAbsence(
+async function waitForEventAbsence(
     input: WaitForEventInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
-    const deadlineEpochMs = waitDeadlineEpochMs(command, input.now);
+    const deadlineEpochMs = computeWaitDeadlineEpochMs(command, input.now());
 
     try {
         await input.sleep(Math.max(0, deadlineEpochMs - input.now()), input.cancellationSignal);
     }
     catch (_error) {
-        return waitCancelled(command);
+        return toWaitCancelledOutcome(command);
     }
     if (input.cancelRequested()) {
-        return waitCancelled(command);
+        return toWaitCancelledOutcome(command);
     }
 
-    const offending = findWaitEvent(input.currentEvents(), command.match);
+    const offending = resolveLatestWaitEvent(input.currentEvents(), command.match);
     if (offending) {
-        return waitAbsenceViolated(command, offending, deadlineEpochMs);
+        return toWaitAbsenceViolatedOutcome(command, offending, deadlineEpochMs);
     }
 
     return {
         status: 'ok',
-        value: toWaitResultValue(command, {
-            matched: false,
-            absent: true
-        }),
+        value: toWaitResultValue(command, { matched: false, absent: true }),
         nextStatus: input.currentStatus()
     };
 }
 
-export function waitDeadlineEpochMs(
-    bounds: RallarBlackBoxTestWaitWindow,
-    now: () => number
-): number {
-    const timeoutMs = bounds.timeoutMs === undefined
-        ? bounds.deadlineEpochMs === undefined
-            ? DEFAULT_WAIT_TIMEOUT_MS
-            : undefined
-        : Math.max(0, bounds.timeoutMs);
-    const timeoutDeadline = timeoutMs === undefined
-        ? undefined
-        : now() + timeoutMs;
-
-    if (bounds.deadlineEpochMs === undefined) {
-        return timeoutDeadline ?? (now() + DEFAULT_WAIT_TIMEOUT_MS);
-    }
-
-    return timeoutDeadline === undefined
-        ? bounds.deadlineEpochMs
-        : Math.min(timeoutDeadline, bounds.deadlineEpochMs);
-}
-
-function toWaitResultValue(
-    command: WaitCommandWithId,
-    partial: Readonly<{
-        matched: boolean;
-        absent?: true;
-        timedOut?: boolean;
-        cancelled?: boolean;
-        event?: RallarBlackBoxTestEvent;
-    }>
-): RallarBlackBoxTestWaitResultValue {
+function toWaitResultValue(command: WaitCommandWithId, facts: WaitResultFacts): RallarBlackBoxTestWaitResultValue {
     return {
         commandId: command.commandId,
         match: command.match,
-        ...partial
+        ...facts
     };
 }
 
-function waitMatched(
+function toWaitMatchedOutcome(
     command: WaitCommandWithId,
     event: RallarBlackBoxTestEvent,
     nextStatus: RallarBlackBoxTestRuntimeStatus
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'ok',
-        value: toWaitResultValue(command, {
-            matched: true,
-            event
-        }),
+        value: toWaitResultValue(command, { matched: true, event }),
         nextStatus
     };
 }
 
-function waitAbsenceViolated(
+function toWaitAbsenceViolatedOutcome(
     command: WaitCommandWithId,
     event: RallarBlackBoxTestEvent,
     deadlineEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
-        value: toWaitResultValue(command, {
-            matched: true,
-            absent: true,
-            event
-        }),
+        value: toWaitResultValue(command, { matched: true, absent: true, event }),
         error: {
             code: RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED,
             message: 'Wait absence was violated: a runtime event matched before the window closed.',
@@ -246,16 +232,13 @@ function waitAbsenceViolated(
     };
 }
 
-function waitTimedOut(
+function toWaitTimedOutOutcome(
     command: WaitCommandWithId,
     deadlineEpochMs: number
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
-        value: toWaitResultValue(command, {
-            matched: false,
-            timedOut: true
-        }),
+        value: toWaitResultValue(command, { matched: false, timedOut: true }),
         error: {
             code: 'RALLAR_BLACK_BOX_WAIT_TIMEOUT',
             message: 'Wait command timed out before matching a runtime event.',
@@ -269,7 +252,7 @@ function waitTimedOut(
     };
 }
 
-function waitCancelled(command: WaitCommandWithId): RallarBlackBoxTestCommandOutcome {
+function toWaitCancelledOutcome(command: WaitCommandWithId): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'cancelled',
         value: toWaitResultValue(command, {
@@ -281,16 +264,14 @@ function waitCancelled(command: WaitCommandWithId): RallarBlackBoxTestCommandOut
     };
 }
 
-function waitInvalid(
+function toWaitInvalidOutcome(
     command: WaitCommandWithId,
     message: string,
-    details?: unknown
+    details: RallarBlackBoxTestRecord | undefined
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',
-        value: toWaitResultValue(command, {
-            matched: false
-        }),
+        value: toWaitResultValue(command, { matched: false }),
         error: {
             code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
             message,

@@ -341,7 +341,7 @@ cannot drift. Contract, participation rules, and failure codes live in
 
 Three comparison vocabularies exist deliberately, and a fourth is prohibited:
 
-- `sameJsonValue` (`wait/wait-event-match.ts`) — `JSON.stringify` equality;
+- `isSameJsonValue` (`wait/wait-event-match.ts`) — `JSON.stringify` equality;
   the agent-side match primitive behind `wait` matching and the historical
   `equals` / `notEquals` / `contains` assert operators.
 - `json-compare` (`CompareJson`) — structural shape modes behind
@@ -350,11 +350,11 @@ Three comparison vocabularies exist deliberately, and a fourth is prohibited:
   order-insensitively.
 - `deepEqualJson` (`distributed/group-assertions-aggregates.ts`) — group
   agreement equality for `allEqual`: object-key-order insensitive,
-  array-order sensitive. Explicitly not `sameJsonValue` (which is
+  array-order sensitive. Explicitly not `isSameJsonValue` (which is
   key-order sensitive via serialization) and not `json-compare` `exact`
   (which is array-order insensitive).
 
-Pick the vocabulary by claim: event matching -> `sameJsonValue`; shape
+Pick the vocabulary by claim: event matching -> `isSameJsonValue`; shape
 containment -> `json-compare` modes; cross-agent agreement ->
 `deepEqualJson`. The assertion-outcome parity and group-assertion
 conformance suites pin these semantics.

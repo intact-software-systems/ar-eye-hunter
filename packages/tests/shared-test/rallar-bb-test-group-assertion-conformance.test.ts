@@ -15,7 +15,7 @@ import {
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { deepEqualJson } from '@shared-test/rallar-bb-test/distributed/group-assertions-aggregates.ts';
 import { computeDistributedGroupAssertionResults } from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
-import { sameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
+import { isSameJsonValue } from '@shared-test/rallar-bb-test/wait/wait-event-match.ts';
 
 describe('rallar-bb-test group assertion conformance', () => {
     it('covers every aggregate with a passing case and a deliberately-broken control', () => {
@@ -181,7 +181,7 @@ describe('rallar-bb-test group assertion conformance', () => {
         const keyOrderLeft = { first: 1, second: [1, 2] };
         const keyOrderRight = { second: [1, 2], first: 1 };
         expect(deepEqualJson(keyOrderLeft, keyOrderRight)).toBe(true);
-        expect(sameJsonValue(keyOrderLeft, keyOrderRight)).toBe(false);
+        expect(isSameJsonValue(keyOrderLeft, keyOrderRight)).toBe(false);
 
         const arrayOrderLeft: JsonValue = { members: ['a', 'b'] };
         const arrayOrderRight: JsonValue = { members: ['b', 'a'] };

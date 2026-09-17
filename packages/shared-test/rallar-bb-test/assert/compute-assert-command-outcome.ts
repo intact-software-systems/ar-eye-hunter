@@ -8,9 +8,9 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
 } from '../rallar-black-box-test-contracts.ts';
-import { lookupPayloadPath, type PayloadPathLookup } from '../wait/wait-event-match.ts';
+import { decodePayloadPathValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
 import {
-    assertValueMatches,
+    isAssertOperatorSatisfied,
     isRallarBlackBoxAssertOperator,
     RALLAR_BLACK_BOX_ASSERT_OPERATORS
 } from './assert-value-operators.ts';
@@ -61,7 +61,7 @@ export function computeAssertCommandOutcome(evidence: AssertCommandEvidence): Ra
     }
 
     const source = resolveAssertSource(command.source, toAssertSourceRoots(evidence));
-    const passed = assertValueMatches(source, command.operator, command.expected);
+    const passed = isAssertOperatorSatisfied(source, command.operator, command.expected);
     const value = toAssertResultValue(command, source, passed);
     return passed
         ? { status: 'ok', value, nextStatus: state.status }
@@ -83,9 +83,7 @@ function resolveAssertSource(source: string, roots: AssertSourceRoots): PayloadP
         return { exists: false };
     }
     const root = roots[rootName as keyof AssertSourceRoots];
-    return pathParts.length === 0
-        ? { exists: root !== undefined, value: root }
-        : lookupPayloadPath(root, pathParts.join('.'));
+    return decodePayloadPathValue(root, pathParts.join('.'));
 }
 
 function toAssertSourceRoots(evidence: AssertCommandEvidence): AssertSourceRoots {
@@ -124,7 +122,7 @@ function toAssertResultValue(
         source: command.source,
         operator: command.operator,
         expected: command.expected,
-        actual: source.value,
+        actual: source.exists ? source.value : undefined,
         exists: source.exists,
         passed
     };

@@ -16,7 +16,7 @@ import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestStorageCountersResultValue
 } from '../rallar-black-box-test-contracts.ts';
-import { waitDeadlineEpochMs } from '../wait/wait-for-event.ts';
+import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
 export type RallarBlackBoxAlmCommandWithId =
@@ -322,9 +322,9 @@ async function countAlmReceivedMessages(
             holdFullWindow: command.absent === true,
             count: command.count,
             match: { connection, typeId: command.typeId, msgId: command.msgId },
-            deadlineEpochMs: waitDeadlineEpochMs(
+            deadlineEpochMs: computeWaitDeadlineEpochMs(
                 { timeoutMs: command.windowMs, deadlineEpochMs: command.deadlineEpochMs },
-                input.port.now
+                input.port.now()
             ),
             signal: abort.signal
         });
@@ -432,7 +432,7 @@ function readAlmWaitTimeoutMs(
     now: () => number
 ): number {
     const nowEpochMs = now();
-    return Math.max(0, waitDeadlineEpochMs(command, () => nowEpochMs) - nowEpochMs);
+    return Math.max(0, computeWaitDeadlineEpochMs(command, nowEpochMs) - nowEpochMs);
 }
 
 function recordAlmDiagnostic<T extends RallarBlackBoxRuntimeDiagnosticEvidence>(

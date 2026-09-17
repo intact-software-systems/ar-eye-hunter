@@ -4,13 +4,14 @@ import { executeHttpInteraction } from '../../black-box-runner/http/execute-http
 import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expectations.ts';
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
-import { assertValueMatches } from '../assert/assert-value-operators.ts';
+import { isAssertOperatorSatisfied } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRuntime
 } from '../rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '../runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+import type { PayloadPathLookup } from '../wait/wait-event-match.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
@@ -57,16 +58,17 @@ export function computeComparatorOutcomeParityRows(): readonly AssertionOutcomeP
     return COMPARATOR_FIXTURES.map((fixture) => {
         const runnerIssues = validateAssertValueComparators(fixture.value, [fixture.runnerComparator]);
         const path = fixture.runnerComparator.path;
-        const lookup = {
-            exists: Object.prototype.hasOwnProperty.call(fixture.value, path),
-            value: fixture.value[path]
-        };
+        const lookup: PayloadPathLookup = Object.hasOwn(fixture.value, path)
+            ? { exists: true, value: fixture.value[path] }
+            : { exists: false };
         return toRow({
             fixtureId: fixture.fixtureId,
             family: 'comparators',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict: runnerIssues.length === 0 ? 'pass' : 'fail',
-            runtimeVerdict: toVerdict(assertValueMatches(lookup, fixture.runtimeOperator, fixture.runtimeExpected))
+            runtimeVerdict: toVerdict(
+                isAssertOperatorSatisfied(lookup, fixture.runtimeOperator, fixture.runtimeExpected)
+            )
         });
     });
 }
@@ -79,7 +81,11 @@ export function computeCompleteArrayOutcomeParityRows(): readonly AssertionOutco
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict: toVerdict(CompareJson.compatibleComplete(fixture.expected, fixture.actual).isEqual),
             runtimeVerdict: toVerdict(
-                assertValueMatches({ exists: true, value: fixture.actual }, 'matchesShapeComplete', fixture.expected)
+                isAssertOperatorSatisfied(
+                    { exists: true, value: fixture.actual },
+                    'matchesShapeComplete',
+                    fixture.expected
+                )
             )
         })
     );

@@ -4,7 +4,7 @@ import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import { lookupPayloadPath } from '../wait/wait-event-match.ts';
+import { decodePayloadPathValue } from '../wait/wait-event-match.ts';
 import type {
     RallarBlackBoxGroupAssertionSource,
     RallarBlackBoxGroupAssertionValue
@@ -147,7 +147,7 @@ function toGroupAssertionEvidenceRow(
         return { agentId: participant.agentId, role, status: 'duplicate' };
     }
 
-    const lookup = lookupPayloadPath(matches[0].result.value, source.path);
+    const lookup = decodePayloadPathValue(matches[0].result.value, source.path);
     if (!lookup.exists) {
         return { agentId: participant.agentId, role, status: 'unresolved' };
     }

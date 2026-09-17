@@ -75,7 +75,7 @@ missing, duplicate, and unresolved evidence, the `minParticipants`
 relaxation, role scoping, and the empty-scope fail-closed path. The cases
 run through the production `computeDistributedGroupAssertionResults` entry in
 `rallar-bb-test-group-assertion-conformance.test.ts`, which also pins the
-three-vocabulary comparison boundary (`deepEqualJson` vs `sameJsonValue` vs
+three-vocabulary comparison boundary (`deepEqualJson` vs `isSameJsonValue` vs
 `json-compare` exact).
 
 ## Reports

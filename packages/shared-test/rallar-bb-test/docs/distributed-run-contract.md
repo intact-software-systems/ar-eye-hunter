@@ -175,7 +175,7 @@ The v1 aggregate vocabulary is fixed, strict, and deterministic:
   checks against the frozen participant denominator.
 - `allEqual` — every agent contributed the same JSON value under
   `deepEqualJson` (object-key-order insensitive, array-order sensitive;
-  deliberately not `sameJsonValue` and not `json-compare` exact).
+  deliberately not `isSameJsonValue` and not `json-compare` exact).
 - `allEqualWithin` — numeric agreement within an absolute `tolerance`;
   non-numeric evidence marks the holder violating.
 

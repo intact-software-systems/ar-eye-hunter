@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import { assertValueMatches } from '../assert/assert-value-operators.ts';
+import { isAssertOperatorSatisfied } from '../assert/assert-value-operators.ts';
 import type { ResolvedGroupAssertionEvidenceRow } from './group-assertions-evidence.ts';
 import type {
     RallarBlackBoxCountMatchingGroupAssertion,
@@ -26,7 +26,7 @@ export interface EqualityGroupAssertionVerdict extends GroupAssertionVerdictFiel
 }
 
 // Group agreement equality: object key order is irrelevant, array order is
-// significant. Deliberately distinct from sameJsonValue (stringify equality)
+// significant. Deliberately distinct from isSameJsonValue (stringify equality)
 // and from json-compare's order-insensitive exact mode.
 export function deepEqualJson(left: any, right: any): boolean {
     if (left === right) {
@@ -71,7 +71,7 @@ function computePredicateVerdict(
 ): PredicateGroupAssertionVerdict {
     const matchingAgentIds = resolved
         .filter((row) =>
-            assertValueMatches(
+            isAssertOperatorSatisfied(
                 { exists: true, value: row.value },
                 assertion.predicate.operator,
                 assertion.predicate.expected
