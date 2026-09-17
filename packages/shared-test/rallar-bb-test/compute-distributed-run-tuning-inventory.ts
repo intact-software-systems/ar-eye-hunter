@@ -134,18 +134,19 @@ class TuningInventoryWalk {
     readonly limitations: DistributedRunTuningInventoryLimitation[] = [];
     private visitedCommands = 0;
     private visitedStructures = 0;
-    private limitReported = false;
-    private stopped = false;
+    private commandLimitReached = false;
 
     constructor(manifestKnobs: readonly DistributedRunManifestTuningKnob[]) {
         this.knobs = [...manifestKnobs];
     }
 
     addRecipes(recipes: readonly RallarBlackBoxDistributedRunRecipeSelection[]): void {
-        for (let recipeIndex = 0; recipeIndex < recipes.length && !this.stopped; recipeIndex += 1) {
-            if (!this.addStructureVisit({ recipeIndex })) {
+        for (let recipeIndex = 0; recipeIndex < recipes.length && !this.commandLimitReached; recipeIndex += 1) {
+            if (!this.hasStructureBudget()) {
+                this.setCommandLimitReached({ recipeIndex });
                 break;
             }
+            this.visitedStructures += 1;
             this.addRecipe(recipes[recipeIndex], recipeIndex, recipeIndex < recipes.length - 1);
         }
     }
@@ -172,13 +173,13 @@ class TuningInventoryWalk {
             context,
             depth: 0
         });
-        if (!this.stopped && this.visitedCommands >= MAX_EXPANDED_COMMANDS && hasLaterRecipes) {
-            this.stopAtCommandLimit(context);
+        if (!this.hasCommandBudget() && hasLaterRecipes) {
+            this.setCommandLimitReached(context);
         }
     }
 
     private addCommands(list: TuningCommandList): void {
-        if (this.stopped) {
+        if (this.commandLimitReached) {
             return;
         }
         if (list.depth > RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxDepth) {
@@ -192,8 +193,8 @@ class TuningInventoryWalk {
         }
         const nested = { context: list.context, depth: list.depth + 1 };
         for (let index = 0; index < list.commands.length; index += 1) {
-            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS) {
-                this.stopAtCommandLimit(list.context);
+            if (!this.hasCommandBudget()) {
+                this.setCommandLimitReached(list.context);
                 return;
             }
             this.visitedCommands += 1;
@@ -236,11 +237,12 @@ class TuningInventoryWalk {
     }
 
     private addParallelGroups(command: RallarBlackBoxTestParallelCommand, scope: TuningCommandScope): void {
-        for (let groupIndex = 0; groupIndex < command.groups.length && !this.stopped; groupIndex += 1) {
-            if (this.visitedCommands >= MAX_EXPANDED_COMMANDS || !this.addStructureVisit(scope.context)) {
-                this.stopAtCommandLimit(scope.context);
+        for (let groupIndex = 0; groupIndex < command.groups.length && !this.commandLimitReached; groupIndex += 1) {
+            if (!this.hasCommandBudget() || !this.hasStructureBudget()) {
+                this.setCommandLimitReached(scope.context);
                 break;
             }
+            this.visitedStructures += 1;
             this.addCommands({
                 ...scope,
                 commands: command.groups[groupIndex].commands,
@@ -249,21 +251,19 @@ class TuningInventoryWalk {
         }
     }
 
-    private addStructureVisit(position: TuningLimitationPosition): boolean {
-        if (this.visitedStructures >= MAX_EXPANDED_COMMANDS) {
-            this.stopAtCommandLimit(position);
-            return false;
-        }
-        this.visitedStructures += 1;
-        return true;
+    private hasCommandBudget(): boolean {
+        return this.visitedCommands < MAX_EXPANDED_COMMANDS;
     }
 
-    private stopAtCommandLimit(position: TuningLimitationPosition): void {
-        this.stopped = true;
-        if (this.limitReported) {
+    private hasStructureBudget(): boolean {
+        return this.visitedStructures < MAX_EXPANDED_COMMANDS;
+    }
+
+    private setCommandLimitReached(position: TuningLimitationPosition): void {
+        if (this.commandLimitReached) {
             return;
         }
-        this.limitReported = true;
+        this.commandLimitReached = true;
         this.limitations.push({
             code: 'command-limit-exceeded',
             message: `Tuning inventory stopped at the shared ${MAX_EXPANDED_COMMANDS}-command limit.`,
