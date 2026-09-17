@@ -173,7 +173,6 @@ describe('remote browser command preparation', () => {
         const config = { interactionName: 'invalidIdentity', interaction };
         const context = {
             dependencies: { now: () => 1000, createUuid: () => 'fixed-id', fetch },
-            options: { rallarRemoteBrowser: { fetch } },
             wsConnections: {},
             wsMessages: {},
             wsCloseEvents: {}

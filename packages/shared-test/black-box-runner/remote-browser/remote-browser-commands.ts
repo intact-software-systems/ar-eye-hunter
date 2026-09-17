@@ -38,7 +38,7 @@ const COMMAND_ID_PARTS = [
     ['actor', '']
 ] as const;
 
-type RemoteBrowserCommandIdentityField = typeof COMMAND_ID_PARTS[number][0] | 'commandId' | 'remoteCommandId';
+type RemoteBrowserCommandIdentityField = typeof COMMAND_ID_PARTS[number][0] | 'commandId';
 
 /** A connect also translates the close the runner sends when the run ends with the connection still open. */
 export function toRemoteBrowserConnection(
@@ -76,16 +76,14 @@ export function toRemoteBrowserCommand(
     );
 }
 
-/** An explicit commandId or remoteCommandId wins; otherwise the id is built from the step's execution position. */
+/** An explicit commandId wins; otherwise the id is built from the step's execution position. */
 export function toRallarRemoteBrowserCommandId(
     action: string,
     interaction: RemoteBrowserCommandIdentitySource
 ): Either<Error, string> {
     const request = interaction.request;
-    const selected = [request.commandId, request.remoteCommandId]
-        .find((value) => typeof value === 'string' && value.trim().length > 0);
-    if (typeof selected === 'string') {
-        return Either.ofRight(selected.trim());
+    if (typeof request.commandId === 'string' && request.commandId.trim().length > 0) {
+        return Either.ofRight(request.commandId.trim());
     }
     const parts = ['rallar-remote-browser', action];
     for (const [key, prefix] of COMMAND_ID_PARTS) {

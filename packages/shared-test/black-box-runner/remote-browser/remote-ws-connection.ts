@@ -7,7 +7,6 @@ import type {
 } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import {
-    getRemoteBrowserRunnerOptions,
     validateRemoteDestination,
     validateRemotePayloadSize
 } from '../execution/remote-browser-execution.ts';
@@ -77,12 +76,7 @@ export function resolveRemoteWsConfig(
     config: WsInteractionConfig,
     context: RemoteWsContext
 ): RallarRemoteBrowserConfig {
-    return resolveRallarRemoteBrowserConfig({
-        request: interaction.request,
-        config,
-        context,
-        options: getRemoteBrowserRunnerOptions(context)
-    });
+    return resolveRallarRemoteBrowserConfig({ request: interaction.request, config, context });
 }
 
 export function toWsUrl(request: WsInteractionRequest): string | undefined {

@@ -1,7 +1,4 @@
 // deno-lint-ignore-file no-explicit-any
-import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
-import type { BlackBoxFetch } from './black-box-scenario-context.ts';
-
 export interface ValidateRemoteDestinationInput {
     readonly request: any;
     readonly context: any;
@@ -23,31 +20,15 @@ export function getRemoteBrowserRunnerOptions(context: any): any {
     return context.options?.rallarRemoteBrowser ?? {};
 }
 
-/** A fetch given in the runner's remote-browser options wins over the runner's own fetch dependency. */
-export function resolveRemoteBrowserFetch(context: any): BlackBoxFetch {
-    return getRemoteBrowserRunnerOptions(context).fetch ?? context.dependencies.fetch;
-}
-
 export function isRallarRemoteBrowserRequest(request: any): boolean {
-    const control = request?.control ?? {};
-    return request?.provider === 'rallar-remote-browser' ||
-        request?.remoteProvider === 'rallar-remote-browser' ||
-        request?.remoteBrowser === true ||
-        request?.browser === 'rallar-remote-browser' ||
-        control.provider === 'rallar-remote-browser' ||
-        control.mode === 'remote-browser' ||
-        control.remoteBrowser === true;
-}
-
-export function toRemoteResultValue(result: ControlResultEnvelope): any {
-    return result.result?.value ?? result.error?.details ?? result.error ?? result.result ?? result;
+    return request?.provider === 'rallar-remote-browser';
 }
 
 /** An empty allowlist allows every destination; a destination that is not a URL is not checked. */
 export function validateRemoteDestination(input: ValidateRemoteDestinationInput): readonly string[] {
     const { request, context, url, label } = input;
-    const allowedOrigins = resolveAllowedDestinations(request, context, ['allowedOrigins', 'remoteAllowedOrigins']);
-    const allowedHosts = resolveAllowedDestinations(request, context, ['allowedHosts', 'remoteAllowedHosts']);
+    const allowedOrigins = resolveAllowedDestinations(request, context, 'allowedOrigins');
+    const allowedHosts = resolveAllowedDestinations(request, context, 'allowedHosts');
     const destination = allowedOrigins.length > 0 || allowedHosts.length > 0 ? toDestinationUrl(url) : undefined;
     if (
         destination === undefined ||
@@ -92,29 +73,17 @@ export function toRemoteHttpHeaders(request: any): Readonly<Record<string, strin
 }
 
 export function toRemoteHttpResponseOptions(request: any): any {
-    const responseBody = request.remoteResponseBody ??
-        request.responseBodyMode ??
-        request.responseBody ??
-        request.bodyMode ??
-        'text';
-    const maxBodyChars = request.maxBodyChars ?? request.responseMaxBodyChars;
-
-    return maxBodyChars === undefined
-        ? {
-            body: responseBody
-        }
-        : {
-            body: responseBody,
-            maxBodyChars
-        };
+    const body = request.responseBodyMode ?? 'text';
+    return request.maxBodyChars === undefined ? { body } : { body, maxBodyChars: request.maxBodyChars };
 }
 
-function resolveAllowedDestinations(request: any, context: any, keys: readonly [string, string]): string[] {
-    const [key, remoteKey] = keys;
+function resolveAllowedDestinations(
+    request: any,
+    context: any,
+    key: 'allowedOrigins' | 'allowedHosts'
+): string[] {
     return [
         ...toStringList(request[key]),
-        ...toStringList(request[remoteKey]),
-        ...toStringList(request?.control?.[key]),
         ...toStringList(getRemoteBrowserRunnerOptions(context)[key])
     ];
 }
@@ -162,13 +131,8 @@ function isAllowedHost(destination: URL, allowedHost: string): boolean {
 }
 
 function resolveMaxPayloadBytes(request: any, context: any): number {
-    const control = request?.control ?? {};
-    const options = getRemoteBrowserRunnerOptions(context);
-    const value = request.maxRemotePayloadBytes ??
-        request.maxPayloadBytes ??
-        control.maxPayloadBytes ??
-        options.maxRemotePayloadBytes ??
-        options.maxPayloadBytes ??
+    const value = request.maxPayloadBytes ??
+        getRemoteBrowserRunnerOptions(context).maxPayloadBytes ??
         DEFAULT_MAX_PAYLOAD_BYTES;
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_PAYLOAD_BYTES;

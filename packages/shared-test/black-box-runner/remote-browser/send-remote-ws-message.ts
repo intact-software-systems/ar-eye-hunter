@@ -1,13 +1,9 @@
-// deno-lint-ignore-file no-explicit-any
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestWsSendCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
-import {
-    resolveRemoteBrowserFetch,
-    toRemoteResultValue
-} from '../execution/remote-browser-execution.ts';
 import type { WsInteractionConfig } from '../ws/ws-interaction-statuses.ts';
 import {
     toWsConnectionName,
@@ -20,7 +16,8 @@ import type {
 } from '../ws/ws-wait-expectations.ts';
 import {
     runRallarRemoteBrowserCommand,
-    syncRallarRemoteBrowserEvents
+    syncRallarRemoteBrowserEvents,
+    toRemoteResultValue
 } from './rallar-remote-browser-control-client.ts';
 import { toRallarRemoteBrowserCommandId } from './remote-browser-commands.ts';
 import {
@@ -57,11 +54,11 @@ interface RemoteWsSendDetails {
     readonly sent: RallarBlackBoxTestWsSendCommand['data'];
     readonly remote: RallarRemoteBrowserConfig;
     readonly commandId: string;
-    readonly result: any;
+    readonly result: ApiJsonValue;
     readonly sendResult: {
         readonly status: 'sent' | 'failed';
         readonly connection: string;
-        readonly remoteResult: any;
+        readonly remoteResult: ApiJsonValue;
     };
     readonly sendStartedAtEpochMs: number;
     readonly sendEndedAtEpochMs: number;
@@ -83,7 +80,7 @@ export function sendRemoteWsMessage(
         }));
     }
     const remote = resolveRemoteWsConfig(interaction, config, context);
-    const target = { interaction, config, context, connectionName, remote, fetch: resolveRemoteBrowserFetch(context) };
+    const target = { interaction, config, context, connectionName, remote, fetch: context.dependencies.fetch };
     return toRallarRemoteBrowserCommandId('ws-send', interaction).fold(
         (error) => Promise.resolve(toRemoteWsSendFailure(target, error)),
         (commandId) => sendIdentifiedRemoteWsMessage({ ...target, commandId })

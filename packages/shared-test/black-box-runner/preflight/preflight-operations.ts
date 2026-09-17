@@ -96,9 +96,7 @@ function toOperationFields(
     return {
         action: toNonEmptyText(request.action),
         connection: toNonEmptyText(request.connection),
-        provider: toNonEmptyText(
-            request.provider ?? request.remoteProvider ?? toPreflightJsonObject(request.control).provider
-        ),
+        provider: toNonEmptyText(request.provider),
         path: toNonEmptyText(request.path ?? request.url),
         group,
         interactionExecutionNumber: toFiniteNumber(request.interactionExecutionNumber),

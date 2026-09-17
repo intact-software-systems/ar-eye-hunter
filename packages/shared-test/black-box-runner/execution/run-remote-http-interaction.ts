@@ -1,14 +1,22 @@
 // deno-lint-ignore-file no-explicit-any
+import type {
+    ApiJsonObject,
+    ApiJsonValue
+} from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toError } from '../../../shared/resilience/to-error.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestHttpRequestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import {
     toHttpInteractionStatus,
     toStatus
 } from '../http/http-response-expectations.ts';
-import { runRallarRemoteBrowserCommand } from '../remote-browser/rallar-remote-browser-control-client.ts';
+import {
+    runRallarRemoteBrowserCommand,
+    toRemoteResultValue
+} from '../remote-browser/rallar-remote-browser-control-client.ts';
 import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
 import {
     resolveRallarRemoteBrowserConfig,
@@ -17,12 +25,9 @@ import {
 import { toCorrelationReportFields } from './black-box-run-correlation.ts';
 import type { BlackBoxFetch } from './black-box-scenario-context.ts';
 import {
-    getRemoteBrowserRunnerOptions,
-    resolveRemoteBrowserFetch,
     toRemoteHttpBody,
     toRemoteHttpHeaders,
     toRemoteHttpResponseOptions,
-    toRemoteResultValue,
     validateRemoteDestination,
     validateRemotePayloadSize
 } from './remote-browser-execution.ts';
@@ -50,13 +55,8 @@ interface RemoteHttpExceptionInput {
 const FAILURE = 'FAILURE';
 
 export function runRemoteHttpInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const remote = resolveRallarRemoteBrowserConfig({
-        request: interaction.request,
-        config,
-        context,
-        options: getRemoteBrowserRunnerOptions(context)
-    });
-    const fetch = resolveRemoteBrowserFetch(context);
+    const remote = resolveRallarRemoteBrowserConfig({ request: interaction.request, config, context });
+    const fetch = context.dependencies.fetch;
     return toRallarRemoteBrowserCommandId('http', interaction).fold(
         (error) => Promise.resolve(toRemoteHttpException({ interaction, config, remote, error })),
         (commandId) => sendRemoteHttpRequest({ interaction, config, context, remote, fetch, commandId })
@@ -117,11 +117,12 @@ function toRemoteHttpCommand(
 
 function toRemoteHttpStatus(input: RemoteHttpResultInput): any {
     const { interaction, config, remote, commandId, result } = input;
+    const value = toRemoteResultValue(result);
     if (!result.ok) {
         return toStatus({
             config,
             result: 'Remote HTTP request failed',
-            actualJson: toRemoteResultValue(result),
+            actualJson: value,
             response: {
                 status: 0,
                 statusText: 'Remote command failed',
@@ -135,7 +136,7 @@ function toRemoteHttpStatus(input: RemoteHttpResultInput): any {
             }
         });
     }
-    const response = toRemoteHttpResponse(result);
+    const response = toRemoteHttpResponse(value);
     const status = toHttpInteractionStatus({
         config,
         interaction,
@@ -148,23 +149,24 @@ function toRemoteHttpStatus(input: RemoteHttpResultInput): any {
             ...status.actual,
             remote,
             commandId,
-            result: toRemoteResultValue(result)
+            result: value
         }
     };
 }
 
-function toRemoteHttpResponse(result: ControlResultEnvelope): any {
-    const value = toRemoteResultValue(result);
-    const status = Number.parseInt(String(value?.status ?? 0), 10);
+/** A value that is not a JSON object reads as a response with none of its members. */
+function toRemoteHttpResponse(value: ApiJsonValue): any {
+    const response: ApiJsonObject = isJsonRecordValue(value) ? value : {};
+    const status = Number.parseInt(String(response.status ?? 0), 10);
     return {
         status,
-        statusText: value?.statusText ?? '',
-        ok: typeof value?.ok === 'boolean'
-            ? value.ok
+        statusText: response.statusText ?? '',
+        ok: typeof response.ok === 'boolean'
+            ? response.ok
             : status >= 200 && status < 300,
-        headers: value?.headers ?? {},
-        url: value?.url,
-        body: value?.body,
+        headers: response.headers ?? {},
+        url: response.url,
+        body: response.body,
         blackBoxAttemptNumber: 1,
         blackBoxMaxAttempts: 1
     };

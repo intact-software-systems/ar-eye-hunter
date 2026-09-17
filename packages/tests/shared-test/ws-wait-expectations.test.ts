@@ -116,7 +116,15 @@ it('does not treat a saturated observation-loss counter as complete evidence', a
 it('fails remote absence when polling loses access to the event stream during its window', async () => {
     let reads = 0;
     const context = {
-        dependencies: createDefaultExecutionDependencies(),
+        dependencies: {
+            ...createDefaultExecutionDependencies(),
+            fetch: async () => {
+                if (reads++ > 0) {
+                    throw new Error('control server unavailable');
+                }
+                return Response.json({ runId: 'run', results: [], events: [] });
+            }
+        },
         wsConnections: { socket: new TestWebSocket('ws://remote.example.test') },
         wsMessages: { socket: [] },
         wsCloseEvents: {},
@@ -125,13 +133,7 @@ it('fails remote absence when polling loses access to the event stream during it
                 controlBaseUrl: 'http://control.example.test',
                 runId: 'run',
                 agentId: 'agent',
-                pollIntervalMs: 5,
-                fetch: async () => {
-                    if (reads++ > 0) {
-                        throw new Error('control server unavailable');
-                    }
-                    return Response.json({ runId: 'run', results: [], events: [] });
-                }
+                pollIntervalMs: 5
             }
         }
     };

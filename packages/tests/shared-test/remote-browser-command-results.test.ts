@@ -58,9 +58,14 @@ function runCommandAgainstSnapshot(snapshot: object | null) {
 describe('remote-browser command results', () => {
     it('reports malformed result truthiness as a connection failure at the public provider', async () => {
         const interaction = { request: { commandId: result.commandId, connection: 'socket' }, response: {} };
-        const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, rtcConnections: {}, rtcMessages: {}, rtcCloseEvents: {} };
+        const context = {
+            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: remote },
+            rtcConnections: {},
+            rtcMessages: {},
+            rtcCloseEvents: {}
+        };
         const provider = createRallarRemoteBrowserRtcProvider({
-            ...remote,
             fetch: async (_input, init) =>
                 init?.method === 'POST'
                     ? Response.json({ accepted: true }, { status: 202 })

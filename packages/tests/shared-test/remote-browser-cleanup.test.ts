@@ -8,6 +8,7 @@ import {
 import type { ControlResultEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import {
     createRallarRemoteBrowserRtcProvider
 } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
@@ -70,18 +71,14 @@ function toRtcStep(action: string, number: number): ApiJsonObject {
     };
 }
 
+const CLEANUP_RUNNER_OPTIONS = { runId: 'cleanup-run', agentId: 'agent', pollIntervalMs: 1, timeoutMs: 100 };
+
 async function runCleanupScenario(control: CleanupControlServer, explicitClose: boolean) {
-    const provider = createRallarRemoteBrowserRtcProvider({
-        runId: 'cleanup-run',
-        agentId: 'agent',
-        fetch: control.fetch.bind(control),
-        pollIntervalMs: 1,
-        timeoutMs: 100
-    });
+    const provider = createRallarRemoteBrowserRtcProvider({ fetch: control.fetch.bind(control) });
     return executeBlackBox(
         explicitClose ? [toRtcStep('connect', 1), toRtcStep('close', 2)] : [toRtcStep('connect', 1)],
         0,
-        { rtcProviders: { 'remote-test': provider } }
+        { rallarRemoteBrowser: CLEANUP_RUNNER_OPTIONS, rtcProviders: { 'remote-test': provider } }
     );
 }
 
@@ -135,13 +132,8 @@ function runWsCleanupScenario(control: CleanupControlServer, explicitClose: bool
         explicitClose ? [toWsStep('open', 1), toWsStep('close', 2)] : [toWsStep('open', 1)],
         0,
         {
-            rallarRemoteBrowser: {
-                runId: 'cleanup-run',
-                agentId: 'agent',
-                fetch: control.fetch.bind(control),
-                pollIntervalMs: 1,
-                timeoutMs: 100
-            }
+            rallarRemoteBrowser: CLEANUP_RUNNER_OPTIONS,
+            dependencies: { ...createDefaultExecutionDependencies(), fetch: control.fetch.bind(control) }
         }
     );
 }

@@ -3,7 +3,8 @@ import { Either } from '../../../shared/resilience/Either.ts';
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import {
     runRallarRemoteBrowserCommand,
-    syncRallarRemoteBrowserEvents
+    syncRallarRemoteBrowserEvents,
+    toRemoteResultValue
 } from '../remote-browser/rallar-remote-browser-control-client.ts';
 import { toRallarRemoteBrowserCommandId } from '../remote-browser/remote-browser-commands.ts';
 import {
@@ -28,11 +29,7 @@ import type {
     WsInteraction,
     WsInteractionResult
 } from '../ws/ws-wait-expectations.ts';
-import {
-    isRallarRemoteBrowserRequest,
-    resolveRemoteBrowserFetch,
-    toRemoteResultValue
-} from './remote-browser-execution.ts';
+import { isRallarRemoteBrowserRequest } from './remote-browser-execution.ts';
 
 interface RemoteWsCommandInput extends Omit<RemoteWsConnection.Input, 'url'> {
     readonly config: WsInteractionConfig;
@@ -64,7 +61,7 @@ export function runRemoteWsInteraction(
 
     if (action === 'wait' || action === 'expect') {
         const remote = resolveRemoteWsConfig(interaction, config, context);
-        const fetch = resolveRemoteBrowserFetch(context);
+        const fetch = context.dependencies.fetch;
         return waitWithRemoteWsEventSync({ remote, fetch, context, interaction, config, details: { remote } });
     }
 
@@ -100,7 +97,7 @@ function openRemoteWs(
         );
     }
     const remote = resolveRemoteWsConfig(interaction, config, context);
-    const fetch = resolveRemoteBrowserFetch(context);
+    const fetch = context.dependencies.fetch;
     return toRallarRemoteBrowserCommandId('ws-open', interaction).fold(
         (error) =>
             Promise.resolve(toWsFailureStatus({
@@ -151,7 +148,7 @@ function closeRemoteWs(
     context: RemoteWsContext
 ): Promise<WsInteractionResult> {
     const remote = resolveRemoteWsConfig(interaction, config, context);
-    const fetch = resolveRemoteBrowserFetch(context);
+    const fetch = context.dependencies.fetch;
     return toRallarRemoteBrowserCommandId('ws-close', interaction).fold(
         (error) =>
             Promise.resolve(toWsFailureStatus({

@@ -29,8 +29,6 @@ describe('remote-browser observation lifecycle', () => {
         vi.useFakeTimers();
         let initial = true;
         const provider = createRallarRemoteBrowserRtcProvider({
-            runId: 'observation-run',
-            pollIntervalMs: 5,
             fetch: async () => {
                 if (initial) {
                     initial = false;
@@ -42,6 +40,7 @@ describe('remote-browser observation lifecycle', () => {
 
         const waiting = provider.wait(waitInteraction(), { interaction: { request: {} } }, {
             dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: { runId: 'observation-run', pollIntervalMs: 5 } },
             rtcMessages: {}
         });
         const outcome = waiting.then((result) => ({ result }), (error) => ({ error }));
@@ -55,10 +54,6 @@ describe('remote-browser observation lifecycle', () => {
         let reads = 0;
         const sentCommandIds: string[] = [];
         const provider = createRallarRemoteBrowserRtcProvider({
-            runId: 'observation-run',
-            agentId: 'agent',
-            pollIntervalMs: 1,
-            timeoutMs: 100,
             fetch: async (_input, init) => {
                 if (init?.method === 'POST') {
                     const { commandId } = JSON.parse(String(init.body));
@@ -89,7 +84,10 @@ describe('remote-browser observation lifecycle', () => {
         };
 
         const result = await provider.send(interaction, { interaction }, {
-            dependencies: { now: Date.now, createUuid: () => 'unused', fetch: async () => toEmptySnapshotResponse() },
+            dependencies: { now: Date.now, createUuid: () => 'unused' },
+            options: {
+                rallarRemoteBrowser: { runId: 'observation-run', agentId: 'agent', pollIntervalMs: 1, timeoutMs: 100 }
+            },
             rtcConnections: { alice: {} },
             rtcMessages: {},
             rtcCloseEvents: {}
@@ -107,8 +105,6 @@ describe('remote-browser observation lifecycle', () => {
         const pendingRead = Promise.withResolvers<Response>();
         let initial = true;
         const provider = createRallarRemoteBrowserRtcProvider({
-            runId: 'observation-run',
-            pollIntervalMs: 5,
             fetch: async () => {
                 if (initial) {
                     initial = false;
@@ -120,6 +116,7 @@ describe('remote-browser observation lifecycle', () => {
         let settled = false;
         const waiting = provider.wait(waitInteraction(), { interaction: { request: {} } }, {
             dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: { runId: 'observation-run', pollIntervalMs: 5 } },
             rtcMessages: {}
         })
             .finally(() => {
@@ -229,15 +226,10 @@ for (
             vi.useFakeTimers();
             const pendingRead = Promise.withResolvers<Response>();
             let reads = 0;
-            const options = {
-                runId: 'observation-run',
-                agentId: 'agent',
-                pollIntervalMs: 1,
-                fetch: async () => ++reads === 1 ? toEmptySnapshotResponse() : pendingRead.promise
-            };
+            const fetch = async () => ++reads === 1 ? toEmptySnapshotResponse() : pendingRead.promise;
             const context = {
-                dependencies: { now: Date.now, createUuid: () => 'unused', fetch: options.fetch },
-                options: { rallarRemoteBrowser: options },
+                dependencies: { now: Date.now, createUuid: () => 'unused', fetch },
+                options: { rallarRemoteBrowser: { runId: 'observation-run', agentId: 'agent', pollIntervalMs: 1 } },
                 rtcMessages: {},
                 wsMessages: {},
                 wsConnections: {},
@@ -251,7 +243,7 @@ for (
             };
             let settled = false;
             const waiting = (transport === 'RTC'
-                ? createRallarRemoteBrowserRtcProvider(options).wait(interaction, { interaction }, context)
+                ? createRallarRemoteBrowserRtcProvider({ fetch }).wait(interaction, { interaction }, context)
                 : runRemoteWsInteraction(interaction, { interaction }, context))
                 .then((result) => ({ result }), (error) => ({ error }))
                 .finally(() => {

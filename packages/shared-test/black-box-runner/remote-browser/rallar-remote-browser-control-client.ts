@@ -1,10 +1,14 @@
 // deno-lint-ignore-file no-explicit-any
-import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
+import type {
+    ApiJsonObject,
+    ApiJsonValue
+} from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toError } from '../../../shared/resilience/to-error.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../../rallar-bb-test/runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import { appendRemoteBrowserEvents } from './append-remote-browser-events.ts';
@@ -52,8 +56,14 @@ export async function syncRallarRemoteBrowserEvents(
     return observations;
 }
 
-export function toRemoteResultDetails(result: ControlResultEnvelope): any {
-    return result.result?.value ?? result.error?.details ?? result.error ?? result.result;
+/** The command's value, else its error details, else its error, else its result; absent when it reported none. */
+export function toRemoteResultDetails(result: ControlResultEnvelope): ApiJsonValue | undefined {
+    return decodeJsonValue(result.result?.value ?? result.error?.details ?? result.error ?? result.result);
+}
+
+/** The command's details, or the result envelope itself when the command reported none. */
+export function toRemoteResultValue(result: ControlResultEnvelope): ApiJsonValue {
+    return toRemoteResultDetails(result) ?? toResultEnvelopeJson(result);
 }
 
 async function readRemoteBrowserCommandResult(
@@ -138,6 +148,11 @@ async function readControlHttpErrorMessage(response: Response): Promise<string> 
     return isJsonRecordValue(body) && typeof body.error === 'string'
         ? body.error
         : response.statusText;
+}
+
+function toResultEnvelopeJson(result: ControlResultEnvelope): ApiJsonObject {
+    const { kind, protocolVersion, runId, agentId, commandId, ok, replayed } = result;
+    return { kind, protocolVersion, runId, agentId, commandId, ok, ...(replayed === undefined ? {} : { replayed }) };
 }
 
 function toControlUrl(remote: RallarRemoteBrowserConfig, path: string): string {

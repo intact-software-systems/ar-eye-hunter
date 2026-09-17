@@ -28,8 +28,7 @@ import {
 } from './remote-browser/remote-rtc-statuses.ts';
 import {
     resolveRallarRemoteBrowserConfig,
-    type RallarRemoteBrowserConfig,
-    type RallarRemoteBrowserOptions
+    type RallarRemoteBrowserConfig
 } from './remote-browser/resolve-rallar-remote-browser-config.ts';
 import {
     toRemoteRtcExpectation,
@@ -43,7 +42,7 @@ import {
     toRtcSuccessStatus
 } from './rtc/rtc-wait-expectations.ts';
 
-export interface CreateRallarRemoteBrowserRtcProviderInput extends RallarRemoteBrowserOptions {
+export interface CreateRallarRemoteBrowserRtcProviderInput {
     readonly fetch: BlackBoxFetch;
 }
 
@@ -265,8 +264,8 @@ async function closeIdentifiedRemoteRtc(
 }
 
 function resolveOperationConfig(operation: RemoteRtcOperation): RallarRemoteBrowserConfig {
-    const { provider, interaction, config, context } = operation;
-    return resolveRallarRemoteBrowserConfig({ request: interaction.request, config, context, options: provider });
+    const { interaction, config, context } = operation;
+    return resolveRallarRemoteBrowserConfig({ request: interaction.request, config, context });
 }
 
 class RemoteRtcConnection {
