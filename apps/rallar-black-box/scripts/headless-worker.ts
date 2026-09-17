@@ -112,7 +112,7 @@ async function openAgent(
     });
 
     await signInIfLoginGateIsVisible(page, agent, config);
-    await waitForAgentRegistration(agent, config, signal);
+    await waitForAgentRegistration({ page, agent, config, signal });
     log(`Agent ${agent.agentId} registered in control server`);
     void confirmAgentRegistrationUi(page, agent, config).catch((error) => {
         logHeadlessWorkerUiConfirmationFailure({
@@ -156,20 +156,36 @@ async function signInIfLoginGateIsVisible(
     await signIn.click({ timeout: config.readyTimeoutMs });
 }
 
-async function waitForAgentRegistration(
-    agent: HeadlessWorkerAgentConfig,
-    config: HeadlessWorkerConfig,
-    signal: AbortSignal
-): Promise<void> {
+interface WaitForAgentRegistrationInput {
+    readonly page: Page;
+    readonly agent: HeadlessWorkerAgentConfig;
+    readonly config: HeadlessWorkerConfig;
+    readonly signal: AbortSignal;
+}
+
+async function waitForAgentRegistration(input: WaitForAgentRegistrationInput): Promise<void> {
+    const { page, agent, config } = input;
     await waitForHeadlessWorkerAgentRegistration({
         agentId: agent.agentId,
         timeoutMs: config.readyTimeoutMs,
         pollIntervalMs: 500,
-        signal,
+        signal: input.signal,
         fetchSnapshot: (signal) => fetchControlRunSnapshot(config, signal),
+        readAgentPageStatus: () => readAgentPageStatus(page),
         sleep: delay,
         now: Date.now
     });
+}
+
+/** The agent page's last action and last error: what an agent that refused to start says. */
+async function readAgentPageStatus(page: Page): Promise<string | undefined> {
+    const parts = await Promise.all(
+        ['[data-last-error]', '[data-last-action]'].map(async (selector) =>
+            await page.locator(selector).first().textContent({ timeout: 1_000 }).catch(() => undefined)
+        )
+    );
+    const status = parts.filter((part) => part !== null && part !== undefined && part !== '').join(' | ');
+    return status === '' ? undefined : status;
 }
 
 async function confirmWorkbenchRegistrationUi(

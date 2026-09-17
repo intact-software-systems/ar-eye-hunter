@@ -461,6 +461,37 @@ describe('rallar-black-box headless worker runtime', () => {
         expect(cancel).toHaveBeenCalledOnce();
     });
 
+    it('names the agent page refusal when registration times out', async () => {
+        vi.useFakeTimers();
+        try {
+            const registration = waitForHeadlessWorkerAgentRegistration({
+                agentId: 'agent-refused',
+                timeoutMs: 10,
+                pollIntervalMs: 5,
+                fetchSnapshot: async () => await new Promise(() => undefined),
+                readAgentPageStatus: async () => 'Control agent refused to start: unreadable launch value providerMode.',
+                sleep: vi.fn(async () => undefined),
+                now: Date.now
+            });
+            const outcome = observe(registration);
+
+            await vi.advanceTimersByTimeAsync(10);
+
+            expect(await outcome).toEqual({
+                state: 'rejected',
+                error: expect.objectContaining({
+                    message: 'Timed out waiting 10ms for agent agent-refused to register ' +
+                        'in control server snapshot. Last state: not seen ' +
+                        'Agent page status: Control agent refused to start: ' +
+                        'unreadable launch value providerMode.'
+                })
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('hard-times out a never-settling registration fetch with detailed state', async () => {
         vi.useFakeTimers();
         try {
@@ -474,6 +505,7 @@ describe('rallar-black-box headless worker runtime', () => {
                     fetchSignal = signal;
                     return await new Promise(() => undefined);
                 },
+                readAgentPageStatus: async () => undefined,
                 sleep,
                 now: Date.now
             });
@@ -512,7 +544,8 @@ describe('rallar-black-box headless worker runtime', () => {
                 return await new Promise(() => undefined);
             },
             sleep,
-            now: Date.now
+            now: Date.now,
+            readAgentPageStatus: async () => undefined
         });
 
         await flushMicrotasks();
@@ -542,7 +575,8 @@ describe('rallar-black-box headless worker runtime', () => {
                 signal: shutdown.signal,
                 fetchSnapshot,
                 sleep: async () => undefined,
-                now: Date.now
+                now: Date.now,
+                readAgentPageStatus: async () => undefined
             });
 
             await flushMicrotasks();
@@ -584,7 +618,8 @@ describe('rallar-black-box headless worker runtime', () => {
                     sleepSignal = signal;
                     return await new Promise(() => undefined);
                 },
-                now: Date.now
+                now: Date.now,
+                readAgentPageStatus: async () => undefined
             });
             const outcome = observe(registration);
 
@@ -620,7 +655,8 @@ describe('rallar-black-box headless worker runtime', () => {
                 };
             },
             sleep,
-            now: () => now
+            now: () => now,
+            readAgentPageStatus: async () => undefined
         })).rejects.toThrow('Timed out waiting 10ms');
 
         expect(sleep).not.toHaveBeenCalled();
@@ -635,7 +671,8 @@ describe('rallar-black-box headless worker runtime', () => {
                 agents: [{ agentId: 'agent-ready', connected: true, status: 'idle' }]
             }),
             sleep: async () => undefined,
-            now: () => 0
+            now: () => 0,
+            readAgentPageStatus: async () => undefined
         })).resolves.toBeUndefined();
 
         await expect(waitForHeadlessWorkerAgentRegistration({
@@ -646,7 +683,8 @@ describe('rallar-black-box headless worker runtime', () => {
                 agents: [{ agentId: 'agent-failed', connected: true, status: 'failed' }]
             }),
             sleep: async () => undefined,
-            now: () => 0
+            now: () => 0,
+            readAgentPageStatus: async () => undefined
         })).rejects.toThrow(
             'Agent agent-failed registered with failed runtime status.'
         );
