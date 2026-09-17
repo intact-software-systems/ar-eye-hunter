@@ -1,13 +1,18 @@
 import type {
     DistributedRunFailedAnalysis,
     DistributedRunLowestReceiver,
+    DistributedRunPassedAnalysis,
     DistributedRunPerformanceAnalysis,
     DistributedRunReceiverDelivery,
     DistributedRunStreamTiming,
     DistributedRunTimingSummary
 } from '../distributed-artifact-analysis.ts';
 import { toRoundedMetric } from '../distributed-run-performance/compute-timing-summary.ts';
-import type { DistributedRunAnalysisFacts } from './compute-distributed-run-artifact-pipeline-analysis.ts';
+
+/** A run analysis before its markdown renderings. */
+export type DistributedRunAnalysisFacts =
+    | Omit<DistributedRunPassedAnalysis, 'summaryMarkdown' | 'performanceMarkdown'>
+    | Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>;
 
 export function toDistributedRunSummaryMarkdown(analysis: DistributedRunAnalysisFacts): string {
     const { targetResolution } = analysis;

@@ -271,7 +271,6 @@ describe('distributed run artifact stream sample index', () => {
         });
         expect(telemetry).toEqual({
             candidateCount: 9,
-            baseKeyLookupCount: 9,
             fingerprintComputationCount: 9,
             indexLookupCount: 27,
             equivalenceCheckCount: 8,
@@ -324,7 +323,6 @@ describe('distributed run artifact stream sample index', () => {
         });
         expect(telemetry).toMatchObject({
             candidateCount,
-            baseKeyLookupCount: candidateCount,
             fingerprintComputationCount: candidateCount,
             groupCount: candidateCount,
             replacementCount: 0

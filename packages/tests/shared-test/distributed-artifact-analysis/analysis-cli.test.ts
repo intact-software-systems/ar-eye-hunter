@@ -145,6 +145,19 @@ describe('distributed run artifact analysis CLI', () => {
         await writeDistributedRunArtifactAnalysis({ artifactDir, outDir, generatedAtEpochMs: GENERATED_AT_EPOCH_MS });
 
         const analysis = await readAnalysisJson<DistributedRunAnalysis>(outDir);
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: agentId must be a non-empty string.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 2,
+                message: 'events.jsonl:2 cannot stand in for a control event: agentId must be a non-empty string.'
+            }
+        ]);
         expect(analysis.ok).toBe(true);
         expect(analysis).not.toHaveProperty('failure');
         expect(analysis).not.toHaveProperty('fixProposalMarkdown');

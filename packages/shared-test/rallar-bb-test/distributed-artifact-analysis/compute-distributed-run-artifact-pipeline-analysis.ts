@@ -8,8 +8,6 @@ import type {
     DistributedRunArtifactParseWarning,
     DistributedRunArtifactRejection,
     DistributedRunArtifactSnapshots,
-    DistributedRunFailedAnalysis,
-    DistributedRunPassedAnalysis,
     DistributedRunPerformanceAnalysis,
     DistributedRunSpaAnalysis,
     DistributedRunTargetResolutionAnalysis
@@ -32,7 +30,8 @@ import {
 import {
     toDistributedRunFixProposalMarkdown,
     toDistributedRunPerformanceMarkdown,
-    toDistributedRunSummaryMarkdown
+    toDistributedRunSummaryMarkdown,
+    type DistributedRunAnalysisFacts
 } from './to-distributed-run-analysis-markdown.ts';
 import type { DistributedRunBundleContent } from './to-distributed-run-artifact-content.ts';
 
@@ -66,11 +65,6 @@ export interface DistributedRunUnavailableControlRunAnalysis {
 export type DistributedRunArtifactPipelineAnalysisResult =
     | DistributedRunRecordedControlRunAnalysis
     | DistributedRunUnavailableControlRunAnalysis;
-
-/** A run analysis before its markdown renderings. */
-export type DistributedRunAnalysisFacts =
-    | Omit<DistributedRunPassedAnalysis, 'summaryMarkdown' | 'performanceMarkdown'>
-    | Omit<DistributedRunFailedAnalysis, 'summaryMarkdown' | 'fixProposalMarkdown' | 'performanceMarkdown'>;
 
 interface DistributedRunAnalysisFactsInput {
     readonly content: DistributedRunBundleContent;

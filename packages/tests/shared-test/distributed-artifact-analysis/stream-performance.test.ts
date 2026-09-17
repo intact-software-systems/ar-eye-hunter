@@ -285,6 +285,15 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
+        expect(analysis.performance).toBeDefined();
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
@@ -322,6 +331,7 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        expect(analysis.performance).toBeDefined();
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
@@ -363,6 +373,7 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        expect(analysis.performance).toBeDefined();
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
@@ -523,6 +534,24 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 2,
+                message: 'events.jsonl:2 cannot stand in for a control event: atEpochMs must be a finite number.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 3,
+                message: 'events.jsonl:3 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.performance?.streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 100,
@@ -596,6 +625,19 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 2,
+                message: 'events.jsonl:2 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.failure).toMatchObject({
             category: 'rtc-stream',
             title: 'RTC stream did not finish before the distributed run timed out.',
@@ -1286,6 +1328,19 @@ describe('distributed run artifact stream performance', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            },
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 2,
+                message: 'events.jsonl:2 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.failure).toMatchObject({
             category: 'rtc-stream-performance',
             minimalFixArea: 'RTC stream pacing/performance',

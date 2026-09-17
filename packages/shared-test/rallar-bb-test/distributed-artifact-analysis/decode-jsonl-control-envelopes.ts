@@ -7,7 +7,7 @@ import {
     type RallarBlackBoxTestResultStatus
 } from '../rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import { isFiniteNumber, isNonEmptyText, isOneOf } from './artifact-json-value-guards.ts';
+import { isFiniteNumber, isNonEmptyText, isOneOf, toAlternativesText } from './artifact-json-value-guards.ts';
 import { CONTROL_EVENT_ENVELOPE_KINDS } from './decode-control-run-snapshot.ts';
 import { decodeResultCommandId } from './decode-distributed-run-result-evidence.ts';
 
@@ -37,7 +37,7 @@ export function decodeJsonlControlResultEnvelope(
     }
     const ok = typeof value.ok === 'boolean' ? value.ok : decodeRecorderOutcome(value.status);
     if (ok === undefined) {
-        return Either.ofLeft('ok must be a boolean or status must be SUCCESS or FAILURE');
+        return Either.ofLeft(`ok must be a boolean or status must be ${toAlternativesText(RECORDER_OUTCOMES)}`);
     }
     const error = ok ? undefined : decodeResultError(value.error ?? value.actual);
     return Either.ofRight({
@@ -73,7 +73,7 @@ export function decodeJsonlControlEventEnvelope(
         ? value.status
         : undefined;
     if (kind === undefined) {
-        return Either.ofLeft('kind or status must be event, diagnostic, stats or report');
+        return Either.ofLeft(`kind or status must be ${toAlternativesText(CONTROL_EVENT_ENVELOPE_KINDS)}`);
     }
     const payload = value.value !== undefined ? value.value : value.payload;
     if (payload === undefined) {

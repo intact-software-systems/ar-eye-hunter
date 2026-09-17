@@ -37,6 +37,13 @@ export function isOneOf<Member extends string>(
     return typeof value === 'string' && members.some((member) => member === value);
 }
 
+/** The members as prose alternatives: `a, b or c`. */
+export function toAlternativesText(members: readonly string[]): string {
+    return members.length <= 1
+        ? members.join('')
+        : `${members.slice(0, -1).join(', ')} or ${members[members.length - 1]}`;
+}
+
 export function decodeArrayItems<Item>(
     value: unknown,
     path: string,

@@ -23,7 +23,6 @@ export interface StreamTimingSampleSources {
 
 export interface StreamSampleIndexTelemetry {
     readonly candidateCount: number;
-    readonly baseKeyLookupCount: number;
     readonly fingerprintComputationCount: number;
     readonly indexLookupCount: number;
     readonly equivalenceCheckCount: number;
@@ -87,7 +86,6 @@ interface StreamSampleBaseBucket {
 
 interface StreamSampleIndexWork {
     candidateCount: number;
-    baseKeyLookupCount: number;
     fingerprintComputationCount: number;
     indexLookupCount: number;
     equivalenceCheckCount: number;
@@ -145,7 +143,6 @@ function toStreamTimingSampleCandidates(sources: StreamTimingSampleSources): rea
 function upsertBestStreamSample(index: StreamSampleIndex, candidate: StreamTimingSampleCandidate): void {
     const prepared = toPreparedStreamSampleCandidate(candidate);
     index.work.candidateCount += 1;
-    index.work.baseKeyLookupCount += 1;
     index.work.fingerprintComputationCount += 1;
     const bucket = index.buckets.get(prepared.baseKey) ?? createStreamSampleBaseBucket();
     index.buckets.set(prepared.baseKey, bucket);
@@ -193,7 +190,6 @@ function createStreamSampleIndex(): StreamSampleIndex {
         groupsByCanonicalKey: new Map(),
         work: {
             candidateCount: 0,
-            baseKeyLookupCount: 0,
             fingerprintComputationCount: 0,
             indexLookupCount: 0,
             equivalenceCheckCount: 0,

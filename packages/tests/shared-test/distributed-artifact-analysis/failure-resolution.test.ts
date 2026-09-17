@@ -130,6 +130,14 @@ describe('distributed run artifact failure resolution', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.ok).toBe(false);
         expect(analysis.status).toBe('failed');
         expect(analysis.failure.category).toBe('diagnostic');
@@ -221,6 +229,14 @@ describe('distributed run artifact failure resolution', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.ok).toBe(false);
         expect(analysis.failure).toMatchObject({
             category: 'diagnostic',

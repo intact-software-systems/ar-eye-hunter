@@ -20,6 +20,7 @@ import {
     isFiniteNumber,
     isNonEmptyText,
     isTextArray,
+    toAlternativesText,
     toFirstDecodeIssue
 } from './artifact-json-value-guards.ts';
 
@@ -164,6 +165,6 @@ function decodeClientEnvelopes(
         }
         return kinds.includes(parsed.envelope.kind)
             ? Either.ofRight(parsed.envelope)
-            : Either.ofLeft(`${itemPath}.kind must be ${kinds.join(' or ')}`);
+            : Either.ofLeft(`${itemPath}.kind must be ${toAlternativesText(kinds)}`);
     });
 }

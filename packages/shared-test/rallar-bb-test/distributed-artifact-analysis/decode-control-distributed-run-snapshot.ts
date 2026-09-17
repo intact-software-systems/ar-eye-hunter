@@ -39,6 +39,7 @@ import {
     isNonEmptyText,
     isOneOf,
     isTextArray,
+    toAlternativesText,
     toFirstDecodeIssue
 } from './artifact-json-value-guards.ts';
 
@@ -237,7 +238,7 @@ function decodeCommandLink(
         return Either.ofLeft(`${path} must be a JSON object`);
     }
     const issue = toFirstDecodeIssue([
-        [isOneOf(value.phase, COMMAND_LINK_PHASES), `${path}.phase must be stage, barrier, start or cancel`],
+        [isOneOf(value.phase, COMMAND_LINK_PHASES), `${path}.phase must be ${toAlternativesText(COMMAND_LINK_PHASES)}`],
         [isNonEmptyText(value.agentId), `${path}.agentId must be a non-empty string`],
         [isNonEmptyText(value.commandId), `${path}.commandId must be a non-empty string`],
         [isAbsentOrNonEmptyText(value.recipeId), `${path}.recipeId must be a non-empty string when present`],
@@ -287,7 +288,7 @@ function decodeRollupFailure(
         return Either.ofLeft(`${path} must be a JSON object`);
     }
     const issue = toFirstDecodeIssue([
-        [isOneOf(value.kind, ROLLUP_FAILURE_KINDS), `${path}.kind must be participant, recipe or group-assertion`],
+        [isOneOf(value.kind, ROLLUP_FAILURE_KINDS), `${path}.kind must be ${toAlternativesText(ROLLUP_FAILURE_KINDS)}`],
         [isNonEmptyText(value.key), `${path}.key must be a non-empty string`],
         [isOneOf(value.state, RUN_ITEM_STATES), `${path}.state must be a distributed run item state`],
         [isAbsentOrRunError(value.error), `${path}.error must carry a code and message when present`]

@@ -221,6 +221,14 @@ describe('distributed run artifact command timing', () => {
             ANALYSIS_GENERATED_AT_EPOCH_MS
         );
 
+        // The events.jsonl rows are not control event envelopes, so each one is named as a row that cannot stand in for one.
+        expect(analysis.parseWarnings).toEqual([
+            {
+                fileName: 'events.jsonl',
+                lineNumber: 1,
+                message: 'events.jsonl:1 cannot stand in for a control event: atEpochMs must be a finite number.'
+            }
+        ]);
         expect(analysis.ok).toBe(true);
         expect(analysis.status).toBe('passed');
         expect(analysis.performance?.runDurationMs).toBe(6_000);
