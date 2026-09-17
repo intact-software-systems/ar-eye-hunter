@@ -134,6 +134,21 @@ describe('browser control-agent lifecycle', () => {
         agent.dispose();
     });
 
+    it('hands the launch control token and final report upload URL to the control connection', async () => {
+        const { agent, controlClient } = createTestControlAgent(
+            '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol' +
+                '&controlToken=run-token&reportUploadUrl=http%3A%2F%2Fcontrol.example.test%2Freport&runId=run-5&agentId=agent-5'
+        );
+
+        expect((await agent.start()).right).toBe('connecting');
+
+        expect(controlClient.connections).toHaveLength(1);
+        expect(controlClient.connections[0]).toHaveProperty('token', 'run-token');
+        expect(controlClient.connections[0]).toHaveProperty('finalReportUploadUrl', 'http://control.example.test/report');
+
+        agent.dispose();
+    });
+
     it('returns an invalid browser-rallar provider config as the start failure', async () => {
         const { agent, controlClient } = createTestControlAgent('?mode=control&provider=browser-rallar&autoConnect=1&runId=run-6&agentId=agent-6');
 

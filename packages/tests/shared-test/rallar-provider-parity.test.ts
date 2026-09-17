@@ -1,7 +1,8 @@
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
@@ -350,6 +351,60 @@ describe('rallar provider parity helpers', () => {
             'rallar-bb-carol-connect-1',
             'rallar-bb-default-connect-1'
         ]);
+    });
+
+    it('forwards only text actors and rooms and a finite minimum snapshot version, reading past null request fields', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const execute = vi.spyOn(runtime, 'execute');
+        const requests = [
+            {
+                name: 'alice',
+                actor: 42,
+                roomId: 7,
+                applicationId: null,
+                minSnapshotVersion: '3',
+                rallar: { applicationId: 'app-1', minSnapshotVersion: 4 }
+            },
+            {
+                name: 'bob',
+                actor: 'bob',
+                roomId: 'room-1',
+                minSnapshotVersion: null,
+                rallar: { applicationId: 'app-1', minSnapshotVersion: 4 }
+            }
+        ];
+
+        for (const request of requests) {
+            await createRallarBlackBoxRtcClient(runtime, request, { commandIdPrefix: 'rallar-bb' }).connect()
+                .catch(() => undefined);
+        }
+
+        const [alice, bob] = execute.mock.calls.map(([command]) => command);
+        expect(alice).toMatchObject({ kind: 'rtc.connect', actor: undefined, roomId: undefined, applicationId: 'app-1' });
+        expect(alice).not.toHaveProperty('minSnapshotVersion');
+        expect(bob).toMatchObject({
+            kind: 'rtc.connect',
+            actor: 'bob',
+            roomId: 'room-1',
+            applicationId: 'app-1',
+            minSnapshotVersion: 4,
+            roomRef: { applicationId: 'app-1', groupId: 'room-1' }
+        });
+    });
+
+    it('hands a message listener no message and a close listener the event when the event carries no JSON payload', () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const client = createRallarBlackBoxRtcClient(runtime, { name: 'alice' }, { commandIdPrefix: 'rallar-bb' });
+        const messages: unknown[] = [];
+        const closes: unknown[] = [];
+        client.onMessage?.((message) => messages.push(message));
+        client.onClose?.((event) => closes.push(event));
+
+        runtime.recordEvent({ kind: 'message', topic: 'rtc.message', connection: 'alice' });
+        runtime.recordEvent({ kind: 'event', topic: 'rtc.close', connection: 'alice' });
+
+        expect(messages).toEqual([undefined]);
+        expect(closes).toEqual([expect.objectContaining({ kind: 'event', topic: 'rtc.close', connection: 'alice' })]);
     });
 
     it('keeps the remote SPA provider mapping aligned with the portable recipe commands', async () => {

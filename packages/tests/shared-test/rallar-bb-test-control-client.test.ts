@@ -160,7 +160,7 @@ describe('shared rallar black-box control client', () => {
         expect(snapshot.state).toBe('idle');
     });
 
-    it('validates control command toSentEnvelopes', () => {
+    it('validates control command envelopes', () => {
         const valid = parseControlServerMessage(
             JSON.stringify(toCommandEnvelope('configure-1', toConfigureCommand())),
             { runId: 'run-1', agentId: 'agent-1' }
@@ -676,7 +676,7 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
-    it('streams periodic stats toSentEnvelopes over the control WebSocket', async () => {
+    it('streams periodic stats envelopes over the control WebSocket', async () => {
         vi.useFakeTimers();
 
         const socket = new FakeControlSocket();
@@ -951,7 +951,7 @@ describe('shared rallar black-box control client', () => {
             await vi.waitFor(() => {
                 expect(receivers).toHaveLength(1);
             });
-            expect(receivers[0]).not.toBe(client);
+            expect(receivers[0]).toBe(globalThis);
         }
         finally {
             client.dispose();

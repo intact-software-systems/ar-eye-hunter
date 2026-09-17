@@ -199,4 +199,14 @@ describe('browser control-agent reload', () => {
 
         expect(takeAgentResumeRecord('run-reload', 'agent-reload')).toBeUndefined();
     });
+
+    it('does not resume a record whose completed command ids are not all text', () => {
+        globalThis.sessionStorage.setItem(
+            RESUME_KEY,
+            JSON.stringify({ runId: 'run-reload', agentId: 'agent-reload', completedCommandIds: ['reload-1', 7] })
+        );
+
+        expect(takeAgentResumeRecord('run-reload', 'agent-reload')).toBeUndefined();
+        expect(globalThis.sessionStorage.getItem(RESUME_KEY)).toBeNull();
+    });
 });
