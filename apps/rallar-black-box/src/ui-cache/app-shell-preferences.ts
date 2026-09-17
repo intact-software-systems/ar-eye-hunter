@@ -1,7 +1,7 @@
-import type { AppModeId, AppTabId } from './app-tabs.ts';
-import { appModeFromValue, appTabFromValue } from './app-tabs.ts';
-import type { RallarBlackBoxUiStorage } from './ui-persistence.ts';
-import { deleteStoredText, readStoredText, UI_STORAGE_KEYS, writeStoredText } from './ui-persistence.ts';
+import type { AppModeId, AppTabId } from '../app-tabs.ts';
+import { appModeFromValue, appTabFromValue } from '../app-tabs.ts';
+import type { RallarBlackBoxUiStorage } from './rallar-black-box-ui-storage.ts';
+import { deleteStoredText, readStoredText, UI_STORAGE_KEYS, writeStoredText } from './rallar-black-box-ui-storage.ts';
 
 export function readStoredAppTab(storage: RallarBlackBoxUiStorage | undefined): AppTabId | undefined {
     const value = readStoredText(storage, UI_STORAGE_KEYS.activeTab);

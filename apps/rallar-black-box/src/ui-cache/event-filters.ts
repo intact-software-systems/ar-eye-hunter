@@ -1,13 +1,13 @@
 import {
     decodeStoredText,
     isStoredJsonObject
-} from './decode-stored-json-values.ts';
-import type { RallarBlackBoxUiStorage } from './ui-persistence.ts';
+} from './decode-cached-values.ts';
+import type { RallarBlackBoxUiStorage } from './rallar-black-box-ui-storage.ts';
 import {
     readStoredJson,
     UI_STORAGE_KEYS,
     writeStoredJson
-} from './ui-persistence.ts';
+} from './rallar-black-box-ui-storage.ts';
 
 export type PersistedEventFilters = Readonly<{
     kind: string;

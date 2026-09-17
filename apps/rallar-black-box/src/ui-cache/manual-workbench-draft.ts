@@ -1,20 +1,20 @@
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
-import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
+import type { RallarBlackBoxProviderMode } from '../client-defaults.ts';
+import type { ManualDeliveryMode, ManualWorkbenchTransport, ManualWorkbenchValues } from '../manual-workbench.ts';
 import {
     decodeStoredBoolean,
     decodeStoredMember,
     decodeStoredNumber,
     decodeStoredText,
     isStoredJsonObject
-} from './decode-stored-json-values.ts';
-import type { ManualDeliveryMode, ManualWorkbenchTransport, ManualWorkbenchValues } from './manual-workbench.ts';
-import { toRedactedJsonEditorText } from './to-redacted-json-editor-text.ts';
-import type { RallarBlackBoxUiStorage } from './ui-persistence.ts';
+} from './decode-cached-values.ts';
+import type { RallarBlackBoxUiStorage } from './rallar-black-box-ui-storage.ts';
 import {
     readStoredJson,
     UI_STORAGE_KEYS,
     writeStoredJson
-} from './ui-persistence.ts';
+} from './rallar-black-box-ui-storage.ts';
+import { toRedactedJsonEditorText } from './to-redacted-json-editor-text.ts';
 
 export type ManualWorkbenchDraft = Readonly<{
     values: ManualWorkbenchValues;

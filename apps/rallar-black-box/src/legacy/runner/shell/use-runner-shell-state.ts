@@ -7,7 +7,7 @@ import {
     getRallarBlackBoxCommandHistory
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../stored-app-shell-preferences.ts';
+import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../ui-cache/app-shell-preferences.ts';
 import type { LegacyDiagnosticContext } from '../../diagnostics/context/legacy-diagnostic-context.ts';
 import { useNow } from '../../shared/use-now.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';

@@ -5,27 +5,27 @@ import {
     readStoredAppTab,
     writeStoredAppMode,
     writeStoredAppTab
-} from '../../../apps/rallar-black-box/src/stored-app-shell-preferences.ts';
+} from '../../../apps/rallar-black-box/src/ui-cache/app-shell-preferences.ts';
 import {
     readStoredEventFilters,
     writeStoredEventFilters
-} from '../../../apps/rallar-black-box/src/stored-event-filters.ts';
+} from '../../../apps/rallar-black-box/src/ui-cache/event-filters.ts';
 import {
     readStoredManualWorkbenchDraft,
     toStoredManualWorkbenchDraft,
     writeStoredManualWorkbenchDraft
-} from '../../../apps/rallar-black-box/src/stored-manual-workbench-draft.ts';
+} from '../../../apps/rallar-black-box/src/ui-cache/manual-workbench-draft.ts';
+import {
+    UI_STORAGE_KEYS,
+    type RallarBlackBoxUiStorage
+} from '../../../apps/rallar-black-box/src/ui-cache/rallar-black-box-ui-storage.ts';
 import {
     readStoredRallarServerRestCollectionDraft,
     readStoredRallarServerWorkbenchDraft,
     toStoredRallarServerWorkbenchDraft,
     writeStoredRallarServerRestCollectionDraft,
     writeStoredRallarServerWorkbenchDraft
-} from '../../../apps/rallar-black-box/src/stored-rallar-server-drafts.ts';
-import {
-    UI_STORAGE_KEYS,
-    type RallarBlackBoxUiStorage
-} from '../../../apps/rallar-black-box/src/ui-persistence.ts';
+} from '../../../apps/rallar-black-box/src/ui-cache/rallar-server-drafts.ts';
 
 class MemoryStorage implements RallarBlackBoxUiStorage {
     private readonly values = new Map<string, string>();

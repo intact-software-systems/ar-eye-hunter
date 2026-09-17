@@ -14,7 +14,7 @@ import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workben
 import type {
     RallarServerRestCollectionDraft,
     RallarServerWorkbenchDraft
-} from '../../../stored-rallar-server-drafts.ts';
+} from '../../../ui-cache/rallar-server-drafts.ts';
 import type { UseRallarServerControllerInput } from './rallar-server-contracts.ts';
 
 export interface RallarServerDefaults {

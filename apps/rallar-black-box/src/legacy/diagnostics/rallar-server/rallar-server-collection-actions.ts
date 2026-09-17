@@ -16,7 +16,7 @@ import type {
     RallarServerRestRequestInput,
     RallarServerRestResponse
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
-import type { RallarServerWorkbenchDraft } from '../../../stored-rallar-server-drafts.ts';
+import type { RallarServerWorkbenchDraft } from '../../../ui-cache/rallar-server-drafts.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { writeTextToClipboard } from '../../shared/write-text-to-clipboard.ts';

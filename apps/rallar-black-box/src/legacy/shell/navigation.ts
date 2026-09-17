@@ -17,7 +17,7 @@ import {
     readStoredAppTab,
     writeStoredAppMode,
     writeStoredAppTab
-} from '../../stored-app-shell-preferences.ts';
+} from '../../ui-cache/app-shell-preferences.ts';
 import { browserUiStorage } from './browser-ui-storage.ts';
 
 export type AppNavigationState = Readonly<{

@@ -8,7 +8,7 @@ import {
     readStoredManualWorkbenchDraft,
     writeStoredManualWorkbenchDraft,
     type ManualWorkbenchDraft
-} from '../../../stored-manual-workbench-draft.ts';
+} from '../../../ui-cache/manual-workbench-draft.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import { toManualWorkbenchValues } from './to-manual-workbench-values.ts';

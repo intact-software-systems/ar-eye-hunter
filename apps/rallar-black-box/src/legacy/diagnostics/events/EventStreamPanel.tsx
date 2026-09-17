@@ -5,7 +5,7 @@ import type {
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { readStoredEventFilters, writeStoredEventFilters } from '../../../stored-event-filters.ts';
+import { readStoredEventFilters, writeStoredEventFilters } from '../../../ui-cache/event-filters.ts';
 import { FilterSelect } from '../../shared/FilterSelect.tsx';
 import { formatTime } from '../../shared/time-format.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';

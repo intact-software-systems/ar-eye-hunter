@@ -16,7 +16,7 @@ import {
     useRallarServerController,
     type RallarServerControllerModel
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts';
-import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
+import { UI_STORAGE_KEYS } from '../../../apps/rallar-black-box/src/ui-cache/rallar-black-box-ui-storage.ts';
 import { CLIPBOARD_FAILURES } from './write-text-to-clipboard-fixtures.ts';
 
 interface RecordedRequest {

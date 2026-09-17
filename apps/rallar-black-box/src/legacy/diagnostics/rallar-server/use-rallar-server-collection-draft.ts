@@ -5,7 +5,7 @@ import {
     readStoredRallarServerRestCollectionDraft,
     writeStoredRallarServerRestCollectionDraft,
     type RallarServerRestCollectionDraft
-} from '../../../stored-rallar-server-drafts.ts';
+} from '../../../ui-cache/rallar-server-drafts.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';

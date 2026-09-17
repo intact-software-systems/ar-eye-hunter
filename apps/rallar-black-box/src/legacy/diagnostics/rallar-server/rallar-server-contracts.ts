@@ -13,7 +13,7 @@ import type {
     RallarServerRestResponse
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import type { RallarServerWorkbenchDraft } from '../../../stored-rallar-server-drafts.ts';
+import type { RallarServerWorkbenchDraft } from '../../../ui-cache/rallar-server-drafts.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 
 /** The last request outcome; each detail is absent until the request stage that produces it has run. */
