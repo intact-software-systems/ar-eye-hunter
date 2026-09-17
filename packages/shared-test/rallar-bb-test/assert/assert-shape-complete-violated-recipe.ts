@@ -7,8 +7,7 @@ import {
 import {
     toCommandMetadata,
     toRecipeId,
-    toRecipeMetadata,
-    toTimeoutMs
+    toRecipeMetadata
 } from '../conformance/composite-conformance-recipe-values.ts';
 import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
@@ -34,7 +33,7 @@ export function assertShapeCompleteViolatedRecipe(
             }),
             toConformanceMessageWait({
                 commandId: 'assert-shape-violated-wait',
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 topic: 'rallar.conformance.assert-shape',
                 caseId: 'assert-shape-complete-violated'
             }),

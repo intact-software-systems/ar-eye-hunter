@@ -5,14 +5,18 @@ import {
     createRallarBlackBoxTestRuntime,
     formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES,
+    RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS,
     RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     toRallarBlackBoxCompositeConformanceReport,
     validateJsonSchema,
     type RallarBlackBoxCompositeConformanceMatrixEntry,
     type RallarBlackBoxTestCommand,
-    type RallarBlackBoxTestCommandOutcome
+    type RallarBlackBoxTestCommandOutcome,
+    type RallarBlackBoxTestEvent,
+    type RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/mod.ts';
+import { isJsonRecordValue } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 function expectValidRecipe(entry: RallarBlackBoxCompositeConformanceMatrixEntry): void {
@@ -23,7 +27,10 @@ function expectValidRecipe(entry: RallarBlackBoxCompositeConformanceMatrixEntry)
     ).toBe(true);
 }
 
-function createDeterministicConformanceRuntime() {
+const ALL_CASE_IDS = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES.map((entry) => entry.caseId);
+const ALL_PROVIDER_IDS = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS.map((entry) => entry.providerId);
+
+function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
     return createRallarBlackBoxTestRuntime({
         now: () => now,
@@ -173,7 +180,7 @@ function createDeterministicConformanceRuntime() {
 
 function okOutcome(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
-    value: unknown
+    value: RallarBlackBoxTestCommandOutcome['value']
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'ok',
@@ -182,17 +189,13 @@ function okOutcome(
     };
 }
 
-function toMessagePayload(command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>): unknown {
+function toMessagePayload(
+    command: Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }>
+): RallarBlackBoxTestEvent['payload'] {
     const send = command.send;
-    if (send && typeof send === 'object' && !Array.isArray(send)) {
-        const record = send as Record<string, unknown>;
-        return {
-            data: record.data ?? record.payload ?? send
-        };
-    }
-    return {
-        data: send
-    };
+    return isJsonRecordValue(send)
+        ? { data: send.data ?? send.payload ?? send }
+        : { data: send };
 }
 
 describe('rallar-bb-test composite conformance matrix', () => {
@@ -216,7 +219,10 @@ describe('rallar-bb-test composite conformance matrix', () => {
         ]);
 
         const matrix = createRallarBlackBoxCompositeConformanceMatrix({
-            recipeOptions: {
+            caseIds: ALL_CASE_IDS,
+            providerIds: ALL_PROVIDER_IDS,
+            recipeSettings: {
+                ...RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS,
                 recipeIdPrefix: 'test-composite-conformance'
             }
         });
@@ -229,25 +235,28 @@ describe('rallar-bb-test composite conformance matrix', () => {
             expectValidRecipe(entry);
         });
 
-        const liveEntries = matrix.filter((entry) => entry.mode === 'live-gated');
-        expect(liveEntries.length).toBeGreaterThan(0);
-        liveEntries.forEach((entry) => {
-            expect(entry.requires?.env).toContain('RALLAR_API_BASE_URL');
-            expect(entry.requires?.httpServices?.length).toBeGreaterThan(0);
+        const liveProviders = matrix.flatMap((entry) => entry.provider.mode === 'live-gated' ? [entry.provider] : []);
+        expect(liveProviders.length).toBeGreaterThan(0);
+        liveProviders.forEach((provider) => {
+            expect(provider.requires.env).toContain('RALLAR_API_BASE_URL');
+            expect(provider.requires.httpServices.length).toBeGreaterThan(0);
         });
 
-        const remoteEntries = matrix.filter((entry) => entry.providerId === 'remote-browser-control');
-        remoteEntries.forEach((entry) => {
-            expect(entry.requires?.env).toContain('RALLAR_BLACK_BOX_CONTROL_BASE_URL');
-            expect(entry.requires?.env).toContain('RALLAR_BLACK_BOX_AGENT_ID');
-            expect(entry.requires?.controlServer).toBe(true);
+        const remoteProviders = liveProviders.filter((provider) => provider.providerId === 'remote-browser-control');
+        expect(remoteProviders.length).toBeGreaterThan(0);
+        remoteProviders.forEach((provider) => {
+            expect(provider.requires.env).toContain('RALLAR_BLACK_BOX_CONTROL_BASE_URL');
+            expect(provider.requires.env).toContain('RALLAR_BLACK_BOX_AGENT_ID');
+            expect(provider.requires.controlServer).toBe(true);
         });
     });
 
     it('passes all deterministic local composite conformance cases', async () => {
         const entries = createRallarBlackBoxCompositeConformanceMatrix({
+            caseIds: ALL_CASE_IDS,
             providerIds: ['in-memory-local'],
-            recipeOptions: {
+            recipeSettings: {
+                ...RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS,
                 recipeIdPrefix: 'local-composite-conformance'
             }
         });
@@ -260,6 +269,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
                 recipe: entry.recipe
             });
             const report = toRallarBlackBoxCompositeConformanceReport(entry, {
+                kind: 'ran',
                 result,
                 state: runtime.state(),
                 redaction: {
@@ -268,9 +278,10 @@ describe('rallar-bb-test composite conformance matrix', () => {
             });
 
             expect(report.status, entry.caseId).toBe('passed');
-            expect(report.observed?.resultStatus).toBe(entry.case.expectedStatus);
-            expect(report.observed?.commandKinds).toEqual(expect.arrayContaining([...entry.case.requiredCommandKinds]));
-            expect(report.observed?.eventTopics).toEqual(expect.arrayContaining([...(entry.case.requiredEventTopics ?? [])]));
+            const observed = report.status === 'skipped' ? undefined : report.observed;
+            expect(observed?.resultStatus).toBe(entry.case.expectedStatus);
+            expect(observed?.commandKinds).toEqual(expect.arrayContaining([...entry.case.requiredCommandKinds]));
+            expect(observed?.eventTopics).toEqual(expect.arrayContaining([...entry.case.requiredEventTopics]));
         }
     });
 
@@ -279,7 +290,8 @@ describe('rallar-bb-test composite conformance matrix', () => {
         let sendCount = 0;
         const [entry] = createRallarBlackBoxCompositeConformanceMatrix({
             providerIds: ['browser-rallar'],
-            caseIds: ['looped-rtc-send']
+            caseIds: ['looped-rtc-send'],
+            recipeSettings: RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS
         });
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             now: () => now,
@@ -319,13 +331,15 @@ describe('rallar-bb-test composite conformance matrix', () => {
             }
         });
         const report = toRallarBlackBoxCompositeConformanceReport(entry, {
+            kind: 'ran',
             result,
-            state: runtime.state()
+            state: runtime.state(),
+            redaction: {}
         });
 
         expect(report.status).toBe('passed');
         expect(sendCount).toBe(3);
-        expect(report.observed?.compositeSummary).toMatchObject({
+        expect(report.status === 'skipped' ? undefined : report.observed.compositeSummary).toMatchObject({
             composite: 1,
             failed: 0
         });
@@ -336,7 +350,8 @@ describe('rallar-bb-test composite conformance matrix', () => {
     it('redacts failure artifacts while preserving expected no-peer evidence', async () => {
         const [entry] = createRallarBlackBoxCompositeConformanceMatrix({
             providerIds: ['in-memory-local'],
-            caseIds: ['negative-no-peer']
+            caseIds: ['negative-no-peer'],
+            recipeSettings: RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS
         });
         const runtime = createDeterministicConformanceRuntime();
         const result = await runtime.execute({
@@ -345,6 +360,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
             recipe: entry.recipe
         });
         const report = toRallarBlackBoxCompositeConformanceReport(entry, {
+            kind: 'ran',
             result,
             state: runtime.state(),
             redaction: {
@@ -353,7 +369,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
         });
 
         expect(report.status).toBe('passed');
-        expect(report.observed?.failureCodes).toContain('RALLAR_BB_RTC_NO_PEERS');
+        expect(report.status === 'skipped' ? undefined : report.observed.failureCodes).toContain('RALLAR_BB_RTC_NO_PEERS');
         expect(JSON.stringify(report)).toContain('<redacted>');
         expect(JSON.stringify(report)).not.toContain('secret-negative-token');
     });

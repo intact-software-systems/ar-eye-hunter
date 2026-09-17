@@ -17,20 +17,16 @@ import {
     toStatsCommand
 } from './composite-conformance-command-fixtures.ts';
 import {
-    DEFAULT_CONNECTION,
-    DEFAULT_ROOM_ID,
-    DEFAULT_WS_CONNECTION,
     toCommandMetadata,
     toRecipeId,
     toRecipeMetadata,
-    toScopeFields,
-    toTimeoutMs
+    toScopeFields
 } from './composite-conformance-recipe-values.ts';
 import { waitAssertRecipe } from './wait-assert-recipe.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions = {}
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     switch (caseId) {
         case 'looped-rtc-send':
@@ -59,8 +55,8 @@ export function createRallarBlackBoxCompositeConformanceRecipe(
 function loopedRtcRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
+    const connection = options.connection;
+    const roomId = options.roomId;
     const transport = options.transport ?? 'realtime';
     return {
         schemaVersion: 1,
@@ -110,7 +106,7 @@ function toLoopedRtcSendLoop(input: LoopedRtcSendLoopInput): RallarBlackBoxTestL
                 commandId: 'looped-rtc-send-frame',
                 connection,
                 transport,
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 send: {
                     data: {
                         topic: 'rallar.conformance.looped-rtc-send',
@@ -130,9 +126,9 @@ function toLoopedRtcSendLoop(input: LoopedRtcSendLoopInput): RallarBlackBoxTestL
 function parallelWsRtcRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const wsConnection = options.wsConnection ?? DEFAULT_WS_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
+    const connection = options.connection;
+    const wsConnection = options.wsConnection;
+    const roomId = options.roomId;
     const transport = options.transport ?? 'messages.rtc';
     return {
         schemaVersion: 1,
@@ -147,7 +143,7 @@ function parallelWsRtcRecipe(
                 commandId: 'parallel-ws-open',
                 connection: wsConnection,
                 url: '{config.wsBaseUrl}/api/ws',
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 metadata: toCommandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open')
             },
             toRtcConnectCommand({
@@ -212,8 +208,8 @@ function cancelDuringLoopRecipe(
 function negativeNoPeerRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
+    const connection = options.connection;
+    const roomId = options.roomId;
     const transport = options.transport ?? 'realtime';
     return {
         schemaVersion: 1,
@@ -236,7 +232,7 @@ function negativeNoPeerRecipe(
                 commandId: 'negative-no-peer-send',
                 connection,
                 transport,
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 send: {
                     data: {
                         topic: 'rallar.conformance.negative-no-peer',
@@ -287,7 +283,7 @@ function toParallelRtcSend(context: ParallelConformanceContext): RallarBlackBoxT
         commandId: 'parallel-rtc-send',
         connection,
         transport,
-        timeoutMs: toTimeoutMs(options),
+        timeoutMs: options.timeoutMs,
         send: {
             payload: {
                 topic: 'rallar.conformance.parallel.rtc',

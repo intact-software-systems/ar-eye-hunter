@@ -11,13 +11,7 @@ import type {
     RallarBlackBoxTestTransport,
     RallarBlackBoxTestWaitCommand
 } from '../rallar-black-box-test-contracts.ts';
-import {
-    DEFAULT_CONNECTION,
-    DEFAULT_ROOM_ID,
-    toCommandMetadata,
-    toScopeFields,
-    toTimeoutMs
-} from './composite-conformance-recipe-values.ts';
+import { toCommandMetadata, toScopeFields } from './composite-conformance-recipe-values.ts';
 
 export function toConfigureCommand(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
@@ -27,28 +21,28 @@ export function toConfigureCommand(
         kind: 'configure',
         commandId: `${caseId}-configure`,
         config: {
-            runId: options.runId ?? 'rallar-composite-conformance-run',
-            agentId: options.agentId ?? 'local-conformance-agent',
-            environment: options.environment ?? 'local',
-            apiBaseUrl: options.apiBaseUrl ?? 'http://localhost:8080',
-            actor: options.actor ?? 'alice',
-            sessionId: options.sessionId ?? 'alice-session',
-            roomId: options.roomId ?? DEFAULT_ROOM_ID,
+            runId: options.runId,
+            agentId: options.agentId,
+            environment: options.environment,
+            apiBaseUrl: options.apiBaseUrl,
+            actor: options.actor,
+            sessionId: options.sessionId,
+            roomId: options.roomId,
             transport: options.transport ?? 'realtime',
             rallar: {
-                apiBaseUrl: options.apiBaseUrl ?? 'http://localhost:8080',
-                wsBaseUrl: toWsBaseUrl(options.apiBaseUrl ?? 'http://localhost:8080'),
-                applicationId: options.applicationId ?? 'rallar-server',
-                workspaceId: options.workspaceId ?? 'default',
-                roomId: options.roomId ?? DEFAULT_ROOM_ID
+                apiBaseUrl: options.apiBaseUrl,
+                wsBaseUrl: toWsBaseUrl(options.apiBaseUrl),
+                applicationId: options.applicationId,
+                workspaceId: options.workspaceId,
+                roomId: options.roomId
             },
             control: {
-                providerMode: options.providerMode ?? 'simulated',
+                providerMode: options.providerMode,
                 conformance: true
             },
             defaults: {
-                timeoutMs: toTimeoutMs(options),
-                connection: options.connection ?? DEFAULT_CONNECTION
+                timeoutMs: options.timeoutMs,
+                connection: options.connection
             },
             redaction: {
                 keys: ['password', 'accessToken', 'token']
@@ -66,13 +60,13 @@ export function toRtcConnectCommand(
         kind: 'rtc.connect',
         commandId,
         connection,
-        actor: options.actor ?? 'alice',
+        actor: options.actor,
         roomId,
         transport,
-        timeoutMs: toTimeoutMs(options),
+        timeoutMs: options.timeoutMs,
         ...toScopeFields(options),
         rallar: {
-            sessionId: options.sessionId ?? 'alice-session',
+            sessionId: options.sessionId,
             transport
         },
         metadata: toCommandMetadata(caseId, commandId)
@@ -133,7 +127,7 @@ export function toConformanceMessageProbe(
         commandId: input.commandId,
         connection: input.connection,
         transport: input.transport,
-        timeoutMs: toTimeoutMs(input.options),
+        timeoutMs: input.options.timeoutMs,
         send: { data: input.data, roomId: input.roomId, ...toScopeFields(input.options) },
         metadata: toCommandMetadata(input.caseId, input.commandId)
     };
@@ -174,8 +168,8 @@ export function toConformanceProbeCommands(
     const { caseId, commandPrefix, options } = input;
     const address = {
         caseId,
-        connection: options.connection ?? DEFAULT_CONNECTION,
-        roomId: options.roomId ?? DEFAULT_ROOM_ID,
+        connection: options.connection,
+        roomId: options.roomId,
         transport: options.transport ?? 'realtime',
         options
     };

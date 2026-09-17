@@ -5,8 +5,7 @@ import { toConfigureCommand, toStatsCommand } from '../conformance/composite-con
 import {
     toCommandMetadata,
     toRecipeId,
-    toRecipeMetadata,
-    toTimeoutMs
+    toRecipeMetadata
 } from '../conformance/composite-conformance-recipe-values.ts';
 
 export function loopUntilConvergenceRecipe(
@@ -31,7 +30,7 @@ export function loopUntilConvergenceRecipe(
                     {
                         kind: 'http.request',
                         commandId: 'loop-until-poll-request',
-                        timeoutMs: toTimeoutMs(options),
+                        timeoutMs: options.timeoutMs,
                         request: {
                             path: '/api/config',
                             method: 'GET'

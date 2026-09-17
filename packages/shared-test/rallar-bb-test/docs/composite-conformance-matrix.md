@@ -46,10 +46,19 @@ Provider rows are:
 - `remote-browser-control`: live-gated control-server path, requiring a Rallar
   API, control server, and target browser agent.
 
-Live rows are skip-safe. They carry explicit `requires` metadata for
-environment variables, HTTP services, Playwright, and control-server needs.
-Provider differences are recorded as capability differences on each row so
-artifacts can distinguish real capability gaps from accidental regressions.
+Live-gated providers are skip-safe. Each carries explicit `requires` metadata
+for environment variables, HTTP services with their local default URLs, and
+whether Playwright or the control server is needed; the deterministic provider
+has none. Provider differences are recorded as capability differences on each
+provider so artifacts can distinguish real capability gaps from accidental
+regressions.
+
+`createRallarBlackBoxCompositeConformanceMatrix({ caseIds, providerIds,
+recipeSettings })` builds one entry per requested provider and case, in the
+requested order. `RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS`
+holds the local recipe settings; leave `transport` unset to let each case pick
+its own transport. The matrix sets each recipe's provider mode from its
+provider.
 
 ## Assertion Outcome Parity
 
@@ -80,8 +89,10 @@ three-vocabulary comparison boundary (`deepEqualJson` vs `isSameJsonValue` vs
 
 ## Reports
 
-Use `toRallarBlackBoxCompositeConformanceReport(...)` to build an artifact
-summary from a matrix entry, command result, and runtime state. Reports include:
+Use `toRallarBlackBoxCompositeConformanceReport(entry, outcome)` to build an
+artifact summary from a matrix entry and its outcome: `{ kind: 'skipped',
+skipReason }`, or `{ kind: 'ran', result, state, redaction }`. An unsupported
+entry always reports `skipped`. Run reports include:
 
 - expected status, command kinds, composite kinds, event topics, and failure
   codes

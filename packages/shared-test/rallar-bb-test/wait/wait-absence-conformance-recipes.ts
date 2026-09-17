@@ -6,7 +6,7 @@ import {
     toConformanceProbeCommands,
     toStatsCommand
 } from '../conformance/composite-conformance-command-fixtures.ts';
-import { toRecipeId, toRecipeMetadata, toTimeoutMs } from '../conformance/composite-conformance-recipe-values.ts';
+import { toRecipeId, toRecipeMetadata } from '../conformance/composite-conformance-recipe-values.ts';
 import type { RallarBlackBoxTestRecipe } from '../rallar-black-box-test-contracts.ts';
 
 export function waitAbsenceHoldRecipe(
@@ -31,7 +31,7 @@ export function waitAbsenceHoldRecipe(
             }),
             toConformanceMessageWait({
                 commandId: 'wait-absence-hold-positive-control',
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 topic: 'rallar.conformance.wait-absence-hold',
                 caseId: 'wait-absence-hold'
             }),
@@ -70,7 +70,7 @@ export function waitAbsenceViolatedRecipe(
             }),
             toConformanceMessageWait({
                 commandId: 'wait-absence-violated-positive-control',
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 topic: 'rallar.conformance.wait-absence-violated',
                 caseId: 'wait-absence-violated'
             }),

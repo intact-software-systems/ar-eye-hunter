@@ -9,19 +9,16 @@ import {
     toStatsCommand
 } from './composite-conformance-command-fixtures.ts';
 import {
-    DEFAULT_CONNECTION,
-    DEFAULT_ROOM_ID,
     toCommandMetadata,
     toRecipeId,
-    toRecipeMetadata,
-    toTimeoutMs
+    toRecipeMetadata
 } from './composite-conformance-recipe-values.ts';
 
 export function waitAssertRecipe(
     options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
-    const connection = options.connection ?? DEFAULT_CONNECTION;
-    const roomId = options.roomId ?? DEFAULT_ROOM_ID;
+    const connection = options.connection;
+    const roomId = options.roomId;
     const transport = options.transport ?? 'realtime';
     return {
         schemaVersion: 1,
@@ -53,7 +50,7 @@ export function waitAssertRecipe(
             }),
             toConformanceMessageWait({
                 commandId: 'wait-assert-wait-message',
-                timeoutMs: toTimeoutMs(options),
+                timeoutMs: options.timeoutMs,
                 topic: 'rallar.conformance.wait-assert',
                 caseId: 'wait-assert-evidence'
             }),
