@@ -3,8 +3,8 @@ import type {
     ApiJsonValue
 } from '../../../shared/api/api-json-value.ts';
 
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import {
-    isPreflightJsonObject,
     toNonEmptyText,
     toPreflightJsonArray,
     toPreflightJsonObject,
@@ -189,7 +189,7 @@ function toTransformConsumedRoots(value: ApiJsonValue): readonly string[] {
     if (Array.isArray(value)) {
         return value.flatMap(toTransformConsumedRoots);
     }
-    if (!isPreflightJsonObject(value)) {
+    if (!isJsonRecordValue(value)) {
         return [];
     }
     return [

@@ -3,10 +3,10 @@ import type {
     ApiJsonValue
 } from '../../../shared/api/api-json-value.ts';
 
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { toRecipeStepAction } from '../recipes/to-recipe-step-action.ts';
 import type { BlackBoxRunnerPreflightIssue } from './black-box-runner-preflight-issue.ts';
 import {
-    isPreflightJsonObject,
     toPreflightJsonArray,
     toPreflightJsonObject
 } from './preflight-json-values.ts';
@@ -178,7 +178,7 @@ function toEmptyArrayPaths(value: ApiJsonValue | undefined, path: string): reado
             ? [path]
             : value.flatMap((item, index) => toEmptyArrayPaths(item, `${path}[${index}]`));
     }
-    return isPreflightJsonObject(value)
+    return isJsonRecordValue(value)
         ? Object.entries(value).flatMap(([key, item]) => toEmptyArrayPaths(item, `${path}.${key}`))
         : [];
 }
@@ -192,7 +192,7 @@ function validateStrictSet(step: ApiJsonObject, path: string): readonly BlackBox
         step.transform !== undefined || request.transform !== undefined ||
         step.derive !== undefined || request.derive !== undefined || stateWriteEvidence !== undefined;
     const issues: BlackBoxRunnerPreflightIssue[] = [];
-    if (output === 'stateWriteEvidence' && !isPreflightJsonObject(stateWriteEvidence)) {
+    if (output === 'stateWriteEvidence' && !isJsonRecordValue(stateWriteEvidence)) {
         issues.push({
             severity: 'error',
             code: 'STRICT_STATE_WRITE_EVIDENCE_SOURCE',

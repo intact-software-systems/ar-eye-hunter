@@ -3,9 +3,9 @@ import type {
     ApiJsonValue
 } from '../../../shared/api/api-json-value.ts';
 
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { directSafeOutputTransformSpec } from '../scenario-transform/safe-output-transform.ts';
 import {
-    isPreflightJsonObject,
     toNonEmptyText,
     toPreflightJsonArray,
     toPreflightJsonObject
@@ -33,7 +33,7 @@ export function toConnectionPreflightSteps(
         const output = toNonEmptyText(request.output);
         const writtenOutputs = [...Object.keys(toPreflightJsonObject(request.outputs)), ...(output ? [output] : [])];
         const writesAllOutputs = writtenOutputs.some((name) => /[{}]/.test(name)) ||
-            (request.outputs !== undefined && !isPreflightJsonObject(request.outputs));
+            (request.outputs !== undefined && !isJsonRecordValue(request.outputs));
         const selectionCanBeTrusted = failureStops && isStoppingOnFailure(request) && !writesAllOutputs;
         const groups = transport === 'PARALLEL' ? toPreflightJsonArray(request.groups) : [];
         return {

@@ -4,6 +4,7 @@ import type {
 } from '../../../shared/api/api-json-value.ts';
 
 import { decodeJsonValue } from '../../rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 
 /** A recipe value the runner read from JSON or YAML, in its JSON form; a value that is not an object reads as empty. */
 export function decodePreflightJsonObject(value: unknown): ApiJsonObject {
@@ -15,12 +16,8 @@ export function decodePreflightJsonArray(value: unknown): readonly ApiJsonValue[
     return toPreflightJsonArray(decodeJsonValue(value));
 }
 
-export function isPreflightJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function toPreflightJsonObject(value: ApiJsonValue | undefined): ApiJsonObject {
-    return isPreflightJsonObject(value) ? value : {};
+    return isJsonRecordValue(value) ? value : {};
 }
 
 export function toPreflightJsonArray(value: ApiJsonValue | undefined): readonly ApiJsonValue[] {

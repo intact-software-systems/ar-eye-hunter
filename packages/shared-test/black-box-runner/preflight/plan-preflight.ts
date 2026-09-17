@@ -3,12 +3,14 @@ import type {
     ApiJsonValue
 } from '../../../shared/api/api-json-value.ts';
 
-import type { JsonSchemaValidationIssue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
+import {
+    isJsonRecordValue,
+    type JsonSchemaValidationIssue
+} from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { validateBlackBoxRunnerScenarioRecipe } from '../schema.ts';
 import type { BlackBoxRunnerPreflightIssue } from './black-box-runner-preflight-issue.ts';
 import type { BlackBoxRunnerEnvRequirement } from './preflight-env-variables.ts';
 import {
-    isPreflightJsonObject,
     toFiniteNumber,
     toNonEmptyText,
     toPreflightJsonArray,
@@ -254,7 +256,7 @@ function computePreflightSummary(
 function toIncludePreflight(expandedConfig: ApiJsonObject): BlackBoxRunnerPreflightIncludes {
     return {
         resolved: toPreflightJsonArray(toPreflightJsonObject(expandedConfig.includeMetadata).includes)
-            .filter(isPreflightJsonObject)
+            .flatMap((include) => isJsonRecordValue(include) ? [include] : [])
     };
 }
 
