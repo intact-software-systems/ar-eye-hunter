@@ -13,7 +13,7 @@ import type {
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupId, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     failRallarValidation,
     validateRallarRouteId,
@@ -130,13 +130,99 @@ export interface DirectRallarOperationError {
     };
 }
 
+/** The session an operation observed, without the access token its diagnostics must not carry. */
+export type DirectRallarSessionDiagnostic = Omit<AuthSession, 'accessToken'>;
+
+export interface DirectRallarStatusCheckValue {
+    readonly action: 'status.check';
+    readonly connected: boolean;
+    readonly connectStatus: ReturnType<DirectRallarFacade['status']>;
+    /** Absent when neither the facade nor the caller's context holds a logged-in session. */
+    readonly session: DirectRallarSessionDiagnostic | undefined;
+    /** Absent when the facade build exposes no defaults reader. */
+    readonly defaults: ReturnType<NonNullable<DirectRallarFacade['defaults']>> | undefined;
+    readonly wsStatus: ReturnType<DirectRallarFacade['ws']['status']>;
+    readonly rtcStatus: ReturnType<DirectRallarFacade['rtc']['status']>;
+    readonly currentRoom: ReturnType<DirectRallarFacade['rooms']['current']>;
+    readonly roomCount: number;
+    readonly peopleCount: number;
+}
+
+export interface DirectRallarGroupCreateValue {
+    readonly action: 'group.create';
+    readonly requestedGroup: string;
+    readonly groupId: GroupId;
+    readonly displayName: string;
+    readonly connected: boolean;
+    /** Absent when neither the facade nor the caller's context holds a logged-in session. */
+    readonly session: DirectRallarSessionDiagnostic | undefined;
+    readonly snapshot: GroupSnapshot;
+}
+
+export interface DirectRallarGroupJoinValue {
+    readonly action: 'group.join';
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly connected: boolean;
+    /** Absent when neither the facade nor the caller's context holds a logged-in session. */
+    readonly session: DirectRallarSessionDiagnostic | undefined;
+    readonly snapshot: GroupSnapshot;
+}
+
+export interface DirectRallarWsSubscribeValue {
+    readonly action: 'ws.subscribe';
+    readonly selector: RallarMessageSelectorInput;
+    readonly groupId: string;
+    readonly displayName: string;
+    readonly connected: boolean;
+    /** Absent when neither the facade nor the caller's context holds a logged-in session. */
+    readonly session: DirectRallarSessionDiagnostic | undefined;
+    readonly wsStatus: ReturnType<DirectRallarFacade['ws']['status']>;
+}
+
+export interface DirectRallarWsSendValue {
+    readonly action: 'ws.send';
+    /** Absent when the caller addressed no room. */
+    readonly groupId: string | undefined;
+    readonly selector: DirectRallarWsSendSelector;
+    readonly connected: boolean;
+    /** Absent when neither the facade nor the caller's context holds a logged-in session. */
+    readonly session: DirectRallarSessionDiagnostic | undefined;
+    readonly wsStatus: ReturnType<DirectRallarFacade['ws']['status']>;
+    readonly sendInput: DirectRallarWsPayload;
+    readonly sendResult: DirectRallarWsSendReceipt;
+}
+
+export interface DirectRallarWsSendSelector {
+    readonly typeId: string;
+    /** Absent when the caller let the type id name the topic. */
+    readonly topicId: string | undefined;
+    /** Absent when the caller addressed no context. */
+    readonly contextId: string | undefined;
+}
+
+export interface DirectRallarWsSendReceipt {
+    readonly msgId: RallarMessageHandle['msgId'];
+    readonly typeId: RallarMessageHandle['typeId'];
+    readonly lifecycle: ReturnType<RallarMessageHandle['lifecycle']>;
+}
+
+/** What an operation observed, named by the action that observed it. */
+export type DirectRallarOperationValue =
+    | DirectRallarStatusCheckValue
+    | DirectRallarGroupCreateValue
+    | DirectRallarGroupJoinValue
+    | DirectRallarWsSubscribeValue
+    | DirectRallarWsSendValue;
+
 export interface DirectRallarOperationResult {
     readonly kind: DirectRallarOperationKind;
     readonly status: DirectRallarOperationStatus;
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly durationMs: number;
-    readonly value?: Record<string, unknown>;
+    /** Absent when the operation failed, so it observed nothing to report. */
+    readonly value?: DirectRallarOperationValue;
     readonly error?: DirectRallarOperationError;
     readonly events: readonly RallarBlackBoxTestRuntimeEventInput[];
 }
@@ -146,6 +232,7 @@ export interface DirectRallarWsSubscribeResult extends DirectRallarOperationResu
 }
 
 const DIRECT_BACKEND_REQUIRED_ERROR_CODE = 'RALLAR_DIRECT_BACKEND_REQUIRED';
+const DIRECT_OPERATION_FAILED_ERROR_CODE = 'RALLAR_DIRECT_OPERATION_FAILED';
 
 function toSessionDiagnostic(session: AuthSession | undefined): Omit<AuthSession, 'accessToken'> | undefined {
     if (!session) {
@@ -178,17 +265,23 @@ export function createDirectRallarRuntimeEvent(
             roomId: input.context.roomId,
             ...(
                 input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload)
-                    ? input.payload as Record<string, unknown>
+                    ? input.payload
                     : { data: input.payload }
             )
         }
     };
 }
 
-function toDirectError(error: unknown, code = 'RALLAR_DIRECT_OPERATION_FAILED'): DirectRallarOperationError {
-    return error instanceof Error
-        ? { code, message: error.message, details: { name: error.name, stack: error.stack } }
-        : { code, message: String(error) };
+/** The failure a caught value reports: an `Error` keeps its name and stack, anything else its text. */
+function decodeDirectRallarError(error: unknown): DirectRallarOperationError {
+    if (typeof error === 'object' && error !== null && error instanceof Error) {
+        return {
+            code: DIRECT_OPERATION_FAILED_ERROR_CODE,
+            message: error.message,
+            details: { name: error.name, stack: error.stack }
+        };
+    }
+    return { code: DIRECT_OPERATION_FAILED_ERROR_CODE, message: String(error) };
 }
 
 export async function loadDirectRallarFacade(): Promise<DirectRallarFacade> {
@@ -247,7 +340,7 @@ function directSession(
 
 function sessionRequiredError(): DirectRallarOperationError {
     return {
-        code: 'RALLAR_DIRECT_OPERATION_FAILED',
+        code: DIRECT_OPERATION_FAILED_ERROR_CODE,
         message: 'Direct Rallar operation requires a logged-in browser session.'
     };
 }
@@ -287,12 +380,13 @@ interface DirectRallarOperationRunInput {
     readonly context: DirectRallarOperationContext;
     readonly transport?: RallarBlackBoxTestRuntimeEventInput['transport'];
     readonly startedPayload: RallarBlackBoxTestRuntimeEventInput['payload'];
-    readonly failurePayload?: Record<string, unknown>;
+    /** Absent for an operation whose failure event carries no selector beside the error. */
+    readonly failureSelector?: RallarMessageSelectorInput;
     readonly run: () => Promise<Either<DirectRallarOperationError, DirectRallarOperationSuccess>>;
 }
 
 interface DirectRallarOperationSuccess {
-    readonly value: Record<string, unknown>;
+    readonly value: DirectRallarOperationValue;
     readonly eventContext?: DirectRallarOperationContext;
     readonly unsubscribe?: RallarUnsubscribe;
 }
@@ -335,7 +429,7 @@ async function runDirectRallarOperation(
     catch (error) {
         return failedOperationResult({
             ...resultInput,
-            error: toDirectError(error)
+            error: decodeDirectRallarError(error)
         });
     }
 }
@@ -401,7 +495,9 @@ function failedOperationResult(
         severity: 'error',
         payload: {
             action: input.execution.kind,
-            ...input.execution.failurePayload,
+            ...(input.execution.failureSelector === undefined
+                ? {}
+                : { selector: input.execution.failureSelector }),
             error
         }
     });
@@ -446,7 +542,7 @@ function validateWsSend(context: DirectRallarOperationContext, input: DirectRall
 
 function toValidationError(result: RallarValidationResult): DirectRallarOperationError {
     return {
-        code: 'RALLAR_DIRECT_OPERATION_FAILED',
+        code: DIRECT_OPERATION_FAILED_ERROR_CODE,
         message: result.errors.join('\n'),
         details: { issues: result.issues }
     };
@@ -629,7 +725,7 @@ export async function runDirectRallarWsSubscribe(
         context: input.context,
         transport: 'ws',
         startedPayload: { action: 'ws.subscribe', selector: input.selector },
-        failurePayload: { selector: input.selector },
+        failureSelector: input.selector,
         run: async () => subscribeDirectRallarWs(input, input.loadFacade ?? loadDirectRallarFacade)
     });
 }
@@ -684,7 +780,7 @@ async function subscribeDirectRallarWs(
     }
     catch (error) {
         unsubscribe();
-        throw error;
+        return Either.ofLeft(decodeDirectRallarError(error));
     }
 }
 
@@ -756,16 +852,18 @@ function registerDirectRallarWs(input: DirectRallarWsSubscribeInput, facade: Dir
             return input.handler({ ...message });
         }
     }));
-    const unsubscribe = () => owned.unsubscribe();
-    input.subscriptions?.add(unsubscribe);
+    const stopDelivery: RallarUnsubscribe = () => {
+        owned.unsubscribe();
+        input.signal?.removeEventListener('abort', stopDelivery);
+    };
+    input.subscriptions?.add(stopDelivery);
     if (input.signal?.aborted) {
-        unsubscribe();
+        stopDelivery();
     }
-    else if (input.signal) {
-        input.signal.addEventListener('abort', unsubscribe, { once: true });
-        owned.add(() => input.signal?.removeEventListener('abort', unsubscribe));
+    else {
+        input.signal?.addEventListener('abort', stopDelivery, { once: true });
     }
-    return unsubscribe;
+    return stopDelivery;
 }
 
 function validateWsSubscribe(

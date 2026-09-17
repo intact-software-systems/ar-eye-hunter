@@ -491,9 +491,9 @@ describe('direct Rallar operations', () => {
             'join:created-group-id'
         ]);
         expect(createResult.status).toBe('completed');
-        expect(createResult.value?.groupId).toBe('bb-group');
+        expect(createResult.value).toMatchObject({ action: 'group.create', groupId: 'bb-group' });
         expect(joinResult.status).toBe('completed');
-        expect(joinResult.value?.groupId).toBe('created-group-id');
+        expect(joinResult.value).toMatchObject({ action: 'group.join', groupId: 'created-group-id' });
     });
 
     it('subscribes and sends WS messages through direct Rallar operations', async () => {
@@ -645,15 +645,109 @@ describe('direct Rallar operations', () => {
         ]);
         expect(subscribeResult.status).toBe('completed');
         expect(sendResult.status).toBe('completed');
-        expect(sendResult.value?.sendResult).toMatchObject({ msgId: expect.any(String), typeId: 'test', lifecycle: { state: 'submitted' } });
+        const sendValue = sendResult.value?.action === 'ws.send' ? sendResult.value : undefined;
+        expect(sendValue?.sendResult).toMatchObject({ msgId: expect.any(String), typeId: 'test', lifecycle: { state: 'submitted' } });
         expect(JSON.parse(JSON.stringify(sendResult)).value.sendResult.lifecycle.state).toBe('submitted');
-        expect(sendResult.value?.sendResult).not.toHaveProperty('wait');
+        expect(sendValue?.sendResult).not.toHaveProperty('wait');
         expect(received).toHaveLength(1);
         expect(sendResult.events.map((event) => event.topic)).toEqual([
             'rallar.direct.ws.send.started',
             'rallar.direct.ws.send.completed'
         ]);
         expect(sendResult.events.every((event) => event.transport === 'ws')).toBe(true);
+    });
+
+    it('reports a failed subscribe as a result that names its selector and drops the listener it registered', async () => {
+        const calls: string[] = [];
+        const selector = { typeId: 'room.manual.message', topicId: 'room.manual.message' };
+        const facade: DirectRallarFacade = {
+            configure() {},
+            setDefaults() {},
+            defaults() {
+                return undefined;
+            },
+            async start() {
+                return { session, connected: true };
+            },
+            status() {
+                return 'connected';
+            },
+            isConnected() {
+                return true;
+            },
+            session() {
+                return session;
+            },
+            auth: {
+                restore() {
+                    return session;
+                }
+            },
+            rooms: {
+                current() {
+                    return undefined;
+                },
+                list() {
+                    return [];
+                },
+                async create() {
+                    return unsupportedOperation();
+                },
+                async join() {
+                    throw new Error('room join refused');
+                }
+            },
+            people: {
+                list() {
+                    return [];
+                }
+            },
+            messages: {
+                ws: {
+                    async send() {
+                        return unsupportedOperation();
+                    },
+                    onMessage() {
+                        calls.push('subscribe');
+                        return () => calls.push('unsubscribe');
+                    }
+                }
+            },
+            ws: {
+                status() {
+                    return createWsStatus();
+                }
+            },
+            rtc: {
+                status() {
+                    return createRtcStatus({});
+                }
+            }
+        };
+
+        const result = await runDirectRallarWsSubscribe({
+            context: {
+                providerMode: 'browser-rallar',
+                apiBaseUrl: 'http://localhost:8080',
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                roomId: 'bb-group',
+                authSession: session
+            },
+            selector,
+            handler: () => {},
+            loadFacade: async () => facade
+        });
+
+        expect(calls).toEqual(['subscribe', 'unsubscribe']);
+        expect(result.status).toBe('failed');
+        expect(result.value).toBeUndefined();
+        expect(result.unsubscribe).toBeUndefined();
+        expect(result.error).toMatchObject({
+            code: 'RALLAR_DIRECT_OPERATION_FAILED',
+            message: 'room join refused'
+        });
+        expect(result.events.at(-1)?.payload).toMatchObject({ action: 'ws.subscribe', selector });
     });
 });
 
