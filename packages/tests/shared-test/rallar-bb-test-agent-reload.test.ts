@@ -6,6 +6,7 @@ import {
     type AgentResumeRecord
 } from '../../shared-test/rallar-bb-test/alm/browser-control-agent-resume.ts';
 import { createRallarBlackBoxBrowserControlAgent } from '../../shared-test/rallar-bb-test/browser-control-agent.ts';
+import type { RallarBlackBoxControlSocketListener } from '../../shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlClientEnvelope,
     ControlCommandEnvelope,
@@ -16,26 +17,23 @@ import type {
 const RESUME_KEY = 'rallar-bb-agent-resume';
 const SEARCH = '?mode=control&provider=simulated&autoConnect=1&controlUrl=ws%3A%2F%2Fcontrol.example.test%2Fcontrol&runId=run-reload&agentId=agent-reload';
 
-type SocketEvent = Readonly<{ data?: string; }>;
-type SocketListener = (event: SocketEvent) => void;
-
 class FakeControlSocket {
     readyState = 0;
     readonly sent: string[] = [];
-    private readonly listeners = new Map<string, Set<SocketListener>>();
+    private readonly listeners = new Map<string, Set<RallarBlackBoxControlSocketListener>>();
 
-    addEventListener(type: string, listener: SocketListener): void {
-        const listeners = this.listeners.get(type) ?? new Set<SocketListener>();
+    addEventListener(type: string, listener: RallarBlackBoxControlSocketListener): void {
+        const listeners = this.listeners.get(type) ?? new Set<RallarBlackBoxControlSocketListener>();
         listeners.add(listener);
         this.listeners.set(type, listeners);
     }
 
-    removeEventListener(type: string, listener: SocketListener): void {
+    removeEventListener(type: string, listener: RallarBlackBoxControlSocketListener): void {
         this.listeners.get(type)?.delete(listener);
     }
 
-    send(data: string): void {
-        this.sent.push(data);
+    send(message: string): void {
+        this.sent.push(message);
     }
 
     close(): void {
@@ -47,12 +45,12 @@ class FakeControlSocket {
         this.listeners.get('open')?.forEach((listener) => listener({}));
     }
 
-    message(data: string): void {
-        this.listeners.get('message')?.forEach((listener) => listener({ data }));
+    publishMessage(messageText: string): void {
+        this.listeners.get('message')?.forEach((listener) => listener({ data: messageText }));
     }
 }
 
-function stubWebSockets(): FakeControlSocket[] {
+function createStubbedWebSockets(): FakeControlSocket[] {
     const sockets: FakeControlSocket[] = [];
     vi.stubGlobal('WebSocket', function FakeWebSocket (_url: string) {
         const socket = new FakeControlSocket();
@@ -66,15 +64,15 @@ function toEnvelopes(sent: readonly string[]): ControlClientEnvelope[] {
     return sent.map((serialized) => JSON.parse(serialized) as ControlClientEnvelope);
 }
 
-function resultsFor(sent: readonly string[], commandId: string): ControlResultEnvelope[] {
+function toResultEnvelopes(sent: readonly string[], commandId: string): ControlResultEnvelope[] {
     return toEnvelopes(sent).filter((envelope): envelope is ControlResultEnvelope => envelope.kind === 'result' && envelope.commandId === commandId);
 }
 
-function registersFrom(sent: readonly string[]): ControlRegisterEnvelope[] {
+function toRegisterEnvelopes(sent: readonly string[]): ControlRegisterEnvelope[] {
     return toEnvelopes(sent).filter((envelope): envelope is ControlRegisterEnvelope => envelope.kind === 'register');
 }
 
-function reloadCommandEnvelope(commandId: string): ControlCommandEnvelope {
+function toReloadCommandEnvelope(commandId: string): ControlCommandEnvelope {
     return {
         kind: 'command',
         protocolVersion: 1,
@@ -104,7 +102,7 @@ describe('browser control-agent reload', () => {
     });
 
     it('sends the agent.reload result before reloading and persists the resume record', async () => {
-        const sockets = stubWebSockets();
+        const sockets = createStubbedWebSockets();
         const sentAtReload: ControlClientEnvelope[][] = [];
         const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
         await agent.start();
@@ -116,13 +114,13 @@ describe('browser control-agent reload', () => {
             });
         socket.open();
 
-        socket.message(JSON.stringify(reloadCommandEnvelope('reload-1')));
+        socket.publishMessage(JSON.stringify(toReloadCommandEnvelope('reload-1')));
         await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
 
         // The result must already be on the wire when the page goes away.
-        expect(resultsFor(socket.sent, 'reload-1')).toHaveLength(1);
+        expect(toResultEnvelopes(socket.sent, 'reload-1')).toHaveLength(1);
         expect(sentAtReload[0].filter((envelope) => envelope.kind === 'result' && envelope.commandId === 'reload-1')).toHaveLength(1);
-        expect(resultsFor(socket.sent, 'reload-1')[0]).toMatchObject({
+        expect(toResultEnvelopes(socket.sent, 'reload-1')[0]).toMatchObject({
             ok: true,
             result: {
                 status: 'ok',
@@ -144,13 +142,13 @@ describe('browser control-agent reload', () => {
             agentId: 'agent-reload',
             completedCommandIds: ['configure-control-1', 'reload-1']
         });
-        const sockets = stubWebSockets();
+        const sockets = createStubbedWebSockets();
         const agent = createRallarBlackBoxBrowserControlAgent({ search: SEARCH, env: {}, hash: '' });
 
         await agent.start();
         sockets[0].open();
 
-        const registers = registersFrom(sockets[0].sent);
+        const registers = toRegisterEnvelopes(sockets[0].sent);
         expect(registers).toHaveLength(1);
         expect(registers[0].resume.completedCommandIds).toContain('reload-1');
         expect(registers[0].resume.completedCommandIds).toContain('configure-control-1');

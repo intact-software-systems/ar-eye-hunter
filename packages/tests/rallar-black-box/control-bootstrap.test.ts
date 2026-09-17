@@ -252,20 +252,20 @@ describe('rallar-black-box control bootstrap', () => {
         expect(bootstrap.rallarRestoreSession).toBe(true);
     });
 
-    it('prefers a fragment control token while keeping legacy query-token links compatible', () => {
+    it('prefers a fragment control token over a query control token', () => {
         const fragment = resolveRallarBlackBoxBootstrapConfig(
-            '?mode=control&controlToken=legacy-token',
+            '?mode=control&controlToken=query-token',
             {},
             '#controlToken=fragment-token'
         );
-        const legacy = resolveRallarBlackBoxBootstrapConfig(
-            '?mode=control&controlToken=legacy-token',
+        const query = resolveRallarBlackBoxBootstrapConfig(
+            '?mode=control&controlToken=query-token',
             {},
             ''
         );
 
         expect(fragment.controlToken).toBe('fragment-token');
-        expect(legacy.controlToken).toBe('legacy-token');
+        expect(query.controlToken).toBe('query-token');
     });
 
     it('validates browser-rallar provider config before real execution exists', () => {
