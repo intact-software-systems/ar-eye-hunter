@@ -1,4 +1,6 @@
-import type { RallarBlackBoxSharedTestRecipeCatalogEntry } from '../../../shared-test-handoff-fixtures.ts';
+import type {
+    BlackBoxRunnerRecipeCatalogEntry
+} from '@shared-test/black-box-runner/artifacts/handoff-contract.ts';
 
 export type AppLocalRecipeEntry = Readonly<{
     id: string;
@@ -40,7 +42,7 @@ export const APP_LOCAL_RECIPE_CATALOG: readonly AppLocalRecipeEntry[] = [
 ];
 
 export function catalogEntryMatches(
-    entry: RallarBlackBoxSharedTestRecipeCatalogEntry,
+    entry: BlackBoxRunnerRecipeCatalogEntry,
     query: string,
     profile: string
 ): boolean {
@@ -70,7 +72,7 @@ export function catalogEntryMatches(
 }
 
 export function catalogRequirements(
-    entry: RallarBlackBoxSharedTestRecipeCatalogEntry
+    entry: BlackBoxRunnerRecipeCatalogEntry
 ): readonly string[] {
     return [
         ...entry.prerequisites.requiredEnvVars.map((env) => `env:${env}`),

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-    commandExampleSnippets,
+    toCommandExampleSnippets,
     validateSchemaAuthoringText,
     type CommandExampleSnippet
 } from '../../../schema-authoring.ts';
@@ -13,7 +13,7 @@ export function CommandExamplePicker({
     onInsert(text: string): void;
     onCopy(text: string): void;
 }) {
-    const snippets = useMemo(() => commandExampleSnippets(), []);
+    const snippets = useMemo(() => toCommandExampleSnippets(), []);
     const [selectedKind, setSelectedKind] = useState(
         snippets[0]?.kind ?? 'health'
     );

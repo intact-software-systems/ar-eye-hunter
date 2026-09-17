@@ -1,5 +1,7 @@
+import type {
+    BlackBoxRunnerParsedArtifactBundle
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { RallarBlackBoxSharedTestParsedArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
 import {
     deriveSharedTestArtifactIndexPresentation,
     deriveSharedTestCompactionSummaryWindow,
@@ -8,7 +10,7 @@ import {
     type SharedTestCompactionSummary
 } from './shared-test-artifact-index-presentation.ts';
 type SharedTestArtifactIndex = NonNullable<
-    RallarBlackBoxSharedTestParsedArtifactBundle[
+    BlackBoxRunnerParsedArtifactBundle[
         'views'
     ]['artifactIndex']
 >;

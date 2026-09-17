@@ -1,17 +1,19 @@
-import { useState, type ChangeEvent } from 'react';
 import {
-    parseRallarBlackBoxSharedTestArtifactBundle,
-    RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT,
-    type RallarBlackBoxSharedTestArtifactBundleFiles
-} from '../../../shared-test-handoff-fixtures.ts';
+    parseBlackBoxRunnerArtifactBundle,
+    type BlackBoxRunnerArtifactBundleFiles
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
+import {
+    BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT
+} from '@shared-test/black-box-runner/artifacts/handoff-contract.ts';
+import { useState, type ChangeEvent } from 'react';
 import { json } from '../../shared/json-presentation.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { artifactIssueText } from '../shared/artifact-issue-presentation.ts';
 import { SharedTestArtifactIndexPanel } from './SharedTestArtifactIndexPanel.tsx';
 
 const SHARED_TEST_ARTIFACT_FILE_NAMES = [
-    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles,
-    ...RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.optionalFiles
+    ...BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.requiredFiles,
+    ...BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.optionalFiles
 ] as const;
 
 function artifactEventTitle(event: Record<string, unknown>): string {
@@ -27,9 +29,9 @@ function artifactEventDetail(event: Record<string, unknown>): string {
 }
 
 export function SharedTestArtifactImportPanel() {
-    const [files, setFiles] = useState<RallarBlackBoxSharedTestArtifactBundleFiles>({});
+    const [files, setFiles] = useState<BlackBoxRunnerArtifactBundleFiles>({});
     const [parseResult, setParseResult] = useState<
-        | ReturnType<typeof parseRallarBlackBoxSharedTestArtifactBundle>
+        | ReturnType<typeof parseBlackBoxRunnerArtifactBundle>
         | undefined
     >();
     const [readError, setReadError] = useState<string | undefined>();
@@ -37,10 +39,10 @@ export function SharedTestArtifactImportPanel() {
     const acceptedFileNames = new Set<string>(SHARED_TEST_ARTIFACT_FILE_NAMES);
 
     const parseFiles = (
-        nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles
+        nextFiles: BlackBoxRunnerArtifactBundleFiles
     ): void => {
         setFiles(nextFiles);
-        setParseResult(parseRallarBlackBoxSharedTestArtifactBundle(nextFiles));
+        setParseResult(parseBlackBoxRunnerArtifactBundle(nextFiles));
     };
 
     const handleFiles = async (
@@ -48,7 +50,7 @@ export function SharedTestArtifactImportPanel() {
     ): Promise<void> => {
         setReadError(undefined);
         const selectedFiles = Array.from(event.target.files ?? []);
-        const nextFiles: RallarBlackBoxSharedTestArtifactBundleFiles = {};
+        const nextFiles: BlackBoxRunnerArtifactBundleFiles = {};
 
         try {
             for (const file of selectedFiles) {
@@ -56,7 +58,7 @@ export function SharedTestArtifactImportPanel() {
                     continue;
                 }
                 nextFiles[
-                    file.name as keyof RallarBlackBoxSharedTestArtifactBundleFiles
+                    file.name as keyof BlackBoxRunnerArtifactBundleFiles
                 ] = await file.text();
             }
             parseFiles(nextFiles);
@@ -112,7 +114,7 @@ export function SharedTestArtifactImportPanel() {
             </div>
             <div className="artifact-file-grid">
                 {SHARED_TEST_ARTIFACT_FILE_NAMES.map((fileName) => {
-                    const required = RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT.requiredFiles.includes(
+                    const required = BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT.requiredFiles.includes(
                         fileName
                     );
                     const loaded = files[fileName] !== undefined;

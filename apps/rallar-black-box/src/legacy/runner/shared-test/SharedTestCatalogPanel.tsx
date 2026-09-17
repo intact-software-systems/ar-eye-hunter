@@ -1,11 +1,13 @@
+import {
+    BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG
+} from '@shared-test/black-box-runner/artifacts/handoff-contract.ts';
 import { useMemo, useState } from 'react';
-import { RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG } from '../../../shared-test-handoff-fixtures.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { uniqueValues } from '../../shared/unique-values.ts';
 import { APP_LOCAL_RECIPE_CATALOG, catalogEntryMatches, catalogRequirements } from './shared-test-catalog.ts';
 
 export function SharedTestCatalogPanel() {
-    const catalog = RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG;
+    const catalog = BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG;
     const profileOptions = useMemo(
         () => uniqueValues(catalog.entries.flatMap((entry) => entry.profiles)),
         [catalog.entries]

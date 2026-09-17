@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    commandExampleSnippets,
-    schemaAuthoringSummary,
-    schemaAuthoringTone,
+    toCommandExampleSnippets,
+    toSchemaAuthoringSummary,
+    toSchemaAuthoringTone,
     validateSchemaAuthoringText,
     validateSchemaAuthoringValue
 } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
@@ -26,8 +26,8 @@ describe('schema authoring helpers', () => {
         expect(validation.liveServiceRequirements).toContain('HTTP endpoint');
         expect(validation.artifactExpectations).toContain('HTTP status');
         expect(validation.distributedCompatible).toBe(true);
-        expect(schemaAuthoringTone(validation)).toBe('warn');
-        expect(schemaAuthoringSummary(validation)).toContain('live requirements');
+        expect(toSchemaAuthoringTone(validation)).toBe('warn');
+        expect(toSchemaAuthoringSummary(validation)).toContain('live requirements');
     });
 
     it('returns parse and schema errors for invalid JSON', () => {
@@ -164,11 +164,11 @@ describe('schema authoring helpers', () => {
         expect(validation.liveServiceRequirements).toContain('open WebSocket connection');
         expect(validation.artifactExpectations).toContain('parent loop rollup');
         expect(validation.artifactExpectations).toContain('parent parallel rollup');
-        expect(schemaAuthoringSummary(validation)).toContain('live requirements');
+        expect(toSchemaAuthoringSummary(validation)).toContain('live requirements');
     });
 
     it('generates one example snippet for each command capability', () => {
-        const snippets = commandExampleSnippets();
+        const snippets = toCommandExampleSnippets();
         expect(snippets.length).toBeGreaterThan(10);
         expect(snippets.map((snippet) => snippet.kind)).toContain('ws.send');
         expect(snippets.find((snippet) => snippet.kind === 'ws.send')?.commandText).toContain('"kind": "ws.send"');

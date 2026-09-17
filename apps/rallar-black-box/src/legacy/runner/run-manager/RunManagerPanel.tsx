@@ -1,3 +1,6 @@
+import {
+    parseBlackBoxRunnerArtifactBundle
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
@@ -21,7 +24,6 @@ import {
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-command-presets.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
-import { parseRallarBlackBoxSharedTestArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
 import { resolveRunManagerRefreshSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import { json } from '../../shared/json-presentation.ts';
@@ -95,7 +97,7 @@ export function RunManagerPanel({
     const parsedArtifact = useMemo(
         () =>
             artifactBundle
-                ? parseRallarBlackBoxSharedTestArtifactBundle(
+                ? parseBlackBoxRunnerArtifactBundle(
                     artifactBundle.files
                 )
                 : undefined,
