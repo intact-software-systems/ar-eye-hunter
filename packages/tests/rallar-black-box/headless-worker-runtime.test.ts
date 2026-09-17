@@ -461,37 +461,6 @@ describe('rallar-black-box headless worker runtime', () => {
         expect(cancel).toHaveBeenCalledOnce();
     });
 
-    it('names the agent page refusal when registration times out', async () => {
-        vi.useFakeTimers();
-        try {
-            const registration = waitForHeadlessWorkerAgentRegistration({
-                agentId: 'agent-refused',
-                timeoutMs: 10,
-                pollIntervalMs: 5,
-                fetchSnapshot: async () => await new Promise(() => undefined),
-                readAgentPageStatus: async () => 'Control agent refused to start: unreadable launch value providerMode.',
-                sleep: vi.fn(async () => undefined),
-                now: Date.now
-            });
-            const outcome = observe(registration);
-
-            await vi.advanceTimersByTimeAsync(10);
-
-            expect(await outcome).toEqual({
-                state: 'rejected',
-                error: expect.objectContaining({
-                    message: 'Timed out waiting 10ms for agent agent-refused to register ' +
-                        'in control server snapshot. Last state: not seen ' +
-                        'Agent page status: Control agent refused to start: ' +
-                        'unreadable launch value providerMode.'
-                })
-            });
-        }
-        finally {
-            vi.useRealTimers();
-        }
-    });
-
     it('hard-times out a never-settling registration fetch with detailed state', async () => {
         vi.useFakeTimers();
         try {
@@ -923,5 +892,36 @@ describe('rallar-black-box headless worker runtime', () => {
             'Distributed run run-state-change state=running',
             'Distributed run run-state-change state=passed'
         ]);
+    });
+
+    it('names the agent page refusal when registration times out', async () => {
+        vi.useFakeTimers();
+        try {
+            const registration = waitForHeadlessWorkerAgentRegistration({
+                agentId: 'agent-refused',
+                timeoutMs: 10,
+                pollIntervalMs: 5,
+                fetchSnapshot: async () => await new Promise(() => undefined),
+                readAgentPageStatus: async () => 'Control agent refused to start: unreadable launch value providerMode.',
+                sleep: vi.fn(async () => undefined),
+                now: Date.now
+            });
+            const outcome = observe(registration);
+
+            await vi.advanceTimersByTimeAsync(10);
+
+            expect(await outcome).toEqual({
+                state: 'rejected',
+                error: expect.objectContaining({
+                    message: 'Timed out waiting 10ms for agent agent-refused to register ' +
+                        'in control server snapshot. Last state: not seen ' +
+                        'Agent page status: Control agent refused to start: ' +
+                        'unreadable launch value providerMode.'
+                })
+            });
+        }
+        finally {
+            vi.useRealTimers();
+        }
     });
 });
