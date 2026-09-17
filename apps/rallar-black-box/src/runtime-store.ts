@@ -43,7 +43,6 @@ import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 
-export { resolveRallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 export type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 type RuntimeStoreSnapshot = Readonly<{
