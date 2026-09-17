@@ -4,7 +4,13 @@ import type {
     RallarBlackBoxTestTransport
 } from './rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
-import { decodeJsonValue, decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
+import {
+    decodeFiniteNumber,
+    decodeJsonValue,
+    decodeNonBlankText,
+    decodeRecord,
+    decodeTransport
+} from './runtime/decode-runtime-result-values.ts';
 
 export const RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
 
@@ -112,6 +118,25 @@ const WARNING_TOPIC_WORDS = [
     'stale'
 ];
 const ERROR_STATUSES = ['failed', 'error', 'timeout'];
+/** The payload record keys a diagnostic reads as typed facts; the record's other keys ride beside them unread. */
+const DIAGNOSTIC_FACT_KEYS: ReadonlySet<string> = new Set([
+    'transport',
+    'commandId',
+    'connection',
+    'actor',
+    'groupId',
+    'roomId',
+    'laneId',
+    'peerId',
+    'remotePeerId',
+    'senderId',
+    'typeId',
+    'topicId',
+    'contextId',
+    'resourceId',
+    'atEpochMs',
+    'error'
+]);
 const WARNING_STATUSES = ['no-peers', 'no-route', 'closed', 'dropped', 'skipped'];
 
 export function computeRallarBlackBoxDiagnosticSeverity(
@@ -145,22 +170,19 @@ export function toRallarBlackBoxRuntimeDiagnostic(
     const payloadRecord = decodeRecord(input.payload);
     const detail = toDiagnosticDetail(input, payloadRecord);
     const error = input.error ?? decodeJsonValue(payloadRecord.error);
-    const typeId = decodeNonBlankText(input.typeId ?? payloadRecord.typeId ?? decodeRecord(input.detail).typeId);
-    const topicId = decodeNonBlankText(input.topicId ?? payloadRecord.topicId ?? decodeRecord(input.detail).topicId);
+    const atEpochMs = input.atEpochMs ?? decodeFiniteNumber(payloadRecord.atEpochMs);
     return redactRallarBlackBoxValue({
-        ...payloadRecord,
+        ...Object.fromEntries(Object.entries(payloadRecord).filter(([key]) => !DIAGNOSTIC_FACT_KEYS.has(key))),
         ...toDefinedSubject(input, payloadRecord),
         diagnosticSchemaVersion: RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION,
         diagnosticTypeId: input.topic,
         topic: input.topic,
         severity: input.severity,
         message: input.message ?? toDiagnosticMessage({ topic: input.topic, payload: input.payload, detail, error }),
-        ...(input.atEpochMs !== undefined ? { atEpochMs: input.atEpochMs } : {}),
+        ...(atEpochMs !== undefined ? { atEpochMs } : {}),
         ...(detail !== undefined ? { data: detail } : {}),
         ...(error !== undefined ? { error } : {}),
-        source: input.source,
-        ...(typeId !== undefined ? { typeId } : {}),
-        ...(topicId !== undefined ? { topicId } : {})
+        source: input.source
     });
 }
 
@@ -180,19 +202,20 @@ function toDefinedSubject(
     input: RallarBlackBoxRuntimeDiagnosticInput,
     payloadRecord: RallarBlackBoxTestRecord
 ): RallarBlackBoxRuntimeDiagnosticSubject {
+    const detailRecord = decodeRecord(input.detail);
     const subject: RallarBlackBoxRuntimeDiagnosticSubject = {
-        transport: input.transport,
-        commandId: input.commandId,
-        connection: input.connection,
-        actor: input.actor,
+        transport: input.transport ?? decodeTransport(payloadRecord.transport),
+        commandId: input.commandId ?? decodeNonBlankText(payloadRecord.commandId),
+        connection: input.connection ?? decodeNonBlankText(payloadRecord.connection),
+        actor: input.actor ?? decodeNonBlankText(payloadRecord.actor),
         groupId: input.groupId ?? decodeNonBlankText(payloadRecord.groupId),
         roomId: input.roomId ?? decodeNonBlankText(payloadRecord.roomId),
         laneId: input.laneId ?? decodeNonBlankText(payloadRecord.laneId),
         peerId: input.peerId ?? decodeNonBlankText(payloadRecord.peerId),
         remotePeerId: input.remotePeerId ?? decodeNonBlankText(payloadRecord.remotePeerId),
         senderId: input.senderId ?? decodeNonBlankText(payloadRecord.senderId),
-        typeId: input.typeId ?? decodeNonBlankText(payloadRecord.typeId),
-        topicId: input.topicId ?? decodeNonBlankText(payloadRecord.topicId),
+        typeId: decodeNonBlankText(input.typeId ?? payloadRecord.typeId ?? detailRecord.typeId),
+        topicId: decodeNonBlankText(input.topicId ?? payloadRecord.topicId ?? detailRecord.topicId),
         contextId: input.contextId ?? decodeNonBlankText(payloadRecord.contextId),
         resourceId: input.resourceId ?? decodeNonBlankText(payloadRecord.resourceId)
     };

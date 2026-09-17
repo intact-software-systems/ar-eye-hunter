@@ -9,6 +9,51 @@ import {
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
+    it('keeps a payload record subject fact only when it decodes, and resolves the type and topic ids once', () => {
+        const unreadable = toRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.browser.rtc.lane_state',
+            severity: 'warning',
+            source: 'unit-test',
+            payload: {
+                transport: 'carrier-pigeon',
+                commandId: 7,
+                connection: ' ',
+                actor: { name: 'alice' },
+                atEpochMs: 'late',
+                typeId: 42,
+                topicId: false,
+                lane: 'rtc-realtime'
+            }
+        });
+        const readable = toRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.browser.rtc.lane_state',
+            severity: 'warning',
+            source: 'unit-test',
+            payload: {
+                transport: 'messages.rtc',
+                commandId: 'rtc-connect-1',
+                connection: 'aliceRtc',
+                actor: 'alice',
+                atEpochMs: 1_000
+            },
+            detail: { typeId: 'room.state', topicId: 'room.topic' }
+        });
+
+        expect(unreadable).toMatchObject({ lane: 'rtc-realtime' });
+        for (const key of ['transport', 'commandId', 'connection', 'actor', 'atEpochMs', 'typeId', 'topicId']) {
+            expect(unreadable).not.toHaveProperty(key);
+        }
+        expect(readable).toMatchObject({
+            transport: 'messages.rtc',
+            commandId: 'rtc-connect-1',
+            connection: 'aliceRtc',
+            actor: 'alice',
+            atEpochMs: 1_000,
+            typeId: 'room.state',
+            topicId: 'room.topic'
+        });
+    });
+
     it('normalizes transport diagnostics so wait and assert can match them', async () => {
         const runtime = createRallarBlackBoxTestRuntime();
         runtime.recordEvent({
