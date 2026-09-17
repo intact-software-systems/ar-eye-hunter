@@ -78,8 +78,14 @@ describe('distributed run monitor indexed derivation', () => {
         const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun });
         const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, monitor });
 
-        expect([targets, recipes, links, commands, results, events].map(toDistinctReadCounts))
-            .toEqual(Array.from({ length: 6 }, () => new Set([1])));
+        expect([
+            toDistinctReadCounts(targets),
+            toDistinctReadCounts(recipes),
+            toDistinctReadCounts(links),
+            toDistinctReadCounts(commands),
+            toDistinctReadCounts(results),
+            toDistinctReadCounts(events)
+        ]).toEqual(Array.from({ length: 6 }, () => new Set([1])));
         expect(report.nextActions.length).toBeGreaterThan(0);
         expect(report).toEqual(deriveDistributedRunAnalysisReport(input));
     }, 30_000);
@@ -1634,7 +1640,7 @@ function duplicateOverlapInput(size: number): DerivationInput {
     };
 }
 
-function toDistinctReadCounts(witness: ElementReadWitness<unknown>): ReadonlySet<number> {
+function toDistinctReadCounts<Value>(witness: ElementReadWitness<Value>): ReadonlySet<number> {
     return new Set(witness.readsPerElement());
 }
 
