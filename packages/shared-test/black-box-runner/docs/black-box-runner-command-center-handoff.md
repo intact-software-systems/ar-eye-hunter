@@ -34,16 +34,12 @@ packages/shared-test/black-box-runner/artifacts/artifact-reader.ts
 ```
 
 That module exports browser-safe parsers for runner artifact file text plus
-recipe-catalog fixture validators. The SPA re-exports the main parser through
-`shared-test-handoff-fixtures.ts`.
+recipe-catalog fixture validators. The SPA imports
+`parseBlackBoxRunnerArtifactBundle` from it directly.
 
-The SPA re-exports the small fixture catalog from:
-
-```text
-apps/rallar-black-box/src/shared-test-handoff-fixtures.ts
-```
-
-That file is intentionally static and browser-safe. It lets the SPA display a
+The small fixture catalog the SPA renders is
+`BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG` from the handoff contract above.
+It is intentionally static and browser-safe: it lets the SPA display a
 representative recipe catalog without reading files or requiring live services.
 
 ## Recipe Catalog Shape

@@ -327,7 +327,7 @@ for missing-peer, stale-agent, duplicate-session, permission, closed-transport, 
 The SPA imports shared-test handoff types at build time and renders the browser-safe fixture catalog in the preserved
 legacy `Shared Test` tab, available from Recipe Console `Advanced` or
 `/?experience=legacy&workspace=black-box-runner&tab=shared-test`. Uploaded runner artifact bundles are parsed with
-`parseRallarBlackBoxSharedTestArtifactBundle(...)` and projected
+`parseBlackBoxRunnerArtifactBundle(...)` and projected
 into imported event stream, RTC diagnostics, failure-focus, summary, and replay-recipe views. The browser still does not
 execute shell commands; runner execution remains explicit local tooling or control-server work.
 

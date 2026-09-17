@@ -327,8 +327,13 @@ actual shell execution to explicit local tooling or the control server.
   for the operational shell.
 - `src/direct-rallar-operations.ts`: direct browser Rallar facade operations
   used by Rallar-mode UI actions.
-- `src/ui-persistence.ts`: reload-safe tab, selected-command, Manual Rallar,
-  Event Stream, and Rallar Server draft persistence with storage-time redaction.
+- `src/ui-cache/`: the browser-local UI cache owners. `rallar-black-box-ui-storage.ts`
+  holds the storage port and cache keys, `decode-cached-values.ts` the cached-value
+  decoders, `app-shell-preferences.ts` the reload-safe tab and selected command,
+  `event-filters.ts` the Event Stream filters, `manual-workbench-draft.ts` the Manual
+  Rallar draft, `rallar-server-drafts.ts` the Rallar Server request and collection
+  drafts, and `to-redacted-json-editor-text.ts` the storage-time redaction. A cached
+  entry that does not decode is discarded and the caller's defaults apply.
 - `src/rallar-server-workbench/`: the Rallar Server tab owners. Endpoint presets
   and drafts (`rallar-server-endpoint-presets.ts`,
   `to-rallar-server-endpoint-draft.ts`, `to-rallar-server-workbench-variables.ts`),
@@ -375,7 +380,8 @@ actual shell execution to explicit local tooling or the control server.
   WebSocket/RTC/Data/Media tabs.
 - `src/runtime-store.ts`: app state store, bootstrap modes, local command
   execution, and control client integration.
-- `src/control-client.ts`: browser WebSocket control client.
+- `packages/shared-test/rallar-bb-test/control-client.ts`: the browser WebSocket
+  control client the app imports directly.
 - `packages/shared-test/rallar-bb-test/control-protocol.ts`: protocol envelopes
   and command validation consumed by the app and control server.
 - `src/manual-workbench.ts`: Manual Rallar values, payload presets, payload
@@ -388,11 +394,13 @@ actual shell execution to explicit local tooling or the control server.
 - `src/rtc-diagnostics.ts`: event-derived RTC diagnostics.
 - `src/topology-graph.ts`: graphology topology derivation used by the Sigma
   view.
-- `src/shared-test-handoff-fixtures.ts`: browser-safe re-export of the
-  shared-test recipe catalog, artifact contract, coverage handoff, artifact
-  parser, distributed-run helpers, command capabilities, and schema validators
-  for command-center work.
-- `src/run-manager-presets.ts`: schema-validated Run Manager command presets.
+- `packages/shared-test/black-box-runner/artifacts/handoff-contract.ts` and
+  `artifacts/artifact-reader.ts`: the browser-safe recipe catalog, artifact
+  contract, coverage handoff and artifact parser the command-center panels import
+  under their owners' names; schema validators and command capabilities come from
+  `packages/shared-test/rallar-bb-test/schema.ts` and its `schema/` owners.
+- `src/run-manager-command-presets.ts`: schema-validated Run Manager command
+  presets.
 - `apps/rallar-black-box-control-server`: local control server used for
   orchestration, smoke tests, optional snapshot persistence, and redacted run
   artifact export.

@@ -105,7 +105,7 @@ Use Vitest for pure helper logic:
 - `packages/tests/rallar-black-box/full-stack-qa-matrix.test.ts`
 - `packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts`
 - `packages/tests/rallar-black-box/rallar-server-workbench.test.ts`
-- `packages/tests/rallar-black-box/ui-persistence.test.ts`
+- `packages/tests/rallar-black-box/ui-cache.test.ts`
 - `packages/tests/shared-test/rallar-bb-browser-adapter-auth.test.ts`
 - `packages/tests/shared-test/black-box-runner-handoff-contract.test.ts`
 - `packages/tests/shared-test/black-box-runner-artifact-reader.test.ts`
@@ -704,7 +704,7 @@ Keep artifacts redacted. Never write access tokens or passwords to snapshots,
 logs, screenshots, or copied cURL output.
 
 For shared-test runner artifacts, validate file text with
-`parseRallarBlackBoxSharedTestArtifactBundle(...)` before rendering it in
+`parseBlackBoxRunnerArtifactBundle(...)` before rendering it in
 command-center UI tests.
 
 ## Test Hygiene

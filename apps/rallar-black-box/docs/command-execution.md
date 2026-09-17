@@ -152,10 +152,10 @@ recipe-matrix entry or JSON scenario
 
 The SPA `Shared Test` tab consumes only the stable handoff layer:
 
-- `RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG`
-- `RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT`
-- `RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF`
-- `parseRallarBlackBoxSharedTestArtifactBundle(...)`
+- `BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG`
+- `BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT`
+- `BLACK_BOX_RUNNER_COVERAGE_HANDOFF`
+- `parseBlackBoxRunnerArtifactBundle(...)`
 
 The browser UI displays catalog entries, copies commands, and imports redacted artifacts through those contracts. It
 does not parse runner internals or silently execute shell commands.
