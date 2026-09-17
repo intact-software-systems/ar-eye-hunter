@@ -154,6 +154,7 @@ describe('distributed run artifact stream performance', () => {
                             failedFrames: 0,
                             droppedFrames: 1,
                             backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
                             duration: {},
                             observations: [
                                 { index: 0, durationMs: 10, ok: true, dropped: false },
@@ -202,6 +203,7 @@ describe('distributed run artifact stream performance', () => {
                             failedFrames: 0,
                             droppedFrames: 0,
                             backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 },
                             duration: { p50Ms: 40, p95Ms: 50, maxMs: 50 },
                             observations: [],
                             thresholdFailures: []
@@ -283,6 +285,127 @@ describe('distributed run artifact stream performance', () => {
         );
 
         expect(analysis.performance?.streamTiming).toBeUndefined();
+    });
+
+    it('leaves stream timing unknown when a terminal summary does not record every frame counter', () => {
+        const analysis = computeDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-stream-unrecorded-counters',
+                    controlRunId: 'run-stream-unrecorded-counters',
+                    state: 'passed',
+                    agentIds: ['controller-01']
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-stream-unrecorded-counters',
+                    agents: [{ agentId: 'controller-01' }]
+                }),
+                files: {
+                    'results.jsonl': JSON.stringify({
+                        resultKey: 'controller-01:stream-command',
+                        agentId: 'controller-01',
+                        commandId: 'stream-command',
+                        action: 'rtc.stream',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            plannedFrames: 3,
+                            completedFrames: 3,
+                            failedFrames: 0,
+                            droppedFrames: 0
+                        }
+                    }),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(analysis.performance?.streamTiming).toBeUndefined();
+    });
+
+    it('names only the frame counts a failed stream recorded', () => {
+        const analysis = computeFailedDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-stream-failed-unrecorded-counts',
+                    controlRunId: 'run-stream-failed-unrecorded-counts',
+                    state: 'failed',
+                    agentIds: ['controller-01'],
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 9_000
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-stream-failed-unrecorded-counts',
+                    agents: [{ agentId: 'controller-01', receivedEventCount: 1 }]
+                }),
+                files: {
+                    'results.jsonl': '',
+                    'events.jsonl': JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_failed',
+                        severity: 'error',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_failed',
+                            severity: 'error',
+                            data: {
+                                plannedFrames: 100,
+                                pacing: { maxStartDriftMs: 900 },
+                                thresholdFailures: [{ name: 'maxStartDriftMs', category: 'pacing', threshold: 50, actual: 900 }]
+                            }
+                        }
+                    })
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(analysis.failure.category).toBe('rtc-stream-performance');
+        expect(analysis.failure.likelyCause).toContain('max drift 900ms');
+        expect(analysis.failure.likelyCause).not.toContain('completed');
+        expect(analysis.failure.likelyCause).not.toContain('dropped 0');
+    });
+
+    it('does not report zero completed frames for a stopped stream that recorded no completed count', () => {
+        const analysis = computeFailedDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-stream-timeout-unrecorded-count',
+                    controlRunId: 'run-stream-timeout-unrecorded-count',
+                    state: 'timed-out',
+                    agentIds: ['controller-01'],
+                    startedAtEpochMs: 1_000,
+                    completedAtEpochMs: 61_000
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-stream-timeout-unrecorded-count',
+                    agents: [{ agentId: 'controller-01', receivedEventCount: 1 }]
+                }),
+                files: {
+                    'results.jsonl': '',
+                    'events.jsonl': JSON.stringify({
+                        kind: 'diagnostic',
+                        topic: 'rallar.bb.rtc.stream_progress',
+                        severity: 'info',
+                        agentId: 'controller-01',
+                        commandId: 'rtc-realtime-position-stream',
+                        payload: {
+                            topic: 'rallar.bb.rtc.stream_progress',
+                            severity: 'info',
+                            data: { plannedFrames: 100, scheduledFrames: 40 }
+                        }
+                    })
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(analysis.failure).toMatchObject({
+            category: 'rtc-stream',
+            likelyCause: 'RTC stream rtc-realtime-position-stream reported no completed frame count before the run stopped.'
+        });
     });
 
     it('uses the latest stream event when result JSONL is bounded', () => {
@@ -454,6 +577,7 @@ describe('distributed run artifact stream performance', () => {
             failedFrames: 0,
             droppedFrames: 0,
             backpressureCount: 0,
+            pacing: { lateFrameCount: 0 },
             requestedRateHz: 20,
             achievedScheduleHz: 20,
             achievedCompletionHz: 20,
@@ -475,6 +599,7 @@ describe('distributed run artifact stream performance', () => {
             failedFrames: 0,
             droppedFrames: 0,
             backpressureCount: 1,
+            pacing: { lateFrameCount: 0 },
             requestedRateHz: 20,
             achievedScheduleHz: 18,
             achievedCompletionHz: 18,
@@ -596,6 +721,8 @@ describe('distributed run artifact stream performance', () => {
             completedFrames: 2,
             failedFrames: 0,
             droppedFrames: 0,
+            backpressureCount: 0,
+            pacing: { lateFrameCount: 0 },
             requestedRateHz: 10,
             achievedCompletionHz: 10,
             duration: { minMs: 10, p50Ms: 12, p95Ms: 14, p99Ms: 14, maxMs: 14, averageMs: 12 },
@@ -614,6 +741,8 @@ describe('distributed run artifact stream performance', () => {
             completedFrames: 3,
             failedFrames: 0,
             droppedFrames: 0,
+            backpressureCount: 0,
+            pacing: { lateFrameCount: 0 },
             requestedRateHz: 10,
             achievedCompletionHz: 10,
             duration: { minMs: 20, p50Ms: 24, p95Ms: 28, p99Ms: 28, maxMs: 28, averageMs: 24 },
@@ -755,6 +884,7 @@ describe('distributed run artifact stream performance', () => {
                                     failedFrames: 0,
                                     droppedFrames: 12,
                                     backpressureCount: 0,
+                                    pacing: { lateFrameCount: 0 },
                                     requestedRateHz: 20,
                                     achievedScheduleHz: 20,
                                     achievedCompletionHz: 17.6,
@@ -816,6 +946,8 @@ describe('distributed run artifact stream performance', () => {
             failedFrames: 0,
             droppedFrames: 2,
             inFlightLimitDropCount: 1,
+            backpressureCount: 0,
+            pacing: { lateFrameCount: 0 },
             requestedRateHz: 10,
             achievedCompletionHz: 9.6,
             duration: { minMs: 10, p50Ms: 12, p95Ms: 16, p99Ms: 16, maxMs: 16, averageMs: 12.5 },

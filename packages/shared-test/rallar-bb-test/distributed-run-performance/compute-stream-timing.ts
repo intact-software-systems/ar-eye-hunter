@@ -3,6 +3,7 @@ import type {
     DistributedRunStreamTiming,
     DistributedRunTimingSummary
 } from '../distributed-artifact-analysis.ts';
+import type { DistributedRunStreamSummary } from '../distributed-artifact-analysis/decode-distributed-run-stream-summary.ts';
 import {
     computeAverage,
     computeMaxNumber,
@@ -19,49 +20,69 @@ type StreamFrameCounter =
     | 'completedFrames'
     | 'failedFrames'
     | 'droppedFrames'
-    | 'backpressureCount';
+    | 'backpressureCount'
+    | 'lateFrameCount';
+
+interface TerminalStreamTimingSample extends StreamTimingSample {
+    readonly summary: DistributedRunStreamSummary & Readonly<Record<StreamFrameCounter, number>>;
+}
 
 const SLOWEST_STREAM_AGENT_LIMIT = 5;
+const STREAM_FRAME_COUNTERS: readonly StreamFrameCounter[] = [
+    'plannedFrames',
+    'scheduledFrames',
+    'attemptedFrames',
+    'completedFrames',
+    'failedFrames',
+    'droppedFrames',
+    'backpressureCount',
+    'lateFrameCount'
+];
 
-/** Absent unless every sample is a terminal summary with planned, completed, failed and dropped frame counts. */
+/** Absent unless every sample is a terminal summary recording every frame counter, as rtc.stream results do. */
 export function computeStreamTiming(samples: readonly StreamTimingSample[]): DistributedRunStreamTiming | undefined {
-    if (samples.length === 0 || !samples.every(hasCompleteStreamTimingEvidence)) {
+    const terminalSamples = samples.filter(isTerminalStreamTimingSample);
+    if (samples.length === 0 || terminalSamples.length !== samples.length) {
         return undefined;
     }
-    const attemptedFrames = computeStreamCounterSum(samples, 'attemptedFrames');
-    const completedFrames = computeStreamCounterSum(samples, 'completedFrames');
+    const attemptedFrames = computeStreamCounterSum(terminalSamples, 'attemptedFrames');
+    const completedFrames = computeStreamCounterSum(terminalSamples, 'completedFrames');
     return {
-        streamCount: samples.length,
-        plannedFrames: computeStreamCounterSum(samples, 'plannedFrames'),
-        scheduledFrames: computeStreamCounterSum(samples, 'scheduledFrames'),
+        streamCount: terminalSamples.length,
+        plannedFrames: computeStreamCounterSum(terminalSamples, 'plannedFrames'),
+        scheduledFrames: computeStreamCounterSum(terminalSamples, 'scheduledFrames'),
         attemptedFrames,
         completedFrames,
-        failedFrames: computeStreamCounterSum(samples, 'failedFrames'),
-        droppedFrames: computeStreamCounterSum(samples, 'droppedFrames'),
-        inFlightLimitDropCount: samples.reduce((sum, sample) => sum + computeStreamInFlightLimitDropCount(sample), 0),
-        backpressureCount: computeStreamCounterSum(samples, 'backpressureCount'),
+        failedFrames: computeStreamCounterSum(terminalSamples, 'failedFrames'),
+        droppedFrames: computeStreamCounterSum(terminalSamples, 'droppedFrames'),
+        inFlightLimitDropCount: terminalSamples.reduce(
+            (sum, sample) => sum + computeStreamInFlightLimitDropCount(sample),
+            0
+        ),
+        backpressureCount: computeStreamCounterSum(terminalSamples, 'backpressureCount'),
         sendSuccessRatio: attemptedFrames > 0 ? toRoundedMetric(completedFrames / attemptedFrames) : undefined,
-        requestedRateHz: computeDefinedAverage(samples.map((sample) => sample.summary.requestedRateHz)),
-        achievedScheduleHz: computeDefinedAverage(samples.map((sample) => sample.summary.achievedScheduleHz)),
-        achievedCompletionHz: computeDefinedAverage(samples.map((sample) => sample.summary.achievedCompletionHz)),
-        maxStartDriftMs: computeMaxNumber(samples.map((sample) => sample.summary.maxStartDriftMs)),
-        lateFrameCount: samples.reduce((sum, sample) => sum + (sample.summary.lateFrameCount ?? 0), 0),
-        duration: computeStreamDurationTiming(samples),
-        slowestAgents: computeSlowestStreamAgents(samples)
+        requestedRateHz: computeDefinedAverage(terminalSamples.map((sample) => sample.summary.requestedRateHz)),
+        achievedScheduleHz: computeDefinedAverage(terminalSamples.map((sample) => sample.summary.achievedScheduleHz)),
+        achievedCompletionHz: computeDefinedAverage(
+            terminalSamples.map((sample) => sample.summary.achievedCompletionHz)
+        ),
+        maxStartDriftMs: computeMaxNumber(terminalSamples.map((sample) => sample.summary.maxStartDriftMs)),
+        lateFrameCount: computeStreamCounterSum(terminalSamples, 'lateFrameCount'),
+        duration: computeStreamDurationTiming(terminalSamples),
+        slowestAgents: computeSlowestStreamAgents(terminalSamples)
     };
 }
 
-function hasCompleteStreamTimingEvidence(sample: StreamTimingSample): boolean {
-    const { summary } = sample;
+function isTerminalStreamTimingSample(sample: StreamTimingSample): sample is TerminalStreamTimingSample {
     return sample.completeness === 'terminal' &&
-        summary.plannedFrames !== undefined &&
-        summary.completedFrames !== undefined &&
-        summary.failedFrames !== undefined &&
-        summary.droppedFrames !== undefined;
+        STREAM_FRAME_COUNTERS.every((counter) => sample.summary[counter] !== undefined);
 }
 
-function computeStreamCounterSum(samples: readonly StreamTimingSample[], counter: StreamFrameCounter): number {
-    return samples.reduce((sum, sample) => sum + (sample.summary[counter] ?? 0), 0);
+function computeStreamCounterSum(
+    samples: readonly TerminalStreamTimingSample[],
+    counter: StreamFrameCounter
+): number {
+    return samples.reduce((sum, sample) => sum + sample.summary[counter], 0);
 }
 
 function computeDefinedAverage(values: readonly (number | undefined)[]): number | undefined {
@@ -93,7 +114,7 @@ function toSummaryDurations(sample: StreamTimingSample): readonly number[] {
 }
 
 function computeSlowestStreamAgents(
-    samples: readonly StreamTimingSample[]
+    samples: readonly TerminalStreamTimingSample[]
 ): readonly DistributedRunSlowestStreamAgent[] {
     return [...toSamplesByAgent(samples).entries()]
         .map(([agentId, agentSamples]) => {
@@ -122,8 +143,10 @@ function computeSlowestStreamAgents(
 }
 
 /** Samples that name no agent belong to no agent's row. */
-function toSamplesByAgent(samples: readonly StreamTimingSample[]): ReadonlyMap<string, readonly StreamTimingSample[]> {
-    const samplesByAgent = new Map<string, StreamTimingSample[]>();
+function toSamplesByAgent(
+    samples: readonly TerminalStreamTimingSample[]
+): ReadonlyMap<string, readonly TerminalStreamTimingSample[]> {
+    const samplesByAgent = new Map<string, TerminalStreamTimingSample[]>();
     for (const sample of samples) {
         if (!sample.agentId) {
             continue;

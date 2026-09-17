@@ -13,6 +13,7 @@ import {
 } from '../distributed-run-performance/to-stream-timing-samples.ts';
 import type { DistributedRunEventEvidence } from './decode-distributed-run-event-evidence.ts';
 import type { DistributedRunResultEvidence } from './decode-distributed-run-result-evidence.ts';
+import type { DistributedRunStreamSummary } from './decode-distributed-run-stream-summary.ts';
 import {
     resolveMinimalFixArea,
     resolveVerificationCommand,
@@ -40,12 +41,9 @@ export function computeStreamPerformanceFailure(
     }
     const { summary } = candidate.sample;
     const commandId = candidate.sample.commandId ?? summary.commandId;
-    const frames = summary.plannedFrames !== undefined
-        ? `${summary.completedFrames ?? 0}/${summary.plannedFrames} frames`
-        : `${summary.completedFrames ?? 0} frames`;
     const details = [
-        `completed ${frames}`,
-        `dropped ${summary.droppedFrames ?? 0}`,
+        toCompletedFramesDetail(summary),
+        summary.droppedFrames !== undefined ? `dropped ${summary.droppedFrames}` : undefined,
         `in-flight limit drops ${computeStreamInFlightLimitDropCount(candidate.sample)}`,
         summary.maxStartDriftMs !== undefined ? `max drift ${summary.maxStartDriftMs}ms` : undefined,
         summary.lateFrameCount !== undefined ? `late frames ${summary.lateFrameCount}` : undefined,
@@ -84,11 +82,9 @@ export function computeStreamTimeoutFailure(
     }
     const summary = streamEvent.streamSummary;
     const commandId = streamEvent.commandId ?? summary?.commandId;
-    const completedFrames = summary?.completedFrames ?? 0;
-    const frameSummary = summary?.plannedFrames !== undefined
-        ? `${completedFrames} of ${summary.plannedFrames} completed frames`
-        : `${completedFrames} completed frames`;
-    const likelyCause = `RTC stream ${commandId ?? 'unknown-stream'} reached ${frameSummary} before the run stopped.`;
+    const likelyCause = `RTC stream ${commandId ?? 'unknown-stream'} ${
+        toStoppedStreamProgress(summary)
+    } before the run stopped.`;
     const minimalFix = resolveMinimalFixArea({
         category: 'rtc-stream',
         transport: streamEvent.transport,
@@ -107,6 +103,25 @@ export function computeStreamTimeoutFailure(
         commandId,
         evidenceFile: 'events.jsonl'
     };
+}
+
+/** Absent when the summary records no completed frame count. */
+function toCompletedFramesDetail(summary: DistributedRunStreamSummary): string | undefined {
+    if (summary.completedFrames === undefined) {
+        return undefined;
+    }
+    return summary.plannedFrames === undefined
+        ? `completed ${summary.completedFrames} frames`
+        : `completed ${summary.completedFrames}/${summary.plannedFrames} frames`;
+}
+
+function toStoppedStreamProgress(summary: DistributedRunStreamSummary | undefined): string {
+    if (summary?.completedFrames === undefined) {
+        return 'reported no completed frame count';
+    }
+    return summary.plannedFrames === undefined
+        ? `reached ${summary.completedFrames} completed frames`
+        : `reached ${summary.completedFrames} of ${summary.plannedFrames} completed frames`;
 }
 
 function toResultFailureCandidates(

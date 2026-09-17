@@ -21,6 +21,7 @@ interface StreamSummaryRow {
     readonly droppedFrames: number;
     readonly inFlightLimitDropCount: number;
     readonly backpressureCount: number;
+    readonly pacing: Readonly<{ lateFrameCount: number; }>;
     readonly observations: readonly Readonly<{ durationMs: number; marker: string; }>[];
     readonly thresholdFailures: readonly never[];
 }
@@ -50,6 +51,7 @@ function completeStreamSummary(
         droppedFrames: 0,
         inFlightLimitDropCount: 0,
         backpressureCount: 0,
+        pacing: { lateFrameCount: 0 },
         observations: [{ durationMs: completedFrames, marker }],
         thresholdFailures: []
     };
