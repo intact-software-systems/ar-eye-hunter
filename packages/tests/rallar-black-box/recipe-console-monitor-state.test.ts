@@ -40,6 +40,7 @@ import {
     setMonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
 import { createControlSnapshotSelectionIndex } from '../../shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createElementReadWitness } from '../shared-test/element-read-witness-fixture.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',
@@ -158,27 +159,6 @@ function forbidGlobalTraversal<Value>(
             return Reflect.get(target, property, receiver);
         }
     });
-}
-
-interface ElementReadWitness<Value> {
-    readonly values: readonly Value[];
-    readonly readsPerElement: () => readonly number[];
-}
-
-function witnessElementReads<Value>(values: readonly Value[]): ElementReadWitness<Value> {
-    const reads = values.map(() => 0);
-    return {
-        values: new Proxy([...values], {
-            get(target, property, receiver) {
-                if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
-                    const position = Number(property);
-                    reads[position] = (reads[position] ?? 0) + 1;
-                }
-                return Reflect.get(target, property, receiver);
-            }
-        }),
-        readsPerElement: () => [...reads]
-    };
 }
 
 function reconcile(
@@ -696,7 +676,7 @@ describe('Recipe Console Monitor coherent state', () => {
             distributedRecipes,
             'deriveDistributedRunAnalysisReport'
         );
-        const commands = witnessElementReads(
+        const commands = createElementReadWitness(
             Array.from({ length: 120 }, (_, index) => ({
                 envelope: {
                     kind: 'command' as const,

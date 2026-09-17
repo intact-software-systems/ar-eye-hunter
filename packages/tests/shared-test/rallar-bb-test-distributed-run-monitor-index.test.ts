@@ -12,6 +12,7 @@ import type {
     DistributedRunFailureRow,
     DistributedRunRuntimeDiagnosticRow
 } from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
+import { createElementReadWitness, type ElementReadWitness } from './element-read-witness-fixture.ts';
 
 const SCALE = 5_000;
 // A derivation whose work is linear in run size roughly doubles when the run doubles; an agent-by-recipe
@@ -55,12 +56,12 @@ describe('distributed run monitor indexed derivation', () => {
 
     it('reads every raw target, recipe, link, command, result and event once across a 5,000-agent monitor and its report', () => {
         const input = adversarialScaleInput(SCALE);
-        const targets = witnessElementReads(input.distributedRun.targetAgentIds);
-        const recipes = witnessElementReads(input.distributedRun.manifest.recipes);
-        const links = witnessElementReads(input.distributedRun.commandLinks);
-        const commands = witnessElementReads(input.controlRun.commands);
-        const results = witnessElementReads(input.controlRun.results);
-        const events = witnessElementReads(input.controlRun.events);
+        const targets = createElementReadWitness(input.distributedRun.targetAgentIds);
+        const recipes = createElementReadWitness(input.distributedRun.manifest.recipes);
+        const links = createElementReadWitness(input.distributedRun.commandLinks);
+        const commands = createElementReadWitness(input.controlRun.commands);
+        const results = createElementReadWitness(input.controlRun.results);
+        const events = createElementReadWitness(input.controlRun.events);
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
             targetAgentIds: targets.values,
@@ -92,7 +93,7 @@ describe('distributed run monitor indexed derivation', () => {
         const recipeIds = input.distributedRun.manifest.recipes.map(
             (selection) => selection.recipeId!
         );
-        const roleAssignments = witnessElementReads(input.distributedRun.targetAgentIds.map(
+        const roleAssignments = createElementReadWitness(input.distributedRun.targetAgentIds.map(
             (agentId, index) => ({
                 agentId,
                 role: index % 3 === 2 ? 'role:other|界' : 'role:receiver\u202E|界',
@@ -438,30 +439,34 @@ describe('distributed run monitor indexed derivation', () => {
             recipeIds: ['recipe-b'],
             variables: {}
         }];
+        const targets = createElementReadWitness(input.distributedRun.targetAgentIds);
+        const links = createElementReadWitness(input.distributedRun.commandLinks);
+        const recipes = createElementReadWitness(input.distributedRun.manifest.recipes);
+        const assignments = createElementReadWitness(roleAssignments);
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
-            targetAgentIds: singleReadArray(input.distributedRun.targetAgentIds, 'targets'),
-            commandLinks: singleReadArray(input.distributedRun.commandLinks, 'links'),
+            targetAgentIds: targets.values,
+            commandLinks: links.values,
             manifest: {
                 ...input.distributedRun.manifest,
-                recipes: singleReadArray(input.distributedRun.manifest.recipes, 'recipes'),
-                roleAssignments: singleReadArray(roleAssignments, 'assignments')
+                recipes: recipes.values,
+                roleAssignments: assignments.values
             }
         };
 
-        let report: ReturnType<typeof deriveDistributedRunAnalysisReport> | undefined;
-        expect(() => {
-            const monitor = deriveDistributedRunMonitor({
-                distributedRun,
-                controlRun: input.controlRun
-            });
-            report = deriveDistributedRunAnalysisReport({
-                distributedRun,
-                controlRun: input.controlRun,
-                monitor
-            });
-        }).not.toThrow();
-        expect(report?.firstFailure).toMatchObject({ commandId: 'command-b', category: 'command' });
+        const monitor = deriveDistributedRunMonitor({
+            distributedRun,
+            controlRun: input.controlRun
+        });
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun,
+            controlRun: input.controlRun,
+            monitor
+        });
+
+        expect(Math.max(...[targets, links, recipes, assignments].flatMap((witness) => witness.readsPerElement())))
+            .toBeLessThanOrEqual(1);
+        expect(report.firstFailure).toMatchObject({ commandId: 'command-b', category: 'command' });
     });
 
     it('keeps delimiter-colliding agent and recipe identities isolated', () => {
@@ -691,7 +696,7 @@ describe('distributed run monitor indexed derivation', () => {
                 endedAtEpochMs: 10
             })]
         });
-        const links = witnessElementReads(input.distributedRun.commandLinks);
+        const links = createElementReadWitness(input.distributedRun.commandLinks);
         const observedInput = {
             ...input,
             distributedRun: { ...input.distributedRun, commandLinks: links.values }
@@ -796,22 +801,15 @@ describe('distributed run monitor indexed derivation', () => {
             links: []
         });
         const suppliedMonitor = deriveDistributedRunMonitor(suppliedMonitorInput);
-        const reportRun: ControlDistributedRunSnapshot = {
-            ...scaleInput.distributedRun,
-            commandLinks: noReadArray(
-                scaleInput.distributedRun.commandLinks,
-                'no-failure fallback links'
-            )
-        };
-        let report: ReturnType<typeof deriveDistributedRunAnalysisReport> | undefined;
+        const links = createElementReadWitness(scaleInput.distributedRun.commandLinks);
 
-        expect(() => {
-            report = deriveDistributedRunAnalysisReport({
-                distributedRun: reportRun,
-                monitor: suppliedMonitor
-            });
-        }).not.toThrow();
-        expect(report?.distributedRunId).toBe(scaleInput.distributedRun.distributedRunId);
+        const report = deriveDistributedRunAnalysisReport({
+            distributedRun: { ...scaleInput.distributedRun, commandLinks: links.values },
+            monitor: suppliedMonitor
+        });
+
+        expect(toDistinctReadCounts(links)).toEqual(new Set([0]));
+        expect(report.distributedRunId).toBe(scaleInput.distributedRun.distributedRunId);
     });
 
     it('lazily indexes 5,000 fallback links once for one cross-run command failure', () => {
@@ -839,7 +837,7 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRun: scaleInput.distributedRun,
             monitor: { ...suppliedMonitor }
         });
-        const links = witnessElementReads(scaleInput.distributedRun.commandLinks);
+        const links = createElementReadWitness(scaleInput.distributedRun.commandLinks);
         const reportRun: ControlDistributedRunSnapshot = {
             ...scaleInput.distributedRun,
             commandLinks: links.values
@@ -1486,38 +1484,6 @@ function focusedTargetResolution(
     };
 }
 
-function singleReadArray<Value>(
-    values: readonly Value[],
-    label: string
-): readonly Value[] {
-    const reads = new Set<string>();
-    return new Proxy([...values], {
-        get(target, property, receiver) {
-            if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
-                if (reads.has(property)) {
-                    throw new Error(`${label}[${property}] was read more than once.`);
-                }
-                reads.add(property);
-            }
-            return Reflect.get(target, property, receiver);
-        }
-    });
-}
-
-function noReadArray<Value>(
-    values: readonly Value[],
-    label: string
-): readonly Value[] {
-    return new Proxy([...values], {
-        get(target, property, receiver) {
-            if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
-                throw new Error(`${label}[${property}] was read.`);
-            }
-            return Reflect.get(target, property, receiver);
-        }
-    });
-}
-
 interface FocusedResultInput {
     readonly commandId: string;
     readonly agentId: string;
@@ -1599,14 +1565,6 @@ type DerivationInput = Readonly<{
     controlRun: ControlRunSnapshot;
 }>;
 
-interface ElementReads {
-    readonly readsPerElement: () => readonly number[];
-}
-
-interface ElementReadWitness<Value> extends ElementReads {
-    readonly values: readonly Value[];
-}
-
 interface OperationCounter {
     operations: number;
 }
@@ -1676,23 +1634,7 @@ function duplicateOverlapInput(size: number): DerivationInput {
     };
 }
 
-function witnessElementReads<Value>(values: readonly Value[]): ElementReadWitness<Value> {
-    const reads = values.map(() => 0);
-    return {
-        values: new Proxy([...values], {
-            get(target, property, receiver) {
-                if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
-                    const position = Number(property);
-                    reads[position] = (reads[position] ?? 0) + 1;
-                }
-                return Reflect.get(target, property, receiver);
-            }
-        }),
-        readsPerElement: () => [...reads]
-    };
-}
-
-function toDistinctReadCounts(witness: ElementReads): ReadonlySet<number> {
+function toDistinctReadCounts(witness: ElementReadWitness<unknown>): ReadonlySet<number> {
     return new Set(witness.readsPerElement());
 }
 
@@ -1774,7 +1716,7 @@ function correlateLatestFailureWindow(failureCount: number): FailureWindowCorrel
         atEpochMs: position * 1_000
     }));
     const index = createDistributedRunMonitorFailureIndex(failures);
-    const bucket = witnessElementReads(index.timedPositionsByAgentId.get('history-agent') ?? []);
+    const bucket = createElementReadWitness(index.timedPositionsByAgentId.get('history-agent') ?? []);
     const failureKeys = computeDistributedRunCorrelatedFailureKeys(windowDiagnostic((failureCount - 16) * 1_000), {
         ...index,
         timedPositionsByAgentId: new Map([['history-agent', bucket.values]])
