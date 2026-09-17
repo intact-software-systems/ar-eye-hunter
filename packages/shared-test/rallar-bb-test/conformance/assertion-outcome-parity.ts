@@ -97,8 +97,8 @@ export async function runAbsenceOutcomeParityRows(
             fixtureId: fixture.fixtureId,
             family: 'absence',
             expectedVerdict: fixture.expectedVerdict,
-            runnerVerdict: await readAbsenceRunnerVerdict(fixture, dependencies),
-            runtimeVerdict: await readAbsenceRuntimeVerdict(fixture)
+            runnerVerdict: await runAbsenceRunnerVerdict(fixture, dependencies),
+            runtimeVerdict: await runAbsenceRuntimeVerdict(fixture)
         }));
     }
     return rows;
@@ -109,7 +109,7 @@ export async function runPollingOutcomeParityRows(
 ): Promise<readonly AssertionOutcomeParityRow[]> {
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of POLLING_FIXTURES) {
-        const runnerVerdict = await readPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), input.now);
+        const runnerVerdict = await runPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), input.now);
         const runtimeResult = await createDeterministicRuntime().execute(toRuntimePollingCommand(fixture));
         rows.push(toRow({
             fixtureId: fixture.fixtureId,
@@ -177,7 +177,7 @@ function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
     });
 }
 
-async function readAbsenceRunnerVerdict(
+async function runAbsenceRunnerVerdict(
     fixture: AbsenceParityFixture,
     dependencies: BlackBoxExecutionDependencies
 ): Promise<AssertionOutcomeVerdict> {
@@ -200,7 +200,7 @@ async function readAbsenceRunnerVerdict(
     return decodeRunnerVerdict(result);
 }
 
-async function readAbsenceRuntimeVerdict(fixture: AbsenceParityFixture): Promise<AssertionOutcomeVerdict> {
+async function runAbsenceRuntimeVerdict(fixture: AbsenceParityFixture): Promise<AssertionOutcomeVerdict> {
     const runtime = createDeterministicRuntime();
     for (const topic of fixture.bufferedTopics) {
         runtime.recordEvent({ kind: 'message', topic, payload: { data: { topic } } });
@@ -215,7 +215,7 @@ async function readAbsenceRuntimeVerdict(fixture: AbsenceParityFixture): Promise
     return toVerdict(result.ok);
 }
 
-async function readPollingRunnerVerdict(
+async function runPollingRunnerVerdict(
     fixture: PollingParityFixture,
     fetch: typeof globalThis.fetch,
     now: () => number
