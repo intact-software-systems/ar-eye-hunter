@@ -3,7 +3,7 @@ import { constants as fsConstants } from 'node:fs';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createAnalyzeArtifactModel } from '../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
-import { searchDistributedArtifactEvidence } from '../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
+import { searchDistributedArtifactEvidence } from '../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/search-distributed-artifact-evidence.ts';
 import {
     createRecipeConsoleScaleFixture,
     validateRecipeConsoleScaleFixtureSize

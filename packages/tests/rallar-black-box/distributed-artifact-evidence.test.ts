@@ -11,8 +11,8 @@ import {
     computeDistributedArtifactEvidence,
     computeDistributedArtifactEvidenceIndex
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
-import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
 import { computeDistributedArtifactEvidenceCollections } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
+import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/search-distributed-artifact-evidence.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
     toDistributedArtifactIssueMarkdown

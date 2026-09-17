@@ -16,10 +16,10 @@ import {
     type DistributedArtifactEvidenceWindowResult
 } from './distributed-artifact-evidence-contracts.ts';
 import {
-    compileDistributedArtifactEvidenceQuery,
-    distributedArtifactEvidenceEntryMatches,
-    distributedArtifactEvidenceQueryFingerprintValue,
-    distributedArtifactEvidenceSearchHaystack,
+    isDistributedArtifactEvidenceQueryMatch,
+    toCompiledDistributedArtifactEvidenceQuery,
+    toDistributedArtifactEvidenceQueryFingerprint,
+    toDistributedArtifactEvidenceSearchHaystack,
     type CompiledDistributedArtifactEvidenceQuery
 } from './distributed-artifact-evidence-query.ts';
 import {
@@ -188,7 +188,7 @@ async function initCatalogAuthority(
     };
     const haystacks = catalog.entries.map((entry, index) =>
         [
-            distributedArtifactEvidenceSearchHaystack(entry),
+            toDistributedArtifactEvidenceSearchHaystack(entry),
             toNormalizedEvidenceText(input.searchValues[index])
         ].filter(Boolean).join(' ')
     );
@@ -204,8 +204,8 @@ async function computeWindowQuery(
     cursor: DecodedEvidenceCursor | undefined
 ): Promise<WindowQuery> {
     const windowSize = resolveWindowSize(request.windowSize ?? cursor?.position.windowSize);
-    const compiled = compileDistributedArtifactEvidenceQuery(request.query ?? {});
-    const fingerprint = distributedArtifactEvidenceQueryFingerprintValue(compiled);
+    const compiled = toCompiledDistributedArtifactEvidenceQuery(request.query ?? {});
+    const fingerprint = toDistributedArtifactEvidenceQueryFingerprint(compiled);
     return {
         compiled,
         matchFingerprint: await computeCanonicalDigest(JSON.stringify(fingerprint)),
@@ -320,7 +320,7 @@ class EvidenceCatalogAuthority {
         const indices = new Uint32Array(catalog.entries.length);
         let count = 0;
         catalog.entries.forEach((entry, index) => {
-            if (distributedArtifactEvidenceEntryMatches(entry, compiled, this.#haystacks[index])) {
+            if (isDistributedArtifactEvidenceQueryMatch(entry, compiled, this.#haystacks[index])) {
                 indices[count] = index;
                 count += 1;
             }

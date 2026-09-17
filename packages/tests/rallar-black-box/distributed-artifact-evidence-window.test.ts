@@ -9,12 +9,12 @@ import {
     type DistributedArtifactEvidenceCursor
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
 import { computeDistributedArtifactEvidenceIndex } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
-import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
 import {
     computeDistributedArtifactEvidenceCollections,
     searchDistributedArtifactEvidenceWindow
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
 import { computeDistributedArtifactEvidenceSource } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/compute-distributed-artifact-evidence-source.ts';
+import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/search-distributed-artifact-evidence.ts';
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import {
     createDefaultRecipeConsoleScaleFixture,

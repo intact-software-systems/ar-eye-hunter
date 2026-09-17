@@ -1,23 +1,25 @@
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
     MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
-    type DistributedArtifactEvidenceEntry,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactEvidenceSearchQuery,
     type DistributedArtifactEvidenceSearchResult
-} from './distributed-artifact-evidence-contracts.ts';
+} from '../distributed-artifact-evidence-contracts.ts';
 import {
-    compileDistributedArtifactEvidenceQuery,
-    distributedArtifactEvidenceEntryMatches
-} from './distributed-artifact-evidence-query.ts';
-import { resolveEvidenceLimit } from './distributed-artifact-evidence/distributed-artifact-evidence-bounds.ts';
+    isDistributedArtifactEvidenceQueryMatch,
+    toCompiledDistributedArtifactEvidenceQuery,
+    toDistributedArtifactEvidenceSearchHaystack
+} from '../distributed-artifact-evidence-query.ts';
+import { resolveEvidenceLimit } from './distributed-artifact-evidence-bounds.ts';
 
 export function searchDistributedArtifactEvidence(
     index: DistributedArtifactEvidenceIndex,
-    query: DistributedArtifactEvidenceSearchQuery = {}
+    query: DistributedArtifactEvidenceSearchQuery
 ): DistributedArtifactEvidenceSearchResult {
-    const compiled = compileDistributedArtifactEvidenceQuery(query);
-    const matches = index.entries.filter((entry) => distributedArtifactEvidenceEntryMatches(entry, compiled));
+    const compiled = toCompiledDistributedArtifactEvidenceQuery(query);
+    const matches = index.entries.filter((entry) =>
+        isDistributedArtifactEvidenceQueryMatch(entry, compiled, toDistributedArtifactEvidenceSearchHaystack(entry))
+    );
     const limit = resolveEvidenceLimit(
         query.limit,
         DEFAULT_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
