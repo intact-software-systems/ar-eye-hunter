@@ -34,6 +34,7 @@ export interface CreateDistributedRunManifestFields {
     /** Absent when staging should accept however many agents the target policy resolves. */
     readonly expectedParticipantCount?: number;
     readonly groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[];
+    readonly createdBy: string;
 }
 
 interface ToTargetPolicyInput {
@@ -78,7 +79,7 @@ export function createDistributedRunManifest(
         ...start,
         groupAssertions: input.groupAssertions,
         metadata: {
-            createdBy: 'rallar-black-box-spa',
+            createdBy: input.createdBy,
             rolePattern: input.rolePattern
         }
     };

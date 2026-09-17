@@ -95,7 +95,8 @@ export function deriveExecuteManifest(
         barrier: { enabled: false },
         startMode: 'manual',
         expectedParticipantCount: selectedAgentIds.length,
-        groupAssertions: []
+        groupAssertions: [],
+        createdBy: 'rallar-black-box-spa'
     });
     return projectExecuteManifest(manifest);
 }

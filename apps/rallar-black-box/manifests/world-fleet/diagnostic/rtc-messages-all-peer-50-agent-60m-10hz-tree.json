@@ -356,7 +356,7 @@
   "startMode": "manual",
   "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-world-fleet-manifest-catalog",
     "rolePattern": "all-agents",
     "topologyProfile": "tree",
     "transport": "messages.rtc",

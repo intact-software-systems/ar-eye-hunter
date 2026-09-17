@@ -356,7 +356,7 @@
   "startMode": "manual",
   "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": true,

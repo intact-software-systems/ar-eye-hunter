@@ -225,6 +225,11 @@ describe('Hetzner distributed manifest catalog', () => {
         }
     });
 
+    it('names the Hetzner manifest catalog as the creator of every manifest', () => {
+        expect(new Set(createHetznerDistributedManifestCatalog().map((entry) => entry.manifest.metadata.createdBy)))
+            .toEqual(new Set(['rallar-black-box-hetzner-manifest-catalog']));
+    });
+
     it('keeps mainline green manifests secret-free and marks the expected-failure diagnostic only', () => {
         const catalog = createHetznerDistributedManifestCatalog();
         const greenEntries = catalog.filter((entry) => entry.mainline);

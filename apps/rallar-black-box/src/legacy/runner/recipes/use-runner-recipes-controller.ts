@@ -550,7 +550,8 @@ export function useRunnerRecipesController({
                 barrier: { enabled: false },
                 startMode: 'manual',
                 expectedParticipantCount: agentIds.length,
-                groupAssertions: []
+                groupAssertions: [],
+                createdBy: 'rallar-black-box-spa'
             });
             const manifestError = validateDistributedRecipeManifest(manifest);
             if (manifestError) {

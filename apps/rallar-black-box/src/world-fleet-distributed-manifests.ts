@@ -238,7 +238,8 @@ function createWorldFleetManifestEntry(input: WorldFleetManifestInput): WorldFle
         barrier: { enabled: true, timeoutMs: DEFAULT_ACK_TIMEOUT_MS },
         startMode: 'manual',
         expectedParticipantCount: WORLD_FLEET_AGENT_COUNT,
-        groupAssertions: []
+        groupAssertions: [],
+        createdBy: 'rallar-black-box-world-fleet-manifest-catalog'
     });
 
     return {

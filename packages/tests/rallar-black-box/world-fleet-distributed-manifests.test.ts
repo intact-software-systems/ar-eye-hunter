@@ -56,6 +56,7 @@ describe('world fleet distributed manifest catalog', () => {
                 expectedParticipantCount: 50
             });
             expect(entry.manifest.metadata).toMatchObject({
+                createdBy: 'rallar-black-box-world-fleet-manifest-catalog',
                 worldFleet: true,
                 noSpawn: true
             });

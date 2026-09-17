@@ -502,7 +502,7 @@
   "startMode": "manual",
   "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-world-fleet-manifest-catalog",
     "rolePattern": "one-sender-many-receivers",
     "topologyProfile": "mesh",
     "transport": "messages.rtc",

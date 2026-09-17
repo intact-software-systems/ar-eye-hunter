@@ -200,7 +200,8 @@ export function useDistributedRecipeBuilder({
                 : effectiveSelectedAgentIds.length > 0
                 ? effectiveSelectedAgentIds.length
                 : undefined,
-            groupAssertions: []
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
         });
     }, [
         ackTimeoutMs,

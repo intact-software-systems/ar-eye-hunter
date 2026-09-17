@@ -854,7 +854,7 @@
   "startMode": "manual",
   "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
     "rolePattern": "one-sender-many-receivers",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": true,

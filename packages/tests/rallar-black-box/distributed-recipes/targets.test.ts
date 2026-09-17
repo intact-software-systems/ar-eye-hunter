@@ -312,7 +312,8 @@ describe('distributed recipes targets', () => {
                 barrier: { enabled: false },
                 startMode: 'manual',
                 expectedParticipantCount: targetAgentIds.length || undefined,
-                groupAssertions: []
+                groupAssertions: [],
+                createdBy: 'rallar-black-box-spa'
             });
         };
 
@@ -399,7 +400,8 @@ describe('distributed recipes targets', () => {
             barrier: { enabled: true, timeoutMs: 5_000 },
             startMode: 'manual',
             expectedParticipantCount: 2,
-            groupAssertions: []
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
         });
 
         expect(manifest.targetPolicy).toMatchObject({
@@ -436,7 +438,8 @@ describe('distributed recipes targets', () => {
             startMode: 'scheduled',
             startDeadlineEpochMs: 20_000,
             expectedParticipantCount: 1,
-            groupAssertions: []
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
         });
 
         expect(manifest).toMatchObject({
@@ -473,7 +476,8 @@ describe('distributed recipes targets', () => {
             barrier: { enabled: false },
             startMode: 'manual',
             expectedParticipantCount: 50,
-            groupAssertions: []
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
         });
 
         expect(manifest.targetPolicy).toEqual({

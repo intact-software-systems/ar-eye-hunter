@@ -103,7 +103,8 @@ export function createManifestEntry(input: ManifestCatalogInput): HetznerDistrib
             : { enabled: false },
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
-        groupAssertions: input.groupAssertions ?? []
+        groupAssertions: input.groupAssertions ?? [],
+        createdBy: 'rallar-black-box-hetzner-manifest-catalog'
     });
 
     return {
