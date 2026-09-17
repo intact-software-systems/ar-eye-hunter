@@ -5,10 +5,18 @@ import { deriveDistributedRunAnalysisReport } from '../../shared-test/rallar-bb-
 import { deriveRunVerdictView } from '../../shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
 import { deriveDistributedRunMonitor } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
-    getDistributedRunMonitorDerivationWork
-} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-derivation-work.ts';
+    computeDistributedRunCorrelatedFailures,
+    createDistributedRunMonitorFailureIndex
+} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-failure-index.ts';
+import type {
+    DistributedRunFailureRow,
+    DistributedRunRuntimeDiagnosticRow
+} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 const SCALE = 5_000;
+// A derivation whose work is linear in run size roughly doubles when the run doubles; an agent-by-recipe
+// or agent-by-link product quadruples.
+const LINEAR_GROWTH_LIMIT = 2.5;
 // Whole-object ratchets, originally captured from the pre-index implementation before Task 6A and
 // recaptured when strict version-1 diagnostic decoding removed the expectedLaneId, observedLaneId,
 // and accepted diagnostic row fields. The report embeds correlated diagnostic rows and the verdict
@@ -20,7 +28,7 @@ const SCALE_MEMBERSHIP_MONITOR_SHA256 = '22adefedec7e3b9131c975bd691e80799cb5bcc
 
 describe('distributed run monitor indexed derivation', () => {
     it('preserves the complete monitor, report, and verdict observables at 5,000 scale', () => {
-        const input = adversarialScaleInput();
+        const input = adversarialScaleInput(SCALE);
         const monitor = deriveDistributedRunMonitor(input);
         const report = deriveDistributedRunAnalysisReport({
             ...input,
@@ -41,59 +49,48 @@ describe('distributed run monitor indexed derivation', () => {
         expect(sha256(monitor)).toBe(SCALE_MONITOR_SHA256);
         expect(sha256(report)).toBe(SCALE_REPORT_SHA256);
         expect(sha256(verdict)).toBe(SCALE_VERDICT_SHA256);
-        expect(getDistributedRunMonitorDerivationWork(report)).toEqual({
-            monitorDerivationCount: 1,
-            reportDerivationCount: 1,
-            commandLinkIndexPassCount: 1,
-            commandLinkVisitCount: SCALE,
-            controlCommandIndexPassCount: 1,
-            controlCommandVisitCount: SCALE,
-            controlResultIndexPassCount: 1,
-            controlResultVisitCount: SCALE,
-            controlEventIndexPassCount: 1,
-            controlEventVisitCount: SCALE,
-            linkedEventAgentIndexVisitCount: monitor.events.length,
-            failureIndexVisitCount: monitor.failures.length,
-            targetAgentIndexPassCount: 1,
-            targetAgentVisitCount: SCALE,
-            recipeSelectionIndexPassCount: 1,
-            recipeSelectionVisitCount: 3,
-            roleAssignmentIndexPassCount: 1,
-            roleAssignmentVisitCount: 0,
-            targetPolicyRoleMembershipVisitCount: 0,
-            membershipDescriptorBuildCount: SCALE,
-            membershipInvertedIndexWriteCount: 0,
-            membershipIntersectionCandidateVisitCount: 0,
-            recipeTargetCountProjectionVisitCount: 3,
-            retainedMembershipDescriptorCount: SCALE,
-            retainedRecipeTargetCountCount: 3,
-            commandLinkCompletionProbeCount: SCALE,
-            agentLinkBucketLookupCount: SCALE,
-            agentEventBucketLookupCount: SCALE,
-            agentRoleLookupCount: SCALE * 2,
-            agentLinkProjectionVisitCount: SCALE,
-            agentEventProjectionVisitCount: monitor.events.length,
-            recipeLinkBucketLookupCount: 3,
-            recipeLinkProjectionVisitCount: 1_176,
-            recipeTargetCountLookupCount: 3,
-            linkedAgentExpectedMembershipProbeCount: 1_176,
-            readinessLinkBucketLookupCount: SCALE,
-            readinessStageLinkProjectionVisitCount: 1_250,
-            timelineCommandLinkProjectionVisitCount: SCALE,
-            diagnosticFailureCandidateVisitCount: 2,
-            reportCommandLinkLookupCount: 4,
-            reportFallbackCommandLinkIndexPassCount: 0,
-            reportFallbackCommandLinkVisitCount: 0,
-            reportFallbackCommandPhaseLookupCount: 0
-        });
+    }, 30_000);
+
+    it('reads every raw target, recipe, link, command, result and event once across a 5,000-agent monitor and its report', () => {
+        const input = adversarialScaleInput(SCALE);
+        const targets = witnessElementReads(input.distributedRun.targetAgentIds);
+        const recipes = witnessElementReads(input.distributedRun.manifest.recipes);
+        const links = witnessElementReads(input.distributedRun.commandLinks);
+        const commands = witnessElementReads(input.controlRun.commands);
+        const results = witnessElementReads(input.controlRun.results);
+        const events = witnessElementReads(input.controlRun.events);
+        const distributedRun: ControlDistributedRunSnapshot = {
+            ...input.distributedRun,
+            targetAgentIds: targets.values,
+            commandLinks: links.values,
+            manifest: { ...input.distributedRun.manifest, recipes: recipes.values }
+        };
+        const controlRun: ControlRunSnapshot = {
+            ...input.controlRun,
+            commands: commands.values,
+            results: results.values,
+            events: events.values
+        };
+
+        const monitor = deriveDistributedRunMonitor({ distributedRun, controlRun });
+        const report = deriveDistributedRunAnalysisReport({ distributedRun, controlRun, monitor });
+
+        expect([targets, recipes, links, commands, results, events].map(toDistinctReadCounts))
+            .toEqual(Array.from({ length: 6 }, () => new Set([1])));
+        expect(report.nextActions.length).toBeGreaterThan(0);
+        expect(report).toEqual(deriveDistributedRunAnalysisReport(input));
+    }, 30_000);
+
+    it('grows linearly with a failed run\'s agents, links, results and events', () => {
+        expect(computeDerivationGrowth(adversarialScaleInput, SCALE)).toBeLessThan(LINEAR_GROWTH_LIMIT);
     }, 30_000);
 
     it('indexes 5,000 role assignments and expected recipe memberships once', () => {
-        const input = adversarialScaleInput();
+        const input = adversarialScaleInput(SCALE);
         const recipeIds = input.distributedRun.manifest.recipes.map(
             (selection) => selection.recipeId!
         );
-        const roleAssignments = input.distributedRun.targetAgentIds.map(
+        const roleAssignments = witnessElementReads(input.distributedRun.targetAgentIds.map(
             (agentId, index) => ({
                 agentId,
                 role: index % 3 === 2 ? 'role:other|界' : 'role:receiver\u202E|界',
@@ -105,7 +102,7 @@ describe('distributed run monitor indexed derivation', () => {
                 required: true,
                 variables: {}
             })
-        );
+        ));
         const distributedRun: ControlDistributedRunSnapshot = {
             ...input.distributedRun,
             manifest: {
@@ -120,7 +117,7 @@ describe('distributed run monitor indexed derivation', () => {
                     ...input.distributedRun.manifest.recipes[2]!,
                     role: undefined
                 }],
-                roleAssignments
+                roleAssignments: roleAssignments.values
             }
         };
 
@@ -128,54 +125,9 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRun,
             controlRun: input.controlRun
         });
-        const work = getDistributedRunMonitorDerivationWork(monitor);
 
+        expect(toDistinctReadCounts(roleAssignments)).toEqual(new Set([1]));
         expect(sha256(monitor)).toBe(SCALE_MEMBERSHIP_MONITOR_SHA256);
-        expect(work).toEqual({
-            monitorDerivationCount: 1,
-            reportDerivationCount: 0,
-            commandLinkIndexPassCount: 1,
-            commandLinkVisitCount: SCALE,
-            controlCommandIndexPassCount: 1,
-            controlCommandVisitCount: SCALE,
-            controlResultIndexPassCount: 1,
-            controlResultVisitCount: SCALE,
-            controlEventIndexPassCount: 1,
-            controlEventVisitCount: SCALE,
-            linkedEventAgentIndexVisitCount: monitor.events.length,
-            failureIndexVisitCount: monitor.failures.length,
-            targetAgentIndexPassCount: 1,
-            targetAgentVisitCount: SCALE,
-            recipeSelectionIndexPassCount: 1,
-            recipeSelectionVisitCount: recipeIds.length,
-            roleAssignmentIndexPassCount: 1,
-            roleAssignmentVisitCount: SCALE,
-            targetPolicyRoleMembershipVisitCount: 0,
-            membershipDescriptorBuildCount: SCALE,
-            membershipInvertedIndexWriteCount: 5_001,
-            membershipIntersectionCandidateVisitCount: 0,
-            recipeTargetCountProjectionVisitCount: recipeIds.length,
-            retainedMembershipDescriptorCount: SCALE,
-            retainedRecipeTargetCountCount: recipeIds.length,
-            commandLinkCompletionProbeCount: SCALE,
-            agentLinkBucketLookupCount: SCALE,
-            agentEventBucketLookupCount: SCALE,
-            agentRoleLookupCount: SCALE * 2,
-            agentLinkProjectionVisitCount: SCALE,
-            agentEventProjectionVisitCount: monitor.events.length,
-            recipeLinkBucketLookupCount: recipeIds.length,
-            recipeLinkProjectionVisitCount: 1_176,
-            recipeTargetCountLookupCount: recipeIds.length,
-            linkedAgentExpectedMembershipProbeCount: 1_176,
-            readinessLinkBucketLookupCount: SCALE,
-            readinessStageLinkProjectionVisitCount: 1_250,
-            timelineCommandLinkProjectionVisitCount: SCALE,
-            diagnosticFailureCandidateVisitCount: 2,
-            reportCommandLinkLookupCount: 0,
-            reportFallbackCommandLinkIndexPassCount: 0,
-            reportFallbackCommandLinkVisitCount: 0,
-            reportFallbackCommandPhaseLookupCount: 0
-        });
         expect(monitor.agentProgress[0]?.role).toBe('role:receiver\u202E|界');
         expect(monitor.readiness[0]?.role).toBe('role:receiver\u202E|界');
         expect(monitor.recipeProgress.map((row) => row.targetCount)).toEqual([
@@ -187,20 +139,8 @@ describe('distributed run monitor indexed derivation', () => {
 
     it('compresses a 2,000 by 2,000 all-unroled membership matrix', () => {
         const dimension = 2_000;
-        const input = focusedInput({
-            agentIds: Array.from(
-                { length: dimension },
-                (_, index) => `matrix-agent-${index}`
-            ),
-            recipeIds: Array.from(
-                { length: dimension },
-                (_, index) => `matrix-recipe-${index}`
-            ),
-            links: []
-        });
 
-        const monitor = deriveDistributedRunMonitor(input);
-        const work = getDistributedRunMonitorDerivationWork(monitor);
+        const monitor = deriveDistributedRunMonitor(allUnroledMatrixInput(dimension));
 
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
@@ -211,50 +151,15 @@ describe('distributed run monitor indexed derivation', () => {
             targetCount: dimension,
             missingCount: dimension
         });
-        expect(work).toEqual(twoDimensionalMonitorWork(dimension));
-        expect(work).not.toHaveProperty('expectedRecipeMembershipWriteCount');
-        expect(work).not.toHaveProperty('expectedRecipeMembershipProjectionVisitCount');
-        expect(work).not.toHaveProperty('expectedRecipeAgentBucketLookupCount');
+        expect(computeDerivationGrowth(allUnroledMatrixInput, dimension)).toBeLessThan(LINEAR_GROWTH_LIMIT);
     }, 30_000);
 
     it('aggregates a 2,000 by 2,000 same-role membership matrix', () => {
         const dimension = 2_000;
         const role = 'matrix-role|\u202E界';
-        const agentIds = Array.from(
-            { length: dimension },
-            (_, index) => `role-matrix-agent-${index}`
-        );
-        const input = focusedInput({
-            agentIds,
-            recipeIds: Array.from(
-                { length: dimension },
-                (_, index) => `role-matrix-recipe-${index}`
-            ),
-            links: []
-        });
-        const distributedRun: ControlDistributedRunSnapshot = {
-            ...input.distributedRun,
-            manifest: {
-                ...input.distributedRun.manifest,
-                recipes: input.distributedRun.manifest.recipes.map((selection) => ({
-                    ...selection,
-                    role
-                })),
-                roleAssignments: agentIds.map((agentId) => ({
-                    agentId,
-                    role,
-                    recipeIds: [],
-                    required: true,
-                    variables: {}
-                }))
-            }
-        };
+        const matrixInput = (size: number) => sameRoleMatrixInput(size, role);
 
-        const monitor = deriveDistributedRunMonitor({
-            distributedRun,
-            controlRun: input.controlRun
-        });
-        const work = getDistributedRunMonitorDerivationWork(monitor);
+        const monitor = deriveDistributedRunMonitor(matrixInput(dimension));
 
         expect(monitor.recipeProgress).toHaveLength(dimension);
         expect(monitor.recipeProgress[0]).toMatchObject({
@@ -265,12 +170,7 @@ describe('distributed run monitor indexed derivation', () => {
             targetCount: dimension,
             missingCount: dimension
         });
-        expect(work).toEqual({
-            ...twoDimensionalMonitorWork(dimension),
-            roleAssignmentVisitCount: dimension,
-            membershipInvertedIndexWriteCount: dimension
-        });
-        expect(work).not.toHaveProperty('explicitRecipeMembershipVisitCount');
+        expect(computeDerivationGrowth(matrixInput, dimension)).toBeLessThan(LINEAR_GROWTH_LIMIT);
     }, 30_000);
 
     it('preserves resolved-empty precedence and duplicate target order', () => {
@@ -514,11 +414,17 @@ describe('distributed run monitor indexed derivation', () => {
             row.targetCount,
             row.missingCount
         ])).toEqual([[4, 4], [4, 4]]);
-        expect(getDistributedRunMonitorDerivationWork(monitor)).toMatchObject({
-            membershipIntersectionCandidateVisitCount: 2,
-            recipeTargetCountProjectionVisitCount: 2
-        });
     });
+
+    it('grows linearly when duplicate id-and-role selections and their overlapping agents grow together', () => {
+        const size = 2_000;
+
+        const monitor = deriveDistributedRunMonitor(duplicateOverlapInput(size));
+
+        expect(monitor.recipeProgress).toHaveLength(size);
+        expect(monitor.recipeProgress.at(-1)).toMatchObject({ targetCount: size, missingCount: size });
+        expect(computeDerivationGrowth(duplicateOverlapInput, size)).toBeLessThan(LINEAR_GROWTH_LIMIT);
+    }, 30_000);
 
     it('reads each raw target, recipe selection, role assignment, and command link at most once', () => {
         const input = focusedInput({
@@ -575,12 +481,7 @@ describe('distributed run monitor indexed derivation', () => {
                 monitor
             });
         }).not.toThrow();
-        expect(getDistributedRunMonitorDerivationWork(report!)).toMatchObject({
-            monitorDerivationCount: 1,
-            reportDerivationCount: 1,
-            commandLinkVisitCount: 2,
-            reportCommandLinkLookupCount: 1
-        });
+        expect(report?.firstFailure).toMatchObject({ commandId: 'command-b', category: 'command' });
     });
 
     it('keeps delimiter-colliding agent and recipe identities isolated', () => {
@@ -790,11 +691,9 @@ describe('distributed run monitor indexed derivation', () => {
 
         expect(report.nextActions.find((action) => action.category === 'command')?.nextAction)
             .toContain('recipe-load output');
-        expect(getDistributedRunMonitorDerivationWork(report))
-            .toMatchObject({ reportCommandLinkLookupCount: 1 });
     });
 
-    it('keeps tracked command-link lookups local to each report', () => {
+    it('reuses the monitor command-link index for every report derived from that monitor', () => {
         const input = focusedInput({
             agentIds: ['agent-a'],
             recipeIds: ['recipe-a'],
@@ -812,27 +711,20 @@ describe('distributed run monitor indexed derivation', () => {
                 endedAtEpochMs: 10
             })]
         });
-        const monitor = deriveDistributedRunMonitor(input);
+        const links = witnessElementReads(input.distributedRun.commandLinks);
+        const observedInput = {
+            ...input,
+            distributedRun: { ...input.distributedRun, commandLinks: links.values }
+        };
+        const monitor = deriveDistributedRunMonitor(observedInput);
 
-        const firstReport = deriveDistributedRunAnalysisReport({ ...input, monitor });
-        const secondReport = deriveDistributedRunAnalysisReport({ ...input, monitor });
+        const firstReport = deriveDistributedRunAnalysisReport({ ...observedInput, monitor });
+        const secondReport = deriveDistributedRunAnalysisReport({ ...observedInput, monitor });
 
-        expect([
-            getDistributedRunMonitorDerivationWork(firstReport)
-                ?.reportCommandLinkLookupCount,
-            getDistributedRunMonitorDerivationWork(secondReport)
-                ?.reportCommandLinkLookupCount,
-            getDistributedRunMonitorDerivationWork(monitor)
-                ?.reportCommandLinkLookupCount
-        ]).toEqual([1, 1, 0]);
-        expect([
-            getDistributedRunMonitorDerivationWork(firstReport)
-                ?.reportDerivationCount,
-            getDistributedRunMonitorDerivationWork(secondReport)
-                ?.reportDerivationCount,
-            getDistributedRunMonitorDerivationWork(monitor)
-                ?.reportDerivationCount
-        ]).toEqual([1, 1, 0]);
+        expect(links.readsPerElement()).toEqual([1]);
+        expect(secondReport).toEqual(firstReport);
+        expect(firstReport.nextActions.find((action) => action.category === 'command')?.nextAction)
+            .toContain('recipe-load output');
     });
 
     it('falls back to report command links when a monitor came from another run object', () => {
@@ -917,7 +809,7 @@ describe('distributed run monitor indexed derivation', () => {
     });
 
     it('does not index 5,000 fallback links when a cross-run monitor has no failures', () => {
-        const scaleInput = adversarialScaleInput();
+        const scaleInput = adversarialScaleInput(SCALE);
         const suppliedMonitorInput = focusedInput({
             agentIds: ['supplied-agent'],
             recipeIds: ['supplied-recipe'],
@@ -939,15 +831,11 @@ describe('distributed run monitor indexed derivation', () => {
                 monitor: suppliedMonitor
             });
         }).not.toThrow();
-        expect(getDistributedRunMonitorDerivationWork(report!)).toMatchObject({
-            reportFallbackCommandLinkIndexPassCount: 0,
-            reportFallbackCommandLinkVisitCount: 0,
-            reportFallbackCommandPhaseLookupCount: 0
-        });
+        expect(report?.distributedRunId).toBe(scaleInput.distributedRun.distributedRunId);
     });
 
     it('lazily indexes 5,000 fallback links once for one cross-run command failure', () => {
-        const scaleInput = adversarialScaleInput();
+        const scaleInput = adversarialScaleInput(SCALE);
         const failedCommandId = scaleInput.distributedRun.commandLinks.at(-1)!.commandId;
         const suppliedMonitorInput = focusedInput({
             agentIds: ['supplied-agent'],
@@ -971,12 +859,10 @@ describe('distributed run monitor indexed derivation', () => {
             distributedRun: scaleInput.distributedRun,
             monitor: { ...suppliedMonitor }
         });
+        const links = witnessElementReads(scaleInput.distributedRun.commandLinks);
         const reportRun: ControlDistributedRunSnapshot = {
             ...scaleInput.distributedRun,
-            commandLinks: singleReadArray(
-                scaleInput.distributedRun.commandLinks,
-                'one-failure fallback links'
-            )
+            commandLinks: links.values
         };
 
         const report = deriveDistributedRunAnalysisReport({
@@ -985,19 +871,7 @@ describe('distributed run monitor indexed derivation', () => {
         });
 
         expect(report).toEqual(headReport);
-        expect(getDistributedRunMonitorDerivationWork(headReport)).toMatchObject({
-            monitorDerivationCount: 0,
-            reportDerivationCount: 1,
-            reportFallbackCommandLinkIndexPassCount: 1,
-            reportFallbackCommandLinkVisitCount: SCALE,
-            reportFallbackCommandPhaseLookupCount: 1
-        });
-        expect(getDistributedRunMonitorDerivationWork(report)).toMatchObject({
-            reportCommandLinkLookupCount: 0,
-            reportFallbackCommandLinkIndexPassCount: 1,
-            reportFallbackCommandLinkVisitCount: SCALE,
-            reportFallbackCommandPhaseLookupCount: 1
-        });
+        expect(toDistinctReadCounts(links)).toEqual(new Set([1]));
     }, 30_000);
 
     it('preserves verdict output when a caller supplies a monitor but omits the report', () => {
@@ -1281,14 +1155,25 @@ describe('distributed run monitor indexed derivation', () => {
     });
 });
 
-function adversarialScaleInput(): Readonly<{
+describe('distributed run monitor failure index', () => {
+    it('correlates a diagnostic by reading its time window, not the agent\'s whole failure history', () => {
+        const shorter = correlateLatestFailureWindow(2_500);
+        const longer = correlateLatestFailureWindow(5_000);
+
+        expect([shorter.failureKeys.length, longer.failureKeys.length]).toEqual([31, 31]);
+        expect(longer.failureKeys.at(-1)).toBe('failure-4999');
+        expect(longer.bucketReads - shorter.bucketReads).toBeLessThanOrEqual(2);
+    });
+});
+
+function adversarialScaleInput(scale: number): Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
     controlRun: ControlRunSnapshot;
 }> {
     const distributedRunId = 'distributed:scale|界';
     const controlRunId = 'control:scale|界';
     const recipeIds = ['recipe:a|b', 'recipe:a:b', 'מתכון-界'] as const;
-    const agentIds = Array.from({ length: SCALE }, (_, index) => {
+    const agentIds = Array.from({ length: scale }, (_, index) => {
         if (index === 0) {
             return 'agent:a|b';
         }
@@ -1300,7 +1185,7 @@ function adversarialScaleInput(): Readonly<{
         }
         return `agent-${String(index).padStart(4, '0')}`;
     });
-    const commandIds = Array.from({ length: SCALE }, (_, index) => {
+    const commandIds = Array.from({ length: scale }, (_, index) => {
         if (index === 0) {
             return 'command:a|b';
         }
@@ -1367,7 +1252,7 @@ function adversarialScaleInput(): Readonly<{
         };
     });
     const events: ControlRunSnapshot['events'] = Array.from(
-        { length: SCALE },
+        { length: scale },
         (_, index) => {
             const isDiagnostic = index % 127 === 0;
             const excluded = index % 23 === 0;
@@ -1377,7 +1262,7 @@ function adversarialScaleInput(): Readonly<{
                 protocolVersion: 1,
                 runId: controlRunId,
                 agentId: agentIds[index]!,
-                atEpochMs: 20_000 + (SCALE - index),
+                atEpochMs: 20_000 + (scale - index),
                 ...(index % 29 === 0 ? {} : { eventId: `event-${index}` }),
                 ...(excluded || payloadLinked
                     ? { commandId: excluded ? `unlinked-${index}` : undefined }
@@ -1431,7 +1316,7 @@ function adversarialScaleInput(): Readonly<{
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: SCALE
+                expectedParticipantCount: scale
             },
             variables: {},
             roleAssignments: [],
@@ -1446,9 +1331,9 @@ function adversarialScaleInput(): Readonly<{
             state: 'failed',
             ok: false,
             summary: {
-                participants: SCALE,
-                readyParticipants: Math.ceil(SCALE / phases.length),
-                passedParticipants: SCALE - 6,
+                participants: scale,
+                readyParticipants: Math.ceil(scale / phases.length),
+                passedParticipants: scale - 6,
                 failedParticipants: 6,
                 recipes: recipeIds.length,
                 passedRecipes: recipeIds.length - 1,
@@ -1730,50 +1615,210 @@ function sha256(value: object): string {
     return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function twoDimensionalMonitorWork(dimension: number) {
+type DerivationInput = Readonly<{
+    distributedRun: ControlDistributedRunSnapshot;
+    controlRun: ControlRunSnapshot;
+}>;
+
+interface ElementReads {
+    readonly readsPerElement: () => readonly number[];
+}
+
+interface ElementReadWitness<Value> extends ElementReads {
+    readonly values: readonly Value[];
+}
+
+interface OperationCounter {
+    operations: number;
+}
+
+interface FailureWindowCorrelation {
+    readonly failureKeys: readonly string[];
+    readonly bucketReads: number;
+}
+
+function allUnroledMatrixInput(dimension: number): DerivationInput {
+    return focusedInput({
+        agentIds: Array.from({ length: dimension }, (_, index) => `matrix-agent-${index}`),
+        recipeIds: Array.from({ length: dimension }, (_, index) => `matrix-recipe-${index}`),
+        links: []
+    });
+}
+
+function sameRoleMatrixInput(dimension: number, role: string): DerivationInput {
+    const agentIds = Array.from({ length: dimension }, (_, index) => `role-matrix-agent-${index}`);
+    const input = focusedInput({
+        agentIds,
+        recipeIds: Array.from({ length: dimension }, (_, index) => `role-matrix-recipe-${index}`),
+        links: []
+    });
     return {
-        monitorDerivationCount: 1,
-        reportDerivationCount: 0,
-        commandLinkIndexPassCount: 1,
-        commandLinkVisitCount: 0,
-        controlCommandIndexPassCount: 1,
-        controlCommandVisitCount: 0,
-        controlResultIndexPassCount: 1,
-        controlResultVisitCount: 0,
-        controlEventIndexPassCount: 1,
-        controlEventVisitCount: 0,
-        linkedEventAgentIndexVisitCount: 0,
-        failureIndexVisitCount: 0,
-        targetAgentIndexPassCount: 1,
-        targetAgentVisitCount: dimension,
-        recipeSelectionIndexPassCount: 1,
-        recipeSelectionVisitCount: dimension,
-        roleAssignmentIndexPassCount: 1,
-        roleAssignmentVisitCount: 0,
-        targetPolicyRoleMembershipVisitCount: 0,
-        membershipDescriptorBuildCount: dimension,
-        membershipInvertedIndexWriteCount: 0,
-        membershipIntersectionCandidateVisitCount: 0,
-        recipeTargetCountProjectionVisitCount: dimension,
-        retainedMembershipDescriptorCount: dimension,
-        retainedRecipeTargetCountCount: dimension,
-        commandLinkCompletionProbeCount: 0,
-        agentLinkBucketLookupCount: dimension,
-        agentEventBucketLookupCount: dimension,
-        agentRoleLookupCount: dimension * 2,
-        agentLinkProjectionVisitCount: 0,
-        agentEventProjectionVisitCount: 0,
-        recipeLinkBucketLookupCount: dimension,
-        recipeLinkProjectionVisitCount: 0,
-        recipeTargetCountLookupCount: dimension,
-        linkedAgentExpectedMembershipProbeCount: 0,
-        readinessLinkBucketLookupCount: dimension,
-        readinessStageLinkProjectionVisitCount: 0,
-        timelineCommandLinkProjectionVisitCount: 0,
-        diagnosticFailureCandidateVisitCount: 0,
-        reportCommandLinkLookupCount: 0,
-        reportFallbackCommandLinkIndexPassCount: 0,
-        reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0
+        ...input,
+        distributedRun: {
+            ...input.distributedRun,
+            manifest: {
+                ...input.distributedRun.manifest,
+                recipes: input.distributedRun.manifest.recipes.map((selection) => ({ ...selection, role })),
+                roleAssignments: agentIds.map((agentId) => ({
+                    agentId,
+                    role,
+                    recipeIds: [],
+                    required: true,
+                    variables: {}
+                }))
+            }
+        }
+    };
+}
+
+/** Every selection repeats one recipe id and role, and every agent is assigned both. */
+function duplicateOverlapInput(size: number): DerivationInput {
+    const role = 'role:overlap|界';
+    const agentIds = Array.from({ length: size }, (_, index) => `overlap-agent-${index}`);
+    const input = focusedInput({ agentIds, recipeIds: [], links: [] });
+    return {
+        ...input,
+        distributedRun: {
+            ...input.distributedRun,
+            manifest: {
+                ...input.distributedRun.manifest,
+                recipes: Array.from({ length: size }, () => ({
+                    recipeId: 'shared-recipe',
+                    role,
+                    required: true,
+                    variables: {}
+                })),
+                roleAssignments: agentIds.map((agentId) => ({
+                    agentId,
+                    role,
+                    recipeIds: ['shared-recipe'],
+                    required: true,
+                    variables: {}
+                }))
+            }
+        }
+    };
+}
+
+function witnessElementReads<Value>(values: readonly Value[]): ElementReadWitness<Value> {
+    const reads = values.map(() => 0);
+    return {
+        values: new Proxy([...values], {
+            get(target, property, receiver) {
+                if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+                    const position = Number(property);
+                    reads[position] = (reads[position] ?? 0) + 1;
+                }
+                return Reflect.get(target, property, receiver);
+            }
+        }),
+        readsPerElement: () => [...reads]
+    };
+}
+
+function toDistinctReadCounts(witness: ElementReads): ReadonlySet<number> {
+    return new Set(witness.readsPerElement());
+}
+
+/** The operations a monitor and its report make at `size`, relative to half that size. */
+function computeDerivationGrowth(inputAtSize: (size: number) => DerivationInput, size: number): number {
+    return countDerivationOperations(inputAtSize(size)) / countDerivationOperations(inputAtSize(size / 2));
+}
+
+/** Property reads on the input graph plus Map and Set operations while a monitor and its report are derived. */
+function countDerivationOperations(input: DerivationInput): number {
+    const counter: OperationCounter = { operations: 0 };
+    const observedInput = toReadCountingInput(input, counter);
+    const restoreCollections = countKeyedCollectionOperations(counter);
+    try {
+        const monitor = deriveDistributedRunMonitor(observedInput);
+        deriveDistributedRunAnalysisReport({ ...observedInput, monitor });
+    }
+    finally {
+        restoreCollections();
+    }
+    return counter.operations;
+}
+
+/** Nested objects keep one proxy each, so identity-keyed reuse behaves as it does for the raw input. */
+function toReadCountingInput(input: DerivationInput, counter: OperationCounter): DerivationInput {
+    const proxies = new WeakMap<object, object>();
+    const handler: ProxyHandler<object> = {
+        get(target, property, receiver) {
+            counter.operations += 1;
+            const value = Reflect.get(target, property, receiver);
+            if (typeof value !== 'object' || value === null) {
+                return value;
+            }
+            const proxy = proxies.get(value) ?? new Proxy(value, handler);
+            proxies.set(value, proxy);
+            return proxy;
+        }
+    };
+    return new Proxy<DerivationInput>(input, handler);
+}
+
+/** Counts Map and Set reads and writes until the returned function restores the original methods. */
+function countKeyedCollectionOperations(counter: OperationCounter): () => void {
+    const { get: mapGet, set: mapSet, has: mapHas } = Map.prototype;
+    const { add: setAdd, has: setHas } = Set.prototype;
+    Map.prototype.get = function (key) {
+        counter.operations += 1;
+        return mapGet.call(this, key);
+    };
+    Map.prototype.set = function (key, value) {
+        counter.operations += 1;
+        return mapSet.call(this, key, value);
+    };
+    Map.prototype.has = function (key) {
+        counter.operations += 1;
+        return mapHas.call(this, key);
+    };
+    Set.prototype.add = function (value) {
+        counter.operations += 1;
+        return setAdd.call(this, value);
+    };
+    Set.prototype.has = function (value) {
+        counter.operations += 1;
+        return setHas.call(this, value);
+    };
+    return () => {
+        Object.assign(Map.prototype, { get: mapGet, set: mapSet, has: mapHas });
+        Object.assign(Set.prototype, { add: setAdd, has: setHas });
+    };
+}
+
+/** Correlates one diagnostic whose window holds the last 31 of `failureCount` one-second-apart failures on its agent. */
+function correlateLatestFailureWindow(failureCount: number): FailureWindowCorrelation {
+    const failures: DistributedRunFailureRow[] = Array.from({ length: failureCount }, (_, position) => ({
+        kind: 'command',
+        key: `failure-${position}`,
+        message: `Failure ${position}.`,
+        agentId: 'history-agent',
+        atEpochMs: position * 1_000
+    }));
+    const index = createDistributedRunMonitorFailureIndex(failures);
+    const bucket = witnessElementReads(index.timedPositionsByAgentId.get('history-agent') ?? []);
+    const correlated = computeDistributedRunCorrelatedFailures(windowDiagnostic((failureCount - 16) * 1_000), {
+        ...index,
+        timedPositionsByAgentId: new Map([['history-agent', bucket.values]])
+    });
+    return {
+        failureKeys: correlated.failureKeys,
+        bucketReads: bucket.readsPerElement().reduce((total, reads) => total + reads, 0)
+    };
+}
+
+function windowDiagnostic(atEpochMs: number): Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'> {
+    return {
+        eventId: 'window-diagnostic',
+        atEpochMs,
+        severity: 'warning',
+        agentId: 'history-agent',
+        topic: 'rtc',
+        diagnosticTypeId: 'rtc.window',
+        message: 'Window diagnostic.',
+        summary: 'Window diagnostic.',
+        payloadSummary: ''
     };
 }

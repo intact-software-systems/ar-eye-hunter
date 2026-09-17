@@ -2326,7 +2326,7 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "summary": "One coherent monitor snapshot derives the shared monitor and its analysis report exactly once, and the report reuses that monitor. Executable assertion: \"projects complete current truth and derives bounded monitor/report/verdict once\".",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-state.test.ts#projects complete current truth and derives bounded monitor/report/verdict once",
-      "coverageRelation": "The test reconciles a live snapshot and derives the workspace model; the spied shared derivations and the report's derivation work are the reuse contract that keeps large runs responsive.",
+      "coverageRelation": "The test reconciles a live snapshot and derives the workspace model; the spied shared derivations and one read of each queued command are the reuse contract that keeps large runs responsive.",
       "interactionRequirement": {
         "interactionKind": "count",
         "ownedPort": "Shared distributed run monitor and analysis report derivation",

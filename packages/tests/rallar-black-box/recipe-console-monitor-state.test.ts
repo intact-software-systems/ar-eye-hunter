@@ -40,9 +40,6 @@ import {
     setMonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
 import { createControlSnapshotSelectionIndex } from '../../shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import {
-    getDistributedRunMonitorDerivationWork
-} from '../../shared-test/rallar-bb-test/distributed-run-observation/distributed-run-monitor-derivation-work.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',
@@ -161,6 +158,27 @@ function forbidGlobalTraversal<Value>(
             return Reflect.get(target, property, receiver);
         }
     });
+}
+
+interface ElementReadWitness<Value> {
+    readonly values: readonly Value[];
+    readonly readsPerElement: () => readonly number[];
+}
+
+function witnessElementReads<Value>(values: readonly Value[]): ElementReadWitness<Value> {
+    const reads = values.map(() => 0);
+    return {
+        values: new Proxy([...values], {
+            get(target, property, receiver) {
+                if (typeof property === 'string' && /^(0|[1-9]\d*)$/.test(property)) {
+                    const position = Number(property);
+                    reads[position] = (reads[position] ?? 0) + 1;
+                }
+                return Reflect.get(target, property, receiver);
+            }
+        }),
+        readsPerElement: () => [...reads]
+    };
 }
 
 function reconcile(
@@ -680,19 +698,21 @@ describe('Recipe Console Monitor coherent state', () => {
             distributedRecipes,
             'deriveDistributedRunAnalysisReport'
         );
-        const commands = Array.from({ length: 120 }, (_, index) => ({
-            envelope: {
-                kind: 'command' as const,
-                protocolVersion: 1 as const,
-                runId: 'run-a',
-                agentId: 'agent-a',
-                commandId: `unlinked-${index}`,
-                command: { kind: 'health' as const }
-            },
-            queuedAtEpochMs: index,
-            dispatchCount: 0
-        }));
-        const run = { ...controlRun(), commands };
+        const commands = witnessElementReads(
+            Array.from({ length: 120 }, (_, index) => ({
+                envelope: {
+                    kind: 'command' as const,
+                    protocolVersion: 1 as const,
+                    runId: 'run-a',
+                    agentId: 'agent-a',
+                    commandId: `unlinked-${index}`,
+                    command: { kind: 'health' as const }
+                },
+                queuedAtEpochMs: index,
+                dispatchCount: 0
+            }))
+        );
+        const run = { ...controlRun(), commands: commands.values };
         const state = reconcile(
             createInitialMonitorWorkspaceState(),
             query(
@@ -723,14 +743,7 @@ describe('Recipe Console Monitor coherent state', () => {
         expect(monitorDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation.mock.calls[0]?.[0].monitor).toBe(model?.monitor);
-        expect(getDistributedRunMonitorDerivationWork(model!.report)).toMatchObject({
-            monitorDerivationCount: 1,
-            reportDerivationCount: 1,
-            commandLinkVisitCount: 0,
-            controlCommandVisitCount: 120,
-            controlResultVisitCount: 0,
-            controlEventVisitCount: 0
-        });
+        expect(new Set(commands.readsPerElement())).toEqual(new Set([1]));
     });
 
     it.each(['stale', 'offline'] as const)(
