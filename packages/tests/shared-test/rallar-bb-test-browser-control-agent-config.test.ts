@@ -5,7 +5,7 @@ import {
     resolveRallarBlackBoxBootstrapConfig,
     validateRallarBlackBoxProviderConfig
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import { parseRallarBlackBoxProviderMode, RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
+import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS, resolveRallarBlackBoxProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
     it('parses URL params into a browser-rallar control-agent bootstrap config', () => {
@@ -123,8 +123,8 @@ describe('browser control-agent bootstrap config', () => {
     });
 
     it('rejects browser-rallar config without usable API and credentials', () => {
-        expect(parseRallarBlackBoxProviderMode('browser-rallar')).toBe('browser-rallar');
-        expect(parseRallarBlackBoxProviderMode('anything')).toBe(
+        expect(resolveRallarBlackBoxProviderMode('browser-rallar')).toBe('browser-rallar');
+        expect(resolveRallarBlackBoxProviderMode('anything')).toBe(
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.providerMode
         );
 

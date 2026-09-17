@@ -20,65 +20,58 @@ const DEFAULT_KEY_SUBSTRINGS = [
     'encryption'
 ];
 
-function normalizeKey(value: string): string {
-    return value.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '');
-}
-
-function shouldRedactKey(
-    key: string,
-    options: RallarBlackBoxTestRedactionOptions = {}
-): boolean {
-    const normalized = normalizeKey(key);
-    const exactKeys = new Set((options.keys ?? []).map(normalizeKey));
-    if (exactKeys.has(normalized)) {
-        return true;
-    }
-
-    const substrings = options.keySubstrings ?? DEFAULT_KEY_SUBSTRINGS;
-    return substrings.some((substring) => normalized.includes(normalizeKey(substring)));
-}
-
-function shouldRedactString(
-    value: string,
-    options: RallarBlackBoxTestRedactionOptions = {}
-): boolean {
-    return (options.secretValues ?? [])
-        .filter((secret) => secret.length > 0)
-        .some((secret) => value.includes(secret));
+interface RedactionPolicy {
+    readonly exactKeys: ReadonlySet<string>;
+    readonly keySubstrings: readonly string[];
+    readonly secretValues: readonly string[];
+    readonly replacement: string;
 }
 
 export function redactRallarBlackBoxValue<T>(
     value: T,
     options: RallarBlackBoxTestRedactionOptions = {}
 ): T {
-    const replacement = options.replacement ?? RALLAR_BLACK_BOX_REDACTED_VALUE;
+    return toRedactedValue(value, undefined, toRedactionPolicy(options));
+}
 
-    function redact(current: unknown, key?: string): unknown {
-        if (key && shouldRedactKey(key, options)) {
-            return replacement;
-        }
+function toRedactionPolicy(options: RallarBlackBoxTestRedactionOptions): RedactionPolicy {
+    return {
+        exactKeys: new Set((options.keys ?? []).map(toNormalizedKey)),
+        keySubstrings: (options.keySubstrings ?? DEFAULT_KEY_SUBSTRINGS).map(toNormalizedKey),
+        secretValues: (options.secretValues ?? []).filter((secret) => secret.length > 0),
+        replacement: options.replacement ?? RALLAR_BLACK_BOX_REDACTED_VALUE
+    };
+}
 
-        if (typeof current === 'string') {
-            return shouldRedactString(current, options)
-                ? replacement
-                : current;
-        }
-
-        if (Array.isArray(current)) {
-            return current.map((item) => redact(item));
-        }
-
-        if (!current || typeof current !== 'object') {
-            return current;
-        }
-
-        return Object.fromEntries(
-            Object.entries(current).map(([childKey, childValue]) => [
-                childKey,
-                redact(childValue, childKey)
-            ])
-        );
+/** Redaction swaps a secret for the replacement text and rebuilds containers, so callers read the value they passed. */
+function toRedactedValue<T>(value: T, key: string | undefined, policy: RedactionPolicy): T {
+    if (key !== undefined && key.length > 0 && isRedactedKey(key, policy)) {
+        return policy.replacement as T;
     }
+    if (typeof value === 'string') {
+        return containsSecretValue(value, policy) ? policy.replacement as T : value;
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => toRedactedValue(item, undefined, policy)) as T;
+    }
+    if (value === null || typeof value !== 'object') {
+        return value;
+    }
+    return Object.fromEntries(
+        Object.entries(value).map(([childKey, child]) => [childKey, toRedactedValue(child, childKey, policy)])
+    ) as T;
+}
 
-    return redact(value) as T;
+function toNormalizedKey(key: string): string {
+    return key.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '');
+}
+
+function isRedactedKey(key: string, policy: RedactionPolicy): boolean {
+    const normalized = toNormalizedKey(key);
+    return policy.exactKeys.has(normalized) ||
+        policy.keySubstrings.some((substring) => normalized.includes(substring));
+}
+
+function containsSecretValue(value: string, policy: RedactionPolicy): boolean {
+    return policy.secretValues.some((secret) => value.includes(secret));
 }

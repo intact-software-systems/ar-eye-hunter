@@ -1,5 +1,3 @@
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS } from './rallar-black-box-test-contracts.ts';
-
 export type RallarCompanionCoverageLayer =
     | 'black-box-runner'
     | 'rallar-bb-test'
@@ -181,14 +179,10 @@ export const RALLAR_COMPANION_COVERAGE_SURFACES: readonly RallarCompanionCoverag
     }
 ] as const;
 
-export function rallarCompanionCoverageBySurface(
+export function resolveRallarCompanionCoverageSurface(
     surfaceId: string
 ): RallarCompanionCoverageSurface | undefined {
     return RALLAR_COMPANION_COVERAGE_SURFACES.find(
         (surface) => surface.surfaceId === surfaceId
     );
-}
-
-export function rallarBlackBoxCommandKinds(): readonly string[] {
-    return RALLAR_BLACK_BOX_TEST_COMMAND_KINDS;
 }

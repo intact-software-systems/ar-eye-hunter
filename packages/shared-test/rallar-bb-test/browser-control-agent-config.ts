@@ -1,7 +1,7 @@
 import { readSession, type AuthSessionStorageKind } from '@shared/api/auth.ts';
 import {
-    parseRallarBlackBoxProviderMode,
     RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    resolveRallarBlackBoxProviderMode,
     type RallarBlackBoxProviderMode
 } from './client-defaults.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
@@ -264,7 +264,7 @@ export function rallarBlackBoxProviderModeFromConfig(
 ): RallarBlackBoxProviderMode {
     const control = asRecord(config?.control);
     const defaults = asRecord(config?.defaults);
-    return parseRallarBlackBoxProviderMode(
+    return resolveRallarBlackBoxProviderMode(
         stringValue(control.providerMode) ??
             stringValue(control.provider) ??
             stringValue(defaults.providerMode) ??
@@ -322,7 +322,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
     const params = searchParams(search);
     const fragmentParams = hashParams(hash);
     const mode = controlModeFrom(params, env);
-    const providerMode = parseRallarBlackBoxProviderMode(
+    const providerMode = resolveRallarBlackBoxProviderMode(
         paramValue(params, env, 'provider', 'VITE_RALLAR_PROVIDER') ??
             paramValue(params, env, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE')
     );

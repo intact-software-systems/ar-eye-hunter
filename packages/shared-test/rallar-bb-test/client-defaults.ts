@@ -33,9 +33,7 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     demoToken: 'local-demo-token'
 } as const;
 
-export type RallarBlackBoxClientDefaults = typeof RALLAR_BLACK_BOX_CLIENT_DEFAULTS;
-
-export function parseRallarBlackBoxProviderMode(
+export function resolveRallarBlackBoxProviderMode(
     value: string | undefined
 ): RallarBlackBoxProviderMode {
     return value === 'browser-rallar'
