@@ -24,7 +24,7 @@ function expectRowsHold(rows: readonly AssertionOutcomeParityRow[]): void {
     }
 }
 
-function pollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
+function createPollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
     let attempt = 0;
     return (async () => {
         attempt += 1;
@@ -36,7 +36,7 @@ function pollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
     }) as typeof fetch;
 }
 
-function failingRunFiles(code: string, message: string): DistributedRunArtifactFiles {
+function toFailingRunFiles(code: string, message: string): DistributedRunArtifactFiles {
     return toDistributedRunArtifactFiles({
         distributedRun: createDistributedRunSnapshot({
             distributedRunId: `dist-${code.toLowerCase()}`,
@@ -78,12 +78,12 @@ describe('rallar-bb-test assertion outcome parity', () => {
     });
 
     it('agrees with the runner polling verdicts for convergence and exhaustion', async () => {
-        expectRowsHold(await runPollingOutcomeParityRows({ fetch: pollingFetch, now: Date.now }));
+        expectRowsHold(await runPollingOutcomeParityRows({ fetch: createPollingFetch, now: Date.now }));
     });
 
     it('names absence violations in analysis and fix proposals', () => {
         const analysis = computeFailedDistributedRunAnalysis(
-            failingRunFiles(
+            toFailingRunFiles(
                 'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED',
                 'Wait absence was violated: a runtime event matched before the window closed.'
             ),
@@ -99,7 +99,7 @@ describe('rallar-bb-test assertion outcome parity', () => {
 
     it('names until-loop exhaustion in analysis and fix proposals', () => {
         const analysis = computeFailedDistributedRunAnalysis(
-            failingRunFiles(
+            toFailingRunFiles(
                 'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED',
                 'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.'
             ),

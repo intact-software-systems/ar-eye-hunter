@@ -15,11 +15,11 @@ import {
 
 const MEBIBYTE = 1_024 * 1_024;
 
-function lineCount(value: string | undefined): number {
+function computeLineCount(value: string | undefined): number {
     return value?.split('\n').filter(Boolean).length ?? 0;
 }
 
-function occurrences(haystack: string, needle: string): number {
+function computeOccurrenceCount(haystack: string, needle: string): number {
     return haystack.split(needle).length - 1;
 }
 
@@ -32,8 +32,8 @@ describe('Recipe Console deterministic scale fixture', () => {
             results: RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT,
             sourceRows: 15_000
         });
-        expect(lineCount(fixture.files['events.jsonl'])).toBe(12_000);
-        expect(lineCount(fixture.files['results.jsonl'])).toBe(3_000);
+        expect(computeLineCount(fixture.files['events.jsonl'])).toBe(12_000);
+        expect(computeLineCount(fixture.files['results.jsonl'])).toBe(3_000);
         expect(fixture.bytes.total).toBe(
             Object.values(fixture.bytes.byFile).reduce((total, bytes) => total + bytes, 0)
         );
@@ -116,11 +116,11 @@ describe('Recipe Console deterministic scale fixture', () => {
         const results = fixture.files['results.jsonl'] ?? '';
 
         for (const needle of Object.values(fixture.needles.events)) {
-            expect(occurrences(events, needle), needle).toBe(1);
+            expect(computeOccurrenceCount(events, needle), needle).toBe(1);
             expect(results, needle).not.toContain(needle);
         }
         for (const needle of Object.values(fixture.needles.results)) {
-            expect(occurrences(results, needle), needle).toBe(1);
+            expect(computeOccurrenceCount(results, needle), needle).toBe(1);
             expect(events, needle).not.toContain(needle);
         }
     });
@@ -172,8 +172,8 @@ describe('Recipe Console deterministic scale fixture', () => {
         const total = createRecipeConsoleScaleFixture({ artifactRowCount: 500 });
 
         expect(explicit.counts).toEqual({ events: 9, results: 5, sourceRows: 14 });
-        expect(lineCount(explicit.files['events.jsonl'])).toBe(9);
-        expect(lineCount(explicit.files['results.jsonl'])).toBe(5);
+        expect(computeLineCount(explicit.files['events.jsonl'])).toBe(9);
+        expect(computeLineCount(explicit.files['results.jsonl'])).toBe(5);
         expect(total.counts).toEqual({ events: 400, results: 100, sourceRows: 500 });
         expect(() =>
             createRecipeConsoleScaleFixture({

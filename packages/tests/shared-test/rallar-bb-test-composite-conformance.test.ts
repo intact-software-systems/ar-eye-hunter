@@ -54,7 +54,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
                         commandId: command.commandId
                     }
                 });
-                return okOutcome(command, {
+                return toOkOutcome(command, {
                     connected: true,
                     durationMs: now - startedAtEpochMs
                 });
@@ -108,7 +108,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
                     transport: command.transport,
                     payload: toMessagePayload(command)
                 });
-                return okOutcome(command, {
+                return toOkOutcome(command, {
                     sent: command.send,
                     sendObservation: {
                         commandId: command.commandId,
@@ -123,7 +123,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
 
             if (command.kind === 'ws.open') {
                 now += 1;
-                return okOutcome(command, {
+                return toOkOutcome(command, {
                     connection: command.connection,
                     opened: true
                 });
@@ -141,7 +141,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
                         data: command.data
                     }
                 });
-                return okOutcome(command, {
+                return toOkOutcome(command, {
                     connection: command.connection,
                     sent: command.data,
                     sendObservation: {
@@ -167,7 +167,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
                         closed: true
                     }
                 });
-                return okOutcome(command, {
+                return toOkOutcome(command, {
                     connection: command.connection,
                     closed: true
                 });
@@ -178,7 +178,7 @@ function createDeterministicConformanceRuntime(): RallarBlackBoxTestRuntime {
     });
 }
 
-function okOutcome(
+function toOkOutcome(
     command: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>,
     value: RallarBlackBoxTestCommandOutcome['value']
 ): RallarBlackBoxTestCommandOutcome {

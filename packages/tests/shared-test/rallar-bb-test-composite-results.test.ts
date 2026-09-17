@@ -38,25 +38,26 @@ const fixturePath = path.join(
 
 function readFixture(): CompositeResultFixture {
     const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-    if (!isCompositeResultFixture(fixture)) {
-        throw new Error('composite-result-summary-v1.json does not hold the composite result fixture sections.');
-    }
+    assertCompositeResultFixture(fixture);
     return fixture;
 }
 
-function isCompositeResultFixture(value: unknown): value is CompositeResultFixture {
-    return isJsonRecordValue(value) &&
+function assertCompositeResultFixture(value: unknown): asserts value is CompositeResultFixture {
+    const hasSections = isJsonRecordValue(value) &&
         isJsonRecordValue(value.summary) &&
         Array.isArray(value.paths) &&
         Array.isArray(value.sourceRecipePaths) &&
         Array.isArray(value.tree) &&
         isJsonRecordValue(value.redactedFailure);
+    if (!hasSections) {
+        throw new Error('composite-result-summary-v1.json does not hold the composite result fixture sections.');
+    }
 }
 
-function treeShape(nodes: readonly RallarBlackBoxCompositeResultTreeNode[]): readonly CompositeResultTreeShape[] {
+function toTreeShape(nodes: readonly RallarBlackBoxCompositeResultTreeNode[]): readonly CompositeResultTreeShape[] {
     return nodes.map((node) => ({
         path: node.entry.path,
-        children: treeShape(node.children)
+        children: toTreeShape(node.children)
     }));
 }
 
@@ -189,7 +190,7 @@ describe('rallar-bb-test composite result helpers', () => {
         expect(entries.map((entry) => entry.path)).toEqual(fixture.paths);
         expect(entries.map((entry) => entry.sourceRecipePath)).toEqual(fixture.sourceRecipePaths);
         expect(summary).toEqual(fixture.summary);
-        expect(treeShape(tree)).toEqual(fixture.tree);
+        expect(toTreeShape(tree)).toEqual(fixture.tree);
         expect(firstFailure?.path).toBe('$.groups[0=left].commands[0].iterations[2].commands[0]');
         expect(firstFailure?.position).toEqual({
             kind: 'loop-child',
