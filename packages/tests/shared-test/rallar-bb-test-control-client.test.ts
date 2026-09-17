@@ -420,16 +420,30 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
-    it('names the client instance from rallar.clientInstanceId, or else the principal', async () => {
+    it('names the agent identity from the configured actor, session and scope, reading no key a configuration never writes', async () => {
         const socket = new FakeControlSocket();
         const runtime = createRallarBlackBoxTestRuntime();
         await runtime.execute({
             kind: 'configure',
-            commandId: 'configure-instance-agent',
+            commandId: 'configure-identity-agent',
             config: {
                 runId: 'run-1',
                 agentId: 'agent-1',
-                rallar: { principalId: 'alice', instanceId: 'unread-instance' }
+                actor: 'alice',
+                sessionId: 'alice-session',
+                roomId: 'room-a',
+                control: { providerMode: 'simulated' },
+                defaults: { providerMode: 'browser-rallar' },
+                rallar: {
+                    principalId: 'mallory',
+                    clientId: 'mallory',
+                    clientInstanceId: 'mallory-browser',
+                    sessionId: 'mallory-session',
+                    groupId: 'mallory-group',
+                    providerMode: 'browser-rallar',
+                    scope: { applicationId: 'scoped-app', workspaceId: 'scoped-workspace' }
+                },
+                browser: { label: 'Mallory browser', name: 'firefox', sessionLabel: 'mallory', version: '1', os: 'plan9' }
             }
         });
         const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
@@ -438,10 +452,27 @@ describe('shared rallar black-box control client', () => {
             connectToRunOne(client);
             socket.open();
 
-            expect(toSentEnvelopes(socket)[0]).toMatchObject({
+            const [register] = toSentEnvelopes(socket);
+            expect(register).toMatchObject({
                 kind: 'register',
-                identity: { principalId: 'alice', clientInstanceId: 'alice' }
+                identity: {
+                    principalId: 'alice',
+                    clientId: 'alice',
+                    clientInstanceId: 'alice',
+                    username: 'alice',
+                    sessionId: 'alice-session',
+                    groupId: 'room-a',
+                    providerMode: 'simulated',
+                    sessionLabel: 'alice:alice-session'
+                }
             });
+            const identity = register?.kind === 'register' ? register.identity : undefined;
+            expect(identity).not.toHaveProperty('applicationId');
+            expect(identity).not.toHaveProperty('workspaceId');
+            expect(identity).not.toHaveProperty('browserName');
+            expect(identity).not.toHaveProperty('browserVersion');
+            expect(identity).not.toHaveProperty('os');
+            expect(JSON.stringify(identity)).not.toContain('mallory');
         }
         finally {
             client.dispose();
@@ -459,18 +490,17 @@ describe('shared rallar black-box control client', () => {
                 agentId: 'agent-1',
                 apiBaseUrl: 'http://localhost:8080',
                 actor: 'alice',
+                control: { providerMode: 'browser-rallar' },
                 defaults: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
                     groupId: 'bb-group',
                     providerMode: 'browser-rallar'
                 },
-                browser: {
-                    name: 'chromium',
-                    version: '126',
-                    os: 'linux'
-                },
                 fleet: {
+                    browserName: 'chromium',
+                    browserVersion: '126',
+                    os: 'linux',
                     region: 'eu-north',
                     provider: 'hetzner',
                     datacenter: 'fsn1',

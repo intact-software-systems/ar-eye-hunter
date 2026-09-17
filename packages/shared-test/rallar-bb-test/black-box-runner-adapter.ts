@@ -3,6 +3,7 @@ import {
     type RtcClient,
     type RtcProvider
 } from '../black-box-runner/rtc-provider.ts';
+import { toRtcConnectionName } from '../black-box-runner/rtc/rtc-wait-expectations.ts';
 import {
     toConnectCommand,
     toRunnerCommandId,
@@ -89,7 +90,7 @@ class RallarBlackBoxRtcClientAdapter implements RtcClient {
         this.runtime = runtime;
         this.request = request;
         this.options = options;
-        this.connection = toConnectionName(request);
+        this.connection = toRtcConnectionName(request);
     }
 
     async connect(): Promise<void> {
@@ -185,12 +186,6 @@ function toInteractionRequest(
     return interaction?.request === undefined || interaction.request === null
         ? request
         : decodeRecord(interaction.request);
-}
-
-function toConnectionName(request: RallarBlackBoxTestRecord): string {
-    return String(
-        request.connection ?? request.connectionId ?? request.actor ?? request.peerId ?? request.clientId ?? 'default'
-    );
 }
 
 function toCommandFailure(result: RallarBlackBoxTestResult): Error {

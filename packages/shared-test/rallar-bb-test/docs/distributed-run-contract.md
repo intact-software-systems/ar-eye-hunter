@@ -235,6 +235,14 @@ is absent until the agent loads a test configuration:
 - `browserLabel` and `sessionLabel`
 - `updatedAtEpochMs`
 
+The agent reads each fact from the configuration keys producers write: the
+principal, client and client instance are the configured `actor`, which also
+names the user unless `rallar.username` does; `sessionId` is the configured
+`sessionId`; application and workspace come from `defaults`, or else `rallar`;
+the group is `defaults.groupId`, or else `roomId`; the provider mode is
+`control.providerMode`; `browserLabel` is the page's user agent; browser name,
+version, OS and the other fleet facts come from `fleet`.
+
 A register or heartbeat envelope whose identity is present but does not decode
 is rejected; nothing in it is read as absent.
 

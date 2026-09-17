@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import { toRtcConnectionName } from '../../shared-test/black-box-runner/rtc/rtc-wait-expectations.ts';
 import type {
     ControlEventEnvelope,
     ControlResultEnvelope
@@ -328,6 +329,26 @@ describe('rallar provider parity helpers', () => {
         expect(runtime.state().commandHistory.map((result) => result.commandId)).toEqual([
             'rallar-bb-aliceRtc-connect-1',
             'runner-connect'
+        ]);
+    });
+
+    it('names the facade adapter connection the way the runner names the RTC connection', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const requests = [
+            { actor: 'bob', peerId: 'bob-peer' },
+            { name: 'carol', clientId: 'carol-client' },
+            { connectionId: 'unread-connection', peerId: 'unread-peer', clientId: 'unread-client' }
+        ];
+
+        for (const request of requests) {
+            await createRallarBlackBoxRtcClient(runtime, request, { commandIdPrefix: 'rallar-bb' }).connect();
+        }
+
+        expect(requests.map(toRtcConnectionName)).toEqual(['bob', 'carol', 'default']);
+        expect(runtime.state().commandHistory.map((result) => result.commandId)).toEqual([
+            'rallar-bb-bob-connect-1',
+            'rallar-bb-carol-connect-1',
+            'rallar-bb-default-connect-1'
         ]);
     });
 

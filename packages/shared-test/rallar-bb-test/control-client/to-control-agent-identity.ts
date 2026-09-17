@@ -17,11 +17,13 @@ export interface ToControlAgentIdentityInput {
     readonly atEpochMs: number;
 }
 
+/** The configuration sections the identity reads, each an empty record when the configuration has none. */
 interface IdentityConfigRecords {
     readonly config: RallarBlackBoxTestConfig;
     readonly rallar: RallarBlackBoxTestRecord;
     readonly defaults: RallarBlackBoxTestRecord;
-    readonly browser: RallarBlackBoxTestRecord;
+    readonly control: RallarBlackBoxTestRecord;
+    readonly fleet: RallarBlackBoxTestRecord;
 }
 
 type RallarIdentityFacts = Pick<
@@ -61,6 +63,7 @@ export function decodeControlAgentFleetLocation(
         : decodeRallarBlackBoxGeoLocation(location).mapRight((decoded) => ({ location: decoded }));
 }
 
+/** Reads only the keys configuration producers write; the principal is the configured actor. */
 export function toControlAgentIdentity(input: ToControlAgentIdentityInput): RallarBlackBoxControlAgentIdentity {
     if (input.config === undefined) {
         return { sessionLabel: input.agentId, updatedAtEpochMs: input.atEpochMs };
@@ -70,58 +73,41 @@ export function toControlAgentIdentity(input: ToControlAgentIdentityInput): Rall
         config: input.config,
         rallar: decodeRecord(input.config.rallar),
         defaults: decodeRecord(input.config.defaults),
-        browser: decodeRecord(input.config.browser)
+        control: decodeRecord(input.config.control),
+        fleet: decodeRecord(input.config.fleet)
     };
     const rallarFacts = toRallarIdentityFacts(records);
     return {
         ...rallarFacts,
-        browserLabel: decodeTrimmedText(records.browser.label) ??
-            decodeTrimmedText(records.browser.name) ??
-            decodeTrimmedText(input.userAgent),
-        sessionLabel: decodeTrimmedText(records.browser.sessionLabel) ??
-            toPrincipalSessionLabel(rallarFacts) ??
-            input.agentId,
-        ...toFleetIdentityFacts(records),
+        browserLabel: decodeTrimmedText(input.userAgent),
+        sessionLabel: toPrincipalSessionLabel(rallarFacts) ?? input.agentId,
+        ...toFleetIdentityFacts(records.fleet),
         location: input.location,
         capabilities: toControlAgentCapabilities({
             config: input.config,
             providerMode: rallarFacts.providerMode,
-            apiBaseUrl: decodeTrimmedText(input.config.apiBaseUrl) ??
-                decodeTrimmedText(records.rallar.apiBaseUrl) ??
-                decodeTrimmedText(records.defaults.apiBaseUrl)
+            apiBaseUrl: decodeTrimmedText(input.config.apiBaseUrl) ?? decodeTrimmedText(records.rallar.apiBaseUrl)
         }),
         updatedAtEpochMs: input.atEpochMs
     };
 }
 
-function toRallarIdentityFacts({ config, rallar, defaults }: IdentityConfigRecords): RallarIdentityFacts {
-    const scope = decodeRecord(rallar.scope);
-    const principalId = decodeTrimmedText(rallar.principalId) ??
-        decodeTrimmedText(rallar.clientId) ??
-        decodeTrimmedText(config.actor);
+function toRallarIdentityFacts({ config, rallar, defaults, control }: IdentityConfigRecords): RallarIdentityFacts {
+    const principalId = decodeTrimmedText(config.actor);
     return {
         principalId,
-        clientId: decodeTrimmedText(rallar.clientId) ?? principalId,
-        username: decodeTrimmedText(rallar.username) ?? decodeTrimmedText(config.actor) ?? principalId,
-        sessionId: decodeTrimmedText(rallar.sessionId) ?? decodeTrimmedText(config.sessionId),
-        clientInstanceId: decodeTrimmedText(rallar.clientInstanceId) ?? principalId,
-        applicationId: decodeTrimmedText(defaults.applicationId) ??
-            decodeTrimmedText(rallar.applicationId) ??
-            decodeTrimmedText(scope.applicationId),
-        workspaceId: decodeTrimmedText(defaults.workspaceId) ??
-            decodeTrimmedText(rallar.workspaceId) ??
-            decodeTrimmedText(scope.workspaceId),
-        groupId: decodeTrimmedText(defaults.groupId) ??
-            decodeTrimmedText(rallar.groupId) ??
-            decodeTrimmedText(config.roomId),
-        providerMode: decodeTrimmedText(decodeRecord(config.control).providerMode) ??
-            decodeTrimmedText(defaults.providerMode) ??
-            decodeTrimmedText(rallar.providerMode)
+        clientId: principalId,
+        username: decodeTrimmedText(rallar.username) ?? principalId,
+        sessionId: decodeTrimmedText(config.sessionId),
+        clientInstanceId: principalId,
+        applicationId: decodeTrimmedText(defaults.applicationId) ?? decodeTrimmedText(rallar.applicationId),
+        workspaceId: decodeTrimmedText(defaults.workspaceId) ?? decodeTrimmedText(rallar.workspaceId),
+        groupId: decodeTrimmedText(defaults.groupId) ?? decodeTrimmedText(config.roomId),
+        providerMode: decodeTrimmedText(control.providerMode)
     };
 }
 
-function toFleetIdentityFacts({ config, browser }: IdentityConfigRecords): FleetIdentityFacts {
-    const fleet = decodeRecord(config.fleet);
+function toFleetIdentityFacts(fleet: RallarBlackBoxTestRecord): FleetIdentityFacts {
     return {
         region: decodeTrimmedText(fleet.region),
         provider: decodeTrimmedText(fleet.provider),
@@ -129,9 +115,9 @@ function toFleetIdentityFacts({ config, browser }: IdentityConfigRecords): Fleet
         hostId: decodeTrimmedText(fleet.hostId),
         agentPoolId: decodeTrimmedText(fleet.agentPoolId),
         deploymentId: decodeTrimmedText(fleet.deploymentId),
-        browserName: decodeTrimmedText(fleet.browserName) ?? decodeTrimmedText(browser.name),
-        browserVersion: decodeTrimmedText(fleet.browserVersion) ?? decodeTrimmedText(browser.version),
-        os: decodeTrimmedText(fleet.os) ?? decodeTrimmedText(browser.os),
+        browserName: decodeTrimmedText(fleet.browserName),
+        browserVersion: decodeTrimmedText(fleet.browserVersion),
+        os: decodeTrimmedText(fleet.os),
         tags: decodeTags(fleet.tags)
     };
 }
