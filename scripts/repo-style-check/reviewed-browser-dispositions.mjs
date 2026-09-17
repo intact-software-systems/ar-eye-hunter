@@ -80,87 +80,15 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 54
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteWsPayload'
-    }),
-    Object.freeze({
         path: 'packages/shared-test/black-box-runner/rallar-browser-rtc-provider.ts',
         rule: 'construction.forward-capture',
         symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 86
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'firstString'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toNumber'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readControlHttpError'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/rallar-rtc-provider.ts',
         rule: 'file.responsibility-count',
         symbol: undefined,
         maximumMagnitude: 12
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRecord'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'parseRemoteWsData'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemotePayloadRecord'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteRtcMessageData'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteRtcDiagnostic'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/rtc-provider.ts',

@@ -4,8 +4,8 @@ import {
     it
 } from 'vitest';
 
-import { executeRemoteHttpInteraction } from '../../shared-test/black-box-runner/execution/execute-remote-http-interaction.ts';
-import { executeRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import { runRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import { runRemoteHttpInteraction } from '../../shared-test/black-box-runner/execution/run-remote-http-interaction.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import {
     toCloseCommand,
@@ -152,11 +152,11 @@ describe('remote browser command preparation', () => {
             rtcDiagnostics: {},
             rtcCloseEvents: {}
         };
-        const execute = provider[operation];
-        if (!execute) {
+        const runOperation = provider[operation];
+        if (!runOperation) {
             throw new Error('Provider command boundary is unavailable');
         }
-        const result = await execute(interaction, config, context);
+        const result = await runOperation(interaction, config, context);
         expect(result.status).toBe('FAILURE');
         expect(requests).toEqual([]);
     });
@@ -180,8 +180,8 @@ describe('remote browser command preparation', () => {
             Reflect.set(context.wsConnections, 'room', { remote: true });
         }
         const result = operation === 'http'
-            ? await executeRemoteHttpInteraction(interaction, config, context)
-            : await executeRemoteWsInteraction(interaction, config, context);
+            ? await runRemoteHttpInteraction(interaction, config, context)
+            : await runRemoteWsInteraction(interaction, config, context);
         expect(result.status).toBe('FAILURE');
         expect(requests).toEqual([]);
     });

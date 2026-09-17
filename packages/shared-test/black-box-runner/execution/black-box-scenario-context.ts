@@ -76,7 +76,7 @@ function createRtcProviders(dependencies: BlackBoxExecutionDependencies): Record
             state: createRallarInMemoryRuntimeState()
         }),
         'rallar-browser': createRallarBrowserRtcProvider(),
-        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider()
+        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider({ fetch: dependencies.fetch })
     };
 }
 

@@ -27,13 +27,13 @@ import {
 } from './execution/black-box-value-resolution.ts';
 import { computeInteractionCorrelation } from './execution/compute-interaction-correlation.ts';
 import { executeAssertInteraction } from './execution/execute-assert-interaction.ts';
-import { executeRemoteHttpInteraction } from './execution/execute-remote-http-interaction.ts';
 import {
     executeWsInteraction,
     rememberWsCloseEvent
 } from './execution/execute-ws-interaction.ts';
 import { createParallelRendezvous } from './execution/parallel-rendezvous.ts';
 import { isRallarRemoteBrowserRequest } from './execution/remote-browser-execution.ts';
+import { runRemoteHttpInteraction } from './execution/run-remote-http-interaction.ts';
 import { withPollUntil } from './execution/with-poll-until.ts';
 import { computeParallelAggregateFailure } from './expectations/parallel-aggregate-expectation.ts';
 import { runHttpInteraction } from './http/run-http-interaction.ts';
@@ -711,7 +711,7 @@ function executeTransportInteraction(transport: string, input: TransportInteract
             return executeRtcInteraction(interaction, config, context);
         default:
             return isRallarRemoteBrowserRequest(interaction.request)
-                ? executeRemoteHttpInteraction(interaction, config, context)
+                ? runRemoteHttpInteraction(interaction, config, context)
                 : runHttpInteraction({
                     interaction,
                     config,

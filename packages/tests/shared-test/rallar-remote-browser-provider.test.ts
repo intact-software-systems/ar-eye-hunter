@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import { FakeRemoteBrowserControlServer, toJsonResponse } from './fake-remote-browser-control-server.ts';
 
@@ -360,6 +361,38 @@ describe('rallar remote browser RTC provider', () => {
             'close'
         ]);
         expect(report.rtcCloseEvents.aliceRtc[0].autoCloseRequested).toBe(true);
+    });
+
+    it('reads runner remote-browser options only under rallarRemoteBrowser', async () => {
+        const server = new FakeRemoteBrowserControlServer();
+        const unreadOptionRequests: string[] = [];
+
+        const report = await executeBlackBox(
+            [
+                {
+                    HTTP: {
+                        request: { provider: 'rallar-remote-browser', path: 'https://api.example.test/widgets', method: 'GET' },
+                        response: {}
+                    },
+                    unreadOptionHttp: {}
+                }
+            ],
+            0,
+            {
+                remoteBrowser: {
+                    runId: 'unread-run',
+                    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+                        unreadOptionRequests.push(String(input));
+                        return server.fetch(input, init);
+                    }
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
+            }
+        );
+
+        expect(unreadOptionRequests).toEqual([]);
+        expect(server.commands.map((command) => command.kind)).toEqual(['http.request']);
+        expect(report.resultsByName.unreadOptionHttp[0].actual.remote.runId).toBe('remote-browser-run');
     });
 
     it('routes remote HTTP interactions through the control server', async () => {

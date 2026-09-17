@@ -1,6 +1,6 @@
 import { createDefaultExecutionDependencies } from '@shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { executeLocalWsInteraction } from '@shared-test/black-box-runner/execution/execute-local-ws-interaction.ts';
-import { executeRemoteWsInteraction } from '@shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import { runRemoteWsInteraction } from '@shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
 import {
     waitForWsMessage,
     waitForWsMessageAbsence,
@@ -135,7 +135,7 @@ it('fails remote absence when polling loses access to the event stream during it
             }
         }
     };
-    const waiting = executeRemoteWsInteraction(
+    const waiting = runRemoteWsInteraction(
         {
             request: { action: 'wait', connection: 'socket' },
             response: interaction.response

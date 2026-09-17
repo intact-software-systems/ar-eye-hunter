@@ -7,7 +7,8 @@ import {
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
-import { createRallarRemoteBrowserRtcProvider, type RallarRemoteBrowserConfig } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+import type { RallarRemoteBrowserConfig } from '../../shared-test/black-box-runner/remote-browser/resolve-rallar-remote-browser-config.ts';
 import type { RtcProvider } from '../../shared-test/black-box-runner/rtc-provider.ts';
 import { FakeRemoteBrowserControlServer } from './fake-remote-browser-control-server.ts';
 
