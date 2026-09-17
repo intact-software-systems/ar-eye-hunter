@@ -652,7 +652,7 @@ function toSeedArtifactBundle(
             'events.jsonl': input.controlRun.events
                 .map((event) => JSON.stringify(event))
                 .join('\n'),
-            'failures.json': JSON.stringify(input.distributedRun.rollup.failures),
+            'failures.json': JSON.stringify({ failures: input.distributedRun.rollup.failures }),
             'metadata.json': JSON.stringify({
                 synthetic: true,
                 generatedAtEpochMs: input.generatedAtEpochMs

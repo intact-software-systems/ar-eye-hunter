@@ -10,6 +10,7 @@ import {
     distributedRunSeedIdFromValue
 } from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import { computeDistributedRunArtifactAnalysis } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>[0]) {
@@ -80,6 +81,30 @@ describe('synthetic distributed run seeds', () => {
         expect(first.distributedRun.distributedRunId).toBe('seed-failed-command');
         expect(first.controlRun.runId).toBe('seed-control-failed-command');
         expect(first.artifactBundle?.distributedRunId).toBe('seed-failed-command');
+    });
+
+    it('writes artifact bundles the distributed run analysis reads without parse warnings', () => {
+        const seeds = DISTRIBUTED_RUN_SEEDS
+            .map((entry) => createSyntheticDistributedRunSeed(entry.id))
+            .flatMap((seed) => seed.artifactBundle === undefined ? [] : [{ seed, bundle: seed.artifactBundle }]);
+
+        expect(seeds.map(({ seed }) => seed.distributedRun.distributedRunId)).toEqual([
+            'seed-passed-clean',
+            'seed-passed-warnings',
+            'seed-failed-command',
+            'seed-high-latency-rtc'
+        ]);
+        for (const { seed, bundle } of seeds) {
+            const analysis = computeDistributedRunArtifactAnalysis({
+                files: bundle.files,
+                generatedAtEpochMs: seed.generatedAtEpochMs
+            });
+            expect(analysis.left, seed.distributedRun.distributedRunId).toBeUndefined();
+            expect(analysis.right?.analysis.parseWarnings, seed.distributedRun.distributedRunId).toEqual([]);
+            expect(JSON.parse(bundle.files['failures.json'] ?? ''), seed.distributedRun.distributedRunId).toEqual({
+                failures: seed.distributedRun.rollup.failures
+            });
+        }
     });
 
     it('derives a clean passed verdict from the passed-clean seed', () => {
