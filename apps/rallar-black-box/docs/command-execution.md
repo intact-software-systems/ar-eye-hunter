@@ -39,7 +39,8 @@ UI panel
   -> React selectors and panels
 ```
 
-Current implementation detail: the default provider is the local/fake executor in `src/runtime-store.ts`. It creates
+Current implementation detail: the default provider is the simulated in-page runtime in
+`src/run-simulated-provider-command.ts`, which `src/runtime-store.ts` installs. It creates
 real runtime state and realistic diagnostic/message events for offline UI work. When `provider=browser-rallar` is
 selected with real Rallar config, runner-owned command tabs use the browser adapter and call the browser Rallar facade
 for RTC, WebSocket, HTTP, health, close, and reset behavior.

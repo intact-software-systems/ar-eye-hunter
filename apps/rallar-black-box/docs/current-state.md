@@ -221,7 +221,8 @@ ingestion remains a separate backend concern.
 
 ## Runtime Reality
 
-The SPA runtime store defaults to the local/fake command executor from `src/runtime-store.ts` for Recipe Console,
+The SPA runtime store defaults to the simulated in-page command runtime from
+`src/run-simulated-provider-command.ts` for Recipe Console,
 black-box-runner workflows, and offline UI work. That executor emits realistic command results, diagnostics, message events, stats, and
 topology inputs for runner surfaces. Direct `Rallar` mode tabs call `@shared-web/browser/rallar.ts` or Rallar Server
 REST APIs directly. The `src/browser-rallar-runtime.ts` bridge remains for runner-owned command execution, such as the

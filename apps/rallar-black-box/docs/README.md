@@ -378,8 +378,10 @@ actual shell execution to explicit local tooling or the control server.
 - `src/browser-rallar-runtime.ts`: lazy bridge used by black-box-runner command
   execution and runner-owned Manual Rallar recipes, not by direct Rallar-mode
   WebSocket/RTC/Data/Media tabs.
-- `src/runtime-store.ts`: app state store, bootstrap modes, local command
-  execution, and control client integration.
+- `src/runtime-store.ts`: app state store, bootstrap modes, and control client
+  integration.
+- `src/run-simulated-provider-command.ts`: the in-page command runtime the store
+  installs for the simulated provider; it refuses every other provider mode.
 - `packages/shared-test/rallar-bb-test/control-client.ts`: the browser WebSocket
   control client the app imports directly.
 - `packages/shared-test/rallar-bb-test/control-protocol.ts`: protocol envelopes
