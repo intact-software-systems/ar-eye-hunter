@@ -32,7 +32,7 @@ export function useManualRallarWorkbench(options: ManualRallarWorkbenchOptions) 
         lifetime,
         nowMs: Date.now,
         createRequestId: () => crypto.randomUUID(),
-        runManualCommands: (commands, label) => rallarBlackBoxRuntimeStore.executeManualCommands(commands, label)
+        runManualCommands: (commands, label) => rallarBlackBoxRuntimeStore.runManualCommands(commands, label)
     });
     return {
         ...draft,

@@ -8,7 +8,7 @@ describe('rallar-black-box runtime store', () => {
         const { rallarBlackBoxRuntimeStore } = await import('../../../apps/rallar-black-box/src/runtime-store.ts');
         expect(rallarBlackBoxRuntimeStore.getSnapshot().bootstrap.providerMode).toBe('simulated');
 
-        await rallarBlackBoxRuntimeStore.executeManualCommands([
+        await rallarBlackBoxRuntimeStore.runManualCommands([
             {
                 kind: 'configure',
                 commandId: 'configure-typo',

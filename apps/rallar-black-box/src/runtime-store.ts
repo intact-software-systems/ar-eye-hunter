@@ -121,8 +121,40 @@ function runtimeDelayFor(command: RallarBlackBoxTestCommand): number {
     }
 }
 
-function commandString(value: unknown, fallback: string): string {
-    return typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+const FAKE_RUNTIME_SESSION_ID = 'visible-session-alice';
+const FAKE_RUNTIME_DELIVERY_MODE = 'direct';
+
+/** The manual-workbench facts a command carries; the operator sets each one or leaves it out. */
+interface ManualCommandMetadata {
+    /** Absent unless the operator listed the clients the command expects to observe. */
+    readonly expectedClients?: readonly string[];
+    /** Absent unless the operator listed the agents a send addresses. */
+    readonly targets?: readonly string[];
+    /** Absent unless the operator chose a delivery mode instead of the send's own default. */
+    readonly deliveryMode?: string;
+}
+
+function decodeCommandText(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function decodeCommandTexts(value: unknown): readonly string[] | undefined {
+    return Array.isArray(value) ? value.map(String) : undefined;
+}
+
+function decodeManualCommandMetadata(value: unknown): ManualCommandMetadata | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+    const record = value as Readonly<Record<string, unknown>>;
+    const expectedClients = decodeCommandTexts(record.expectedClients);
+    const targets = decodeCommandTexts(record.targets);
+    const deliveryMode = decodeCommandText(record.deliveryMode);
+    return {
+        ...(expectedClients ? { expectedClients } : {}),
+        ...(targets ? { targets } : {}),
+        ...(deliveryMode === undefined ? {} : { deliveryMode })
+    };
 }
 
 function recordProviderRefusal(
@@ -190,14 +222,11 @@ async function providerCommandExecutor(
     switch (command.kind) {
         case 'rtc.connect': {
             const config = context.config();
-            const sessionId = commandString(
-                command.rallar?.sessionId ?? config?.sessionId,
-                'visible-session-alice'
-            );
-            const manualMetadata = command.metadata?.manual as Record<string, unknown> | undefined;
-            const manualExpectedClients = Array.isArray(manualMetadata?.expectedClients)
-                ? manualMetadata.expectedClients.map(String)
-                : [];
+            const sessionId = decodeCommandText(
+                command.rallar?.sessionId ?? config?.sessionId
+            ) ?? FAKE_RUNTIME_SESSION_ID;
+            const manualMetadata = decodeManualCommandMetadata(command.metadata?.manual);
+            const manualExpectedClients = manualMetadata?.expectedClients ?? [];
             const expectedClients = manualExpectedClients.length > 0
                 ? manualExpectedClients
                 : [sessionId];
@@ -289,11 +318,9 @@ async function providerCommandExecutor(
             };
         }
         case 'rtc.send': {
-            const manualMetadata = command.metadata?.manual as Record<string, unknown> | undefined;
-            const targets = Array.isArray(manualMetadata?.targets)
-                ? manualMetadata.targets.map(String)
-                : [];
-            const deliveryMode = commandString(manualMetadata?.deliveryMode, 'direct');
+            const manualMetadata = decodeManualCommandMetadata(command.metadata?.manual);
+            const targets = manualMetadata?.targets ?? [];
+            const deliveryMode = manualMetadata?.deliveryMode ?? FAKE_RUNTIME_DELIVERY_MODE;
             const negativeCase = typeof command.metadata?.negativeCase === 'string'
                 ? command.metadata.negativeCase
                 : undefined;
@@ -648,7 +675,7 @@ class RallarBlackBoxRuntimeStore {
                 busy: false,
                 runState: 'failed',
                 lastAction: 'Local sample failed',
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
             this.emit();
         }
@@ -686,7 +713,7 @@ class RallarBlackBoxRuntimeStore {
                 runState: 'failed',
                 loadedFixtureId: undefined,
                 lastAction: 'Local browser-rallar workbench configuration failed',
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
         }
 
@@ -763,7 +790,7 @@ class RallarBlackBoxRuntimeStore {
                 busy: false,
                 runState: 'failed',
                 lastAction: 'Remote control bootstrap failed',
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
             this.emit();
         }
@@ -815,29 +842,29 @@ class RallarBlackBoxRuntimeStore {
                 bootstrapping: false,
                 runState: 'failed',
                 lastAction: 'Local recipe failed',
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
         }
 
         this.emit();
     }
 
-    async executeCommandFromJson(commandJson: string): Promise<void> {
+    async runCommandFromJsonText(commandJson: string): Promise<void> {
         const command = this.parseJson<RallarBlackBoxTestCommand>(
             commandJson,
             'Command JSON is invalid'
         );
-        await this.executeManualCommand(command, `Executing ${command.kind}`);
+        await this.runManualCommand(command, `Executing ${command.kind}`);
     }
 
-    async executeManualCommand(
+    async runManualCommand(
         command: RallarBlackBoxTestCommand,
         actionLabel = `Executing ${command.kind}`
     ): Promise<void> {
-        await this.executeManualCommands([command], actionLabel);
+        await this.runManualCommands([command], actionLabel);
     }
 
-    async executeManualCommands(
+    async runManualCommands(
         commands: readonly RallarBlackBoxTestCommand[],
         actionLabel: string
     ): Promise<void> {
@@ -879,7 +906,7 @@ class RallarBlackBoxRuntimeStore {
                 busy: false,
                 runState: 'failed',
                 lastAction: `${actionLabel} failed`,
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
         }
 
@@ -1031,7 +1058,7 @@ class RallarBlackBoxRuntimeStore {
                 ...this.snapshot,
                 runState: 'failed',
                 lastAction: message,
-                lastError: toMessage(error)
+                lastError: decodeErrorMessage(error)
             };
             this.emit();
             throw error;
@@ -1053,7 +1080,13 @@ export function useRallarBlackBoxRuntimeStore(): RuntimeStoreSnapshot {
     );
 }
 
-function toMessage(error: unknown): string {
-    return (error as RallarBlackBoxTestError | Error | undefined)?.message ??
-        String(error);
+/** The message a caught value carries, whether it is an `Error`, a test error, or plain text. */
+function decodeErrorMessage(error: unknown): string {
+    if (
+        typeof error === 'object' && error !== null && 'message' in error &&
+        typeof error.message === 'string'
+    ) {
+        return error.message;
+    }
+    return String(error);
 }

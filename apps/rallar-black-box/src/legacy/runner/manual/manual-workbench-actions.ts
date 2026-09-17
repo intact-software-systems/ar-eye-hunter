@@ -31,7 +31,7 @@ export namespace ManualWorkbenchActions {
         readonly setSequence: React.Dispatch<React.SetStateAction<number>>;
         readonly setHistory: React.Dispatch<React.SetStateAction<readonly ManualActionHistoryEntry[]>>;
         readonly setLocalError: React.Dispatch<React.SetStateAction<string | undefined>>;
-        readonly runManualCommands: typeof rallarBlackBoxRuntimeStore.executeManualCommands;
+        readonly runManualCommands: typeof rallarBlackBoxRuntimeStore.runManualCommands;
         nowMs(): number;
         createRequestId(): string;
     }

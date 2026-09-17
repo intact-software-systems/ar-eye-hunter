@@ -17,7 +17,7 @@ import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/s
 const runLabels = vi.hoisted(() => [] as string[]);
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: {
-        executeManualCommands: async (_commands: readonly RallarBlackBoxTestCommand[], label: string) => {
+        runManualCommands: async (_commands: readonly RallarBlackBoxTestCommand[], label: string) => {
             runLabels.push(label);
         }
     }

@@ -25,7 +25,7 @@ export namespace FlowBuilderActions {
         readonly setVariablesEdited: React.Dispatch<React.SetStateAction<boolean>>;
         readonly setSequence: React.Dispatch<React.SetStateAction<number>>;
         readonly setLocalError: React.Dispatch<React.SetStateAction<string | undefined>>;
-        readonly runManualCommands: typeof rallarBlackBoxRuntimeStore.executeManualCommands;
+        readonly runManualCommands: typeof rallarBlackBoxRuntimeStore.runManualCommands;
         onSelectCommand(commandId: string): void;
     }
 }

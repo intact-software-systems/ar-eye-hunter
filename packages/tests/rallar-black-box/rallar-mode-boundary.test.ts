@@ -114,9 +114,9 @@ const DIRECT_RALLAR_TAB_GROUPS = [
 const BLACK_BOX_RUNTIME_STORE = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/runtime-store.ts');
 const DIAGNOSTICS_SOURCE_ROOT = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/legacy/diagnostics');
 const BLACK_BOX_RUNTIME_COMMAND_NAMES: ReadonlySet<string> = new Set([
-    'executeManualCommand',
-    'executeManualCommands',
-    'executeCommandFromJson',
+    'runManualCommand',
+    'runManualCommands',
+    'runCommandFromJsonText',
     'loadRecipeFromJson',
     'runLoadedRecipe',
     'runSample',

@@ -28,7 +28,7 @@ const runs = vi.hoisted(() => [] as RecordedRun[]);
 const runFailure = vi.hoisted(() => ({ error: undefined as Error | undefined }));
 vi.mock('../../../apps/rallar-black-box/src/runtime-store.ts', () => ({
     rallarBlackBoxRuntimeStore: {
-        executeManualCommands: async (commands: readonly RallarBlackBoxTestCommand[], label: string) => {
+        runManualCommands: async (commands: readonly RallarBlackBoxTestCommand[], label: string) => {
             runs.push({ commands, label });
             if (runFailure.error) {
                 throw runFailure.error;

@@ -99,7 +99,7 @@ export function useFlowBuilderController(input: UseFlowBuilderControllerInput): 
         ...input,
         ...drafts,
         ...preview,
-        runManualCommands: (commands, label) => rallarBlackBoxRuntimeStore.executeManualCommands(commands, label)
+        runManualCommands: (commands, label) => rallarBlackBoxRuntimeStore.runManualCommands(commands, label)
     });
     return {
         templateId: drafts.templateId,

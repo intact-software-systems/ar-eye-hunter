@@ -157,7 +157,7 @@ export function WorkbenchPanel({
                         type="button"
                         onClick={() =>
                             runAction(() =>
-                                rallarBlackBoxRuntimeStore.executeCommandFromJson(
+                                rallarBlackBoxRuntimeStore.runCommandFromJsonText(
                                     commandText
                                 )
                             )}
