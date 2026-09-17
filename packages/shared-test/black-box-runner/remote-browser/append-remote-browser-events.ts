@@ -8,6 +8,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestTransport
 } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import {
     rememberRtcCloseEvent,
     rememberRtcDiagnostic,
@@ -89,7 +90,7 @@ function toObservedEventId(event: RemoteBrowserObservationEvent): string {
 }
 
 function toPayloadRecord(event: RallarBlackBoxTestEvent<ApiJsonValue>): ApiJsonObject {
-    return isApiJsonObject(event.payload) ? event.payload : {};
+    return isJsonRecordValue(event.payload) ? event.payload : {};
 }
 
 function toMessageBody(event: RallarBlackBoxTestEvent<ApiJsonValue>): ApiJsonValue | undefined {
@@ -207,8 +208,4 @@ function toRemoteWsMessageValue(frame: ApiJsonValue | undefined): ApiJsonValue |
     catch {
         return frame;
     }
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

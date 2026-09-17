@@ -1,13 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
-import type {
-    ApiJsonObject,
-    ApiJsonValue
-} from '../../../shared/api/api-json-value.ts';
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 import { toError } from '../../../shared/resilience/to-error.ts';
 
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import type { BlackBoxFetch } from '../execution/black-box-scenario-context.ts';
 import { appendRemoteBrowserEvents } from './append-remote-browser-events.ts';
 import {
@@ -137,7 +135,7 @@ async function readRemoteBrowserObservations(
 
 async function readControlHttpErrorMessage(response: Response): Promise<string> {
     const body: ApiJsonValue | undefined = await response.json().catch(() => undefined);
-    return isApiJsonObject(body) && typeof body.error === 'string'
+    return isJsonRecordValue(body) && typeof body.error === 'string'
         ? body.error
         : response.statusText;
 }
@@ -148,8 +146,4 @@ function toControlUrl(remote: RallarRemoteBrowserConfig, path: string): string {
 
 function toAuthorizationHeaders(remote: RallarRemoteBrowserConfig): Readonly<Record<string, string>> {
     return remote.token ? { Authorization: `Bearer ${remote.token}` } : {};
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

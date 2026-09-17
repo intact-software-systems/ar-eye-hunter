@@ -114,7 +114,7 @@ function openRemoteWs(
 }
 
 async function openIdentifiedRemoteWs(input: RemoteWsOpenInput): Promise<WsInteractionResult> {
-    const { interaction, config, context, remote, fetch, commandId } = input;
+    const { interaction, context, remote, fetch, commandId } = input;
     const opened = await toRemoteWsOpenCommand(commandId, interaction, context).fold(
         (error) => Promise.resolve(Either.ofLeft<Error, ControlResultEnvelope>(error)),
         (command) => runRallarRemoteBrowserCommand({ remote, fetch, context, command })

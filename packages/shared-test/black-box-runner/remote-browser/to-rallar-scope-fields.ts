@@ -1,9 +1,7 @@
-import type {
-    ApiJsonObject,
-    ApiJsonValue
-} from '../../../shared/api/api-json-value.ts';
+import type { ApiJsonObject } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import {
     toRallarScopeDiagnostics,
     type RecipeRallarScopeFields
@@ -19,10 +17,10 @@ const SCOPE_IDENTIFIER_KEYS = ['applicationId', 'workspaceId', 'roomId', 'groupI
 
 /** Scope identifiers set anywhere on the step must be scalars; the minimum snapshot version must be a finite number. */
 export function toRallarScopeFields(request: ApiJsonObject): Either<Error, RemoteBrowserScopeFields> {
-    if (request.rallar !== undefined && !isApiJsonObject(request.rallar)) {
+    if (request.rallar !== undefined && !isJsonRecordValue(request.rallar)) {
         return Either.ofLeft(new Error('Rallar options must be an object.'));
     }
-    const rallar = isApiJsonObject(request.rallar) ? request.rallar : {};
+    const rallar = isJsonRecordValue(request.rallar) ? request.rallar : {};
     const minSnapshotVersion = request.minSnapshotVersion !== undefined
         ? request.minSnapshotVersion
         : rallar.minSnapshotVersion;
@@ -36,7 +34,7 @@ export function toRallarScopeFields(request: ApiJsonObject): Either<Error, Remot
         if (source === undefined) {
             continue;
         }
-        if (!isApiJsonObject(source)) {
+        if (!isJsonRecordValue(source)) {
             return Either.ofLeft(new Error('Rallar scope must be an object.'));
         }
         const invalidKey = SCOPE_IDENTIFIER_KEYS.find((key) =>
@@ -50,8 +48,4 @@ export function toRallarScopeFields(request: ApiJsonObject): Either<Error, Remot
         ...toRallarScopeDiagnostics(request),
         ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {})
     });
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

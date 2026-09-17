@@ -1,10 +1,8 @@
-import type {
-    ApiJsonObject,
-    ApiJsonValue
-} from '../../../shared/api/api-json-value.ts';
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 import { toRtcPayload } from '../rtc-provider.ts';
 import { decodeScenarioText } from '../scenario-value-decoding.ts';
 import {
@@ -127,7 +125,7 @@ export function toConnectCommand(
         transport: request.transport,
         readiness: request.readiness,
         rallar: {
-            ...(isApiJsonObject(request.rallar) ? request.rallar : {}),
+            ...(isJsonRecordValue(request.rallar) ? request.rallar : {}),
             ...scope.right
         },
         timeoutMs: request.timeoutMs,
@@ -150,7 +148,7 @@ export function toSendCommand(
     }
     const scopeFields = scope.right;
     const payload = toRtcPayload(request);
-    const send = isApiJsonObject(payload)
+    const send = isJsonRecordValue(payload)
         ? { ...payload, ...Object.fromEntries(Object.entries(scopeFields).filter(([key]) => !(key in payload))) }
         : { data: payload, ...scopeFields };
     return decodeRemoteBrowserCommand({
@@ -226,8 +224,4 @@ function toActionCommand(
         case 'crdt':
             return toCrdtCommand(commandId, interaction);
     }
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

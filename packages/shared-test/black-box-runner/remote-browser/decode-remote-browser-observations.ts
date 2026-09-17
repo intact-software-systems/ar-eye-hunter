@@ -1,7 +1,4 @@
-import type {
-    ApiJsonObject,
-    ApiJsonValue
-} from '../../../shared/api/api-json-value.ts';
+import type { ApiJsonValue } from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
 import {
@@ -19,6 +16,7 @@ import {
     decodeFiniteNumber,
     decodeTransport
 } from '../../rallar-bb-test/runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../../rallar-bb-test/schema/json-schema-validation.ts';
 
 export interface RemoteBrowserObservationEvent extends ControlEventEnvelope {
     readonly payload: RallarBlackBoxTestEvent<ApiJsonValue>;
@@ -48,7 +46,7 @@ export function decodeRemoteBrowserObservations(
     runId: string
 ): Either<Error, RemoteBrowserObservations> {
     if (
-        !isApiJsonObject(value) || value.runId !== runId || !Array.isArray(value.results) ||
+        !isJsonRecordValue(value) || value.runId !== runId || !Array.isArray(value.results) ||
         !Array.isArray(value.events)
     ) {
         return toSnapshotIssue('expected matching runId and result/event arrays');
@@ -74,7 +72,7 @@ export function decodeRemoteBrowserObservations(
 
 function decodeObservationEvent(raw: ApiJsonValue, runId: string): Either<Error, RemoteBrowserObservationEvent> {
     const parsed = parseControlClientMessage(raw);
-    if (!parsed.ok || !isEventEnvelope(parsed.envelope) || parsed.envelope.runId !== runId || !isApiJsonObject(raw)) {
+    if (!parsed.ok || !isEventEnvelope(parsed.envelope) || parsed.envelope.runId !== runId || !isJsonRecordValue(raw)) {
         return toSnapshotIssue('invalid event envelope');
     }
     const envelope = parsed.envelope;
@@ -82,7 +80,7 @@ function decodeObservationEvent(raw: ApiJsonValue, runId: string): Either<Error,
 }
 
 function decodeEventProjection(value: ApiJsonValue | undefined): Either<Error, RallarBlackBoxTestEvent<ApiJsonValue>> {
-    if (!isApiJsonObject(value)) {
+    if (!isJsonRecordValue(value)) {
         return toSnapshotIssue('invalid event projection');
     }
     const { eventId, kind, topic, commandId, connection, actor, transport, severity, payload } = value;
@@ -118,10 +116,6 @@ function decodeEventProjection(value: ApiJsonValue | undefined): Either<Error, R
         ...(decodedSeverity === undefined ? {} : { severity: decodedSeverity }),
         ...(payload === undefined ? {} : { payload })
     });
-}
-
-function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isEventEnvelope(value: ControlClientEnvelope): value is ControlEventEnvelope {
