@@ -62,7 +62,7 @@ describe('rtc.send expect fail-closed boundary', () => {
             name: 'adapterRtc',
             roomId: 'bb-group',
             applicationId: 'rallar-server'
-        });
+        }, { commandIdPrefix: 'rallar-bb' });
 
         await client.send(
             { topic: 'room.adapter.parity', text: 'hello' },

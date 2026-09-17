@@ -266,7 +266,7 @@ describe('rallar provider parity helpers', () => {
 
         const report = await executeBlackBox([...conversion.interactions], 0, {
             rtcProviders: {
-                'rallar-browser': createRallarBlackBoxRtcProvider(runtime)
+                'rallar-browser': createRallarBlackBoxRtcProvider(runtime, { commandIdPrefix: 'rallar-bb' })
             }
         });
 

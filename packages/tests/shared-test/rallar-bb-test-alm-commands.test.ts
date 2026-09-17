@@ -636,7 +636,7 @@ describe('ALM browser adapter execution', () => {
 });
 
 async function runAlmKindThroughRtcSendStep(kind: string) {
-    const provider = createRallarBlackBoxRtcProvider(createRallarBlackBoxTestRuntime());
+    const provider = createRallarBlackBoxRtcProvider(createRallarBlackBoxTestRuntime(), { commandIdPrefix: 'rallar-bb' });
     return await executeBlackBox(
         [
             {
@@ -691,7 +691,8 @@ describe('ALM commands on the in-process runner adapter', () => {
     it('rejects every browser-only ALM kind instead of translating it to an RTC send', async () => {
         const client = createRallarBlackBoxRtcClient(
             createRallarBlackBoxTestRuntime(),
-            { connection: 'alice' }
+            { connection: 'alice' },
+            { commandIdPrefix: 'rallar-bb' }
         );
 
         for (const kind of ALM_COMMAND_KINDS) {
