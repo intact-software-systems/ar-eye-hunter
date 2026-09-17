@@ -18,7 +18,7 @@ import {
     type ControlRunSnapshot,
     type ControlServerSnapshot
 } from '../../../control-run-manager.ts';
-import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-presets.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-command-presets.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
 import { parseRallarBlackBoxSharedTestArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';

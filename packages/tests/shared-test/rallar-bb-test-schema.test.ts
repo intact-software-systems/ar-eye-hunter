@@ -7,7 +7,7 @@ import { FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-
 import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
 import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
 import { toManualRecipeText, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-command-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
 import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
