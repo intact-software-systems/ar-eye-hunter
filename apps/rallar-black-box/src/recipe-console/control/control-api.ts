@@ -1,8 +1,8 @@
 import type { ControlServerSnapshot, ControlSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
     ControlRunManagerHttpError,
+    toControlHttpBaseUrl,
     type ControlRunManagerFetch
 } from '../../control-run-manager.ts';
 import {
@@ -193,7 +193,7 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
             throw new Error('The configured control URL must not contain credentials.');
         }
     }
-    return controlHttpBaseUrlFromWsUrl(configured);
+    return toControlHttpBaseUrl(configured);
 }
 
 export type {

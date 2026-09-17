@@ -9,9 +9,9 @@ import type {
 import {
     cancelDistributedRun,
     createDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    fetchDistributedRunArtifactBundleBytes,
-    resolveDistributedTargets,
+    readDistributedRunArtifactBundle,
+    readDistributedRunArtifactBundleBytes,
+    readDistributedTargetResolution,
     stageDistributedRun,
     startDistributedRun
 } from '../../control-run-manager.ts';
@@ -73,7 +73,7 @@ export function createRecipeConsoleControlExecutionApi(
         async resolveTargets(request) {
             const result = await input.transport.response(
                 async (token, fetchFn) => {
-                    const value = await resolveDistributedTargets({
+                    const value = await readDistributedTargetResolution({
                         baseUrl: input.baseUrl,
                         manifest: request.manifest,
                         token,
@@ -139,7 +139,7 @@ export function createRecipeConsoleControlExecutionApi(
         async exportRunArtifact(request) {
             const result = await input.transport.response(
                 async (token, fetchFn) => {
-                    const value = await fetchDistributedRunArtifactBundle({
+                    const value = await readDistributedRunArtifactBundle({
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
@@ -156,7 +156,7 @@ export function createRecipeConsoleControlExecutionApi(
         async exportRunArtifactBytes(request) {
             const result = await input.transport.response(
                 (token, fetchFn) =>
-                    fetchDistributedRunArtifactBundleBytes({
+                    readDistributedRunArtifactBundleBytes({
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,

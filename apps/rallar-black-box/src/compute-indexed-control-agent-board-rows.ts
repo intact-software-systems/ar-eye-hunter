@@ -17,7 +17,7 @@ import {
 } from './control-agent-board-model.ts';
 import { projectRelevantControlAgentBoardRuns, type IndexedBoardRun } from './control-agent-board-run-projection.ts';
 import {
-    controlAgentIdentitySummary,
+    toControlAgentIdentitySummary,
     type ControlDistributedRunSnapshot,
     type ControlRunAgentRow,
     type ControlServerSnapshot
@@ -72,7 +72,7 @@ export function computeIndexedControlAgentBoardRows(
         lastSeenAtEpochMs: agent.lastSeenAtEpochMs,
         lastHeartbeatAtEpochMs: agent.lastHeartbeatAtEpochMs,
         identity: agent.identity,
-        identitySummary: controlAgentIdentitySummary(agent.identity),
+        identitySummary: toControlAgentIdentitySummary(agent.identity),
         queuedCommandCount: selectionIndex.queuedControlCommandCountByControlRunAgentId
             .get(run.runId)?.get(agent.agentId) ?? 0,
         completedCommandCount: agent.completedCommandIds.length,

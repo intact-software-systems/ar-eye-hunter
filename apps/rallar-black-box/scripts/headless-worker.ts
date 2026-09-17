@@ -170,7 +170,7 @@ async function waitForAgentRegistration(input: WaitForAgentRegistrationInput): P
         timeoutMs: config.readyTimeoutMs,
         pollIntervalMs: 500,
         signal: input.signal,
-        fetchSnapshot: (signal) => fetchControlRunSnapshot(config, signal),
+        fetchSnapshot: (signal) => readControlRunSnapshot(config, signal),
         readAgentPageStatus: () => readAgentPageStatus(page),
         sleep: delay,
         now: Date.now
@@ -236,7 +236,7 @@ async function confirmHeadlessRegistrationUi(
     }).catch(() => undefined);
 }
 
-async function fetchControlRunSnapshot(
+async function readControlRunSnapshot(
     config: HeadlessWorkerConfig,
     signal: AbortSignal
 ): Promise<HeadlessWorkerRegistrationSnapshot> {

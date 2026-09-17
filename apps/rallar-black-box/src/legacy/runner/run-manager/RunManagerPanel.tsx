@@ -5,18 +5,18 @@ import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    controlRunAgentRows,
-    controlRunCommandRows,
-    controlRunManagerStats,
+    computeControlRunManagerStats,
     deleteControlRun,
     enqueueBulkControlCommand,
-    fetchControlRunArtifactBundle,
-    fetchControlRunFailureBundle,
-    fetchControlRunJsonl,
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
+    readControlRunArtifactBundle,
+    readControlRunFailureBundle,
+    readControlRunJsonl,
+    readControlRunSnapshot,
+    readControlServerSnapshot,
     resetControlRun,
+    toControlHttpBaseUrl,
+    toControlRunAgentRows,
+    toControlRunCommandRows,
     type ControlRunArtifactBundle,
     type ControlRunSnapshot,
     type ControlServerSnapshot
@@ -51,7 +51,7 @@ export function RunManagerPanel({
 }) {
     const diagnosticContext = useLegacyDiagnosticContext().context;
     const diagnosticControlRunId = diagnosticContext?.controlRunId;
-    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
+    const [baseUrl, setBaseUrl] = useState(() => toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
         diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? ''
@@ -68,11 +68,11 @@ export function RunManagerPanel({
     const [lastAction, setLastAction] = useState<string | undefined>();
     const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
     const selectionRequests = useLatestRequestGuard();
-    const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
-    const agentRows = useMemo(() => controlRunAgentRows(run), [run]);
+    const stats = useMemo(() => computeControlRunManagerStats(snapshot), [snapshot]);
+    const agentRows = useMemo(() => toControlRunAgentRows(run), [run]);
     const agentRowsKey = agentRows.map((row) => row.agentId).join('\u0000');
     const commandRows = useMemo(
-        () => controlRunCommandRows(run).slice(0, 24),
+        () => toControlRunCommandRows(run).slice(0, 24),
         [run]
     );
     const runOptions = useMemo(
@@ -114,7 +114,7 @@ export function RunManagerPanel({
         setBusyAction('refresh');
         setError(undefined);
         try {
-            const serverSnapshot = await fetchControlServerSnapshot({
+            const serverSnapshot = await readControlServerSnapshot({
                 baseUrl,
                 token,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
@@ -140,7 +140,7 @@ export function RunManagerPanel({
                 return;
             }
             if (nextRunId) {
-                const nextRun = await fetchControlRunSnapshot({
+                const nextRun = await readControlRunSnapshot({
                     baseUrl,
                     token,
                     runId: nextRunId,
@@ -213,7 +213,7 @@ export function RunManagerPanel({
         setBusyAction('load-run');
         setError(undefined);
         try {
-            const loaded = await fetchControlRunSnapshot({
+            const loaded = await readControlRunSnapshot({
                 baseUrl,
                 token,
                 runId,
@@ -340,7 +340,7 @@ export function RunManagerPanel({
         setBusyAction('artifact');
         setError(undefined);
         try {
-            const bundle = await fetchControlRunArtifactBundle({
+            const bundle = await readControlRunArtifactBundle({
                 baseUrl,
                 token,
                 runId: run.runId
@@ -359,7 +359,7 @@ export function RunManagerPanel({
     const copyArtifactBundle = async (): Promise<void> => {
         const bundle = artifactBundle ??
             (run
-                ? await fetchControlRunArtifactBundle({
+                ? await readControlRunArtifactBundle({
                     baseUrl,
                     token,
                     runId: run.runId
@@ -376,7 +376,7 @@ export function RunManagerPanel({
         if (!run) {
             return;
         }
-        const text = await fetchControlRunJsonl({
+        const text = await readControlRunJsonl({
             baseUrl,
             token,
             runId: run.runId,
@@ -390,7 +390,7 @@ export function RunManagerPanel({
         if (!run) {
             return;
         }
-        const bundle = await fetchControlRunFailureBundle({
+        const bundle = await readControlRunFailureBundle({
             baseUrl,
             token,
             runId: run.runId

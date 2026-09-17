@@ -396,7 +396,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsDistributedView).toContain('Clear seed');
         expect(fleetViews).toContain('Live Fleet');
         expect(fleetViews).toContain('title="Live Fleet Agents"');
-        expect(fleetController).toContain('fetchControlServerSnapshot');
+        expect(fleetController).toContain('readControlServerSnapshot');
         expect(recipesPanel).toContain('resolveBlackBoxControlToken');
         expect(recipesPanel).toContain('brokeredControlToken');
         expect(recipesPanel).toContain('Session control token valid until');

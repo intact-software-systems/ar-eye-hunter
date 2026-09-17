@@ -14,13 +14,13 @@ import {
 } from '../../../control-agent-board.ts';
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
     createDistributedRun,
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRun,
+    readControlRunSnapshot,
+    readControlServerSnapshot,
+    readDistributedRun,
     stageDistributedRun,
     startDistributedRun,
+    toControlHttpBaseUrl,
     type ControlDistributedRunArtifactBundle,
     type ControlDistributedRunSnapshot,
     type ControlRunSnapshot,
@@ -77,7 +77,7 @@ export function useRunnerRecipesController({
     onDistributedRunStarted
 }: UseRunnerRecipesControllerInput) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+        toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
@@ -351,7 +351,7 @@ export function useRunnerRecipesController({
                     });
                 })
             : Promise.resolve();
-        const controlPromise = fetchControlServerSnapshot({
+        const controlPromise = readControlServerSnapshot({
             baseUrl: controlBaseUrl,
             token: controlToken,
             bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
@@ -381,7 +381,7 @@ export function useRunnerRecipesController({
                 setControlRunId(nextRunId);
                 if (knownPreferredRunId) {
                     setAgentRunId(knownPreferredRunId);
-                    const nextControlRun = await fetchControlRunSnapshot({
+                    const nextControlRun = await readControlRunSnapshot({
                         baseUrl: controlBaseUrl,
                         token: controlToken,
                         runId: knownPreferredRunId,
@@ -504,7 +504,7 @@ export function useRunnerRecipesController({
         setArtifactBundle(undefined);
         try {
             const [serverSnapshot] = await Promise.all([
-                fetchControlServerSnapshot({
+                readControlServerSnapshot({
                     baseUrl: controlBaseUrl,
                     token: controlToken,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
@@ -526,7 +526,7 @@ export function useRunnerRecipesController({
             if (!nextRunId) {
                 throw new Error('Control run missing.');
             }
-            const latestControlRun = await fetchControlRunSnapshot({
+            const latestControlRun = await readControlRunSnapshot({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
                 runId: nextRunId,
@@ -610,7 +610,7 @@ export function useRunnerRecipesController({
                 controlBaseUrl,
                 controlToken
             });
-            void fetchDistributedRun({
+            void readDistributedRun({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
                 distributedRunId: started.distributedRunId

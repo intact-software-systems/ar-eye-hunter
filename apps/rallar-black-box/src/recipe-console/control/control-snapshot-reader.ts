@@ -4,9 +4,9 @@ import type {
     ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRuns
+    readControlRunSnapshot,
+    readControlServerSnapshot,
+    readDistributedRuns
 } from '../../control-run-manager.ts';
 import { isControlAbortError } from './control-authorized-fetch.ts';
 import type { ControlAuthorizedTransport, RecipeConsoleControlAuthorization } from './control-authorized-transport.ts';
@@ -67,7 +67,7 @@ export function createControlSnapshotReader(
     return async function readSnapshot (input = {}) {
         const server = await config.transport.response(
             (token, fetchFn) =>
-                fetchControlServerSnapshot({
+                readControlServerSnapshot({
                     baseUrl: config.baseUrl,
                     token,
                     bounds: config.indexBounds,
@@ -105,7 +105,7 @@ export function createControlSnapshotReader(
             try {
                 const distributed = await config.transport.response(
                     (token, fetchFn) =>
-                        fetchDistributedRuns({
+                        readDistributedRuns({
                             baseUrl: config.baseUrl,
                             token,
                             fetchFn
@@ -146,7 +146,7 @@ export function createControlSnapshotReader(
         for (const runId of requestedRunIds) {
             const detail = await config.transport.response(
                 async (token, fetchFn) => {
-                    const value = await fetchControlRunSnapshot({
+                    const value = await readControlRunSnapshot({
                         baseUrl: config.baseUrl,
                         runId,
                         token,

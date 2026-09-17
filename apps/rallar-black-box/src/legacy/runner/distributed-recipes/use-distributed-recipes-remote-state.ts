@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { useMemo, useState } from 'react';
 import {
-    controlHttpBaseUrlFromWsUrl,
+    toControlHttpBaseUrl,
     type ControlDistributedRunArtifactBundle,
     type ControlDistributedRunSnapshot,
     type ControlRunSnapshot,
@@ -32,7 +32,7 @@ export function useDistributedRecipesRemoteState({
     initialControlRunId,
     initialDistributedRunId
 }: UseDistributedRecipesRemoteStateInput) {
-    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
+    const [baseUrl, setBaseUrl] = useState(() => toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
         initialControlRunId ?? control.runId ?? bootstrap.runId ?? ''

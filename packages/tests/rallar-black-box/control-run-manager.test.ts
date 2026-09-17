@@ -3,31 +3,31 @@ import { ControlRunManagerHttpError as CanonicalControlRunManagerHttpError } fro
 import { controlResponseDocumentText } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import {
     cancelDistributedRun,
-    controlHttpBaseUrlFromWsUrl,
-    controlRunAgentRows,
-    controlRunCommandRows,
+    computeControlRunManagerStats,
     ControlRunManagerHttpError as ReexportedControlRunManagerHttpError,
-    controlRunManagerStats,
     createDistributedRun,
     deleteControlRun,
     enqueueBulkControlCommand,
-    fetchControlRunArtifactBundle,
-    fetchControlRunFailureBundle,
-    fetchControlRunJsonl,
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    fetchDistributedRunArtifactBundleBytes,
-    fetchDistributedRuns,
-    fetchFleetReport,
-    fetchFleetReportBundle,
-    fetchFleetReportBundleBytes,
-    fetchFleetReports,
+    readControlRunArtifactBundle,
+    readControlRunFailureBundle,
+    readControlRunJsonl,
+    readControlRunSnapshot,
+    readControlServerSnapshot,
+    readDistributedRun,
+    readDistributedRunArtifactBundle,
+    readDistributedRunArtifactBundleBytes,
+    readDistributedRuns,
+    readDistributedTargetResolution,
+    readFleetReport,
+    readFleetReportBundle,
+    readFleetReportBundleBytes,
+    readFleetReports,
     rebuildFleetReports,
-    resolveDistributedTargets,
     stageDistributedRun,
     startDistributedRun,
+    toControlHttpBaseUrl,
+    toControlRunAgentRows,
+    toControlRunCommandRows,
     type ControlRunSnapshot,
     type ControlServerSnapshot
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
@@ -151,15 +151,15 @@ describe('rallar-black-box control run manager', () => {
     });
 
     it('derives HTTP base URLs from control WebSocket URLs', () => {
-        expect(controlHttpBaseUrlFromWsUrl('ws://localhost:5180/control')).toBe('http://localhost:5180');
-        expect(controlHttpBaseUrlFromWsUrl('wss://example.test/control?token=secret')).toBe('https://example.test');
-        expect(controlHttpBaseUrlFromWsUrl(undefined)).toBe('http://localhost:5180');
+        expect(toControlHttpBaseUrl('ws://localhost:5180/control')).toBe('http://localhost:5180');
+        expect(toControlHttpBaseUrl('wss://example.test/control?token=secret')).toBe('https://example.test');
+        expect(toControlHttpBaseUrl(undefined)).toBe('http://localhost:5180');
     });
 
     it('summarizes snapshots and derives sorted agent and command rows', () => {
         const snapshot: ControlServerSnapshot = { runs: [runSnapshot] };
 
-        expect(controlRunManagerStats(snapshot)).toMatchObject({
+        expect(computeControlRunManagerStats(snapshot)).toMatchObject({
             runCount: 1,
             agentCount: 2,
             connectedAgentCount: 1,
@@ -168,10 +168,10 @@ describe('rallar-black-box control run manager', () => {
             resultCount: 1,
             eventCount: 1
         });
-        expect(controlRunAgentRows(runSnapshot).map((row) => row.agentId)).toEqual(['agent-a', 'agent-b']);
-        expect(controlRunAgentRows(runSnapshot)[0].identitySummary).toContain('alice');
-        expect(controlRunAgentRows(runSnapshot)[0].identitySummary).toContain('group bb-group');
-        expect(controlRunCommandRows(runSnapshot).map((row) => [row.commandId, row.status])).toEqual([
+        expect(toControlRunAgentRows(runSnapshot).map((row) => row.agentId)).toEqual(['agent-a', 'agent-b']);
+        expect(toControlRunAgentRows(runSnapshot)[0].identitySummary).toContain('alice');
+        expect(toControlRunAgentRows(runSnapshot)[0].identitySummary).toContain('group bb-group');
+        expect(toControlRunCommandRows(runSnapshot).map((row) => [row.commandId, row.status])).toEqual([
             ['cmd-2', 'queued'],
             ['cmd-1', 'completed']
         ]);
@@ -219,13 +219,13 @@ describe('rallar-black-box control run manager', () => {
             return new Response(JSON.stringify({ runs: [runSnapshot] }), { status: 200 });
         };
 
-        await fetchControlServerSnapshot({
+        await readControlServerSnapshot({
             baseUrl: 'http://control.test',
             token: 'run-token',
             bounds: { commands: 5, events: 10 },
             fetchFn
         });
-        await fetchControlRunSnapshot({
+        await readControlRunSnapshot({
             baseUrl: 'http://control.test',
             runId: 'run-1',
             bounds: { results: 3 },
@@ -240,18 +240,18 @@ describe('rallar-black-box control run manager', () => {
             token: 'admin-token',
             fetchFn
         });
-        const artifact = await fetchControlRunArtifactBundle({
+        const artifact = await readControlRunArtifactBundle({
             baseUrl: 'http://control.test',
             runId: 'run-1',
             fetchFn
         });
-        const eventsJsonl = await fetchControlRunJsonl({
+        const eventsJsonl = await readControlRunJsonl({
             baseUrl: 'http://control.test',
             runId: 'run-1',
             kind: 'events',
             fetchFn
         });
-        const failureBundle = await fetchControlRunFailureBundle({
+        const failureBundle = await readControlRunFailureBundle({
             baseUrl: 'http://control.test',
             runId: 'run-1',
             fetchFn
@@ -285,7 +285,7 @@ describe('rallar-black-box control run manager', () => {
             }
         });
 
-        const snapshot = await fetchControlServerSnapshot({
+        const snapshot = await readControlServerSnapshot({
             baseUrl: 'http://control.test',
             fetchFn: async () => response
         });
@@ -308,7 +308,7 @@ describe('rallar-black-box control run manager', () => {
             }
         });
 
-        const distributedRuns = await fetchDistributedRuns({
+        const distributedRuns = await readDistributedRuns({
             baseUrl: 'http://control.test',
             fetchFn: async () => response
         });
@@ -336,14 +336,14 @@ describe('rallar-black-box control run manager', () => {
         };
         const oldManifestRun = { distributedRunId: 'dist-old', controlRunId: 'run-1', manifest };
 
-        await expect(fetchDistributedRuns({
+        await expect(readDistributedRuns({
             baseUrl: 'http://control.test',
             fetchFn: async () => Response.json({ distributedRuns: [oldManifestRun] })
         })).rejects.toThrow(
             'Control server snapshot distributedRuns[0].manifest is not a distributed run manifest:\n' +
                 '$: Missing required property groupAssertions.'
         );
-        await expect(fetchDistributedRun({
+        await expect(readDistributedRun({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-old',
             fetchFn: async () =>
@@ -358,7 +358,7 @@ describe('rallar-black-box control run manager', () => {
     });
 
     it('preserves response status on HTTP errors without changing the server message', async () => {
-        const request = fetchControlServerSnapshot({
+        const request = readControlServerSnapshot({
             baseUrl: 'http://control.test',
             fetchFn: async () =>
                 Response.json(
@@ -403,7 +403,7 @@ describe('rallar-black-box control run manager', () => {
             message: 'Run is gone.'
         }
     ])('names a failed JSONL reply from $label', async ({ reply, message }) => {
-        await expect(fetchControlRunJsonl({
+        await expect(readControlRunJsonl({
             baseUrl: 'http://control.test',
             runId: 'run-1',
             kind: 'events',
@@ -539,13 +539,13 @@ describe('rallar-black-box control run manager', () => {
             return new Response(JSON.stringify(distributedRun), { status: 200 });
         };
 
-        await fetchDistributedRuns({ baseUrl: 'http://control.test', token: 'admin-token', fetchFn });
-        await fetchDistributedRun({
+        await readDistributedRuns({ baseUrl: 'http://control.test', token: 'admin-token', fetchFn });
+        await readDistributedRun({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn
         });
-        const targetResolution = await resolveDistributedTargets({
+        const targetResolution = await readDistributedTargetResolution({
             baseUrl: 'http://control.test',
             token: 'admin-token',
             manifest: {
@@ -576,7 +576,7 @@ describe('rallar-black-box control run manager', () => {
             reason: 'stop',
             fetchFn
         });
-        const artifact = await fetchDistributedRunArtifactBundle({
+        const artifact = await readDistributedRunArtifactBundle({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn
@@ -637,7 +637,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchDistributedRunArtifactBundleBytes({
+        await expect(readDistributedRunArtifactBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             maxBytes: 4,
@@ -668,7 +668,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchDistributedRunArtifactBundleBytes({
+        await expect(readDistributedRunArtifactBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             maxBytes: 12,
@@ -701,7 +701,7 @@ describe('rallar-black-box control run manager', () => {
                 }
             }, { highWaterMark: 0 });
 
-            await expect(fetchDistributedRunArtifactBundleBytes({
+            await expect(readDistributedRunArtifactBundleBytes({
                 baseUrl: 'http://control.test',
                 distributedRunId: 'dist-1',
                 maxBytes: 4,
@@ -724,7 +724,7 @@ describe('rallar-black-box control run manager', () => {
     );
 
     it('preserves bounded Control HTTP errors for non-success artifact responses', async () => {
-        await expect(fetchDistributedRunArtifactBundleBytes({
+        await expect(readDistributedRunArtifactBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             maxBytes: 64,
@@ -750,7 +750,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchDistributedRunArtifactBundleBytes({
+        await expect(readDistributedRunArtifactBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             maxBytes: 4,
@@ -783,7 +783,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        const bytes = await fetchDistributedRunArtifactBundleBytes({
+        const bytes = await readDistributedRunArtifactBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             maxBytes: 4,
@@ -818,7 +818,7 @@ describe('rallar-black-box control run manager', () => {
                 ? undefined
                 : { 'content-length': contentLength };
 
-            const bytes = await fetchDistributedRunArtifactBundleBytes({
+            const bytes = await readDistributedRunArtifactBundleBytes({
                 baseUrl: 'http://control.test',
                 distributedRunId: 'dist-1',
                 maxBytes: 4,
@@ -836,7 +836,7 @@ describe('rallar-black-box control run manager', () => {
     ])(
         'returns exact body bytes when declared length $declaredBytes does not match the stream',
         async ({ declaredBytes, bodyBytes }) => {
-            const bytes = await fetchDistributedRunArtifactBundleBytes({
+            const bytes = await readDistributedRunArtifactBundleBytes({
                 baseUrl: 'http://control.test',
                 distributedRunId: 'dist-1',
                 maxBytes: 4,
@@ -864,7 +864,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchFleetReportBundleBytes({
+        await expect(readFleetReportBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn: async () =>
@@ -899,7 +899,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchFleetReportBundleBytes({
+        await expect(readFleetReportBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn: async () => new Response(body)
@@ -929,7 +929,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        const bytes = await fetchFleetReportBundleBytes({
+        const bytes = await readFleetReportBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn: async () =>
@@ -972,7 +972,7 @@ describe('rallar-black-box control run manager', () => {
             }
         }, { highWaterMark: 0 });
 
-        await expect(fetchFleetReportBundleBytes({
+        await expect(readFleetReportBundleBytes({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn: async () =>
@@ -1005,7 +1005,7 @@ describe('rallar-black-box control run manager', () => {
         let requestUrl = '';
         let requestAuthorization: string | undefined;
 
-        const result = await fetchFleetReportBundle({
+        const result = await readFleetReportBundle({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist/1',
             token: 'admin-token',
@@ -1109,7 +1109,7 @@ describe('rallar-black-box control run manager', () => {
             return new Response(JSON.stringify(response), { status: 200 });
         };
 
-        const reports = await fetchFleetReports({
+        const reports = await readFleetReports({
             baseUrl: 'http://control.test',
             token: 'admin-token',
             filter: {
@@ -1123,12 +1123,12 @@ describe('rallar-black-box control run manager', () => {
             },
             fetchFn
         });
-        const singleReport = await fetchFleetReport({
+        const singleReport = await readFleetReport({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn
         });
-        const exportBundle = await fetchFleetReportBundle({
+        const exportBundle = await readFleetReportBundle({
             baseUrl: 'http://control.test',
             distributedRunId: 'dist-1',
             fetchFn

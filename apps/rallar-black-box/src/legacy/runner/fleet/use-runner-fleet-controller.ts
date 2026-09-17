@@ -6,11 +6,11 @@ import {
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    fetchControlServerSnapshot,
-    fetchFleetReportBundle,
-    fetchFleetReports,
+    readControlServerSnapshot,
+    readFleetReportBundle,
+    readFleetReports,
     rebuildFleetReports,
+    toControlHttpBaseUrl,
     type ControlFleetReportBundle,
     type ControlFleetReportsResponse,
     type ControlServerSnapshot
@@ -55,7 +55,7 @@ export function useRunnerFleetController({
     globalValues
 }: UseRunnerFleetControllerInput) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+        toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
@@ -199,7 +199,7 @@ export function useRunnerFleetController({
                     baseUrl: controlBaseUrl,
                     token: controlToken
                 })
-                : await fetchFleetReports({
+                : await readFleetReports({
                     baseUrl: controlBaseUrl,
                     token: controlToken,
                     filter: fleetReportFilterFromUi(filters)
@@ -207,7 +207,7 @@ export function useRunnerFleetController({
             if (!request.isCurrent()) {
                 return;
             }
-            const nextSnapshot = await fetchControlServerSnapshot({
+            const nextSnapshot = await readControlServerSnapshot({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
@@ -313,7 +313,7 @@ export function useRunnerFleetController({
         setBusy('export');
         setError(undefined);
         try {
-            const bundle = await fetchFleetReportBundle({
+            const bundle = await readFleetReportBundle({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
                 distributedRunId: selectedReport.distributedRunId

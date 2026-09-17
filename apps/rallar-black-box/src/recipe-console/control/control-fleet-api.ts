@@ -1,6 +1,6 @@
 import { validateControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import type { ControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import { fetchFleetReportBundleBytes } from '../../control-run-manager.ts';
+import { readFleetReportBundleBytes } from '../../control-run-manager.ts';
 import { throwIfControlAborted } from './control-authorized-fetch.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
@@ -41,7 +41,7 @@ export function createRecipeConsoleControlFleetApi(
                 const pending = input.endpoint.response(
                     async (fetchFn) =>
                         parseFleetReportBundleBytes(
-                            await fetchFleetReportBundleBytes({
+                            await readFleetReportBundleBytes({
                                 baseUrl: input.baseUrl,
                                 distributedRunId: request.distributedRunId,
                                 fetchFn

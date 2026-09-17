@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 import {
     cancelDistributedRun,
     createDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    resolveDistributedTargets,
+    readDistributedRunArtifactBundle,
+    readDistributedTargetResolution,
     stageDistributedRun,
     startDistributedRun,
     type ControlDistributedRunSnapshot
@@ -111,7 +111,7 @@ export function useDistributedRecipesActions({
         try {
             await loadRun(selectedRunId);
             if (usesWorldFleetTargets && manifest) {
-                const resolution = await resolveDistributedTargets({
+                const resolution = await readDistributedTargetResolution({
                     baseUrl,
                     token,
                     manifest
@@ -284,7 +284,7 @@ export function useDistributedRecipesActions({
         setBusyAction('artifact');
         setError(undefined);
         try {
-            const bundle = await fetchDistributedRunArtifactBundle({
+            const bundle = await readDistributedRunArtifactBundle({
                 baseUrl,
                 token,
                 distributedRunId: target.distributedRunId

@@ -11,7 +11,7 @@ import {
     syntheticControlAgentRow
 } from './control-agent-board-model.ts';
 import {
-    controlRunAgentRows,
+    toControlRunAgentRows,
     type ControlDistributedRunSnapshot,
     type ControlRunAgentRow
 } from './control-run-manager.ts';
@@ -51,7 +51,7 @@ function computeUnindexedControlAgentBoardRows(
     const scopedAgentIds = input.agentIds
         ? new Set(input.agentIds)
         : undefined;
-    const agentRows = controlRunAgentRows(input.run)
+    const agentRows = toControlRunAgentRows(input.run)
         .filter((row) => !scopedAgentIds || scopedAgentIds.has(row.agentId));
     const targetRows = input.group
         ? distributedRecipeTargetRows({

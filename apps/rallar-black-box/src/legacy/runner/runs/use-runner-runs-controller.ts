@@ -14,11 +14,11 @@ import {
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    fetchControlRunSnapshot,
-    fetchDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    fetchDistributedRuns,
+    readControlRunSnapshot,
+    readDistributedRun,
+    readDistributedRunArtifactBundle,
+    readDistributedRuns,
+    toControlHttpBaseUrl,
     type ControlDistributedRunArtifactBundle,
     type ControlDistributedRunSnapshot,
     type ControlRunSnapshot
@@ -82,7 +82,7 @@ export function useRunnerRunsController({
     );
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         preferredDistributedRun?.controlBaseUrl ??
-            controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+            toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? ''
@@ -262,7 +262,7 @@ export function useRunnerRunsController({
         }
         setDistributedError(undefined);
         try {
-            const fetchedRuns = await fetchDistributedRuns({ baseUrl, token });
+            const fetchedRuns = await readDistributedRuns({ baseUrl, token });
             if (!request.isCurrent()) {
                 return;
             }
@@ -273,7 +273,7 @@ export function useRunnerRunsController({
                 ? list.find((item) => item.distributedRunId === preferredRunId)
                 : undefined;
             const nextDistributedRun = preferredRunId
-                ? await fetchDistributedRun({
+                ? await readDistributedRun({
                     baseUrl,
                     token,
                     distributedRunId: preferredRunId
@@ -285,7 +285,7 @@ export function useRunnerRunsController({
             const nextControlRunId = nextDistributedRun?.controlRunId ?? override?.controlRunId ??
                 controlRunId;
             const nextControlRun = nextControlRunId
-                ? await fetchControlRunSnapshot({
+                ? await readControlRunSnapshot({
                     baseUrl,
                     token,
                     runId: nextControlRunId,
@@ -301,7 +301,7 @@ export function useRunnerRunsController({
                         isDistributedRunTerminalState(nextDistributedRun.state))
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
-                ? await fetchDistributedRunArtifactBundle({
+                ? await readDistributedRunArtifactBundle({
                     baseUrl,
                     token,
                     distributedRunId: nextDistributedRun.distributedRunId

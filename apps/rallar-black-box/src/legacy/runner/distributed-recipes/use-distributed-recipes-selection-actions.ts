@@ -1,9 +1,9 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import {
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRun,
-    fetchDistributedRuns
+    readControlRunSnapshot,
+    readControlServerSnapshot,
+    readDistributedRun,
+    readDistributedRuns
 } from '../../../control-run-manager.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { deriveDistributedDiagnosticSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
@@ -54,12 +54,12 @@ export function useDistributedRecipesSelectionActions({
         setError(undefined);
         try {
             const [serverSnapshot, distributedList] = await Promise.all([
-                fetchControlServerSnapshot({
+                readControlServerSnapshot({
                     baseUrl,
                     token,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 }),
-                fetchDistributedRuns({ baseUrl, token })
+                readDistributedRuns({ baseUrl, token })
             ]);
             if (!request.isCurrent()) {
                 return;
@@ -102,7 +102,7 @@ export function useDistributedRecipesSelectionActions({
                 preferredDistributedRunId;
             setSelectedRunId(nextRunId);
             const nextRun = nextRunId
-                ? await fetchControlRunSnapshot({
+                ? await readControlRunSnapshot({
                     baseUrl,
                     token,
                     runId: nextRunId,
@@ -153,7 +153,7 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await fetchControlRunSnapshot({
+            const loaded = await readControlRunSnapshot({
                 baseUrl,
                 token,
                 runId,
@@ -188,7 +188,7 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await fetchDistributedRun({
+            const loaded = await readDistributedRun({
                 baseUrl,
                 token,
                 distributedRunId: id
@@ -196,7 +196,7 @@ export function useDistributedRecipesSelectionActions({
             if (!request.isCurrent()) {
                 return;
             }
-            const controlRun = await fetchControlRunSnapshot({
+            const controlRun = await readControlRunSnapshot({
                 baseUrl,
                 token,
                 runId: loaded.controlRunId,
