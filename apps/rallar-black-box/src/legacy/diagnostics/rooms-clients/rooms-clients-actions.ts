@@ -385,8 +385,11 @@ export class RoomsClientsActions implements RoomsClientsOperations {
         }));
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic: `rallar.direct.rooms.${action}.completed`,
                 context,
+                transport: undefined,
+                severity: 'info',
                 payload: { action, result: body }
             }),
             `Direct room ${action} completed`

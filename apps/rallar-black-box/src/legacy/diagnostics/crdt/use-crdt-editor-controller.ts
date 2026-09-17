@@ -80,6 +80,7 @@ export function useCrdtEditorController({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: {
                     providerMode: bootstrap.providerMode,
@@ -94,8 +95,9 @@ export function useCrdtEditorController({
                     authSession,
                     timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
                 },
-                payload: optionalRecord(payload),
-                severity
+                transport: undefined,
+                severity,
+                payload: optionalRecord(payload)
             }),
             lastAction
         );

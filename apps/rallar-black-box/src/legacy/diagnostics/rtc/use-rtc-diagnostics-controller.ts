@@ -78,6 +78,7 @@ export function useRtcDiagnosticsController({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: directContext(),
                 transport: 'realtime',

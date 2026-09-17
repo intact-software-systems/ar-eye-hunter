@@ -231,7 +231,7 @@ export class QuickRallarTestActions {
                         ...(this.input.activeTopicId ? { topicId: this.input.activeTopicId } : {})
                     },
                     handler: (message) => this.receiveMessage(context, message),
-                    loadFacade: loadBrowserRallarFacade,
+                    readFacade: loadBrowserRallarFacade,
                     signal: this.input.lifetime.signal,
                     subscriptions: this.input.lifetime.subscriptions
                 }),
@@ -250,9 +250,11 @@ export class QuickRallarTestActions {
         this.input.setWaitStatus('unsubscribed');
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic: 'rallar.direct.ws.unsubscribe.completed',
                 context: this.operationContext(),
                 transport: 'ws',
+                severity: 'info',
                 payload: {
                     groupId: this.input.activeGroupId,
                     selector: this.input.selectorLabel
@@ -314,9 +316,11 @@ export class QuickRallarTestActions {
             this.input.setWaitStatus('message observed');
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 createDirectRallarRuntimeEvent({
+                    kind: 'diagnostic',
                     topic: 'rallar.direct.quick.receive.completed',
                     context: this.operationContext(),
                     transport: 'ws',
+                    severity: 'info',
                     payload: {
                         waitedMs: this.input.nowMs() - startedAt,
                         receivedCount: this.input.receivedCountRef.current
@@ -407,6 +411,7 @@ export class QuickRallarTestActions {
                 topic: 'rallar.direct.ws.message',
                 context,
                 transport: 'ws',
+                severity: 'info',
                 payload: {
                     senderId: row.senderId,
                     roomId: row.roomId,
@@ -503,6 +508,7 @@ export class QuickRallarTestActions {
         this.input.setLocalError(message);
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic: 'rallar.direct.quick.receive.timeout',
                 context: this.operationContext(),
                 transport: 'ws',

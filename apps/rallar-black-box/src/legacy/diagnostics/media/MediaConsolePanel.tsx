@@ -66,6 +66,7 @@ export function MediaConsolePanel({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: {
                     providerMode,

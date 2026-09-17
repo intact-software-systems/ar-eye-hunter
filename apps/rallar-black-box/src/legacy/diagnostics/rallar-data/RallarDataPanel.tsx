@@ -123,6 +123,7 @@ export function RallarDataPanel({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: {
                     providerMode,
@@ -137,12 +138,13 @@ export function RallarDataPanel({
                     authSession,
                     timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
                 },
+                transport: undefined,
+                severity,
                 payload: {
                     storeName,
                     scope: resolvedScope,
                     ...optionalRecord(payload)
-                },
-                severity
+                }
             }),
             lastAction
         );

@@ -50,6 +50,7 @@ export class RtcRealtimeFacadeSession {
     recordEvent(event: RtcRealtimeFacadeSession.Event): void {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic: event.topic,
                 context: this.toOperationContext(),
                 transport: this.input.transport,

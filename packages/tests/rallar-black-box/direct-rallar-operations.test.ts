@@ -34,7 +34,7 @@ describe('direct Rallar operations', () => {
                 workspaceId: 'workspace',
                 roomId: 'bad room'
             },
-            { typeId: '', topicId: 'invalid.topic', payload: undefined },
+            { scope: 'room', typeId: '', topicId: 'invalid.topic', payload: undefined },
             async () => {
                 throw new Error('Validation must precede facade loading');
             }
@@ -86,7 +86,7 @@ describe('direct Rallar operations', () => {
                 },
                 selector: { topicId: 'room.test', typeId: 'test' },
                 handler: () => {},
-                loadFacade: async () => facade
+                readFacade: async () => facade
             }
         );
         expect(result.status).toBe('failed');
@@ -606,7 +606,7 @@ describe('direct Rallar operations', () => {
                 handler: (message) => {
                     received.push(message);
                 },
-                loadFacade: async () => facade
+                readFacade: async () => facade
             }
         );
         await subscribedHandler?.(createDirectMessage({
@@ -736,7 +736,7 @@ describe('direct Rallar operations', () => {
             },
             selector,
             handler: () => {},
-            loadFacade: async () => facade
+            readFacade: async () => facade
         });
 
         expect(calls).toEqual(['subscribe', 'unsubscribe']);

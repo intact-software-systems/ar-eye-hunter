@@ -172,7 +172,7 @@ export class WebSocketRallarMessageActions {
                 context: this.input.commandCenter.directContext(),
                 selector: selector,
                 handler: (message) => this.receiveRoomMessage(message),
-                loadFacade: loadBrowserRallarFacade,
+                readFacade: loadBrowserRallarFacade,
                 signal: signal,
                 subscriptions: this.input.lifetime.subscriptions
             }
@@ -318,6 +318,7 @@ export class WebSocketRallarMessageActions {
     ): void {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic: open ? 'rallar.direct.ws.wait_open.completed' : 'rallar.direct.ws.wait_open.failed',
                 context: this.input.commandCenter.directContext(),
                 transport: 'ws',
