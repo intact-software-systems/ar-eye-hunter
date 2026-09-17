@@ -10,7 +10,8 @@ import {
 } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import {
-    RallarBlackBoxControlClient,
+    createDefaultRallarBlackBoxControlClient,
+    type RallarBlackBoxControlClient,
     type RallarBlackBoxControlSnapshot
 } from '@shared-test/rallar-bb-test/control-client.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
@@ -524,12 +525,10 @@ class RallarBlackBoxRuntimeStore {
             busy: false,
             runState: 'waiting'
         };
-        this.controlClient = new RallarBlackBoxControlClient({
+        this.controlClient = createDefaultRallarBlackBoxControlClient({
             runtime: this.runtime,
-            token: this.bootstrapConfig.controlToken,
             heartbeatIntervalMs: this.bootstrapConfig.heartbeatIntervalMs,
             statsIntervalMs: this.bootstrapConfig.statsIntervalMs,
-            finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
             onSnapshot: (control) => {
                 this.snapshot = {
                     ...this.snapshot,
@@ -604,6 +603,7 @@ class RallarBlackBoxRuntimeStore {
             runId: effectiveRunId,
             agentId: effectiveAgentId,
             token: this.bootstrapConfig.controlToken,
+            finalReportUploadUrl: this.bootstrapConfig.finalReportUploadUrl,
             completedCommandIds: this.resumedCommandIds
         });
     }

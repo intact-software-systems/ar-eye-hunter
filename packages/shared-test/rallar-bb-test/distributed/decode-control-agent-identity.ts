@@ -1,6 +1,6 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import type { RallarBlackBoxControlAgentIdentity } from '../distributed-run.ts';
+import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from '../distributed-run.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import { decodeControlAgentCapabilities } from './control-agent-capabilities.ts';
 
@@ -91,12 +91,8 @@ function decodeOptionalIdentityTexts(value: unknown): Either<string, OptionalIde
     return Either.ofRight(texts);
 }
 
-function decodeOptionalGeoLocation(
-    value: unknown
-): Either<string, Pick<RallarBlackBoxControlAgentIdentity, 'location'>> {
-    if (value === undefined) {
-        return Either.ofRight({});
-    }
+/** An agent location names both coordinates and its precision; a label, when present, is non-empty text. */
+export function decodeRallarBlackBoxGeoLocation(value: unknown): Either<string, RallarBlackBoxGeoLocation> {
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(GEO_LOCATION_ISSUE);
     }
@@ -105,8 +101,16 @@ function decodeOptionalGeoLocation(
             isCoordinate(longitude, 180) &&
             (precision === 'exact' || precision === 'approximate') &&
             (label === undefined || isNonEmptyText(label))
-        ? Either.ofRight({ location: { latitude, longitude, ...(label === undefined ? {} : { label }), precision } })
+        ? Either.ofRight({ latitude, longitude, ...(label === undefined ? {} : { label }), precision })
         : Either.ofLeft(GEO_LOCATION_ISSUE);
+}
+
+function decodeOptionalGeoLocation(
+    value: unknown
+): Either<string, Pick<RallarBlackBoxControlAgentIdentity, 'location'>> {
+    return value === undefined
+        ? Either.ofRight({})
+        : decodeRallarBlackBoxGeoLocation(value).mapRight((location) => ({ location }));
 }
 
 function decodeOptionalCapabilities(

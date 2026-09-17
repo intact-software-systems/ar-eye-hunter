@@ -1,6 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
+import {
+    createDefaultRallarBlackBoxControlClient,
+    RallarBlackBoxControlClient,
+    type RallarBlackBoxControlClientOptions,
+    type RallarBlackBoxControlSnapshot,
+    type RallarBlackBoxControlSocketEvent,
+    type RallarBlackBoxControlSocketEventType,
+    type RallarBlackBoxControlSocketListener,
+    type RallarBlackBoxControlWebSocketFactory
+} from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import {
     parseControlClientMessage,
     parseControlServerMessage,
@@ -9,28 +18,32 @@ import {
     type ControlEventEnvelope,
     type ControlResultEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestReportFragment,
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestStatsSnapshot
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
-
-type Listener = (event: unknown) => void;
 
 class FakeControlSocket {
     readyState = 0;
     readonly sent: string[] = [];
-    private readonly listeners = new Map<string, Set<Listener>>();
+    private readonly listeners = new Map<RallarBlackBoxControlSocketEventType, Set<RallarBlackBoxControlSocketListener>>();
 
-    addEventListener(type: string, listener: Listener): void {
-        const listeners = this.listeners.get(type) ?? new Set<Listener>();
+    addEventListener(type: RallarBlackBoxControlSocketEventType, listener: RallarBlackBoxControlSocketListener): void {
+        const listeners = this.listeners.get(type) ?? new Set<RallarBlackBoxControlSocketListener>();
         listeners.add(listener);
         this.listeners.set(type, listeners);
     }
 
-    removeEventListener(type: string, listener: Listener): void {
+    removeEventListener(type: RallarBlackBoxControlSocketEventType, listener: RallarBlackBoxControlSocketListener): void {
         this.listeners.get(type)?.delete(listener);
     }
 
-    send(data: string): void {
-        this.sent.push(data);
+    send(message: string): void {
+        this.sent.push(message);
     }
 
     close(): void {
@@ -47,13 +60,38 @@ class FakeControlSocket {
         this.emit('open', {});
     }
 
-    message(data: unknown): void {
+    message(data: string): void {
         this.emit('message', { data });
     }
 
-    private emit(type: string, event: unknown): void {
+    private emit(type: RallarBlackBoxControlSocketEventType, event: RallarBlackBoxControlSocketEvent): void {
         this.listeners.get(type)?.forEach((listener) => listener(event));
     }
+}
+
+function toClientOptions(
+    runtime: RallarBlackBoxTestRuntime,
+    webSocketFactory: RallarBlackBoxControlWebSocketFactory
+): RallarBlackBoxControlClientOptions {
+    return {
+        runtime,
+        webSocketFactory,
+        fetch: () => Promise.reject(new Error('This client uploads no final report.')),
+        heartbeatIntervalMs: 60_000,
+        statsIntervalMs: 5_000,
+        reconnectBaseMs: 600,
+        reconnectMaxMs: 5_000,
+        onSnapshot: () => undefined
+    };
+}
+
+function connectToRunOne(client: RallarBlackBoxControlClient): void {
+    client.connect({
+        url: 'ws://control.example.test',
+        runId: 'run-1',
+        agentId: 'agent-1',
+        completedCommandIds: []
+    });
 }
 
 function envelopes(socket: FakeControlSocket): ControlClientEnvelope[] {
@@ -318,18 +356,10 @@ describe('shared rallar black-box control client', () => {
     it('registers, dispatches commands, and streams results and events', async () => {
         const socket = new FakeControlSocket();
         const runtime = createRallarBlackBoxTestRuntime();
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
 
         try {
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             socket.open();
 
             expect(envelopes(socket)[0]).toMatchObject({
@@ -359,7 +389,7 @@ describe('shared rallar black-box control client', () => {
                     envelope.commandId === 'configure-1'
                 )
             ).toBe(true);
-            expect(client.currentSnapshot()).toMatchObject({
+            expect(client.getSnapshot()).toMatchObject({
                 state: 'registered',
                 receivedCount: 1
             });
@@ -408,18 +438,10 @@ describe('shared rallar black-box control client', () => {
                 }
             }
         });
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
 
         try {
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             socket.open();
 
             const register = envelopes(socket)[0];
@@ -456,7 +478,7 @@ describe('shared rallar black-box control client', () => {
             });
             expect(
                 register.kind === 'register'
-                    ? register.identity?.capabilities?.crdt?.transports
+                    ? register.identity?.capabilities?.crdt.transports
                     : []
             ).toContain('rtc-with-ws-fallback');
 
@@ -494,19 +516,11 @@ describe('shared rallar black-box control client', () => {
     it('replays cached command results for duplicate command IDs', async () => {
         const socket = new FakeControlSocket();
         const runtime = createRallarBlackBoxTestRuntime();
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
         const command = JSON.stringify(commandEnvelope('configure-1', configureCommand()));
 
         try {
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             socket.open();
             socket.message(command);
 
@@ -539,23 +553,17 @@ describe('shared rallar black-box control client', () => {
         const sockets: FakeControlSocket[] = [];
         const runtime = createRallarBlackBoxTestRuntime();
         const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            reconnectBaseMs: 25,
-            reconnectMaxMs: 25,
-            webSocketFactory: () => {
+            ...toClientOptions(runtime, () => {
                 const socket = new FakeControlSocket();
                 sockets.push(socket);
                 return socket;
-            }
+            }),
+            reconnectBaseMs: 25,
+            reconnectMaxMs: 25
         });
 
         try {
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             sockets[0].open();
             sockets[0].message(JSON.stringify(commandEnvelope('configure-1', configureCommand())));
 
@@ -564,7 +572,7 @@ describe('shared rallar black-box control client', () => {
             });
 
             sockets[0].close();
-            expect(client.currentSnapshot().state).toBe('reconnecting');
+            expect(client.getSnapshot().state).toBe('reconnecting');
 
             await vi.advanceTimersByTimeAsync(25);
             expect(sockets).toHaveLength(2);
@@ -594,19 +602,10 @@ describe('shared rallar black-box control client', () => {
 
         const socket = new FakeControlSocket();
         const runtime = createRallarBlackBoxTestRuntime();
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            statsIntervalMs: 25,
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 25 });
 
         try {
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             socket.open();
 
             expect(eventsFor(socket, 'stats')).toHaveLength(1);
@@ -618,13 +617,11 @@ describe('shared rallar black-box control client', () => {
 
             await vi.advanceTimersByTimeAsync(25);
 
-            const latestStatsEnvelope = eventsFor(socket, 'stats').at(-1);
-            expect(latestStatsEnvelope).toBeDefined();
-            const statsEvent = latestStatsEnvelope?.payload as any;
+            const statsEvent = eventsFor(socket, 'stats').at(-1)?.payload as RallarBlackBoxTestEvent<RallarBlackBoxTestStatsSnapshot>;
             expect(statsEvent.kind).toBe('stats');
             expect(statsEvent.topic).toBe('rallar.bb.stats');
-            expect(statsEvent.payload.counters.commands).toBe(1);
-            expect(client.currentSnapshot().lastStatsAtEpochMs).toBeDefined();
+            expect(statsEvent.payload?.counters.commands).toBe(1);
+            expect(client.getSnapshot().lastStatsAtEpochMs).toBeDefined();
         }
         finally {
             client.dispose();
@@ -638,34 +635,28 @@ describe('shared rallar black-box control client', () => {
         const uploads: Array<{
             url: string;
             body: ControlClientEnvelope;
-            authorization?: string;
+            authorization: string | null;
         }> = [];
         const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-            const headers = new Headers(init?.headers);
             uploads.push({
                 url: String(input),
-                body: JSON.parse(String(init?.body ?? '{}')) as ControlClientEnvelope,
-                authorization: headers.get('authorization') ?? undefined
+                body: JSON.parse(String(init?.body)) as ControlClientEnvelope,
+                authorization: new Headers(init?.headers).get('authorization')
             });
             return new Response('{}', {
                 status: 202
             });
         });
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            fetch,
-            heartbeatIntervalMs: 60_000,
-            statsIntervalMs: 0,
-            finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
-            token: 'run-token-1',
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), fetch, statsIntervalMs: 0 });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1'
+                agentId: 'agent-1',
+                token: 'run-token-1',
+                finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
+                completedCommandIds: []
             });
             socket.open();
 
@@ -692,22 +683,21 @@ describe('shared rallar black-box control client', () => {
             expect(uploads[0].body.kind).toBe('report');
             expect(uploads[0].authorization).toBe('Bearer run-token-1');
             expect(JSON.stringify(uploads[0].body)).not.toContain('secret-token');
-            const uploadedBody = uploads[0].body;
-            if (uploadedBody.kind !== 'report') {
-                throw new Error(
-                    `expected an uploaded report envelope, received ${uploadedBody.kind}`
-                );
-            }
-            const uploadedEvent = uploadedBody.payload as any;
-            const uploadedReport = uploadedEvent.payload as any;
-            expect(uploadedReport.summary).toBeDefined();
-            expect(uploadedReport.stats).toBeDefined();
-            expect(uploadedReport.results).toBeUndefined();
-            expect(uploadedReport.events).toBeUndefined();
-            const socketEvent = eventsFor(socket, 'report')[0].payload as any;
-            expect(socketEvent.payload.results).toBeUndefined();
-            expect(socketEvent.payload.events).toBeUndefined();
-            expect(client.currentSnapshot().lastReportAtEpochMs).toBeDefined();
+            const uploadedEnvelope = uploads[0].body as ControlEventEnvelope;
+            const uploadedReport = (uploadedEnvelope.payload as RallarBlackBoxTestEvent<RallarBlackBoxTestReportFragment>)
+                .payload;
+            expect(uploadedReport?.summary).toBeDefined();
+            expect(uploadedReport?.stats).toBeDefined();
+            expect(uploadedReport?.results).toBeUndefined();
+            expect(uploadedReport?.events).toBeUndefined();
+            const socketReport = (eventsFor(socket, 'report')[0].payload as RallarBlackBoxTestEvent<RallarBlackBoxTestReportFragment>)
+                .payload;
+            expect(socketReport?.results).toBeUndefined();
+            expect(socketReport?.events).toBeUndefined();
+            await vi.waitFor(() => {
+                expect(client.getSnapshot().lastReportUploadAtEpochMs).toBeDefined();
+            });
+            expect(client.getSnapshot().lastReportAtEpochMs).toBeDefined();
         }
         finally {
             client.dispose();
@@ -719,21 +709,12 @@ describe('shared rallar black-box control client', () => {
         const runtime = createRallarBlackBoxTestRuntime();
         vi.stubGlobal('localStorage', memoryStorage());
         vi.stubGlobal('sessionStorage', memoryStorage());
-        const client = new RallarBlackBoxControlClient({
-            runtime,
-            heartbeatIntervalMs: 60_000,
-            statsIntervalMs: 0,
-            webSocketFactory: () => socket
-        });
+        const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 0 });
 
         try {
             localStorage.setItem('rallar-secret', 'persisted');
             sessionStorage.setItem('rallar-session-secret', 'persisted');
-            client.connect({
-                url: 'ws://control.example.test',
-                runId: 'run-1',
-                agentId: 'agent-1'
-            });
+            connectToRunOne(client);
             socket.open();
             socket.message(JSON.stringify(commandEnvelope('reset-1', {
                 kind: 'reset'
@@ -749,9 +730,150 @@ describe('shared rallar black-box control client', () => {
                 envelopes(socket).some((envelope) =>
                     envelope.kind === 'diagnostic' &&
                     envelope.commandId === 'reset-1' &&
-                    (envelope.payload as any).topic === 'rallar.bb.control.browser_storage_cleaned'
+                    (envelope.payload as RallarBlackBoxTestEvent).topic === 'rallar.bb.control.browser_storage_cleaned'
                 )
             ).toBe(true);
+        }
+        finally {
+            client.dispose();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('reports a failed final report upload as the snapshot error and a warning diagnostic', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        const fetch = vi.fn(async () => new Response('down', { status: 503, statusText: 'Service Unavailable' }));
+        const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), fetch, statsIntervalMs: 0 });
+
+        try {
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+                finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
+                completedCommandIds: []
+            });
+            socket.open();
+            client.disconnect();
+
+            await vi.waitFor(() => {
+                expect(client.getSnapshot().lastError).toBe('Final report upload failed: 503 Service Unavailable');
+            });
+            expect(runtime.state().events.find((event) => event.topic === 'rallar.bb.control.report_upload_failed'))
+                .toMatchObject({
+                    severity: 'warning',
+                    payload: {
+                        error: 'Final report upload failed: 503 Service Unavailable',
+                        uploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report'
+                    }
+                });
+            expect(client.getSnapshot().lastReportUploadAtEpochMs).toBeUndefined();
+        }
+        finally {
+            client.dispose();
+        }
+    });
+
+    it('streams the runtime stats, including load, over the control socket', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        const client = new RallarBlackBoxControlClient({ ...toClientOptions(runtime, () => socket), statsIntervalMs: 0 });
+
+        try {
+            await runtime.execute({
+                kind: 'loop',
+                commandId: 'loop-1',
+                count: 1,
+                commands: [{ kind: 'health', commandId: 'loop-health' }]
+            });
+            connectToRunOne(client);
+            socket.open();
+
+            const statsEvent = eventsFor(socket, 'stats')[0]?.payload as RallarBlackBoxTestEvent<RallarBlackBoxTestStatsSnapshot>;
+            expect(statsEvent.payload?.load).toMatchObject({ loopCount: 1, latestLoopCommandId: 'loop-1' });
+        }
+        finally {
+            client.dispose();
+        }
+    });
+
+    it('registers without a configured fleet location that names no precision and reports why once', async () => {
+        vi.useFakeTimers();
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-fleet',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                fleet: { region: 'eu-north', location: { latitude: 52.5, longitude: 13.4 } }
+            }
+        });
+        const client = new RallarBlackBoxControlClient({
+            ...toClientOptions(runtime, () => socket),
+            heartbeatIntervalMs: 25,
+            statsIntervalMs: 0
+        });
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+            await vi.advanceTimersByTimeAsync(50);
+
+            const register = envelopes(socket)[0];
+            expect(register.kind === 'register' ? register.identity : undefined).toMatchObject({ region: 'eu-north' });
+            expect(register.kind === 'register' ? register.identity?.location : 'not a register').toBeUndefined();
+            expect(runtime.state().events.filter((event) => event.topic === 'rallar.bb.control.identity_invalid'))
+                .toEqual([
+                    expect.objectContaining({
+                        severity: 'error',
+                        payload: {
+                            issue: 'identity.location must carry latitude, longitude and an exact or approximate precision'
+                        }
+                    })
+                ]);
+        }
+        finally {
+            client.dispose();
+            vi.useRealTimers();
+        }
+    });
+
+    it('uploads the final report through the page fetch without rebinding it', async () => {
+        const receivers: unknown[] = [];
+        vi.stubGlobal('fetch', function pageFetch (this: unknown) {
+            receivers.push(this);
+            return Promise.resolve(new Response('{}', { status: 202 }));
+        });
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        const client = createDefaultRallarBlackBoxControlClient({
+            runtime,
+            heartbeatIntervalMs: 60_000,
+            statsIntervalMs: 0,
+            onSnapshot: () => undefined
+        });
+        vi.stubGlobal('WebSocket', function PageWebSocket () {
+            return socket;
+        });
+
+        try {
+            client.connect({
+                url: 'ws://control.example.test',
+                runId: 'run-1',
+                agentId: 'agent-1',
+                finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
+                completedCommandIds: []
+            });
+            socket.open();
+            client.disconnect();
+
+            await vi.waitFor(() => {
+                expect(receivers).toHaveLength(1);
+            });
+            expect(receivers[0]).not.toBe(client);
         }
         finally {
             client.dispose();

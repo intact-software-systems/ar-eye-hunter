@@ -9,7 +9,7 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
-import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from './control-client.ts';
+import { createDefaultRallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from './control-client.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
 import type {
     RallarBlackBoxTestConfig,
@@ -172,12 +172,10 @@ export function createRallarBlackBoxBrowserControlAgent(
         }
     };
 
-    const controlClient = new RallarBlackBoxControlClient({
+    const controlClient = createDefaultRallarBlackBoxControlClient({
         runtime,
-        token: bootstrap.controlToken,
         heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
         statsIntervalMs: bootstrap.statsIntervalMs,
-        finalReportUploadUrl: bootstrap.finalReportUploadUrl,
         onSnapshot: (control) => {
             snapshot = {
                 ...snapshot,
@@ -258,6 +256,7 @@ export function createRallarBlackBoxBrowserControlAgent(
                         runId: config.runId ?? bootstrap.runId,
                         agentId: bootstrap.agentId,
                         token: bootstrap.controlToken,
+                        finalReportUploadUrl: bootstrap.finalReportUploadUrl,
                         completedCommandIds: resumedCommandIds
                     });
                 }
