@@ -1,4 +1,4 @@
-import { flattenRallarBlackBoxCompositeResults } from '../composite-results.ts';
+import { toRallarBlackBoxCompositeResultFlatEntries } from '../composite-results.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
 import type { RallarBlackBoxDistributedTargetResolution } from '../distributed-run.ts';
@@ -162,9 +162,9 @@ function toGroupAssertionEvidenceRow(
 function toRecipeCommandResults(resultValue: RallarBlackBoxGroupAssertionValue): readonly RecipeCommandResult[] {
     const results = isJsonRecordValue(resultValue) && Array.isArray(resultValue.results) ? resultValue.results : [];
     const rootResults = results.filter(isCommandResult);
-    return flattenRallarBlackBoxCompositeResults(rootResults).map((entry) => ({
+    return toRallarBlackBoxCompositeResultFlatEntries(rootResults).map((entry) => ({
         commandId: entry.commandId,
-        originalCommandId: entry.originalCommandId,
+        originalCommandId: entry.position.kind === 'root' ? undefined : entry.position.originalCommandId,
         result: entry.result
     }));
 }

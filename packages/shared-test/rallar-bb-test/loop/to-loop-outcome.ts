@@ -1,6 +1,6 @@
 import type {
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestCompositeChildResult,
+    RallarBlackBoxTestLoopChildResult,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
@@ -8,7 +8,7 @@ import { toLoopResultValue, type LoopResultMetrics } from './to-loop-result-valu
 
 export interface LoopOutcomeEvidence {
     readonly commandId: string;
-    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+    readonly results: readonly RallarBlackBoxTestLoopChildResult[];
     /** Absent before the loop starts, when no pacing has been measured. */
     readonly metrics?: LoopResultMetrics;
 }
@@ -70,7 +70,7 @@ export function toLoopCancelledOutcome(value: RallarBlackBoxTestLoopResultValue)
 
 export function toLoopChildFailedOutcome(
     value: RallarBlackBoxTestLoopResultValue,
-    failedChild: RallarBlackBoxTestCompositeChildResult
+    failedChild: RallarBlackBoxTestLoopChildResult
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',

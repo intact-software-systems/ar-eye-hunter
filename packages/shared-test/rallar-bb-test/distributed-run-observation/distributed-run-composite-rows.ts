@@ -1,6 +1,7 @@
 import {
-    flattenRallarBlackBoxCompositeResults,
-    toRallarBlackBoxCompositeDisplayResults
+    toRallarBlackBoxCompositeDisplayResults,
+    toRallarBlackBoxCompositeResultFlatEntries,
+    type RallarBlackBoxCompositeResultPosition
 } from '../composite-results.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeParallelResultValue } from './decode-composite-result-values.ts';
@@ -15,30 +16,43 @@ import {
 } from './to-composite-result-detail.ts';
 import { toCompositeResultSummary } from './to-composite-result-summary.ts';
 
+type CompositeRowPosition = Pick<
+    DistributedRunCompositeRow,
+    | 'parentPath'
+    | 'parentCommandId'
+    | 'childIndex'
+    | 'commandIndex'
+    | 'iteration'
+    | 'groupId'
+    | 'groupIndex'
+    | 'originalCommandId'
+>;
+
 export function toDistributedRunCompositeRows(
     roots: readonly RallarBlackBoxTestResult[]
 ): readonly DistributedRunCompositeRow[] {
-    const entries = flattenRallarBlackBoxCompositeResults(roots);
+    const entries = toRallarBlackBoxCompositeResultFlatEntries(roots);
     const displayByPath = new Map(
-        toRallarBlackBoxCompositeDisplayResults(roots)
+        toRallarBlackBoxCompositeDisplayResults(roots, {})
             .map((row) => [row.path, row])
     );
 
     return entries.map((entry) => {
         const display = displayByPath.get(entry.path);
         const errorSummary = toCompositeErrorSummary(display?.error ?? entry.result.error);
+        const position = toCompositeRowPosition(entry.position);
         return {
             path: entry.path,
             sourceRecipePath: entry.sourceRecipePath,
-            parentPath: entry.parentPath,
-            parentCommandId: entry.parentCommandId,
+            parentPath: position.parentPath,
+            parentCommandId: position.parentCommandId,
             depth: entry.depth,
-            childIndex: entry.childIndex,
-            commandIndex: entry.commandIndex,
-            iteration: entry.iteration,
-            groupId: entry.groupId,
-            groupIndex: entry.groupIndex,
-            originalCommandId: entry.originalCommandId,
+            childIndex: position.childIndex,
+            commandIndex: position.commandIndex,
+            iteration: position.iteration,
+            groupId: position.groupId,
+            groupIndex: position.groupIndex,
+            originalCommandId: position.originalCommandId,
             commandId: entry.commandId,
             kind: entry.kind,
             status: entry.status,
@@ -57,7 +71,7 @@ export function toDistributedRunCompositeRows(
 export function toDistributedRunCompositeGroupSummaries(
     roots: readonly RallarBlackBoxTestResult[]
 ): readonly DistributedRunCompositeGroupSummary[] {
-    return flattenRallarBlackBoxCompositeResults(roots)
+    return toRallarBlackBoxCompositeResultFlatEntries(roots)
         .flatMap((entry) => {
             const value = decodeParallelResultValue(entry.result.value);
             if (!value) {
@@ -76,6 +90,32 @@ export function toDistributedRunCompositeGroupSummaries(
                 status: toCompositeGroupStatus(group)
             }));
         });
+}
+
+function toCompositeRowPosition(position: RallarBlackBoxCompositeResultPosition): CompositeRowPosition {
+    switch (position.kind) {
+        case 'root':
+            return {};
+        case 'loop-child':
+            return {
+                parentPath: position.parentPath,
+                parentCommandId: position.parentCommandId,
+                childIndex: position.childIndex,
+                commandIndex: position.commandIndex,
+                iteration: position.iteration,
+                originalCommandId: position.originalCommandId
+            };
+        case 'parallel-child':
+            return {
+                parentPath: position.parentPath,
+                parentCommandId: position.parentCommandId,
+                childIndex: position.childIndex,
+                commandIndex: position.commandIndex,
+                groupId: position.groupId,
+                groupIndex: position.groupIndex,
+                originalCommandId: position.originalCommandId
+            };
+    }
 }
 
 function toCompositeGroupStatus(

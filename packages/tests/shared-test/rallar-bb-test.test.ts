@@ -151,11 +151,11 @@ describe('rallar-bb runtime core', () => {
     });
 
     it('passes raw config to command executors while keeping runtime state redacted', async () => {
-        let capturedPassword: unknown;
+        let capturedPassword: string | undefined;
         const runtime = createRallarBlackBoxTestRuntime({
             commandExecutor: (_command, context) => {
-                const rallarConfig = context.config()?.rallar as { password?: unknown; } | undefined;
-                capturedPassword = rallarConfig?.password;
+                const password = context.config()?.rallar?.password;
+                capturedPassword = typeof password === 'string' ? password : undefined;
                 return {
                     status: 'ok',
                     value: {

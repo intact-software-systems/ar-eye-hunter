@@ -1,6 +1,6 @@
 import type {
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestCompositeChildResult,
+    RallarBlackBoxTestLoopChildResult,
     RallarBlackBoxTestLoopCommand,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopThresholdFailure
@@ -11,7 +11,7 @@ export const RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED = 'RALLAR_BLACK_BOX_LOOP_UNTI
 const DEFAULT_BACKOFF_MULTIPLIER = 1;
 
 export type LoopIterationOutcome =
-    | Readonly<{ kind: 'completed'; failedChildResult?: RallarBlackBoxTestCompositeChildResult; }>
+    | Readonly<{ kind: 'completed'; failedChildResult?: RallarBlackBoxTestLoopChildResult; }>
     | Readonly<{ kind: 'outcome'; outcome: RallarBlackBoxTestCommandOutcome; }>;
 
 export interface LoopUntilValidationIssue {
@@ -85,7 +85,7 @@ export interface RunLoopUntilFirstSuccessInput {
 export async function runLoopUntilFirstSuccess(
     input: RunLoopUntilFirstSuccessInput
 ): Promise<RallarBlackBoxTestCommandOutcome> {
-    let lastFailedChildResult: RallarBlackBoxTestCompositeChildResult | undefined;
+    let lastFailedChildResult: RallarBlackBoxTestLoopChildResult | undefined;
     let attempts = 0;
     let nextScheduledAtEpochMs = input.loopStartedAtEpochMs;
 
@@ -165,9 +165,7 @@ function toBackoffMultiplier(input: RunLoopUntilFirstSuccessInput): number {
 
 function toExhaustedOutcome(
     input: RunLoopUntilFirstSuccessInput,
-    exhausted: Readonly<
-        { attempts: number; lastFailedChildResult: RallarBlackBoxTestCompositeChildResult | undefined; }
-    >
+    exhausted: Readonly<{ attempts: number; lastFailedChildResult: RallarBlackBoxTestLoopChildResult | undefined; }>
 ): RallarBlackBoxTestCommandOutcome {
     return {
         status: 'failed',

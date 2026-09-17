@@ -1,12 +1,12 @@
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
-    rallarBlackBoxLoopChildResultPath,
-    rallarBlackBoxLoopChildSourceRecipePath
-} from '../composite-results.ts';
+    toRallarBlackBoxLoopChildResultPath,
+    toRallarBlackBoxLoopChildSourceRecipePath
+} from '../composite-result-paths.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
-    RallarBlackBoxTestCompositeChildResult,
+    RallarBlackBoxTestLoopChildResult,
     RallarBlackBoxTestLoopPacingIteration,
     RallarBlackBoxTestLoopResultValue,
     RallarBlackBoxTestLoopThresholdFailure,
@@ -54,14 +54,14 @@ export namespace LoopCommandExecution {
     export type IterationCompletion =
         | Readonly<{ kind: 'completed' | 'cancelled' | 'limit'; }>
         | Readonly<{ kind: 'timed-out'; deadlineEpochMs: number; }>
-        | Readonly<{ kind: 'child-failed'; entry: RallarBlackBoxTestCompositeChildResult; }>;
+        | Readonly<{ kind: 'child-failed'; entry: RallarBlackBoxTestLoopChildResult; }>;
 }
 
 /** Owns scheduling and collected evidence for one loop command; child commands run through the runtime. */
 export class LoopCommandExecution {
     private readonly command: LoopCommandWithId;
     private readonly ports: LoopCommandExecution.Ports;
-    private readonly results: RallarBlackBoxTestCompositeChildResult[] = [];
+    private readonly results: RallarBlackBoxTestLoopChildResult[] = [];
     private readonly pacingIterations: RallarBlackBoxTestLoopPacingIteration[] = [];
 
     constructor(command: LoopCommandWithId, ports: LoopCommandExecution.Ports) {
@@ -178,7 +178,7 @@ export class LoopCommandExecution {
     private async runChild(
         input: LoopCommandExecution.IterationInput,
         commandIndex: number
-    ): Promise<RallarBlackBoxTestCompositeChildResult> {
+    ): Promise<RallarBlackBoxTestLoopChildResult> {
         const template = this.command.commands[commandIndex];
         const iteration = input.iterationIndex + 1;
         const context = {
@@ -194,12 +194,12 @@ export class LoopCommandExecution {
             commandId: result.commandId,
             originalCommandId: template.commandId,
             parentCommandId: this.command.commandId,
-            path: rallarBlackBoxLoopChildResultPath(
+            path: toRallarBlackBoxLoopChildResultPath(
                 RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
                 iteration,
                 commandIndex
             ),
-            sourceRecipePath: rallarBlackBoxLoopChildSourceRecipePath(
+            sourceRecipePath: toRallarBlackBoxLoopChildSourceRecipePath(
                 RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
                 commandIndex
             ),

@@ -1,11 +1,10 @@
 import {
-    summarizeRallarBlackBoxCompositeResults,
+    computeRallarBlackBoxCompositeResultSummary,
     type RallarBlackBoxCompositeResultSummary
 } from './composite-results.ts';
 import {
     createRallarBlackBoxCompositeConformanceRecipe
 } from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -16,6 +15,7 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport
 } from './rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
 
 export type RallarBlackBoxCompositeConformanceCaseId =
     | 'looped-rtc-send'
@@ -466,9 +466,7 @@ export function toRallarBlackBoxCompositeConformanceReport(
             diagnostics: diagnostics.length,
             failures: failures.length,
             compositeSummary: compositeResults.length > 0
-                ? summarizeRallarBlackBoxCompositeResults(compositeResults, {
-                    redaction: input.redaction
-                })
+                ? computeRallarBlackBoxCompositeResultSummary(compositeResults, input.redaction ?? {})
                 : undefined,
             failureCodes
         }

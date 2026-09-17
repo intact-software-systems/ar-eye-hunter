@@ -1,7 +1,9 @@
 # Composite Result Contract
 
 `packages/shared-test/rallar-bb-test/composite-results.ts` defines shared
-helpers for inspecting `loop` and `parallel` command output. The helpers are
+helpers for inspecting `loop` and `parallel` command output, and
+`composite-result-paths.ts` owns the path grammar that the loop and parallel
+runtimes record on each child. The helpers are
 intended for the SPA, control-server artifacts, and automated analysis code
 that needs a stable view of nested command results.
 
@@ -40,23 +42,37 @@ back to the recipe template:
 - `$.groups[0].commands[1]`
 - `$.groups[0].commands[0].commands[0]`
 
+## Child Results
+
+Every loop child records `commandId`, `parentCommandId`, `path`,
+`sourceRecipePath`, `childIndex`, `commandIndex` and its one-based `iteration`;
+every parallel child records the same fields plus `groupId` and `groupIndex`.
+`originalCommandId` is present when the recipe template names a command id.
+Paths are recorded relative to the composite root (`$`) and rebased under the
+parent path when nested composites are walked. A loop or parallel value whose
+children do not all carry these fields and a decodable command result
+contributes no child entries.
+
 ## Helpers
 
+Every helper takes the list of root results; a single root keeps the `$` path.
 Use:
 
-- `flattenRallarBlackBoxCompositeResults(...)` for a stable flat tree order.
+- `toRallarBlackBoxCompositeResultFlatEntries(...)` for a stable flat tree order.
 - `toRallarBlackBoxCompositeResultTimeline(...)` for chronological display.
 - `toRallarBlackBoxCompositeResultTree(...)` for parent/child drilldowns.
-- `summarizeRallarBlackBoxCompositeResults(...)` for pass/fail/cancel counts
-  and first-failure focus, with optional redaction for display use.
-- `findFirstFailedRallarBlackBoxCompositeResult(...)` for failure focus.
+- `computeRallarBlackBoxCompositeResultSummary(...)` for pass/fail/cancel counts
+  and first-failure focus, redacted with the given redaction options.
+- `resolveRallarBlackBoxCompositeFirstFailure(...)` for failure focus.
 - `toRallarBlackBoxCompositeDisplayResults(...)` for redacted UI/artifact
   summaries.
 
-The flat entries include both `path` and `sourceRecipePath`, plus parent command
-ID, original command ID, loop iteration, parallel group ID, group index, command
-index, and the raw result. Display entries omit the raw result object and expose
-only redacted `value` and `error` fields.
+The flat entries include both `path` and `sourceRecipePath`, the depth, and a
+`position`: `root`, or a `loop-child` (parent path and command ID, child and
+command index, iteration, original command ID) or `parallel-child` (the same
+with group ID and group index instead of the iteration), plus the raw result.
+Display entries omit the raw result object and expose only redacted `value` and
+`error` fields.
 
 Loop parent result values may also include:
 
@@ -83,7 +99,8 @@ composite result contract.
 
 ## Compatibility
 
-Adding optional fields to composite child results is compatible.
+Adding optional fields to composite child results is compatible. Child results
+missing a field listed under Child Results no longer decode.
 
 Changing path syntax, source path syntax, summary field names, or redacted
 display-entry semantics is a contract change. Update this document, the fixture

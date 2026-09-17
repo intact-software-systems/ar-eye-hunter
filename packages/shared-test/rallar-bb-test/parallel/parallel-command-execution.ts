@@ -1,14 +1,14 @@
 import { Either } from '@shared/resilience/Either.ts';
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
-    rallarBlackBoxParallelChildResultPath,
-    rallarBlackBoxParallelChildSourceRecipePath
-} from '../composite-results.ts';
+    toRallarBlackBoxParallelChildResultPath,
+    toRallarBlackBoxParallelChildSourceRecipePath
+} from '../composite-result-paths.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandOutcome,
-    type RallarBlackBoxTestCompositeChildResult,
+    type RallarBlackBoxTestParallelChildResult,
     type RallarBlackBoxTestParallelCommand,
     type RallarBlackBoxTestParallelGroup,
     type RallarBlackBoxTestParallelGroupResult,
@@ -116,7 +116,7 @@ export class ParallelCommandExecution {
         const group = this.command.groups[groupIndex];
         const startedAtEpochMs = this.ports.now();
         const groupId = group.groupId ?? `group-${groupIndex + 1}`;
-        const results: RallarBlackBoxTestCompositeChildResult[] = [];
+        const results: RallarBlackBoxTestParallelChildResult[] = [];
         const stop = await this.runGroupCommands({ run, group, groupId, groupIndex, results });
         return {
             result: {
@@ -158,7 +158,7 @@ export class ParallelCommandExecution {
     private async runChild(
         input: GroupCommandsInput,
         commandIndex: number
-    ): Promise<RallarBlackBoxTestCompositeChildResult> {
+    ): Promise<RallarBlackBoxTestParallelChildResult> {
         const { run, group } = input;
         const context = { groupId: input.groupId, groupIndex: input.groupIndex, commandIndex };
         const childIndex = input.results.length;
@@ -169,13 +169,13 @@ export class ParallelCommandExecution {
             commandId: result.commandId,
             originalCommandId: template.commandId,
             parentCommandId: this.command.commandId,
-            path: rallarBlackBoxParallelChildResultPath(
-                root,
-                context.groupIndex,
-                context.groupId,
-                context.commandIndex
-            ),
-            sourceRecipePath: rallarBlackBoxParallelChildSourceRecipePath(
+            path: toRallarBlackBoxParallelChildResultPath({
+                parentPath: root,
+                groupIndex: context.groupIndex,
+                groupId: context.groupId,
+                commandIndex: context.commandIndex
+            }),
+            sourceRecipePath: toRallarBlackBoxParallelChildSourceRecipePath(
                 root,
                 context.groupIndex,
                 context.commandIndex
@@ -277,7 +277,7 @@ interface GroupCommandsInput {
     readonly group: RallarBlackBoxTestParallelGroup;
     readonly groupId: string;
     readonly groupIndex: number;
-    readonly results: RallarBlackBoxTestCompositeChildResult[];
+    readonly results: RallarBlackBoxTestParallelChildResult[];
 }
 
 interface ChildCommandInput {

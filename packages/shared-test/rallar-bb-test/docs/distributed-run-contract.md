@@ -331,9 +331,9 @@ rolls up to `failed`.
 
 Distributed artifacts may contain nested `loop` and `parallel` result payloads
 inside ordinary command results. Consumers should use
-`flattenRallarBlackBoxCompositeResults(...)`,
+`toRallarBlackBoxCompositeResultFlatEntries(...)`,
 `toRallarBlackBoxCompositeResultTree(...)`,
-`summarizeRallarBlackBoxCompositeResults(...)`, and
+`computeRallarBlackBoxCompositeResultSummary(...)`, and
 `toRallarBlackBoxCompositeDisplayResults(...)` from
 `packages/shared-test/rallar-bb-test/composite-results.ts` instead of parsing
 runtime-specific child arrays directly. The path contract is documented in

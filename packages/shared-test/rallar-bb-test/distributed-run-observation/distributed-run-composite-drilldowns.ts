@@ -1,4 +1,4 @@
-import { summarizeRallarBlackBoxCompositeResults } from '../composite-results.ts';
+import { computeRallarBlackBoxCompositeResultSummary } from '../composite-results.ts';
 import type { ControlDistributedRunCommandLink, ControlRunSnapshot } from '../control-snapshots.ts';
 import type { RallarBlackBoxTestResult } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from '../runtime/decode-runtime-result-values.ts';
@@ -34,7 +34,7 @@ export function toDistributedRunCompositeDrilldowns(
             return [];
         }
 
-        const summary = summarizeRallarBlackBoxCompositeResults(roots);
+        const summary = computeRallarBlackBoxCompositeResultSummary(roots, {});
         const failedRows = [...rows]
             .filter((row) => !row.ok)
             .sort((left, right) =>

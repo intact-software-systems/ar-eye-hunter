@@ -1,5 +1,5 @@
 import {
-    type RallarBlackBoxTestCompositeChildResult,
+    type RallarBlackBoxTestLoopChildResult,
     type RallarBlackBoxTestLoopPacingIteration,
     type RallarBlackBoxTestLoopPacingSummary,
     type RallarBlackBoxTestLoopResultValue,
@@ -30,7 +30,7 @@ export interface LoopResultMetrics {
 
 export interface LoopResultInput {
     readonly commandId: string;
-    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+    readonly results: readonly RallarBlackBoxTestLoopChildResult[];
     readonly cancelled: boolean;
     /** Absent before the loop starts, when no pacing has been measured. */
     readonly metrics?: LoopResultMetrics;
@@ -107,7 +107,7 @@ function toLoopPacingDrift(iterations: readonly RallarBlackBoxTestLoopPacingIter
 }
 
 function toLoopSendSummary(
-    results: readonly RallarBlackBoxTestCompositeChildResult[]
+    results: readonly RallarBlackBoxTestLoopChildResult[]
 ): RallarBlackBoxTestLoopSendSummary {
     const observations = results
         .map((result) => toSendObservation(result.result))

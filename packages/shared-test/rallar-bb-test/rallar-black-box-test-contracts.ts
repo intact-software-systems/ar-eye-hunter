@@ -666,7 +666,9 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestFormationCommand
     | RallarBlackBoxTestSimpleCommand;
 
-export type RallarBlackBoxTestResultStatus = 'ok' | 'failed' | 'cancelled' | 'skipped';
+export const RALLAR_BLACK_BOX_TEST_RESULT_STATUSES = ['ok', 'failed', 'cancelled', 'skipped'] as const;
+
+export type RallarBlackBoxTestResultStatus = typeof RALLAR_BLACK_BOX_TEST_RESULT_STATUSES[number];
 
 export interface RallarBlackBoxTestError {
     readonly code: string;
@@ -687,18 +689,26 @@ export interface RallarBlackBoxTestResult<T = unknown> {
     readonly replayed?: boolean;
 }
 
+/** Paths are recorded relative to the composite root; readers rebase them under the parent path. */
 export interface RallarBlackBoxTestCompositeChildResult {
     readonly commandId: string;
+    /** Absent when the recipe template names no command id. */
     readonly originalCommandId?: string;
-    readonly parentCommandId?: string;
-    readonly path?: string;
-    readonly sourceRecipePath?: string;
-    readonly childIndex?: number;
+    readonly parentCommandId: string;
+    readonly path: string;
+    readonly sourceRecipePath: string;
+    readonly childIndex: number;
     readonly commandIndex: number;
-    readonly iteration?: number;
-    readonly groupId?: string;
-    readonly groupIndex?: number;
     readonly result: RallarBlackBoxTestResult;
+}
+
+export interface RallarBlackBoxTestLoopChildResult extends RallarBlackBoxTestCompositeChildResult {
+    readonly iteration: number;
+}
+
+export interface RallarBlackBoxTestParallelChildResult extends RallarBlackBoxTestCompositeChildResult {
+    readonly groupId: string;
+    readonly groupIndex: number;
 }
 
 export interface RallarBlackBoxTestLoopPacingIteration {
@@ -790,7 +800,7 @@ export interface RallarBlackBoxTestLoopResultValue {
     readonly pacing?: RallarBlackBoxTestLoopPacingSummary;
     readonly sends?: RallarBlackBoxTestLoopSendSummary;
     readonly thresholdFailures?: readonly RallarBlackBoxTestLoopThresholdFailure[];
-    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+    readonly results: readonly RallarBlackBoxTestLoopChildResult[];
 }
 
 /** Every scheduled frame records its timing; a dropped frame starts and completes at the moment it was dropped. */
@@ -870,7 +880,7 @@ export interface RallarBlackBoxTestParallelGroupResult {
     readonly failed: number;
     readonly cancelled: boolean;
     readonly durationMs: number;
-    readonly results: readonly RallarBlackBoxTestCompositeChildResult[];
+    readonly results: readonly RallarBlackBoxTestParallelChildResult[];
 }
 
 export interface RallarBlackBoxTestParallelResultValue {

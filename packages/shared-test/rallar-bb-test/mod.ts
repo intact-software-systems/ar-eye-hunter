@@ -24,6 +24,7 @@ export type {
 export * from './client-defaults.ts';
 export * from './companion-coverage.ts';
 export * from './composite-conformance.ts';
+export * from './composite-result-paths.ts';
 export * from './composite-results.ts';
 export * from './compute-distributed-run-tuning-inventory.ts';
 export * from './conformance/assertion-outcome-parity.ts';
