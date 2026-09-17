@@ -41,10 +41,11 @@ export function computeStreamPerformanceFailure(
     }
     const { summary } = candidate.sample;
     const commandId = candidate.sample.commandId ?? summary.commandId;
+    const inFlightLimitDropCount = computeStreamInFlightLimitDropCount(candidate.sample);
     const details = [
         toCompletedFramesDetail(summary),
         summary.droppedFrames !== undefined ? `dropped ${summary.droppedFrames}` : undefined,
-        `in-flight limit drops ${computeStreamInFlightLimitDropCount(candidate.sample)}`,
+        inFlightLimitDropCount !== undefined ? `in-flight limit drops ${inFlightLimitDropCount}` : undefined,
         summary.maxStartDriftMs !== undefined ? `max drift ${summary.maxStartDriftMs}ms` : undefined,
         summary.lateFrameCount !== undefined ? `late frames ${summary.lateFrameCount}` : undefined,
         summary.duration?.p99Ms !== undefined ? `p99 ${summary.duration.p99Ms}ms` : undefined

@@ -39,10 +39,14 @@ const STREAM_FRAME_COUNTERS: readonly StreamFrameCounter[] = [
     'lateFrameCount'
 ];
 
-/** Absent unless every sample is a terminal summary recording every frame counter, as rtc.stream results do. */
+/**
+ * Absent unless every sample is a terminal summary recording every frame counter and the evidence of its in-flight
+ * drops, as rtc.stream results do.
+ */
 export function computeStreamTiming(samples: readonly StreamTimingSample[]): DistributedRunStreamTiming | undefined {
     const terminalSamples = samples.filter(isTerminalStreamTimingSample);
-    if (samples.length === 0 || terminalSamples.length !== samples.length) {
+    const inFlightLimitDropCount = computeStreamInFlightLimitDropSum(terminalSamples);
+    if (samples.length === 0 || terminalSamples.length !== samples.length || inFlightLimitDropCount === undefined) {
         return undefined;
     }
     const attemptedFrames = computeStreamCounterSum(terminalSamples, 'attemptedFrames');
@@ -55,10 +59,7 @@ export function computeStreamTiming(samples: readonly StreamTimingSample[]): Dis
         completedFrames,
         failedFrames: computeStreamCounterSum(terminalSamples, 'failedFrames'),
         droppedFrames: computeStreamCounterSum(terminalSamples, 'droppedFrames'),
-        inFlightLimitDropCount: terminalSamples.reduce(
-            (sum, sample) => sum + computeStreamInFlightLimitDropCount(sample),
-            0
-        ),
+        inFlightLimitDropCount,
         backpressureCount: computeStreamCounterSum(terminalSamples, 'backpressureCount'),
         sendSuccessRatio: attemptedFrames > 0 ? toRoundedMetric(completedFrames / attemptedFrames) : undefined,
         requestedRateHz: computeDefinedAverage(terminalSamples.map((sample) => sample.summary.requestedRateHz)),
@@ -83,6 +84,14 @@ function computeStreamCounterSum(
     counter: StreamFrameCounter
 ): number {
     return samples.reduce((sum, sample) => sum + sample.summary[counter], 0);
+}
+
+/** Absent when any sample records neither an in-flight drop count nor a frame observation. */
+function computeStreamInFlightLimitDropSum(samples: readonly TerminalStreamTimingSample[]): number | undefined {
+    const counts = samples.map(computeStreamInFlightLimitDropCount);
+    return counts.every((count): count is number => count !== undefined)
+        ? counts.reduce((sum, count) => sum + count, 0)
+        : undefined;
 }
 
 function computeDefinedAverage(values: readonly (number | undefined)[]): number | undefined {

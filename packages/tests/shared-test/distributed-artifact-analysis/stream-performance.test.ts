@@ -202,6 +202,7 @@ describe('distributed run artifact stream performance', () => {
                             completedFrames: 2,
                             failedFrames: 0,
                             droppedFrames: 0,
+                            inFlightLimitDropCount: 0,
                             backpressureCount: 0,
                             pacing: { lateFrameCount: 0 },
                             duration: { p50Ms: 40, p95Ms: 50, maxMs: 50 },
@@ -324,6 +325,47 @@ describe('distributed run artifact stream performance', () => {
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
+    it('leaves stream timing unknown when a terminal summary records neither in-flight drops nor frame observations', () => {
+        const analysis = computeDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-stream-unrecorded-in-flight-drops',
+                    controlRunId: 'run-stream-unrecorded-in-flight-drops',
+                    state: 'passed',
+                    agentIds: ['controller-01']
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-stream-unrecorded-in-flight-drops',
+                    agents: [{ agentId: 'controller-01' }]
+                }),
+                files: {
+                    'results.jsonl': JSON.stringify({
+                        resultKey: 'controller-01:stream-command',
+                        agentId: 'controller-01',
+                        commandId: 'stream-command',
+                        action: 'rtc.stream',
+                        ok: true,
+                        result: {
+                            commandId: 'rtc-realtime-position-stream',
+                            plannedFrames: 3,
+                            scheduledFrames: 3,
+                            attemptedFrames: 3,
+                            completedFrames: 3,
+                            failedFrames: 0,
+                            droppedFrames: 0,
+                            backpressureCount: 0,
+                            pacing: { lateFrameCount: 0 }
+                        }
+                    }),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(analysis.performance?.streamTiming).toBeUndefined();
+    });
+
     it('names only the frame counts a failed stream recorded', () => {
         const analysis = computeFailedDistributedRunAnalysis(
             toDistributedRunArtifactFiles({
@@ -363,9 +405,9 @@ describe('distributed run artifact stream performance', () => {
         );
 
         expect(analysis.failure.category).toBe('rtc-stream-performance');
-        expect(analysis.failure.likelyCause).toContain('max drift 900ms');
-        expect(analysis.failure.likelyCause).not.toContain('completed');
-        expect(analysis.failure.likelyCause).not.toContain('dropped 0');
+        expect(analysis.failure.likelyCause).toBe(
+            'RTC stream rtc-realtime-position-stream exceeded pacing/backlog thresholds: max drift 900ms.'
+        );
     });
 
     it('does not report zero completed frames for a stopped stream that recorded no completed count', () => {
