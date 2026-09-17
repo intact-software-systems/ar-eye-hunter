@@ -2,6 +2,10 @@
  * The in-page command runtime the local workbench installs. It answers the simulated provider with
  * synthetic evidence and refuses every other provider mode, so no command reaches a real backend
  * from here.
+ *
+ * The `data-channel` RTC phase and the `data` payload key below are black-box wire vocabulary: the
+ * RTC evidence contract names that phase and recipe ASSERT selectors address `payload.data`, so
+ * neither can be renamed from this app.
  */
 import { validateRallarBlackBoxProviderConfig } from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
