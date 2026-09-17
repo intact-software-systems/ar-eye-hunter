@@ -1,10 +1,13 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 
-/** Evidence stays opaque: a path either reaches a value or it does not. */
+/** A path either reaches a value in its JSON form or it does not. */
 export type PayloadPathLookup =
     | Readonly<{ exists: false; }>
-    | Readonly<{ exists: true; value: unknown; }>;
+    | Readonly<{ exists: true; value: ApiJsonValue; }>;
 
 type WaitEventRoutingKey = keyof RallarBlackBoxTestWaitMatch & keyof RallarBlackBoxTestEvent;
 
@@ -19,43 +22,22 @@ const WAIT_EVENT_ROUTING_KEYS: readonly WaitEventRoutingKey[] = [
     'severity'
 ];
 
-/** An absent or blank path reads the whole payload. */
+/**
+ * An absent or blank path reads the whole payload. The reached value is read in the JSON form the control connection
+ * carries it, so a member without a JSON form is not reached.
+ */
 export function decodePayloadPathValue(payload: unknown, path: string | undefined): PayloadPathLookup {
-    if (path === undefined || path.trim().length === 0) {
-        return payload === undefined ? MISSING_PATH_VALUE : { exists: true, value: payload };
-    }
-    let lookup: PayloadPathLookup = { exists: true, value: payload };
-    for (const segment of toPayloadPathSegments(path)) {
-        if (!lookup.exists) {
-            return lookup;
-        }
-        lookup = decodePayloadPathSegment(lookup.value, segment);
-    }
-    return lookup;
+    return decodePathSegmentsValue(payload, toPayloadPathSegments(path));
 }
 
-export function isSameJsonValue(left: unknown, right: unknown): boolean {
-    try {
-        return JSON.stringify(left) === JSON.stringify(right);
-    }
-    catch (_error) {
-        return Object.is(left, right);
-    }
+export function isSameJsonValue(left: ApiJsonValue | undefined, right: ApiJsonValue | undefined): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function hasContainedText(value: unknown, expected: string): boolean {
-    if (typeof value === 'string') {
-        return value.includes(expected);
-    }
-    try {
-        const serialized = JSON.stringify(value);
-        return typeof serialized === 'string'
-            ? serialized.includes(expected)
-            : String(value).includes(expected);
-    }
-    catch (_error) {
-        return String(value).includes(expected);
-    }
+export function hasContainedText(value: ApiJsonValue | undefined, expected: string): boolean {
+    return typeof value === 'string'
+        ? value.includes(expected)
+        : (JSON.stringify(value) ?? String(value)).includes(expected);
 }
 
 /** The latest matching event wins. */
@@ -71,7 +53,10 @@ export function resolveLatestWaitEvent(
     return undefined;
 }
 
-function toPayloadPathSegments(path: string): readonly string[] {
+function toPayloadPathSegments(path: string | undefined): readonly string[] {
+    if (path === undefined || path.trim().length === 0) {
+        return [];
+    }
     const prefix = PAYLOAD_PATH_PREFIXES.find((candidate) => path.startsWith(candidate));
     return (prefix === undefined ? path : path.slice(prefix.length))
         .split('.')
@@ -98,17 +83,27 @@ function isWaitEventPayloadMatch(event: RallarBlackBoxTestEvent, match: RallarBl
         (contains === undefined || hasContainedText(value, contains));
 }
 
-function decodePayloadPathSegment(value: unknown, segment: string): PayloadPathLookup {
+function decodePathSegmentsValue(value: unknown, segments: readonly string[]): PayloadPathLookup {
+    const [segment, ...rest] = segments;
+    if (segment === undefined) {
+        const json = decodeJsonValue(value);
+        return json === undefined ? MISSING_PATH_VALUE : { exists: true, value: json };
+    }
     if ((Array.isArray(value) || typeof value === 'string') && segment === 'length') {
-        return { exists: true, value: value.length };
+        return decodePathSegmentsValue(value.length, rest);
     }
     if (Array.isArray(value)) {
         const index = Number(segment);
-        return Number.isInteger(index) && index >= 0 && index < value.length
-            ? { exists: true, value: value[index] }
-            : MISSING_PATH_VALUE;
+        if (!Number.isInteger(index) || index < 0 || index >= value.length) {
+            return MISSING_PATH_VALUE;
+        }
+        // JSON writes an array element that has no JSON form as null.
+        const hasJsonForm = value[index] !== undefined &&
+            typeof value[index] !== 'function' &&
+            typeof value[index] !== 'symbol';
+        return decodePathSegmentsValue(hasJsonForm ? value[index] : null, rest);
     }
     return isJsonRecordValue(value) && Object.hasOwn(value, segment)
-        ? { exists: true, value: value[segment] }
+        ? decodePathSegmentsValue(value[segment], rest)
         : MISSING_PATH_VALUE;
 }

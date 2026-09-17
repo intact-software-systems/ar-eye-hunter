@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { isRallarBlackBoxTestResult, toRallarBlackBoxCompositeResultFlatEntries } from '../composite-results.ts';
 import type { ControlResultEnvelope } from '../control-protocol.ts';
 import type { ControlDistributedRunCommandLink } from '../control-snapshots.ts';
@@ -32,7 +34,8 @@ export type GroupAssertionEvidenceRow = ResolvedGroupAssertionEvidenceRow | Unus
 
 export interface ResolvedGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {
     readonly status: 'resolved';
-    readonly value: RallarBlackBoxGroupAssertionValue;
+    /** The value the source path reaches, in its JSON form. */
+    readonly value: ApiJsonValue;
 }
 
 export interface UnusableGroupAssertionEvidenceRow extends GroupAssertionEvidenceRowFields {

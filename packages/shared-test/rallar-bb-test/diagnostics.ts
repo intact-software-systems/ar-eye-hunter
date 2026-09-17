@@ -1,12 +1,10 @@
-import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
-
 import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestTransport
 } from './rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
-import { decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
+import { decodeJsonValue, decodeNonBlankText, decodeRecord } from './runtime/decode-runtime-result-values.ts';
 
 export const RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
 
@@ -146,7 +144,7 @@ export function toRallarBlackBoxRuntimeDiagnostic(
 ): RallarBlackBoxRuntimeDiagnosticPayload {
     const payloadRecord = decodeRecord(input.payload);
     const detail = toDiagnosticDetail(input, payloadRecord);
-    const error = input.error ?? decodeRallarBlackBoxRuntimeDiagnosticEvidence(payloadRecord.error);
+    const error = input.error ?? decodeJsonValue(payloadRecord.error);
     const typeId = decodeNonBlankText(input.typeId ?? payloadRecord.typeId ?? decodeRecord(input.detail).typeId);
     const topicId = decodeNonBlankText(input.topicId ?? payloadRecord.topicId ?? decodeRecord(input.detail).topicId);
     return redactRallarBlackBoxValue({
@@ -166,20 +164,6 @@ export function toRallarBlackBoxRuntimeDiagnostic(
     });
 }
 
-/**
- * Evidence in the JSON form the control connection carries it, all the way down: absent members and functions drop
- * out, dates become text, and a value with no JSON form (undefined, a cycle, a bigint) is absent.
- */
-export function decodeRallarBlackBoxRuntimeDiagnosticEvidence(value: unknown): ApiJsonValue | undefined {
-    try {
-        const text = JSON.stringify(value);
-        return text === undefined ? undefined : JSON.parse(text) as ApiJsonValue;
-    }
-    catch {
-        return undefined;
-    }
-}
-
 /** A null detail is reported evidence, so only an absent detail falls back to the payload's data and then the payload. */
 function toDiagnosticDetail(
     input: RallarBlackBoxRuntimeDiagnosticInput,
@@ -188,7 +172,7 @@ function toDiagnosticDetail(
     if (input.detail !== undefined) {
         return input.detail;
     }
-    const payloadDetail = decodeRallarBlackBoxRuntimeDiagnosticEvidence(payloadRecord.data);
+    const payloadDetail = decodeJsonValue(payloadRecord.data);
     return payloadDetail !== undefined ? payloadDetail : input.payload;
 }
 

@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
@@ -25,10 +27,11 @@ export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
 
 type PresentValueAssertOperator = Exclude<RallarBlackBoxTestAssertOperator, 'exists' | 'notEquals'>;
 
-/** A recipe expectation and the evidence it is compared with; both are opaque JSON. */
+/** A recipe expectation and the evidence it is compared with, both in JSON form. */
 interface AssertComparison {
-    readonly actual: unknown;
-    readonly expected: unknown;
+    readonly actual: ApiJsonValue;
+    /** Absent when the recipe names no expected value. */
+    readonly expected: ApiJsonValue | undefined;
 }
 
 export function isRallarBlackBoxAssertOperator(
@@ -41,7 +44,7 @@ export function isRallarBlackBoxAssertOperator(
 export function isAssertOperatorSatisfied(
     source: PayloadPathLookup,
     operator: RallarBlackBoxTestAssertOperator,
-    expected: unknown
+    expected: ApiJsonValue | undefined
 ): boolean {
     switch (operator) {
         case 'exists':
@@ -69,13 +72,13 @@ function isPresentValueOperatorSatisfied(
         case 'lte':
             return typeof actual === 'number' && typeof expected === 'number' && actual <= expected;
         case 'gt':
-            return isBoundSatisfied(decodeCoercedNumber(actual), decodeCoercedNumber(expected), 'above');
+            return isBoundSatisfied(toCoercedNumber(actual), toCoercedNumber(expected), 'above');
         case 'lt':
-            return isBoundSatisfied(decodeCoercedNumber(actual), decodeCoercedNumber(expected), 'below');
+            return isBoundSatisfied(toCoercedNumber(actual), toCoercedNumber(expected), 'below');
         case 'between':
-            return isBetweenSatisfied(decodeCoercedNumber(actual), decodeBetweenBounds(expected));
+            return isBetweenSatisfied(toCoercedNumber(actual), toBetweenBounds(expected));
         case 'length':
-            return decodeCollectionLength(actual) === Number(expected);
+            return computeCollectionLength(actual) === Number(expected);
         case 'matches':
             return typeof actual === 'string' && isPatternMatch(actual, String(expected));
         case 'matchesShape':
@@ -129,7 +132,7 @@ function isPatternMatch(text: string, pattern: string): boolean {
 }
 
 /** Absent when Number() does not coerce the value to a finite number. */
-function decodeCoercedNumber(value: unknown): number | undefined {
+function toCoercedNumber(value: ApiJsonValue | undefined): number | undefined {
     if (value === undefined) {
         return undefined;
     }
@@ -138,7 +141,7 @@ function decodeCoercedNumber(value: unknown): number | undefined {
 }
 
 /** Absent unless the value is a pair whose members coerce to finite numbers. */
-function decodeBetweenBounds(value: unknown): readonly [number, number] | undefined {
+function toBetweenBounds(value: ApiJsonValue | undefined): readonly [number, number] | undefined {
     if (!Array.isArray(value) || value.length !== 2) {
         return undefined;
     }
@@ -148,6 +151,6 @@ function decodeBetweenBounds(value: unknown): readonly [number, number] | undefi
 }
 
 /** Absent unless the value is an array or text. */
-function decodeCollectionLength(value: unknown): number | undefined {
+function computeCollectionLength(value: ApiJsonValue): number | undefined {
     return Array.isArray(value) || typeof value === 'string' ? value.length : undefined;
 }

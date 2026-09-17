@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
@@ -210,7 +212,7 @@ export interface RallarBlackBoxTestWaitMatch {
     readonly transport?: RallarBlackBoxTestTransport;
     readonly severity?: RallarBlackBoxTestSeverity;
     readonly payloadPath?: string;
-    readonly equals?: unknown;
+    readonly equals?: ApiJsonValue;
     readonly contains?: string;
     readonly exists?: boolean;
     readonly sinceEpochMs?: number;
@@ -243,7 +245,7 @@ export type RallarBlackBoxTestAssertCommand =
     & Readonly<{
         source: string;
         operator: RallarBlackBoxTestAssertOperator;
-        expected?: unknown;
+        expected?: ApiJsonValue;
     }>;
 
 export interface RallarBlackBoxTestRtcConnectReadiness {

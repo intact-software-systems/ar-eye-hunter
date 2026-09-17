@@ -1,3 +1,5 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestTransport
@@ -45,4 +47,21 @@ export function decodeTransport(value: unknown): RallarBlackBoxTestTransport | u
     return typeof value === 'string' && RUNTIME_TRANSPORTS.some((transport) => transport === value)
         ? value as RallarBlackBoxTestTransport
         : undefined;
+}
+
+/**
+ * The value in the JSON form a control connection or an artifact carries, all the way down: absent members and functions
+ * drop out, dates become text, and a value with no JSON form (undefined, a cycle, a bigint) is absent.
+ */
+export function decodeJsonValue(value: unknown): ApiJsonValue | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    try {
+        const text = JSON.stringify(value);
+        return text === undefined ? undefined : JSON.parse(text) as ApiJsonValue;
+    }
+    catch {
+        return undefined;
+    }
 }

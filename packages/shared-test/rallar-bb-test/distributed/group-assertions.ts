@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type {
     DistributedRunManifestSchemaValue,
     RallarBlackBoxDistributedRunValidationIssue
@@ -43,7 +44,7 @@ export interface RallarBlackBoxGroupAssertionScope {
 export interface RallarBlackBoxGroupAssertionPredicate {
     readonly operator: RallarBlackBoxTestAssertOperator;
     /** Absent when the operator compares against no expected value, as `exists` does. */
-    readonly expected?: RallarBlackBoxGroupAssertionValue;
+    readonly expected?: ApiJsonValue;
 }
 
 export interface RallarBlackBoxGroupAssertionCountBounds {

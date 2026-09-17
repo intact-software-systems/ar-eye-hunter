@@ -1,3 +1,4 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import {
     RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
@@ -15,6 +16,7 @@ import {
     type RallarBlackBoxTestResultStatus
 } from './rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
+import { decodeJsonValue } from './runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export interface RallarBlackBoxCompositeChildPosition {
@@ -107,8 +109,8 @@ export interface RallarBlackBoxCompositeDisplayResult {
     readonly startedAtEpochMs: number;
     readonly endedAtEpochMs: number;
     readonly durationMs: number;
-    /** The redacted result value; absent when the result carries none. */
-    readonly value?: unknown;
+    /** The redacted result value in its JSON form; absent when the result carries none or it has no JSON form. */
+    readonly value?: ApiJsonValue;
     /** The redacted result error; absent when the result carries none. */
     readonly error?: RallarBlackBoxTestError;
 }
@@ -259,7 +261,7 @@ export function toRallarBlackBoxCompositeDisplayResults(
         startedAtEpochMs: entry.startedAtEpochMs,
         endedAtEpochMs: entry.endedAtEpochMs,
         durationMs: entry.durationMs,
-        value: redactRallarBlackBoxValue(entry.result.value, redaction),
+        value: decodeJsonValue(redactRallarBlackBoxValue(entry.result.value, redaction)),
         error: redactRallarBlackBoxValue(entry.result.error, redaction)
     }));
 }

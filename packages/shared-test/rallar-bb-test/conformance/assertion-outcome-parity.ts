@@ -11,7 +11,7 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '../runtime/create-rallar-black-box-test-runtime.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
-import type { PayloadPathLookup } from '../wait/wait-event-match.ts';
+import { decodePayloadPathValue } from '../wait/wait-event-match.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
@@ -57,10 +57,7 @@ const RUNNER_SUCCESS_STATUSES = ['success', 'ok', 'passed'];
 export function computeComparatorOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
     return COMPARATOR_FIXTURES.map((fixture) => {
         const runnerIssues = validateAssertValueComparators(fixture.value, [fixture.runnerComparator]);
-        const path = fixture.runnerComparator.path;
-        const lookup: PayloadPathLookup = Object.hasOwn(fixture.value, path)
-            ? { exists: true, value: fixture.value[path] }
-            : { exists: false };
+        const lookup = decodePayloadPathValue(fixture.value, fixture.runnerComparator.path);
         return toRow({
             fixtureId: fixture.fixtureId,
             family: 'comparators',

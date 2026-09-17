@@ -33,6 +33,43 @@ async function evaluateAssert(
 }
 
 describe('rallar-bb-test extended assert operators', () => {
+    it('reads recorded evidence in the JSON form a control connection carries', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'room.assert.json-form',
+            payload: {
+                data: {
+                    peers: ['bob-session', undefined],
+                    unset: undefined,
+                    retry: () => 'not evidence'
+                }
+            }
+        });
+
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.unset',
+                operator: 'exists',
+                expected: false
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.retry',
+                operator: 'exists',
+                expected: false
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.peers.1',
+                operator: 'equals',
+                expected: null
+            })).ok
+        ).toBe(true);
+    });
+
     it('evaluates numeric bounds, length, and regex operators on recorded evidence', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({

@@ -2,7 +2,6 @@ import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import {
     computeRallarBlackBoxDiagnosticSeverity,
-    decodeRallarBlackBoxRuntimeDiagnosticEvidence,
     toRallarBlackBoxRuntimeDiagnostic,
     type RallarBlackBoxRuntimeDiagnosticPayload
 } from '../diagnostics.ts';
@@ -10,6 +9,7 @@ import type {
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestSeverity
 } from '../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../runtime/decode-runtime-result-values.ts';
 
 import type { RallarBlackBoxBrowserRallarEvent } from './browser-command-contracts.ts';
 
@@ -107,7 +107,7 @@ function toRallarBrowserEventPayload(event: RallarBlackBoxBrowserRallarEvent): R
         topicId: event.topicId,
         contextId: event.contextId,
         resourceId: event.resourceId,
-        data: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
+        data: decodeJsonValue(event.data),
         error: event.error
     };
 }
