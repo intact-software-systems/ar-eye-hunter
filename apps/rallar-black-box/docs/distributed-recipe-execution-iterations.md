@@ -174,6 +174,10 @@ Results:
 - Added contract tests for lifecycle states, valid manifests, invalid standalone manifests, scheduled/role-map
   validation, participant readiness, running/passed rollups, optional failures, required failures, timeouts, and
   cancellations.
+- Later removed (2026-09-17) because nothing acted on them: the manifest's secret refs, artifact policy and
+  `targetPolicy.includeOfflineExpectedAgents`; the recipe selection and role assignment `required` flags, which never
+  changed the verdict; and the rollup's required counters and per-failure `required` flag. Every recipe selection and
+  role assignment counts toward the verdict.
 - Added `packages/shared-test/rallar-bb-test/docs/distributed-run-contract.md`.
 
 Verification:
@@ -229,6 +233,8 @@ Results:
   `resolveDistributedRunTargets(...)`.
 - Added tests for control-client identity registration, control-server identity storage, Run Manager identity summaries,
   group-member matching, and target-policy filtering.
+- The planned "include offline expected agents" control never gained a reader; its manifest setting was removed on
+  2026-09-17.
 
 Verification:
 

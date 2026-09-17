@@ -158,8 +158,8 @@ JSON:
 
 - Recipes: `validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value)`
 - Distributed manifests: `decodeDistributedRunManifest(value)`, which runs
-  `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and then the manifest
-  contract rules and returns every issue as its Left
+  `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and returns the schema
+  issues as its Left, or, once the schema holds, the manifest contract issues
 
 Treat validation errors as blocking failures. Catalog schema results report
 `valid` or `invalid`; they do not expose a legacy status or compatibility warning.

@@ -64,8 +64,8 @@ Useful constraints:
 
 After generation, decode the JSON with
 `decodeDistributedRunManifest(value)`: it runs
-`RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and then the manifest contract
-rules, and returns every issue as its Left.
+`RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and returns the schema issues
+as its Left, or, once the schema holds, the manifest contract issues.
 
 For black-box-runner scenarios, validate with:
 
