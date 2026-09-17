@@ -78,7 +78,7 @@ export interface RallarBlackBoxGeoLocation {
     readonly precision: 'exact' | 'approximate';
 }
 
-/** Identity facts an agent reports from its configuration; each is absent when that configuration omits it. */
+/** Identity facts an agent reports; each optional fact is absent when the agent's configuration omits it. */
 export interface RallarBlackBoxControlAgentIdentity {
     /** Absent before the agent's Rallar configuration names a principal. */
     readonly principalId?: string;
@@ -100,8 +100,7 @@ export interface RallarBlackBoxControlAgentIdentity {
     readonly providerMode?: string;
     /** Absent when the agent's browser configuration and user agent give no label. */
     readonly browserLabel?: string;
-    /** Absent when an agent build predates session labels. */
-    readonly sessionLabel?: string;
+    readonly sessionLabel: string;
     /** Absent when the fleet configuration names no region. */
     readonly region?: string;
     /** Absent when the fleet configuration names no hosting provider. */
@@ -124,16 +123,14 @@ export interface RallarBlackBoxControlAgentIdentity {
     readonly tags?: readonly string[];
     /** Absent when the fleet configuration gives no valid coordinates. */
     readonly location?: RallarBlackBoxGeoLocation;
-    /** Absent when an agent build predates capability advertisement or advertises an unreadable block. */
+    /** Absent before the agent loads a test configuration. */
     readonly capabilities?: RallarBlackBoxControlAgentCapabilities;
-    /** Absent when an agent build predates identity timestamps. */
-    readonly updatedAtEpochMs?: number;
+    readonly updatedAtEpochMs: number;
 }
 
 export interface RallarBlackBoxControlAgentCapabilities {
     readonly crdt: RallarBlackBoxControlAgentCrdtCapability;
-    /** Absent when an agent build predates assertion capability advertisement. */
-    readonly assertions?: RallarBlackBoxControlAgentAssertionsCapability;
+    readonly assertions: RallarBlackBoxControlAgentAssertionsCapability;
     readonly messaging: RallarBlackBoxControlAgentMessagingCapability;
 }
 

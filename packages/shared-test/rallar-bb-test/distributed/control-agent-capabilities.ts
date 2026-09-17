@@ -1,9 +1,13 @@
 import { Either } from '@shared/resilience/Either.ts';
 
-import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../assert/assert-value-operators.ts';
+import {
+    isRallarBlackBoxAssertOperator,
+    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+} from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxControlAgentAssertionsCapability,
-    RallarBlackBoxControlAgentCapabilities
+    RallarBlackBoxControlAgentCapabilities,
+    RallarBlackBoxControlAgentCrdtCapability
 } from '../distributed-run.ts';
 import type {
     RallarBlackBoxTestAssertOperator,
@@ -53,6 +57,12 @@ export interface ToControlAgentCapabilitiesInput {
     readonly apiBaseUrl: string | undefined;
 }
 
+interface DecodedCapabilityBlocks {
+    readonly crdt: RallarBlackBoxControlAgentCrdtCapability;
+    readonly assertions: Either<string, RallarBlackBoxControlAgentAssertionsCapability>;
+    readonly messaging: Either<string, RallarBlackBoxControlAgentCapabilities['messaging']>;
+}
+
 // The advertisement is a build-time truth: an agent built from this checkout
 // evaluates absence waits, until loops, and the full operator set, so the
 // capability block mirrors the runtime feature set rather than configuration.
@@ -77,35 +87,17 @@ export function toControlAgentCapabilities(
     };
 }
 
-/**
- * The capability block an agent advertises. An unreadable assertions block reads as absent, so the agent is
- * gated as one that predates assertion advertisement; unrecognised CRDT transports are dropped.
- */
+/** The capability block an agent advertises; any missing or unreadable part rejects the whole block. */
 export function decodeControlAgentCapabilities(value: unknown): Either<string, RallarBlackBoxControlAgentCapabilities> {
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft('capabilities must be a JSON object');
     }
-    const crdt = value.crdt;
-    if (
-        !isJsonRecordValue(crdt) ||
-        typeof crdt.supported !== 'boolean' ||
-        !Array.isArray(crdt.transports) ||
-        typeof crdt.apiBaseUrlConfigured !== 'boolean'
-    ) {
-        return Either.ofLeft('capabilities.crdt must report supported, transports and apiBaseUrlConfigured');
-    }
-    const assertions = decodeAssertionsCapability(value.assertions).right;
-    const crdtCapability = {
-        supported: crdt.supported,
-        transports: crdt.transports.filter(isControlAgentCrdtTransport),
-        runtimeSurface: isNonEmptyText(crdt.runtimeSurface) ? crdt.runtimeSurface : undefined,
-        apiBaseUrlConfigured: crdt.apiBaseUrlConfigured
-    };
-    return decodeControlAgentMessagingCapability(value.messaging).mapRight((messaging) => ({
-        crdt: crdtCapability,
-        messaging,
-        ...(assertions ? { assertions } : {})
-    }));
+    const assertions = decodeAssertionsCapability(value.assertions);
+    const messaging = decodeControlAgentMessagingCapability(value.messaging);
+    return decodeCrdtCapability(value.crdt).flatMap(
+        (issue) => Either.ofLeft(issue),
+        (crdt) => toDecodedControlAgentCapabilities({ crdt, assertions, messaging })
+    );
 }
 
 export function computeDistributedAssertionFeatures(
@@ -163,15 +155,51 @@ export function toMissingAssertionCapabilityReason(missing: readonly string[]): 
     return `Agent does not advertise required assertion capabilities: ${missing.join('; ')}.`;
 }
 
-function decodeAssertionsCapability(value: unknown): Either<string, RallarBlackBoxControlAgentAssertionsCapability> {
-    if (!isJsonRecordValue(value) || typeof value.absence !== 'boolean' || typeof value.untilLoop !== 'boolean') {
-        return Either.ofLeft('capabilities.assertions must report absence and untilLoop');
+function decodeCrdtCapability(value: unknown): Either<string, RallarBlackBoxControlAgentCrdtCapability> {
+    if (
+        !isJsonRecordValue(value) ||
+        typeof value.supported !== 'boolean' ||
+        !Array.isArray(value.transports) ||
+        typeof value.apiBaseUrlConfigured !== 'boolean'
+    ) {
+        return Either.ofLeft('capabilities.crdt must report supported, transports and apiBaseUrlConfigured');
+    }
+    if (!value.transports.every(isControlAgentCrdtTransport)) {
+        return Either.ofLeft('capabilities.crdt.transports must list known CRDT transports');
+    }
+    const runtimeSurface = value.runtimeSurface;
+    if (runtimeSurface !== undefined && !isNonEmptyText(runtimeSurface)) {
+        return Either.ofLeft('capabilities.crdt.runtimeSurface must be a non-empty string when present');
     }
     return Either.ofRight({
-        absence: value.absence,
-        untilLoop: value.untilLoop,
-        operators: Array.isArray(value.operators) ? value.operators.filter(isAssertOperator) : []
+        supported: value.supported,
+        transports: value.transports,
+        ...(runtimeSurface === undefined ? {} : { runtimeSurface }),
+        apiBaseUrlConfigured: value.apiBaseUrlConfigured
     });
+}
+
+function decodeAssertionsCapability(value: unknown): Either<string, RallarBlackBoxControlAgentAssertionsCapability> {
+    if (
+        !isJsonRecordValue(value) ||
+        typeof value.absence !== 'boolean' ||
+        typeof value.untilLoop !== 'boolean' ||
+        !Array.isArray(value.operators)
+    ) {
+        return Either.ofLeft('capabilities.assertions must report absence, untilLoop and operators');
+    }
+    return value.operators.every(isRallarBlackBoxAssertOperator)
+        ? Either.ofRight({ absence: value.absence, untilLoop: value.untilLoop, operators: value.operators })
+        : Either.ofLeft('capabilities.assertions.operators must list known assert operators');
+}
+
+function toDecodedControlAgentCapabilities(
+    blocks: DecodedCapabilityBlocks
+): Either<string, RallarBlackBoxControlAgentCapabilities> {
+    return blocks.assertions.flatMap(
+        (issue) => Either.ofLeft(issue),
+        (assertions) => blocks.messaging.mapRight((messaging) => ({ crdt: blocks.crdt, assertions, messaging }))
+    );
 }
 
 function isCrdtCapableProvider(providerMode: string | undefined): boolean {
@@ -196,8 +224,4 @@ function isNonEmptyText(value: unknown): value is string {
 
 function isControlAgentCrdtTransport(value: unknown): value is RallarBlackBoxTestCrdtTransport {
     return typeof value === 'string' && CONTROL_AGENT_CRDT_TRANSPORTS.some((transport) => transport === value);
-}
-
-function isAssertOperator(value: unknown): value is RallarBlackBoxTestAssertOperator {
-    return typeof value === 'string' && RALLAR_BLACK_BOX_ASSERT_OPERATORS.some((operator) => operator === value);
 }

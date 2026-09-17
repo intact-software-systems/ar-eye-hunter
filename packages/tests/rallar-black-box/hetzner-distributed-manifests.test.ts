@@ -697,7 +697,9 @@ describe('Hetzner distributed manifest catalog', () => {
                 identity: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: 'hetzner-headless-room'
+                    groupId: 'hetzner-headless-room',
+                    sessionLabel: agentId,
+                    updatedAtEpochMs: 5_500
                 },
                 connectionSequence: 1,
                 reconnectCount: 0,

@@ -209,7 +209,8 @@ Deno.test('control service stores Rallar identity metadata on register and heart
             workspaceId: 'default',
             groupId: 'new-group',
             providerMode: 'browser-rallar',
-            updatedAtEpochMs: 1_500
+            updatedAtEpochMs: 1_500,
+            sessionLabel: 'alice:session-1'
         }
     });
 

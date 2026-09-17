@@ -113,8 +113,12 @@ The capabilities are the source for UI help, catalog filtering, and future
 distributed recipe preflight checks.
 
 A control agent's own registration carries a second, separate capability
-document. `decodeControlAgentCapabilities` requires a `messaging` block beside
-`crdt`, and rejects the registration outright when it is absent or malformed:
+document. `decodeControlAgentCapabilities` requires the `crdt`, `assertions`
+and `messaging` blocks, rejects unknown CRDT transports, assert operators and
+message carriers, and rejects the registration outright when any block is
+absent or malformed. The identity around it must name `sessionLabel` and
+`updatedAtEpochMs`, and a reported `location` must carry its `precision`. The
+`messaging` block looks like this:
 
 ```json
 {

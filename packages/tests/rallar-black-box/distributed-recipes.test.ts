@@ -39,9 +39,11 @@ import {
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
+    AGENT_A_IDENTITY,
     distributedArtifactBundle,
     distributedControlRun,
     distributedRun,
+    FULL_ASSERTIONS_CAPABILITY,
     FULL_MESSAGING_CAPABILITY,
     runSnapshot
 } from './distributed-recipes/distributed-run-fixture.ts';
@@ -960,7 +962,7 @@ describe('distributed recipes catalog', () => {
                         ? {
                             ...agent,
                             identity: {
-                                ...(agent.identity ?? {}),
+                                ...AGENT_A_IDENTITY,
                                 capabilities: {
                                     crdt: {
                                         supported: true,
@@ -973,6 +975,7 @@ describe('distributed recipes catalog', () => {
                                         ],
                                         apiBaseUrlConfigured: true
                                     },
+                                    assertions: FULL_ASSERTIONS_CAPABILITY,
                                     messaging: FULL_MESSAGING_CAPABILITY
                                 }
                             }

@@ -20,7 +20,14 @@ import {
     validateDistributedRunManifest
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestCrdtOpenCommand, RallarBlackBoxTestRecipe } from '../../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { distributedRun, FULL_MESSAGING_CAPABILITY, recipe, runSnapshot } from './distributed-run-fixture.ts';
+import {
+    AGENT_A_IDENTITY,
+    distributedRun,
+    FULL_ASSERTIONS_CAPABILITY,
+    FULL_MESSAGING_CAPABILITY,
+    recipe,
+    runSnapshot
+} from './distributed-run-fixture.ts';
 
 describe('distributed recipes targets', () => {
     it('derives target rows from control-agent Rallar identity', () => {
@@ -50,7 +57,7 @@ describe('distributed recipes targets', () => {
                     ...runSnapshot.agents[0],
                     agentId: 'duplicate-a',
                     identity: {
-                        ...runSnapshot.agents[0].identity,
+                        ...AGENT_A_IDENTITY,
                         principalId: ' Alice ',
                         sessionId: ' SESSION-A '
                     }
@@ -59,7 +66,7 @@ describe('distributed recipes targets', () => {
                     ...runSnapshot.agents[0],
                     agentId: 'duplicate-b',
                     identity: {
-                        ...runSnapshot.agents[0].identity,
+                        ...AGENT_A_IDENTITY,
                         principalId: 'alice',
                         sessionId: 'session-a'
                     }
@@ -69,7 +76,7 @@ describe('distributed recipes targets', () => {
                     agentId: 'stale-duplicate',
                     lastHeartbeatAtEpochMs: 1_000,
                     identity: {
-                        ...runSnapshot.agents[0].identity,
+                        ...AGENT_A_IDENTITY,
                         principalId: 'alice',
                         sessionId: 'session-a'
                     }
@@ -87,7 +94,9 @@ describe('distributed recipes targets', () => {
                     agentId: 'missing-identity-agent',
                     identity: {
                         principalId: 'missing-scope',
-                        sessionId: 'missing-scope-session'
+                        sessionId: 'missing-scope-session',
+                        sessionLabel: 'missing-scope:missing-scope-session',
+                        updatedAtEpochMs: 1_000
                     }
                 }
             ]
@@ -122,13 +131,14 @@ describe('distributed recipes targets', () => {
             agents: [{
                 ...runSnapshot.agents[0],
                 identity: {
-                    ...runSnapshot.agents[0].identity,
+                    ...AGENT_A_IDENTITY,
                     capabilities: {
                         crdt: {
                             supported: true,
                             transports: ['ws'],
                             apiBaseUrlConfigured: true
                         },
+                        assertions: FULL_ASSERTIONS_CAPABILITY,
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }
@@ -199,13 +209,14 @@ describe('distributed recipes targets', () => {
             agents: [{
                 ...runSnapshot.agents[0],
                 identity: {
-                    ...runSnapshot.agents[0].identity,
+                    ...AGENT_A_IDENTITY,
                     capabilities: {
                         crdt: {
                             supported: true,
                             transports: ['ws'],
                             apiBaseUrlConfigured: true
                         },
+                        assertions: FULL_ASSERTIONS_CAPABILITY,
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }
@@ -256,13 +267,14 @@ describe('distributed recipes targets', () => {
             agents: [{
                 ...runSnapshot.agents[0],
                 identity: {
-                    ...runSnapshot.agents[0].identity,
+                    ...AGENT_A_IDENTITY,
                     capabilities: {
                         crdt: {
                             supported: true,
                             transports: ['ws'],
                             apiBaseUrlConfigured: true
                         },
+                        assertions: FULL_ASSERTIONS_CAPABILITY,
                         messaging: FULL_MESSAGING_CAPABILITY
                     }
                 }

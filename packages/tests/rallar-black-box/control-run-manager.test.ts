@@ -60,7 +60,9 @@ const runSnapshot: ControlRunSnapshot = {
                 sessionId: 'session-1',
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group'
+                groupId: 'bb-group',
+                sessionLabel: 'alice:session-1',
+                updatedAtEpochMs: 1_000
             },
             connectionSequence: 2,
             reconnectCount: 1,

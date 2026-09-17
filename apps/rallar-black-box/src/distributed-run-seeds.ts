@@ -1,3 +1,4 @@
+import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { normalizeRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -573,6 +574,7 @@ function toSeedAgentSnapshot(
             groupId: 'seed-room',
             providerMode: 'browser-rallar',
             browserLabel: `${input.agent.role} synthetic browser`,
+            sessionLabel: `${input.agent.principalId}:${input.agent.principalId}-session`,
             tags: ['synthetic', input.agent.role],
             capabilities: {
                 crdt: {
@@ -581,6 +583,11 @@ function toSeedAgentSnapshot(
                     runtimeSurface: 'browser-rallar',
                     apiBaseUrlConfigured: true
                 },
+                assertions: {
+                    absence: true,
+                    untilLoop: true,
+                    operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+                },
                 messaging: {
                     supported: true,
                     carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
@@ -588,7 +595,8 @@ function toSeedAgentSnapshot(
                     storageCounters: true,
                     reload: true
                 }
-            }
+            },
+            updatedAtEpochMs: input.updatedAtEpochMs
         },
         connectionSequence: 1,
         reconnectCount: 0,

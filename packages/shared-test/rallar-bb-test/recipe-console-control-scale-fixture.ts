@@ -165,6 +165,7 @@ function agent(
             clientId: `client-${id}`,
             sessionId: `session-${id}`,
             ...GROUP,
+            sessionLabel: `principal-${id}:session-${id}`,
             updatedAtEpochMs
         },
         connectionSequence: 1,

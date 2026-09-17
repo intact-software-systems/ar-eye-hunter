@@ -214,6 +214,8 @@ export function toFleetIdentity(
         applicationId: 'rallar-server',
         workspaceId: 'default',
         groupId: 'bb-group',
+        sessionLabel: `${agentId}:${agentId}-session`,
+        updatedAtEpochMs: 1_000,
         ...overrides
     };
 }

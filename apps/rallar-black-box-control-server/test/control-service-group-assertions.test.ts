@@ -21,7 +21,9 @@ function identity(agentId: string): RallarBlackBoxControlAgentIdentity {
         sessionId: `${agentId}-session`,
         applicationId: 'rallar-server',
         workspaceId: 'default',
-        groupId: 'bb-group'
+        groupId: 'bb-group',
+        sessionLabel: `${agentId}:${agentId}-session`,
+        updatedAtEpochMs: 1_000
     };
 }
 

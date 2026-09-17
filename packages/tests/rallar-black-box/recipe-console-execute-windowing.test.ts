@@ -666,7 +666,7 @@ function resolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
         agentId: `blocked-${index}`,
         status: 'offline-agent' as const,
         reason: `blocker ${index}`,
-        identity: { principalId: `blocked-${index}` }
+        identity: { principalId: `blocked-${index}`, sessionLabel: `blocked-${index}`, updatedAtEpochMs: 1_000 }
     }));
     const issues = Array.from({ length: count }, (_, index) => ({
         code: 'target-mismatch' as const,

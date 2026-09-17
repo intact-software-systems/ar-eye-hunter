@@ -23,6 +23,12 @@ const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messagi
     reload: true
 };
 
+const BASELINE_ONLY_CAPABILITIES: RallarBlackBoxControlAgentCapabilities = {
+    crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
+    assertions: { absence: false, untilLoop: false, operators: ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'] },
+    messaging: FULL_MESSAGING_CAPABILITY
+};
+
 const NEW_FEATURE_RECIPE: RallarBlackBoxTestRecipe = {
     schemaVersion: 1,
     recipeId: 'gate-new-features',
@@ -123,7 +129,8 @@ function agentWith(
             workspaceId: 'default',
             groupId: 'gate-room',
             capabilities,
-            updatedAtEpochMs: 1_000
+            updatedAtEpochMs: 1_000,
+            sessionLabel: 'gate-principal:gate-session'
         }
     };
 }
@@ -144,13 +151,10 @@ describe('rallar-bb-test assertion capability gate', () => {
         });
     });
 
-    it('blocks staging targets for old-capability agents with a named reason', () => {
+    it('blocks staging targets for agents that advertise none of the required assertion features', () => {
         const resolution = resolveDistributedRunTargets({
             manifest: manifestWith(NEW_FEATURE_RECIPE),
-            agents: [agentWith({
-                crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
-                messaging: FULL_MESSAGING_CAPABILITY
-            })],
+            agents: [agentWith(BASELINE_ONLY_CAPABILITIES)],
             nowEpochMs: 1_500,
             staleAfterMs: 30_000
         });
@@ -186,15 +190,48 @@ describe('rallar-bb-test assertion capability gate', () => {
 
         const baseline = resolveDistributedRunTargets({
             manifest: manifestWith(BASELINE_RECIPE),
-            agents: [agentWith({
-                crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
-                messaging: FULL_MESSAGING_CAPABILITY
-            })],
+            agents: [agentWith(BASELINE_ONLY_CAPABILITIES)],
             nowEpochMs: 1_500,
             staleAfterMs: 30_000
         });
         expect(baseline.targetAgentIds).toEqual(['gate-agent']);
         expect(baseline.blockers).toEqual([]);
+    });
+
+    it.each([
+        {
+            name: 'no assertions block',
+            patch: { assertions: undefined },
+            error: 'capabilities.assertions must report absence, untilLoop and operators'
+        },
+        {
+            name: 'an assertions block without operators',
+            patch: { assertions: { absence: true, untilLoop: true } },
+            error: 'capabilities.assertions must report absence, untilLoop and operators'
+        },
+        {
+            name: 'an operator the build does not know',
+            patch: { assertions: { absence: true, untilLoop: true, operators: ['equals', 'resembles'] } },
+            error: 'capabilities.assertions.operators must list known assert operators'
+        },
+        {
+            name: 'a CRDT transport the build does not know',
+            patch: { crdt: { supported: true, transports: ['ws', 'carrier-pigeon'], apiBaseUrlConfigured: true } },
+            error: 'capabilities.crdt.transports must list known CRDT transports'
+        },
+        {
+            name: 'a blank CRDT runtime surface',
+            patch: { crdt: { supported: true, transports: ['ws'], runtimeSurface: ' ', apiBaseUrlConfigured: true } },
+            error: 'capabilities.crdt.runtimeSurface must be a non-empty string when present'
+        }
+    ])('rejects a capability block with $name instead of reading it as absent', ({ patch, error }) => {
+        const advertised = JSON.parse(JSON.stringify(toControlAgentCapabilities({
+            config: undefined,
+            providerMode: 'browser-rallar',
+            apiBaseUrl: 'http://localhost:8080'
+        })));
+
+        expect(decodeControlAgentCapabilities({ ...advertised, ...patch }).left).toBe(error);
     });
 
     it('advertises the runtime feature set and survives the register-envelope parse', () => {
@@ -215,15 +252,6 @@ describe('rallar-bb-test assertion capability gate', () => {
         expect(decoded.right?.assertions).toEqual(advertised.assertions);
         expect(decoded.right?.crdt.supported).toBe(true);
 
-        const legacyDecoded = decodeControlAgentCapabilities({
-            crdt: { supported: true, transports: [], apiBaseUrlConfigured: false },
-            messaging: FULL_MESSAGING_CAPABILITY
-        });
-        expect(legacyDecoded.right?.assertions).toBeUndefined();
-        expect(validateAgentAssertionCapability(
-            computeDistributedAssertionFeatures([NEW_FEATURE_RECIPE]),
-            legacyDecoded.right
-        )).toEqual(['absence waits', 'until loops', 'assert operators: gt']);
         expect(decodeControlAgentCapabilities({ crdt: { supported: true }, messaging: FULL_MESSAGING_CAPABILITY }).left)
             .toBe('capabilities.crdt must report supported, transports and apiBaseUrlConfigured');
     });

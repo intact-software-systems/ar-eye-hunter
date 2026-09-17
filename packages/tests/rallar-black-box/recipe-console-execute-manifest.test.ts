@@ -199,7 +199,7 @@ describe('Recipe Console Execute manifest', () => {
             agentId: 'agent-unrelated',
             status: 'offline-agent' as const,
             reason: 'An unrelated known agent is offline.',
-            identity: { principalId: 'agent-unrelated' }
+            identity: { principalId: 'agent-unrelated', sessionLabel: 'agent-unrelated', updatedAtEpochMs: 1_000 }
         };
         const matching = targetResolution(manifest, {
             blockers: [unrelatedBlocker]
@@ -288,7 +288,7 @@ describe('Recipe Console Execute manifest', () => {
                         agentId: 'agent-a',
                         status: 'stale-agent',
                         reason: 'The selected agent became stale.',
-                        identity: { principalId: 'agent-a' }
+                        identity: { principalId: 'agent-a', sessionLabel: 'agent-a', updatedAtEpochMs: 1_000 }
                     }]
                 }),
                 'selected-target-blocked'

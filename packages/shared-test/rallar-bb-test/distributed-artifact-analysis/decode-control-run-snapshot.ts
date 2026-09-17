@@ -87,7 +87,10 @@ function decodeControlAgentSnapshot(value: unknown, path: string): Either<string
     if (!isJsonRecordValue(value)) {
         return Either.ofLeft(`${path} must be a JSON object`);
     }
-    const identity = value.identity === undefined ? undefined : decodeControlAgentIdentity(value.identity);
+    const identity = value.identity === undefined
+        ? Either.ofRight<string, Pick<ControlAgentSnapshot, 'identity'>>({})
+        : decodeControlAgentIdentity(value.identity)
+            .mapBoth((identityIssue) => `${path}.${identityIssue}`, (decoded) => ({ identity: decoded }));
     const issue = toFirstDecodeIssue([
         [isNonEmptyText(value.runId), `${path}.runId must be a non-empty string`],
         [isNonEmptyText(value.agentId), `${path}.agentId must be a non-empty string`],
@@ -96,10 +99,7 @@ function decodeControlAgentSnapshot(value: unknown, path: string): Either<string
             [isAbsentOrFiniteNumber(value[key]), `${path}.${key} must be a finite number when present`] as const
         ),
         [isAbsentOrNonEmptyText(value.status), `${path}.status must be a non-empty string when present`],
-        [
-            value.identity === undefined || identity !== undefined,
-            `${path}.identity must be a control agent identity when present`
-        ],
+        [identity.left === undefined, identity.left ?? ''],
         ...AGENT_COUNTERS.map((key) => [isFiniteNumber(value[key]), `${path}.${key} must be a finite number`] as const),
         [isTextArray(value.completedCommandIds), `${path}.completedCommandIds must be an array of strings`],
         [isTextArray(value.resumeCompletedCommandIds), `${path}.resumeCompletedCommandIds must be an array of strings`]
@@ -107,7 +107,7 @@ function decodeControlAgentSnapshot(value: unknown, path: string): Either<string
     if (issue !== undefined) {
         return Either.ofLeft(issue);
     }
-    return Either.ofRight((identity === undefined ? value : { ...value, identity }) as ControlAgentSnapshot);
+    return Either.ofRight({ ...value, ...identity.right } as ControlAgentSnapshot);
 }
 
 function decodeQueuedCommandSnapshot(

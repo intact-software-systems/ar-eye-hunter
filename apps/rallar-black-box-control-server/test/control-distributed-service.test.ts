@@ -145,7 +145,9 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
         browserName: 'chromium',
         browserVersion: '126',
         os: 'linux',
-        tags: ['pool-a']
+        tags: ['pool-a'],
+        sessionLabel: 'alice:session-1',
+        updatedAtEpochMs: 1_000
     };
     const agent2Identity: RallarBlackBoxControlAgentIdentity = {
         principalId: 'bob',
@@ -166,7 +168,9 @@ Deno.test('control service derives, filters, persists, and exports fleet reports
         browserName: 'chromium',
         browserVersion: '126',
         os: 'linux',
-        tags: ['pool-a']
+        tags: ['pool-a'],
+        sessionLabel: 'bob:session-2',
+        updatedAtEpochMs: 1_000
     };
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: agent1Identity }));
     service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: agent2Identity }));
@@ -489,7 +493,9 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
             sessionId: 'session-1',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'bb-group'
+            groupId: 'bb-group',
+            sessionLabel: 'alice:session-1',
+            updatedAtEpochMs: 1_000
         }
     }));
     service.receiveClientEnvelope(toRegisterEnvelope({
@@ -502,7 +508,9 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
             sessionId: 'session-2',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'other-group'
+            groupId: 'other-group',
+            sessionLabel: 'bob:session-2',
+            updatedAtEpochMs: 1_000
         }
     }));
     service.receiveClientEnvelope(toRegisterEnvelope({
@@ -515,7 +523,9 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
             sessionId: 'session-3',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'bb-group'
+            groupId: 'bb-group',
+            sessionLabel: 'carol:session-3',
+            updatedAtEpochMs: 1_000
         }
     }));
     service.markAgentDisconnected('run-1', 'agent-3');

@@ -49,7 +49,9 @@ function snapshot(status = 'connected'): ControlServerSnapshot {
                 sessionId: 'session-a',
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a'
+                groupId: 'group-a',
+                sessionLabel: 'principal-a:session-a',
+                updatedAtEpochMs: 1_000
             },
             connectionSequence: 1,
             reconnectCount: 0,

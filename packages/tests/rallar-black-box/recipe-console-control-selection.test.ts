@@ -43,6 +43,8 @@ function controlAgent(
         identity: {
             principalId: `${agentId}-principal`,
             sessionId: `${agentId}-session`,
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: 1_000,
             ...group
         },
         connectionSequence: 1,

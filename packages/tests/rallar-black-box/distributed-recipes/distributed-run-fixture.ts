@@ -6,7 +6,11 @@ import type {
 import {
     type DistributedRecipeCatalogItem
 } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import type { RallarBlackBoxControlAgentCapabilities } from '../../../shared-test/rallar-bb-test/distributed-run.ts';
+import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../../../shared-test/rallar-bb-test/assert/assert-value-operators.ts';
+import type {
+    RallarBlackBoxControlAgentCapabilities,
+    RallarBlackBoxControlAgentIdentity
+} from '../../../shared-test/rallar-bb-test/distributed-run.ts';
 
 export const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
     supported: true,
@@ -14,6 +18,22 @@ export const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['
     faults: true,
     storageCounters: true,
     reload: true
+};
+
+export const FULL_ASSERTIONS_CAPABILITY: RallarBlackBoxControlAgentCapabilities['assertions'] = {
+    absence: true,
+    untilLoop: true,
+    operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+};
+
+export const AGENT_A_IDENTITY: RallarBlackBoxControlAgentIdentity = {
+    principalId: 'alice',
+    sessionId: 'session-a',
+    applicationId: 'rallar-server',
+    workspaceId: 'default',
+    groupId: 'bb-group',
+    sessionLabel: 'alice:session-a',
+    updatedAtEpochMs: 1_000
 };
 
 export const runSnapshot: ControlRunSnapshot = {
@@ -26,13 +46,7 @@ export const runSnapshot: ControlRunSnapshot = {
             agentId: 'agent-a',
             connected: true,
             lastHeartbeatAtEpochMs: 2_000,
-            identity: {
-                principalId: 'alice',
-                sessionId: 'session-a',
-                applicationId: 'rallar-server',
-                workspaceId: 'default',
-                groupId: 'bb-group'
-            },
+            identity: AGENT_A_IDENTITY,
             connectionSequence: 1,
             reconnectCount: 0,
             receivedResultCount: 0,
@@ -50,7 +64,9 @@ export const runSnapshot: ControlRunSnapshot = {
                 sessionId: 'session-b',
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group'
+                groupId: 'bb-group',
+                sessionLabel: 'bob:session-b',
+                updatedAtEpochMs: 1_000
             },
             connectionSequence: 1,
             reconnectCount: 0,
@@ -69,7 +85,9 @@ export const runSnapshot: ControlRunSnapshot = {
                 sessionId: 'session-c',
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'other-group'
+                groupId: 'other-group',
+                sessionLabel: 'carol:session-c',
+                updatedAtEpochMs: 1_000
             },
             connectionSequence: 1,
             reconnectCount: 0,

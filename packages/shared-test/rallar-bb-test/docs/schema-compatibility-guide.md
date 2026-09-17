@@ -535,3 +535,49 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```
+
+```text
+Title: Control agent identities and capability blocks decode strictly
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batch B6b
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RallarBlackBoxControlAgentIdentity (sessionLabel and updatedAtEpochMs required)
+- RallarBlackBoxControlAgentCapabilities (assertions block required)
+- Control register and heartbeat envelopes
+
+Old shape:
+The capability decoder read an absent or malformed assertions block as an agent
+that predates assertion advertisement, filled a missing operators list with an
+empty one, and dropped unknown CRDT transports. The identity decoder read an
+unreadable capability block as no capabilities and a missing location precision
+as exact.
+
+New shape:
+decodeControlAgentCapabilities returns a Left for a missing or malformed crdt,
+assertions or messaging block and for unknown transports, operators or
+carriers. decodeControlAgentIdentity returns a Left for a missing sessionLabel
+or updatedAtEpochMs, a present but unreadable fact, or a location without a
+precision, and the control protocol rejects a register or heartbeat envelope
+that carries such an identity.
+
+Migration:
+Rebuild agents from this checkout; every current agent build writes the full
+identity and capability blocks. Agents built before assertion advertisement
+can no longer register.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md and distributed-run-contract.md describe the
+required identity facts and the rejected envelopes.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```

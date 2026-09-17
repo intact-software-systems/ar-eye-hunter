@@ -198,10 +198,14 @@ describe('fleet world map model', () => {
                         longitude: 10.7522,
                         label: 'Oslo operator rack',
                         precision: 'exact'
-                    }
+                    },
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 }),
                 liveAgent('agent-3', {
-                    provider: 'private-lab'
+                    provider: 'private-lab',
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 })
             ],
             reports: [report([
@@ -252,7 +256,9 @@ describe('fleet world map model', () => {
                 liveAgent('live-agent', {
                     region: 'eu-north',
                     provider: 'hetzner',
-                    datacenter: 'fsn1'
+                    datacenter: 'fsn1',
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 })
             ],
             reports: [report([

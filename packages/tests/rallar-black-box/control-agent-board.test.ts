@@ -8,6 +8,7 @@ import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../..
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
+import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../../../packages/shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type {
     RallarBlackBoxControlAgentCapabilities,
@@ -19,6 +20,12 @@ const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
     groupId: 'bb-group'
+};
+
+const FULL_ASSERTIONS_CAPABILITY: RallarBlackBoxControlAgentCapabilities['assertions'] = {
+    absence: true,
+    untilLoop: true,
+    operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
 };
 
 const FULL_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentCapabilities['messaging'] = {
@@ -51,6 +58,8 @@ function agent(
             browserName: 'chromium',
             provider: 'hetzner',
             region: 'eu-north',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: 2_000,
             capabilities: options.crdt === true
                 ? {
                     crdt: {
@@ -64,6 +73,7 @@ function agent(
                         ],
                         apiBaseUrlConfigured: true
                     },
+                    assertions: FULL_ASSERTIONS_CAPABILITY,
                     messaging: FULL_MESSAGING_CAPABILITY
                 }
                 : undefined
@@ -530,7 +540,7 @@ describe('control agent board derivation', () => {
         expect(stale[0]).toMatchObject({ targetStatus: 'stale', targetable: false });
     });
 
-    it('does not invent staleness when a connected scoped agent has no timestamps', () => {
+    it('reads freshness from the identity update time when a connected scoped agent has no heartbeat', () => {
         const {
             lastHeartbeatAtEpochMs: _heartbeat,
             lastSeenAtEpochMs: _seen,
@@ -539,7 +549,7 @@ describe('control agent board derivation', () => {
         const rows = deriveControlAgentBoardRows({
             run: controlRun([withoutTimestamps]),
             group,
-            nowEpochMs: 100_000
+            nowEpochMs: 2_500
         });
 
         expect(rows[0]).toMatchObject({
@@ -594,6 +604,7 @@ describe('control agent board derivation', () => {
                         transports: ['ws'],
                         apiBaseUrlConfigured: true
                     },
+                    assertions: FULL_ASSERTIONS_CAPABILITY,
                     messaging: FULL_MESSAGING_CAPABILITY
                 }
             }

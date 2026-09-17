@@ -12,7 +12,6 @@ import {
 } from './control-protocol.ts';
 import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
 import { toControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -22,6 +21,7 @@ import type {
     RallarBlackBoxTestState,
     RallarBlackBoxTestStatsSnapshot
 } from './rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
 
 export type RallarBlackBoxControlConnectionState =
     | 'idle'
@@ -171,7 +171,7 @@ function firstString(...values: readonly unknown[]): string | undefined {
 function toControlAgentIdentity(
     state: RallarBlackBoxTestState,
     agentId: string
-): RallarBlackBoxControlAgentIdentity | undefined {
+): RallarBlackBoxControlAgentIdentity {
     const config = state.currentConfig;
     if (!config) {
         return {
@@ -190,7 +190,7 @@ function toControlAgentIdentity(
     const sessionId = firstString(rallar.sessionId, config.sessionId);
     const providerMode = firstString(control.providerMode, defaults.providerMode, rallar.providerMode);
     const apiBaseUrl = firstString(config.apiBaseUrl, rallar.apiBaseUrl, defaults.apiBaseUrl);
-    const identity: RallarBlackBoxControlAgentIdentity = {
+    return {
         principalId,
         clientId: firstString(rallar.clientId, principalId),
         username: firstString(rallar.username, config.actor, principalId),
@@ -203,9 +203,8 @@ function toControlAgentIdentity(
         browserLabel: firstString(browser.label, browser.name, globalThis.navigator?.userAgent),
         sessionLabel: firstString(
             browser.sessionLabel,
-            sessionId && principalId ? `${principalId}:${sessionId}` : undefined,
-            agentId
-        ),
+            sessionId && principalId ? `${principalId}:${sessionId}` : undefined
+        ) ?? agentId,
         region: firstString(fleet.region),
         provider: firstString(fleet.provider),
         datacenter: firstString(fleet.datacenter),
@@ -224,10 +223,6 @@ function toControlAgentIdentity(
         }),
         updatedAtEpochMs: Date.now()
     };
-
-    return Object.values(identity).some((value) => value !== undefined)
-        ? identity
-        : undefined;
 }
 
 function stringArray(value: unknown): readonly string[] | undefined {

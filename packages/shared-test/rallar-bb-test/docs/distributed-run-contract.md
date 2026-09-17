@@ -216,7 +216,9 @@ already-running world-fleet agents that must be resolved from live control
 server state.
 
 Control agents report `RallarBlackBoxControlAgentIdentity` on register and
-heartbeat:
+heartbeat. `sessionLabel` and `updatedAtEpochMs` are always written; the other
+facts are absent when the agent's configuration omits them, and `capabilities`
+is absent until the agent loads a test configuration:
 
 - `principalId`, `clientId`, and `username`
 - `sessionId` and `clientInstanceId`
@@ -224,6 +226,9 @@ heartbeat:
 - `providerMode`
 - `browserLabel` and `sessionLabel`
 - `updatedAtEpochMs`
+
+A register or heartbeat envelope whose identity is present but does not decode
+is rejected; nothing in it is read as absent.
 
 The operator target-row projection uses a normalized duplicate identity key of
 `applicationId`, `workspaceId`, `groupId`, the first reported

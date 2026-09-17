@@ -112,7 +112,9 @@ function targetAgent(
             workspaceId: 'default',
             groupId: options.groupId ?? 'bb-group',
             region: options.region,
-            provider: options.provider
+            provider: options.provider,
+            sessionLabel: 'agent-session',
+            updatedAtEpochMs: 1_000
         }
     };
 }

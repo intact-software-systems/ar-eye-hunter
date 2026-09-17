@@ -12,9 +12,10 @@ describe('Recipe Console control scale fixture', () => {
     it('keeps the public builder and its focused retention helper bounded', () => {
         for (
             const [fileName, budget] of [
-                // Re-baselined after the dprint reformat (275 -> 286 lines) and again when manifests began
-                // writing every author setting explicitly (+15 lines of manifest data, no behaviour).
-                ['recipe-console-control-scale-fixture.ts', 301],
+                // Re-baselined after the dprint reformat (275 -> 286 lines), when manifests began writing every
+                // author setting explicitly (+15 lines), and when agent identities began writing their session
+                // label (+1 line); all of it data, no behaviour.
+                ['recipe-console-control-scale-fixture.ts', 302],
                 ['recipe-console-control-scale-retention.ts', 140]
             ] as const
         ) {

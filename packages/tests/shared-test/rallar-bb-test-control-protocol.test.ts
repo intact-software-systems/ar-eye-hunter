@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseControlServerMessage, type ControlCommandEnvelope } from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import {
+    parseControlClientMessage,
+    parseControlServerMessage,
+    type ControlCommandEnvelope
+} from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import { toControlAgentCapabilities } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord
@@ -17,6 +22,33 @@ function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand
         command
     };
 }
+
+function toRegisterMessage(identity: Readonly<Record<string, unknown>>): string {
+    return JSON.stringify({
+        kind: 'register',
+        protocolVersion: 1,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_000,
+        resume: { completedCommandIds: [] },
+        identity
+    });
+}
+
+const REGISTERED_IDENTITY = {
+    principalId: 'alice',
+    applicationId: 'rallar-server',
+    workspaceId: 'default',
+    groupId: 'bb-group',
+    sessionLabel: 'alice:session-1',
+    updatedAtEpochMs: 1_000,
+    location: { latitude: 60.39, longitude: 5.32, precision: 'approximate' },
+    capabilities: toControlAgentCapabilities({
+        config: undefined,
+        providerMode: 'browser-rallar',
+        apiBaseUrl: 'http://localhost:8080'
+    })
+};
 
 describe('rallar-bb-test control protocol', () => {
     it.each([
@@ -337,6 +369,43 @@ describe('rallar-bb-test control protocol', () => {
                 'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
             ]
         });
+    });
+
+    it('decodes the identity a current agent registers with', () => {
+        const parsed = parseControlClientMessage(toRegisterMessage(REGISTERED_IDENTITY));
+
+        expect(parsed.ok ? parsed.envelope : parsed.error).toMatchObject({
+            kind: 'register',
+            identity: JSON.parse(JSON.stringify(REGISTERED_IDENTITY))
+        });
+    });
+
+    it.each([
+        {
+            name: 'an identity without a session label',
+            identity: { ...REGISTERED_IDENTITY, sessionLabel: undefined },
+            error: 'Control register identity is invalid: identity.sessionLabel must be a non-empty string.'
+        },
+        {
+            name: 'an identity without an update time',
+            identity: { ...REGISTERED_IDENTITY, updatedAtEpochMs: undefined },
+            error: 'Control register identity is invalid: identity.updatedAtEpochMs must be a finite number.'
+        },
+        {
+            name: 'a location without a precision',
+            identity: { ...REGISTERED_IDENTITY, location: { latitude: 60.39, longitude: 5.32 } },
+            error: 'Control register identity is invalid: identity.location must carry latitude, longitude and an exact or approximate precision.'
+        },
+        {
+            name: 'a capability block without assertions',
+            identity: {
+                ...REGISTERED_IDENTITY,
+                capabilities: { ...REGISTERED_IDENTITY.capabilities, assertions: undefined }
+            },
+            error: 'Control register identity is invalid: identity.capabilities.assertions must report absence, untilLoop and operators.'
+        }
+    ])('rejects a register envelope carrying $name', ({ identity, error }) => {
+        expect(parseControlClientMessage(toRegisterMessage(identity))).toEqual({ ok: false, error });
     });
 
     it('admits the capability catalog fields and requires each of its required fields', () => {

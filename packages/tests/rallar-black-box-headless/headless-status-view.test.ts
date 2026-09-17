@@ -51,7 +51,9 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
                 region: 'eu-north',
                 provider: 'hetzner',
                 datacenter: 'fsn1',
-                hostId: 'host-1'
+                hostId: 'host-1',
+                sessionLabel: 'agent-1:agent-1',
+                updatedAtEpochMs: 1_000
             }
         },
         state: {

@@ -472,10 +472,8 @@ function decodeTargetBlocker(
             ? Either.ofRight({ agentId, status, reason })
             : Either.ofLeft(`${path}.identity must be absent for an agent without identity`);
     }
-    const identity = decodeControlAgentIdentity(value.identity);
-    return identity === undefined
-        ? Either.ofLeft(`${path}.identity must be a control agent identity`)
-        : Either.ofRight({ agentId, status, reason, identity });
+    return decodeControlAgentIdentity(value.identity)
+        .mapBoth((issue) => `${path}.${issue}`, (identity) => ({ agentId, status, reason, identity }));
 }
 
 function isAbsentOrRunError(value: unknown): value is RallarBlackBoxTestError | undefined {
