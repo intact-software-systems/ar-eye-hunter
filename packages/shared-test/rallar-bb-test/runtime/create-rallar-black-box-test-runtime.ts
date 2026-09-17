@@ -1,5 +1,5 @@
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import { LoopCommandExecution } from '../loop/loop-command-execution.ts';
 import { ParallelCommandExecution } from '../parallel/parallel-command-execution.ts';
 import type {
@@ -282,10 +282,11 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             topic,
             commandId: command.commandId,
             severity: 'info',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic,
                 severity: 'info',
                 commandId: command.commandId,
+                source: 'simulated-runtime',
                 payload: { command: this.toRedacted(command) }
             })
         });

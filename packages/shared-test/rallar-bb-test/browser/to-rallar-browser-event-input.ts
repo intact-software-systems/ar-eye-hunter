@@ -1,6 +1,8 @@
 import {
-    inferRallarBlackBoxDiagnosticSeverity,
-    normalizeRallarBlackBoxRuntimeDiagnostic
+    computeRallarBlackBoxDiagnosticSeverity,
+    decodeRallarBlackBoxRuntimeDiagnosticEvidence,
+    toRallarBlackBoxRuntimeDiagnostic,
+    type RallarBlackBoxRuntimeDiagnosticPayload
 } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestRuntimeEventInput,
@@ -42,11 +44,11 @@ export function toRallarBrowserEventInput(
     if (event.kind === 'close') {
         return { ...base, kind: 'event', severity: 'warning', payload };
     }
-    const severity = inferRallarBlackBoxDiagnosticSeverity({
+    const severity = computeRallarBlackBoxDiagnosticSeverity({
         topic,
         severity: event.severity,
         error: event.error,
-        data: event.data,
+        detail: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
         payload
     });
     return { ...base, kind: 'diagnostic', severity, payload: toRallarBrowserDiagnosticPayload(event, severity) };
@@ -55,8 +57,8 @@ export function toRallarBrowserEventInput(
 function toRallarBrowserDiagnosticPayload(
     event: RallarBlackBoxBrowserRallarEvent,
     severity: RallarBlackBoxTestSeverity
-): ReturnType<typeof normalizeRallarBlackBoxRuntimeDiagnostic> {
-    return normalizeRallarBlackBoxRuntimeDiagnostic({
+): RallarBlackBoxRuntimeDiagnosticPayload {
+    return toRallarBlackBoxRuntimeDiagnostic({
         topic: event.topic ?? DEFAULT_RALLAR_BROWSER_EVENT_TOPIC,
         severity,
         transport: event.transport,
@@ -72,7 +74,7 @@ function toRallarBrowserDiagnosticPayload(
         contextId: event.contextId,
         resourceId: event.resourceId,
         atEpochMs: event.atEpochMs,
-        data: event.data,
+        detail: decodeRallarBlackBoxRuntimeDiagnosticEvidence(event.data),
         error: event.error,
         payload: toRallarBrowserEventPayload(event),
         source: 'browser-rallar-runtime'

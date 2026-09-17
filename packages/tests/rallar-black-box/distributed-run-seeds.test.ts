@@ -104,7 +104,8 @@ describe('synthetic distributed run seeds', () => {
             topic: 'rallar.browser.realtime.synthetic_seed',
             severity: 'warning',
             transport: 'messages.rtc',
-            message: 'Synthetic RTC evidence includes a warning diagnostic.'
+            message: 'Synthetic RTC evidence includes a warning diagnostic.',
+            source: 'distributed-run-seed'
         });
         expect(monitor.runtimeDiagnostics).toHaveLength(1);
 

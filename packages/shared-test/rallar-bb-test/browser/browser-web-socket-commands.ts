@@ -4,7 +4,7 @@ import {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -301,7 +301,7 @@ export class BrowserWebSocketCommands {
             connection,
             transport: 'ws',
             severity: 'warning',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic: 'rallar.bb.ws.headers_ignored',
                 severity: 'warning',
                 commandId: command.commandId,
@@ -372,7 +372,7 @@ function recordWebSocketError(
         connection,
         transport: 'ws',
         severity: 'error',
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic: 'rallar.bb.ws.error',
             severity: 'error',
             connection,

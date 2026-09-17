@@ -1,6 +1,6 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { Either } from '@shared/resilience/Either.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -265,13 +265,13 @@ function recordRtcReadinessDiagnostic(
         connection: command.connection,
         transport: command.transport,
         severity,
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic,
             severity,
             commandId: command.commandId,
             connection: command.connection,
             transport: command.transport,
-            data: payload,
+            detail: payload,
             payload,
             message: typeof payload.message === 'string' ? payload.message : undefined,
             source: 'browser-adapter'
@@ -293,7 +293,7 @@ function recordRtcConnected(
         actor: connectionConfig.actor,
         transport,
         severity: 'info',
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic: 'rallar.bb.rtc.connected',
             severity: 'info',
             commandId: command.commandId,
@@ -301,7 +301,7 @@ function recordRtcConnected(
             actor: connectionConfig.actor,
             transport,
             roomId: connectionConfig.roomId,
-            data: value,
+            detail: value,
             payload: value,
             source: 'browser-adapter'
         })
@@ -319,13 +319,13 @@ function recordRtcSendDiagnostic(diagnostic: RtcSendDiagnostic): void {
         connection: command.connection,
         transport: command.transport,
         severity,
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic,
             severity,
             commandId: command.commandId,
             connection: command.connection,
             transport: command.transport,
-            data: diagnostics,
+            detail: diagnostics,
             payload: failure ? { diagnostics, failure, sendObservation } : { ...diagnostics, sendObservation },
             message: failure?.message,
             error: failure,

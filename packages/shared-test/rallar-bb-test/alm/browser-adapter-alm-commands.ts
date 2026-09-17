@@ -3,7 +3,7 @@ import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/a
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BrowserCommandAbortScope } from '../browser/browser-command-cancellation.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../browser/browser-command-contracts.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic, type RallarBlackBoxRuntimeDiagnosticEvidence } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandContext,
@@ -49,7 +49,7 @@ interface AlmBrowserCommandInput<K extends RallarBlackBoxTestAlmCommandKind> {
     readonly context: RallarBlackBoxTestCommandContext;
 }
 
-interface RunAlmRuntimeCommandInput<T> {
+interface RunAlmRuntimeCommandInput<T extends RallarBlackBoxRuntimeDiagnosticEvidence> {
     readonly port: RallarBlackBoxAlmBrowserPort;
     readonly command: RallarBlackBoxAlmCommandWithId;
     readonly context: RallarBlackBoxTestCommandContext;
@@ -58,7 +58,7 @@ interface RunAlmRuntimeCommandInput<T> {
     readonly invoke: (runtime: RallarBlackBoxBrowserRallarRuntime) => Promise<T>;
 }
 
-interface RecordAlmDiagnosticInput<T> {
+interface RecordAlmDiagnosticInput<T extends RallarBlackBoxRuntimeDiagnosticEvidence> {
     readonly context: RallarBlackBoxTestCommandContext;
     readonly command: RallarBlackBoxAlmCommandWithId;
     readonly connection: string | undefined;
@@ -275,7 +275,7 @@ function requestAlmAgentReload(
     };
 }
 
-async function runAlmRuntimeCommand<T>(
+async function runAlmRuntimeCommand<T extends RallarBlackBoxRuntimeDiagnosticEvidence>(
     input: RunAlmRuntimeCommandInput<T>
 ): Promise<RallarBlackBoxTestCommandOutcome> {
     const abort = input.port.commandAbortScope(input.command, input.context);
@@ -435,20 +435,22 @@ function readAlmWaitTimeoutMs(
     return Math.max(0, waitDeadlineEpochMs(command, () => nowEpochMs) - nowEpochMs);
 }
 
-function recordAlmDiagnostic<T>(input: RecordAlmDiagnosticInput<T>): void {
+function recordAlmDiagnostic<T extends RallarBlackBoxRuntimeDiagnosticEvidence>(
+    input: RecordAlmDiagnosticInput<T>
+): void {
     input.context.recordEvent({
         kind: 'diagnostic',
         topic: input.topic,
         commandId: input.command.commandId,
         connection: input.connection,
         severity: input.severity,
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic: input.topic,
             severity: input.severity,
             commandId: input.command.commandId,
             connection: input.connection,
             message: input.message,
-            data: input.value,
+            detail: input.value,
             payload: input.value,
             source: ALM_DIAGNOSTIC_SOURCE
         })

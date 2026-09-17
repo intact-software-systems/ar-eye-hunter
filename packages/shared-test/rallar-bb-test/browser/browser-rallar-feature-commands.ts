@@ -1,5 +1,5 @@
 import { toError } from '@shared/resilience/to-error.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -175,12 +175,12 @@ export class BrowserRallarFeatureCommands {
             topic,
             commandId: command.commandId,
             severity: 'error',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic,
                 severity: 'error',
                 commandId: command.commandId,
                 message,
-                data: refusal,
+                detail: refusal,
                 payload: refusal,
                 source: 'browser-adapter'
             })
@@ -283,12 +283,12 @@ function recordFeatureDiagnostic(
         topic: diagnostic.topic,
         commandId: command.commandId,
         severity: diagnostic.severity,
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic: diagnostic.topic,
             severity: diagnostic.severity,
             commandId: command.commandId,
             message: diagnostic.error?.message,
-            data: diagnostic.value,
+            detail: diagnostic.value,
             payload: diagnostic.value,
             error: diagnostic.error,
             source: 'browser-adapter'

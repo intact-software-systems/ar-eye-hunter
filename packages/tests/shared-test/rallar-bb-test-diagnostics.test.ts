@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxTestRuntime,
-    normalizeRallarBlackBoxRuntimeDiagnostic,
     selectRallarBlackBoxDiagnostics,
+    toRallarBlackBoxRuntimeDiagnostic,
     type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
@@ -16,12 +16,12 @@ describe('rallar-bb-test runtime diagnostics', () => {
             topic: 'rallar.browser.ws.unhandled_message',
             transport: 'ws',
             severity: 'warning',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic: 'rallar.browser.ws.unhandled_message',
                 transport: 'ws',
                 severity: 'warning',
                 message: 'Unhandled WS message: room.unknown',
-                data: {
+                detail: {
                     typeId: 'room.unknown',
                     payload: {
                         text: 'ignored'
@@ -64,6 +64,23 @@ describe('rallar-bb-test runtime diagnostics', () => {
             }
         });
         expect(assertResult.ok).toBe(true);
+    });
+
+    it('names the producer of a simulated runtime command diagnostic', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+
+        await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'simulated-send',
+            send: { data: { text: 'hello' } }
+        });
+
+        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+            .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
+        expect(diagnostic?.payload).toMatchObject({
+            diagnosticTypeId: 'rallar.bb.fake.rtc.send',
+            source: 'simulated-runtime'
+        });
     });
 
     it('normalizes browser Rallar RTC warning events from the adapter bridge', () => {

@@ -1,5 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import type {
     RallarBlackBoxTestCommandContext,
     RallarBlackBoxTestCommandOutcome,
@@ -306,13 +306,13 @@ export class BrowserRtcStream {
             connection: command.connection,
             transport: command.transport,
             severity,
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic: outcome.topic,
                 severity,
                 commandId: command.commandId,
                 connection: command.connection,
                 transport: command.transport,
-                data: outcome.value,
+                detail: outcome.value,
                 payload: outcome.value,
                 message: outcome.message,
                 error: outcome.error,
@@ -330,13 +330,13 @@ export class BrowserRtcStream {
             connection: command.connection,
             transport: command.transport,
             severity: 'info',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic,
                 severity: 'info',
                 commandId: command.commandId,
                 connection: command.connection,
                 transport: command.transport,
-                data,
+                detail: data,
                 source: 'browser-adapter'
             })
         });

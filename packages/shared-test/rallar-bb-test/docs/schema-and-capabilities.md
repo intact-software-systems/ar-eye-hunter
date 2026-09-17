@@ -538,11 +538,11 @@ second recipe run with the same child `commandId` values does not inherit stale
 results, messages, sockets, or RTC state from a failed or cancelled prior run.
 
 WS/RTC runtime diagnostics should use
-`normalizeRallarBlackBoxRuntimeDiagnostic(...)` before they are recorded as
-`kind: "diagnostic"` evidence. Normalized payloads expose
-`diagnosticSchemaVersion`, `diagnosticTypeId`, `message`, `transport`,
-`severity`, connection/group/peer identifiers, and structured `data`/`error`
-details. `wait` can match these diagnostics by event fields and payload paths,
+`toRallarBlackBoxRuntimeDiagnostic(...)` before they are recorded as
+`kind: "diagnostic"` evidence. The payloads always expose
+`diagnosticSchemaVersion`, `diagnosticTypeId`, `topic`, `severity`, `message` and
+the producing `source`, plus the `transport`, connection/group/peer identifiers
+and structured `data`/`error` details a diagnostic concerns. `wait` can match these diagnostics by event fields and payload paths,
 and `assert` can read them through `diagnostics` or `recentDiagnostics`.
 
 `assert` is a small browser-agent evidence check. It reads only whitelisted

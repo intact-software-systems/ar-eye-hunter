@@ -1,6 +1,6 @@
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import { normalizeRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
+import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxDistributedRunRollup
@@ -522,13 +522,14 @@ function toSeedDiagnosticEnvelope(
         commandId: input.commandId,
         eventId: `${input.commandId}-${severity}-diagnostic`,
         atEpochMs: input.atEpochMs,
-        payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+        payload: toRallarBlackBoxRuntimeDiagnostic({
             topic: 'rallar.browser.realtime.synthetic_seed',
             severity,
             transport: 'messages.rtc',
             message: input.message ?? 'Synthetic RTC evidence includes a warning diagnostic.',
             commandId: input.commandId,
             roomId: 'seed-room',
+            source: 'distributed-run-seed',
             payload: {
                 distributedRunId: input.distributedRunId,
                 agentId: input.agent.agentId
