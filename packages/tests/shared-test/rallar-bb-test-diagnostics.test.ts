@@ -120,7 +120,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
 
     it('records browser event evidence in the JSON form the control connection carries, all the way down', () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime();
-        const cyclic: { self?: unknown; } = {};
+        const cyclic: { self?: object; } = {};
         cyclic.self = cyclic;
 
         runtime.receiveRallarBrowserEvent({

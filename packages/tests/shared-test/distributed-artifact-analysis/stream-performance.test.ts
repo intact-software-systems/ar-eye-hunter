@@ -378,26 +378,29 @@ describe('distributed run artifact stream performance', () => {
     });
 
     it('reads a recorded empty observation list as no in-flight drops, so a stream that scheduled no frames keeps run timing', () => {
-        const streamResult = (commandId: string, frames: number, recorded: Readonly<Record<string, unknown>>) =>
-            JSON.stringify({
-                resultKey: `controller-01:${commandId}`,
-                agentId: 'controller-01',
-                commandId,
-                action: 'rtc.stream',
-                ok: true,
-                result: {
-                    commandId: `rtc-${commandId}`,
-                    plannedFrames: frames,
-                    scheduledFrames: frames,
-                    attemptedFrames: frames,
-                    completedFrames: frames,
-                    failedFrames: 0,
-                    droppedFrames: 0,
-                    backpressureCount: 0,
-                    pacing: { lateFrameCount: 0 },
-                    ...recorded
-                }
-            });
+        const streamResult = (
+            commandId: string,
+            frames: number,
+            recorded: { readonly inFlightLimitDropCount?: number; readonly observations?: readonly object[]; }
+        ) => JSON.stringify({
+            resultKey: `controller-01:${commandId}`,
+            agentId: 'controller-01',
+            commandId,
+            action: 'rtc.stream',
+            ok: true,
+            result: {
+                commandId: `rtc-${commandId}`,
+                plannedFrames: frames,
+                scheduledFrames: frames,
+                attemptedFrames: frames,
+                completedFrames: frames,
+                failedFrames: 0,
+                droppedFrames: 0,
+                backpressureCount: 0,
+                pacing: { lateFrameCount: 0 },
+                ...recorded
+            }
+        });
         const analysis = computeDistributedRunAnalysis(
             toDistributedRunArtifactFiles({
                 distributedRun: createDistributedRunSnapshot({
