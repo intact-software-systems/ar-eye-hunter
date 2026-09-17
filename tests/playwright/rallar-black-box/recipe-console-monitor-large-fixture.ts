@@ -238,7 +238,9 @@ function createLargeControlRun(
                     providerMode: 'browser-rallar',
                     browserName: 'chromium',
                     region: 'eu-north',
-                    tags: [largeMonitorRole(index)]
+                    tags: [largeMonitorRole(index)],
+                    sessionLabel: `${agentId}-principal:${agentId}-session`,
+                    updatedAtEpochMs: BASE_EPOCH_MS + 8_000
                 },
                 connectionSequence: 1,
                 reconnectCount: 0,

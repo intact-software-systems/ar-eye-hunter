@@ -130,9 +130,7 @@ function distributedRun(
                 secretRefs: []
             }],
             targetPolicy: {
-                mode: 'selected-agents',
-                agentIds: [],
-                expectedParticipantCount: 0,
+                mode: 'all-online-group-members',
                 includeOfflineExpectedAgents: false
             },
             variables: {},
@@ -165,6 +163,9 @@ function distributedRun(
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []

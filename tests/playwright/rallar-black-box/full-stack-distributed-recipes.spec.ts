@@ -520,6 +520,7 @@ async function openScriptedControlAgent(
                     groupId: input.group.groupId,
                     providerMode: input.providerMode ?? 'scripted-control',
                     browserLabel: input.agentId,
+                    sessionLabel: input.agentId,
                     updatedAtEpochMs: Date.now()
                 },
                 resume: {

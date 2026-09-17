@@ -44,7 +44,9 @@ function agent(
             groupId: options.groupId ?? GROUP.groupId,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north'
+            region: 'eu-north',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: now - 500
         },
         connectionSequence: 1,
         reconnectCount: 0,
@@ -177,7 +179,8 @@ function targetResolution(
                     (recipe) => recipe.recipeId ?? recipe.recipe?.recipeId ?? ''
                 )
                 .filter(Boolean),
-            required: true
+            required: true,
+            variables: {}
         })),
         blockers: [],
         summary: {
@@ -189,6 +192,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: { 'all-agents': targetAgentIds.length },
             regions: { 'eu-north': targetAgentIds.length },

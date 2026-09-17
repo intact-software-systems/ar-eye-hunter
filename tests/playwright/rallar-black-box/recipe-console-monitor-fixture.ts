@@ -428,7 +428,9 @@ function agent(
             providerMode: 'browser-rallar',
             browserName: 'chromium',
             region: 'eu-north',
-            tags: [role]
+            tags: [role],
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: BASE_EPOCH_MS + 900
         },
         connectionSequence: reconnectCount + 1,
         reconnectCount,

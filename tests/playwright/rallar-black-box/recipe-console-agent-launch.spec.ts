@@ -536,7 +536,9 @@ function connectedAgent(runId: string, agentId: string, now: number): ControlAge
             workspaceId: 'default',
             groupId: 'execute-live-group',
             providerMode: 'simulated',
-            browserName: 'chromium'
+            browserName: 'chromium',
+            sessionLabel: `${agentId}:${agentId}-session`,
+            updatedAtEpochMs: now
         },
         connectionSequence: 1,
         reconnectCount: 0,

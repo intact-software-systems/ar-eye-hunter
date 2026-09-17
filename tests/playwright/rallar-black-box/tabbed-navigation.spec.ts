@@ -33,6 +33,30 @@ const RUNNER_SURFACE_TARGETS: Readonly<
     'flow-builder': { visibleTab: 'Builder' }
 };
 
+const EXPLICIT_ARTIFACT_POLICY = {
+    retainArtifacts: true,
+    includeEventJsonl: true,
+    includeResultJsonl: true,
+    includeFailureBundle: true,
+    includeDistributedMetadata: true
+};
+
+function toExplicitDistributedManifest(fields: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+    return {
+        schemaVersion: 1,
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: EXPLICIT_ARTIFACT_POLICY,
+        groupAssertions: [],
+        metadata: {},
+        ...fields
+    };
+}
+
 async function openRunnerSurface(page: Page, tab: RunnerSurfaceTab): Promise<void> {
     const target = RUNNER_SURFACE_TARGETS[tab];
     await page.getByLabel('Rallar workspace mode')
@@ -2186,6 +2210,8 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         recipes: [{
             recipeId: 'ai-health-recipe',
             required: true,
+            variables: {},
+            secretRefs: [],
             recipe: {
                 schemaVersion: 1,
                 recipeId: 'ai-health-recipe',
@@ -2197,10 +2223,18 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         }],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1
+            expectedParticipantCount: 1,
+            includeOfflineExpectedAgents: false
         },
+        variables: {},
+        secretRefs: [],
+        roleAssignments: [],
         ackTimeoutMs: 30000,
-        startMode: 'manual'
+        barrier: { enabled: false },
+        startMode: 'manual',
+        artifactPolicy: EXPLICIT_ARTIFACT_POLICY,
+        groupAssertions: [],
+        metadata: {}
     };
     await authoring.getByRole('textbox', { name: 'Generated JSON' }).fill(JSON.stringify(generatedManifest, null, 2));
     const generatedValidation = authoring.getByRole('region', { name: 'Generated JSON validation' });
@@ -2272,6 +2306,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -2298,8 +2333,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
         updatedAtEpochMs: Date.now() - 5_000,
         targetAgentIds: staleResolution.targetAgentIds,
         targetResolution: staleResolution,
-        manifest: {
-            schemaVersion: 1,
+        manifest: toExplicitDistributedManifest({
             distributedRunId: 'dist-stale-world',
             controlRunId: 'demo-run',
             displayName: 'Stale world fleet run',
@@ -2307,6 +2341,8 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             recipes: [{
                 recipeId: 'stale-health',
                 required: true,
+                variables: {},
+                secretRefs: [],
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'stale-health',
@@ -2315,11 +2351,10 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             }],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2
-            },
-            ackTimeoutMs: 30_000,
-            startMode: 'manual'
-        },
+                expectedParticipantCount: 2,
+                includeOfflineExpectedAgents: false
+            }
+        }),
         commandLinks: [],
         rollup: {
             state: 'draft',
@@ -2334,6 +2369,9 @@ test('uses fresh world-fleet target previews after loading an older distributed 
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []
@@ -2750,8 +2788,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
         startedAtEpochMs: now - 5_000,
         completedAtEpochMs: now - 3_800,
         targetAgentIds: ['agent-a', 'agent-b'],
-        manifest: {
-            schemaVersion: 1,
+        manifest: toExplicitDistributedManifest({
             distributedRunId: 'dist-diagnostics',
             controlRunId: 'demo-run',
             displayName: 'Diagnostics distributed',
@@ -2760,13 +2797,14 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'diagnostic-recipe', required: true }],
+            recipes: [{ recipeId: 'diagnostic-recipe', required: true, variables: {}, secretRefs: [] }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],
-                expectedParticipantCount: 2
+                expectedParticipantCount: 2,
+                includeOfflineExpectedAgents: false
             }
-        },
+        }),
         commandLinks: [
             {
                 phase: 'start',
@@ -2796,6 +2834,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1
             },
             failures: [{

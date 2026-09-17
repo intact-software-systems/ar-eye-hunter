@@ -150,7 +150,9 @@ export function createAnalyzeControlRun(): ControlRunSnapshot {
                 workspaceId: 'default',
                 groupId: 'analyze-ci',
                 region: 'eu-north',
-                providerMode: 'browser-rallar'
+                providerMode: 'browser-rallar',
+                sessionLabel: 'analyze-principal:analyze-session',
+                updatedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500
             },
             connectionSequence: 3,
             reconnectCount: 2,
