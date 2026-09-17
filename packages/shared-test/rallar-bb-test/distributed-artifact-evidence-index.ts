@@ -17,14 +17,15 @@ import {
     type DistributedArtifactEvidenceEntry,
     type DistributedArtifactEvidenceIndex
 } from './distributed-artifact-evidence-contracts.ts';
-import { distributedArtifactEvidenceRows } from './distributed-artifact-evidence-rows.ts';
 import {
-    boundedEvidenceLimit,
-    boundedEvidenceTextLimit,
+    resolveEvidenceLimit,
+    resolveEvidenceTextLimit
+} from './distributed-artifact-evidence/distributed-artifact-evidence-bounds.ts';
+import {
     compareEvidenceEntries,
-    deduplicateArtifactEvidenceEntries,
     resolvePrimaryDistributedArtifactResultFailure
-} from './distributed-artifact-evidence-utils.ts';
+} from './distributed-artifact-evidence/distributed-artifact-evidence-order.ts';
+import { toDistributedArtifactEvidenceRows } from './distributed-artifact-evidence/to-distributed-artifact-evidence-rows.ts';
 import { parseDistributedArtifactPipeline } from './distributed-artifact-pipeline.ts';
 
 /** Every evidence entry of an artifact before the index limit, deduplicated and ordered, and as the rows recorded them. */
@@ -73,25 +74,24 @@ export function computeDistributedArtifactEvidenceIndex(
 export function computeDistributedArtifactEvidenceSource(
     input: ComputeDistributedArtifactEvidenceIndexInput
 ): DistributedArtifactEvidenceSource {
-    const rawEntries = distributedArtifactEvidenceRows({
+    const rawEntries = toDistributedArtifactEvidenceRows({
         analysis: input.analysis,
         snapshots: input.snapshots,
         monitor: input.monitor,
         parsed: input.parsed,
         sourceFileNames: new Set(input.sourceFileNames),
-        summaryLimit: boundedEvidenceTextLimit(
+        summaryLimit: resolveEvidenceTextLimit(
             input.limits.summary,
             DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
             MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
         ),
-        payloadSummaryLimit: boundedEvidenceTextLimit(
+        payloadSummaryLimit: resolveEvidenceTextLimit(
             input.limits.payloadSummary,
             DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
             MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
-        ),
-        deduplicate: false
+        )
     });
-    const entries = deduplicateArtifactEvidenceEntries(rawEntries).sort(compareEvidenceEntries);
+    const entries = deduplicateEvidenceEntries(rawEntries).sort(compareEvidenceEntries);
     return { entries, rawEntries };
 }
 
@@ -103,7 +103,7 @@ export function computeDistributedArtifactEvidenceIndexFromSource(
     input: ComputeDistributedArtifactEvidenceIndexInput,
     source: DistributedArtifactEvidenceSource
 ): DistributedArtifactEvidenceIndex {
-    const limit = boundedEvidenceLimit(
+    const limit = resolveEvidenceLimit(
         input.limits.index,
         DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
         MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT
@@ -159,6 +159,13 @@ function computeRetainedEvidence<Entry extends DistributedArtifactEvidenceEntry>
             .slice(0, Math.max(0, limit - retained.length))
     );
     return retained;
+}
+
+/** The last row recorded for an id stands for it. */
+function deduplicateEvidenceEntries(
+    entries: readonly DistributedArtifactEvidenceEntry[]
+): DistributedArtifactEvidenceEntry[] {
+    return [...new Map(entries.map((entry) => [entry.id, entry])).values()];
 }
 
 function resolveLatestEntry<Entry extends DistributedArtifactEvidenceEntry>(

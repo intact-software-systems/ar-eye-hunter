@@ -2,7 +2,7 @@ import type {
     DistributedArtifactEvidenceEntry,
     DistributedArtifactEvidenceWindowQuery
 } from './distributed-artifact-evidence-contracts.ts';
-import { normalizedEvidenceText } from './distributed-artifact-evidence-utils.ts';
+import { toNormalizedEvidenceText } from './distributed-artifact-evidence/to-normalized-evidence-text.ts';
 
 export type CompiledDistributedArtifactEvidenceQuery = Readonly<{
     query: DistributedArtifactEvidenceWindowQuery;
@@ -12,7 +12,7 @@ export type CompiledDistributedArtifactEvidenceQuery = Readonly<{
 export function compileDistributedArtifactEvidenceQuery(
     query: DistributedArtifactEvidenceWindowQuery = {}
 ): CompiledDistributedArtifactEvidenceQuery {
-    const tokens = normalizedEvidenceText(query.query).split(/\s+/).filter(Boolean);
+    const tokens = toNormalizedEvidenceText(query.query).split(/\s+/).filter(Boolean);
     return { query, tokens };
 }
 
@@ -39,7 +39,7 @@ export function distributedArtifactEvidenceQueryFingerprintValue(
 function optionalTextFingerprint(value: string | undefined): readonly unknown[] {
     return value === undefined
         ? ['absent']
-        : ['present', normalizedEvidenceText(value)];
+        : ['present', toNormalizedEvidenceText(value)];
 }
 
 function optionalNumberFingerprint(value: number | undefined): readonly unknown[] {
@@ -61,7 +61,7 @@ function optionalNumberFingerprint(value: number | undefined): readonly unknown[
 export function distributedArtifactEvidenceSearchHaystack(
     entry: DistributedArtifactEvidenceEntry
 ): string {
-    return normalizedEvidenceText(
+    return toNormalizedEvidenceText(
         [
             entry.agentId,
             ...(entry.agentIds ?? []),
@@ -107,7 +107,7 @@ export function distributedArtifactEvidenceEntryMatches(
 
 function exactMatch(value: string | undefined, expected: string | undefined): boolean {
     return expected === undefined ||
-        normalizedEvidenceText(value) === normalizedEvidenceText(expected);
+        toNormalizedEvidenceText(value) === toNormalizedEvidenceText(expected);
 }
 
 function relatedMatch(
@@ -124,7 +124,7 @@ function statusMatch(value: string | undefined, expected: string | undefined): b
 }
 
 function normalizedStatus(value: string | undefined): string {
-    const status = normalizedEvidenceText(value);
+    const status = toNormalizedEvidenceText(value);
     if (status === 'ok' || status === 'pass' || status === 'success') {
         return 'passed';
     }

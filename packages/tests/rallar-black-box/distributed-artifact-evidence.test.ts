@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { computeDistributedArtifactEvidenceCollections } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-artifact-evidence-collections.ts';
 import type { DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { resolveDistributedArtifactEvidenceCatalogEntryIds } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
 import {
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
     type ComputeDistributedArtifactEvidenceIndexInput,
     type ComputeDistributedArtifactEvidenceInput,
-    type DistributedArtifactEvidenceEntry,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactEvidenceLimits
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
 import {
-    composeDistributedArtifactIssueMarkdown,
     computeDistributedArtifactEvidence,
-    computeDistributedArtifactEvidenceIndex,
-    searchDistributedArtifactEvidence
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
+    computeDistributedArtifactEvidenceIndex
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
+import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
+import {
+    DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
+    toDistributedArtifactIssueMarkdown
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/to-distributed-artifact-issue-markdown.ts';
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { computeDistributedRunAnalysis } from '../shared-test/distributed-artifact-analysis/distributed-artifact-files-fixture.ts';
 
@@ -457,26 +459,20 @@ describe('distributed artifact evidence index', () => {
         expect(missing.entries.find((entry) => entry.kind === 'result' && entry.commandId === 'send-rtc')).not.toHaveProperty('failureDetails');
     });
 
-    it('canonicalizes structured failures even when their rendered summaries match', async () => {
-        const base: DistributedArtifactEvidenceEntry = {
-            id: 'result:same',
-            kind: 'result',
-            sourceFile: 'control-run.json',
-            status: 'failed',
-            summary: 'Same rendered summary',
-            payloadSummary: '',
-            failureDetails: { code: 'FIRST', message: 'First failure' }
-        };
-        const entries = await resolveDistributedArtifactEvidenceCatalogEntryIds([
-            base,
-            {
-                ...base,
-                failureDetails: { code: 'SECOND', message: 'Second failure' }
-            }
-        ]);
+    it('keeps failed results that share an id and a rendered summary apart in the catalog when their failures differ', async () => {
+        const files = evidenceFiles();
+        const controlRun = JSON.parse(files['control-run.json'] ?? '{}');
+        const failed = controlRun.results[0];
+        const revoked = { code: 'RTC_ROUTE_REVOKED', message: 'TURN route missing' };
+        controlRun.results.push({ ...failed, result: { ...failed.result, error: revoked }, error: revoked });
+        const { catalog } = await computeDistributedArtifactEvidenceCollections(toPrecomputedEvidenceInput(
+            { ...files, 'control-run.json': JSON.stringify(controlRun) },
+            DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS
+        ));
+        const failures = catalog.entries.filter((entry) => entry.kind === 'result' && entry.summary === 'TURN route missing');
 
-        expect(entries).toHaveLength(2);
-        expect(new Set(entries.map((entry) => entry.id)).size).toBe(2);
+        expect(failures.map((entry) => entry.failureDetails?.code).sort()).toEqual(['RTC_NO_ROUTE', 'RTC_ROUTE_REVOKED']);
+        expect(new Set(failures.map((entry) => entry.id)).size).toBe(2);
     });
 
     it('retains usable result and event rows when a partial run has no command links', () => {
@@ -765,7 +761,7 @@ describe('distributed artifact evidence search', () => {
 });
 
 describe('distributed artifact issue markdown', () => {
-    it('composes bounded issue-ready markdown with warnings, source evidence, and a labeled likely trail', () => {
+    it('writes bounded issue-ready markdown with warnings, source evidence, and a labeled likely trail', () => {
         const index = evidenceIndex({
             files: evidenceFiles(),
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS,
@@ -775,11 +771,10 @@ describe('distributed artifact issue markdown', () => {
             query: 'no route',
             limit: 10
         });
-        const markdown = composeDistributedArtifactIssueMarkdown({
+        const markdown = toDistributedArtifactIssueMarkdown({
             analysis: index.analysis,
-            index,
-            searchResult: result,
-            maxCausalTrailItems: 2
+            evidence: result.entries,
+            limits: { ...DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS, causalTrailItems: 2 }
         });
 
         expect(markdown).toContain('# Distributed run dist-evidence-search');

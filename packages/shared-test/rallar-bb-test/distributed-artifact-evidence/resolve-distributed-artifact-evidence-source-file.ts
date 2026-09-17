@@ -1,7 +1,7 @@
 import {
     distributedArtifactPipelineJsonRecord,
     type ParsedDistributedArtifactPipeline
-} from './distributed-artifact-pipeline.ts';
+} from '../distributed-artifact-pipeline.ts';
 
 export interface DistributedArtifactEvidenceSourceFiles {
     readonly parsed: ParsedDistributedArtifactPipeline;

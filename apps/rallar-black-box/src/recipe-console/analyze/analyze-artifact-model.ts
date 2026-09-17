@@ -1,8 +1,9 @@
 import {
-    composeDistributedArtifactIssueMarkdown,
     computeDistributedArtifactEvidenceIndex,
     computeDistributedArtifactWorkspace,
     DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
+    DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
+    toDistributedArtifactIssueMarkdown,
     type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactPipelineTelemetry,
@@ -214,9 +215,10 @@ export function finalizeAnalyzeArtifactModel(
         analysis,
         snapshots,
         evidenceIndex,
-        issueMarkdown: composeDistributedArtifactIssueMarkdown({
+        issueMarkdown: toDistributedArtifactIssueMarkdown({
             analysis,
-            index: evidenceIndex
+            evidence: evidenceIndex.entries,
+            limits: DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS
         }),
         portableEnvelope: {
             artifactSchemaVersion: workspace.artifactSchemaVersion ?? analysis.artifactSchemaVersion,

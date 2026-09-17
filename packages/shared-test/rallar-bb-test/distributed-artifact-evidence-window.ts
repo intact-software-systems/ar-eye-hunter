@@ -13,7 +13,7 @@ import {
     distributedArtifactEvidenceQueryFingerprintValue,
     distributedArtifactEvidenceSearchHaystack
 } from './distributed-artifact-evidence-query.ts';
-import { normalizedEvidenceText } from './distributed-artifact-evidence-utils.ts';
+import { toNormalizedEvidenceText } from './distributed-artifact-evidence/to-normalized-evidence-text.ts';
 
 type MatchIndexCache = Readonly<{
     queryFingerprint: string;
@@ -77,7 +77,7 @@ export async function prepareDistributedArtifactEvidenceCatalogAuthority(
         haystacks: catalog.entries.map((entry, index) =>
             [
                 distributedArtifactEvidenceSearchHaystack(entry),
-                normalizedEvidenceText(input.searchValues?.[index])
+                toNormalizedEvidenceText(input.searchValues?.[index])
             ].filter(Boolean).join(' ')
         ),
         work: emptyWindowWork()

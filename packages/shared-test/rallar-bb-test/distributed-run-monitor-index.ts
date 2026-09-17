@@ -9,11 +9,11 @@ import type {
     ControlQueuedCommandSnapshot,
     ControlRunSnapshot
 } from './control-snapshots.ts';
-import { payloadReferencesDistributedRun } from './distributed-artifact-evidence-utils.ts';
 import {
     createDistributedRunMonitorMembershipIndex,
     type DistributedRunMonitorMembershipIndex
 } from './distributed-run-monitor-membership-index.ts';
+import { hasDistributedRunReference } from './has-distributed-run-reference.ts';
 
 export interface DistributedRunMonitorAgentLinks {
     readonly all: readonly ControlDistributedRunCommandLink[];
@@ -294,7 +294,7 @@ function toLinkedControlEvents(
     const distributedRunId = input.distributedRun.distributedRunId;
     return (input.controlRun?.events ?? []).filter((event) =>
         (event.commandId !== undefined && links.linksByCommandId.has(event.commandId)) ||
-        (Boolean(event.payload) && payloadReferencesDistributedRun(event.payload, distributedRunId))
+        (Boolean(event.payload) && hasDistributedRunReference(event, distributedRunId))
     );
 }
 

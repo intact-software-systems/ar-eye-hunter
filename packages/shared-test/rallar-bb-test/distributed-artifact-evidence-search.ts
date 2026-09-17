@@ -10,7 +10,7 @@ import {
     compileDistributedArtifactEvidenceQuery,
     distributedArtifactEvidenceEntryMatches
 } from './distributed-artifact-evidence-query.ts';
-import { boundedEvidenceLimit } from './distributed-artifact-evidence-utils.ts';
+import { resolveEvidenceLimit } from './distributed-artifact-evidence/distributed-artifact-evidence-bounds.ts';
 
 export function searchDistributedArtifactEvidence(
     index: DistributedArtifactEvidenceIndex,
@@ -18,7 +18,7 @@ export function searchDistributedArtifactEvidence(
 ): DistributedArtifactEvidenceSearchResult {
     const compiled = compileDistributedArtifactEvidenceQuery(query);
     const matches = index.entries.filter((entry) => distributedArtifactEvidenceEntryMatches(entry, compiled));
-    const limit = boundedEvidenceLimit(
+    const limit = resolveEvidenceLimit(
         query.limit,
         DEFAULT_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT,
         MAX_DISTRIBUTED_ARTIFACT_SEARCH_LIMIT
