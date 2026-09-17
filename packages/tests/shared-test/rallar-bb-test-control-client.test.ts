@@ -478,7 +478,7 @@ describe('shared rallar black-box control client', () => {
             });
             expect(
                 register.kind === 'register'
-                    ? register.identity?.capabilities?.crdt.transports
+                    ? register.identity.capabilities?.crdt.transports
                     : []
             ).toContain('rtc-with-ws-fallback');
 
@@ -824,7 +824,7 @@ describe('shared rallar black-box control client', () => {
 
             const register = envelopes(socket)[0];
             expect(register.kind === 'register' ? register.identity : undefined).toMatchObject({ region: 'eu-north' });
-            expect(register.kind === 'register' ? register.identity?.location : 'not a register').toBeUndefined();
+            expect(register.kind === 'register' ? register.identity.location : 'not a register').toBeUndefined();
             expect(runtime.state().events.filter((event) => event.topic === 'rallar.bb.control.identity_invalid'))
                 .toEqual([
                     expect.objectContaining({

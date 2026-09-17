@@ -15,7 +15,8 @@ import {
     toConfigureCommand,
     toControlServiceInput,
     toDistributedManifest,
-    toRegisterEnvelope
+    toRegisterEnvelope,
+    toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
 
 Deno.test('control service queues and dispatches commands to a registered agent', () => {
@@ -27,7 +28,7 @@ Deno.test('control service queues and dispatches commands to a registered agent'
         createCommandId: () => 'generated-command-1'
     }));
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const queued = assertRight(service.enqueueCommand({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -50,7 +51,7 @@ Deno.test('control service queues and dispatches commands to a registered agent'
 Deno.test('control service stores results and suppresses completed resume commands', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.enqueueCommand({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -63,7 +64,7 @@ Deno.test('control service stores results and suppresses completed resume comman
     );
 
     service.markAgentDisconnected('run-1', 'agent-1');
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: ['configure-1'], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: ['configure-1'] }));
     assertJsonEquals(service.takeDispatchableCommands('run-1', 'agent-1'), []);
 
     service.receiveClientEnvelope({
@@ -105,7 +106,7 @@ Deno.test('control service hardens command enqueueing and run tokens', () => {
         commandRateLimitWindowMs: 1_000
     }));
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const first = assertRight(service.enqueueCommand({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -223,7 +224,7 @@ Deno.test('control service stores Rallar identity metadata on register and heart
 Deno.test('control service stores heartbeat and event telemetry', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.receiveClientEnvelope({
         kind: 'heartbeat',
         protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -231,6 +232,7 @@ Deno.test('control service stores heartbeat and event telemetry', () => {
         agentId: 'agent-1',
         atEpochMs: 1_500,
         status: 'running',
+        identity: toUnconfiguredAgentIdentity('agent-1', 1_500),
         lastCommandId: 'configure-1'
     });
     service.receiveClientEnvelope({
@@ -257,7 +259,7 @@ Deno.test('control service stores heartbeat and event telemetry', () => {
 Deno.test('control service stores stats and redacted reports separately', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.receiveClientEnvelope({
         kind: 'stats',
         protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -314,7 +316,7 @@ Deno.test('control service stores stats and redacted reports separately', () => 
 Deno.test('control service compacts canonical reports and preserves arbitrary event payloads', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const fullReport: ControlClientEnvelope = {
         kind: 'report',
         protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -373,7 +375,7 @@ Deno.test('control service compacts canonical reports and preserves arbitrary ev
 
 Deno.test('control service compacts recipe run results while preserving distributed rollups', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
 
     service.createDistributedRun({
         ...toDistributedManifest(),
@@ -406,7 +408,7 @@ Deno.test('control service compacts recipe run results while preserving distribu
 
 Deno.test('control service compact result failure counts include all composite child failures', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const failedChildren = Array.from({ length: 25 }, (_, index) => ({
         commandId: `child-${index}`,
         commandIndex: index,
@@ -475,7 +477,7 @@ Deno.test('control service keeps terminal distributed rollups stable after runti
             heartbeats: 0
         }
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
 
     service.createDistributedRun({
         ...toDistributedManifest(),
@@ -528,7 +530,7 @@ Deno.test('control service runtime retention trims old evidence but keeps active
         }
     }));
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     for (let index = 1; index <= 4; index += 1) {
         const commandId = `health-${index}`;
         service.enqueueCommand({
@@ -598,7 +600,7 @@ Deno.test('control service report dedupe survives report payload retention trimm
             heartbeats: 10
         }
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     const report: ControlClientEnvelope = {
         kind: 'report',
         protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
@@ -635,7 +637,7 @@ Deno.test('control service report dedupe survives report payload retention trimm
 Deno.test('control service returns bounded snapshots and resets or deletes runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
 
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.enqueueCommand({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -662,7 +664,8 @@ Deno.test('control service returns bounded snapshots and resets or deletes runs'
         runId: 'run-1',
         agentId: 'agent-1',
         atEpochMs: 1_500,
-        status: 'running'
+        status: 'running',
+        identity: toUnconfiguredAgentIdentity('agent-1', 1_500)
     });
     service.receiveClientEnvelope({
         kind: 'diagnostic',
@@ -712,7 +715,7 @@ Deno.test('control service returns bounded snapshots and resets or deletes runs'
 
 Deno.test('control service restores persisted snapshots as disconnected runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ completedCommandIds: [] }));
     service.enqueueCommand({
         runId: 'run-1',
         agentId: 'agent-1',
@@ -734,7 +737,7 @@ Deno.test('control service records duplicate agent socket replacement diagnostic
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => 2_000
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
 
     service.recordDuplicateAgentSocketReplacement('run-1', 'agent-1');
 
@@ -766,7 +769,7 @@ Deno.test('control service prunes old runs by update time', () => {
 });
 
 Deno.test('control protocol parses client envelopes before server ingestion', () => {
-    const parsed = parseControlClientMessage(JSON.stringify(toRegisterEnvelope({ completedCommandIds: ['configure-1'], identity: undefined })));
+    const parsed = parseControlClientMessage(JSON.stringify(toRegisterEnvelope({ completedCommandIds: ['configure-1'] })));
 
     assert(parsed.ok);
     assertJsonEquals(parsed.envelope.kind, 'register');
@@ -775,7 +778,7 @@ Deno.test('control protocol parses client envelopes before server ingestion', ()
 
     assertJsonEquals(
         parseControlClientMessage(JSON.stringify({
-            ...toRegisterEnvelope({ completedCommandIds: [], identity: undefined }),
+            ...toRegisterEnvelope({ completedCommandIds: [] }),
             protocolVersion: 2
         })),
         {

@@ -15,13 +15,14 @@ import {
     toDistributedManifest,
     toFleetIdentity,
     toPrincipalWorldFleetManifest,
-    toRegisterEnvelope
+    toRegisterEnvelope,
+    toUnconfiguredAgentIdentity
 } from './support/control-service-test-fixtures.ts';
 
 Deno.test('control service stages, starts, monitors, and exports distributed runs', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
 
     const created = assertRight(service.createDistributedRun(toDistributedManifest()));
     assertJsonEquals(created.state, 'draft');
@@ -77,8 +78,8 @@ Deno.test('control service stages, starts, monitors, and exports distributed run
 
 Deno.test('control service reconciles persisted distributed start links from completed control results', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
 
     service.createDistributedRun(toDistributedManifest());
     service.stageDistributedRun('dist-1');
@@ -282,8 +283,8 @@ Deno.test('control service coordinates distributed barrier before auto start', (
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now++
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
         barrier: {
             enabled: true,
@@ -339,8 +340,8 @@ Deno.test('control service holds barrier-ready scheduled runs until start time',
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
         barrier: {
             enabled: true,
@@ -374,7 +375,8 @@ Deno.test('control service holds barrier-ready scheduled runs until start time',
         runId: 'run-1',
         agentId: 'agent-1',
         atEpochMs: now,
-        status: 'ready'
+        status: 'ready',
+        identity: toUnconfiguredAgentIdentity('agent-1', now)
     });
 
     const running = service.snapshotDistributedRun('dist-1');
@@ -388,8 +390,8 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
     const timeoutService = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
     }));
-    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
     timeoutService.createDistributedRun(toDistributedManifest({
         distributedRunId: 'dist-barrier-timeout',
         barrier: {
@@ -412,8 +414,8 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
     assertJsonEquals(timedOut.rollup.failures[0].error?.code, 'RALLAR_BB_DISTRIBUTED_BARRIER_TIMEOUT');
 
     const disconnectService = createRallarBlackBoxControlService(toControlServiceInput());
-    disconnectService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    disconnectService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    disconnectService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    disconnectService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
     disconnectService.createDistributedRun(toDistributedManifest({
         distributedRunId: 'dist-barrier-disconnect',
         barrier: {
@@ -438,8 +440,8 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
     assertJsonEquals(failed.rollup.failures[0].error?.code, 'RALLAR_BB_DISTRIBUTED_BARRIER_DISCONNECTED');
 
     const cancelService = createRallarBlackBoxControlService(toControlServiceInput());
-    cancelService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    cancelService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    cancelService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    cancelService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
     cancelService.createDistributedRun(toDistributedManifest({
         distributedRunId: 'dist-barrier-cancel',
         barrier: {
@@ -463,7 +465,7 @@ Deno.test('control service reports distributed barrier timeout, disconnect, and 
 
 Deno.test('control service cancels distributed runs and queues cancel commands', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
             mode: 'selected-agents',
@@ -542,8 +544,8 @@ Deno.test('control service resolves all-online distributed targets from Rallar i
 
 Deno.test('control service keeps explicit role-map target resolution aligned without fleet identity', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput());
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-2', completedCommandIds: [] }));
 
     const created = assertRight(service.createDistributedRun(toDistributedManifest({
         recipes: [
@@ -707,7 +709,7 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
     const service = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
 
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: {
@@ -723,7 +725,7 @@ Deno.test('control service reports distributed target mismatch and ACK timeout',
     const timeoutService = createRallarBlackBoxControlService(toControlServiceInput({
         now: () => now
     }));
-    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    timeoutService.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     timeoutService.createDistributedRun(toDistributedManifest({
         distributedRunId: 'dist-timeout',
         targetPolicy: {
@@ -753,7 +755,7 @@ Deno.test('control service defers a refused automatic start to a later refresh i
         commandRateLimitMax: 1,
         commandRateLimitWindowMs: 1_000
     }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
     }, { startMode: 'auto-after-ready' }));
@@ -778,7 +780,7 @@ Deno.test('control service defers a refused automatic start to a later refresh i
 
 Deno.test('control service returns lifecycle failures as values without changing the run', () => {
     const service = createRallarBlackBoxControlService(toControlServiceInput({ allowedCommandKinds: ['recipe.cancel'] }));
-    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [], identity: undefined }));
+    service.receiveClientEnvelope(toRegisterEnvelope({ runId: 'run-1', agentId: 'agent-1', completedCommandIds: [] }));
     service.createDistributedRun(toDistributedManifest({
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-1'] }
     }));

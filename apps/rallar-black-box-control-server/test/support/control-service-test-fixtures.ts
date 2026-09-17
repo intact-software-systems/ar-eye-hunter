@@ -35,6 +35,7 @@ interface ControlRegisterFixtureInput {
     readonly runId?: string;
     readonly agentId?: string;
     readonly completedCommandIds?: readonly string[];
+    /** Absent when the agent registers before loading a configuration, so it names only its session label. */
     readonly identity?: RallarBlackBoxControlAgentIdentity;
 }
 
@@ -120,7 +121,7 @@ export function toRegisterEnvelope(
         runId,
         agentId,
         atEpochMs: 1_000,
-        identity,
+        identity: identity ?? toUnconfiguredAgentIdentity(agentId, 1_000),
         resume: {
             completedCommandIds
         }
@@ -191,6 +192,13 @@ export function toDistributedManifest(
         ...overrides,
         ...start
     };
+}
+/** The identity an agent reports before it loads a test configuration. */
+export function toUnconfiguredAgentIdentity(
+    agentId: string,
+    updatedAtEpochMs: number
+): RallarBlackBoxControlAgentIdentity {
+    return { sessionLabel: agentId, updatedAtEpochMs };
 }
 export function toFleetIdentity(
     agentId: string,

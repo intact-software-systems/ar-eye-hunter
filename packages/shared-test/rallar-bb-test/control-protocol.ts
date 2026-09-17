@@ -1,5 +1,4 @@
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
 import { validateRallarBlackBoxTestCommand } from './control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxControlAgentIdentity } from './distributed-run.ts';
@@ -30,7 +29,7 @@ export type ControlRegisterEnvelope = Readonly<{
     agentId: string;
     token?: string;
     atEpochMs: number;
-    identity?: RallarBlackBoxControlAgentIdentity;
+    identity: RallarBlackBoxControlAgentIdentity;
     resume: Readonly<{
         completedCommandIds: readonly string[];
     }>;
@@ -43,7 +42,7 @@ export type ControlHeartbeatEnvelope = Readonly<{
     agentId: string;
     atEpochMs: number;
     status: string;
-    identity?: RallarBlackBoxControlAgentIdentity;
+    identity: RallarBlackBoxControlAgentIdentity;
     lastCommandId?: string;
     lastEventAtEpochMs?: number;
 }>;
@@ -256,22 +255,24 @@ function decodeRegisterEnvelope(
     if (!Array.isArray(completedCommandIds) || !completedCommandIds.every((id) => typeof id === 'string')) {
         return { ok: false, error: 'Control register requires resume.completedCommandIds.' };
     }
-    const agentIdentity = decodeEnvelopeIdentity(envelope.identity);
-    if (agentIdentity.left !== undefined) {
-        return { ok: false, error: `Control register identity is invalid: ${agentIdentity.left}.` };
+    if (envelope.identity === undefined) {
+        return { ok: false, error: 'Control register requires identity.' };
     }
-    return {
-        ok: true,
-        envelope: {
-            kind: 'register',
-            protocolVersion: 1,
-            ...identity,
-            token: typeof envelope.token === 'string' ? envelope.token : undefined,
-            atEpochMs,
-            ...agentIdentity.right,
-            resume: { completedCommandIds }
-        }
-    };
+    return decodeControlAgentIdentity(envelope.identity).fold<ParseControlClientMessageResult>(
+        (issue) => ({ ok: false, error: `Control register identity is invalid: ${issue}.` }),
+        (agentIdentity) => ({
+            ok: true,
+            envelope: {
+                kind: 'register',
+                protocolVersion: 1,
+                ...identity,
+                token: typeof envelope.token === 'string' ? envelope.token : undefined,
+                atEpochMs,
+                identity: agentIdentity,
+                resume: { completedCommandIds }
+            }
+        })
+    );
 }
 
 function decodeHeartbeatEnvelope(
@@ -285,25 +286,27 @@ function decodeHeartbeatEnvelope(
     if (typeof status !== 'string') {
         return { ok: false, error: 'Control heartbeat requires status.' };
     }
-    const agentIdentity = decodeEnvelopeIdentity(envelope.identity);
-    if (agentIdentity.left !== undefined) {
-        return { ok: false, error: `Control heartbeat identity is invalid: ${agentIdentity.left}.` };
+    if (envelope.identity === undefined) {
+        return { ok: false, error: 'Control heartbeat requires identity.' };
     }
-    return {
-        ok: true,
-        envelope: {
-            kind: 'heartbeat',
-            protocolVersion: 1,
-            ...identity,
-            atEpochMs,
-            status,
-            ...agentIdentity.right,
-            lastCommandId: typeof envelope.lastCommandId === 'string' ? envelope.lastCommandId : undefined,
-            lastEventAtEpochMs: typeof envelope.lastEventAtEpochMs === 'number'
-                ? envelope.lastEventAtEpochMs
-                : undefined
-        }
-    };
+    return decodeControlAgentIdentity(envelope.identity).fold<ParseControlClientMessageResult>(
+        (issue) => ({ ok: false, error: `Control heartbeat identity is invalid: ${issue}.` }),
+        (agentIdentity) => ({
+            ok: true,
+            envelope: {
+                kind: 'heartbeat',
+                protocolVersion: 1,
+                ...identity,
+                atEpochMs,
+                status,
+                identity: agentIdentity,
+                lastCommandId: typeof envelope.lastCommandId === 'string' ? envelope.lastCommandId : undefined,
+                lastEventAtEpochMs: typeof envelope.lastEventAtEpochMs === 'number'
+                    ? envelope.lastEventAtEpochMs
+                    : undefined
+            }
+        })
+    );
 }
 
 function decodeResultEnvelope(
@@ -353,11 +356,4 @@ function decodeEventEnvelope(
             payload: envelope.payload
         }
     };
-}
-
-/** An envelope that carries no identity leaves the agent's recorded identity unchanged. */
-function decodeEnvelopeIdentity(value: unknown): Either<string, Pick<ControlRegisterEnvelope, 'identity'>> {
-    return value === undefined
-        ? Either.ofRight({})
-        : decodeControlAgentIdentity(value).mapRight((identity) => ({ identity }));
 }

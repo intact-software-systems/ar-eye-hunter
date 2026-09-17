@@ -596,7 +596,7 @@ export class RallarBlackBoxControlService {
         agent.registeredAtEpochMs = envelope.atEpochMs;
         agent.disconnectedAtEpochMs = undefined;
         agent.lastSeenAtEpochMs = this.dependencies.now();
-        agent.identity = envelope.identity ?? agent.identity;
+        agent.identity = envelope.identity;
         agent.connectionSequence += 1;
         if (reconnecting) {
             agent.reconnectCount += 1;
@@ -611,7 +611,7 @@ export class RallarBlackBoxControlService {
         agent.lastHeartbeatAtEpochMs = envelope.atEpochMs;
         agent.lastSeenAtEpochMs = this.dependencies.now();
         agent.status = envelope.status;
-        agent.identity = envelope.identity ?? agent.identity;
+        agent.identity = envelope.identity;
         run.heartbeats.push(envelope);
         this.touch(run);
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);

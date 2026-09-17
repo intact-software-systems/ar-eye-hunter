@@ -408,6 +408,21 @@ describe('rallar-bb-test control protocol', () => {
         expect(parseControlClientMessage(toRegisterMessage(identity))).toEqual({ ok: false, error });
     });
 
+    it.each([
+        { kind: 'register', error: 'Control register requires identity.' },
+        { kind: 'heartbeat', error: 'Control heartbeat requires identity.' }
+    ])('rejects a $kind envelope that carries no identity', ({ kind, error }) => {
+        expect(parseControlClientMessage(JSON.stringify({
+            kind,
+            protocolVersion: 1,
+            runId: 'run-1',
+            agentId: 'agent-1',
+            atEpochMs: 1_000,
+            status: 'running',
+            resume: { completedCommandIds: [] }
+        }))).toEqual({ ok: false, error });
+    });
+
     it('admits the capability catalog fields and requires each of its required fields', () => {
         const controlCapabilities = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
             .filter((capability) => !capability.kind.startsWith('crdt.'));
