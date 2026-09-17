@@ -7,10 +7,10 @@ import {
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
@@ -165,7 +165,7 @@ export function useRunnerRecipesController({
     );
     const recipeAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run: controlRun,
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
@@ -189,7 +189,7 @@ export function useRunnerRecipesController({
         ]
     );
     const recipeAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(recipeAgentRows),
+        () => computeControlAgentBoardSummary(recipeAgentRows),
         [recipeAgentRows]
     );
     const targetableRows = targetRows.filter((row) => row.targetable);

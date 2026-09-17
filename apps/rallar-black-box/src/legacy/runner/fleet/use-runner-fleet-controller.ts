@@ -1,9 +1,9 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import { useEffect, useMemo, useState } from 'react';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -154,7 +154,7 @@ export function useRunnerFleetController({
     );
     const liveAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run: liveRun,
                 group: liveGroupRef,
                 distributedRuns: liveSnapshot?.distributedRuns ?? [],
@@ -168,7 +168,7 @@ export function useRunnerFleetController({
         [liveGroupRef, liveRun, liveSnapshot?.distributedRuns]
     );
     const liveAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(liveAgentRows),
+        () => computeControlAgentBoardSummary(liveAgentRows),
         [liveAgentRows]
     );
     const routeEvidence = useMemo(

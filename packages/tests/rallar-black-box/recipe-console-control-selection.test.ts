@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { controlAgentBoardWorkForTest } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
@@ -317,14 +316,11 @@ describe('Recipe Console control selection', () => {
             fallback: false,
             activeRunProjectionCount: 0
         });
-        expect(controlAgentBoardWorkForTest(selection.boardRows)).toMatchObject({
-            indexed: true,
-            fallback: false,
-            distributedRunProjectionCount: 0
-        });
+        expect(selection.boardRows.map((row) => row.agentId)).toEqual(['agent-a']);
+        expect(selection.boardRows.every((row) => row.activeRuns.length === 0 && row.selectedRun === undefined)).toBe(true);
     });
 
-    it('keeps the indexed control board when partial truth omits distributed runs', () => {
+    it('keeps the control board rows and reports the gap when partial truth omits distributed runs', () => {
         const first: ControlServerSnapshot = {
             runs: [controlRun('run-a', [controlAgent('run-a', 'agent-a')])]
         };
@@ -342,10 +338,7 @@ describe('Recipe Console control selection', () => {
             nowEpochMs: 10_000
         });
 
-        expect(controlAgentBoardWorkForTest(selected.boardRows)).toMatchObject({
-            indexed: true,
-            fallback: false
-        });
+        expect(selected.boardRows.map((row) => row.agentId)).toEqual(['agent-a']);
         expect(selected.issues).toContainEqual(expect.objectContaining({
             field: 'distributedRuns',
             code: 'unavailable'

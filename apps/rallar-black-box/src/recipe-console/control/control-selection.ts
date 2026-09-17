@@ -1,10 +1,10 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../control-agent-board-contract.ts';
 import {
-    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
 } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
@@ -231,7 +231,7 @@ export function deriveRecipeConsoleControlSelection(
         distributedRun,
         bootstrapGroup: input.bootstrapGroup
     });
-    const boardRows = deriveControlAgentBoardRows({
+    const boardRows = computeControlAgentBoardRows({
         run: controlRun,
         group: groupContext.group,
         distributedRuns,
@@ -244,7 +244,7 @@ export function deriveRecipeConsoleControlSelection(
         snapshot: input.snapshot,
         selectionIndex
     });
-    const boardSummary = summarizeControlAgentBoardRows(boardRows);
+    const boardSummary = computeControlAgentBoardSummary(boardRows);
     const safe = input.queryStatus === 'live' || input.queryStatus === 'partial';
 
     const selection: RecipeConsoleControlSelection = {

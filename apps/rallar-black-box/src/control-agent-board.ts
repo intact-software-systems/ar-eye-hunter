@@ -1,10 +1,9 @@
+import { computeIndexedControlAgentBoardRows } from './compute-indexed-control-agent-board-rows.ts';
 import type {
+    ComputeControlAgentBoardRowsInput,
     ControlAgentBoardRow,
-    ControlAgentBoardSummary,
-    ControlAgentRunParticipation,
-    DeriveControlAgentBoardRowsInput
+    ControlAgentBoardSummary
 } from './control-agent-board-contract.ts';
-import { deriveIndexedControlAgentBoardRows, type IndexedControlAgentBoardWork } from './control-agent-board-index.ts';
 import {
     controlAgentBoardRowFromParticipations,
     controlAgentBoardRowSort,
@@ -22,66 +21,31 @@ import {
     type DistributedRecipeTargetRow,
     type DistributedRunAgentProgressRow
 } from './distributed-recipes.ts';
-export { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from './control-agent-board-contract.ts';
 export type {
+    ComputeControlAgentBoardRowsInput,
     ControlAgentBoardRow,
     ControlAgentBoardSummary,
     ControlAgentBoardTargetStatus,
-    ControlAgentRunParticipation,
-    DeriveControlAgentBoardRowsInput
+    ControlAgentRunParticipation
 } from './control-agent-board-contract.ts';
 
-export type ControlAgentBoardWork =
-    | IndexedControlAgentBoardWork
-    | Readonly<{
-        indexed: false;
-        fallback: boolean;
-    }>;
-
-const workByRows = new WeakMap<object, ControlAgentBoardWork>();
-
-export function deriveControlAgentBoardRows(
-    input: DeriveControlAgentBoardRowsInput
+export function computeControlAgentBoardRows(
+    input: ComputeControlAgentBoardRowsInput
 ): readonly ControlAgentBoardRow[] {
-    if (input.selectionIndex && input.snapshot) {
-        if (
-            !isControlSelectionIndexBoundToSnapshot(
-                input.snapshot,
-                input.selectionIndex
-            )
-        ) {
-            const fallback = deriveLegacyControlAgentBoardRows(input);
-            workByRows.set(
-                fallback,
-                Object.freeze({
-                    indexed: false,
-                    fallback: true
-                })
-            );
-            return fallback;
-        }
-        const indexed = deriveIndexedControlAgentBoardRows(input);
+    if (
+        input.selectionIndex && input.snapshot &&
+        isControlSelectionIndexBoundToSnapshot(input.snapshot, input.selectionIndex)
+    ) {
+        const indexed = computeIndexedControlAgentBoardRows(input);
         if (indexed) {
-            workByRows.set(indexed.rows, indexed.work);
-            return indexed.rows;
+            return indexed;
         }
-        const fallback = deriveLegacyControlAgentBoardRows(input);
-        workByRows.set(fallback, Object.freeze({ indexed: false, fallback: true }));
-        return fallback;
     }
-    const rows = deriveLegacyControlAgentBoardRows(input);
-    workByRows.set(rows, Object.freeze({ indexed: false, fallback: false }));
-    return rows;
+    return computeUnindexedControlAgentBoardRows(input);
 }
 
-export function controlAgentBoardWorkForTest(
-    rows: readonly ControlAgentBoardRow[]
-): ControlAgentBoardWork | undefined {
-    return workByRows.get(rows);
-}
-
-function deriveLegacyControlAgentBoardRows(
-    input: DeriveControlAgentBoardRowsInput
+function computeUnindexedControlAgentBoardRows(
+    input: ComputeControlAgentBoardRowsInput
 ): readonly ControlAgentBoardRow[] {
     const nowEpochMs = input.nowEpochMs;
     const scopedAgentIds = input.agentIds
@@ -106,7 +70,7 @@ function deriveLegacyControlAgentBoardRows(
         input.monitorAgentProgress.map((row) => [row.agentId, row])
     );
     const currentControlRunId = input.run?.runId ?? input.selectedDistributedRun?.controlRunId;
-    const distributedRuns = uniqueRuns([
+    const distributedRuns = toDistinctRuns([
         ...input.distributedRuns,
         ...(input.selectedDistributedRun ? [input.selectedDistributedRun] : [])
     ]).filter((run) =>
@@ -116,7 +80,7 @@ function deriveLegacyControlAgentBoardRows(
     const selectedDistributedRunId = input.selectedDistributedRun?.distributedRunId;
 
     const rows = agentRows.map((agentRow) =>
-        controlAgentBoardRow({
+        toControlAgentBoardRow({
             agentRow,
             targetRow: targetRowsByAgentId.get(agentRow.agentId),
             nowEpochMs,
@@ -132,7 +96,7 @@ function deriveLegacyControlAgentBoardRows(
         .filter((agentId) => !scopedAgentIds || scopedAgentIds.has(agentId))
         .filter((agentId) => !knownAgentIds.has(agentId))
         .map((agentId) =>
-            controlAgentBoardRow({
+            toControlAgentBoardRow({
                 agentRow: syntheticControlAgentRow(agentId),
                 targetRow: undefined,
                 nowEpochMs,
@@ -146,7 +110,7 @@ function deriveLegacyControlAgentBoardRows(
     return [...rows, ...syntheticRows].sort(controlAgentBoardRowSort);
 }
 
-export function summarizeControlAgentBoardRows(
+export function computeControlAgentBoardSummary(
     rows: readonly ControlAgentBoardRow[]
 ): ControlAgentBoardSummary {
     return rows.reduce<ControlAgentBoardSummary>((summary, row) => ({
@@ -182,13 +146,14 @@ export function summarizeControlAgentBoardRows(
     });
 }
 
-function controlAgentBoardRow(
+function toControlAgentBoardRow(
     input: Readonly<{
         agentRow: ControlRunAgentRow;
         targetRow: DistributedRecipeTargetRow | undefined;
         nowEpochMs: number;
         runs: readonly ControlDistributedRunSnapshot[];
-        selectedDistributedRunId?: string;
+        /** `undefined` when the operator has selected no distributed run. */
+        selectedDistributedRunId: string | undefined;
         progressByAgentId: ReadonlyMap<string, DistributedRunAgentProgressRow>;
         synthetic: boolean;
     }>
@@ -213,7 +178,7 @@ function controlAgentBoardRow(
     });
 }
 
-function uniqueRuns(
+function toDistinctRuns(
     runs: readonly ControlDistributedRunSnapshot[]
 ): readonly ControlDistributedRunSnapshot[] {
     const byId = new Map<string, ControlDistributedRunSnapshot>();

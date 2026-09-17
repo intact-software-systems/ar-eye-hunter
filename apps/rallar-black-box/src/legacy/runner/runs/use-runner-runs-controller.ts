@@ -8,10 +8,10 @@ import {
     getRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -142,7 +142,7 @@ export function useRunnerRunsController({
     const runParticipantRows = useMemo(
         () =>
             selectedDistributedRun
-                ? deriveControlAgentBoardRows({
+                ? computeControlAgentBoardRows({
                     run: distributedControlRun,
                     group: selectedDistributedRun.manifest.group,
                     agentIds: selectedDistributedRun.targetAgentIds,
@@ -163,7 +163,7 @@ export function useRunnerRunsController({
         ]
     );
     const runParticipantSummary = useMemo(
-        () => summarizeControlAgentBoardRows(runParticipantRows),
+        () => computeControlAgentBoardSummary(runParticipantRows),
         [runParticipantRows]
     );
     const analysisReport = useMemo(

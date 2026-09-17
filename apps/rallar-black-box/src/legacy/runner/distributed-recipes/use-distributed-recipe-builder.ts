@@ -4,10 +4,10 @@ import type {
     RallarBlackBoxDistributedTargetPolicyMode
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunSnapshot,
@@ -255,7 +255,7 @@ export function useDistributedRecipeBuilder({
     );
     const distributedTargetAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run,
                 group: groupRef,
                 requiredCommandKinds: selectedPreflightCommandKinds,
@@ -277,7 +277,7 @@ export function useDistributedRecipeBuilder({
         ]
     );
     const distributedTargetAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(distributedTargetAgentRows),
+        () => computeControlAgentBoardSummary(distributedTargetAgentRows),
         [distributedTargetAgentRows]
     );
     const liveSelectedRecipeCount = selectedRecipes.filter(

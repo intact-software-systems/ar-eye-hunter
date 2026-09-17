@@ -117,7 +117,7 @@ export type ControlAgentBoardSummary = Readonly<{
 /** The heartbeat age at which the board calls an agent stale. */
 export const CONTROL_AGENT_BOARD_STALE_AFTER_MS = 30_000;
 
-export type DeriveControlAgentBoardRowsInput = Readonly<{
+export type ComputeControlAgentBoardRowsInput = Readonly<{
     /** The control run the rows describe, or `undefined` before the operator has loaded one. */
     run: ControlRunSnapshot | undefined;
     /** The scoped group, or `undefined` when no group is selected and no agent is targetable. */
