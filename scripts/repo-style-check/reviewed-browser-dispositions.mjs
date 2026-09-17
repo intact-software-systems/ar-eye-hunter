@@ -1,33 +1,5 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
-    // Remote command translation validates scalar identity, scope and canonical
-    // command fields before enqueue. Transport payloads and error data stay opaque.
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 72
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRallarScopeFields'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toConnectionName'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toValidatedCommand'
-    }),
     // Native WebSocket data and open expectations are validated at these
     // exact ingress owners. Completed scoped snapshots have named results;
     // unscoped application values remain opaque capture data.

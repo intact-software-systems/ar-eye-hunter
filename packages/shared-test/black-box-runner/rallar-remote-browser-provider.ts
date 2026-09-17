@@ -6,10 +6,10 @@ import {
     type RunRallarRemoteBrowserCommandInput
 } from './remote-browser/rallar-remote-browser-control-client.ts';
 import {
-    prepareRemoteBrowserCommand,
-    prepareRemoteBrowserConnection,
-    type PreparedRemoteBrowserCommand,
-    type PreparedRemoteBrowserConnection
+    toRemoteBrowserCommand,
+    toRemoteBrowserConnection,
+    type IdentifiedRemoteBrowserCommand,
+    type IdentifiedRemoteBrowserConnection
 } from './remote-browser/remote-browser-commands.ts';
 import { runWithRemoteBrowserEventSync } from './remote-browser/remote-browser-observation-sync.ts';
 import {
@@ -73,16 +73,16 @@ export function createRallarRemoteBrowserRtcProvider(input: CreateRallarRemoteBr
 
 function connectRemoteRtc(operation: RemoteRtcOperation): Promise<any> {
     const { interaction, config } = operation;
-    return prepareRemoteBrowserConnection(interaction).fold(
+    return toRemoteBrowserConnection(interaction).fold(
         (error) =>
             Promise.resolve(toRemoteRtcFailure({ config, interaction, message: 'Remote RTC connect failed', error })),
-        (connection) => connectPreparedRemoteRtc(operation, connection)
+        (connection) => connectIdentifiedRemoteRtc(operation, connection)
     );
 }
 
-async function connectPreparedRemoteRtc(
+async function connectIdentifiedRemoteRtc(
     operation: RemoteRtcOperation,
-    connection: PreparedRemoteBrowserConnection
+    connection: IdentifiedRemoteBrowserConnection
 ): Promise<any> {
     const { provider, interaction, config, context } = operation;
     const remote = resolveOperationConfig(operation);
@@ -129,12 +129,12 @@ function recordRemoteRtcConnection(acceptance: RemoteRtcConnectAcceptance): any 
 
 function sendRemoteRtc(operation: RemoteRtcOperation): Promise<any> {
     const { interaction, config, context } = operation;
-    return prepareRemoteBrowserCommand('send', interaction).fold(
+    return toRemoteBrowserCommand('send', interaction).fold(
         (error) =>
             Promise.resolve(toRemoteRtcFailure({ config, interaction, message: 'Remote RTC send failed', error })),
         (send) =>
             context.rtcConnections[send.connectionName]
-                ? sendPreparedRemoteRtc(operation, send)
+                ? sendIdentifiedRemoteRtc(operation, send)
                 : Promise.resolve(toRtcFailureStatus({
                     config,
                     interaction,
@@ -144,7 +144,10 @@ function sendRemoteRtc(operation: RemoteRtcOperation): Promise<any> {
     );
 }
 
-async function sendPreparedRemoteRtc(operation: RemoteRtcOperation, send: PreparedRemoteBrowserCommand): Promise<any> {
+async function sendIdentifiedRemoteRtc(
+    operation: RemoteRtcOperation,
+    send: IdentifiedRemoteBrowserCommand
+): Promise<any> {
     const { provider, interaction, config, context } = operation;
     const remote = resolveOperationConfig(operation);
     const sendStartedAtEpochMs = context.dependencies.now();
@@ -199,16 +202,16 @@ async function waitRemoteRtc(operation: RemoteRtcOperation): Promise<any> {
 
 function runRemoteCrdtCommand(operation: RemoteRtcOperation): Promise<any> {
     const { interaction, config } = operation;
-    return prepareRemoteBrowserCommand('crdt', interaction).fold(
+    return toRemoteBrowserCommand('crdt', interaction).fold(
         (error) =>
             Promise.resolve(toRemoteCrdtFailureStatus({ config, interaction, details: { error: error.message } })),
-        (crdt) => runPreparedRemoteCrdtCommand(operation, crdt)
+        (crdt) => runIdentifiedRemoteCrdtCommand(operation, crdt)
     );
 }
 
-async function runPreparedRemoteCrdtCommand(
+async function runIdentifiedRemoteCrdtCommand(
     operation: RemoteRtcOperation,
-    crdt: PreparedRemoteBrowserCommand
+    crdt: IdentifiedRemoteBrowserCommand
 ): Promise<any> {
     const { provider, interaction, config, context } = operation;
     const { commandId, command } = crdt;
@@ -226,16 +229,16 @@ async function runPreparedRemoteCrdtCommand(
 
 function closeRemoteRtc(operation: RemoteRtcOperation): Promise<any> {
     const { interaction, config } = operation;
-    return prepareRemoteBrowserCommand('close', interaction).fold(
+    return toRemoteBrowserCommand('close', interaction).fold(
         (error) =>
             Promise.resolve(toRemoteRtcFailure({ config, interaction, message: 'Remote RTC close failed', error })),
-        (close) => closePreparedRemoteRtc(operation, close)
+        (close) => closeIdentifiedRemoteRtc(operation, close)
     );
 }
 
-async function closePreparedRemoteRtc(
+async function closeIdentifiedRemoteRtc(
     operation: RemoteRtcOperation,
-    close: PreparedRemoteBrowserCommand
+    close: IdentifiedRemoteBrowserCommand
 ): Promise<any> {
     const { provider, interaction, config, context } = operation;
     const { commandId, command, connectionName } = close;

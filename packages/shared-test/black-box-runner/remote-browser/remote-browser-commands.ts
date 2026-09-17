@@ -1,136 +1,87 @@
+import type {
+    ApiJsonObject,
+    ApiJsonValue
+} from '../../../shared/api/api-json-value.ts';
 import { Either } from '../../../shared/resilience/Either.ts';
 
-import { validateRallarBlackBoxTestCommand } from '../../rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestCommand } from '../../rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../rallar-bb-test/schema.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    validateJsonSchema
-} from '../../rallar-bb-test/schema/json-schema-validation.ts';
-import { isRecord } from '../execution/black-box-redaction.ts';
-import { toRallarScopeDiagnostics, type RecipeRallarScopeFields } from '../recipes/recipe-rallar-scope.ts';
 import { toRtcPayload } from '../rtc-provider.ts';
 import { decodeScenarioText } from '../scenario-value-decoding.ts';
+import {
+    decodeRemoteBrowserCommand,
+    toRemoteBrowserConnectionName,
+    type RemoteBrowserCommandInteraction
+} from './decode-remote-browser-command.ts';
+import { toCrdtCommand } from './to-crdt-command.ts';
+import { toRallarScopeFields } from './to-rallar-scope-fields.ts';
 
-export interface RemoteBrowserScopeFields extends RecipeRallarScopeFields {
-    readonly minSnapshotVersion?: number;
+export type RemoteBrowserCommandAction = 'connect' | 'send' | 'close' | 'health' | 'crdt';
+
+/** The step fields a command id is built from; a field the step does not set takes no part in the id. */
+export interface RemoteBrowserCommandIdentitySource {
+    readonly request: Readonly<Partial<Record<RemoteBrowserCommandIdentityField, ApiJsonValue>>>;
 }
 
-export interface RemoteBrowserCommandInteraction {
-    readonly request: Readonly<Record<string, unknown>>;
-}
-
-export interface RemoteBrowserCommandIdentityInput {
-    readonly request: {
-        readonly commandId?: unknown;
-        readonly remoteCommandId?: unknown;
-        readonly scenarioExecutionNumber?: unknown;
-        readonly interactionExecutionNumber?: unknown;
-        readonly repeatIndex?: unknown;
-        readonly connection?: unknown;
-        readonly actor?: unknown;
-    };
-}
-
-export interface PreparedRemoteBrowserCommand {
+export interface IdentifiedRemoteBrowserCommand {
     readonly commandId: string;
     readonly connectionName: string;
     readonly command: RallarBlackBoxTestCommand;
 }
 
-export interface PreparedRemoteBrowserConnection extends PreparedRemoteBrowserCommand {
+export interface IdentifiedRemoteBrowserConnection extends IdentifiedRemoteBrowserCommand {
     readonly closeCommand: RallarBlackBoxTestCommand;
 }
 
-export function prepareRemoteBrowserConnection(
+const COMMAND_ID_PARTS = [
+    ['scenarioExecutionNumber', 's'],
+    ['interactionExecutionNumber', 'i'],
+    ['repeatIndex', 'r'],
+    ['connection', ''],
+    ['actor', '']
+] as const;
+
+type RemoteBrowserCommandIdentityField = typeof COMMAND_ID_PARTS[number][0] | 'commandId' | 'remoteCommandId';
+
+/** A connect also translates the close the runner sends when the run ends with the connection still open. */
+export function toRemoteBrowserConnection(
     interaction: RemoteBrowserCommandInteraction
-): Either<Error, PreparedRemoteBrowserConnection> {
-    const preparation = prepareRemoteBrowserCommand('connect', interaction);
-    if (preparation.right === undefined) {
-        return Either.ofLeft(preparation.left!);
-    }
-    const closeCommand = toCloseCommand(`${preparation.right.commandId}-auto-close`, interaction);
-    if (closeCommand.right === undefined) {
-        return Either.ofLeft(closeCommand.left!);
-    }
-    return Either.ofRight({ ...preparation.right, closeCommand: closeCommand.right });
+): Either<Error, IdentifiedRemoteBrowserConnection> {
+    return toRemoteBrowserCommand('connect', interaction).flatMap(
+        (error) => Either.ofLeft(error),
+        (connection) =>
+            toCloseCommand(`${connection.commandId}-auto-close`, interaction)
+                .mapRight((closeCommand) => ({ ...connection, closeCommand }))
+    );
 }
 
-export function prepareRemoteBrowserCommand(
-    action: 'connect' | 'send' | 'close' | 'health' | 'crdt',
+export function toRemoteBrowserCommand(
+    action: RemoteBrowserCommandAction,
     interaction: RemoteBrowserCommandInteraction
-): Either<Error, PreparedRemoteBrowserCommand> {
+): Either<Error, IdentifiedRemoteBrowserCommand> {
     const crdtAction = interaction.request.action === undefined ? 'open' : interaction.request.action;
     if (action === 'crdt' && typeof crdtAction !== 'string') {
         return Either.ofLeft(new Error('CRDT action must be a string.'));
     }
-    const commandId = toRallarRemoteBrowserCommandId(action === 'crdt' ? `crdt-${crdtAction}` : action, interaction);
-    const connection = toConnectionName(interaction.request);
-    if (commandId.right === undefined || connection.right === undefined) {
-        return Either.ofLeft(commandId.left ?? connection.left ?? new Error('Invalid remote command identity.'));
-    }
-    let command: Either<Error, RallarBlackBoxTestCommand>;
-    switch (action) {
-        case 'connect':
-            command = toConnectCommand(commandId.right, interaction);
-            break;
-        case 'send':
-            command = toSendCommand(commandId.right, interaction);
-            break;
-        case 'close':
-            command = toCloseCommand(commandId.right, interaction);
-            break;
-        case 'health':
-            command = toHealthCommand(commandId.right, interaction);
-            break;
-        case 'crdt':
-            command = toCrdtCommand(commandId.right, interaction);
-            break;
-    }
-    if (command.right === undefined) {
-        return Either.ofLeft(command.left!);
-    }
-    return Either.ofRight({ commandId: commandId.right, connectionName: connection.right, command: command.right });
+    const identity = toRallarRemoteBrowserCommandId(action === 'crdt' ? `crdt-${crdtAction}` : action, interaction);
+    const connectionName = toRemoteBrowserConnectionName(interaction.request);
+    const address = identity.flatMap(
+        (error) => Either.ofLeft<Error, Omit<IdentifiedRemoteBrowserCommand, 'command'>>(error),
+        (commandId) => connectionName.mapRight((name) => ({ commandId, connectionName: name }))
+    );
+    return address.flatMap(
+        (error) => Either.ofLeft(error),
+        (identified) =>
+            toActionCommand(action, identified.commandId, interaction).mapRight((command) => ({
+                ...identified,
+                command
+            }))
+    );
 }
 
-export function toRallarScopeFields(
-    request: Readonly<Record<string, unknown>>
-): Either<Error, RemoteBrowserScopeFields> {
-    if (request.rallar !== undefined && !isRecord(request.rallar)) {
-        return Either.ofLeft(new Error('Rallar options must be an object.'));
-    }
-    const rallar = isRecord(request.rallar) ? request.rallar : {};
-    const minSnapshotVersion = request.minSnapshotVersion !== undefined
-        ? request.minSnapshotVersion
-        : rallar.minSnapshotVersion;
-    if (
-        minSnapshotVersion !== undefined &&
-        (typeof minSnapshotVersion !== 'number' || !Number.isFinite(minSnapshotVersion))
-    ) {
-        return Either.ofLeft(new Error('minSnapshotVersion must be a finite number.'));
-    }
-    for (const source of [request, rallar, request.scope, rallar.scope, request.roomRef, rallar.roomRef]) {
-        if (source === undefined) {
-            continue;
-        }
-        if (!isRecord(source)) {
-            return Either.ofLeft(new Error('Rallar scope must be an object.'));
-        }
-        for (const key of ['applicationId', 'workspaceId', 'roomId', 'groupId']) {
-            if (source[key] !== undefined && decodeScenarioText(source[key]) === undefined) {
-                return Either.ofLeft(new Error(`Rallar scope ${key} must be a scalar identifier.`));
-            }
-        }
-    }
-    return Either.ofRight({
-        ...toRallarScopeDiagnostics(request),
-        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {})
-    });
-}
-
+/** An explicit commandId or remoteCommandId wins; otherwise the id is built from the step's execution position. */
 export function toRallarRemoteBrowserCommandId(
     action: string,
-    interaction: RemoteBrowserCommandIdentityInput
+    interaction: RemoteBrowserCommandIdentitySource
 ): Either<Error, string> {
     const request = interaction.request;
     const selected = [request.commandId, request.remoteCommandId]
@@ -139,15 +90,7 @@ export function toRallarRemoteBrowserCommandId(
         return Either.ofRight(selected.trim());
     }
     const parts = ['rallar-remote-browser', action];
-    for (
-        const [key, prefix] of [
-            ['scenarioExecutionNumber', 's'],
-            ['interactionExecutionNumber', 'i'],
-            ['repeatIndex', 'r'],
-            ['connection', ''],
-            ['actor', '']
-        ] as const
-    ) {
+    for (const [key, prefix] of COMMAND_ID_PARTS) {
         const value = request[key];
         if (value === undefined || (prefix === '' && (value === null || value === ''))) {
             continue;
@@ -161,54 +104,31 @@ export function toRallarRemoteBrowserCommandId(
     return Either.ofRight(parts.join('-'));
 }
 
-function toConnectionName(request: Readonly<Record<string, unknown>>): Either<Error, string> {
-    const value = [request.connection, request.actor, request.name].find((entry) => entry !== undefined);
-    const name = value === undefined ? 'default' : decodeScenarioText(value);
-    return name === undefined
-        ? Either.ofLeft(new Error('Remote command connection must be a scalar identifier.'))
-        : Either.ofRight(name);
-}
-
-function toValidatedCommand(candidate: unknown): Either<Error, RallarBlackBoxTestCommand> {
-    // CRDT has a canonical schema, but is absent from the control protocol's kind switch.
-    if (isRecord(candidate) && typeof candidate.kind === 'string' && candidate.kind.startsWith('crdt.')) {
-        const validation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, candidate);
-        return validation.ok
-            ? Either.ofRight(candidate as RallarBlackBoxTestCommand)
-            : Either.ofLeft(new Error(formatJsonSchemaValidationErrors(validation.errors)));
-    }
-    const validation = validateRallarBlackBoxTestCommand(candidate);
-    return validation.ok
-        ? Either.ofRight(candidate as RallarBlackBoxTestCommand)
-        : Either.ofLeft(new Error(validation.error));
-}
-
 export function toConnectCommand(
     commandId: string,
     interaction: RemoteBrowserCommandInteraction
 ): Either<Error, RallarBlackBoxTestCommand> {
     const request = interaction.request;
     const scope = toRallarScopeFields(request);
-    const connection = toConnectionName(request);
+    const connection = toRemoteBrowserConnectionName(request);
     if (scope.right === undefined || connection.right === undefined) {
         return Either.ofLeft(scope.left ?? connection.left ?? new Error('Invalid remote command scope.'));
     }
-    const scopeFields = scope.right;
     if (request.actor !== undefined && decodeScenarioText(request.actor) === undefined) {
         return Either.ofLeft(new Error('Remote command actor must be a scalar identifier.'));
     }
-    return toValidatedCommand({
+    return decodeRemoteBrowserCommand({
         kind: 'rtc.connect',
         commandId,
         connection: connection.right,
         actor: request.actor === undefined ? undefined : decodeScenarioText(request.actor),
         roomId: request.roomId === undefined ? undefined : decodeScenarioText(request.roomId),
-        ...scopeFields,
+        ...scope.right,
         transport: request.transport,
         readiness: request.readiness,
         rallar: {
-            ...(isRecord(request.rallar) ? request.rallar : {}),
-            ...scopeFields
+            ...(isApiJsonObject(request.rallar) ? request.rallar : {}),
+            ...scope.right
         },
         timeoutMs: request.timeoutMs,
         metadata: {
@@ -224,24 +144,16 @@ export function toSendCommand(
 ): Either<Error, RallarBlackBoxTestCommand> {
     const request = interaction.request;
     const scope = toRallarScopeFields(request);
-    const connection = toConnectionName(request);
+    const connection = toRemoteBrowserConnectionName(request);
     if (scope.right === undefined || connection.right === undefined) {
         return Either.ofLeft(scope.left ?? connection.left ?? new Error('Invalid remote command scope.'));
     }
     const scopeFields = scope.right;
-    const payload: unknown = toRtcPayload(request);
-    const send = payload && typeof payload === 'object' && !Array.isArray(payload)
-        ? {
-            ...payload,
-            ...Object.fromEntries(
-                Object.entries(scopeFields).filter(([key]) => !(key in payload))
-            )
-        }
-        : {
-            data: payload,
-            ...scopeFields
-        };
-    return toValidatedCommand({
+    const payload = toRtcPayload(request);
+    const send = isApiJsonObject(payload)
+        ? { ...payload, ...Object.fromEntries(Object.entries(scopeFields).filter(([key]) => !(key in payload))) }
+        : { data: payload, ...scopeFields };
+    return decodeRemoteBrowserCommand({
         kind: 'rtc.send',
         commandId,
         connection: connection.right,
@@ -261,20 +173,20 @@ export function toCloseCommand(
     interaction: RemoteBrowserCommandInteraction
 ): Either<Error, RallarBlackBoxTestCommand> {
     const request = interaction.request;
-    const connection = toConnectionName(request);
-    if (connection.right === undefined) {
-        return Either.ofLeft(connection.left!);
-    }
-    return toValidatedCommand({
-        kind: 'close',
-        commandId,
-        timeoutMs: request.timeoutMs,
-        metadata: {
-            ...(request.parity ? { parity: request.parity } : {}),
-            connection: connection.right,
-            blackBoxRunner: request
-        }
-    });
+    return toRemoteBrowserConnectionName(request).flatMap(
+        (error) => Either.ofLeft(error),
+        (connection) =>
+            decodeRemoteBrowserCommand({
+                kind: 'close',
+                commandId,
+                timeoutMs: request.timeoutMs,
+                metadata: {
+                    ...(request.parity ? { parity: request.parity } : {}),
+                    connection,
+                    blackBoxRunner: request
+                }
+            })
+    );
 }
 
 export function toHealthCommand(
@@ -282,107 +194,40 @@ export function toHealthCommand(
     interaction: RemoteBrowserCommandInteraction
 ): Either<Error, RallarBlackBoxTestCommand> {
     const request = interaction.request;
-    const connection = toConnectionName(request);
-    if (connection.right === undefined) {
-        return Either.ofLeft(connection.left!);
-    }
-    return toValidatedCommand({
-        kind: 'health',
-        commandId,
-        timeoutMs: interaction.request?.timeoutMs,
-        metadata: {
-            connection: connection.right,
-            blackBoxRunner: interaction.request
-        }
-    });
+    return toRemoteBrowserConnectionName(request).flatMap(
+        (error) => Either.ofLeft(error),
+        (connection) =>
+            decodeRemoteBrowserCommand({
+                kind: 'health',
+                commandId,
+                timeoutMs: request.timeoutMs,
+                metadata: {
+                    connection,
+                    blackBoxRunner: request
+                }
+            })
+    );
 }
 
-export function toCrdtCommand(
+function toActionCommand(
+    action: RemoteBrowserCommandAction,
     commandId: string,
     interaction: RemoteBrowserCommandInteraction
 ): Either<Error, RallarBlackBoxTestCommand> {
-    const request = interaction.request;
-    const action = request.action === undefined ? 'open' : request.action;
-    if (typeof action !== 'string') {
-        return Either.ofLeft(new Error('CRDT action must be a string.'));
-    }
-    const connection = toConnectionName(request);
-    if (connection.right === undefined) {
-        return Either.ofLeft(connection.left!);
-    }
-    const metadata = {
-        ...(request.parity ? { parity: request.parity } : {}),
-        connection: connection.right,
-        blackBoxRunner: request
-    };
-    const base = { commandId, handle: request.handle, timeoutMs: request.timeoutMs, metadata };
     switch (action) {
-        case 'open':
-            return toCrdtOpenCommand(commandId, request, metadata);
-        case 'apply':
-            return toValidatedCommand({ ...base, kind: 'crdt.apply', batch: request.batch });
-        case 'sync':
-            return toValidatedCommand({
-                ...base,
-                kind: 'crdt.sync',
-                reason: request.reason,
-                transport: request.transport
-            });
-        case 'wait':
-            return toValidatedCommand({
-                ...base,
-                kind: 'crdt.wait',
-                intervalMs: request.intervalMs,
-                stableForMs: request.stableForMs,
-                sync: request.sync,
-                conditions: request.conditions
-            });
-        case 'undo':
-        case 'redo':
-            return toValidatedCommand({
-                ...base,
-                kind: action === 'undo' ? 'crdt.undo' : 'crdt.redo',
-                targetOperationGroupId: request.targetOperationGroupId,
-                operations: request.operations,
-                operationGroupId: request.operationGroupId
-            });
-        case 'read':
-        case 'health':
+        case 'connect':
+            return toConnectCommand(commandId, interaction);
+        case 'send':
+            return toSendCommand(commandId, interaction);
         case 'close':
-        case 'destroy':
-            return toValidatedCommand({ ...base, kind: `crdt.${action}` });
-        default:
-            return Either.ofLeft(new Error('Unsupported CRDT action: ' + action));
+            return toCloseCommand(commandId, interaction);
+        case 'health':
+            return toHealthCommand(commandId, interaction);
+        case 'crdt':
+            return toCrdtCommand(commandId, interaction);
     }
 }
 
-function toCrdtOpenCommand(
-    commandId: string,
-    request: Readonly<Record<string, unknown>>,
-    metadata: Readonly<Record<string, unknown>>
-): Either<Error, RallarBlackBoxTestCommand> {
-    return toValidatedCommand({
-        kind: 'crdt.open',
-        commandId,
-        handle: request.handle,
-        name: request.name,
-        applicationId: request.applicationId,
-        workspaceId: request.workspaceId,
-        documentId: request.documentId,
-        documentType: request.documentType,
-        scope: request.scope,
-        roomRef: request.roomRef,
-        principalId: request.principalId,
-        customScope: request.customScope,
-        transport: request.transport,
-        persist: request.persist,
-        tabSync: request.tabSync,
-        initialValue: request.initialValue,
-        policies: request.policies,
-        validation: request.validation,
-        encryption: request.encryption,
-        durableCatchUp: request.durableCatchUp,
-        timeoutMs: request.timeoutMs,
-        metadata
-    });
+function isApiJsonObject(value: ApiJsonValue | undefined): value is ApiJsonObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

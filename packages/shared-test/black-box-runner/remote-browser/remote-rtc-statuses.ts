@@ -6,8 +6,8 @@ import {
     toRtcSuccessStatus
 } from '../rtc/rtc-wait-expectations.ts';
 import { toRemoteResultDetails } from './rallar-remote-browser-control-client.ts';
-import { toRallarScopeFields } from './remote-browser-commands.ts';
 import type { RallarRemoteBrowserConfig } from './resolve-rallar-remote-browser-config.ts';
+import { toRallarScopeFields } from './to-rallar-scope-fields.ts';
 
 export interface RemoteRtcFailureInput {
     readonly config: any;

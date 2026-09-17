@@ -15,8 +15,8 @@ import {
 } from '../rtc/rtc-wait-expectations.ts';
 import { recordRemoteRtcHealth } from './record-remote-rtc-health.ts';
 import {
-    prepareRemoteBrowserCommand,
-    type PreparedRemoteBrowserCommand
+    toRemoteBrowserCommand,
+    type IdentifiedRemoteBrowserCommand
 } from './remote-browser-commands.ts';
 import {
     RemoteBrowserObservationSync,
@@ -85,7 +85,7 @@ export async function waitForRemoteRtcObservation(
 
 export function waitForRemoteRtcHealth(input: RemoteRtcWaitInput): Promise<any> {
     const { interaction, config } = input;
-    return prepareRemoteBrowserCommand('health', interaction).fold(
+    return toRemoteBrowserCommand('health', interaction).fold(
         (error) =>
             Promise.resolve(toRemoteRtcFailure({ config, interaction, message: 'Remote RTC health failed', error })),
         (health) => waitForProbedRemoteRtcHealth(input, health)
@@ -94,7 +94,7 @@ export function waitForRemoteRtcHealth(input: RemoteRtcWaitInput): Promise<any> 
 
 async function waitForProbedRemoteRtcHealth(
     input: RemoteRtcWaitInput,
-    health: PreparedRemoteBrowserCommand
+    health: IdentifiedRemoteBrowserCommand
 ): Promise<any> {
     const { interaction, config, context, details } = input;
     // An unanswered first probe is not a failure: the probes keep polling and the health waiter owns the deadline.
