@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import type { DistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    deriveRtcDiagnostics,
-    deriveRtcDiagnosticsTimeseries,
-    deriveRtcPerformanceView,
-    rtcConnectStageIdForEvent
+    computeRtcDiagnostics,
+    computeRtcDiagnosticsTimeseries,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT,
+    resolveRtcConnectStageId
 } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
 function event(
     eventId: string,
@@ -102,12 +105,12 @@ function state(
 
 describe('rallar-black-box RTC diagnostics', () => {
     it('maps runtime topics and phases to connect stages', () => {
-        expect(rtcConnectStageIdForEvent(event('event-1', 'rallar.browser.auth.completed', 10)))
+        expect(resolveRtcConnectStageId(event('event-1', 'rallar.browser.auth.completed', 10)))
             .toBe('auth');
-        expect(rtcConnectStageIdForEvent(event('event-2', 'rallar.browser.connect.phase_failed', 11, {
+        expect(resolveRtcConnectStageId(event('event-2', 'rallar.browser.connect.phase_failed', 11, {
             phase: 'peer-discovery'
         }))).toBe('peer-discovery');
-        expect(rtcConnectStageIdForEvent({
+        expect(resolveRtcConnectStageId({
             ...event('event-3', 'rallar.browser.messages.rtc.message', 12),
             kind: 'message'
         })).toBe('first-payload');
@@ -153,10 +156,13 @@ describe('rallar-black-box RTC diagnostics', () => {
                 }
             }
         ];
-        const diagnostics = deriveRtcDiagnostics(state(events, [
-            result('connect-1', 'rtc.connect', 90, 85),
-            result('send-1', 'rtc.send', 180, 12)
-        ]));
+        const diagnostics = computeRtcDiagnostics(
+            state(events, [
+                result('connect-1', 'rtc.connect', 90, 85),
+                result('send-1', 'rtc.send', 180, 12)
+            ]),
+            DIAGNOSTICS_NOW_EPOCH_MS
+        );
 
         expect(diagnostics.stages.map((stage) => [stage.stageId, stage.status])).toEqual([
             ['auth', 'observed'],
@@ -218,17 +224,20 @@ describe('rallar-black-box RTC diagnostics', () => {
             }),
             severity: 'error'
         } satisfies RallarBlackBoxTestEvent;
-        const diagnostics = deriveRtcDiagnostics(state([failure], [
-            {
-                ...result('connect-1', 'rtc.connect', 100, 50),
-                status: 'failed',
-                ok: false,
-                error: {
-                    code: 'RTC_TIMEOUT',
-                    message: 'channel timeout'
+        const diagnostics = computeRtcDiagnostics(
+            state([failure], [
+                {
+                    ...result('connect-1', 'rtc.connect', 100, 50),
+                    status: 'failed',
+                    ok: false,
+                    error: {
+                        code: 'RTC_TIMEOUT',
+                        message: 'channel timeout'
+                    }
                 }
-            }
-        ]));
+            ]),
+            DIAGNOSTICS_NOW_EPOCH_MS
+        );
 
         expect(diagnostics.stages.find((stage) => stage.stageId === 'data-channel')).toMatchObject({
             status: 'failed',
@@ -243,29 +252,32 @@ describe('rallar-black-box RTC diagnostics', () => {
     });
 
     it('surfaces ready peers, active peers, lane health, and NACK evidence', () => {
-        const diagnostics = deriveRtcDiagnostics(state([
-            event('event-send', 'rallar.bb.fake.rtc.send_completed', 130, {
-                expectedClients: ['bob-session', 'charlie-session'],
-                readyPeerIds: ['bob-session'],
-                activePeerIds: ['bob-session'],
-                laneHealth: 'degraded',
-                peerCount: 1
-            }),
-            {
-                ...event('event-nack', 'rallar.bb.fake.rtc.not-yet-in-sync', 140, {
-                    negativeCase: 'not-yet-in-sync',
-                    nack: {
-                        code: 'not-yet-in-sync',
-                        message: 'Snapshot is behind the minimum requested version.'
-                    },
+        const diagnostics = computeRtcDiagnostics(
+            state([
+                event('event-send', 'rallar.bb.fake.rtc.send_completed', 130, {
                     expectedClients: ['bob-session', 'charlie-session'],
-                    observedClients: ['bob-session']
+                    readyPeerIds: ['bob-session'],
+                    activePeerIds: ['bob-session'],
+                    laneHealth: 'degraded',
+                    peerCount: 1
                 }),
-                severity: 'warning'
-            }
-        ], [
-            result('send-1', 'rtc.send', 120, 20)
-        ]));
+                {
+                    ...event('event-nack', 'rallar.bb.fake.rtc.not-yet-in-sync', 140, {
+                        negativeCase: 'not-yet-in-sync',
+                        nack: {
+                            code: 'not-yet-in-sync',
+                            message: 'Snapshot is behind the minimum requested version.'
+                        },
+                        expectedClients: ['bob-session', 'charlie-session'],
+                        observedClients: ['bob-session']
+                    }),
+                    severity: 'warning'
+                }
+            ], [
+                result('send-1', 'rtc.send', 120, 20)
+            ]),
+            DIAGNOSTICS_NOW_EPOCH_MS
+        );
 
         expect(diagnostics.membership).toMatchObject({
             readyPeerIds: ['bob-session'],
@@ -305,10 +317,15 @@ describe('rallar-black-box RTC diagnostics', () => {
                 severity: 'error'
             }
         ]);
-        const diagnostics = deriveRtcDiagnostics(sampleState);
-        const series = deriveRtcDiagnosticsTimeseries(
+        const diagnostics = computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS);
+        const series = computeRtcDiagnosticsTimeseries(
             sampleState,
-            { bucketCount: 4, bucketMs: 1_000, endAtEpochMs: 3_000 }
+            {
+                bucketCount: 4,
+                bucketMs: 1_000,
+                endAtEpochMs: 3_000,
+                nowEpochMs: DIAGNOSTICS_NOW_EPOCH_MS
+            }
         );
 
         expect(diagnostics.timeseries.map((entry) => entry.seriesId)).toEqual([
@@ -355,10 +372,11 @@ describe('rallar-black-box RTC diagnostics', () => {
             result('send-1', 'rtc.send', 180, 12),
             result('ws-1', 'ws.send', 210, 34)
         ]);
-        const diagnostics = deriveRtcDiagnostics(sampleState);
-        const performance = deriveRtcPerformanceView({
+        const diagnostics = computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS);
+        const performance = computeRtcPerformanceView({
             diagnostics,
             state: sampleState,
+            distributedMonitor: undefined,
             histogramBucketCount: 3
         });
 
@@ -445,8 +463,8 @@ describe('rallar-black-box RTC diagnostics', () => {
                 }
             ]
         } as unknown as DistributedRunMonitor;
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(sampleState),
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(sampleState, DIAGNOSTICS_NOW_EPOCH_MS),
             state: sampleState,
             distributedMonitor,
             histogramBucketCount: 4
@@ -468,9 +486,11 @@ describe('rallar-black-box RTC diagnostics', () => {
 
     it('returns explicit empty RTC performance states', () => {
         const emptyState = state([]);
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(emptyState),
-            state: emptyState
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(emptyState, DIAGNOSTICS_NOW_EPOCH_MS),
+            state: emptyState,
+            distributedMonitor: undefined,
+            histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
         });
 
         expect(performance.summary.commandCount).toBe(0);
@@ -493,17 +513,20 @@ describe('rallar-black-box RTC diagnostics', () => {
         ] as const;
 
         for (const [topic, source] of cases) {
-            const diagnostics = deriveRtcDiagnostics(state([
-                {
-                    ...event('event-failure', topic, 150, {
-                        phase: topic.includes('phase_failed') ? 'room-join' : undefined,
-                        error: {
-                            message: 'failure'
-                        }
-                    }),
-                    severity: 'error'
-                }
-            ]));
+            const diagnostics = computeRtcDiagnostics(
+                state([
+                    {
+                        ...event('event-failure', topic, 150, {
+                            phase: topic.includes('phase_failed') ? 'room-join' : undefined,
+                            error: {
+                                message: 'failure'
+                            }
+                        }),
+                        severity: 'error'
+                    }
+                ]),
+                DIAGNOSTICS_NOW_EPOCH_MS
+            );
 
             expect(diagnostics.failure).toMatchObject({
                 source,

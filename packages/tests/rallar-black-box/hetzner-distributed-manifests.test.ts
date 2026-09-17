@@ -7,7 +7,11 @@ import {
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
 } from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
 import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import {
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type {
     RallarBlackBoxDistributedRunManifest
@@ -16,6 +20,9 @@ import { validateDistributedRunManifestContract } from '../../shared-test/rallar
 import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
+/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
@@ -738,10 +745,11 @@ describe('Hetzner distributed manifest catalog', () => {
             controlRun: snapshots.right.controlRun,
             artifactBundle: snapshots.right.artifactBundle
         });
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(emptySpaState()),
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(emptySpaState(), DIAGNOSTICS_NOW_EPOCH_MS),
             state: emptySpaState(),
-            distributedMonitor: monitor
+            distributedMonitor: monitor,
+            histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
         });
 
         expect(monitor?.state).toBe('passed');

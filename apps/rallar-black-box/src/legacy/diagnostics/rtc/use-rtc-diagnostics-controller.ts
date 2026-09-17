@@ -11,7 +11,11 @@ import {
     runDirectRallarStatusCheck
 } from '../../../direct-rallar-operations.ts';
 import type { ManualWorkbenchAction } from '../../../manual-workbench.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../rtc-diagnostics.ts';
+import {
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../rtc-diagnostics.ts';
 import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
@@ -35,9 +39,15 @@ export function useRtcDiagnosticsController({
     busy,
     onSelectCommand
 }: UseRtcDiagnosticsControllerInput) {
-    const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const diagnostics = useMemo(() => computeRtcDiagnostics(state, Date.now()), [state]);
     const rtcPerformance = useMemo(
-        () => deriveRtcPerformanceView({ diagnostics, state }),
+        () =>
+            computeRtcPerformanceView({
+                diagnostics,
+                state,
+                distributedMonitor: undefined,
+                histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+            }),
         [diagnostics, state]
     );
     const [sequence, setSequence] = useState(1);

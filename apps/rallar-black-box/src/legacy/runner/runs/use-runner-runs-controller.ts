@@ -35,7 +35,11 @@ import {
     type DistributedRunSeedId,
     type SyntheticDistributedRunSeed
 } from '../../../distributed-run-seeds.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../rtc-diagnostics.ts';
+import {
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../rtc-diagnostics.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -196,13 +200,14 @@ export function useRunnerRunsController({
             selectedMonitor
         ]
     );
-    const rtcDiagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const rtcDiagnostics = useMemo(() => computeRtcDiagnostics(state, Date.now()), [state]);
     const rtcPerformance = useMemo(
         () =>
-            deriveRtcPerformanceView({
+            computeRtcPerformanceView({
                 diagnostics: rtcDiagnostics,
                 state,
-                distributedMonitor: selectedMonitor
+                distributedMonitor: selectedMonitor,
+                histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
             }),
         [rtcDiagnostics, selectedMonitor, state]
     );

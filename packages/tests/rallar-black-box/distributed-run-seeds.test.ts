@@ -9,9 +9,12 @@ import {
     DISTRIBUTED_RUN_SEEDS,
     distributedRunSeedIdFromValue
 } from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import { computeRtcDiagnostics, computeRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import { computeDistributedRunArtifactAnalysis } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
 function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>[0]) {
     const seed = createSyntheticDistributedRunSeed(seedId);
@@ -175,8 +178,8 @@ describe('synthetic distributed run seeds', () => {
     it('feeds high-latency distributed agents into RTC performance charts', () => {
         const { monitor } = verdictFor('high-latency-rtc');
         const state = emptyRtcState();
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(state),
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(state, DIAGNOSTICS_NOW_EPOCH_MS),
             state,
             distributedMonitor: monitor,
             histogramBucketCount: 4

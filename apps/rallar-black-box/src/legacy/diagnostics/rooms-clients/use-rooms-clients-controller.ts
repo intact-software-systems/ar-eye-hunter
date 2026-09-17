@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RallarServerWorkbenchVariables } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workbench/to-rallar-server-workbench-variables.ts';
-import { deriveRtcDiagnostics } from '../../../rtc-diagnostics.ts';
+import { computeRtcDiagnostics } from '../../../rtc-diagnostics.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { idleActionFeedback, type CommandCenterActionFeedback } from '../shared/action-feedback.ts';
@@ -51,7 +51,7 @@ const EMPTY_BODIES: RoomsClientsStateBodies = {
 };
 
 export function useRoomsClientsController(input: UseRoomsClientsControllerInput): RoomsClientsControllerModel {
-    const diagnostics = useMemo(() => deriveRtcDiagnostics(input.state), [input.state]);
+    const diagnostics = useMemo(() => computeRtcDiagnostics(input.state, Date.now()), [input.state]);
     const draft = useRoomsClientsDraft(input);
     const controls = useRoomsClientsControls();
     const actions = new RoomsClientsActions({
