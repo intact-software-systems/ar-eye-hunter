@@ -7,7 +7,7 @@ import {
 import type { JsonValue } from '@shared-test/json-compare/compare-json-values.ts';
 import { CompareJson } from '@shared-test/json-compare/json-compare.ts';
 import {
-    evaluateGroupAssertionConformanceCase,
+    computeGroupAssertionConformanceResult,
     GROUP_ASSERTION_CONFORMANCE_CASES,
     GROUP_ASSERTION_CONFORMANCE_COMMAND_ID,
     GROUP_ASSERTION_CONFORMANCE_RECIPE_ID
@@ -48,25 +48,28 @@ describe('rallar-bb-test group assertion conformance', () => {
 
     for (const conformanceCase of GROUP_ASSERTION_CONFORMANCE_CASES) {
         it(`evaluates ${conformanceCase.caseId}: ${conformanceCase.intent}`, () => {
-            const result = evaluateGroupAssertionConformanceCase(conformanceCase);
-            expect(result.ok, conformanceCase.caseId).toBe(conformanceCase.expected.ok);
-            if (conformanceCase.expected.code !== undefined) {
-                expect(result.error?.code, conformanceCase.caseId)
-                    .toBe(conformanceCase.expected.code);
+            const result = computeGroupAssertionConformanceResult(conformanceCase);
+            const { expected } = conformanceCase;
+            expect(result.ok, conformanceCase.caseId).toBe(expected.ok);
+            if (expected.ok) {
+                return;
             }
-            if (conformanceCase.expected.violatingAgentIds !== undefined) {
+            if (expected.code !== undefined) {
+                expect(result.error?.code, conformanceCase.caseId).toBe(expected.code);
+            }
+            if (expected.violatingAgentIds !== undefined) {
                 expect([...result.violatingAgentIds].sort(), conformanceCase.caseId)
-                    .toEqual([...conformanceCase.expected.violatingAgentIds].sort());
+                    .toEqual([...expected.violatingAgentIds].sort());
             }
-            if (conformanceCase.expected.missingAgentIds !== undefined) {
+            if (expected.missingAgentIds !== undefined) {
                 expect([...result.missingAgentIds].sort(), conformanceCase.caseId)
-                    .toEqual([...conformanceCase.expected.missingAgentIds].sort());
+                    .toEqual([...expected.missingAgentIds].sort());
             }
         });
     }
 
     it('names both missing and violating agents in one failing evaluation', () => {
-        const result = evaluateGroupAssertionConformanceCase({
+        const result = computeGroupAssertionConformanceResult({
             caseId: 'missing-and-violating',
             intent: 'Failure artifacts identify both missing and violating agents.',
             assertion: {
@@ -80,8 +83,8 @@ describe('rallar-bb-test group assertion conformance', () => {
                 }
             },
             agents: [
-                { agentId: 'agent-a', observed: 1 },
-                { agentId: 'agent-b', observed: 2 },
+                { agentId: 'agent-a', evidence: 'resolved', observed: 1 },
+                { agentId: 'agent-b', evidence: 'resolved', observed: 2 },
                 { agentId: 'agent-c', evidence: 'missing' }
             ],
             expected: { ok: false }
@@ -152,7 +155,7 @@ describe('rallar-bb-test group assertion conformance', () => {
     });
 
     it('redacts sensitive values in per-agent tables and error details', () => {
-        const result = evaluateGroupAssertionConformanceCase({
+        const result = computeGroupAssertionConformanceResult({
             caseId: 'redaction',
             intent: 'Evidence values pass redaction before artifacts.',
             assertion: {
@@ -165,8 +168,8 @@ describe('rallar-bb-test group assertion conformance', () => {
                 }
             },
             agents: [
-                { agentId: 'agent-a', observed: { accessToken: 'secret-a', count: 1 } },
-                { agentId: 'agent-b', observed: { accessToken: 'secret-b', count: 1 } }
+                { agentId: 'agent-a', evidence: 'resolved', observed: { accessToken: 'secret-a', count: 1 } },
+                { agentId: 'agent-b', evidence: 'resolved', observed: { accessToken: 'secret-b', count: 1 } }
             ],
             expected: { ok: false }
         });
