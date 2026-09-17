@@ -111,7 +111,7 @@ function computeStreamDurationTiming(samples: readonly StreamTimingSample[]): Di
 }
 
 function toObservationDurations(sample: StreamTimingSample): readonly number[] {
-    return sample.summary.observations.flatMap((observation) =>
+    return (sample.summary.observations ?? []).flatMap((observation) =>
         !observation.dropped && observation.durationMs !== undefined ? [observation.durationMs] : []
     );
 }

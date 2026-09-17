@@ -47,7 +47,8 @@ export interface DistributedRunStreamSummary {
     /** Absent when the summary records no duration object. */
     readonly duration?: DistributedRunTimingRecord;
     readonly thresholdFailureCount: number;
-    readonly observations: readonly DistributedRunStreamObservation[];
+    /** Absent when the summary records no observations list; a recorded empty list means the stream observed no frame. */
+    readonly observations?: readonly DistributedRunStreamObservation[];
     /** The recorded duration, threshold failures and observations as JSON text; they tell stream executions apart. */
     readonly fingerprintText: DistributedRunStreamFingerprintText;
 }
@@ -80,7 +81,6 @@ export function decodeDistributedRunStreamSummary(value: unknown): DistributedRu
     if (!isJsonRecordValue(value)) {
         return undefined;
     }
-    const duration = decodeDistributedRunTimingRecord(value.duration);
     const isSummary = isFiniteNumber(value.plannedFrames) ||
         isFiniteNumber(value.completedFrames) ||
         isFiniteNumber(value.scheduledFrames) ||
@@ -89,12 +89,6 @@ export function decodeDistributedRunStreamSummary(value: unknown): DistributedRu
         return undefined;
     }
     const pacing = isJsonRecordValue(value.pacing) ? value.pacing : undefined;
-    const thresholdFailures = Array.isArray(value.thresholdFailures)
-        ? value.thresholdFailures.map((item) => isJsonRecordValue(item) ? item : {})
-        : [];
-    const observations = Array.isArray(value.observations)
-        ? value.observations.map((item) => isJsonRecordValue(item) ? item : {})
-        : [];
     return {
         commandId: decodeText(value.commandId),
         plannedFrames: decodeNumber(value.plannedFrames),
@@ -110,14 +104,12 @@ export function decodeDistributedRunStreamSummary(value: unknown): DistributedRu
         achievedCompletionHz: decodeNumber(value.achievedCompletionHz),
         maxStartDriftMs: decodeNumber(pacing?.maxStartDriftMs),
         lateFrameCount: decodeNumber(pacing?.lateFrameCount),
-        duration,
-        thresholdFailureCount: thresholdFailures.length,
-        observations: decodeRecordItems(value.observations, decodeStreamObservation),
-        fingerprintText: {
-            duration: JSON.stringify(isJsonRecordValue(value.duration) ? value.duration : {}),
-            thresholdFailures: JSON.stringify(thresholdFailures),
-            observations: JSON.stringify(observations)
-        }
+        duration: decodeDistributedRunTimingRecord(value.duration),
+        thresholdFailureCount: Array.isArray(value.thresholdFailures) ? value.thresholdFailures.length : 0,
+        observations: Array.isArray(value.observations)
+            ? decodeRecordItems(value.observations, decodeStreamObservation)
+            : undefined,
+        fingerprintText: decodeStreamFingerprintText(value)
     };
 }
 
@@ -145,6 +137,21 @@ export function decodeNestedStreamSummary(value: unknown): DistributedRunStreamS
         }
     }
     return undefined;
+}
+
+/** An absent observations list prints like an empty one, so it does not tell two stream executions apart. */
+function decodeStreamFingerprintText(summary: unknown): DistributedRunStreamFingerprintText {
+    const record = isJsonRecordValue(summary) ? summary : {};
+    return {
+        duration: JSON.stringify(isJsonRecordValue(record.duration) ? record.duration : {}),
+        thresholdFailures: decodeRecordItemsText(record.thresholdFailures),
+        observations: decodeRecordItemsText(record.observations)
+    };
+}
+
+/** The list as JSON text with every item that is not a JSON object printed as an empty object; not a list prints `[]`. */
+function decodeRecordItemsText(value: unknown): string {
+    return JSON.stringify(Array.isArray(value) ? value.map((item) => isJsonRecordValue(item) ? item : {}) : []);
 }
 
 /** Absent when the value is not a JSON object. */

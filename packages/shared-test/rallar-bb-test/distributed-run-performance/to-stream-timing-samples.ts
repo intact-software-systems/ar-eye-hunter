@@ -75,10 +75,10 @@ export function hasStreamFailureEvidence(sample: StreamTimingSample): boolean {
     return sample.failed || sample.summary.thresholdFailureCount > 0;
 }
 
-/** Absent when the summary records neither an in-flight drop count nor any frame observation to count them from. */
+/** Absent when the summary records neither an in-flight drop count nor an observations list to count them from. */
 export function computeStreamInFlightLimitDropCount(sample: StreamTimingSample): number | undefined {
     const { inFlightLimitDropCount, observations } = sample.summary;
-    if (inFlightLimitDropCount !== undefined || observations.length === 0) {
+    if (inFlightLimitDropCount !== undefined || observations === undefined) {
         return inFlightLimitDropCount;
     }
     return observations.filter((observation) => observation.errorCode === IN_FLIGHT_LIMIT_ERROR_CODE).length;

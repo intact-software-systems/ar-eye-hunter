@@ -377,6 +377,57 @@ describe('distributed run artifact stream performance', () => {
         expect(analysis.performance?.streamTiming).toBeUndefined();
     });
 
+    it('reads a recorded empty observation list as no in-flight drops, so a stream that scheduled no frames keeps run timing', () => {
+        const streamResult = (commandId: string, frames: number, recorded: Readonly<Record<string, unknown>>) =>
+            JSON.stringify({
+                resultKey: `controller-01:${commandId}`,
+                agentId: 'controller-01',
+                commandId,
+                action: 'rtc.stream',
+                ok: true,
+                result: {
+                    commandId: `rtc-${commandId}`,
+                    plannedFrames: frames,
+                    scheduledFrames: frames,
+                    attemptedFrames: frames,
+                    completedFrames: frames,
+                    failedFrames: 0,
+                    droppedFrames: 0,
+                    backpressureCount: 0,
+                    pacing: { lateFrameCount: 0 },
+                    ...recorded
+                }
+            });
+        const analysis = computeDistributedRunAnalysis(
+            toDistributedRunArtifactFiles({
+                distributedRun: createDistributedRunSnapshot({
+                    distributedRunId: 'dist-stream-empty-observations',
+                    controlRunId: 'run-stream-empty-observations',
+                    state: 'passed',
+                    agentIds: ['controller-01']
+                }),
+                controlRun: createControlRunSnapshot({
+                    runId: 'run-stream-empty-observations',
+                    agents: [{ agentId: 'controller-01' }]
+                }),
+                files: {
+                    'results.jsonl': [
+                        streamResult('stream-frames', 3, { inFlightLimitDropCount: 0 }),
+                        streamResult('stream-no-frames', 0, { observations: [] })
+                    ].join('\n'),
+                    'events.jsonl': ''
+                }
+            }),
+            ANALYSIS_GENERATED_AT_EPOCH_MS
+        );
+
+        expect(analysis.performance?.streamTiming).toMatchObject({
+            streamCount: 2,
+            plannedFrames: 3,
+            inFlightLimitDropCount: 0
+        });
+    });
+
     it('names only the frame counts a failed stream recorded', () => {
         const analysis = computeFailedDistributedRunAnalysis(
             toDistributedRunArtifactFiles({
