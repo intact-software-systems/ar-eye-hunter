@@ -1,6 +1,6 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     fetchControlServerSnapshot,

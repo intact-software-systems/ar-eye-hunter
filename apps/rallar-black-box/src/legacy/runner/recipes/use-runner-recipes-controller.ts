@@ -1,3 +1,4 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     getRallarBlackBoxCommandHistory,
@@ -7,7 +8,6 @@ import {
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
     controlHttpBaseUrlFromWsUrl,

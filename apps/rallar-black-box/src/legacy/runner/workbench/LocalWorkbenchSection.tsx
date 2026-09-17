@@ -1,6 +1,6 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { ReportPanel } from '../advanced/ReportPanel.tsx';
 import type { CommandQueueRow } from '../runner-contracts.ts';

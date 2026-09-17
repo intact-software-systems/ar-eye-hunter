@@ -1,3 +1,4 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -8,7 +9,6 @@ import {
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     fetchControlRunSnapshot,

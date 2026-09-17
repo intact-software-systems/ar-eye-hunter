@@ -1,9 +1,9 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { RunnerAdvancedSurfaceId } from '../../../app-tabs.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { ManualRallarSection } from '../manual/manual-rallar-section.tsx';

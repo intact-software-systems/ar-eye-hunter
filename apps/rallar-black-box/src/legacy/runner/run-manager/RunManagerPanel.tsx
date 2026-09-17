@@ -1,9 +1,9 @@
 import {
     parseBlackBoxRunnerArtifactBundle
 } from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     controlRunAgentRows,

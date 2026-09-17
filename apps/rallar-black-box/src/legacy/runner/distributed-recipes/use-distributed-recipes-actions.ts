@@ -1,6 +1,6 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxDistributedRolePattern } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useEffect } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     cancelDistributedRun,
     createDistributedRun,

@@ -1,5 +1,5 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';

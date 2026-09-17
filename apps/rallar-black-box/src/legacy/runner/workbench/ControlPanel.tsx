@@ -1,7 +1,7 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';

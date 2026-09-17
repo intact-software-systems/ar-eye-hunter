@@ -2,6 +2,7 @@ import {
     decodeRallarBlackBoxConfigProviderMode,
     type RallarBlackBoxProviderMode
 } from '@shared-test/rallar-bb-test/client-defaults.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     getRallarBlackBoxActiveCommand,
@@ -13,7 +14,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
 import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import { statusTone } from '../shared/command-presentation.ts';
 import { Metric } from '../shared/Metric.tsx';

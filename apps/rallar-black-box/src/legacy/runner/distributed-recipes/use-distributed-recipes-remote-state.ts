@@ -1,7 +1,7 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { useMemo, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     type ControlDistributedRunArtifactBundle,

@@ -1,7 +1,7 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import type {
     RallarServerResponseBodyMode,
     RallarServerRestMethod

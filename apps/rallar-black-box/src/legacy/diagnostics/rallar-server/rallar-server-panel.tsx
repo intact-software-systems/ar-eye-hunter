@@ -1,4 +1,4 @@
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import type { UseRallarServerControllerInput } from './rallar-server-contracts.ts';
 import { RallarServerView } from './rallar-server-view.tsx';
