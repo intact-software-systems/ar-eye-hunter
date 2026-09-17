@@ -7,7 +7,11 @@ import {
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
+import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows
+} from '../../../control-agent-board.ts';
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -154,7 +158,8 @@ export function useRunnerRecipesController({
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
                 requiredRecipes: selectedRecipe?.recipe ? [selectedRecipe.recipe] : [],
-                nowEpochMs: Date.now()
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [controlRun, groupRef, recipePreflight, selectedRecipe?.recipe]
     );
@@ -169,7 +174,10 @@ export function useRunnerRecipesController({
                     ...(controlSnapshot?.distributedRuns ?? []),
                     ...(distributedRun ? [distributedRun] : [])
                 ],
-                nowEpochMs: Date.now()
+                selectedDistributedRun: undefined,
+                monitorAgentProgress: [],
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [
             controlRun,

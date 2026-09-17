@@ -1,7 +1,11 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../control-agent-board.ts';
+import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows
+} from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
@@ -232,7 +236,11 @@ export function deriveRecipeConsoleControlSelection(
         group: groupContext.group,
         distributedRuns,
         selectedDistributedRun: distributedRun,
-        nowEpochMs: input.nowEpochMs,
+        requiredCommandKinds: [],
+        requiredRecipes: [],
+        monitorAgentProgress: [],
+        nowEpochMs: input.nowEpochMs ?? Date.now(),
+        staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS,
         snapshot: input.snapshot,
         selectionIndex
     });

@@ -22,6 +22,7 @@ import {
     type DistributedRecipeTargetRow,
     type DistributedRunAgentProgressRow
 } from './distributed-recipes.ts';
+export { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from './control-agent-board-contract.ts';
 export type {
     ControlAgentBoardRow,
     ControlAgentBoardSummary,
@@ -82,7 +83,7 @@ export function controlAgentBoardWorkForTest(
 function deriveLegacyControlAgentBoardRows(
     input: DeriveControlAgentBoardRowsInput
 ): readonly ControlAgentBoardRow[] {
-    const nowEpochMs = input.nowEpochMs ?? Date.now();
+    const nowEpochMs = input.nowEpochMs;
     const scopedAgentIds = input.agentIds
         ? new Set(input.agentIds)
         : undefined;
@@ -92,8 +93,8 @@ function deriveLegacyControlAgentBoardRows(
         ? distributedRecipeTargetRows({
             run: input.run,
             group: input.group,
-            requiredCommandKinds: input.requiredCommandKinds ?? [],
-            requiredRecipes: input.requiredRecipes ?? [],
+            requiredCommandKinds: input.requiredCommandKinds,
+            requiredRecipes: input.requiredRecipes,
             nowEpochMs,
             staleAfterMs: input.staleAfterMs
         })
@@ -102,11 +103,11 @@ function deriveLegacyControlAgentBoardRows(
         targetRows.map((row) => [row.agentId, row])
     );
     const progressByAgentId = new Map(
-        (input.monitorAgentProgress ?? []).map((row) => [row.agentId, row])
+        input.monitorAgentProgress.map((row) => [row.agentId, row])
     );
     const currentControlRunId = input.run?.runId ?? input.selectedDistributedRun?.controlRunId;
     const distributedRuns = uniqueRuns([
-        ...(input.distributedRuns ?? []),
+        ...input.distributedRuns,
         ...(input.selectedDistributedRun ? [input.selectedDistributedRun] : [])
     ]).filter((run) =>
         currentControlRunId === undefined ||

@@ -8,7 +8,11 @@ import {
     getRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
+import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows
+} from '../../../control-agent-board.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     fetchControlRunSnapshot,
@@ -145,7 +149,10 @@ export function useRunnerRunsController({
                     distributedRuns,
                     selectedDistributedRun,
                     monitorAgentProgress: selectedMonitor?.agentProgress ?? [],
-                    nowEpochMs: Date.now()
+                    requiredCommandKinds: [],
+                    requiredRecipes: [],
+                    nowEpochMs: Date.now(),
+                    staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
                 })
                 : [],
         [

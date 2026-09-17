@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
     controlAgentBoardWorkForTest,
     deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows
+    summarizeControlAgentBoardRows,
+    type DeriveControlAgentBoardRowsInput
 } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
@@ -15,6 +17,24 @@ import type {
     RallarBlackBoxDistributedGroupRef
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+type BoardInputCase = Partial<DeriveControlAgentBoardRowsInput>;
+
+/** The board input a case does not vary: no scope, no selection, and the board's own staleness. */
+function toBoardInput(caseInput: BoardInputCase): DeriveControlAgentBoardRowsInput {
+    return {
+        run: undefined,
+        group: undefined,
+        requiredCommandKinds: [],
+        requiredRecipes: [],
+        distributedRuns: [],
+        selectedDistributedRun: undefined,
+        monitorAgentProgress: [],
+        nowEpochMs: 0,
+        staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+        ...caseInput
+    };
+}
 
 const group: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -227,7 +247,7 @@ describe('control agent board derivation', () => {
         });
         const current = { runs: [], distributedRuns: currentRuns };
 
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: undefined,
             snapshot: current,
             selectionIndex: bindControlSelectionIndexToSnapshot(
@@ -236,7 +256,7 @@ describe('control agent board derivation', () => {
             ),
             distributedRuns: currentRuns,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows).toEqual([]);
         expect(controlAgentBoardWorkForTest(rows)).toEqual({
@@ -270,15 +290,15 @@ describe('control agent board derivation', () => {
             current,
             createControlSnapshotSelectionIndex(first)
         );
-        const legacy = deriveControlAgentBoardRows({
+        const legacy = deriveControlAgentBoardRows(toBoardInput({
             run: current.runs[0],
             group,
             distributedRuns: current.distributedRuns,
             selectedDistributedRun: current.distributedRuns[0],
             nowEpochMs: 2_500
-        });
+        }));
 
-        const indexed = deriveControlAgentBoardRows({
+        const indexed = deriveControlAgentBoardRows(toBoardInput({
             run: current.runs[0],
             group,
             snapshot: current,
@@ -286,7 +306,7 @@ describe('control agent board derivation', () => {
             distributedRuns: current.distributedRuns,
             selectedDistributedRun: current.distributedRuns[0],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
         expect(indexed[0]!.selectedRun?.distributedRunId).toBe('duplicate\0\u202e');
@@ -333,15 +353,15 @@ describe('control agent board derivation', () => {
         const snapshot = { runs: [run], distributedRuns };
         const selectionIndex = createControlSelectionIndexCache().get(snapshot);
         const selected = distributedRuns[6]!;
-        const legacy = deriveControlAgentBoardRows({
+        const legacy = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             distributedRuns,
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
-        });
+        }));
 
-        const indexed = deriveControlAgentBoardRows({
+        const indexed = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             snapshot,
@@ -349,7 +369,7 @@ describe('control agent board derivation', () => {
             distributedRuns,
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
         expect(indexed[0]!.activeRuns.map((item) => item.distributedRunId)).toEqual([
@@ -397,14 +417,14 @@ describe('control agent board derivation', () => {
         const snapshot = { runs: [run], distributedRuns };
         const selectionIndex = createControlSelectionIndexCache().get(snapshot);
 
-        const legacy = deriveControlAgentBoardRows({
+        const legacy = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             distributedRuns,
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
-        });
-        const indexed = deriveControlAgentBoardRows({
+        }));
+        const indexed = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             snapshot,
@@ -412,7 +432,7 @@ describe('control agent board derivation', () => {
             distributedRuns,
             selectedDistributedRun: selected,
             nowEpochMs: 2_500
-        });
+        }));
 
         const work = controlAgentBoardWorkForTest(indexed);
         expect(JSON.stringify(indexed)).toBe(JSON.stringify(legacy));
@@ -438,7 +458,7 @@ describe('control agent board derivation', () => {
             targetAgentIds: ['ghost']
         };
 
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: snapshot.runs[0],
             group,
             snapshot,
@@ -449,7 +469,7 @@ describe('control agent board derivation', () => {
             distributedRuns: snapshot.distributedRuns,
             selectedDistributedRun: external,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows.map((row) => row.agentId)).toEqual(['agent-a', 'ghost']);
         expect(controlAgentBoardWorkForTest(rows)).toMatchObject({
@@ -459,11 +479,11 @@ describe('control agent board derivation', () => {
     });
 
     it('marks connected matching agents as targetable and summarizes them', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a')]),
             group,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({
@@ -486,7 +506,7 @@ describe('control agent board derivation', () => {
     });
 
     it('reports stale, offline, wrong-group, and missing-identity blockers', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([
                 agent('agent-a', { lastHeartbeatAtEpochMs: 1_000 }),
                 agent('agent-b', { connected: false }),
@@ -495,7 +515,7 @@ describe('control agent board derivation', () => {
             ]),
             group,
             nowEpochMs: 40_000
-        });
+        }));
 
         expect(rows.map((row) => [row.agentId, row.targetStatus, row.targetable])).toEqual([
             ['agent-a', 'stale', false],
@@ -512,16 +532,16 @@ describe('control agent board derivation', () => {
     });
 
     it('uses a strict 30,000ms heartbeat freshness boundary', () => {
-        const fresh = deriveControlAgentBoardRows({
+        const fresh = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
             group,
             nowEpochMs: 32_000
-        });
-        const stale = deriveControlAgentBoardRows({
+        }));
+        const stale = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a', { lastHeartbeatAtEpochMs: 2_000 })]),
             group,
             nowEpochMs: 32_001
-        });
+        }));
 
         expect(fresh[0]).toMatchObject({ targetStatus: 'matched', targetable: true });
         expect(stale[0]).toMatchObject({ targetStatus: 'stale', targetable: false });
@@ -533,11 +553,11 @@ describe('control agent board derivation', () => {
             lastSeenAtEpochMs: _seen,
             ...withoutTimestamps
         } = agent('agent-a');
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([withoutTimestamps]),
             group,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows[0]).toMatchObject({
             heartbeatAgeMs: undefined,
@@ -547,10 +567,10 @@ describe('control agent board derivation', () => {
     });
 
     it('marks otherwise matching agents not-scoped when no group is supplied', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a')]),
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows[0]).toMatchObject({
             targetStatus: 'not-scoped',
@@ -559,7 +579,7 @@ describe('control agent board derivation', () => {
     });
 
     it('requires CRDT capability when recipe command kinds need CRDT runtime', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([
                 agent('agent-a'),
                 agent('agent-b', { crdt: true })
@@ -567,7 +587,7 @@ describe('control agent board derivation', () => {
             group,
             requiredCommandKinds: ['crdt.open'],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows.map((row) => [row.agentId, row.targetStatus, row.targetable])).toEqual([
             ['agent-a', 'missing-crdt-runtime', false],
@@ -607,20 +627,20 @@ describe('control agent board derivation', () => {
             }]
         });
 
-        const rtcRows = deriveControlAgentBoardRows({
+        const rtcRows = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             requiredCommandKinds: ['crdt.open'],
             requiredRecipes: [recipe('rtc')],
             nowEpochMs: 2_500
-        });
-        const wsRows = deriveControlAgentBoardRows({
+        }));
+        const wsRows = deriveControlAgentBoardRows(toBoardInput({
             run,
             group,
             requiredCommandKinds: ['crdt.open'],
             requiredRecipes: [recipe('ws')],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rtcRows[0]).toMatchObject({
             targetStatus: 'missing-crdt-transport',
@@ -634,7 +654,7 @@ describe('control agent board derivation', () => {
     });
 
     it('adds active distributed run participation for non-terminal runs only', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a')]),
             group,
             distributedRuns: [
@@ -642,7 +662,7 @@ describe('control agent board derivation', () => {
                 distributedRun('passed', ['agent-a'])
             ],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows[0].activeRuns.map((run) => run.distributedRunId)).toEqual([
             'dist-running'
@@ -703,12 +723,12 @@ describe('control agent board derivation', () => {
             }
         };
 
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a'), agent('agent-b')]),
             group,
             selectedDistributedRun,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows.map((row) => row.selectedRun?.role)).toEqual(['sender', 'receiver']);
     });
@@ -732,13 +752,13 @@ describe('control agent board derivation', () => {
             lastActivityAtEpochMs: 2_400
         };
 
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a')]),
             group,
             selectedDistributedRun,
             monitorAgentProgress: [progress],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows.map((row) => row.agentId)).toEqual(['agent-a', 'ghost-agent']);
         expect(rows[1]).toMatchObject({
@@ -756,7 +776,7 @@ describe('control agent board derivation', () => {
     });
 
     it('ignores active distributed runs from other control runs', () => {
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a')]),
             group,
             distributedRuns: [
@@ -766,7 +786,7 @@ describe('control agent board derivation', () => {
                 })
             ],
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows[0].activeRuns).toEqual([]);
         expect(summarizeControlAgentBoardRows(rows).active).toBe(0);
@@ -774,13 +794,13 @@ describe('control agent board derivation', () => {
 
     it('scopes rows to explicit agent ids and keeps missing selected targets', () => {
         const selectedDistributedRun = distributedRun('running', ['agent-a', 'ghost-agent']);
-        const rows = deriveControlAgentBoardRows({
+        const rows = deriveControlAgentBoardRows(toBoardInput({
             run: controlRun([agent('agent-a'), agent('agent-extra')]),
             group,
             selectedDistributedRun,
             agentIds: selectedDistributedRun.targetAgentIds,
             nowEpochMs: 2_500
-        });
+        }));
 
         expect(rows.map((row) => row.agentId)).toEqual(['agent-a', 'ghost-agent']);
         expect(rows.map((row) => row.selectedRun?.distributedRunId)).toEqual([

@@ -1,6 +1,10 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
+import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows
+} from '../../../control-agent-board.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
     fetchControlServerSnapshot,
@@ -154,7 +158,12 @@ export function useRunnerFleetController({
                 run: liveRun,
                 group: liveGroupRef,
                 distributedRuns: liveSnapshot?.distributedRuns ?? [],
-                nowEpochMs: Date.now()
+                requiredCommandKinds: [],
+                requiredRecipes: [],
+                selectedDistributedRun: undefined,
+                monitorAgentProgress: [],
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [liveGroupRef, liveRun, liveSnapshot?.distributedRuns]
     );

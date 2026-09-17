@@ -4,7 +4,11 @@ import type {
     RallarBlackBoxDistributedTargetPolicyMode
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
+import {
+    CONTROL_AGENT_BOARD_STALE_AFTER_MS,
+    deriveControlAgentBoardRows,
+    summarizeControlAgentBoardRows
+} from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
@@ -259,7 +263,8 @@ export function useDistributedRecipeBuilder({
                 distributedRuns,
                 selectedDistributedRun,
                 monitorAgentProgress: monitorAgentProgress ?? [],
-                nowEpochMs: Date.now()
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [
             distributedRuns,
