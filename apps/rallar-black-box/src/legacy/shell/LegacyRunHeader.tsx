@@ -1,11 +1,11 @@
 import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCurrentConfig,
-    selectRallarBlackBoxFirstFailure,
-    selectRallarBlackBoxLatestStats
-} from '@shared-test/rallar-bb-test/selectors.ts';
+    getRallarBlackBoxActiveCommand,
+    getRallarBlackBoxCurrentConfig,
+    getRallarBlackBoxFirstFailure,
+    getRallarBlackBoxLatestStats
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
@@ -42,10 +42,10 @@ export function Header({
     onLogout(): void;
 }) {
     const [detailsExpanded, setDetailsExpanded] = useState(false);
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const stats = selectRallarBlackBoxLatestStats(state);
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
-    const firstFailure = selectRallarBlackBoxFirstFailure(state);
+    const config = getRallarBlackBoxCurrentConfig(state);
+    const stats = getRallarBlackBoxLatestStats(state);
+    const activeCommand = getRallarBlackBoxActiveCommand(state);
+    const firstFailure = getRallarBlackBoxFirstFailure(state);
     const providerMode = config
         ? resolveRallarBlackBoxConfigProviderMode(config)
         : bootstrap.providerMode;

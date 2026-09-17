@@ -2,7 +2,7 @@ import { resolveRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-
 import type {
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
@@ -126,7 +126,7 @@ function createWebSocketCommandCenterValues(
 export function useWebSocketCommandCenterController(
     input: UseWebSocketCommandCenterControllerInput
 ): WebSocketCommandCenterViewModel {
-    const config = selectRallarBlackBoxCurrentConfig(input.state);
+    const config = getRallarBlackBoxCurrentConfig(input.state);
     const providerMode = config ? resolveRallarBlackBoxConfigProviderMode(config) : input.bootstrap.providerMode;
     const defaultContext = defaultWebSocketValuesFromContext(input.globalValues, config, input.bootstrap);
     const controls = useWebSocketCommandCenterControls(defaultContext);

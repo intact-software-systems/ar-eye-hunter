@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -105,7 +105,7 @@ function useRoomsClientsRequestDraft(
     input: UseRoomsClientsControllerInput
 ): Pick<RoomsClientsDraftModel, 'apiBaseUrl' | 'setApiBaseUrl' | 'variables' | 'updateVariable'> {
     const { bootstrap, authSession, globalValues } = input;
-    const config = selectRallarBlackBoxCurrentConfig(input.state);
+    const config = getRallarBlackBoxCurrentConfig(input.state);
     const defaultVariables = useRoomsClientsDefaultVariables(input);
     const [apiBaseUrl, setApiBaseUrl] = useState(globalValues.apiBaseUrl);
     const [variables, setVariables] = useState<RallarServerWorkbenchVariables>(defaultVariables);

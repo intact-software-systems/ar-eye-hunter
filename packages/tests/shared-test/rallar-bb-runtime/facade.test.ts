@@ -3,7 +3,7 @@ import { executeBlackBox } from '../../../shared-test/black-box-runner/execute-b
 import {
     createRallarBlackBoxRtcProvider,
     createRallarBlackBoxTestRuntime,
-    selectRallarBlackBoxCommandHistory,
+    getRallarBlackBoxCommandHistory,
     type RallarBlackBoxTestCommand
 } from '../../../shared-test/rallar-bb-test/mod.ts';
 
@@ -140,7 +140,7 @@ describe('rallar-bb runtime facade', () => {
         expect(report.resultsByName.aliceSendsAndReceivesFacadeEcho[0].status)
             .toBe('SUCCESS');
         expect(report.resultsByName.closeAlice[0].status).toBe('SUCCESS');
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.kind))
+        expect(getRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.kind))
             .toEqual(['rtc.connect', 'rtc.send', 'close']);
     });
 

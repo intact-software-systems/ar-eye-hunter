@@ -10,7 +10,7 @@ import {
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from '../../../apps/rallar-black-box/src/browser-rallar-runtime.ts';
-import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
+import { toRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/test-state-accessors.ts';
 import { ApiHttpError } from '../../../packages/shared-web/browser/api/http-error.ts';
 import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 import type { RallarBlackBoxBrowserRoomRefreshOptions } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
@@ -309,7 +309,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
             expect(result.ok).toBe(true);
             expect(
-                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                toRallarBlackBoxDiagnostics(runtime.state()).some(
                     (event) =>
                         event.topic === 'rallar.browser.connect.phase_completed' &&
                         event.connection === 'aliceRtc'
@@ -393,7 +393,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 }
             });
             expect(
-                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                toRallarBlackBoxDiagnostics(runtime.state()).some(
                     (event) =>
                         event.topic === 'rallar.bb.rtc.send_completed' &&
                         event.commandId === 'send-real-command-path'
@@ -450,7 +450,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             }
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).map(
+            toRallarBlackBoxDiagnostics(runtime.state()).map(
                 (event) => event.topic
             )
         ).toEqual(
@@ -1190,7 +1190,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             message: 'RTC connect timed out waiting for ready peers.'
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some(
+            toRallarBlackBoxDiagnostics(runtime.state()).some(
                 (event) =>
                     event.topic === 'rallar.bb.rtc.readiness_timeout' &&
                     event.commandId === 'connect-ready-timeout' &&
@@ -1237,7 +1237,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             message: 'RTC send resolved no target peers.'
         });
         expect(
-            selectRallarBlackBoxDiagnostics(runtime.state()).some(
+            toRallarBlackBoxDiagnostics(runtime.state()).some(
                 (event) =>
                     event.topic === 'rallar.bb.rtc.send_failed' &&
                     event.commandId === 'manual-send-no-peers' &&
@@ -1500,7 +1500,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 sendObservation: { status: 'failed', ok: false, errorCode: 'RALLAR_BB_RTC_SEND_FAILED' }
             });
             expect(
-                selectRallarBlackBoxDiagnostics(runtime.state()).some(
+                toRallarBlackBoxDiagnostics(runtime.state()).some(
                     (event) =>
                         event.topic === 'rallar.bb.rtc.send_failed' &&
                         event.commandId === 'manual-send-no-route' &&

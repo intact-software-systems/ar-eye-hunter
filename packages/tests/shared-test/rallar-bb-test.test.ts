@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { normalizeBlackBoxResponseHeaders } from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
 import {
     createRallarBlackBoxTestRuntime,
+    getRallarBlackBoxActiveCommand,
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxCurrentConfig,
+    getRallarBlackBoxFailures,
+    getRallarBlackBoxFirstFailure,
+    getRallarBlackBoxLatestStats,
     redactRallarBlackBoxValue,
-    selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxCurrentConfig,
-    selectRallarBlackBoxDiagnostics,
-    selectRallarBlackBoxFailures,
-    selectRallarBlackBoxFirstFailure,
-    selectRallarBlackBoxLatestStats,
+    toRallarBlackBoxDiagnostics,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestRecipe
 } from '../../shared-test/rallar-bb-test/mod.ts';
@@ -134,7 +134,7 @@ describe('rallar-bb runtime core', () => {
         const state = runtime.state();
         expect(result.status).toBe('ok');
         expect(state.status).toBe('configured');
-        expect(selectRallarBlackBoxCurrentConfig(state)).toEqual({
+        expect(getRallarBlackBoxCurrentConfig(state)).toEqual({
             runId: 'run-1',
             agentId: 'agent-1',
             apiBaseUrl: 'https://api.example.test',
@@ -146,8 +146,8 @@ describe('rallar-bb runtime core', () => {
                 password: '<redacted>'
             }
         });
-        expect(selectRallarBlackBoxActiveCommand(state)).toBeUndefined();
-        expect(selectRallarBlackBoxDiagnostics(state).some((event) => event.topic === 'rallar.bb.configured')).toBe(true);
+        expect(getRallarBlackBoxActiveCommand(state)).toBeUndefined();
+        expect(toRallarBlackBoxDiagnostics(state).some((event) => event.topic === 'rallar.bb.configured')).toBe(true);
     });
 
     it('passes raw config to command executors while keeping runtime state redacted', async () => {
@@ -185,7 +185,7 @@ describe('rallar-bb runtime core', () => {
         expect(result.value).toEqual({
             password: '<redacted>'
         });
-        expect(selectRallarBlackBoxCurrentConfig(runtime.state())?.rallar).toEqual({
+        expect(getRallarBlackBoxCurrentConfig(runtime.state())?.rallar).toEqual({
             username: 'alice',
             password: '<redacted>'
         });
@@ -213,7 +213,7 @@ describe('rallar-bb runtime core', () => {
             }
         });
 
-        const sendDiagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+        const sendDiagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
 
         expect(sendDiagnostic?.payload).toMatchObject({
@@ -278,10 +278,10 @@ describe('rallar-bb runtime core', () => {
         expect(loadResult.ok).toBe(true);
         expect(runResult.ok).toBe(true);
         expect(state.status).toBe('completed');
-        expect(selectRallarBlackBoxCommandHistory(state).map((result) => result.commandId))
+        expect(getRallarBlackBoxCommandHistory(state).map((result) => result.commandId))
             .toEqual(['load-1', 'configure-1', 'connect-1', 'stats-1', 'run-1']);
-        expect(selectRallarBlackBoxLatestStats(state)?.counters.commands).toBe(3);
-        expect(selectRallarBlackBoxFailures(state)).toEqual([]);
+        expect(getRallarBlackBoxLatestStats(state)?.counters.commands).toBe(3);
+        expect(getRallarBlackBoxFailures(state)).toEqual([]);
     });
 
     it('records validation failures for invalid recipes', async () => {
@@ -301,7 +301,7 @@ describe('rallar-bb runtime core', () => {
         expect(result.ok).toBe(false);
         expect(result.status).toBe('failed');
         expect(state.status).toBe('failed');
-        expect(selectRallarBlackBoxFirstFailure(state)?.commandId).toBe('load-invalid');
+        expect(getRallarBlackBoxFirstFailure(state)?.commandId).toBe('load-invalid');
         expect(result.error?.message).toBe('Recipe requires at least one command.');
     });
 
@@ -319,7 +319,7 @@ describe('rallar-bb runtime core', () => {
         expect(second.ok).toBe(true);
         expect(second.replayed).toBe(true);
         expect(second.value).toEqual(first.value);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId))
+        expect(getRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId))
             .toEqual(['health-1']);
     });
 
@@ -378,7 +378,7 @@ describe('rallar-bb runtime core', () => {
         expect(first.status).toBe('failed');
         expect(second.status).toBe('ok');
         expect(sendCount).toBe(2);
-        expect(selectRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId)).toEqual([
+        expect(getRallarBlackBoxCommandHistory(runtime.state()).map((result) => result.commandId)).toEqual([
             'shared-send-id',
             'run-repeatable-1',
             'shared-send-id',

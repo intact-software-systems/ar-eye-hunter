@@ -2,7 +2,7 @@ import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { Metric } from '../../shared/Metric.tsx';
@@ -29,7 +29,7 @@ export function RallarTracePanel({
     const [severityFilter, setSeverityFilter] = useState<'all' | RallarBlackBoxTestSeverity>('all');
     const [eventLimit, setEventLimit] = useState(100);
     const traceEvents = useMemo(
-        () => selectRallarBlackBoxEvents(state).filter(isRallarTraceEvent),
+        () => getRallarBlackBoxEvents(state).filter(isRallarTraceEvent),
         [state]
     );
     const filteredEvents = useMemo(

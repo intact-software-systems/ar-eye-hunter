@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useMemo } from 'react';
 import { toManualReceivedMessages } from '../../../manual-workbench.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
@@ -13,7 +13,7 @@ export function ReceivedDataInboxPanel({
     onSelectCommand(commandId: string): void;
 }) {
     const received = useMemo(
-        () => toManualReceivedMessages(selectRallarBlackBoxEvents(state)),
+        () => toManualReceivedMessages(getRallarBlackBoxEvents(state)),
         [state]
     );
 

@@ -143,5 +143,5 @@ export {
     validateJsonSchema
 } from './schema/json-schema-validation.ts';
 export * from './schema/rallar-black-box-command-capabilities.ts';
-export * from './selectors.ts';
+export * from './test-state-accessors.ts';
 export * from './wait/wait-for-event.ts';

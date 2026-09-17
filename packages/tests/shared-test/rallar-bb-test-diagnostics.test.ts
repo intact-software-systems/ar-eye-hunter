@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxTestRuntime,
-    selectRallarBlackBoxDiagnostics,
+    toRallarBlackBoxDiagnostics,
     toRallarBlackBoxRuntimeDiagnostic,
     type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
@@ -75,7 +75,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
             send: { data: { text: 'hello' } }
         });
 
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
         expect(diagnostic?.payload).toMatchObject({
             diagnosticTypeId: 'rallar.bb.fake.rtc.send',
@@ -99,7 +99,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
             }
         });
 
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())[0];
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())[0];
         expect(diagnostic).toMatchObject({
             topic: 'rallar.browser.rtc.data_channel_label_mismatch',
             connection: 'aliceRtc',
@@ -147,7 +147,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 }
             }
         });
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.rtc.send_failed');
 
         expect(result.status).toBe('failed');

@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../manual-workbench.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
@@ -22,7 +22,7 @@ export function commandCenterGlobalValuesFromState(
     authSession?: AuthSession,
     diagnosticContext?: LegacyDiagnosticContext
 ): CommandCenterGlobalValues {
-    const config = selectRallarBlackBoxCurrentConfig(state);
+    const config = getRallarBlackBoxCurrentConfig(state);
     const configRallar = optionalRecord(config?.rallar);
     return {
         apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,

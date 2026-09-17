@@ -1,9 +1,9 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxFailures,
-    selectRallarBlackBoxFirstFailure
-} from '@shared-test/rallar-bb-test/selectors.ts';
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxFailures,
+    getRallarBlackBoxFirstFailure
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
@@ -211,9 +211,9 @@ export function useRunnerRecipesController({
         ? 'This shared-test catalog entry is CLI-only from the SPA. Use Copy command or Advanced artifact import.'
         : runnerDisabledReason(readiness, 'connected-agents');
     const localRunning = busy || launchState === 'preparing' || launchState === 'running';
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const failures = selectRallarBlackBoxFailures(state);
-    const firstFailure = selectRallarBlackBoxFirstFailure(state) ?? failures[0];
+    const history = getRallarBlackBoxCommandHistory(state);
+    const failures = getRallarBlackBoxFailures(state);
+    const firstFailure = getRallarBlackBoxFirstFailure(state) ?? failures[0];
     const latestResult = history.at(-1);
 
     useEffect(() => {

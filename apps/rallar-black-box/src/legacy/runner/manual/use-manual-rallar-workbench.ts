@@ -1,4 +1,4 @@
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { ManualActionHistoryEntry } from '../../../manual-workbench.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
@@ -41,7 +41,7 @@ export function useManualRallarWorkbench(options: ManualRallarWorkbenchOptions) 
         localError,
         recipeVisible,
         setRecipeVisible,
-        events: selectRallarBlackBoxEvents(options.state),
+        events: getRallarBlackBoxEvents(options.state),
         runManualAction: actions.runManualAction,
         runRtcMatrix: actions.runRtcMatrix,
         runRtcNackProbe: actions.runRtcNackProbe,

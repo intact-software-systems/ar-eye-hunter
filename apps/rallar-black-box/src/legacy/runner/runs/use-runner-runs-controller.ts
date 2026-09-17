@@ -2,10 +2,10 @@ import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distrib
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxFailures,
-    selectRallarBlackBoxLatestStats
-} from '@shared-test/rallar-bb-test/selectors.ts';
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxFailures,
+    getRallarBlackBoxLatestStats
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
@@ -59,9 +59,9 @@ export function useRunnerRunsController({
     control,
     preferredDistributedRun
 }: UseRunnerRunsControllerInput) {
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const failures = selectRallarBlackBoxFailures(state);
-    const latestStats = selectRallarBlackBoxLatestStats(state);
+    const history = getRallarBlackBoxCommandHistory(state);
+    const failures = getRallarBlackBoxFailures(state);
+    const latestStats = getRallarBlackBoxLatestStats(state);
     const recentHistory = [...history].reverse().slice(0, 12);
     const initialSyntheticSeed = useMemo<SyntheticDistributedRunSeed | undefined>(
         () => {

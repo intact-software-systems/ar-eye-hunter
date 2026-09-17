@@ -34,8 +34,8 @@ import {
     createRallarBlackBoxTestRuntime,
     DISTRIBUTED_RECIPE_CATALOG as SHARED_DISTRIBUTED_RECIPE_CATALOG,
     distributedRecipeMatches as sharedDistributedRecipeMatches,
-    projectDistributedRecipeCatalog,
-    selectRallarBlackBoxCommandHistory
+    getRallarBlackBoxCommandHistory,
+    projectDistributedRecipeCatalog
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
@@ -835,7 +835,7 @@ describe('distributed recipes catalog', () => {
             expect(result.ok, result.error?.message).toBe(true);
         }
 
-        const history = selectRallarBlackBoxCommandHistory(runtime.state());
+        const history = getRallarBlackBoxCommandHistory(runtime.state());
 
         expect(history).toHaveLength(9);
         expect(history.map((result) => result.commandId)).toEqual(expect.arrayContaining([

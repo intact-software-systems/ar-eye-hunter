@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
-    selectRallarBlackBoxEvents,
-    selectRallarBlackBoxMessages,
+    getRallarBlackBoxEvents,
+    toRallarBlackBoxMessages,
     type RallarBlackBoxBrowserRallarConnectionConfig,
     type RallarBlackBoxBrowserRallarRuntime
 } from '../../../shared-test/rallar-bb-test/mod.ts';
@@ -54,10 +54,10 @@ describe('rallar-bb runtime sockets', () => {
             }
         });
         expect(sockets[0].sent).toEqual(['{"text":"hello"}']);
-        expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
+        expect(toRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             data: '{"text":"hello"}'
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.closed')).toBe(true);
+        expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.closed')).toBe(true);
     });
 
     it('refuses a ws.send without data before writing to the raw socket or the Rallar signaling', async () => {
@@ -219,7 +219,7 @@ describe('rallar-bb runtime sockets', () => {
         expect(health.value).toMatchObject({
             webSockets: []
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.cleanup.resources_closed')).toBe(true);
+        expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.cleanup.resources_closed')).toBe(true);
     });
 
     it('routes ws.send through browser Rallar signaling when no raw socket is open', async () => {
@@ -291,7 +291,7 @@ describe('rallar-bb runtime sockets', () => {
             connection: 'rallarApi',
             via: 'rallar-signaling-websocket'
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.sent_via_rallar_signaling')).toBe(true);
+        expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.ws.sent_via_rallar_signaling')).toBe(true);
     });
 
     it('prefers browser Rallar signaling for app WS envelopes even when a raw socket is open', async () => {

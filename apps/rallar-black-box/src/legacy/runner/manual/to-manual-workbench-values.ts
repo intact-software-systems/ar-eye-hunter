@@ -8,7 +8,7 @@ import {
     decodeBoolean,
     decodeFiniteNumber
 } from '@shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -29,7 +29,7 @@ export interface ManualWorkbenchValuesInput {
 }
 
 export function toManualWorkbenchValues(input: ManualWorkbenchValuesInput): ManualWorkbenchValues {
-    const config = selectRallarBlackBoxCurrentConfig(input.state);
+    const config = getRallarBlackBoxCurrentConfig(input.state);
     return {
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
         ...toManualTargetValues(input, config),

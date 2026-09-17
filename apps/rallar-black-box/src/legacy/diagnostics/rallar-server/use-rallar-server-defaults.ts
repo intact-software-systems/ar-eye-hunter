@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useMemo } from 'react';
 import {
     createRallarServerRestCollectionTemplates
@@ -24,7 +24,7 @@ export interface RallarServerDefaults {
 }
 
 export function useRallarServerDefaults(input: UseRallarServerControllerInput): RallarServerDefaults {
-    const config = selectRallarBlackBoxCurrentConfig(input.state);
+    const config = getRallarBlackBoxCurrentConfig(input.state);
     const variables = useRallarServerVariables(input, config);
     const { apiBaseUrl } = input.globalValues;
     const defaultDraft = useMemo<RallarServerWorkbenchDraft>(() => ({

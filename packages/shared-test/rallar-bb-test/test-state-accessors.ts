@@ -7,55 +7,55 @@ import type {
     RallarBlackBoxTestStatsSnapshot
 } from './rallar-black-box-test-contracts.ts';
 
-export function selectRallarBlackBoxCurrentConfig(
+export function getRallarBlackBoxCurrentConfig(
     state: RallarBlackBoxTestState
 ): RallarBlackBoxTestConfig | undefined {
     return state.currentConfig;
 }
 
-export function selectRallarBlackBoxActiveCommand(
+export function getRallarBlackBoxActiveCommand(
     state: RallarBlackBoxTestState
 ): (RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>) | undefined {
     return state.activeCommand;
 }
 
-export function selectRallarBlackBoxCommandHistory(
+export function getRallarBlackBoxCommandHistory(
     state: RallarBlackBoxTestState
 ): readonly RallarBlackBoxTestResult[] {
     return state.commandHistory;
 }
 
-export function selectRallarBlackBoxEvents(
+export function getRallarBlackBoxEvents(
     state: RallarBlackBoxTestState
 ): readonly RallarBlackBoxTestEvent[] {
     return state.events;
 }
 
-export function selectRallarBlackBoxMessages(
+export function toRallarBlackBoxMessages(
     state: RallarBlackBoxTestState
 ): readonly RallarBlackBoxTestEvent[] {
     return state.events.filter((event) => event.kind === 'message');
 }
 
-export function selectRallarBlackBoxDiagnostics(
+export function toRallarBlackBoxDiagnostics(
     state: RallarBlackBoxTestState
 ): readonly RallarBlackBoxTestEvent[] {
     return state.events.filter((event) => event.kind === 'diagnostic');
 }
 
-export function selectRallarBlackBoxFailures(
+export function getRallarBlackBoxFailures(
     state: RallarBlackBoxTestState
 ): readonly RallarBlackBoxTestResult[] {
     return state.failures;
 }
 
-export function selectRallarBlackBoxLatestStats(
+export function getRallarBlackBoxLatestStats(
     state: RallarBlackBoxTestState
 ): RallarBlackBoxTestStatsSnapshot | undefined {
     return state.latestStats;
 }
 
-export function selectRallarBlackBoxFirstFailure(
+export function getRallarBlackBoxFirstFailure(
     state: RallarBlackBoxTestState
 ): RallarBlackBoxTestResult | undefined {
     return state.failures[0];

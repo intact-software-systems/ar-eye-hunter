@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxCommandHistory } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { RunnerAdvancedSurfaceId } from '../../../app-tabs.ts';
@@ -162,7 +162,7 @@ export function RunnerAdvancedPanel({
                         globalValues={globalValues}
                         globalValuesEdited={globalValuesEdited}
                         busy={busy}
-                        history={selectRallarBlackBoxCommandHistory(state)}
+                        history={getRallarBlackBoxCommandHistory(state)}
                         selectedCommandId={selectedCommandId}
                         onSelectCommand={onSelectCommand}
                         onGlobalValueChange={onGlobalValueChange}

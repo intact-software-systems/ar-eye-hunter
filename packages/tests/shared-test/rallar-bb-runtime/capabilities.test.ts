@@ -2,9 +2,9 @@ import * as timers from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
-    selectRallarBlackBoxDiagnostics,
-    selectRallarBlackBoxEvents,
-    selectRallarBlackBoxMessages,
+    getRallarBlackBoxEvents,
+    toRallarBlackBoxDiagnostics,
+    toRallarBlackBoxMessages,
     type RallarBlackBoxBrowserRallarConnectionConfig,
     type RallarBlackBoxBrowserRallarRuntime,
     type RallarBlackBoxBrowserRallarRuntimeMethod,
@@ -141,7 +141,7 @@ describe('rallar-bb runtime capabilities', () => {
                 text: 'hello'
             }
         });
-        expect(selectRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
+        expect(toRallarBlackBoxMessages(runtime.state())[0].payload).toEqual({
             roomId: undefined,
             laneId: undefined,
             peerId: undefined,
@@ -311,7 +311,7 @@ describe('rallar-bb runtime capabilities', () => {
                 workspaceId: 'default'
             }
         });
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
+        expect(toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
             'rallar.bb.crdt.opened',
             'rallar.bb.crdt.applied',
             'rallar.bb.crdt.read',
@@ -441,7 +441,7 @@ describe('rallar-bb runtime capabilities', () => {
             intentTypeId: 'app.test.director.intent',
             outputTypeId: 'app.test.director.output'
         });
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
+        expect(toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toEqual(expect.arrayContaining([
             'rallar.bb.director.appointed',
             'rallar.bb.director.status',
             'rallar.bb.director.relay_started',
@@ -472,7 +472,7 @@ describe('rallar-bb runtime capabilities', () => {
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toContain('does not support CRDT commands');
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
+        expect(toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
             'rallar.bb.crdt.failed'
         );
     });
@@ -497,7 +497,7 @@ describe('rallar-bb runtime capabilities', () => {
 
         expect(result.ok).toBe(false);
         expect(result.error?.message).toContain('does not support director commands');
-        expect(selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
+        expect(toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic)).toContain(
             'rallar.bb.director.failed'
         );
     });
@@ -570,7 +570,7 @@ describe('rallar-bb runtime capabilities', () => {
             }
         });
         const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
-        const topics = selectRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic);
+        const topics = toRallarBlackBoxDiagnostics(runtime.state()).map((event) => event.topic);
 
         expect(result.ok).toBe(true);
         expect(sendStarts).toHaveLength(5);
@@ -625,7 +625,7 @@ describe('rallar-bb runtime capabilities', () => {
             }
         });
         const value = result.value as RallarBlackBoxTestRtcStreamResultValue;
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.rtc.stream_failed');
 
         expect(result.ok).toBe(false);
@@ -763,6 +763,6 @@ describe('rallar-bb runtime capabilities', () => {
                 token: '<redacted>'
             }
         });
-        expect(selectRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.http.response')).toBe(true);
+        expect(getRallarBlackBoxEvents(runtime.state()).some((event) => event.topic === 'rallar.bb.http.response')).toBe(true);
     });
 });

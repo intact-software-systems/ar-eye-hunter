@@ -1,5 +1,5 @@
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
+import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
 import {
@@ -25,7 +25,7 @@ export function RallarBrowserTraceBar({
     onOpenTrace(): void;
     onOpenEvents(): void;
 }) {
-    const events = selectRallarBlackBoxEvents(state);
+    const events = getRallarBlackBoxEvents(state);
     const rallarEvents = useMemo(
         () => events.filter(isRallarBrowserEvent),
         [events]
