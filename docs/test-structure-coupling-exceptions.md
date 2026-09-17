@@ -1911,15 +1911,30 @@ moved or changed test.
       "id": "control-agent-disposed-never-connects",
       "domain": "Black-box control agent disposal",
       "owner": "Shared Test maintainers",
-      "summary": "A disposed control agent rejects start and opens no control socket. Executable assertion: \u201cdoes not start or connect after disposal\u201d.",
+      "summary": "A disposed control agent returns a start failure and opens no control socket. Executable assertion: \u201cdoes not start or connect after disposal\u201d.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#does not start or connect after disposal",
-      "coverageRelation": "The test disposes an autoConnect agent, awaits the rejected start, and observes the control client's connect port receive nothing.",
+      "coverageRelation": "The test disposes an autoConnect agent, awaits the failed start, and observes the control client's connect port receive nothing.",
       "interactionRequirement": {
         "interactionKind": "absence",
         "ownedPort": "RallarBlackBoxControlClient.connect socket-opening port",
         "observableEffect": "Starting a disposed agent produces no call to the socket-opening port.",
         "requiredConstraint": "Disposal is final, so a disposed agent never opens a control socket even if start is called again.",
         "failureRationale": "A socket opened after disposal registers an agent nothing can drive or shut down, and the control run then waits on results the torn-down runtime can never produce."
+      }
+    },
+    {
+      "id": "control-agent-invalid-provider-never-connects",
+      "domain": "Black-box control agent provider configuration",
+      "owner": "Shared Test maintainers",
+      "summary": "A control agent whose browser-rallar provider configuration is invalid returns the configuration failure and opens no control socket. Executable assertion: \u201creturns an invalid browser-rallar provider config as the start failure\u201d.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#returns an invalid browser-rallar provider config as the start failure",
+      "coverageRelation": "The test bootstraps an autoConnect browser-rallar agent without a real API base URL, awaits the failed start, and observes the control client's connect port receive nothing while the snapshot reports the failure.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RallarBlackBoxControlClient.connect socket-opening port",
+        "observableEffect": "Starting an agent with an invalid provider configuration produces no call to the socket-opening port.",
+        "requiredConstraint": "An agent that cannot run browser-rallar commands must not register, so no control run dispatches work to it.",
+        "failureRationale": "A registered agent with an unusable provider accepts commands it can only fail, turning a configuration error into failed run results on every targeted recipe."
       }
     },
     {
@@ -4894,11 +4909,22 @@ moved or changed test.
       "id": "test-structure-coupling-bbc79fe630b040de",
       "path": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts",
       "kind": "mock-invocation-count-or-order",
+      "contract": "control-agent-invalid-provider-never-connects",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Shared Test maintainers",
+      "rationale": "The failed start and snapshot prove only that validation ran; absence at the socket-opening port proves the misconfigured agent never registered.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#returns an invalid browser-rallar provider config as the start failure"
+    },
+    {
+      "id": "test-structure-coupling-7f89327a2716a11e",
+      "path": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts",
+      "kind": "mock-invocation-count-or-order",
       "contract": "control-agent-disposed-never-connects",
       "disposition": "durable-boundary",
       "boundary": "interaction",
       "owner": "Shared Test maintainers",
-      "rationale": "The rejected start proves only that the guard threw; absence at the socket-opening port proves the disposed agent left no registered socket behind.",
+      "rationale": "The failed start proves only that the guard returned; absence at the socket-opening port proves the disposed agent left no registered socket behind.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-browser-control-agent.test.ts#does not start or connect after disposal"
     },
     {
