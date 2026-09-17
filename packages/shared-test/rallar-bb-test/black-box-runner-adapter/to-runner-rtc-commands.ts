@@ -54,7 +54,7 @@ export function toRunnerCommandId(input: RunnerCommandIdInput): string {
         request.repeatIndex,
         input.sequence
     ].filter((part) => part !== undefined && part !== '').join('-');
-    return String(request.commandId ?? request.rallarCommandId ?? generated);
+    return String(request.commandId ?? generated);
 }
 
 function toRallarScope(request: RallarBlackBoxTestRecord): RallarBlackBoxTestRecord | undefined {

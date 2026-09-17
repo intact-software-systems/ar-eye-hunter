@@ -5,7 +5,10 @@ import {
     toRallarBlackBoxRallarConfig,
     toRemoteControlConfig
 } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/to-remote-control-config.ts';
-import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import {
+    resolveRallarBlackBoxConfigProviderMode,
+    validateRallarBlackBoxProviderConfig
+} from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS, resolveRallarBlackBoxProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('browser control-agent bootstrap config', () => {
@@ -29,6 +32,22 @@ describe('browser control-agent bootstrap config', () => {
         expect(config.rallarRegister).toBe(true);
         expect(config.fleetTags).toEqual(['canary', 'rtc']);
         expect(config.source).toBe('url');
+    });
+
+    it('selects the provider and control mode only from their canonical launch keys', () => {
+        expect(resolveRallarBlackBoxBootstrapConfig('?mode=control-agent&providerMode=browser-rallar', {}, ''))
+            .toMatchObject({ mode: 'local-workbench', providerMode: 'simulated' });
+        expect(resolveRallarBlackBoxBootstrapConfig('', { VITE_RALLAR_BOOTSTRAP_MODE: 'control-agent' }, ''))
+            .toMatchObject({ mode: 'local-workbench' });
+        expect(resolveRallarBlackBoxBootstrapConfig('', { VITE_RALLAR_PROVIDER_MODE: 'browser-rallar' }, ''))
+            .toMatchObject({ providerMode: 'simulated', source: 'default' });
+    });
+
+    it('reads a runtime config provider mode only from control or defaults providerMode', () => {
+        expect(resolveRallarBlackBoxConfigProviderMode({
+            control: { provider: 'browser-rallar' },
+            defaults: { provider: 'browser-rallar' }
+        })).toBe('simulated');
     });
 
     it('writes the heartbeat, stats and runner agent count defaults explicitly', () => {

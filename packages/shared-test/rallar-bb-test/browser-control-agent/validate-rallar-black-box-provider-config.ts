@@ -14,10 +14,7 @@ export function resolveRallarBlackBoxConfigProviderMode(
     const control = decodeRecord(config?.control);
     const defaults = decodeRecord(config?.defaults);
     return resolveRallarBlackBoxProviderMode(
-        decodeNonBlankText(control.providerMode) ??
-            decodeNonBlankText(control.provider) ??
-            decodeNonBlankText(defaults.providerMode) ??
-            decodeNonBlankText(defaults.provider)
+        decodeNonBlankText(control.providerMode) ?? decodeNonBlankText(defaults.providerMode)
     );
 }
 

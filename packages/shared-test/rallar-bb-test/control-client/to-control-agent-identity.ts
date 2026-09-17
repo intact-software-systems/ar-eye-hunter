@@ -104,9 +104,7 @@ function toRallarIdentityFacts({ config, rallar, defaults }: IdentityConfigRecor
         clientId: decodeTrimmedText(rallar.clientId) ?? principalId,
         username: decodeTrimmedText(rallar.username) ?? decodeTrimmedText(config.actor) ?? principalId,
         sessionId: decodeTrimmedText(rallar.sessionId) ?? decodeTrimmedText(config.sessionId),
-        clientInstanceId: decodeTrimmedText(rallar.clientInstanceId) ??
-            decodeTrimmedText(rallar.instanceId) ??
-            principalId,
+        clientInstanceId: decodeTrimmedText(rallar.clientInstanceId) ?? principalId,
         applicationId: decodeTrimmedText(defaults.applicationId) ??
             decodeTrimmedText(rallar.applicationId) ??
             decodeTrimmedText(scope.applicationId),

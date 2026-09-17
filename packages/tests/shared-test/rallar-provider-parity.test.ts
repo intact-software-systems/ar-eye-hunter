@@ -12,6 +12,7 @@ import type {
 import {
     compareRallarBlackBoxProviderParityReports,
     createRallarBlackBoxProviderParityRecipe,
+    createRallarBlackBoxRtcClient,
     createRallarBlackBoxRtcProvider,
     createRallarBlackBoxTestRuntime,
     normalizeBlackBoxRunnerParityReport,
@@ -305,6 +306,29 @@ describe('rallar provider parity helpers', () => {
                 connection: 'aliceRtc'
             }
         });
+    });
+
+    it('names facade adapter commands from the runner commandId or the generated sequence', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+        const request = { roomId: 'rallar-black-box-room', applicationId: 'rallar-server' };
+        const generated = createRallarBlackBoxRtcClient(
+            runtime,
+            { ...request, connection: 'aliceRtc', rallarCommandId: 'unread-command-id' },
+            { commandIdPrefix: 'rallar-bb' }
+        );
+        const named = createRallarBlackBoxRtcClient(
+            runtime,
+            { ...request, connection: 'bobRtc', commandId: 'runner-connect' },
+            { commandIdPrefix: 'rallar-bb' }
+        );
+
+        await generated.connect();
+        await named.connect();
+
+        expect(runtime.state().commandHistory.map((result) => result.commandId)).toEqual([
+            'rallar-bb-aliceRtc-connect-1',
+            'runner-connect'
+        ]);
     });
 
     it('keeps the remote SPA provider mapping aligned with the portable recipe commands', async () => {

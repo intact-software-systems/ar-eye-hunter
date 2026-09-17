@@ -399,6 +399,34 @@ describe('shared rallar black-box control client', () => {
         }
     });
 
+    it('names the client instance from rallar.clientInstanceId, or else the principal', async () => {
+        const socket = new FakeControlSocket();
+        const runtime = createRallarBlackBoxTestRuntime();
+        await runtime.execute({
+            kind: 'configure',
+            commandId: 'configure-instance-agent',
+            config: {
+                runId: 'run-1',
+                agentId: 'agent-1',
+                rallar: { principalId: 'alice', instanceId: 'unread-instance' }
+            }
+        });
+        const client = new RallarBlackBoxControlClient(toClientOptions(runtime, () => socket));
+
+        try {
+            connectToRunOne(client);
+            socket.open();
+
+            expect(toSentEnvelopes(socket)[0]).toMatchObject({
+                kind: 'register',
+                identity: { principalId: 'alice', clientInstanceId: 'alice' }
+            });
+        }
+        finally {
+            client.dispose();
+        }
+    });
+
     it('reports CRDT runtime capability in register identity when configured for browser Rallar', async () => {
         const socket = new FakeControlSocket();
         const runtime = createRallarBlackBoxTestRuntime();

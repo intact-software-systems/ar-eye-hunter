@@ -45,7 +45,7 @@ Useful query parameters:
 - `v=1`: select the current Recipe Console URL schema
 - `experience=recipe-console` or `experience=legacy`: select the product or preserved diagnostic experience
 - `view=execute`, `monitor`, `analyze`, `tune`, `fleet`, or `advanced`: select a Recipe Console primary view
-- `mode=control` or `mode=control-agent`: start in remote control mode
+- `mode=control`: start in remote control mode
 - `autoConnect=1`: connect to the control server after bootstrap
 - `provider=simulated` or `provider=browser-rallar`: select simulated or real-provider execution mode
 - `controlUrl`: WebSocket URL, for example `ws://localhost:5180/control`

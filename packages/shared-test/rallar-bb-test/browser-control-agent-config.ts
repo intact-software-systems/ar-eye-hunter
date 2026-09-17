@@ -89,7 +89,6 @@ const BOOTSTRAP_URL_KEYS = [
     'controlUrl',
     'autoConnect',
     'provider',
-    'providerMode',
     'runId',
     'agentId',
     'controlToken',
@@ -131,7 +130,6 @@ const BOOTSTRAP_ENV_KEYS = [
     'VITE_RALLAR_CONTROL_URL',
     'VITE_RALLAR_AUTO_CONNECT',
     'VITE_RALLAR_PROVIDER',
-    'VITE_RALLAR_PROVIDER_MODE',
     'VITE_RALLAR_RUN_ID',
     'VITE_RALLAR_AGENT_ID',
     'VITE_RALLAR_CONTROL_TOKEN',
@@ -210,10 +208,7 @@ function resolveControlTargetBootstrap(
     return {
         mode: autoConnect ? 'control-agent' : mode,
         autoConnect,
-        providerMode: resolveRallarBlackBoxProviderMode(
-            resolveLaunchText(sources, 'provider', 'VITE_RALLAR_PROVIDER') ??
-                resolveLaunchText(sources, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE')
-        ),
+        providerMode: resolveRallarBlackBoxProviderMode(resolveLaunchText(sources, 'provider', 'VITE_RALLAR_PROVIDER')),
         controlUrl: resolveLaunchText(sources, 'controlUrl', 'VITE_RALLAR_CONTROL_URL') ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlUrl,
         runId: resolveLaunchText(sources, 'runId', 'VITE_RALLAR_RUN_ID') ??
@@ -356,7 +351,7 @@ function resolveFleetLocation(sources: BootstrapSources): RallarBlackBoxGeoLocat
 
 function resolveBootstrapMode(sources: BootstrapSources): RallarBlackBoxBootstrapConfig['mode'] {
     const mode = sources.params.get('mode') ?? sources.env.VITE_RALLAR_BOOTSTRAP_MODE;
-    return mode === 'control' || mode === 'control-agent' ? 'control-agent' : 'local-workbench';
+    return mode === 'control' ? 'control-agent' : 'local-workbench';
 }
 
 function resolveBootstrapSource(sources: BootstrapSources): RallarBlackBoxBootstrapConfig['source'] {
