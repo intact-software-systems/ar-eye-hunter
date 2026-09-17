@@ -10,12 +10,10 @@ export const RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT = 40_000;
 export const RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES = 16 * 1_024 * 1_024;
 export const RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES = 48 * 1_024 * 1_024;
 
-export interface RecipeConsoleScaleFixtureOptions {
-    /** Split 80/20 between events and results. Cannot be combined with explicit counts. */
-    readonly artifactRowCount?: number;
-    readonly eventCount?: number;
-    readonly resultCount?: number;
-}
+/** A total source row count split 80/20 between events and results, or explicit counts per stream. */
+export type RecipeConsoleScaleFixtureSize =
+    | Readonly<{ artifactRowCount: number; }>
+    | Readonly<{ eventCount: number; resultCount: number; }>;
 
 export interface RecipeConsoleScaleFixture {
     readonly files: DistributedRunArtifactFiles;
@@ -74,14 +72,17 @@ const ACTIONABLE_FAILURE = 'recipe-console-scale-actionable-failure';
 const ACTIONABLE_DIAGNOSTIC = 'recipe-console-scale-actionable-diagnostic';
 const SCALE_POSITIONS: readonly ScalePosition[] = ['first', 'middle', 'last'];
 
-/**
- * Creates deterministic distributed-run evidence for scale and profiling tests.
- * The returned metadata describes the source JSONL rows and UTF-8 file bytes.
- */
-export function createRecipeConsoleScaleFixture(
-    options: RecipeConsoleScaleFixtureOptions = {}
-): RecipeConsoleScaleFixture {
-    const counts = resolveScaleCounts(options);
+export function createDefaultRecipeConsoleScaleFixture(): RecipeConsoleScaleFixture {
+    return createRecipeConsoleScaleFixture({
+        eventCount: RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT,
+        resultCount: RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT
+    });
+}
+
+/** The size must pass validateRecipeConsoleScaleFixtureSize; the byte metadata counts the UTF-8 file text. */
+export function createRecipeConsoleScaleFixture(size: RecipeConsoleScaleFixtureSize): RecipeConsoleScaleFixture {
+    assertValidScaleFixtureSize(size);
+    const counts = toScaleCounts(size);
     const plan: ScaleFixturePlan = {
         counts,
         events: toScaleSourceStream('event', counts.events),
@@ -110,35 +111,38 @@ export function createRecipeConsoleScaleFixture(
     };
 }
 
-function resolveScaleCounts(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
-    if (options.artifactRowCount !== undefined) {
-        return resolveScaleCountsFromTotal(options);
+export function validateRecipeConsoleScaleFixtureSize(size: RecipeConsoleScaleFixtureSize): readonly string[] {
+    const maximum = RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT;
+    if ('artifactRowCount' in size) {
+        return [
+            ...('eventCount' in size || 'resultCount' in size
+                ? ['artifactRowCount cannot be combined with eventCount or resultCount.']
+                : []),
+            ...validateScaleRowCount(size.artifactRowCount, 'artifactRowCount', 6),
+            ...(size.artifactRowCount > maximum ? [`artifactRowCount must not exceed ${maximum} source rows.`] : [])
+        ];
     }
-    const events = options.eventCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT;
-    const results = options.resultCount ?? RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT;
-    assertValidCount(events, 'eventCount', 3);
-    assertValidCount(results, 'resultCount', 3);
-    if (events > RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT - results) {
-        throw new Error(
-            `eventCount and resultCount must not exceed ${RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT} source rows in total.`
-        );
-    }
-    return { events, results };
+    return [
+        ...validateScaleRowCount(size.eventCount, 'eventCount', 3),
+        ...validateScaleRowCount(size.resultCount, 'resultCount', 3),
+        ...(size.eventCount > maximum - size.resultCount
+            ? [`eventCount and resultCount must not exceed ${maximum} source rows in total.`]
+            : [])
+    ];
 }
 
-function resolveScaleCountsFromTotal(options: RecipeConsoleScaleFixtureOptions): ScaleCounts {
-    const sourceRows = options.artifactRowCount ?? 0;
-    if (options.eventCount !== undefined || options.resultCount !== undefined) {
-        throw new Error('artifactRowCount cannot be combined with eventCount or resultCount.');
+function toScaleCounts(size: RecipeConsoleScaleFixtureSize): ScaleCounts {
+    if (!('artifactRowCount' in size)) {
+        return { events: size.eventCount, results: size.resultCount };
     }
-    assertValidCount(sourceRows, 'artifactRowCount', 6);
-    if (sourceRows > RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT) {
-        throw new Error(
-            `artifactRowCount must not exceed ${RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT} source rows.`
-        );
-    }
-    const results = Math.max(3, Math.round(sourceRows / 5));
-    return { events: sourceRows - results, results };
+    const results = Math.max(3, Math.round(size.artifactRowCount / 5));
+    return { events: size.artifactRowCount - results, results };
+}
+
+function validateScaleRowCount(value: number, label: string, minimum: number): readonly string[] {
+    return Number.isSafeInteger(value) && value >= minimum
+        ? []
+        : [`${label} must be a safe integer greater than or equal to ${minimum}.`];
 }
 
 function toScaleArtifactFiles(plan: ScaleFixturePlan): DistributedRunArtifactFiles {
@@ -187,9 +191,11 @@ function assertBrowserIntakeLimits(bytes: RecipeConsoleScaleFixtureBytes): void 
     }
 }
 
-function assertValidCount(value: number, label: string, minimum: number): void {
-    if (!Number.isSafeInteger(value) || value < minimum) {
-        throw new Error(`${label} must be a safe integer greater than or equal to ${minimum}.`);
+/** Callers validate the requested size first; an invalid size here is a programming error. */
+function assertValidScaleFixtureSize(size: RecipeConsoleScaleFixtureSize): void {
+    const issues = validateRecipeConsoleScaleFixtureSize(size);
+    if (issues.length > 0) {
+        throw new Error(issues.join(' '));
     }
 }
 

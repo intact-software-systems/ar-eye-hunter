@@ -4,7 +4,10 @@ import { access, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { createAnalyzeArtifactModel } from '../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import { searchDistributedArtifactEvidence } from '../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-search.ts';
-import { createRecipeConsoleScaleFixture } from '../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import {
+    createRecipeConsoleScaleFixture,
+    validateRecipeConsoleScaleFixtureSize
+} from '../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const DEFAULT_SIZES = [500, 2_000, 15_000] as const;
 const DEFAULT_WARMUP_COUNT = 1;
@@ -597,6 +600,12 @@ function parseSizes(value: string): readonly number[] {
     const sizes = value.split(',').map((part, index) => parsePositiveInteger(`sizes[${index}]`, part));
     if (sizes.length === 0 || new Set(sizes).size !== sizes.length) {
         throw new Error('--sizes must contain one or more unique positive integers.');
+    }
+    const fixtureIssues = sizes.flatMap((artifactRowCount) =>
+        validateRecipeConsoleScaleFixtureSize({ artifactRowCount })
+    );
+    if (fixtureIssues.length > 0) {
+        throw new Error(`--sizes: ${fixtureIssues.join(' ')}`);
     }
     return sizes;
 }

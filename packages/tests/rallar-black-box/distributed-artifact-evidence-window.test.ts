@@ -20,7 +20,11 @@ import {
     type DistributedArtifactEvidenceCursor
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
-import { createRecipeConsoleScaleFixture, type RecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import {
+    createDefaultRecipeConsoleScaleFixture,
+    createRecipeConsoleScaleFixture,
+    type RecipeConsoleScaleFixture
+} from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 function inputForFixture(
     fixture: RecipeConsoleScaleFixture
@@ -58,7 +62,7 @@ function decodeCursorBody(cursor: DistributedArtifactEvidenceCursor): JsonRecord
 
 describe('distributed artifact evidence catalog windows', () => {
     it('preserves the legacy index/search contract while traversing all 15k evidence without gaps', async () => {
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
         const { index, catalog } = await deriveDistributedArtifactEvidenceCollections(
             inputForFixture(fixture)
         );

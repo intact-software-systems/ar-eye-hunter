@@ -2,7 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Locator, type Pag
 import {
     createRecipeConsoleControlScaleFixture
 } from '../../../packages/shared-test/rallar-bb-test/recipe-console-control-scale-fixture.ts';
-import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import { createDefaultRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 import { createAnalyzeLooseFiles, type AnalyzeUploadFile } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import {
@@ -49,7 +49,7 @@ test(
             document.documentElement.dir = 'rtl';
         });
 
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
         expect(fixture.counts).toEqual({
             events: 12_000,
             results: 3_000,

@@ -20,7 +20,10 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { createRecipeConsoleTuneScaleFixture } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
+import {
+    createDefaultRecipeConsoleTuneScaleFixture,
+    createRecipeConsoleTuneScaleFixture
+} from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -336,7 +339,7 @@ describe('Recipe Console Tune pressure UI', () => {
     });
 
     it('indexes and reaches a late long-bidi pointer among 24,002 editable knobs', async () => {
-        const fixture = createRecipeConsoleTuneScaleFixture();
+        const fixture = createDefaultRecipeConsoleTuneScaleFixture();
         const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,
@@ -384,7 +387,7 @@ describe('Recipe Console Tune pressure UI', () => {
     });
 
     it('keeps an open queried knob page stable across equivalent re-inventory', async () => {
-        const fixture = createRecipeConsoleTuneScaleFixture();
+        const fixture = createDefaultRecipeConsoleTuneScaleFixture();
         const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,

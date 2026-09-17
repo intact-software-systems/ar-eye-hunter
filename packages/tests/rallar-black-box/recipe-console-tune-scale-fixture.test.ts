@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import { validateDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
+    createDefaultRecipeConsoleTuneScaleFixture,
     createRecipeConsoleTuneScaleFixture,
     RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT,
     RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND
@@ -22,8 +23,8 @@ describe('Recipe Console Tune scale fixture', () => {
     });
 
     it('creates a valid 2,000-command stream recipe with 24,002 unique editable knobs', () => {
-        const fixture = createRecipeConsoleTuneScaleFixture();
-        const second = createRecipeConsoleTuneScaleFixture();
+        const fixture = createDefaultRecipeConsoleTuneScaleFixture();
+        const second = createDefaultRecipeConsoleTuneScaleFixture();
         const validation = validateDistributedRunManifest(fixture.manifest);
         const inventory = computeDistributedRunTuningInventory(fixture.manifest);
 

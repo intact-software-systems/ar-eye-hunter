@@ -11,7 +11,7 @@ import {
     ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-request-boundary.ts';
 import { createAnalyzeWorkerRuntime } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-runtime.ts';
-import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import { createDefaultRecipeConsoleScaleFixture, createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 describe('Recipe Console Analyze worker runtime', () => {
     it('accepts transferred bytes without parsing and derives one bounded model only after start', async () => {
@@ -374,7 +374,7 @@ describe('Recipe Console Analyze worker runtime', () => {
     });
 
     it('finds first, middle, and last scale evidence and returns only bounded worker projections', async () => {
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
         const harness = runtimeHarness();
         await harness.runtime.handle(offer(9, fixture));
         await harness.runtime.handle({ type: 'start', operationGeneration: 9 });

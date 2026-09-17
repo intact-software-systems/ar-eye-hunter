@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import {
-    createRecipeConsoleTuneScaleFixture,
+    createDefaultRecipeConsoleTuneScaleFixture,
     RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND
 } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 import { installRecipeConsoleTuneFixture, tuneScaleRunNeedles } from './recipe-console-tune-fixture.ts';
@@ -213,7 +213,7 @@ export async function verifyTuneScalePressure(browser: Browser): Promise<void> {
                 });
                 const knobOptions = knobPopup.getByRole('option');
                 await expect(knobOptions).toHaveCount(100);
-                const knobFixture = createRecipeConsoleTuneScaleFixture();
+                const knobFixture = createDefaultRecipeConsoleTuneScaleFixture();
                 for (
                     const position of [
                         'first',

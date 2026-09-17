@@ -3,12 +3,14 @@ import { computeDistributedRunArtifactAnalysis } from '../../../packages/shared-
 import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
 import { decodeDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
 import {
+    createDefaultRecipeConsoleScaleFixture,
     createRecipeConsoleScaleFixture,
     RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT,
     RECIPE_CONSOLE_SCALE_DEFAULT_RESULT_COUNT,
     RECIPE_CONSOLE_SCALE_MAX_ARTIFACT_ROW_COUNT,
     RECIPE_CONSOLE_SCALE_MAX_FILE_BYTES,
-    RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES
+    RECIPE_CONSOLE_SCALE_MAX_TOTAL_BYTES,
+    validateRecipeConsoleScaleFixtureSize
 } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const MEBIBYTE = 1_024 * 1_024;
@@ -23,7 +25,7 @@ function occurrences(haystack: string, needle: string): number {
 
 describe('Recipe Console deterministic scale fixture', () => {
     it('creates the canonical 15,000-row artifact within browser intake limits', () => {
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
 
         expect(fixture.counts).toEqual({
             events: RECIPE_CONSOLE_SCALE_DEFAULT_EVENT_COUNT,
@@ -78,6 +80,18 @@ describe('Recipe Console deterministic scale fixture', () => {
         ).toThrow('eventCount and resultCount must not exceed 40000 source rows in total.');
     });
 
+    it('reports every issue with a requested size before creating the fixture', () => {
+        expect(validateRecipeConsoleScaleFixtureSize({ artifactRowCount: 500 })).toEqual([]);
+        expect(validateRecipeConsoleScaleFixtureSize({ eventCount: 2, resultCount: 1.5 })).toEqual([
+            'eventCount must be a safe integer greater than or equal to 3.',
+            'resultCount must be a safe integer greater than or equal to 3.'
+        ]);
+        expect(validateRecipeConsoleScaleFixtureSize({ artifactRowCount: 5, eventCount: 3 })).toEqual([
+            'artifactRowCount cannot be combined with eventCount or resultCount.',
+            'artifactRowCount must be a safe integer greater than or equal to 6.'
+        ]);
+    });
+
     it('accepts the exact row ceiling while keeping every artifact inside byte limits', () => {
         const fixture = createRecipeConsoleScaleFixture({ artifactRowCount: 40_000 });
         const resultHeavyFixture = createRecipeConsoleScaleFixture({
@@ -97,7 +111,7 @@ describe('Recipe Console deterministic scale fixture', () => {
     });
 
     it('provides unique first, middle, and last needles for both source streams', () => {
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
         const events = fixture.files['events.jsonl'] ?? '';
         const results = fixture.files['results.jsonl'] ?? '';
 
