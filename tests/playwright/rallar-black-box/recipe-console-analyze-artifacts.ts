@@ -185,12 +185,14 @@ function createAnalyzeArtifactFiles(
         eventId: 'analyze-diagnostic-relay',
         atEpochMs: ANALYZE_BASE_EPOCH_MS + 700,
         payload: {
+            diagnosticSchemaVersion: 1,
             topic: 'rtc.route',
             diagnosticTypeId: 'rallar.browser.rtc.no_relay',
             severity: 'error',
             transport: 'messages.rtc',
             message: ANALYZE_DIAGNOSTIC_MESSAGE,
-            data: { candidate: 'relay', region: 'eu-north', allocation: 'missing' }
+            data: { candidate: 'relay', region: 'eu-north', allocation: 'missing' },
+            source: 'rallar.browser.rtc'
         }
     };
     const priorEvent = {
