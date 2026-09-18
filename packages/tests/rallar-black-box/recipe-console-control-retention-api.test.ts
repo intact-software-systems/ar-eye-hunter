@@ -7,8 +7,10 @@ import {
     TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 import { createControlLazyCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-lazy-capability.ts';
-import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
-import type { ControlRetentionRefusal } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-refusal.ts';
+import type {
+    ControlRetentionRefusal,
+    RecipeConsoleControlRetentionApi
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
 import {
     requestControlRetentionConfirmation,
     requestControlRetentionPreview
@@ -122,6 +124,7 @@ describe('Recipe Console retention request wire format', () => {
             planToken: 'opaque +&/token',
             fetchFn
         });
+
         expect(requests.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
             '/retention/cleanup?dryRun=true',
             '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken'

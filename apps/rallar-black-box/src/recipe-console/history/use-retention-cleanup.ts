@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RecipeConsoleControlRetentionCapability } from '../control/control-api.ts';
-import type { RecipeConsoleControlRetentionApi } from '../control/control-retention-api.ts';
-import { toControlRetentionRefusalMessage } from '../control/control-retention-refusal.ts';
+import type {
+    ControlRetentionRefusal,
+    RecipeConsoleControlRetentionApi
+} from '../control/control-retention-api.ts';
 import type { ControlRetentionConfirmation, ControlRetentionPreview } from '../control/control-retention-validation.ts';
 import {
     freezeRetentionCleanupState,
@@ -202,7 +204,7 @@ export function useRetentionCleanup(
                     capability,
                     freezeRetentionCleanupState({
                         status: 'error',
-                        message: toControlRetentionRefusalMessage(previewed.left)
+                        message: toRetentionRefusalMessage(previewed.left)
                     })
                 );
                 return;
@@ -282,7 +284,7 @@ export function useRetentionCleanup(
                     freezeRetentionCleanupState({
                         status: 'error',
                         preview: staleRetentionCleanupPreview(sanitized),
-                        message: toControlRetentionRefusalMessage(confirmed.left)
+                        message: toRetentionRefusalMessage(confirmed.left)
                     })
                 );
                 return;
@@ -352,6 +354,12 @@ function beginOperation(
     };
     operationRef.current = operation;
     return operation;
+}
+
+function toRetentionRefusalMessage(
+    refusal: ControlRetentionRefusal | undefined
+): string {
+    return refusal?.message ?? 'Retention cleanup failed.';
 }
 
 function isCurrent(

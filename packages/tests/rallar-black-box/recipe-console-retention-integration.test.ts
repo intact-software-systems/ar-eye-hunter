@@ -4,8 +4,10 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlRetentionCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
-import type { ControlRetentionRefusal } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-refusal.ts';
+import type {
+    ControlRetentionRefusal,
+    RecipeConsoleControlRetentionApi
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
 import type { ControlRetentionPreview } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
 import { HistoryWorkspace } from '../../../apps/rallar-black-box/src/recipe-console/history/HistoryWorkspace.tsx';
 import type { HistoryWorkspaceProps } from '../../../apps/rallar-black-box/src/recipe-console/history/HistoryWorkspace.tsx';

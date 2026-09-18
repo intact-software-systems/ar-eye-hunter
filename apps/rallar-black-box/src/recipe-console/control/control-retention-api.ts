@@ -1,6 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
-import type { ControlRetentionRefusal } from './control-retention-refusal.ts';
 import { requestControlRetentionConfirmation, requestControlRetentionPreview } from './control-retention-request.ts';
 import {
     parseControlRetentionConfirmation,
@@ -10,6 +9,16 @@ import {
 } from './control-retention-validation.ts';
 
 type RetentionSignal = Readonly<{ signal?: AbortSignal; }>;
+
+/**
+ * A refusal this API decides on its own, without asking the control server: a preview raised while
+ * a confirmation still holds the plan, and a confirmation offered a preview this connection never
+ * issued.
+ */
+export type ControlRetentionRefusal = Readonly<{
+    code: 'confirmation-in-progress' | 'foreign-preview';
+    message: string;
+}>;
 
 export type RecipeConsoleControlRetentionApi = Readonly<{
     preview(
