@@ -7,7 +7,9 @@ import {
 } from './analyze-file-boundary.ts';
 import type {
     AnalyzeWorkerArtifactOffer,
+    AnalyzeWorkerControlOffer,
     AnalyzeWorkerErrorProjection,
+    AnalyzeWorkerLocalFilesOffer,
     AnalyzeWorkerRequest
 } from './analyze-worker-contract.ts';
 
@@ -19,35 +21,33 @@ const ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES = 64 * 1_024 * 1_024;
 export function isAnalyzeWorkerArtifactOffer(
     value: unknown
 ): value is AnalyzeWorkerArtifactOffer {
-    if (!isRecord(value) || !boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES)) {
-        return false;
-    }
-    if (value.source === 'control') {
-        return isControlOffer(value);
-    }
-    return value.source === 'local-files' && isLocalFilesOffer(value);
+    return isControlOffer(value) || isLocalFilesOffer(value);
 }
 
-function isControlOffer(value: Record<string, unknown>): boolean {
-    return onlyKeys(value, [
+function isControlOffer(value: unknown): value is AnalyzeWorkerControlOffer {
+    return isRecord(value) && onlyKeys(value, [
         'source',
         'label',
         'controlEnvelope',
         'expectedControlIdentity'
-    ]) && value.controlEnvelope instanceof ArrayBuffer &&
+    ]) && value.source === 'control' &&
+        boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES) &&
+        value.controlEnvelope instanceof ArrayBuffer &&
         value.controlEnvelope.byteLength <= ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES &&
         isAnalyzeControlIdentityDigest(value.expectedControlIdentity);
 }
 
-function isLocalFilesOffer(value: Record<string, unknown>): boolean {
+function isLocalFilesOffer(value: unknown): value is AnalyzeWorkerLocalFilesOffer {
     if (
-        !onlyKeys(value, [
+        !isRecord(value) || !onlyKeys(value, [
             'source',
             'label',
             'generatedAtEpochMs',
             'files',
             'ignoredFiles'
-        ]) || !finiteNumber(value.generatedAtEpochMs) ||
+        ]) || value.source !== 'local-files' ||
+        !boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES) ||
+        !finiteNumber(value.generatedAtEpochMs) ||
         !Array.isArray(value.files) ||
         value.files.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT ||
         !isIgnoredFileList(value.ignoredFiles)
