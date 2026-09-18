@@ -13,11 +13,18 @@ function performanceWithCommandTiming(
     commandTiming: DistributedRunPerformanceAnalysis['commandTiming']
 ): DistributedRunPerformanceAnalysis {
     return {
+        agentCount: 1,
+        passRate: 1,
+        reconnectCount: 0,
+        diagnosticCount: 0,
+        warningDiagnosticCount: 0,
+        errorDiagnosticCount: 0,
+        exportedEventCount: 0,
+        agentReportedEventCount: 0,
+        failedAgentCount: 0,
         commandTiming,
-        slowestAgents: [],
-        streamTiming: { duration: {}, slowestAgents: [] },
-        receiverDelivery: { lowestReceivers: [] }
-    } as unknown as DistributedRunPerformanceAnalysis;
+        slowestAgents: []
+    };
 }
 
 describe('TuneCommandTiming sample count', () => {

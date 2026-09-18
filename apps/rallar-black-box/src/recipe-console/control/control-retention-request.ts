@@ -52,29 +52,29 @@ async function readJsonResponse(
     response: Response
 ): Promise<Either<ControlRequestFailure, unknown>> {
     const text = await response.text();
-    let value: unknown = {};
-    let parseError: unknown;
-    if (text.length > 0) {
-        try {
-            value = JSON.parse(text);
-        }
-        catch (error) {
-            parseError = error;
-        }
-    }
     if (!response.ok) {
-        return Either.ofLeft(createControlHttpFailure(response, failureMessage(value, response)));
+        return Either.ofLeft(
+            createControlHttpFailure(response, decodeFailureMessage(text, response))
+        );
     }
-    if (parseError) {
-        // A 2xx body the control server could not have meant: the transport reads this as a
-        // reachable protocol error rather than as a retention outcome.
-        throw parseError;
-    }
-    return Either.ofRight(value);
+    // A 2xx body the control server could not have meant throws here: the transport reads that as
+    // a reachable protocol error rather than as a retention outcome.
+    return Either.ofRight(text.length === 0 ? {} : JSON.parse(text));
 }
 
-function failureMessage(value: unknown, response: Response): string {
-    return value && typeof value === 'object' && 'error' in value
-        ? String((value as { error: unknown; }).error)
-        : `Control server request failed: ${response.status} ${response.statusText}`;
+function decodeFailureMessage(text: string, response: Response): string {
+    const requestFailed = `Control server request failed: ${response.status} ${response.statusText}`;
+    if (text.length === 0) {
+        return requestFailed;
+    }
+    let body: unknown;
+    try {
+        body = JSON.parse(text);
+    }
+    catch {
+        return requestFailed;
+    }
+    return body && typeof body === 'object' && 'error' in body
+        ? String(body.error)
+        : requestFailed;
 }
