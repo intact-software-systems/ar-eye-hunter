@@ -968,6 +968,7 @@ function completeResponse(
                 issues: []
             },
             analysis: {
+                detail: 'full',
                 generatedAtEpochMs: 1,
                 artifactSchemaVersion: 1,
                 distributedRunId,

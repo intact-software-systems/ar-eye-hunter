@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import { resolveTuneAnalysisPerformance } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-evidence.ts';
 import { deriveTuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import type {
     ControlDistributedRunSnapshot,
@@ -227,7 +228,7 @@ describe('Recipe Console Tune source model', () => {
             });
             expect(model.provenance).toMatchObject({ source: 'control', detail: 'bounded' });
             expect(model.performance?.commandTiming.p95Ms).toBe(100);
-            expect(model.retained.inspection?.performance?.commandTiming.p95Ms).toBe(950);
+            expect(resolveTuneAnalysisPerformance(model.retained.inspection)?.commandTiming.p95Ms).toBe(950);
             expect(model.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
                 retained.status === 'error' ? 'retained-context-error' : 'retained-mismatch'
             ]));

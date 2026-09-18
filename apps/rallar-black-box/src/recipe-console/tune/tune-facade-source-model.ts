@@ -6,7 +6,10 @@ import {
     type TuneFacadeManifestValidation
 } from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
-import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
+import {
+    hasTunePerformanceEvidence,
+    resolveTuneAnalysisPerformance
+} from './tune-performance-evidence.ts';
 import { tuneOmittedInventoryMessage } from './tune-source-issue.ts';
 import type { TuneSourceIssue, TuneSourceIssueCode, TuneSourceModel } from './tune-source-model.ts';
 
@@ -19,9 +22,7 @@ export function deriveTuneSourceModelFromFacade(
     }>
 ): TuneSourceModel {
     const facade = input.facade;
-    const performance = facade.analysis.detail === 'full'
-        ? facade.analysis.performance
-        : undefined;
+    const performance = resolveTuneAnalysisPerformance(facade.analysis);
     const inventory: DistributedRunTuningInventory = {
         knobs: facade.tuningInventory.knobs,
         limitations: facade.tuningInventory.limitations

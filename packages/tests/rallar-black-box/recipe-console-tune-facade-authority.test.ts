@@ -4,6 +4,7 @@ import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/re
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { projectTuneFacadeManifestValidation } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';
 import { deriveTuneSourceModelFromFacade } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-source-model.ts';
+import { resolveTuneAnalysisPerformance } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-evidence.ts';
 import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { tuneSourceIssueKey } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-issue.ts';
 import { tuneRightSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-url-patches.ts';
@@ -583,7 +584,7 @@ describe('Recipe Console Tune facade authority', () => {
         expect(model.focusRunId).toBe('candidate');
         expect(model.provenance.source).toBe('control');
         expect(model.performance?.commandTiming.p95Ms).toBe(100);
-        expect(model.retained.inspection?.performance?.commandTiming.p95Ms).toBe(900);
+        expect(resolveTuneAnalysisPerformance(model.retained.inspection)?.commandTiming.p95Ms).toBe(900);
     });
 
     it('preserves the exact retained error while keeping live control authoritative', () => {

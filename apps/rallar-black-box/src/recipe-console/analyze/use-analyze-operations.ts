@@ -1,9 +1,14 @@
 import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useRef } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { createAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import { resolveAnalyzeOperationContext } from './analyze-current-url-boundary.ts';
+import {
+    toAnalyzeFileIntakeMessage,
+    type AnalyzeFileIntakeFailure
+} from './analyze-file-contract.ts';
 import { createAnalyzeLocalOffer, type AnalyzeImportFile } from './analyze-local-offer.ts';
 import { boundedText, MAX_METADATA_BYTES } from './analyze-projection-bounds.ts';
 import { analyzeImportedIdentityPatch } from './analyze-selection.ts';
@@ -100,7 +105,9 @@ export function useAnalyzeOperations(
     const perform = useCallback(async (
         action: AnalyzeWorkspaceAction,
         operationContext: AnalyzeWorkspaceContext | undefined,
-        loadOffer: (signal: AbortSignal) => Promise<AnalyzeWorkerArtifactOffer>
+        loadOffer: (
+            signal: AbortSignal
+        ) => Promise<Either<AnalyzeFileIntakeFailure, AnalyzeWorkerArtifactOffer>>
     ): Promise<boolean> => {
         if (pendingRef.current) {
             return false;
@@ -152,8 +159,23 @@ export function useAnalyzeOperations(
             ).state
         );
         activeWorkspace.setPendingPaintGeneration(undefined);
+        const reportFailure = (error: Error): void => {
+            if (pendingRef.current?.authority !== authority) {
+                return;
+            }
+            activeWorkspace.setState((previous) => failAnalyzeWorkspaceOperation(previous, authority, error));
+            pendingRef.current = undefined;
+            resolveCompletion(false);
+        };
         try {
-            const offer = await loadOffer(controller.signal);
+            const offered = await loadOffer(controller.signal);
+            const offer = offered.right;
+            if (offer === undefined) {
+                // The workspace state reducer reports a failed operation as an Error; a refused
+                // selection is a value until exactly here.
+                reportFailure(new Error(toAnalyzeFileIntakeMessage(offered.left)));
+                return completion;
+            }
             if (controller.signal.aborted || pendingRef.current?.authority !== authority) {
                 throw createAnalyzeInterruptedError('Artifact operation was interrupted.');
             }
@@ -164,17 +186,7 @@ export function useAnalyzeOperations(
             client.offer(offer, generation);
         }
         catch (error) {
-            if (pendingRef.current?.authority === authority) {
-                activeWorkspace.setState((previous) =>
-                    failAnalyzeWorkspaceOperation(
-                        previous,
-                        authority,
-                        toError(error)
-                    )
-                );
-                pendingRef.current = undefined;
-                resolveCompletion(false);
-            }
+            reportFailure(toError(error));
         }
         return completion;
     }, []);
@@ -225,7 +237,7 @@ export function useAnalyzeOperations(
                     'Analyze control source changed while the artifact was loading.'
                 );
             }
-            return {
+            return Either.ofRight({
                 source: 'control',
                 label: boundedText(
                     `Control artifact ${context.distributedRunId}`,
@@ -233,7 +245,7 @@ export function useAnalyzeOperations(
                 ),
                 controlEnvelope: bundle.bytes,
                 expectedControlIdentity
-            };
+            });
         });
     }, [perform]);
 

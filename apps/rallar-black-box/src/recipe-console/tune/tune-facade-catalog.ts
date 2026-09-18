@@ -6,6 +6,7 @@ import {
     type TuneFacadeManifestValidation
 } from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
+import { resolveTuneAnalysisPerformance } from './tune-performance-evidence.ts';
 import type { TuneQuarantineCode, TuneRunOption } from './tune-run-catalog.ts';
 
 export type TuneFacadeCatalogProjection =
@@ -84,7 +85,7 @@ export function projectTuneFacadeCatalog(
     }
     const distributedRun = facadeSnapshot(facade, manifest);
     const analysis = facade.analysis;
-    const performance = analysis.detail === 'full' ? analysis.performance : undefined;
+    const performance = resolveTuneAnalysisPerformance(analysis);
     const artifactEvidence = {
         distributedRun,
         analysis,

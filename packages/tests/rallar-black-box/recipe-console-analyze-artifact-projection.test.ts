@@ -59,6 +59,9 @@ describe('Recipe Console Analyze artifact projection', () => {
             throw new Error('Scale fixture must describe a failed run.');
         }
         expect(projection.analysis.failure.affectedAgents).toEqual(model.analysis.failure.affectedAgents);
+        if (projection.analysis.detail !== 'full') {
+            throw new Error('Scale fixture must project its full display detail.');
+        }
         expect(projection.analysis.targetResolution?.targetAgentIds)
             .toEqual(model.analysis.targetResolution?.targetAgentIds);
         expect(projection.analysis.spa).not.toHaveProperty('report');

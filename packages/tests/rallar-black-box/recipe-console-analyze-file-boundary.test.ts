@@ -1,12 +1,13 @@
+import type { Either } from '@shared/resilience/Either.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
     ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES,
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
     ANALYZE_ARTIFACT_MAX_FILE_COUNT,
     ANALYZE_ARTIFACT_MAX_TOTAL_BYTES,
-    AnalyzeFileIntakeError,
     readAnalyzeArtifactFiles,
     readAnalyzeArtifactTransferFiles,
+    type AnalyzeFileIntakeFailure,
     type AnalyzeFileLike,
     type AnalyzeTransferFileLike
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-file-boundary.ts';
@@ -64,25 +65,38 @@ function transferFile(
     };
 }
 
-async function expectIntakeError(
-    promise: Promise<unknown>,
-    code: AnalyzeFileIntakeError['code'],
+async function expectIntakeFailure(
+    outcome: Promise<Either<AnalyzeFileIntakeFailure, unknown>>,
+    code: AnalyzeFileIntakeFailure['code'],
     message: string | RegExp
 ) {
-    const error = await promise.catch((reason) => reason);
-    expect(error).toBeInstanceOf(AnalyzeFileIntakeError);
-    expect(error).toMatchObject({ code });
-    // Unreachable once the instanceof expectation above holds; it only narrows
-    // the rejection reason so the message assertions read the real error type.
-    if (!(error instanceof AnalyzeFileIntakeError)) {
-        throw error;
+    const refused = await outcome;
+    // A refused selection is a left value, never a rejected promise: the intake never resolves a
+    // partial right beside it.
+    expect(refused.right).toBeUndefined();
+    expect(refused.left).toMatchObject({ code });
+    const failure = refused.left;
+    if (failure === undefined) {
+        throw new Error('A refused intake must carry its failure value.');
     }
     if (typeof message === 'string') {
-        expect(error.message).toBe(message);
+        expect(failure.message).toBe(message);
     }
     else {
-        expect(error.message).toMatch(message);
+        expect(failure.message).toMatch(message);
     }
+}
+
+async function expectAcceptedIntake<Value>(
+    outcome: Promise<Either<AnalyzeFileIntakeFailure, Value>>
+): Promise<Value> {
+    const accepted = await outcome;
+    expect(accepted.left).toBeUndefined();
+    const intake = accepted.right;
+    if (intake === undefined) {
+        throw new Error('An accepted intake must carry its value.');
+    }
+    return intake;
 }
 
 describe('Recipe Console Analyze file boundary', () => {
@@ -111,7 +125,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('reads JSON and JSONL by safe basename and returns deterministic texts and metadata', async () => {
-        const intake = await readAnalyzeArtifactFiles([
+        const intake = await expectAcceptedIntake(readAnalyzeArtifactFiles([
             file('dist-42-artifact.json', '{"files":{}}', {
                 type: 'application/octet-stream',
                 webkitRelativePath: 'downloads/dist-42-artifact.json'
@@ -124,7 +138,7 @@ describe('Recipe Console Analyze file boundary', () => {
                 type: 'application/json',
                 webkitRelativePath: 'ci/manifest.json'
             })
-        ]);
+        ]));
 
         expect(Object.keys(intake.files)).toEqual([
             'dist-42-artifact.json',
@@ -174,7 +188,7 @@ describe('Recipe Console Analyze file boundary', () => {
         );
 
         try {
-            const intake = await readAnalyzeArtifactTransferFiles([
+            const intake = await expectAcceptedIntake(readAnalyzeArtifactTransferFiles([
                 transferFile('manifest.json', '{"distributedRunId":"dist-42"}', {
                     type: 'application/json',
                     webkitRelativePath: 'ci/manifest.json'
@@ -183,7 +197,7 @@ describe('Recipe Console Analyze file boundary', () => {
                     type: 'application/octet-stream',
                     webkitRelativePath: 'downloads/dist-42-artifact.json'
                 })
-            ]);
+            ]));
 
             expect(intake.files.map((file) => file.name)).toEqual([
                 'dist-42-artifact.json',
@@ -227,7 +241,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('rejects declared and actual byte mismatches without returning partial buffers', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactTransferFiles([
                 transferFile('manifest.json', '{}', {
                     size: 2,
@@ -242,7 +256,7 @@ describe('Recipe Console Analyze file boundary', () => {
     it('enforces the per-file limit against actual transferable bytes', async () => {
         const oversized = new ArrayBuffer(ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1);
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactTransferFiles([
                 transferFile('events.jsonl', '', {
                     size: 0,
@@ -259,7 +273,7 @@ describe('Recipe Console Analyze file boundary', () => {
         const exactQuarters = Array.from({ length: 3 }, () => new ArrayBuffer(quarter));
         const oversizedQuarter = new ArrayBuffer(quarter + 1);
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactTransferFiles([
                 transferFile('artifact-a.json', '', { size: quarter, read: async () => exactQuarters[0] }),
                 transferFile('artifact-b.json', '', { size: quarter, read: async () => exactQuarters[1] }),
@@ -314,7 +328,7 @@ describe('Recipe Console Analyze file boundary', () => {
         ];
 
         for (const intakeCase of cases) {
-            await expectIntakeError(
+            await expectIntakeFailure(
                 readAnalyzeArtifactTransferFiles(intakeCase.files),
                 intakeCase.code,
                 intakeCase.message
@@ -325,7 +339,7 @@ describe('Recipe Console Analyze file boundary', () => {
 
     it('retains deterministic ignored-filename diagnostics and never reads ignored content', async () => {
         let ignoredRead = false;
-        const intake = await readAnalyzeArtifactFiles([
+        const intake = await expectAcceptedIntake(readAnalyzeArtifactFiles([
             file('manifest.json', '{}'),
             file('notes.txt', 'not an artifact', {
                 webkitRelativePath: 'ci/notes.txt',
@@ -335,7 +349,7 @@ describe('Recipe Console Analyze file boundary', () => {
                 }
             }),
             file('screenshot.png', 'binary', { webkitRelativePath: 'ci/screenshot.png' })
-        ]);
+        ]));
 
         expect(ignoredRead).toBe(false);
         expect(intake.ignoredFiles).toEqual([
@@ -353,9 +367,9 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('preserves a sole arbitrary JSON export for shared envelope detection', async () => {
-        const intake = await readAnalyzeArtifactFiles([
+        const intake = await expectAcceptedIntake(readAnalyzeArtifactFiles([
             file('dist-42-artifact.json', '{"artifactSchemaVersion":2,"files":{}}')
-        ]);
+        ]));
 
         expect(intake.files).toEqual({
             'dist-42-artifact.json': '{"artifactSchemaVersion":2,"files":{}}'
@@ -366,7 +380,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('rejects a selection with no JSON or JSONL candidate and names every ignored file', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('notes.txt'),
                 file('trace.log')
@@ -386,7 +400,7 @@ describe('Recipe Console Analyze file boundary', () => {
                 }
             }));
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles(files),
             'too-many-files',
             'Select at most 24 files; received 25.'
@@ -397,7 +411,7 @@ describe('Recipe Console Analyze file boundary', () => {
     it('rejects a selected file over 16 MiB before reading it', async () => {
         let readCount = 0;
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('events.jsonl', '', {
                     size: ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1,
@@ -416,7 +430,7 @@ describe('Recipe Console Analyze file boundary', () => {
     it('rejects selections over 48 MiB in total, including ignored files', async () => {
         const quarter = ANALYZE_ARTIFACT_MAX_TOTAL_BYTES / 4;
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('manifest.json', '', { size: quarter }),
                 file('events.jsonl', '', { size: quarter }),
@@ -429,7 +443,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('rejects invalid declared sizes rather than weakening byte bounds', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([file('manifest.json', '{}', { size: Number.NaN })]),
             'invalid-file-size',
             'File "manifest.json" reports an invalid size.'
@@ -445,7 +459,7 @@ describe('Recipe Console Analyze file boundary', () => {
         'ci/manifest.json\u0000',
         'ci/ manifest.json'
     ])('rejects the unsafe or suspicious selected path %j', async (sourcePath) => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([file(sourcePath)]),
             'unsafe-path',
             /is unsafe:/
@@ -453,7 +467,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('rejects a suspicious webkitRelativePath even when File.name is safe', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('manifest.json', '{}', { webkitRelativePath: '../manifest.json' })
             ]),
@@ -469,7 +483,7 @@ describe('Recipe Console Analyze file boundary', () => {
             return '{}';
         };
 
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('manifest.json', '{}', {
                     webkitRelativePath: 'first/manifest.json',
@@ -487,7 +501,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('rejects case-insensitive duplicate JSON basenames to stay deterministic across filesystems', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('Run-Artifact.json'),
                 file('run-artifact.JSON')
@@ -498,7 +512,7 @@ describe('Recipe Console Analyze file boundary', () => {
     });
 
     it('reports a deterministic read failure without returning a partial intake', async () => {
-        await expectIntakeError(
+        await expectIntakeFailure(
             readAnalyzeArtifactFiles([
                 file('manifest.json', '{}'),
                 file('events.jsonl', '', {

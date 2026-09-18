@@ -1,28 +1,48 @@
 export * from './analyze-file-contract.ts';
 
+import { Either } from '@shared/resilience/Either.ts';
 import {
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
     ANALYZE_ARTIFACT_MAX_TOTAL_BYTES,
-    AnalyzeFileIntakeError,
     type AnalyzeAcceptedFile,
     type AnalyzeArtifactFileIntake,
+    type AnalyzeArtifactFileIntakePlan,
     type AnalyzeArtifactTransferIntake,
+    type AnalyzeFileIntakeFailure,
     type AnalyzeFileLike,
     type AnalyzeTransferFile,
     type AnalyzeTransferFileLike
 } from './analyze-file-contract.ts';
 import {
     computeAnalyzeArtifactFileIntake,
-    createFileTooLargeError,
-    createReadFailureError,
-    createTotalTooLargeError,
+    createFileReadFailure,
+    createFileSizeMismatchFailure,
+    createFileTooLargeFailure,
+    createTotalTooLargeFailure,
     toAcceptedFileMetadata
 } from './analyze-file-intake-policy.ts';
 
-export async function readAnalyzeArtifactFiles(
+export function readAnalyzeArtifactFiles(
     selectedFiles: readonly AnalyzeFileLike[]
-): Promise<AnalyzeArtifactFileIntake> {
-    const prepared = computeAnalyzeArtifactFileIntake(selectedFiles);
+): Promise<Either<AnalyzeFileIntakeFailure, AnalyzeArtifactFileIntake>> {
+    return computeAnalyzeArtifactFileIntake(selectedFiles).fold(
+        async (failure) => Either.ofLeft<AnalyzeFileIntakeFailure, AnalyzeArtifactFileIntake>(failure),
+        (prepared) => readPreparedTexts(prepared)
+    );
+}
+
+export function readAnalyzeArtifactTransferFiles(
+    selectedFiles: readonly AnalyzeTransferFileLike[]
+): Promise<Either<AnalyzeFileIntakeFailure, AnalyzeArtifactTransferIntake>> {
+    return computeAnalyzeArtifactFileIntake(selectedFiles).fold(
+        async (failure) => Either.ofLeft<AnalyzeFileIntakeFailure, AnalyzeArtifactTransferIntake>(failure),
+        (prepared) => readPreparedBuffers(prepared)
+    );
+}
+
+async function readPreparedTexts(
+    prepared: AnalyzeArtifactFileIntakePlan<AnalyzeFileLike>
+): Promise<Either<AnalyzeFileIntakeFailure, AnalyzeArtifactFileIntake>> {
     const texts: [string, string][] = [];
     const acceptedFiles: AnalyzeAcceptedFile[] = [];
     for (const selected of prepared.accepted) {
@@ -34,25 +54,24 @@ export async function readAnalyzeArtifactFiles(
             }
         }
         catch (error) {
-            throw createReadFailureError(selected.basename, error);
+            return Either.ofLeft(createFileReadFailure(selected.basename, error));
         }
 
         texts.push([selected.basename, contents]);
         acceptedFiles.push(toAcceptedFileMetadata(selected));
     }
 
-    return {
+    return Either.ofRight({
         files: Object.fromEntries(texts),
         acceptedFiles,
         ignoredFiles: prepared.ignoredFiles,
         totalSelectedBytes: prepared.totalSelectedBytes
-    };
+    });
 }
 
-export async function readAnalyzeArtifactTransferFiles(
-    selectedFiles: readonly AnalyzeTransferFileLike[]
-): Promise<AnalyzeArtifactTransferIntake> {
-    const prepared = computeAnalyzeArtifactFileIntake(selectedFiles);
+async function readPreparedBuffers(
+    prepared: AnalyzeArtifactFileIntakePlan<AnalyzeTransferFileLike>
+): Promise<Either<AnalyzeFileIntakeFailure, AnalyzeArtifactTransferIntake>> {
     const files: AnalyzeTransferFile[] = [];
     const acceptedFiles: AnalyzeAcceptedFile[] = [];
     const transferList: ArrayBuffer[] = [];
@@ -75,22 +94,23 @@ export async function readAnalyzeArtifactTransferFiles(
             }
         }
         catch (error) {
-            throw createReadFailureError(selected.basename, error);
+            return Either.ofLeft(createFileReadFailure(selected.basename, error));
         }
 
         const actualSize = bytes.byteLength;
         if (actualSize > ANALYZE_ARTIFACT_MAX_FILE_BYTES) {
-            throw createFileTooLargeError(selected.basename, actualSize);
+            return Either.ofLeft(createFileTooLargeFailure(selected.basename, actualSize));
         }
         totalActualBytes += actualSize;
         if (totalActualBytes > ANALYZE_ARTIFACT_MAX_TOTAL_BYTES) {
-            throw createTotalTooLargeError(totalActualBytes);
+            return Either.ofLeft(createTotalTooLargeFailure(totalActualBytes));
         }
         if (actualSize !== selected.file.size) {
-            throw new AnalyzeFileIntakeError(
-                'file-size-mismatch',
-                `File "${selected.basename}" reported ${selected.file.size} bytes but returned ${actualSize} bytes. No files were imported.`
-            );
+            return Either.ofLeft(createFileSizeMismatchFailure(
+                selected.basename,
+                selected.file.size,
+                actualSize
+            ));
         }
 
         seenBuffers.add(bytes);
@@ -99,11 +119,11 @@ export async function readAnalyzeArtifactTransferFiles(
         acceptedFiles.push(toAcceptedFileMetadata(selected));
     }
 
-    return {
+    return Either.ofRight({
         files,
         acceptedFiles,
         ignoredFiles: prepared.ignoredFiles,
         totalSelectedBytes: prepared.totalSelectedBytes,
         transferList
-    };
+    });
 }

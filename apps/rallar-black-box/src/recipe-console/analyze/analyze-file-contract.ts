@@ -73,7 +73,7 @@ export type AnalyzeArtifactTransferIntake = Readonly<{
     transferList: readonly ArrayBuffer[];
 }>;
 
-export type AnalyzeFileIntakeErrorCode =
+export type AnalyzeFileIntakeFailureCode =
     | 'too-many-files'
     | 'invalid-file-size'
     | 'file-too-large'
@@ -84,14 +84,24 @@ export type AnalyzeFileIntakeErrorCode =
     | 'file-size-mismatch'
     | 'read-failed';
 
-export class AnalyzeFileIntakeError extends Error {
-    readonly code: AnalyzeFileIntakeErrorCode;
+/**
+ * Why a file selection was refused. Every variant carries the exact sentence the operator sees, so
+ * a caller folds one value instead of matching an error class.
+ */
+export type AnalyzeFileIntakeFailure = Readonly<{
+    code: AnalyzeFileIntakeFailureCode;
+    message: string;
+}>;
 
-    constructor(code: AnalyzeFileIntakeErrorCode, message: string) {
-        super(message);
-        this.name = 'AnalyzeFileIntakeError';
-        this.code = code;
-    }
+/**
+ * The operator-visible sentence a refused intake carries. A caller reads the intake through
+ * `outcome.right` and reaches this with `outcome.left`, which the `Either` invariant guarantees is
+ * present there; the second arm names the refusal rather than inventing a cause.
+ */
+export function toAnalyzeFileIntakeMessage(
+    failure: AnalyzeFileIntakeFailure | undefined
+): string {
+    return failure?.message ?? 'The selected files were refused.';
 }
 
 export type AnalyzeSelectedFileMetadata = Readonly<{
