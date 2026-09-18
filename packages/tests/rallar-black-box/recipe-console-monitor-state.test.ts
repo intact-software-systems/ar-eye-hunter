@@ -15,21 +15,23 @@ import {
     failMonitorOperation
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-operation-state.ts';
 import {
+    computeMonitorDistributedRunSelection,
+    computeMonitorRunOptions,
+    getMonitorDistributedRunSelectionIndexWork,
+    getMonitorRunOptionsIndexWork
+} from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection-projection.ts';
+import {
+    computeMonitorRecipeEvidenceStatus,
+    createMonitorControlRunSelectionPatch,
+    createMonitorDistributedRunSelectionPatch,
     createMonitorRecipeEvidenceSelectionId,
-    deriveMonitorDistributedRunSelection,
-    deriveMonitorRecipeEvidenceStatus,
-    deriveMonitorRunOptions,
-    deriveMonitorUrlEvidenceSelection,
     MONITOR_ARTIFACT_EVIDENCE_ID,
-    monitorDistributedRunSelectionWorkForTest,
-    monitorEvidenceSelectionIdentifier,
-    monitorRunOptionsWorkForTest,
-    monitorUrlEvidenceKey,
-    parseMonitorRecipeEvidenceSelectionId,
-    recipeConsoleMonitorControlRunSelectionPatch,
-    recipeConsoleMonitorDistributedRunSelectionPatch
+    resolveMonitorUrlEvidenceSelection,
+    toMonitorEvidenceSelectionLabel,
+    toMonitorRecipeEvidenceIdentity,
+    toMonitorUrlEvidenceKey
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection.ts';
-import { deriveMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
+import { computeMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
 import {
     createInitialMonitorWorkspaceState,
     createMonitorWorkspaceContext,
@@ -192,11 +194,11 @@ describe('Recipe Console Monitor selection', () => {
         ]);
         const lastKnown = distributedRun('last-known', 'run-last', 'passed', 40);
 
-        expect(deriveMonitorRunOptions({
+        expect(computeMonitorRunOptions({
             controlRunId: undefined,
             distributedRuns
         })).toEqual([]);
-        expect(deriveMonitorRunOptions({
+        expect(computeMonitorRunOptions({
             controlRunId: undefined,
             distributedRuns,
             lastKnown
@@ -227,17 +229,17 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: current.distributedRuns!,
             distributedRunsAuthoritative: true
         } as const;
-        const legacySelection = deriveMonitorDistributedRunSelection(selectionInput);
-        const indexedSelection = deriveMonitorDistributedRunSelection({
+        const legacySelection = computeMonitorDistributedRunSelection(selectionInput);
+        const indexedSelection = computeMonitorDistributedRunSelection({
             ...selectionInput,
             snapshot: current,
             selectionIndex
         });
-        const legacyOptions = deriveMonitorRunOptions({
+        const legacyOptions = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!
         });
-        const indexedOptions = deriveMonitorRunOptions({
+        const indexedOptions = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -254,11 +256,11 @@ describe('Recipe Console Monitor selection', () => {
 
         expect(indexedSelection).toEqual(legacySelection);
         expect(indexedSelection.run).toBe(current.distributedRuns![0]);
-        expect(monitorDistributedRunSelectionWorkForTest(indexedSelection))
+        expect(getMonitorDistributedRunSelectionIndexWork(indexedSelection))
             .toEqual({ indexed: false, fallback: true });
         expect(indexedOptions).toEqual(legacyOptions);
         expect(indexedOptions[0]).toBe(current.distributedRuns![0]);
-        expect(monitorRunOptionsWorkForTest(indexedOptions))
+        expect(getMonitorRunOptionsIndexWork(indexedOptions))
             .toEqual({ indexed: false, fallback: true });
         expect(indexedState).toEqual(legacyState);
         expect(indexedState.source?.controlRun).toBe(current.runs[0]);
@@ -276,7 +278,7 @@ describe('Recipe Console Monitor selection', () => {
             current,
             createControlSnapshotSelectionIndex(current)
         );
-        const selection = deriveMonitorDistributedRunSelection({
+        const selection = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing-distributed',
             distributedRuns: current.distributedRuns!,
@@ -287,7 +289,7 @@ describe('Recipe Console Monitor selection', () => {
 
         expect(selection.run).toBeUndefined();
         expect(selection.issue?.code).toBe('unavailable');
-        expect(monitorDistributedRunSelectionWorkForTest(selection))
+        expect(getMonitorDistributedRunSelectionIndexWork(selection))
             .toEqual({ indexed: true, fallback: false });
     });
 
@@ -304,7 +306,7 @@ describe('Recipe Console Monitor selection', () => {
             }
         });
 
-        const selection = deriveMonitorDistributedRunSelection({
+        const selection = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing-distributed',
             distributedRuns: current.distributedRuns!,
@@ -312,7 +314,7 @@ describe('Recipe Console Monitor selection', () => {
             snapshot: current,
             selectionIndex
         });
-        const options = deriveMonitorRunOptions({
+        const options = computeMonitorRunOptions({
             controlRunId: 'missing-run',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -333,10 +335,10 @@ describe('Recipe Console Monitor selection', () => {
         );
 
         expect(selection.issue?.code).toBe('unavailable');
-        expect(monitorDistributedRunSelectionWorkForTest(selection))
+        expect(getMonitorDistributedRunSelectionIndexWork(selection))
             .toEqual({ indexed: true, fallback: false });
         expect(options).toEqual([]);
-        expect(monitorRunOptionsWorkForTest(options))
+        expect(getMonitorRunOptionsIndexWork(options))
             .toEqual({ indexed: true, fallback: false });
         expect(state.source).toBeUndefined();
         expect(monitorWorkspaceReconciliationWorkForTest(state))
@@ -361,7 +363,7 @@ describe('Recipe Console Monitor selection', () => {
             createControlSnapshotSelectionIndex(first)
         );
 
-        const indexed = deriveMonitorDistributedRunSelection({
+        const indexed = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'duplicate\0\u202e',
             distributedRuns: current.distributedRuns!,
@@ -400,7 +402,7 @@ describe('Recipe Console Monitor selection', () => {
             createControlSnapshotSelectionIndex(first)
         );
 
-        const options = deriveMonitorRunOptions({
+        const options = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -415,7 +417,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('canonicalizes only a sole compatible run and never chooses by collection order', () => {
-        const sole = deriveMonitorDistributedRunSelection({
+        const sole = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('other', 'run-b'),
@@ -423,7 +425,7 @@ describe('Recipe Console Monitor selection', () => {
             ],
             distributedRunsAuthoritative: true
         });
-        const ambiguous = deriveMonitorDistributedRunSelection({
+        const ambiguous = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('first', 'run-a'),
@@ -431,7 +433,7 @@ describe('Recipe Console Monitor selection', () => {
             ],
             distributedRunsAuthoritative: true
         });
-        const none = deriveMonitorDistributedRunSelection({
+        const none = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('other', 'run-b')],
             distributedRunsAuthoritative: true
@@ -456,19 +458,19 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('preserves explicit unavailable and incompatible IDs without fallback', () => {
-        const unavailable = deriveMonitorDistributedRunSelection({
+        const unavailable = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [distributedRun('first', 'run-a')],
             distributedRunsAuthoritative: true
         });
-        const incompatible = deriveMonitorDistributedRunSelection({
+        const incompatible = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'other',
             distributedRuns: [distributedRun('other', 'run-b')],
             distributedRunsAuthoritative: true
         });
-        const pending = deriveMonitorDistributedRunSelection({
+        const pending = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [],
@@ -491,7 +493,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('does not canonicalize a sole run from a non-authoritative collection', () => {
-        expect(deriveMonitorDistributedRunSelection({
+        expect(computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('sole', 'run-a')],
             distributedRunsAuthoritative: false
@@ -503,7 +505,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('clears URL-backed evidence dependencies when the distributed run changes', () => {
-        expect(recipeConsoleMonitorDistributedRunSelectionPatch('distributed-b'))
+        expect(createMonitorDistributedRunSelectionPatch('distributed-b'))
             .toEqual({
                 distributedRunId: 'distributed-b',
                 agentId: undefined,
@@ -523,7 +525,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('clears every Monitor evidence dependency when the control run changes', () => {
-        expect(recipeConsoleMonitorControlRunSelectionPatch({
+        expect(createMonitorControlRunSelectionPatch({
             state: {
                 v: 1,
                 experience: 'recipe-console',
@@ -555,26 +557,26 @@ describe('Recipe Console Monitor selection', () => {
             commandId: 'command-a'
         };
 
-        expect(deriveMonitorUrlEvidenceSelection(state)).toEqual({
+        expect(resolveMonitorUrlEvidenceSelection(state)).toEqual({
             kind: 'command',
             id: 'command-a'
         });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined
         })).toEqual({ kind: 'recipe', id: 'recipe-a' });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
             recipeId: undefined
         })).toEqual({ kind: 'agent', id: 'agent-a' });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
             recipeId: undefined,
             agentId: undefined
         })).toBeUndefined();
-        expect(monitorUrlEvidenceKey(state)).toBe(
+        expect(toMonitorUrlEvidenceKey(state)).toBe(
             JSON.stringify(['agent-a', 'recipe-a', 'command-a'])
         );
     });
@@ -592,13 +594,13 @@ describe('Recipe Console Monitor selection', () => {
         });
 
         expect(sender).not.toBe(receiver);
-        expect(parseMonitorRecipeEvidenceSelectionId(sender)).toEqual({
+        expect(toMonitorRecipeEvidenceIdentity(sender)).toEqual({
             recipeId: 'recipe-a',
             role: 'sender',
             profile: 'rtc'
         });
-        expect(parseMonitorRecipeEvidenceSelectionId('recipe-a')).toBeUndefined();
-        expect(monitorEvidenceSelectionIdentifier({
+        expect(toMonitorRecipeEvidenceIdentity('recipe-a')).toBeUndefined();
+        expect(toMonitorEvidenceSelectionLabel({
             kind: 'recipe',
             id: sender
         })).toBe('recipe-a · sender · rtc');
@@ -625,9 +627,9 @@ describe('Recipe Console Monitor selection', () => {
             missingCount: 0,
             averageLatencyMs: 20
         }];
-        expect(deriveMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
+        expect(computeMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
             .toBe('failed');
-        expect(deriveMonitorRecipeEvidenceStatus(roleRows, sender))
+        expect(computeMonitorRecipeEvidenceStatus(roleRows, sender))
             .toBe('passed');
         expect(MONITOR_ARTIFACT_EVIDENCE_ID).toBe('artifact');
     });
@@ -698,7 +700,7 @@ describe('Recipe Console Monitor coherent state', () => {
                 { runs: [run], distributedRuns: [distributedRun()] }
             )
         );
-        const model = deriveMonitorWorkspaceModel(state);
+        const model = computeMonitorWorkspaceModel(state);
 
         expect(state.source).toMatchObject({
             freshness: 'current',

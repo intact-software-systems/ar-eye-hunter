@@ -8,7 +8,7 @@ import { createLegacyMonitorHref } from './legacy-monitor-link.ts';
 import type { MonitorConnectionTruth } from './monitor-action-policy.ts';
 import {
     MONITOR_ARTIFACT_EVIDENCE_ID,
-    parseMonitorRecipeEvidenceSelectionId,
+    toMonitorRecipeEvidenceIdentity,
     type MonitorEvidenceSelection
 } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
@@ -239,7 +239,7 @@ function selectionLabel(
         return `Artifact · ${model?.monitor.artifact.status ?? 'unavailable'}`;
     }
     if (selected.kind === 'recipe') {
-        const identity = parseMonitorRecipeEvidenceSelectionId(selected.id);
+        const identity = toMonitorRecipeEvidenceIdentity(selected.id);
         return `Recipe · ${identity?.recipeId ?? selected.id}${identity?.role ? ` · ${identity.role}` : ''}`;
     }
     return `${selected.kind[0].toUpperCase()}${selected.kind.slice(1)} · ${selected.id}`;

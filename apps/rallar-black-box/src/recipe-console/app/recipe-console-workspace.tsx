@@ -5,7 +5,7 @@ import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
 import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspace.ts';
 import { ExecuteWorkspace } from '../execute/execute-workspace.tsx';
-import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
+import { createMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
 import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import type { RecipeConsoleAccountSettings } from '../shell/AccountSettingsPanel.tsx';
@@ -50,7 +50,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
         setInspectorOpen(true);
     }, []);
     const selectMonitorControlRun = useCallback((controlRunId: string) => {
-        urlState.navigate(recipeConsoleMonitorControlRunSelectionPatch({
+        urlState.navigate(createMonitorControlRunSelectionPatch({
             state: urlState.state,
             controlRunId,
             distributedRuns: control.connection.query.snapshot?.distributedRuns ?? []

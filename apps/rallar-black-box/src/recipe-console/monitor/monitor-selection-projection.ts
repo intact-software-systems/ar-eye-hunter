@@ -36,7 +36,7 @@ export type MonitorRunOptionsInput = Readonly<{
 const workByDistributedSelection = new WeakMap<object, MonitorSelectionIndexWork>();
 const workByRunOptions = new WeakMap<object, MonitorSelectionIndexWork>();
 
-export function deriveMonitorDistributedRunSelectionProjection(
+export function computeMonitorDistributedRunSelection(
     input: MonitorDistributedRunSelectionInput
 ): MonitorDistributedRunSelection {
     const prepared = prepareIndex(input);
@@ -135,7 +135,7 @@ export function deriveMonitorDistributedRunSelectionProjection(
     );
 }
 
-export function deriveMonitorRunOptionsProjection(
+export function computeMonitorRunOptions(
     input: MonitorRunOptionsInput
 ): readonly ControlDistributedRunSnapshot[] {
     const prepared = prepareIndex(input);
@@ -184,13 +184,13 @@ export function deriveMonitorRunOptionsProjection(
     );
 }
 
-export function monitorDistributedSelectionWork(
+export function getMonitorDistributedRunSelectionIndexWork(
     selection: MonitorDistributedRunSelection
 ): MonitorSelectionIndexWork | undefined {
     return workByDistributedSelection.get(selection);
 }
 
-export function monitorOptionsWork(
+export function getMonitorRunOptionsIndexWork(
     options: readonly ControlDistributedRunSnapshot[]
 ): MonitorSelectionIndexWork | undefined {
     return workByRunOptions.get(options);

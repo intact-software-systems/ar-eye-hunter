@@ -3,7 +3,7 @@ import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import {
     createMonitorRecipeEvidenceSelectionId,
-    parseMonitorRecipeEvidenceSelectionId,
+    toMonitorRecipeEvidenceIdentity,
     type MonitorEvidenceSelection,
     type MonitorRecipeEvidenceIdentity
 } from './monitor-selection.ts';
@@ -23,7 +23,7 @@ export function MonitorRecipeEvidence({
         patch?: Partial<RecipeConsoleUrlState>
     ): void;
 }>) {
-    const identity = parseMonitorRecipeEvidenceSelectionId(selectionId);
+    const identity = toMonitorRecipeEvidenceIdentity(selectionId);
     const recipeId = identity?.recipeId ?? selectionId;
     const rows = model.monitor.recipeProgress.filter((row) => row.recipeId === recipeId);
     if (rows.length === 0) {

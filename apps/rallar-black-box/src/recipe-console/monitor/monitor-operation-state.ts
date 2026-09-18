@@ -1,9 +1,12 @@
 import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { MonitorAction } from './monitor-action-policy.ts';
 
 export type MonitorArtifactState = Readonly<{
     status: 'idle' | 'pending' | 'ready' | 'error';
+    /** Absent until a bundle has been loaded for this context; a loaded one is retained while reloading. */
     bundle?: ControlDistributedRunArtifactBundle;
+    /** Absent unless `status` is `error`. */
     error?: string;
 }>;
 
@@ -14,9 +17,11 @@ export type MonitorOperationAuthority = Readonly<{
 }>;
 
 export type MonitorOperationState = Readonly<{
+    /** Absent until a control run and a distributed run are both selected. */
     contextKey?: string;
     artifact: MonitorArtifactState;
     operationGeneration: number;
+    /** Absent while no operation is in flight. */
     activeOperation?: MonitorOperationAuthority;
     /** Absent while no operation has failed since the last successful one. */
     operationError?: Error;
@@ -156,6 +161,6 @@ function decodeContextKeyDistributedRunId(value: unknown): string | undefined {
     if (typeof value !== 'object' || value === null) {
         return undefined;
     }
-    const { distributedRunId } = value as Readonly<{ distributedRunId?: unknown; }>;
+    const { distributedRunId } = value as ApiJsonObject;
     return typeof distributedRunId === 'string' ? distributedRunId : undefined;
 }

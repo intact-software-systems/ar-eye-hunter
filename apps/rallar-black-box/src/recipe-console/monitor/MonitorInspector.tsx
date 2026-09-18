@@ -4,9 +4,9 @@ import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import {
-    deriveMonitorRecipeEvidenceStatus,
+    computeMonitorRecipeEvidenceStatus,
     MONITOR_ARTIFACT_EVIDENCE_ID,
-    monitorEvidenceSelectionIdentifier,
+    toMonitorEvidenceSelectionLabel,
     type MonitorEvidenceSelection
 } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
@@ -39,7 +39,9 @@ export function MonitorInspector({
             <header className={styles.header}>
                 <p className={styles.eyebrow}>Evidence inspector</p>
                 <h2>{heading}</h2>
-                <ExactIdentifier value={monitorEvidenceSelectionIdentifier(active) ?? model.monitor.distributedRunId} />
+                <ExactIdentifier
+                    value={active ? toMonitorEvidenceSelectionLabel(active) : model.monitor.distributedRunId}
+                />
                 <StatusMark label={statusLabel(model, active)} status={selectionStatus(model, active)} />
             </header>
             {active
@@ -334,7 +336,7 @@ function selectionStatus(model: MonitorWorkspaceModel, selection?: MonitorEviden
         return progressStatus(model.monitor.agentProgress.find((row) => row.agentId === selection.id)?.execution);
     }
     if (selection.kind === 'recipe') {
-        return deriveMonitorRecipeEvidenceStatus(
+        return computeMonitorRecipeEvidenceStatus(
             model.monitor.recipeProgress,
             selection.id
         );

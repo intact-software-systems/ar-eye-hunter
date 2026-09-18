@@ -16,7 +16,7 @@ export type MonitorWorkspaceModel = Readonly<{
     verdict: RunVerdictView;
 }>;
 
-export function deriveMonitorWorkspaceModel(
+export function computeMonitorWorkspaceModel(
     state: MonitorWorkspaceState
 ): MonitorWorkspaceModel | undefined {
     const source = state.source;
