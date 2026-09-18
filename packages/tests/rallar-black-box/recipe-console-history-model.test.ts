@@ -700,7 +700,8 @@ describe('Recipe Console retention selection reconciliation', () => {
             urlState: afterCleanup,
             snapshot: { runs: [survivor], distributedRuns: [] },
             bootstrapGroup,
-            queryStatus: 'live'
+            queryStatus: 'live',
+            nowEpochMs: 10_000
         });
 
         expect(afterCleanup.controlRunId).toBeUndefined();

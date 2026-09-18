@@ -4,7 +4,6 @@ import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/re
 import { createRecipeConsoleUrlHistory } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-history.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { projectTuneIdentitySurfaces } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-identity.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import {
     tuneLeftSelectionPatch,
     tuneRightSelectionPatch,
@@ -15,6 +14,7 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 const state = (patch: Partial<RecipeConsoleUrlState> = {}): RecipeConsoleUrlState => ({
     v: 1,
@@ -177,7 +177,7 @@ const rightControl = control('control-right', 'right', 2);
 
 describe('Recipe Console Tune selection and comparison', () => {
     it('deduplicates artifact/control options deterministically and preserves explicit focus', () => {
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: state({ distributedRunId: 'left', compareRight: 'right' }),
             query: query([left, right], [leftControl, rightControl]),
             retainedArtifact: artifact(left, leftControl),
@@ -195,14 +195,14 @@ describe('Recipe Console Tune selection and comparison', () => {
     });
 
     it('keeps comparison explicit and reports invalid and same-run selections without rewriting', () => {
-        const missing = deriveTuneSelectionModel({
+        const missing = toTuneSelectionModelFromQuery({
             urlState: state({ distributedRunId: 'left' }),
             query: query([left, right], [])
         });
         expect(missing.comparison.state).toBe('incomplete');
         expect(missing.comparison.issues.map((issue) => issue.field)).toEqual(['compareLeft', 'compareRight']);
 
-        const invalid = deriveTuneSelectionModel({
+        const invalid = toTuneSelectionModelFromQuery({
             urlState: state({ compareLeft: 'missing-left', compareRight: 'missing-right' }),
             query: query([left, right], [])
         });
@@ -213,7 +213,7 @@ describe('Recipe Console Tune selection and comparison', () => {
             'missing-right'
         ]);
 
-        const same = deriveTuneSelectionModel({
+        const same = toTuneSelectionModelFromQuery({
             urlState: state({ compareLeft: 'left', compareRight: 'left' }),
             query: query([left], [leftControl])
         });
@@ -222,7 +222,7 @@ describe('Recipe Console Tune selection and comparison', () => {
     });
 
     it('composes every structural category and performance beside cross-control pairing', () => {
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: state({
                 compareLeft: 'left',
                 compareRight: 'right',
@@ -265,7 +265,7 @@ describe('Recipe Console Tune selection and comparison', () => {
             start: 2_000,
             end: 3_000
         });
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: state({ compareLeft: 'left', compareRight: 'other' }),
             query: query([left, incompatible], [leftControl, rightControl])
         });
@@ -279,7 +279,7 @@ describe('Recipe Console Tune selection and comparison', () => {
     });
 
     it('emits atomic right, left-only, and metric push patches through the v1 history contract', () => {
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: state(),
             query: query([left, right], [leftControl, rightControl])
         });
@@ -339,7 +339,7 @@ describe('Recipe Console Tune selection and comparison', () => {
         }
 
         const unsafeRun = { ...left, distributedRunId: malformed };
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: state({ compareLeft: malformed, compareRight: 'right' }),
             query: query([unsafeRun, right], [leftControl, rightControl]),
             retainedArtifact: artifact(unsafeRun, leftControl)

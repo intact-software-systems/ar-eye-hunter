@@ -8,7 +8,7 @@ import {
     tuneRunCatalogCacheWorkForTest,
     type TuneRunCatalogCache
 } from './tune-run-catalog-cache.ts';
-import { deriveTuneSelectionModel } from './tune-selection-model.ts';
+import { computeTuneSelectionModel } from './tune-selection-model.ts';
 import { deriveTuneWorkspaceSourceModel } from './tune-workspace-source-model.ts';
 import { TuneCandidate } from './TuneCandidate.tsx';
 import { TuneCommandTiming } from './TuneCommandTiming.tsx';
@@ -90,9 +90,8 @@ export default function TuneWorkspace({
             }
             : sourceTruth, [query.receivedAtEpochMs, sourceTruth]);
     const selection = useMemo(() =>
-        deriveTuneSelectionModel({
+        computeTuneSelectionModel({
             catalog,
-            query,
             urlState
         }), [catalog, urlState]);
     const inspect = useTuneInspectionHost({

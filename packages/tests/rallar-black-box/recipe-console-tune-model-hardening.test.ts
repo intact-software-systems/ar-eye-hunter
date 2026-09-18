@@ -3,13 +3,14 @@ import { createAnalyzeArtifactModel, type AnalyzeArtifactModel } from '../../../
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import { validateTuneCatalogSelections } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-catalog-selection-validation.ts';
 import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
+import { computeTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import { deriveTuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 function run(id: string, controlRunId: string, updated = 2_000): ControlDistributedRunSnapshot {
     return {
@@ -174,12 +175,11 @@ describe('Recipe Console Tune model hardening', () => {
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
         });
-        let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
+        let model: ReturnType<typeof computeTuneSelectionModel> | undefined;
 
         expect(() => {
-            model = deriveTuneSelectionModel({
+            model = computeTuneSelectionModel({
                 catalog: deferred,
-                query: querySnapshot,
                 urlState: url({
                     compareLeft: 'baseline',
                     compareRight: 'deep-invalid'
@@ -410,9 +410,8 @@ describe('Recipe Console Tune model hardening', () => {
                 codes: ['invalid-manifest']
             })
         ]);
-        const selection = deriveTuneSelectionModel({
+        const selection = computeTuneSelectionModel({
             catalog: selected,
-            query: querySnapshot,
             urlState: url({ compareRight: 'deep-invalid' })
         });
         expect(selection.comparison.state).toBe('invalid');
@@ -491,7 +490,7 @@ describe('Recipe Console Tune model hardening', () => {
         const leftControl = control('control-left', 1);
         const liveRight = control('control-right', 2);
         const artifactRight = control('control-right', 10);
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: url({ compareLeft: 'left', compareRight: 'right' }),
             query: query('live', [left, right], [leftControl, liveRight]),
             retainedArtifact: artifact(right, artifactRight),
@@ -515,7 +514,7 @@ describe('Recipe Console Tune model hardening', () => {
             const leftControl = control('control-left', 1);
             const liveRight = control('control-right', 2);
             const retainedRight = control('control-right', 10);
-            const model = deriveTuneSelectionModel({
+            const model = toTuneSelectionModelFromQuery({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [left, right], [leftControl, liveRight]),
                 retainedArtifact: artifact(right, retainedRight),
@@ -531,7 +530,7 @@ describe('Recipe Console Tune model hardening', () => {
                 delta: 1
             });
 
-            const withoutLivePair = deriveTuneSelectionModel({
+            const withoutLivePair = toTuneSelectionModelFromQuery({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [left, right], [leftControl]),
                 retainedArtifact: artifact(right, retainedRight),
@@ -548,7 +547,7 @@ describe('Recipe Console Tune model hardening', () => {
         const liveLeft = control('control-left', 1);
         const liveRight = control('control-right', 2);
         const detailed = control('control-right', 10);
-        const unsupported = deriveTuneSelectionModel({
+        const unsupported = toTuneSelectionModelFromQuery({
             urlState: url({ compareLeft: 'left', compareRight: 'right' }),
             query: query('live', [left, right], [liveLeft, liveRight]),
             retainedArtifact: artifact(right, detailed, 'unsupported'),
@@ -561,7 +560,7 @@ describe('Recipe Console Tune model hardening', () => {
             delta: 1
         });
 
-        const retainedLeft = deriveTuneSelectionModel({
+        const retainedLeft = toTuneSelectionModelFromQuery({
             urlState: url({ compareLeft: 'left', compareRight: 'right' }),
             query: query('live', [left, right], [liveLeft, liveRight]),
             retainedArtifact: artifact(left, control('control-left', 10)),
@@ -607,7 +606,7 @@ describe('Recipe Console Tune model hardening', () => {
             const retained = artifact(right, control('control-right', 10));
             mutate(retained);
 
-            const model = deriveTuneSelectionModel({
+            const model = toTuneSelectionModelFromQuery({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [left, right], [liveLeft, liveRight]),
                 retainedArtifact: retained,
@@ -635,7 +634,7 @@ describe('Recipe Console Tune model hardening', () => {
     it('keeps comparison invalid when either selected run lacks a control pair', () => {
         const left = run('left', 'control-left');
         const right = run('right', 'control-right');
-        const model = deriveTuneSelectionModel({
+        const model = toTuneSelectionModelFromQuery({
             urlState: url({ compareLeft: 'left', compareRight: 'right' }),
             query: query('live', [left, right], [])
         });
@@ -668,9 +667,9 @@ describe('Recipe Console Tune model hardening', () => {
         const left = run('left', 'control-left');
         const malformed = structuredClone(run('right', 'control-right'));
         Reflect.set(malformed.manifest, 'recipes', null);
-        let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
+        let model: ReturnType<typeof computeTuneSelectionModel> | undefined;
         expect(() => {
-            model = deriveTuneSelectionModel({
+            model = toTuneSelectionModelFromQuery({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [left, malformed], [
                     control('control-left'),
@@ -698,10 +697,10 @@ describe('Recipe Console Tune model hardening', () => {
         const left = run('left', 'control-left');
         const malformed = structuredClone(run('right', 'control-right'));
         mutate(malformed);
-        let model: ReturnType<typeof deriveTuneSelectionModel> | undefined;
+        let model: ReturnType<typeof computeTuneSelectionModel> | undefined;
 
         expect(() => {
-            model = deriveTuneSelectionModel({
+            model = toTuneSelectionModelFromQuery({
                 urlState: url({ compareLeft: 'left', compareRight: 'right' }),
                 query: query('live', [
                     left,

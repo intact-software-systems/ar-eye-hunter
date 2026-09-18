@@ -9,7 +9,6 @@ import { createTuneCandidateKnobIndex } from '../../../apps/rallar-black-box/src
 import { createTuneRunCatalogCache, tuneRunCatalogCacheWorkForTest } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog-cache.ts';
 import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { createTuneRunPickerModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-picker-model.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import type { TuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import { TuneKnobInventory } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobInventory.tsx';
 import { TuneKnobPicker } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobPicker.tsx';
@@ -24,6 +23,7 @@ import {
     createDefaultRecipeConsoleTuneScaleFixture,
     createRecipeConsoleTuneScaleFixture
 } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -85,7 +85,7 @@ describe('Recipe Console Tune scale windowing', () => {
             (_, index) => controlRun(index)
         );
 
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             urlState: {
                 v: 1,
                 experience: 'recipe-console',
@@ -561,7 +561,7 @@ function scaleSelection(left: string | undefined, right: string | undefined) {
         { length: RUN_COUNT },
         (_, index) => controlRun(index)
     );
-    return deriveTuneSelectionModel({
+    return toTuneSelectionModelFromQuery({
         urlState: {
             v: 1,
             experience: 'recipe-console',

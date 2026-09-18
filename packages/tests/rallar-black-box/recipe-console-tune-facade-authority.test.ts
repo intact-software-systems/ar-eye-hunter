@@ -5,7 +5,6 @@ import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/r
 import { projectTuneFacadeManifestValidation } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';
 import { deriveTuneSourceModelFromFacade } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-source-model.ts';
 import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import { tuneSourceIssueKey } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-issue.ts';
 import { tuneRightSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-url-patches.ts';
 import { deriveTuneWorkspaceSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
@@ -15,6 +14,7 @@ import type {
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import * as manifestValidation from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 const urlState = (
     patch: Partial<RecipeConsoleUrlState> = {}
@@ -280,7 +280,7 @@ describe('Recipe Console Tune facade authority', () => {
             candidateManifest: false
         });
         const baseline = distributedRun('baseline', 'control-baseline');
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([baseline], [controlRun('control-baseline')]),
             retainedFacade: retained,
             urlState: urlState({
@@ -355,7 +355,7 @@ describe('Recipe Console Tune facade authority', () => {
                 recipeIds: { entries: ['visible-only'], total: 2, omitted: 1 }
             }
         } satisfies AnalyzeTuneArtifactFacade;
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([baseline], [controlRun('control-baseline')]),
             retainedFacade: retained,
             urlState: urlState({
@@ -388,7 +388,7 @@ describe('Recipe Console Tune facade authority', () => {
                 }
             }
         } satisfies AnalyzeTuneArtifactFacade;
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([], []),
             retainedFacade: retained,
             urlState: urlState({ distributedRunId: 'role-map-artifact' })
@@ -536,7 +536,7 @@ describe('Recipe Console Tune facade authority', () => {
             [baseline, candidate],
             [controlRun('control-baseline'), controlRun('control-candidate')]
         );
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: controlQuery,
             retainedFacade: retained,
             urlState: urlState({

@@ -47,7 +47,8 @@ export function deriveRecipeConsoleControlSelection(
         bootstrapRunId?: string;
         bootstrapGroup: RallarBlackBoxDistributedGroupRef;
         queryStatus: ControlQueryStatus;
-        nowEpochMs?: number;
+        nowEpochMs: number;
+        /** Absent unless the caller has a prebuilt snapshot selection index to reuse. */
         selectionIndex?: ControlSnapshotSelectionIndex;
     }>
 ): RecipeConsoleControlSelection {
@@ -239,7 +240,7 @@ export function deriveRecipeConsoleControlSelection(
         requiredCommandKinds: [],
         requiredRecipes: [],
         monitorAgentProgress: [],
-        nowEpochMs: input.nowEpochMs ?? Date.now(),
+        nowEpochMs: input.nowEpochMs,
         staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS,
         snapshot: input.snapshot,
         selectionIndex
