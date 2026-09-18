@@ -2667,6 +2667,333 @@ moved or changed test.
         "requiredConstraint": "The rejected late candidate is terminated exactly once and the accepted worker is terminated zero times.",
         "failureRationale": "The rejected completion and the retained dataset look the same whether the candidate thread was torn down or left holding its transferred bytes, and whether or not the accepted thread survived to answer the next request."
       }
+    },
+    {
+      "id": "retention-cleanup-mount-defers-the-retention-client",
+      "sharedCoverageGroup": "retention-cleanup-preview-defers-then-requests-one-plan",
+      "domain": "Recipe Console retention cleanup client acquisition",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Mounting the retention cleanup controller loads no retention client; the lazily imported client and its authorized control endpoint appear only when the operator asks for a preview. Executable assertion: “loads only on Preview and exposes exact frozen token-free consequences”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#loads only on Preview and exposes exact frozen token-free consequences",
+      "coverageRelation": "The test renders the controller with a live capability and reads its idle state and enabled Preview affordance before anything is clicked. An idle controller renders identically whether or not its client was already acquired, so the unmade load call is the only witness that the mount deferred it.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ControlLazyCapability.load for the retention API, which dynamically imports the retention client chunk and binds an authorized control endpoint",
+        "observableEffect": "A load fetches the retention feature chunk over the network and binds a fresh authorized endpoint to the live control connection, and the capability caches that result for the connection’s lifetime.",
+        "requiredConstraint": "Rendering the cleanup controller performs zero loads until the operator requests a preview.",
+        "failureRationale": "A load on mount spends a chunk fetch and an authorization binding for every operator who never opens cleanup, and the cached result then belongs to a connection state the operator never asked about."
+      }
+    },
+    {
+      "id": "retention-cleanup-preview-loads-once-and-requests-one-plan",
+      "sharedCoverageGroup": "retention-cleanup-preview-defers-then-requests-one-plan",
+      "domain": "Recipe Console retention plan request",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "One operator preview acquires the retention client exactly once and asks the control server for exactly one retention plan. Executable assertion: “loads only on Preview and exposes exact frozen token-free consequences”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#loads only on Preview and exposes exact frozen token-free consequences",
+      "coverageRelation": "The test previews once and reads the frozen, token-free consequences the controller exposes. The same rows render for one plan request or for several, so the load and request counts are the only witnesses that one operator action produced one plan.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ControlLazyCapability.load and RecipeConsoleControlRetentionApi.preview, the dry-run retention plan request to the control server",
+        "observableEffect": "Each preview issues a dry-run retention request and advances the client’s preview generation, superseding any plan issued before it.",
+        "requiredConstraint": "One operator preview performs exactly one load and issues exactly one plan request.",
+        "failureRationale": "A second plan request supersedes the first, so the plan token the operator later confirms is no longer the one the server holds, while the rendered consequences look identical either way."
+      }
+    },
+    {
+      "id": "retention-cleanup-strictmode-replay-issues-no-second-plan",
+      "domain": "Recipe Console retention cleanup under StrictMode effect replay",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The StrictMode double-invoked context effect neither re-acquires the retention client nor reissues the operator’s plan request. Executable assertion: “remains operational after the StrictMode effect replay”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#remains operational after the StrictMode effect replay",
+      "coverageRelation": "The test mounts the controller inside StrictMode, which runs its context effect twice, previews once and reads the preview-ready state with its enabled confirm affordance. That state is reached whether or not the replay reissued the work, so the counts are the only witnesses.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ControlLazyCapability.load and RecipeConsoleControlRetentionApi.preview reached through useRetentionCleanup",
+        "observableEffect": "Each load fetches the retention chunk and binds an authorized endpoint; each preview issues a dry-run retention request and supersedes the previous plan.",
+        "requiredConstraint": "A StrictMode effect replay leaves one operator preview at exactly one load and one plan request.",
+        "failureRationale": "The replayed effect resets the controller’s context; if it also re-ran the operator’s work the plan on screen would already be superseded on the server and nothing rendered would say so."
+      }
+    },
+    {
+      "id": "retention-cleanup-concurrent-previews-issue-one-plan",
+      "domain": "Recipe Console retention preview serialization",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Two previews raised in the same commit serialize into one client acquisition and one plan request, and the superseded result never reaches the operator. Executable assertion: “serializes double preview calls and suppresses a superseded result”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#serializes double preview calls and suppresses a superseded result",
+      "coverageRelation": "The test starts two previews before the first resolves, reads the busy controller, then resolves the pending request and reads the single preview-ready state. A controller that issued both requests and dropped one reaches the same rendered state, so the counts are the only witnesses.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ControlLazyCapability.load and RecipeConsoleControlRetentionApi.preview, the dry-run retention plan request to the control server",
+        "observableEffect": "Each preview issues a dry-run retention request to the control server and advances the client’s preview generation.",
+        "requiredConstraint": "A preview raised while another is in flight performs zero additional loads and issues zero additional plan requests.",
+        "failureRationale": "A concurrent second request supersedes the first inside the retention client, which aborts the operator’s own in-flight preview and leaves the panel waiting for a plan that will never arrive."
+      }
+    },
+    {
+      "id": "retention-cleanup-confirmation-deletes-once-and-reconciles-once",
+      "domain": "Recipe Console retention deletion",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A confirmed cleanup sends exactly one destructive delete for the previewed plan and runs its reconciliation exactly once, even when the operator confirms twice. Executable assertion: “confirms only the exact private preview and awaits one callback before success”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#confirms only the exact private preview and awaits one callback before success",
+      "coverageRelation": "The test confirms twice within one commit, holds the reconciliation callback open, then releases it and reads the succeeded state with its confirmation payload. That state and payload are identical whether one or two deletes reached the server, so the counts are the only witnesses.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ControlLazyCapability.load, RecipeConsoleControlRetentionApi.confirm (the destructive retention deletion request) and the caller’s afterConfirmed reconciliation callback",
+        "observableEffect": "A confirm deletes the previewed control runs, their distributed runs and their fleet reports on the control server; a reconciliation re-reads the control snapshot and rewrites the console’s URL selection.",
+        "requiredConstraint": "One operator confirmation reuses the already-loaded client, sends exactly one delete and runs exactly one reconciliation.",
+        "failureRationale": "Retention deletion is irreversible and consumes its plan token, so a second delete either destroys a set the operator never reviewed or fails after the first already ran, and a repeated reconciliation rewrites operator state after the run set has already changed."
+      }
+    },
+    {
+      "id": "retention-cleanup-drifted-plan-sends-no-second-delete",
+      "domain": "Recipe Console retention drift recovery",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A drifted deletion keeps only the stale consequences on screen and refuses every further confirmation until a new preview is taken. Executable assertion: “maps 409 to drift, preserves only stale consequences, and requires a new preview”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#maps 409 to drift, preserves only stale consequences, and requires a new preview",
+      "coverageRelation": "The test confirms once into a 409, reads the drift state with its non-current preview, confirms again and reads the delete count. The drift state is unchanged by a refused or a repeated request, so the count is the only witness that the second confirmation never left the console.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RecipeConsoleControlRetentionApi.confirm, the destructive retention deletion request",
+        "observableEffect": "Each confirm asks the control server to delete the run set named by a plan token.",
+        "requiredConstraint": "After a drift refusal, further confirmations leave the delete count at the single attempt that drifted.",
+        "failureRationale": "The drifted plan token no longer names the run set the operator reviewed, so a retry would delete whatever the server now counts as excess without the operator ever seeing it."
+      }
+    },
+    {
+      "id": "retention-cleanup-replaced-connection-abandons-the-late-client",
+      "domain": "Recipe Console retention capability replacement",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "When the control connection is replaced while a retention client is still loading, the late client is never asked for a plan and the replacement acquires nothing on its own. Executable assertion: “invalidates synchronously on capability replacement and suppresses late load and preview”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates synchronously on capability replacement and suppresses late load and preview",
+      "coverageRelation": "The test starts a preview whose load is still pending, replaces the capability, resolves the old load and reads the unavailable state. That state is reached whether or not the resolved client was used, so the two unmade calls are the only witnesses.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RecipeConsoleControlRetentionApi.preview on the superseded connection’s client, and ControlLazyCapability.load on the replacement capability",
+        "observableEffect": "A preview issues a dry-run retention request over the connection that owns the client; a load fetches the retention chunk and binds an authorized endpoint to that capability.",
+        "requiredConstraint": "A capability replacement leaves the superseded client at zero plan requests and the replacement at zero loads until the operator asks again.",
+        "failureRationale": "A plan request over the superseded connection reads a run set the operator is no longer looking at, and an eager load on replacement spends a chunk fetch and an authorization binding nobody requested."
+      }
+    },
+    {
+      "id": "retention-cleanup-identity-replacement-sends-no-stale-delete",
+      "sharedCoverageGroup": "retention-cleanup-identity-replacement-rebinds-its-client",
+      "domain": "Recipe Console retention plan invalidation",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Replacing the capability’s loader under the same generation and lifetime invalidates a completed plan, and no confirmation reaches either the previous or the replacement client. Executable assertion: “invalidates a completed preview on capability identity replacement”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement",
+      "coverageRelation": "The test completes a preview, swaps in a capability with the same generation and signal but a different loader, reads the unavailable state with its non-current preview and then confirms. The state already reports the plan as stale, so the two unmade deletes are the only witnesses that nothing was sent.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "RecipeConsoleControlRetentionApi.confirm on both the previous and the replacement retention client",
+        "observableEffect": "Each confirm asks the control server to delete the run set named by a plan token.",
+        "requiredConstraint": "A confirmation raised after the loader was replaced sends zero deletes to either client.",
+        "failureRationale": "A completed plan token belongs to the client that issued it; sending it afterwards either deletes over a connection the console has abandoned or replays a plan the replacement never offered."
+      }
+    },
+    {
+      "id": "retention-cleanup-identity-replacement-previews-once-through-the-new-client",
+      "sharedCoverageGroup": "retention-cleanup-identity-replacement-rebinds-its-client",
+      "domain": "Recipe Console retention client rebinding",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "After a loader replacement the next preview acquires the replacement client exactly once and asks it for exactly one plan. Executable assertion: “invalidates a completed preview on capability identity replacement”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement",
+      "coverageRelation": "The test previews again after the replacement and reads the confirmable controller. A confirmable controller follows from any successful plan, so the counts are the only witnesses that the plan came from one acquisition of the replacement client and one request over it.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The replacement capability’s ControlLazyCapability.load and its RecipeConsoleControlRetentionApi.preview",
+        "observableEffect": "The load fetches the retention chunk and binds an authorized endpoint for the replacement; the preview issues one dry-run retention request over it.",
+        "requiredConstraint": "The first preview after a loader replacement performs exactly one load and one plan request on the replacement client.",
+        "failureRationale": "Reusing the invalidated client would confirm over a connection the console has abandoned, and a repeated request would supersede the very plan the operator is about to confirm."
+      }
+    },
+    {
+      "id": "retention-cleanup-drifted-confirmation-reconciles-nothing",
+      "domain": "Recipe Console retention reconciliation fencing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A confirmation that completes after the control context changed never runs its reconciliation callback. Executable assertion: “aborts in-flight work on signal/context drift and never calls back after drift”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts in-flight work on signal/context drift and never calls back after drift",
+      "coverageRelation": "The test holds the confirmation open, replaces the capability, resolves the confirmation and reads the unavailable state. That state is reached whether or not the callback ran, so the unmade reconciliation is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "The caller’s afterConfirmed reconciliation callback, which re-reads the control snapshot and rewrites the console’s URL selection",
+        "observableEffect": "Running the reconciliation refreshes the control snapshot and replaces the operator’s URL selection with the post-cleanup one.",
+        "requiredConstraint": "A confirmation resolved after a context change runs its reconciliation zero times.",
+        "failureRationale": "The reconciliation would refresh and rewrite the selection of the control connection the operator moved to, using run ids deleted on the connection they left."
+      }
+    },
+    {
+      "id": "retention-cleanup-reconciliation-starts-once-per-confirmation",
+      "sharedCoverageGroup": "retention-cleanup-reconciliation-aborts-on-context-drift",
+      "domain": "Recipe Console retention reconciliation lifetime",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A confirmed cleanup starts its reconciliation exactly once and hands it the abort signal of that operation. Executable assertion: “aborts an in-progress reconciliation callback on context drift”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts an in-progress reconciliation callback on context drift",
+      "coverageRelation": "The test waits for the reconciliation to start so it can read the abort signal the controller handed it; that callback invocation is the only place the signal exists. The count both proves that one reconciliation began and names the call whose signal the rest of the assertion reads.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The caller’s afterConfirmed reconciliation callback, invoked with the confirmation, the sanitized plan and the operation’s abort signal",
+        "observableEffect": "Invoking the reconciliation begins the post-cleanup refresh and URL rewrite under the operation’s own abort signal.",
+        "requiredConstraint": "One confirmation begins exactly one reconciliation, and the signal it carries is the one the controller aborts on context drift.",
+        "failureRationale": "Without a single started call there is no signal to read at all, and a second reconciliation would refresh and rewrite the operator’s selection twice for one deletion."
+      }
+    },
+    {
+      "id": "retention-cleanup-aborted-reconciliation-performs-no-work",
+      "sharedCoverageGroup": "retention-cleanup-reconciliation-aborts-on-context-drift",
+      "domain": "Recipe Console retention reconciliation abort",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A reconciliation already running when the control context changes performs no further work once its signal aborts. Executable assertion: “aborts an in-progress reconciliation callback on context drift”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts an in-progress reconciliation callback on context drift",
+      "coverageRelation": "The test replaces the capability while the reconciliation awaits, then releases it and reads the unavailable state. The state is the same whether the callback’s remaining work ran or not, so the unmade side effect is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "The post-cleanup work the reconciliation callback guards behind its abort signal",
+        "observableEffect": "The guarded work rewrites the console’s selection from the run ids the cleanup deleted.",
+        "requiredConstraint": "A reconciliation whose signal aborted performs the guarded work zero times.",
+        "failureRationale": "The abort is the only thing standing between a completed deletion on the old connection and a selection rewrite on the new one, and the rendered state reports neither."
+      }
+    },
+    {
+      "id": "history-retention-panel-defers-the-retention-client",
+      "sharedCoverageGroup": "history-retention-preview-defers-until-the-operator-asks",
+      "domain": "Recipe Console History retention panel acquisition",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Rendering the History retention panel acquires no retention client; the client appears only when the operator presses Preview cleanup. Executable assertion: “previews, confirms, refreshes, then selectively replaces URL state”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#previews, confirms, refreshes, then selectively replaces URL state",
+      "coverageRelation": "The test renders the History workspace with an authorized capability and reads the panel before any click. The panel renders the same whether or not its client was already acquired, so the unmade load is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ControlLazyCapability.load for the retention API, which dynamically imports the retention client chunk and binds an authorized control endpoint",
+        "observableEffect": "A load fetches the retention feature chunk over the network and binds an authorized, deletion-capable endpoint to the live control connection.",
+        "requiredConstraint": "Rendering the History workspace performs zero retention loads.",
+        "failureRationale": "Opening History would then fetch the cleanup chunk and bind a deletion-capable endpoint for every operator who came only to read run history."
+      }
+    },
+    {
+      "id": "history-retention-preview-click-loads-the-client-once",
+      "sharedCoverageGroup": "history-retention-preview-defers-until-the-operator-asks",
+      "domain": "Recipe Console History retention preview",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Pressing Preview cleanup acquires the retention client exactly once for the connection. Executable assertion: “previews, confirms, refreshes, then selectively replaces URL state”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#previews, confirms, refreshes, then selectively replaces URL state",
+      "coverageRelation": "The test clicks Preview cleanup and reads the rendered candidate rows and the absent plan token. Those rows render from any successful plan, so the load count is the only witness that one click acquired one client.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "ControlLazyCapability.load for the retention API, which dynamically imports the retention client chunk and binds an authorized control endpoint",
+        "observableEffect": "Each load fetches the retention chunk and binds a fresh authorized endpoint, and the capability caches that result for the connection’s lifetime.",
+        "requiredConstraint": "One Preview cleanup click performs exactly one load.",
+        "failureRationale": "A second load binds a second authorized endpoint, and the plan the operator confirms then belongs to whichever client answered last."
+      }
+    },
+    {
+      "id": "history-retention-unauthorized-operator-loads-nothing",
+      "domain": "Recipe Console History retention authorization gate",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "While operator authorization is required, the disabled Preview cleanup control acquires no retention client. Executable assertion: “keeps preview unavailable when operator authorization is required”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#keeps preview unavailable when operator authorization is required",
+      "coverageRelation": "The test renders with authorization required and reads the operator sentence and the disabled control. A disabled button renders identically whether or not the client behind it was acquired, so the unmade load is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ControlLazyCapability.load for the retention API, which dynamically imports the retention client chunk and binds an authorized control endpoint",
+        "observableEffect": "A load fetches the retention chunk and binds an authorized control endpoint capable of the destructive confirmation.",
+        "requiredConstraint": "An operator without authorization causes zero retention loads.",
+        "failureRationale": "Binding a deletion-capable endpoint before the operator is authorized moves the authorization decision behind a disabled control, where nothing rendered would report it."
+      }
+    },
+    {
+      "id": "history-retention-untrusted-credentials-load-nothing",
+      "domain": "Recipe Console History retention credential provenance gate",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "When control credential provenance is withheld, the retention panel withholds cleanup and acquires no retention client. Executable assertion: “withholds cleanup when credential provenance is unsafe”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#withholds cleanup when credential provenance is unsafe",
+      "coverageRelation": "The test renders with a credential-trust error and reads the withheld sentence and the disabled control. That rendering is identical whether or not the client was acquired, so the unmade load is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "ControlLazyCapability.load for the retention API, which dynamically imports the retention client chunk and binds an authorized control endpoint",
+        "observableEffect": "A load binds an authorized control endpoint using the very credentials the query reported as untrusted.",
+        "requiredConstraint": "A withheld credential provenance causes zero retention loads.",
+        "failureRationale": "Loading would spend the untrusted credential on a deletion-capable endpoint, which is exactly the use the withheld provenance exists to prevent."
+      }
+    },
+    {
+      "id": "history-retention-drifted-dialog-deletes-once",
+      "domain": "Recipe Console History retention drift dialog",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A drifted deletion closes the confirm dialog, restores Preview focus and leaves exactly one delete attempt behind. Executable assertion: “closes a drifted dialog, restores Preview focus, and requires a new preview”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#closes a drifted dialog, restores Preview focus, and requires a new preview",
+      "coverageRelation": "The test drives Preview, Review and Delete previewed runs into a 409, then reads the drift sentence, the closed dialog, the stale-preview label and the restored focus. None of those distinguishes one attempt from a silent retry, so the count is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RecipeConsoleControlRetentionApi.confirm, the destructive retention deletion request",
+        "observableEffect": "Each confirm asks the control server to delete the runs named by the plan token.",
+        "requiredConstraint": "The Delete previewed runs control sends exactly one delete, and the drift that follows adds none.",
+        "failureRationale": "A retry after drift deletes whatever the server now counts as excess rather than the run set the operator reviewed, and the panel would show the same drift sentence either way."
+      }
+    },
+    {
+      "id": "history-retention-confirmed-cleanup-refreshes-once",
+      "sharedCoverageGroup": "history-retention-reconciliation-under-context-change",
+      "domain": "Recipe Console History post-cleanup refresh",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A confirmed cleanup re-reads the control snapshot exactly once before it reconciles the URL. Executable assertion: “suppresses URL reconciliation when context changes during refresh”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#suppresses URL reconciliation when context changes during refresh",
+      "coverageRelation": "The test waits for the refresh to be in flight so it can change the control context underneath it. The refresh is held open by the test, and that single call is what places the reconciliation inside the window the assertion is about.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The History workspace’s refreshAfterCurrent, which re-reads the control-server snapshot after the current poll",
+        "observableEffect": "Each call re-reads the control snapshot and holds the URL reconciliation until it resolves.",
+        "requiredConstraint": "One confirmed cleanup refreshes the snapshot exactly once, with the reconciliation waiting behind that one refresh.",
+        "failureRationale": "Without a single in-flight refresh there is no window in which to change the context, and a second refresh would give the suppressed reconciliation another chance to run."
+      }
+    },
+    {
+      "id": "history-retention-context-change-during-refresh-rewrites-no-url",
+      "sharedCoverageGroup": "history-retention-reconciliation-under-context-change",
+      "domain": "Recipe Console History URL reconciliation fencing",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A control context change while the post-cleanup refresh is in flight suppresses the URL reconciliation entirely. Executable assertion: “suppresses URL reconciliation when context changes during refresh”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#suppresses URL reconciliation when context changes during refresh",
+      "coverageRelation": "The test replaces the capability during the held refresh, releases it and reads the stale-preview label and the closed dialog. Neither reports the address bar, so the unmade replace is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "The History workspace’s replace, which rewrites the console’s URL state in place",
+        "observableEffect": "A replace removes the deleted run, distributed run, agent, recipe and command selection from the operator’s address bar.",
+        "requiredConstraint": "A context change during the refresh leaves the URL untouched: zero replaces.",
+        "failureRationale": "The patch was computed from run ids deleted on the previous control connection; applying it would clear the new connection’s selection for runs it never had."
+      }
+    },
+    {
+      "id": "history-retention-authorization-loss-refreshes-once",
+      "sharedCoverageGroup": "history-retention-reconciliation-under-authorization-loss",
+      "domain": "Recipe Console History post-cleanup refresh under authorization loss",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A confirmed cleanup re-reads the control snapshot exactly once even when operator authorization is withdrawn while the same retention client stays in place. Executable assertion: “aborts reconciliation when authorization is lost without API replacement”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#aborts reconciliation when authorization is lost without API replacement",
+      "coverageRelation": "The test waits for the single refresh so it can withdraw operator authorization while that refresh is still in flight. The held call is what defines the window the rest of the assertion depends on.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The History workspace’s refreshAfterCurrent, which re-reads the control-server snapshot after the current poll",
+        "observableEffect": "Each call re-reads the control snapshot and holds the URL reconciliation until it resolves.",
+        "requiredConstraint": "One confirmed cleanup refreshes exactly once, with the reconciliation waiting behind it.",
+        "failureRationale": "Without one in-flight refresh the authorization loss cannot be placed inside the reconciliation window, and a second refresh would give the suppressed reconciliation another chance to run."
+      }
+    },
+    {
+      "id": "history-retention-authorization-loss-rewrites-no-url",
+      "sharedCoverageGroup": "history-retention-reconciliation-under-authorization-loss",
+      "domain": "Recipe Console History URL reconciliation under authorization loss",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Losing operator authorization during the post-cleanup refresh suppresses the URL reconciliation even though the retention client is unchanged. Executable assertion: “aborts reconciliation when authorization is lost without API replacement”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#aborts reconciliation when authorization is lost without API replacement",
+      "coverageRelation": "The test withdraws authorization during the held refresh, releases it and reads the authorization sentence and the closed dialog. Neither reports the address bar, so the unmade replace is the only witness.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "The History workspace’s replace, which rewrites the console’s URL state in place",
+        "observableEffect": "A replace clears the deleted run selection from the operator’s address bar.",
+        "requiredConstraint": "An authorization loss during the refresh leaves the URL untouched: zero replaces.",
+        "failureRationale": "The reconciliation would rewrite the operator’s selection at the moment the console can no longer read the runs behind it, leaving an address bar that matches nothing the operator can see."
+      }
     }
   ],
   "entries": [
@@ -6156,6 +6483,325 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The unmade terminate call is the only witness that the accepted worker survived the rejected late candidate.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#rejects a candidate completed after a render-time context and execution change before passive reconciliation"
+    },
+    {
+      "id": "test-structure-coupling-fcf32bd5c97d44c8",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-mount-defers-the-retention-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade load is the only witness that mounting the panel fetched no retention chunk and bound no authorized endpoint before the operator asked.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#loads only on Preview and exposes exact frozen token-free consequences"
+    },
+    {
+      "id": "test-structure-coupling-7d3ba7fd24a6dba9",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-preview-loads-once-and-requests-one-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that the operator’s first preview, and not the render, acquired the retention client.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#loads only on Preview and exposes exact frozen token-free consequences"
+    },
+    {
+      "id": "test-structure-coupling-bc3234f3bfba5c13",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-preview-loads-once-and-requests-one-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single plan request witnesses that one Preview action asked the control server for one plan instead of superseding its own.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#loads only on Preview and exposes exact frozen token-free consequences"
+    },
+    {
+      "id": "test-structure-coupling-b4a24cf9b074895e",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-strictmode-replay-issues-no-second-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that the replayed StrictMode mount effect did not re-acquire the retention client.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#remains operational after the StrictMode effect replay"
+    },
+    {
+      "id": "test-structure-coupling-9ab6dedf56ed2673",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-strictmode-replay-issues-no-second-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single plan request witnesses that the replayed effect did not supersede the operator’s own preview.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#remains operational after the StrictMode effect replay"
+    },
+    {
+      "id": "test-structure-coupling-f589cffbfd80f60f",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-concurrent-previews-issue-one-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that the second concurrent preview acquired no further client while the first was in flight.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#serializes double preview calls and suppresses a superseded result"
+    },
+    {
+      "id": "test-structure-coupling-3cdb4577e62e6e84",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-concurrent-previews-issue-one-plan",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single plan request witnesses that the second concurrent preview never reached the control server to supersede the first.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#serializes double preview calls and suppresses a superseded result"
+    },
+    {
+      "id": "test-structure-coupling-6933890207d86446",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-confirmation-deletes-once-and-reconciles-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that the confirmation reused the client the preview acquired rather than binding a second authorized endpoint.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#confirms only the exact private preview and awaits one callback before success"
+    },
+    {
+      "id": "test-structure-coupling-db3215194d8dece3",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-confirmation-deletes-once-and-reconciles-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single delete witnesses that the second confirmation raised in the same commit never reached the control server.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#confirms only the exact private preview and awaits one callback before success"
+    },
+    {
+      "id": "test-structure-coupling-11eee3563888c45b",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-confirmation-deletes-once-and-reconciles-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single reconciliation witnesses that one deletion refreshed and rewrote the operator’s view once, not once per confirm call.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#confirms only the exact private preview and awaits one callback before success"
+    },
+    {
+      "id": "test-structure-coupling-fbf4ad9ca22b29e9",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-drifted-plan-sends-no-second-delete",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unchanged delete count is the only witness that the confirmation offered after the drift sent nothing.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#maps 409 to drift, preserves only stale consequences, and requires a new preview"
+    },
+    {
+      "id": "test-structure-coupling-2109e9e00a87d73e",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-replaced-connection-abandons-the-late-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade plan request is the only witness that the late-resolving client of the superseded connection was abandoned.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates synchronously on capability replacement and suppresses late load and preview"
+    },
+    {
+      "id": "test-structure-coupling-e48bc1257ab1f3f8",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-replaced-connection-abandons-the-late-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade load is the only witness that replacing the connection did not eagerly acquire a retention client of its own.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates synchronously on capability replacement and suppresses late load and preview"
+    },
+    {
+      "id": "test-structure-coupling-1065fea0d6db556c",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-identity-replacement-sends-no-stale-delete",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade delete on the previous client witnesses that the invalidated plan was not sent back to the client that issued it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement"
+    },
+    {
+      "id": "test-structure-coupling-a6d411cc6c04db35",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-identity-replacement-sends-no-stale-delete",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade delete on the replacement client witnesses that the invalidated plan was not replayed to the new loader.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement"
+    },
+    {
+      "id": "test-structure-coupling-91af7fd2e5d1d234",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-identity-replacement-previews-once-through-the-new-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that the preview taken after the replacement acquired the new client exactly once.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement"
+    },
+    {
+      "id": "test-structure-coupling-ebd88c566d01c3b6",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-identity-replacement-previews-once-through-the-new-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single plan request witnesses that the replacement client was asked for one plan rather than a superseding pair.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#invalidates a completed preview on capability identity replacement"
+    },
+    {
+      "id": "test-structure-coupling-ec748a9447a192a0",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-drifted-confirmation-reconciles-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade reconciliation is the only witness that a confirmation resolved after the context changed reconciled nothing.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts in-flight work on signal/context drift and never calls back after drift"
+    },
+    {
+      "id": "test-structure-coupling-7c5771f7c4785af6",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-reconciliation-starts-once-per-confirmation",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Waiting for exactly one started reconciliation both proves that the confirmation began one and names the call whose abort signal the assertion then reads.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts an in-progress reconciliation callback on context drift"
+    },
+    {
+      "id": "test-structure-coupling-604f3ee475a608b0",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "retention-cleanup-aborted-reconciliation-performs-no-work",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade side effect is the only witness that the aborted reconciliation stopped instead of rewriting the new connection’s selection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-cleanup.test.ts#aborts an in-progress reconciliation callback on context drift"
+    },
+    {
+      "id": "test-structure-coupling-bf67af6aea146bc4",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-panel-defers-the-retention-client",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade load is the only witness that rendering History fetched no cleanup chunk before the operator pressed Preview.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#previews, confirms, refreshes, then selectively replaces URL state"
+    },
+    {
+      "id": "test-structure-coupling-b5d2c9f3353f0687",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-preview-click-loads-the-client-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single load witnesses that one Preview cleanup click acquired one retention client for the connection.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#previews, confirms, refreshes, then selectively replaces URL state"
+    },
+    {
+      "id": "test-structure-coupling-32871347912c8ec0",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-unauthorized-operator-loads-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade load is the only witness that the disabled control acquired no deletion-capable endpoint.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#keeps preview unavailable when operator authorization is required"
+    },
+    {
+      "id": "test-structure-coupling-b03068e3657585db",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-untrusted-credentials-load-nothing",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade load is the only witness that the withheld credential was never spent on a retention endpoint.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#withholds cleanup when credential provenance is unsafe"
+    },
+    {
+      "id": "test-structure-coupling-3f1f9af6eccaf126",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-drifted-dialog-deletes-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single delete witnesses that the drifted dialog left one attempt behind rather than retrying under the stale plan.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#closes a drifted dialog, restores Preview focus, and requires a new preview"
+    },
+    {
+      "id": "test-structure-coupling-aec7fd09fa87317b",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-confirmed-cleanup-refreshes-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single refresh is what holds the reconciliation open long enough for the control context to change underneath it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#suppresses URL reconciliation when context changes during refresh"
+    },
+    {
+      "id": "test-structure-coupling-644c5c778fce6cac",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-context-change-during-refresh-rewrites-no-url",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade replace is the only witness that the suppressed reconciliation left the new connection’s address bar alone.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#suppresses URL reconciliation when context changes during refresh"
+    },
+    {
+      "id": "test-structure-coupling-3ab32c3886758f97",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-authorization-loss-refreshes-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single refresh is what holds the reconciliation open while operator authorization is withdrawn underneath it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#aborts reconciliation when authorization is lost without API replacement"
+    },
+    {
+      "id": "test-structure-coupling-3da4231e5aa3606e",
+      "path": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "history-retention-authorization-loss-rewrites-no-url",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade replace is the only witness that the reconciliation stopped instead of rewriting the selection after authorization was lost.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#aborts reconciliation when authorization is lost without API replacement"
     }
   ]
 }
