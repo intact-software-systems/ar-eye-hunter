@@ -3,7 +3,10 @@ import type { Either } from '@shared/resilience/Either.ts';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
-import { createBrowserAgentLaunchService } from '../../../apps/rallar-black-box/src/browser-agent-launch-service.ts';
+import {
+    createBrowserAgentLaunchService,
+    type BrowserAgentLaunchService
+} from '../../../apps/rallar-black-box/src/browser-agent-launch-service.ts';
 import {
     navigateReservedBrowserAgentPopups,
     releaseReservedBrowserAgentPopups,
@@ -18,6 +21,10 @@ import {
     useControlConnection,
     type RecipeConsoleControlConnection
 } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import {
+    useExecuteAgentLaunch,
+    type ExecuteAgentLaunchModel
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
 import { controlWebSocketUrlFromHttpBaseUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 
@@ -626,6 +633,84 @@ describe('browser-agent popup reservation', () => {
         expect(second.location.replace).not.toHaveBeenCalled();
     });
 });
+
+describe('Recipe Console Execute browser-agent launch model', () => {
+    it('names an unavailable clipboard instead of minting links it cannot copy', async () => {
+        const prepare = vi.fn<BrowserAgentLaunchService['prepare']>(
+            async () => ({
+                runId: 'launch-run',
+                group,
+                providerMode: 'simulated',
+                agents: []
+            })
+        );
+        const container = document.createElement('div');
+        document.body.append(container);
+        const root = createRoot(container);
+        let model: ExecuteAgentLaunchModel | undefined;
+
+        function LaunchProbe() {
+            model = useExecuteAgentLaunch({
+                connection: liveLaunchConnection(prepare),
+                controlRunId: 'launch-run',
+                group,
+                targetRows: [],
+                selectedAgentIds: [],
+                selectionLocked: false,
+                onBindRunId: () => undefined,
+                onSelectTargets: () => undefined
+            });
+            return null;
+        }
+
+        const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+        try {
+            await act(async () => root.render(createElement(LaunchProbe)));
+            expect(model?.blocker).toBeUndefined();
+            await act(async () => {
+                await model?.copyAgentLinks();
+            });
+
+            expect(prepare).not.toHaveBeenCalled();
+            expect(model?.message).toBe(
+                'Clipboard access is unavailable; open the agent tabs instead.'
+            );
+        }
+        finally {
+            if (clipboard) {
+                Object.defineProperty(navigator, 'clipboard', clipboard);
+            }
+            await act(async () => root.unmount());
+            container.remove();
+        }
+    });
+});
+
+function liveLaunchConnection(
+    prepare: BrowserAgentLaunchService['prepare']
+): RecipeConsoleControlConnection {
+    return {
+        bootstrap: {
+            apiBaseUrl: 'https://api.example.test',
+            providerMode: 'simulated',
+            bootstrapGroup: group
+        },
+        baseUrl: 'https://control.example.test',
+        browserAgentLaunch: { prepare },
+        execution: undefined,
+        retention: undefined,
+        fleet: undefined,
+        query: {
+            status: 'live',
+            reachability: 'reachable',
+            authorization: 'ready',
+            isRefreshing: false
+        },
+        refresh: async () => undefined,
+        refreshAfterCurrent: async () => undefined
+    };
+}
 
 function popup() {
     return {

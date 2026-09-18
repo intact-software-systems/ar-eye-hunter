@@ -8,11 +8,14 @@ import {
 
 export function useExecuteAgentCohort(
     input: Readonly<{
+        /** Absent until a launch has opened or copied at least one agent. */
         cohort?: ExecuteAgentLaunchCohort;
+        /** Absent unless a launch request is in flight. */
         pendingCohort?: ExecuteAgentLaunchCohort;
         targetRows: readonly DistributedRecipeTargetRow[];
         selectedAgentIds: readonly string[];
         selectionLocked: boolean;
+        /** Absent while no control run is selected. */
         controlRunId?: string;
         onSelectTargets(agentIds: readonly string[]): void;
         onReadyMessage(message: string): void;
@@ -29,7 +32,7 @@ export function useExecuteAgentCohort(
         () => readyExecuteAgentIds(input.cohort, input.targetRows),
         [input.cohort, input.targetRows]
     );
-    const cohortKey = executeAgentCohortKey(input.cohort);
+    const cohortKey = toExecuteAgentCohortKey(input.cohort);
     const cohortSelected = Boolean(
         input.cohort && sameExecuteAgentIds(
             input.cohort.agentIds,
@@ -90,7 +93,7 @@ export function useExecuteAgentCohort(
     } as const;
 }
 
-function executeAgentCohortKey(
+function toExecuteAgentCohortKey(
     cohort: ExecuteAgentLaunchCohort | undefined
 ): string | undefined {
     return cohort
