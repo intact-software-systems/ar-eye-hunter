@@ -58,6 +58,7 @@ import {
 } from './distributed-artifact-import.ts';
 import { readDistributedRunSeedFromUrl, writeDistributedRunSeedToUrl } from './distributed-run-seed-url.ts';
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
+import { readAvailableControlValue } from './read-available-control-value.ts';
 import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
 import { DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS, RUNNER_DISTRIBUTED_POLL_MS } from './runner-runs-constants.ts';
 
@@ -293,11 +294,11 @@ export function useRunnerRunsController({
             const nextControlRunId = nextDistributedRun?.controlRunId ?? override?.controlRunId ??
                 controlRunId;
             const nextControlRun = nextControlRunId
-                ? (await readControlRunSnapshot({
+                ? await readAvailableControlValue(readControlRunSnapshot({
                     ...controlEndpoint,
                     runId: nextControlRunId,
                     bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
-                })).right
+                }))
                 : undefined;
             if (!request.isCurrent()) {
                 return;
@@ -308,10 +309,10 @@ export function useRunnerRunsController({
                         isDistributedRunTerminalState(nextDistributedRun.state))
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
-                ? (await readDistributedRunArtifactBundle({
+                ? await readAvailableControlValue(readDistributedRunArtifactBundle({
                     ...controlEndpoint,
                     distributedRunId: nextDistributedRun.distributedRunId
-                })).right
+                }))
                 : preferredRunId === selectedDistributedRunId
                 ? artifactBundle
                 : undefined;
@@ -630,10 +631,10 @@ async function readPreferredDistributedRun(
     if (!input.preferredRunId) {
         return input.list[0];
     }
-    const outcome = await readDistributedRun({
+    const preferred = await readAvailableControlValue(readDistributedRun({
         ...input.controlEndpoint,
         distributedRunId: input.preferredRunId
-    });
-    return outcome.right ??
+    }));
+    return preferred ??
         input.list.find((item) => item.distributedRunId === input.preferredRunId);
 }
