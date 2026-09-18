@@ -41,7 +41,7 @@ export async function readDistributedRuns(
 async function readDistributedRunsDocument(
     input: ControlEndpointRequest
 ): Promise<ControlResponseDocument<ControlDistributedRunListResponse>> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL('/distributed-runs', toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
@@ -55,7 +55,7 @@ async function readDistributedRunsDocument(
 export async function readDistributedRun(
     input: ControlDistributedRunRequest
 ): Promise<ControlDistributedRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/distributed-runs/${encodeURIComponent(input.distributedRunId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
@@ -71,7 +71,7 @@ export async function createDistributedRun(
             manifest: RallarBlackBoxDistributedRunManifest;
         }>
 ): Promise<ControlDistributedRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL('/distributed-runs', toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
@@ -94,7 +94,7 @@ export async function readDistributedTargetResolution(
             manifest: RallarBlackBoxDistributedRunManifest;
         }>
 ): Promise<RallarBlackBoxDistributedTargetResolution> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL('/distributed-runs/resolve-targets', toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
@@ -136,7 +136,7 @@ export async function cancelDistributedRun(
 export async function readDistributedRunArtifactBundle(
     input: ControlDistributedRunRequest
 ): Promise<ControlDistributedRunArtifactBundle> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
             toNormalizedBaseUrl(input.baseUrl)
@@ -154,7 +154,7 @@ export async function readDistributedRunArtifactBundleBytes(
     if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes <= 0) {
         throw new RangeError('Control artifact byte limit must be a positive safe integer.');
     }
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
             toNormalizedBaseUrl(input.baseUrl)
@@ -173,7 +173,7 @@ async function writeDistributedRunPhase(
         }>,
     action: ControlDistributedRunCommandPhase
 ): Promise<ControlDistributedRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/${action}`,
             toNormalizedBaseUrl(input.baseUrl)

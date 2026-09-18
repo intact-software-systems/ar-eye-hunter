@@ -10,7 +10,10 @@ import {
     computeControlAgentBoardRows,
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
-import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
 import {
     readFleetReportBundle,
     readFleetReports,
@@ -62,6 +65,10 @@ export function useRunnerFleetController({
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
     );
+    const controlEndpoint = createDefaultControlEndpointRequest({
+        baseUrl: controlBaseUrl,
+        token: controlToken
+    });
     const [filters, setFilters] = useState<FleetFilterState>(
         readFleetFiltersFromUrl
     );
@@ -197,21 +204,16 @@ export function useRunnerFleetController({
         setError(undefined);
         try {
             const nextResponse = options.rebuild
-                ? await rebuildFleetReports({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken
-                })
+                ? await rebuildFleetReports(controlEndpoint)
                 : await readFleetReports({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken,
+                    ...controlEndpoint,
                     filter: fleetReportFilterFromUi(filters)
                 });
             if (!request.isCurrent()) {
                 return;
             }
             const nextSnapshot = await readControlServerSnapshot({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+                ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
@@ -316,8 +318,7 @@ export function useRunnerFleetController({
         setError(undefined);
         try {
             const bundle = await readFleetReportBundle({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+                ...controlEndpoint,
                 distributedRunId: selectedReport.distributedRunId
             });
             setLastExport(bundle);

@@ -3,6 +3,7 @@ import {
     readDistributedRun,
     readDistributedRuns
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import { createDefaultControlEndpointRequest } from '../../../control-run-manager/control-endpoint-request.ts';
 import {
     readControlRunSnapshot,
     readControlServerSnapshot
@@ -46,6 +47,7 @@ export function useDistributedRecipesSelectionActions({
         diagnosticSelectionAuthority
     } = remote;
     const { distributedRunId, setDistributedRunId } = builder;
+    const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
 
     const refresh = async (
         preferredRunId = selectedRunId,
@@ -57,11 +59,10 @@ export function useDistributedRecipesSelectionActions({
         try {
             const [serverSnapshot, distributedList] = await Promise.all([
                 readControlServerSnapshot({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 }),
-                readDistributedRuns({ baseUrl, token })
+                readDistributedRuns(controlEndpoint)
             ]);
             if (!request.isCurrent()) {
                 return;
@@ -105,8 +106,7 @@ export function useDistributedRecipesSelectionActions({
             setSelectedRunId(nextRunId);
             const nextRun = nextRunId
                 ? await readControlRunSnapshot({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 })
@@ -156,8 +156,7 @@ export function useDistributedRecipesSelectionActions({
         }
         try {
             const loaded = await readControlRunSnapshot({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
@@ -191,16 +190,14 @@ export function useDistributedRecipesSelectionActions({
         }
         try {
             const loaded = await readDistributedRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 distributedRunId: id
             });
             if (!request.isCurrent()) {
                 return;
             }
             const controlRun = await readControlRunSnapshot({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId: loaded.controlRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });

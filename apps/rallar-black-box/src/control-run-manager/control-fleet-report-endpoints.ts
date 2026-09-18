@@ -25,7 +25,7 @@ export async function readFleetReports(
 ): Promise<ControlFleetReportsResponse> {
     const url = new URL('/fleet/reports', toNormalizedBaseUrl(input.baseUrl));
     setFleetReportFilter(url, input.filter ?? {});
-    const response = await (input.fetchFn ?? fetch)(url, {
+    const response = await input.fetchFn(url, {
         headers: toAuthorizationHeaders(input.token)
     });
     return readJsonResponse<ControlFleetReportsResponse>(response);
@@ -34,7 +34,7 @@ export async function readFleetReports(
 export async function readFleetReport(
     input: ControlDistributedRunRequest
 ): Promise<ControlFleetRunReport> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
@@ -46,7 +46,7 @@ export async function readFleetReport(
 export async function readFleetReportBundle(
     input: ControlDistributedRunRequest
 ): Promise<ControlFleetReportBundle> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
             toNormalizedBaseUrl(input.baseUrl)
@@ -61,7 +61,7 @@ export async function readFleetReportBundle(
 export async function readFleetReportBundleBytes(
     input: ControlDistributedRunRequest
 ): Promise<ArrayBuffer> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
             toNormalizedBaseUrl(input.baseUrl)
@@ -79,7 +79,7 @@ export async function readFleetReportBundleBytes(
 export async function rebuildFleetReports(
     input: ControlEndpointRequest
 ): Promise<ControlFleetReportsResponse> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL('/fleet/reports/rebuild', toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',

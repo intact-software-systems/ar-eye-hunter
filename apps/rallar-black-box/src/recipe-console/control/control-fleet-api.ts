@@ -44,6 +44,9 @@ export function createRecipeConsoleControlFleetApi(
                             await readFleetReportBundleBytes({
                                 baseUrl: input.baseUrl,
                                 distributedRunId: request.distributedRunId,
+                                // The authorized endpoint's own fetch already carries the
+                                // Authorization header, so this reader sends none itself.
+                                token: undefined,
                                 fetchFn
                             }),
                             request.distributedRunId

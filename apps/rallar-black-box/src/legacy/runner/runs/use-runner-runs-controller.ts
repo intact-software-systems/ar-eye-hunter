@@ -23,7 +23,10 @@ import {
     readDistributedRunArtifactBundle,
     readDistributedRuns
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
-import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
 import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     compareDistributedRuns,
@@ -257,6 +260,7 @@ export function useRunnerRunsController({
         const request = distributedRefreshRequests.begin();
         const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
         const token = override?.controlToken ?? controlToken;
+        const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
         const preferredRunId = override?.distributedRunId ?? selectedDistributedRunId;
         if (!options.quiet) {
             manualDistributedRefreshActive.current = true;
@@ -264,7 +268,7 @@ export function useRunnerRunsController({
         }
         setDistributedError(undefined);
         try {
-            const fetchedRuns = await readDistributedRuns({ baseUrl, token });
+            const fetchedRuns = await readDistributedRuns(controlEndpoint);
             if (!request.isCurrent()) {
                 return;
             }
@@ -276,8 +280,7 @@ export function useRunnerRunsController({
                 : undefined;
             const nextDistributedRun = preferredRunId
                 ? await readDistributedRun({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     distributedRunId: preferredRunId
                 }).catch(() => selectedFromList)
                 : list[0];
@@ -288,8 +291,7 @@ export function useRunnerRunsController({
                 controlRunId;
             const nextControlRun = nextControlRunId
                 ? await readControlRunSnapshot({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     runId: nextControlRunId,
                     bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
                 }).catch(() => undefined)
@@ -304,8 +306,7 @@ export function useRunnerRunsController({
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
                 ? await readDistributedRunArtifactBundle({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     distributedRunId: nextDistributedRun.distributedRunId
                 }).catch(() => undefined)
                 : preferredRunId === selectedDistributedRunId

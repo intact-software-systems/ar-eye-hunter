@@ -25,7 +25,10 @@ import {
     stageDistributedRun,
     startDistributedRun
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
-import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
 import {
     readControlRunSnapshot,
     readControlServerSnapshot
@@ -86,6 +89,10 @@ export function useRunnerRecipesController({
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
     );
+    const controlEndpoint = createDefaultControlEndpointRequest({
+        baseUrl: controlBaseUrl,
+        token: controlToken
+    });
     const [brokeredControlToken, setBrokeredControlToken] = useState<BlackBoxControlTokenSession | undefined>();
     const [brokeredControlTokenError, setBrokeredControlTokenError] = useState<string | undefined>();
     const [controlRunId, setControlRunId] = useState(
@@ -356,8 +363,7 @@ export function useRunnerRecipesController({
                 })
             : Promise.resolve();
         const controlPromise = readControlServerSnapshot({
-            baseUrl: controlBaseUrl,
-            token: controlToken,
+            ...controlEndpoint,
             bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
         })
             .then(async (serverSnapshot) => {
@@ -386,8 +392,7 @@ export function useRunnerRecipesController({
                 if (knownPreferredRunId) {
                     setAgentRunId(knownPreferredRunId);
                     const nextControlRun = await readControlRunSnapshot({
-                        baseUrl: controlBaseUrl,
-                        token: controlToken,
+                        ...controlEndpoint,
                         runId: knownPreferredRunId,
                         bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                     });
@@ -509,8 +514,7 @@ export function useRunnerRecipesController({
         try {
             const [serverSnapshot] = await Promise.all([
                 readControlServerSnapshot({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken,
+                    ...controlEndpoint,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 })
             ]);
@@ -531,8 +535,7 @@ export function useRunnerRecipesController({
                 throw new Error('Control run missing.');
             }
             const latestControlRun = await readControlRunSnapshot({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+                ...controlEndpoint,
                 runId: nextRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
@@ -577,24 +580,25 @@ export function useRunnerRecipesController({
             }
 
             const distributedControlToken = await resolveDistributedControlToken();
+            const distributedControlEndpoint = createDefaultControlEndpointRequest({
+                baseUrl: controlBaseUrl,
+                token: distributedControlToken
+            });
             setLaunchMessage(
                 `Creating ${distributedRunId} for ${agentIds.length} agent(s).`
             );
             const created = await createDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+                ...distributedControlEndpoint,
                 manifest
             });
             setLaunchMessage(`Staging ${created.distributedRunId}.`);
             const staged = await stageDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+                ...distributedControlEndpoint,
                 distributedRunId: created.distributedRunId
             });
             setLaunchMessage(`Starting ${staged.distributedRunId}.`);
             const started = await startDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+                ...distributedControlEndpoint,
                 distributedRunId: staged.distributedRunId
             });
             setDistributedRun(started);
@@ -615,8 +619,7 @@ export function useRunnerRecipesController({
                 controlToken
             });
             void readDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+                ...controlEndpoint,
                 distributedRunId: started.distributedRunId
             })
                 .then((nextDistributedRun) => {

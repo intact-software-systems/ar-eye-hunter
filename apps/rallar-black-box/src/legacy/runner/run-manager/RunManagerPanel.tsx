@@ -9,7 +9,10 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
 import {
     deleteControlRun,
     enqueueBulkControlCommand,
@@ -70,6 +73,7 @@ export function RunManagerPanel({
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
+    const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
     const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
     const selectionRequests = useLatestRequestGuard();
     const stats = useMemo(() => computeControlRunManagerStats(snapshot), [snapshot]);
@@ -119,8 +123,7 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const serverSnapshot = await readControlServerSnapshot({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
@@ -145,8 +148,7 @@ export function RunManagerPanel({
             }
             if (nextRunId) {
                 const nextRun = await readControlRunSnapshot({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 });
@@ -218,8 +220,7 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const loaded = await readControlRunSnapshot({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
@@ -256,8 +257,7 @@ export function RunManagerPanel({
         try {
             const command = parseRunManagerCommandText(commandText);
             const result = await enqueueBulkControlCommand({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId: run.runId,
                 agentIds: selectedAgentIds,
                 command,
@@ -283,8 +283,7 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const resetRun = await resetControlRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId: run.runId
             });
             setRun(resetRun);
@@ -309,8 +308,7 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             await deleteControlRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId: deletedRunId
             });
             setRun(undefined);
@@ -345,8 +343,7 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const bundle = await readControlRunArtifactBundle({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 runId: run.runId
             });
             setArtifactBundle(bundle);
@@ -364,8 +361,7 @@ export function RunManagerPanel({
         const bundle = artifactBundle ??
             (run
                 ? await readControlRunArtifactBundle({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     runId: run.runId
                 })
                 : undefined);
@@ -381,8 +377,7 @@ export function RunManagerPanel({
             return;
         }
         const text = await readControlRunJsonl({
-            baseUrl,
-            token,
+            ...controlEndpoint,
             runId: run.runId,
             kind
         });
@@ -395,8 +390,7 @@ export function RunManagerPanel({
             return;
         }
         const bundle = await readControlRunFailureBundle({
-            baseUrl,
-            token,
+            ...controlEndpoint,
             runId: run.runId
         });
         await navigator.clipboard?.writeText(json(bundle));

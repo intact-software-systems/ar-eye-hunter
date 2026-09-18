@@ -10,6 +10,7 @@ import {
     stageDistributedRun,
     startDistributedRun
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import { createDefaultControlEndpointRequest } from '../../../control-run-manager/control-endpoint-request.ts';
 import {
     defaultDistributedRecipeTargetIds,
     reconcileDistributedRecipeTargetIds
@@ -52,6 +53,7 @@ export function useDistributedRecipesActions({
         setError,
         setLastAction
     } = remote;
+    const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
     const {
         distributedRunId,
         setDistributedRunId,
@@ -112,8 +114,7 @@ export function useDistributedRecipesActions({
             await loadRun(selectedRunId);
             if (usesWorldFleetTargets && manifest) {
                 const resolution = await readDistributedTargetResolution({
-                    baseUrl,
-                    token,
+                    ...controlEndpoint,
                     manifest
                 });
                 setTargetResolutionPreview(resolution);
@@ -159,8 +160,7 @@ export function useDistributedRecipesActions({
             return existing;
         }
         const created = await createDistributedRun({
-            baseUrl,
-            token,
+            ...controlEndpoint,
             manifest
         });
         setSelectedDistributedRun(created);
@@ -193,8 +193,7 @@ export function useDistributedRecipesActions({
             }
             const created = await ensureCreatedDistributedRun();
             const staged = await stageDistributedRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 distributedRunId: created.distributedRunId
             });
             setSelectedDistributedRun(staged);
@@ -226,8 +225,7 @@ export function useDistributedRecipesActions({
         setError(undefined);
         try {
             const started = await startDistributedRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 distributedRunId: target.distributedRunId
             });
             setSelectedDistributedRun(started);
@@ -255,8 +253,7 @@ export function useDistributedRecipesActions({
         setError(undefined);
         try {
             const cancelled = await cancelDistributedRun({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 distributedRunId: target.distributedRunId,
                 reason: 'Cancelled from Rallar Kit Distributed Recipes UI.'
             });
@@ -285,8 +282,7 @@ export function useDistributedRecipesActions({
         setError(undefined);
         try {
             const bundle = await readDistributedRunArtifactBundle({
-                baseUrl,
-                token,
+                ...controlEndpoint,
                 distributedRunId: target.distributedRunId
             });
             setArtifactBundle(bundle);

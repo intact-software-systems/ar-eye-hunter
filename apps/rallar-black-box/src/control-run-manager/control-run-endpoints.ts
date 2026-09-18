@@ -45,7 +45,7 @@ export async function readControlServerSnapshot(
 async function readControlServerSnapshotDocument(
     input: ReadControlServerSnapshotInput
 ): Promise<ControlResponseDocument<ControlServerSnapshot>> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         toControlRunSnapshotUrl(
             input.baseUrl,
             undefined,
@@ -66,7 +66,7 @@ export async function readControlRunSnapshot(
             bounds?: ControlSnapshotBounds;
         }>
 ): Promise<ControlRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         toControlRunSnapshotUrl(
             input.baseUrl,
             input.runId,
@@ -91,7 +91,7 @@ export async function enqueueBulkControlCommand(
             commandIdPrefix?: string;
         }>
 ): Promise<EnqueueBulkControlCommandResult> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/commands`, toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
@@ -112,7 +112,7 @@ export async function enqueueBulkControlCommand(
 export async function resetControlRun(
     input: ControlRunRequest
 ): Promise<ControlRunSnapshot> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/reset`, toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'POST',
@@ -126,7 +126,7 @@ export async function resetControlRun(
 export async function deleteControlRun(
     input: ControlRunRequest
 ): Promise<void> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
             method: 'DELETE',
@@ -139,7 +139,7 @@ export async function deleteControlRun(
 export async function readControlRunArtifactBundle(
     input: ControlRunRequest
 ): Promise<ControlRunArtifactBundle> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/artifacts`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
@@ -151,7 +151,7 @@ export async function readControlRunArtifactBundle(
 export async function readControlRunJsonl(
     input: ControlRunRequest & Readonly<{ kind: 'events' | 'results'; }>
 ): Promise<string> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(
             `/runs/${encodeURIComponent(input.runId)}/${input.kind}.jsonl`,
             toNormalizedBaseUrl(input.baseUrl)
@@ -166,7 +166,7 @@ export async function readControlRunJsonl(
 export async function readControlRunFailureBundle(
     input: ControlRunRequest
 ): Promise<ApiJsonValue> {
-    const response = await (input.fetchFn ?? fetch)(
+    const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/failure-bundle`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
