@@ -2485,6 +2485,156 @@ moved or changed test.
         "requiredConstraint": "A prepared link navigates its own open window once, and a closed window is never navigated.",
         "failureRationale": "Navigating a closed window raises a cross-origin error that aborts the remaining launches, and a second replace loses the agent's one-time launch link from history."
       }
+    },
+    {
+      "id": "analyze-worker-crashed-candidate-keeps-accepted-worker",
+      "domain": "Recipe Console Analyze worker replacement safety",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A replacement Analyze worker that crashes before it completes never terminates the accepted worker that still owns the current analysis and export. Executable assertion: “keeps the accepted worker and export when a replacement candidate crashes”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#keeps the accepted worker and export when a replacement candidate crashes",
+      "coverageRelation": "The test drives the real client over two fake Worker ports, completes the first, offers a replacement, raises the candidate’s error event, and reads the retained export together with the accepted port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "AnalyzeWorkerPort.terminate called by createAnalyzeWorkerClient",
+        "observableEffect": "Terminating a worker port permanently stops its thread and discards the parsed artifact model it holds.",
+        "requiredConstraint": "A candidate crash must terminate zero accepted workers; the accepted worker keeps serving searches from its retained model.",
+        "failureRationale": "The retained export object is a UI-thread value that survives a terminated worker, so export identity alone cannot prove the accepted thread is still alive to answer the next search."
+      }
+    },
+    {
+      "id": "analyze-worker-identity-mismatch-terminates-only-the-candidate",
+      "domain": "Recipe Console Analyze worker identity rejection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An Analyze candidate whose Control identity fails validation is terminated exactly once and the accepted worker is left running. Executable assertion: “rejects an identity-invalid candidate without replacing the accepted worker or export”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects an identity-invalid candidate without replacing the accepted worker or export",
+      "coverageRelation": "The test accepts a first worker, offers a second with a mismatching Control identity digest, lets it complete, and reads the identity-mismatch failure beside each port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerPort.terminate called by createAnalyzeWorkerClient",
+        "observableEffect": "Terminating a worker port permanently stops its thread and releases the artifact bytes it was transferred.",
+        "requiredConstraint": "A rejected candidate is terminated exactly once, and the accepted worker is terminated zero times.",
+        "failureRationale": "A rejected candidate that is never terminated leaks a thread holding the artifact bytes it was handed, and a terminated accepted worker silently ends the analysis the operator is still reading; neither is visible in the completion or export state."
+      }
+    },
+    {
+      "id": "analyze-worker-oversized-request-constructs-no-replacement",
+      "domain": "Recipe Console Analyze outbound request bounds",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An Analyze request or offer that exceeds its outbound byte bounds is refused before any worker is constructed or terminated. Executable assertion: “rejects oversized outbound metadata and RPC text without posting or replacing authority”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects oversized outbound metadata and RPC text without posting or replacing authority",
+      "coverageRelation": "The test accepts one worker, then issues oversized search, window, select, tune and offer requests through the real client and reads the accepted port’s post list, the factory’s construction count and the accepted port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerClient.Input.createWorker and AnalyzeWorkerPort.terminate",
+        "observableEffect": "Each construction spawns a worker thread and each termination ends one; both are resource effects the client owns.",
+        "requiredConstraint": "The whole rejected sequence constructs exactly one worker in total and terminates none, so a refused offer never spends or replaces worker authority.",
+        "failureRationale": "The returned undefined request ids and the unchanged post list are identical whether or not the client first spawned and discarded a candidate thread, so only the construction count excludes that hidden cost."
+      }
+    },
+    {
+      "id": "analyze-worker-failed-transfer-post-terminates-its-candidate",
+      "domain": "Recipe Console Analyze candidate cleanup on a failed transfer",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A candidate whose first transfer post throws is terminated exactly once, synchronously, before the throw reaches the caller. Executable assertion: “cleans candidate authority synchronously when the initial transfer post throws”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#cleans candidate authority synchronously when the initial transfer post throws",
+      "coverageRelation": "The test offers an artifact to a port whose postMessage throws, catches the rethrown error, and reads the port’s termination and the pending-timer set before offering a second artifact that succeeds.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerPort.terminate called by createAnalyzeWorkerClient",
+        "observableEffect": "Terminating the failed candidate ends the thread that was spawned for a transfer that never landed.",
+        "requiredConstraint": "A candidate whose initial post throws is terminated exactly once before the client returns control.",
+        "failureRationale": "The next successful offer works either way, so only the termination count proves the failed candidate’s thread was not left running beside it."
+      }
+    },
+    {
+      "id": "analyze-worker-watchdog-terminates-only-its-own-candidate",
+      "domain": "Recipe Console Analyze watchdog scope",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "An Analyze watchdog timeout ends only the candidate or request that armed it, never the accepted worker. Executable assertion: “times out only the candidate or request that owns the watchdog and ignores late replies”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#times out only the candidate or request that owns the watchdog and ignores late replies",
+      "coverageRelation": "The test fires the request watchdog and then the candidate watchdog against a real client holding an accepted worker, and reads the unavailability reasons beside each port’s termination and the retained export.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerPort.terminate called by createAnalyzeWorkerClient",
+        "observableEffect": "Terminating a worker port ends its thread and the model it holds; the accepted worker still owns the analysis the operator is reading.",
+        "requiredConstraint": "A timed-out request terminates no worker, a timed-out candidate terminates exactly its own, and the accepted worker is terminated zero times.",
+        "failureRationale": "The unavailability reasons and the retained export are produced identically by a client that also tore down the accepted thread, so only the per-port termination counts separate a scoped watchdog from a global one."
+      }
+    },
+    {
+      "id": "analyze-worker-factory-constructs-nothing-until-invoked",
+      "domain": "Recipe Console Analyze worker factory laziness",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The Analyze worker factory constructs no worker until the returned factory is called. Executable assertion: “creates no worker until the lazy factory is explicitly invoked”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#creates no worker until the lazy factory is explicitly invoked",
+      "coverageRelation": "The test builds the real factory over an injected constructor, reads the construction count before invoking it, then invokes it once and reads the returned port and the count again.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The worker constructor passed to createAnalyzeWorkerFactory",
+        "observableEffect": "Each construction spawns and loads a worker thread with the Analyze module.",
+        "requiredConstraint": "Building the factory constructs zero workers and one invocation constructs exactly one.",
+        "failureRationale": "Laziness has no other witness: an eagerly constructed worker returns the same port from the same call, and the cost it imposes on every Recipe Console load is only visible as the construction that did not happen."
+      }
+    },
+    {
+      "id": "analyze-worker-factory-targets-the-module-worker-asset",
+      "domain": "Recipe Console Analyze worker asset identity",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The default Analyze worker factory hands the platform constructor the Analyze artifact worker asset as a named module worker. Executable assertion: “targets the production Analyze artifact worker asset”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#targets the production Analyze artifact worker asset",
+      "coverageRelation": "The test stubs the global Worker constructor, invokes the real default factory once, and reads the URL and options the factory passed to it.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "The global Worker constructor",
+        "observableEffect": "The constructor call is the only place the app names which built asset runs as the Analyze worker and under which module type and name.",
+        "requiredConstraint": "The single construction names the analyze-artifact worker asset with the module type and the Recipe Console worker name.",
+        "failureRationale": "Nothing the returned port exposes carries the asset URL or the worker options, so a factory pointed at the wrong chunk or started as a classic worker would be invisible to any state assertion."
+      }
+    },
+    {
+      "id": "analyze-hook-failed-replacement-keeps-the-accepted-worker",
+      "domain": "Recipe Console Analyze workspace hook replacement safety",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Across held replies, a Tune round trip and a failed replacement, the Analyze workspace hook terminates each failed worker exactly once and keeps the accepted worker running until it fails itself. Executable assertion: “keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement",
+      "coverageRelation": "The test renders the real hook over controllable worker ports, fails a replacement, runs a Tune round trip on the accepted worker, then fails the accepted worker, reading the rendered workspace dataset beside each port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerPort.terminate reached through useAnalyzeWorkspace",
+        "observableEffect": "Terminating a worker port ends the thread that answers the workspace’s searches, windows and Tune requests.",
+        "requiredConstraint": "A failed replacement terminates exactly its own worker and none of the accepted one; the accepted worker is terminated exactly once, when it fails.",
+        "failureRationale": "The rendered dataset keeps its retained analysis and Tune facade whether or not the accepted thread is alive, so only the termination counts prove which worker still answers the next request and that no failed one was left running."
+      }
+    },
+    {
+      "id": "analyze-hook-off-view-retains-its-accepted-worker",
+      "domain": "Recipe Console Analyze off-view work suppression",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Leaving and re-entering the Analyze view does no worker work off-view and never terminates the accepted worker that retains the artifact and Tune facade. Executable assertion: “does no Analyze option or search work off-view, retains the artifact and Tune facade, then searches the latest query once on entry”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#does no Analyze option or search work off-view, retains the artifact and Tune facade, then searches the latest query once on entry",
+      "coverageRelation": "The test renders the real hook, navigates away and back through URL state, and reads the single search request, the retained artifact and Tune facade and the accepted port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "AnalyzeWorkerPort.terminate reached through useAnalyzeWorkspace",
+        "observableEffect": "Terminating the accepted worker discards the parsed model the retained artifact and Tune facade are projections of.",
+        "requiredConstraint": "Leaving and re-entering the view terminates zero workers, so re-entry costs no reparse.",
+        "failureRationale": "The retained artifact and facade are UI-thread values that outlive a terminated worker, so only the absent termination proves re-entry reuses the parsed model instead of silently rebuilding it."
+      }
+    },
+    {
+      "id": "analyze-hook-late-candidate-terminates-only-the-candidate",
+      "domain": "Recipe Console Analyze late-candidate rejection",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "A candidate that completes after a render-time context and execution change is terminated exactly once, and the accepted worker keeps its analysis. Executable assertion: “rejects a candidate completed after a render-time context and execution change before passive reconciliation”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#rejects a candidate completed after a render-time context and execution change before passive reconciliation",
+      "coverageRelation": "The test emits the candidate’s completion during the commit that changes context and execution, then reads the rejected completion, the rendered dataset and each port’s termination.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "AnalyzeWorkerPort.terminate reached through useAnalyzeWorkspace",
+        "observableEffect": "Terminating a worker port ends the thread and releases the artifact bytes the rejected candidate was transferred.",
+        "requiredConstraint": "The rejected late candidate is terminated exactly once and the accepted worker is terminated zero times.",
+        "failureRationale": "The rejected completion and the retained dataset look the same whether the candidate thread was torn down or left holding its transferred bytes, and whether or not the accepted thread survived to answer the next request."
+      }
     }
   ],
   "entries": [
@@ -5743,6 +5893,215 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The absent replace on the operator-closed window is the only witness that navigation skipped it rather than raising on it.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reports a reserved popup closed before prepared links are navigated"
+    },
+    {
+      "id": "test-structure-coupling-8e2ac7c015d184f8",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-crashed-candidate-keeps-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that a crashed replacement left the accepted worker thread serving the current analysis.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#keeps the accepted worker and export when a replacement candidate crashes"
+    },
+    {
+      "id": "test-structure-coupling-b6084e9b4526e9cb",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-identity-mismatch-terminates-only-the-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that rejecting a candidate never ended the accepted worker thread.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects an identity-invalid candidate without replacing the accepted worker or export"
+    },
+    {
+      "id": "test-structure-coupling-e042e92e3c70253f",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-identity-mismatch-terminates-only-the-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that the rejected candidate’s thread and transferred bytes were released.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects an identity-invalid candidate without replacing the accepted worker or export"
+    },
+    {
+      "id": "test-structure-coupling-61b62179919560c6",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-oversized-request-constructs-no-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single construction is the only witness that a refused oversized offer spawned no replacement worker thread.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects oversized outbound metadata and RPC text without posting or replacing authority"
+    },
+    {
+      "id": "test-structure-coupling-eeae664b4a52bc21",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-oversized-request-constructs-no-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that a refused request never spent the accepted worker’s authority.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#rejects oversized outbound metadata and RPC text without posting or replacing authority"
+    },
+    {
+      "id": "test-structure-coupling-a126dbeb238ef49a",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-failed-transfer-post-terminates-its-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that a candidate whose first post threw was not left running.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#cleans candidate authority synchronously when the initial transfer post throws"
+    },
+    {
+      "id": "test-structure-coupling-f2eec898236252a1",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-watchdog-terminates-only-its-own-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that a timed-out request did not tear down the accepted worker.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#times out only the candidate or request that owns the watchdog and ignores late replies"
+    },
+    {
+      "id": "test-structure-coupling-d4cf2d45e2cca8c7",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-watchdog-terminates-only-its-own-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that the timed-out candidate’s own thread was ended.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#times out only the candidate or request that owns the watchdog and ignores late replies"
+    },
+    {
+      "id": "test-structure-coupling-87a44beb1e55abca",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-watchdog-terminates-only-its-own-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that the candidate watchdog stayed scoped to its candidate.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#times out only the candidate or request that owns the watchdog and ignores late replies"
+    },
+    {
+      "id": "test-structure-coupling-b736d0204512620b",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-factory-constructs-nothing-until-invoked",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent construction is the whole of the factory’s laziness contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#creates no worker until the lazy factory is explicitly invoked"
+    },
+    {
+      "id": "test-structure-coupling-324e3a28fdae85ac",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-factory-constructs-nothing-until-invoked",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single construction is the only witness that one invocation spawns exactly one worker thread.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#creates no worker until the lazy factory is explicitly invoked"
+    },
+    {
+      "id": "test-structure-coupling-c5c0707a56d6d488",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-worker-factory-targets-the-module-worker-asset",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The recorded constructor arguments are the only place the asset URL and module worker options are observable.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-worker-client.test.ts#targets the production Analyze artifact worker asset"
+    },
+    {
+      "id": "test-structure-coupling-2671526eb9869d4f",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-failed-replacement-keeps-the-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that the failed replacement left the accepted worker answering requests.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement"
+    },
+    {
+      "id": "test-structure-coupling-03154b510383238a",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-failed-replacement-keeps-the-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that the failed replacement’s thread was released.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement"
+    },
+    {
+      "id": "test-structure-coupling-b67857e26992513c",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-failed-replacement-keeps-the-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that re-entering Analyze after Tune reused the accepted worker instead of replacing it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement"
+    },
+    {
+      "id": "test-structure-coupling-66ce1bef13e7ebbb",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-failed-replacement-keeps-the-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that the accepted worker was released exactly once when it failed.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#keeps input, navigation, accepted analysis, and export usable across held replies, Tune, and a failed replacement"
+    },
+    {
+      "id": "test-structure-coupling-a6280abceb9f8959",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-off-view-retains-its-accepted-worker",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that leaving and re-entering the view costs no worker reparse.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#does no Analyze option or search work off-view, retains the artifact and Tune facade, then searches the latest query once on entry"
+    },
+    {
+      "id": "test-structure-coupling-90e780c5c8792d3f",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-late-candidate-terminates-only-the-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single terminate call is the only witness that the rejected late candidate’s thread and transferred bytes were released.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#rejects a candidate completed after a render-time context and execution change before passive reconciliation"
+    },
+    {
+      "id": "test-structure-coupling-87dbba6ad92e0ccb",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-hook-late-candidate-terminates-only-the-candidate",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade terminate call is the only witness that the accepted worker survived the rejected late candidate.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-hook-lifetime.test.ts#rejects a candidate completed after a render-time context and execution change before passive reconciliation"
     }
   ]
 }
