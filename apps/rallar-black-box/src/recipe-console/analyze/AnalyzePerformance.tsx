@@ -16,7 +16,11 @@ export function AnalyzePerformance({
                     <p className={styles.eyebrow}>Performance summary</p>
                     <h2>Command and stream health</h2>
                 </div>
-                <span>{timing?.count ?? 0} command samples</span>
+                <span>
+                    {timing?.count === undefined
+                        ? 'Command samples unknown'
+                        : `${timing.count} command samples`}
+                </span>
             </header>
             <dl className={styles.metrics}>
                 <Metric label="Run" value={formatMs(performance?.runDurationMs)} />
