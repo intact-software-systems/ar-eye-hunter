@@ -31,20 +31,20 @@ export function projectTuneFacadeCatalog(
     const distributedRunId = facade.identity.distributedRunId;
     const controlRunId = facade.identity.controlRunId ?? facade.distributedRun.controlRunId;
     if (input.distributedIdentityIsAmbiguous) {
-        return quarantine(
+        return quarantine({
             distributedRunId,
             controlRunId,
-            'ambiguous-run',
-            'Duplicate distributed run identity is ambiguous.'
-        );
+            code: 'ambiguous-run',
+            issue: 'Duplicate distributed run identity is ambiguous.'
+        });
     }
     if (!facadeIdentityIsConsistent(facade, distributedRunId, controlRunId)) {
-        return quarantine(
+        return quarantine({
             distributedRunId,
             controlRunId,
-            'identity-conflict',
-            'Retained facade identities conflict across its bounded projections.'
-        );
+            code: 'identity-conflict',
+            issue: 'Retained facade identities conflict across its bounded projections.'
+        });
     }
     const identity = projectTuneIdentitySurfaces({ distributedRunId, controlRunId });
     if (identity.quarantined || !identity.reactKey || !identity.controlRunId) {
@@ -59,12 +59,12 @@ export function projectTuneFacadeCatalog(
         };
     }
     if (input.current && input.current.controlRunId !== controlRunId) {
-        return quarantine(
+        return quarantine({
             distributedRunId,
             controlRunId,
-            'identity-conflict',
-            'Retained facade control identity conflicts with control evidence.'
-        );
+            code: 'identity-conflict',
+            issue: 'Retained facade control identity conflicts with control evidence.'
+        });
     }
 
     const manifest = facade.candidateManifest ?? manifestSummaryProjection(facade);
@@ -74,14 +74,14 @@ export function projectTuneFacadeCatalog(
     );
     if (validation.status === 'invalid') {
         const first = validation.firstError;
-        return quarantine(
+        return quarantine({
             distributedRunId,
             controlRunId,
-            'invalid-manifest',
-            first
+            code: 'invalid-manifest',
+            issue: first
                 ? `Retained facade manifest is invalid at ${first.path}: ${first.message}`
                 : 'Retained facade manifest is invalid.'
-        );
+        });
     }
     const distributedRun = facadeSnapshot(facade, manifest);
     const analysis = facade.analysis;
@@ -187,16 +187,18 @@ function facadeSnapshot(
 }
 
 function quarantine(
-    distributedRunId: string,
-    controlRunId: string | undefined,
-    code: TuneQuarantineCode,
-    issue: string
+    refusal: Readonly<{
+        distributedRunId: string;
+        controlRunId: string;
+        code: TuneQuarantineCode;
+        issue: string;
+    }>
 ): TuneFacadeCatalogProjection {
     return {
         kind: 'quarantine',
-        distributedRunId,
-        controlRunId,
-        codes: [code],
-        issues: [issue]
+        distributedRunId: refusal.distributedRunId,
+        controlRunId: refusal.controlRunId,
+        codes: [refusal.code],
+        issues: [refusal.issue]
     };
 }

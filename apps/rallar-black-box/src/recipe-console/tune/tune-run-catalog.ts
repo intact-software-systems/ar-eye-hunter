@@ -129,22 +129,19 @@ export function computeTuneRunCatalog(
     const options = new Map<string, TuneRunOption>();
     const quarantined = new Map<string, Omit<TuneQuarantinedRun, 'key'>>();
     let retainedFacadeManifestValidation: TuneFacadeManifestValidation | undefined;
-    const quarantine = (
-        distributedRunId: string,
-        controlRunId: string | undefined,
-        codes: readonly TuneQuarantineCode[],
-        issues: readonly string[]
-    ): void => {
-        const identityKey = JSON.stringify([distributedRunId, controlRunId ?? null]);
-        quarantined.set(identityKey, { distributedRunId, controlRunId, codes, issues });
+    const quarantine = (run: Omit<TuneQuarantinedRun, 'key'>): void => {
+        const identityKey = JSON.stringify([run.distributedRunId, run.controlRunId ?? null]);
+        quarantined.set(identityKey, run);
     };
 
     for (const [distributedRunId, rows] of distributedGroups) {
         work.distributedIdentitiesVisited += 1;
         if (rows.length !== 1) {
-            quarantine(distributedRunId, undefined, ['ambiguous-run'], [
-                'Duplicate distributed run identity is ambiguous.'
-            ]);
+            quarantine({
+                distributedRunId,
+                codes: ['ambiguous-run'],
+                issues: ['Duplicate distributed run identity is ambiguous.']
+            });
             continue;
         }
         const distributedRun = rows[0];
@@ -167,16 +164,16 @@ export function computeTuneRunCatalog(
             identity.quarantined || !identity.controlRunId || !identity.reactKey ||
             manifestIssues.length > 0
         ) {
-            quarantine(
-                distributedRun.distributedRunId,
-                distributedRun.controlRunId,
-                manifestIssues.length > 0
+            quarantine({
+                distributedRunId: distributedRun.distributedRunId,
+                controlRunId: distributedRun.controlRunId,
+                codes: manifestIssues.length > 0
                     ? ['invalid-manifest']
                     : ['unsafe-identity'],
-                identity.quarantined
+                issues: identity.quarantined
                     ? identity.issues
                     : manifestIssues
-            );
+            });
             continue;
         }
         work.controlPairLookups += 1;
@@ -235,12 +232,12 @@ export function computeTuneRunCatalog(
             )
         });
         if (projection.kind === 'quarantine') {
-            quarantine(
-                projection.distributedRunId,
-                projection.controlRunId,
-                projection.codes,
-                projection.issues
-            );
+            quarantine({
+                distributedRunId: projection.distributedRunId,
+                controlRunId: projection.controlRunId,
+                codes: projection.codes,
+                issues: projection.issues
+            });
         }
         else {
             options.set(projection.option.distributedRunId, projection.option);
@@ -259,12 +256,12 @@ export function computeTuneRunCatalog(
             manifestValidation: retainedFacadeManifestValidation
         });
         if (projection.kind === 'quarantine') {
-            quarantine(
-                projection.distributedRunId,
-                projection.controlRunId,
-                projection.codes,
-                projection.issues
-            );
+            quarantine({
+                distributedRunId: projection.distributedRunId,
+                controlRunId: projection.controlRunId,
+                codes: projection.codes,
+                issues: projection.issues
+            });
         }
         else {
             options.set(projection.option.distributedRunId, projection.option);
