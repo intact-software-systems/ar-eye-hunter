@@ -1,7 +1,7 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 
-export function executeAgentLaunchBlocker(
+export function resolveExecuteAgentLaunchBlocker(
     input: Readonly<{
         connection: RecipeConsoleControlConnection;
         group: RallarBlackBoxDistributedGroupRef;

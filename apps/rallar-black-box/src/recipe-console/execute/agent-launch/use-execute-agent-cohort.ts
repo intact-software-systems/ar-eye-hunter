@@ -1,8 +1,8 @@
 import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    readyExecuteAgentIds,
-    sameExecuteAgentIds,
+    isSameExecuteAgentIds,
+    resolveReadyExecuteAgentIds,
     type ExecuteAgentLaunchCohort
 } from './execute-agent-launch-state.ts';
 
@@ -25,16 +25,16 @@ export function useExecuteAgentCohort(
     const requestedKeyRef = useRef<string | undefined>(undefined);
     const activeCohort = input.pendingCohort ?? input.cohort;
     const activeReadyAgentIds = useMemo(
-        () => readyExecuteAgentIds(activeCohort, input.targetRows),
+        () => resolveReadyExecuteAgentIds(activeCohort, input.targetRows),
         [activeCohort, input.targetRows]
     );
     const readyAgentIds = useMemo(
-        () => readyExecuteAgentIds(input.cohort, input.targetRows),
+        () => resolveReadyExecuteAgentIds(input.cohort, input.targetRows),
         [input.cohort, input.targetRows]
     );
     const cohortKey = toExecuteAgentCohortKey(input.cohort);
     const cohortSelected = Boolean(
-        input.cohort && sameExecuteAgentIds(
+        input.cohort && isSameExecuteAgentIds(
             input.cohort.agentIds,
             input.selectedAgentIds
         )

@@ -1,5 +1,6 @@
 export type ExecuteAgentLaunchRunIdSync = Readonly<{
     selectedControlRunId: string | undefined;
+    /** Absent when the newly selected control run carries no id for the launch form to adopt. */
     runId?: string;
     invalidate: boolean;
 }>;
@@ -11,13 +12,16 @@ export type ExecuteAgentLaunchCohort = Readonly<{
 
 export type ExecuteAgentPopupNavigationState = Readonly<{
     unavailableAgentIds: readonly string[];
+    /** Absent when no popup was navigated, so this launch produced no cohort. */
     cohort?: ExecuteAgentLaunchCohort;
     message: string;
 }>;
 
-export function executeAgentLaunchRunIdSync(
+export function computeExecuteAgentLaunchRunIdSync(
     input: Readonly<{
+        /** Absent while no control run was selected before this change. */
         previousControlRunId?: string;
+        /** Absent while no control run is selected after this change. */
         nextControlRunId?: string;
         currentRunId: string;
     }>
@@ -33,7 +37,7 @@ export function executeAgentLaunchRunIdSync(
     };
 }
 
-export function sameExecuteAgentIds(
+export function isSameExecuteAgentIds(
     left: readonly string[],
     right: readonly string[]
 ): boolean {
@@ -44,7 +48,7 @@ export function sameExecuteAgentIds(
     return right.every((agentId) => expected.has(agentId));
 }
 
-export function readyExecuteAgentIds(
+export function resolveReadyExecuteAgentIds(
     cohort: ExecuteAgentLaunchCohort | undefined,
     rows: readonly Readonly<{ agentId: string; targetable: boolean; }>[]
 ): readonly string[] {
@@ -57,7 +61,7 @@ export function readyExecuteAgentIds(
     return cohort.agentIds.filter((agentId) => targetable.has(agentId));
 }
 
-export function mergeExecuteAgentLaunchCohort(
+export function computeMergedExecuteAgentLaunchCohort(
     previous: ExecuteAgentLaunchCohort | undefined,
     runId: string,
     agentIds: readonly string[]
@@ -73,7 +77,7 @@ export function mergeExecuteAgentLaunchCohort(
     };
 }
 
-export function projectExecuteAgentPopupNavigation(
+export function computeExecuteAgentPopupNavigationState(
     input: Readonly<{
         runId: string;
         blockedAgentIds: readonly string[];
@@ -93,17 +97,17 @@ export function projectExecuteAgentPopupNavigation(
             ? { runId: input.runId, agentIds: input.navigatedAgentIds }
             : undefined,
         message: unavailable > 0
-            ? `Opened ${opened} browser agent ${plural(opened, 'tab', 'tabs')}. ${unavailable} ${
-                plural(unavailable, 'popup was', 'popups were')
+            ? `Opened ${opened} browser agent ${toPluralWord(opened, 'tab', 'tabs')}. ${unavailable} ${
+                toPluralWord(unavailable, 'popup was', 'popups were')
             } blocked or closed. Use the copy-link fallback below.`
-            : `Opened ${opened} browser agent ${plural(opened, 'tab', 'tabs')}. Waiting for registration.`
+            : `Opened ${opened} browser agent ${toPluralWord(opened, 'tab', 'tabs')}. Waiting for registration.`
     };
 }
 
-export function executeAgentLaunchErrorMessage(error: unknown): string {
+export function decodeExecuteAgentLaunchErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-function plural(count: number, one: string, many: string): string {
+function toPluralWord(count: number, one: string, many: string): string {
     return count === 1 ? one : many;
 }

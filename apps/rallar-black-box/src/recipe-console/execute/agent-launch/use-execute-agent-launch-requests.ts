@@ -8,10 +8,10 @@ import {
 } from '../../../browser-agent-popup.ts';
 import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 import {
-    executeAgentLaunchErrorMessage,
-    mergeExecuteAgentLaunchCohort,
-    projectExecuteAgentPopupNavigation,
-    sameExecuteAgentIds,
+    computeExecuteAgentPopupNavigationState,
+    computeMergedExecuteAgentLaunchCohort,
+    decodeExecuteAgentLaunchErrorMessage,
+    isSameExecuteAgentIds,
     type ExecuteAgentLaunchCohort
 } from './execute-agent-launch-state.ts';
 
@@ -107,7 +107,7 @@ export function useExecuteAgentLaunchRequests(
                 prepared.agents
             );
             reservationRef.current = undefined;
-            const outcome = projectExecuteAgentPopupNavigation({
+            const outcome = computeExecuteAgentPopupNavigationState({
                 runId: prepared.runId,
                 blockedAgentIds: reservation.blockedAgentIds,
                 closedAgentIds: navigation.closedAgentIds,
@@ -123,10 +123,10 @@ export function useExecuteAgentLaunchRequests(
             if (!controller.signal.aborted && generationRef.current === generation) {
                 releaseReservedBrowserAgentPopups(
                     reservation,
-                    executeAgentLaunchErrorMessage(error)
+                    decodeExecuteAgentLaunchErrorMessage(error)
                 );
                 reservationRef.current = undefined;
-                setMessage(executeAgentLaunchErrorMessage(error));
+                setMessage(decodeExecuteAgentLaunchErrorMessage(error));
             }
         }
         finally {
@@ -143,11 +143,11 @@ export function useExecuteAgentLaunchRequests(
             setMessage('Clipboard access is unavailable; open the agent tabs instead.');
             return;
         }
-        const replaceCohort = sameExecuteAgentIds(ids, input.agentIds);
+        const replaceCohort = isSameExecuteAgentIds(ids, input.agentIds);
         const generation = ++generationRef.current;
         const controller = new AbortController();
         requestRef.current = controller;
-        setPendingCohort(mergeExecuteAgentLaunchCohort(
+        setPendingCohort(computeMergedExecuteAgentLaunchCohort(
             replaceCohort ? undefined : cohort,
             input.runId.trim(),
             ids
@@ -169,7 +169,7 @@ export function useExecuteAgentLaunchRequests(
                 prepared.agents.map((agent) => agent.launchUrl).join('\n')
             );
             setCohort((previous) =>
-                mergeExecuteAgentLaunchCohort(
+                computeMergedExecuteAgentLaunchCohort(
                     replaceCohort ? undefined : previous,
                     prepared.runId,
                     prepared.agents.map((agent) => agent.agentId)
@@ -187,7 +187,7 @@ export function useExecuteAgentLaunchRequests(
         }
         catch (error) {
             if (!controller.signal.aborted && generationRef.current === generation) {
-                setMessage(executeAgentLaunchErrorMessage(error));
+                setMessage(decodeExecuteAgentLaunchErrorMessage(error));
             }
         }
         finally {

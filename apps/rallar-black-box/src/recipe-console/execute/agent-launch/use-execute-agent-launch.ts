@@ -3,8 +3,8 @@ import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-t
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
 import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
-import { executeAgentLaunchBlocker } from './execute-agent-launch-blocker.ts';
-import { executeAgentLaunchRunIdSync } from './execute-agent-launch-state.ts';
+import { computeExecuteAgentLaunchRunIdSync } from './execute-agent-launch-state.ts';
+import { resolveExecuteAgentLaunchBlocker } from './resolve-execute-agent-launch-blocker.ts';
 import { useExecuteAgentCohort } from './use-execute-agent-cohort.ts';
 import { useExecuteAgentLaunchRequests } from './use-execute-agent-launch-requests.ts';
 
@@ -42,7 +42,7 @@ export function useExecuteAgentLaunch(
         () => Array.from({ length: count }, (_, index) => runnerAgentId(prefix, index, count, suffix)),
         [count, prefix, suffix]
     );
-    const blocker = executeAgentLaunchBlocker({
+    const blocker = resolveExecuteAgentLaunchBlocker({
         connection: input.connection,
         group: input.group,
         runId,
@@ -70,7 +70,7 @@ export function useExecuteAgentLaunch(
     });
     runIdRef.current = runId;
     useEffect(() => {
-        const sync = executeAgentLaunchRunIdSync({
+        const sync = computeExecuteAgentLaunchRunIdSync({
             previousControlRunId: selectedControlRunIdRef.current,
             nextControlRunId: input.controlRunId,
             currentRunId: runIdRef.current
