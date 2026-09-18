@@ -211,6 +211,32 @@ describe('Recipe Console Analyze artifact projection', () => {
             .toBe(boundedText(model.analysis.fixProposalMarkdown));
     });
 
+    it('tags each projection with the display detail it actually carries', () => {
+        const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
+        const full = projectAnalyzeArtifactModel(createAnalyzeArtifactModel({
+            files: fixture.files,
+            source: 'local-files',
+            label: 'Projection fixture',
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
+        }));
+        const bounded = projectAnalyzeArtifactModel(hostileAnalyzeModel());
+
+        expect(full.analysis.detail).toBe('full');
+        expect(bounded.analysis.detail).toBe('bounded');
+        // A bounded projection states the omission through its tag; it never carries a display
+        // section holding a placeholder sentence instead of the analysis's own text.
+        expect(bounded.analysis).not.toHaveProperty('summaryMarkdown');
+        expect(bounded.analysis).not.toHaveProperty('performanceMarkdown');
+        expect(bounded.analysis).not.toHaveProperty('performance');
+        expect(bounded.analysis).not.toHaveProperty('targetResolution');
+        expect(bounded.analysis).not.toHaveProperty('group');
+        if (full.analysis.detail !== 'full') {
+            throw new Error('The scale fixture must project its full display detail.');
+        }
+        expect(typeof full.analysis.summaryMarkdown).toBe('string');
+    });
+
     it('keeps the retained stack in the normal primary-result projection', () => {
         const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
         const base = createAnalyzeArtifactModel({

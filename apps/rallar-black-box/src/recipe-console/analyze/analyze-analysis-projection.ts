@@ -12,15 +12,22 @@ import {
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
     projectAuthorityIdentifier,
-    PROJECTION_OMISSION_MESSAGE,
     projectOpaqueIdentifier,
     projectOpaqueKey
 } from './analyze-projection-bounds.ts';
 import { projectAnalyzeVerdict } from './analyze-verdict-projection.ts';
 import type {
     AnalyzeWorkerAnalysisProjection,
-    AnalyzeWorkerAnalysisProjectionSections
+    AnalyzeWorkerAnalysisProjectionSections,
+    AnalyzeWorkerBoundedAnalysisProjection,
+    AnalyzeWorkerFullAnalysisProjection
 } from './analyze-worker-projection-contract.ts';
+
+/** The identity every projected analysis repeats, whatever its display detail. */
+type AnalyzeAnalysisProjectionIdentity = Pick<
+    AnalyzeWorkerAnalysisProjectionSections,
+    'generatedAtEpochMs' | 'artifactSchemaVersion' | 'distributedRunId' | 'controlRunId' | 'status'
+>;
 
 export function projectAnalyzeAnalysis(
     analysis: DistributedRunAnalysis
@@ -52,8 +59,9 @@ export function projectMinimalAnalyzeAnalysis(
 
 function projectAnalysisSections(
     analysis: DistributedRunAnalysis
-): AnalyzeWorkerAnalysisProjectionSections {
+): AnalyzeWorkerFullAnalysisProjection {
     return {
+        detail: 'full',
         ...projectAnalysisIdentity(analysis),
         ...(analysis.group ? { group: projectGroup(analysis.group) } : {}),
         summary: {
@@ -87,8 +95,9 @@ function projectAnalysisSections(
 
 function projectMinimalAnalysisSections(
     analysis: DistributedRunAnalysis
-): AnalyzeWorkerAnalysisProjectionSections {
+): AnalyzeWorkerBoundedAnalysisProjection {
     return {
+        detail: 'bounded',
         ...projectAnalysisIdentity(analysis),
         summary: { ...analysis.summary },
         parseWarnings: [],
@@ -104,12 +113,13 @@ function projectMinimalAnalysisSections(
                         causalTrail: []
                     }
                 }
-            }),
-        summaryMarkdown: PROJECTION_OMISSION_MESSAGE
+            })
     };
 }
 
-function projectAnalysisIdentity(analysis: DistributedRunAnalysis) {
+function projectAnalysisIdentity(
+    analysis: DistributedRunAnalysis
+): AnalyzeAnalysisProjectionIdentity {
     return {
         generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
         artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),

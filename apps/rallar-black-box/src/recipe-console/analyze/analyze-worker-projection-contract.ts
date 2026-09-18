@@ -41,9 +41,8 @@ export type AnalyzeArtifactWorkspaceProjection = Readonly<{
 }>;
 
 /**
- * The sections of a distributed run analysis the Analyze worker hands the view, bounded for
- * transfer. A bounded projection empties its rows and names the omission in its markdown; it never
- * drops a field the analysis always writes.
+ * The identity and outcome of a distributed run analysis, carried by every projection the Analyze
+ * worker hands the view whether or not the display sections fit the transfer budget.
  */
 export interface AnalyzeWorkerAnalysisProjectionSections {
     readonly generatedAtEpochMs: number;
@@ -51,34 +50,53 @@ export interface AnalyzeWorkerAnalysisProjectionSections {
     readonly distributedRunId: string;
     readonly controlRunId: string;
     readonly status: string;
-    /** Absent when the analysis names no run group, or the projection is bounded. */
-    readonly group?: DistributedRunAnalysisGroup;
     readonly summary: DistributedRunAnalysisSummary;
     readonly parseWarnings: readonly DistributedRunArtifactParseWarning[];
-    /** Absent when the analysis omits performance for an unavailable control run, or the projection is bounded. */
-    readonly performance?: DistributedRunPerformanceAnalysis;
-    /** Absent when the analysis records no target resolution, or the projection is bounded. */
-    readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
     /** Absent when the analysis omits the SPA report and verdict for an unavailable control run. */
     readonly spa?: Readonly<{ verdict: RunVerdictView; }>;
+}
+
+/** Every display section the analysis wrote, each bounded for transfer. */
+export interface AnalyzeWorkerFullAnalysisProjection extends AnalyzeWorkerAnalysisProjectionSections {
+    readonly detail: 'full';
+    /** Absent when the analysis names no run group. */
+    readonly group?: DistributedRunAnalysisGroup;
+    /** Absent when the analysis omits performance for an unavailable control run. */
+    readonly performance?: DistributedRunPerformanceAnalysis;
+    /** Absent when the analysis records no target resolution. */
+    readonly targetResolution?: DistributedRunTargetResolutionAnalysis;
     readonly summaryMarkdown: string;
     /** Absent with the performance section. */
     readonly performanceMarkdown?: string;
 }
 
-export interface AnalyzeWorkerPassedAnalysisProjection extends AnalyzeWorkerAnalysisProjectionSections {
-    readonly ok: true;
+/**
+ * What the worker sends instead when the full projection exceeds the transfer budget: identity,
+ * outcome and the run's own summary counts, with no display section at all. A reader tells the two
+ * apart by `detail` rather than by a placeholder sentence in a section that is not there.
+ */
+export interface AnalyzeWorkerBoundedAnalysisProjection extends AnalyzeWorkerAnalysisProjectionSections {
+    readonly detail: 'bounded';
 }
 
-export interface AnalyzeWorkerFailedAnalysisProjection extends AnalyzeWorkerAnalysisProjectionSections {
-    readonly ok: false;
-    readonly failure: DistributedRunFailureAnalysis;
-    readonly fixProposalMarkdown: string;
-}
+type AnalyzeWorkerAnalysisProjectionDetail =
+    | AnalyzeWorkerFullAnalysisProjection
+    | AnalyzeWorkerBoundedAnalysisProjection;
 
+/**
+ * Display detail and run outcome are independent facts about one projected analysis: either detail
+ * can describe either outcome, so a reader narrows on `detail` and on `ok` separately.
+ */
 export type AnalyzeWorkerAnalysisProjection =
-    | AnalyzeWorkerPassedAnalysisProjection
-    | AnalyzeWorkerFailedAnalysisProjection;
+    | (AnalyzeWorkerAnalysisProjectionDetail & Readonly<{ ok: true; }>)
+    | (
+        & AnalyzeWorkerAnalysisProjectionDetail
+        & Readonly<{
+            ok: false;
+            failure: DistributedRunFailureAnalysis;
+            fixProposalMarkdown: string;
+        }>
+    );
 
 export type AnalyzeArtifactProjection = Readonly<{
     distributedRunId: string;

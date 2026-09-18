@@ -19,6 +19,9 @@ export function deriveTuneSourceModelFromFacade(
     }>
 ): TuneSourceModel {
     const facade = input.facade;
+    const performance = facade.analysis.detail === 'full'
+        ? facade.analysis.performance
+        : undefined;
     const inventory: DistributedRunTuningInventory = {
         knobs: facade.tuningInventory.knobs,
         limitations: facade.tuningInventory.limitations
@@ -63,7 +66,7 @@ export function deriveTuneSourceModelFromFacade(
             )
         );
     }
-    if (!hasTunePerformanceEvidence(facade.analysis.performance)) {
+    if (!hasTunePerformanceEvidence(performance)) {
         addIssue(issues, 'missing-performance', 'No command or RTC stream performance samples are available.');
     }
     if (!facade.candidateManifest) {
@@ -95,7 +98,7 @@ export function deriveTuneSourceModelFromFacade(
         facade.candidateManifest && !candidateManifestValid
             ? 'The candidate manifest is invalid.'
             : undefined,
-        !hasTunePerformanceEvidence(facade.analysis.performance)
+        !hasTunePerformanceEvidence(performance)
             ? 'Performance evidence is required before creating a candidate.'
             : undefined,
         identity.quarantined ? 'The run identity is unsafe.' : undefined
@@ -116,7 +119,7 @@ export function deriveTuneSourceModelFromFacade(
         },
         manifest: candidateManifestValid ? facade.candidateManifest : undefined,
         analysis: facade.analysis,
-        performance: facade.analysis.performance,
+        performance,
         inventory,
         decisions,
         identity,

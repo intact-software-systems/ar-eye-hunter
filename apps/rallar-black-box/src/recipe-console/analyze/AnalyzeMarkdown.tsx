@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PROJECTION_OMISSION_MESSAGE } from './analyze-projection-bounds.ts';
 import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
@@ -59,14 +60,21 @@ export function AnalyzeMarkdown({
 }
 
 function markdownDocuments(model: AnalyzeArtifactProjection): readonly MarkdownDocument[] {
+    const analysis = model.analysis;
+    const summary = analysis.detail === 'full'
+        ? analysis.summaryMarkdown
+        : PROJECTION_OMISSION_MESSAGE;
+    const performanceMarkdown = analysis.detail === 'full'
+        ? analysis.performanceMarkdown
+        : undefined;
     return [
         { id: 'issue', label: 'Issue Markdown', value: model.issueMarkdown },
-        { id: 'summary', label: 'Summary', value: model.analysis.summaryMarkdown },
-        !model.analysis.ok && model.analysis.fixProposalMarkdown
-            ? { id: 'fix', label: 'Fix proposal', value: model.analysis.fixProposalMarkdown }
+        { id: 'summary', label: 'Summary', value: summary },
+        !analysis.ok && analysis.fixProposalMarkdown
+            ? { id: 'fix', label: 'Fix proposal', value: analysis.fixProposalMarkdown }
             : undefined,
-        model.analysis.performanceMarkdown
-            ? { id: 'performance', label: 'Performance', value: model.analysis.performanceMarkdown }
+        performanceMarkdown
+            ? { id: 'performance', label: 'Performance', value: performanceMarkdown }
             : undefined
     ].filter((document): document is MarkdownDocument => document !== undefined);
 }

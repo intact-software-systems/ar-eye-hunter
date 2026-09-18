@@ -4,7 +4,9 @@ import styles from './AnalyzeEvidence.module.css';
 export function AnalyzePerformance({
     model
 }: Readonly<{ model: AnalyzeArtifactProjection; }>) {
-    const performance = model.analysis.performance;
+    const performance = model.analysis.detail === 'full'
+        ? model.analysis.performance
+        : undefined;
     const timing = performance?.commandTiming;
     const stream = performance?.streamTiming;
     return (

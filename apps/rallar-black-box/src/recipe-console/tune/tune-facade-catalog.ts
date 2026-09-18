@@ -84,10 +84,11 @@ export function projectTuneFacadeCatalog(
     }
     const distributedRun = facadeSnapshot(facade, manifest);
     const analysis = facade.analysis;
+    const performance = analysis.detail === 'full' ? analysis.performance : undefined;
     const artifactEvidence = {
         distributedRun,
         analysis,
-        performance: facade.analysis.performance,
+        performance,
         pairStatus: 'missing' as const
     };
     if (input.current) {
@@ -107,7 +108,7 @@ export function projectTuneFacadeCatalog(
             source: 'artifact',
             distributedRun,
             analysis,
-            performance: facade.analysis.performance,
+            performance,
             identity,
             pairStatus: 'missing',
             manifestValidation: 'validated',

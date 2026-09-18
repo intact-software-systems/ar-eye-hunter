@@ -184,6 +184,7 @@ function facade(
             targetAgentIds: { entries: run.targetAgentIds, total: 1, omitted: 0 }
         },
         analysis: {
+            detail: 'full',
             generatedAtEpochMs: 2_600,
             distributedRunId: input.distributedRunId,
             controlRunId: input.controlRunId,
