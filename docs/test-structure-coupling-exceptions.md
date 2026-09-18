@@ -2382,6 +2382,21 @@ moved or changed test.
     }
 ,
     {
+      "id": "agent-launch-unavailable-clipboard-mints-no-links",
+      "domain": "Recipe Console browser-agent launch authority",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "When the browser offers no clipboard, copying launch links mints none. Executable assertion: \"names an unavailable clipboard instead of minting links it cannot copy\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#names an unavailable clipboard instead of minting links it cannot copy",
+      "coverageRelation": "The named test reads the operator message the panel shows; that message alone cannot say whether the links behind it were already minted, so the absence of a prepare call is the only witness that no credential was spent.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Control server browser-agent launch preparation endpoint",
+        "observableEffect": "No prepare call when the clipboard is unavailable.",
+        "requiredConstraint": "The copy action checks the clipboard before it asks the control server for fresh launch links.",
+        "failureRationale": "Links minted for a clipboard that cannot receive them leave short-lived agent credentials live on the control server with no operator holding them."
+      }
+    },
+{
       "id": "agent-launch-one-control-token-per-simulated-agent",
       "domain": "Recipe Console browser-agent launch authority",
       "owner": "Rallar Black Box maintainers",
@@ -2496,6 +2511,17 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
     },
     {
+      "id": "test-structure-coupling-10af8255a405b3b0",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-unavailable-clipboard-mints-no-links",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade prepare call is the only witness that an unavailable clipboard stops the copy before the control server mints short-lived launch credentials.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#names an unavailable clipboard instead of minting links it cannot copy"
+    },
+{
       "id": "test-structure-coupling-2156428ddf7703a1",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
       "kind": "symbol-assertion",
