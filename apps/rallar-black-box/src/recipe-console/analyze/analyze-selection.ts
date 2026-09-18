@@ -2,7 +2,7 @@ import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { recipeConsoleControlRunSelectionPatch } from '../control/control-selection.ts';
+import { deriveControlRunSelectionPatch } from '../control/control-run-selection-patch.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { safeAnalyzeArtifactIdentity, type AnalyzeImportedArtifactIdentity } from './analyze-identity-policy.ts';
 export { analyzeArtifactIdentityIssues } from './analyze-identity-policy.ts';
@@ -91,7 +91,7 @@ export function recipeConsoleAnalyzeControlRunSelectionPatch(
     }>
 ): Partial<RecipeConsoleUrlState> {
     return {
-        ...recipeConsoleControlRunSelectionPatch(input),
+        ...deriveControlRunSelectionPatch(input),
         agentId: undefined,
         recipeId: undefined,
         commandId: undefined

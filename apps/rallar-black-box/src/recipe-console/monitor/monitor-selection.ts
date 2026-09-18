@@ -1,6 +1,6 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunRecipeProgressRow } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
-import { recipeConsoleControlRunSelectionPatch } from '../control/control-selection.ts';
+import { deriveControlRunSelectionPatch } from '../control/control-run-selection-patch.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type MonitorSelectionIssue = Readonly<{
@@ -149,7 +149,7 @@ export function createMonitorControlRunSelectionPatch(
     }>
 ): Partial<RecipeConsoleUrlState> {
     return {
-        ...recipeConsoleControlRunSelectionPatch(input),
+        ...deriveControlRunSelectionPatch(input),
         agentId: undefined,
         recipeId: undefined,
         commandId: undefined

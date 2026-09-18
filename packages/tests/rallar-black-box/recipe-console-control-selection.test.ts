@@ -6,10 +6,10 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
+import { deriveControlRunSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/control/control-run-selection-patch.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import {
     deriveRecipeConsoleControlSelection,
-    recipeConsoleControlRunSelectionPatch,
     recipeConsoleControlSelectionWorkForTest
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
@@ -770,7 +770,7 @@ describe('Recipe Console control selection', () => {
             agentId: 'agent-a'
         };
 
-        expect(recipeConsoleControlRunSelectionPatch({
+        expect(deriveControlRunSelectionPatch({
             state,
             controlRunId: 'run-b',
             distributedRuns
@@ -779,7 +779,7 @@ describe('Recipe Console control selection', () => {
             distributedRunId: undefined,
             agentId: undefined
         });
-        expect(recipeConsoleControlRunSelectionPatch({
+        expect(deriveControlRunSelectionPatch({
             state: { ...state, distributedRunId: 'distributed-b' },
             controlRunId: 'run-b',
             distributedRuns

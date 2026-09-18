@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import { deriveRecipeConsoleControlSelection, recipeConsoleControlRunSelectionPatch } from './control-selection.ts';
+import { deriveControlRunSelectionPatch } from './control-run-selection-patch.ts';
+import { deriveRecipeConsoleControlSelection } from './control-selection.ts';
 import { controlCommandStatus } from './ControlCommandContext.tsx';
 import { useControlConnection } from './ControlConnectionProvider.tsx';
 
@@ -47,7 +48,7 @@ export function useRecipeConsoleControlWorkspace(
     ]);
 
     const selectControlRun = useCallback((controlRunId: string) => {
-        input.navigate(recipeConsoleControlRunSelectionPatch({
+        input.navigate(deriveControlRunSelectionPatch({
             state: input.urlState,
             controlRunId,
             distributedRuns: connection.query.snapshot?.distributedRuns ?? []
