@@ -7,6 +7,7 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { rememberControlResponseDocument } from '../control-response-document.ts';
 import {
     toAuthorizationHeaders,
@@ -14,18 +15,16 @@ import {
     type ControlEndpointRequest,
     type ControlRunRequest
 } from './control-endpoint-request.ts';
-import {
-    readAcknowledgedJsonResponse,
-    readJsonResponse,
-    readJsonResponseDocument,
-    readTextResponse,
-    type ControlResponseDocument
-} from './control-reply-reader.ts';
+import { readJsonReply, readJsonReplyDocument, readTextReply } from './control-reply-reader.ts';
+import type { ControlRequestFailure } from './control-request-failure.ts';
 
 export type EnqueueBulkControlCommandResult = Readonly<{
     accepted: true;
     commands: readonly ControlCommandEnvelope[];
 }>;
+
+/** The run the control server confirmed it deleted. */
+export type ControlRunDeletion = Readonly<{ runId: string; }>;
 
 type ReadControlServerSnapshotInput =
     & ControlEndpointRequest
@@ -36,15 +35,7 @@ type ReadControlServerSnapshotInput =
 
 export async function readControlServerSnapshot(
     input: ReadControlServerSnapshotInput
-): Promise<ControlServerSnapshot> {
-    const document = await readControlServerSnapshotDocument(input);
-    rememberControlResponseDocument(document.value, document.text);
-    return document.value;
-}
-
-async function readControlServerSnapshotDocument(
-    input: ReadControlServerSnapshotInput
-): Promise<ControlResponseDocument<ControlServerSnapshot>> {
+): Promise<Either<ControlRequestFailure, ControlServerSnapshot>> {
     const response = await input.fetchFn(
         toControlRunSnapshotUrl(
             input.baseUrl,
@@ -55,7 +46,11 @@ async function readControlServerSnapshotDocument(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponseDocument<ControlServerSnapshot>(response);
+    const document = await readJsonReplyDocument<ControlServerSnapshot>(response);
+    return document.mapRight((carried) => {
+        rememberControlResponseDocument(carried.value, carried.text);
+        return carried.value;
+    });
 }
 
 export async function readControlRunSnapshot(
@@ -65,7 +60,7 @@ export async function readControlRunSnapshot(
             /** Absent when the caller wants the server's own collection sizes, unbounded. */
             bounds?: ControlSnapshotBounds;
         }>
-): Promise<ControlRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlRunSnapshot>> {
     const response = await input.fetchFn(
         toControlRunSnapshotUrl(
             input.baseUrl,
@@ -76,9 +71,11 @@ export async function readControlRunSnapshot(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    const document = await readJsonResponseDocument<ControlRunSnapshot>(response);
-    rememberControlResponseDocument(document.value, document.text);
-    return document.value;
+    const document = await readJsonReplyDocument<ControlRunSnapshot>(response);
+    return document.mapRight((carried) => {
+        rememberControlResponseDocument(carried.value, carried.text);
+        return carried.value;
+    });
 }
 
 export async function enqueueBulkControlCommand(
@@ -90,7 +87,7 @@ export async function enqueueBulkControlCommand(
             /** Absent when the control server may name the queued commands itself. */
             commandIdPrefix?: string;
         }>
-): Promise<EnqueueBulkControlCommandResult> {
+): Promise<Either<ControlRequestFailure, EnqueueBulkControlCommandResult>> {
     const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/commands`, toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -106,12 +103,12 @@ export async function enqueueBulkControlCommand(
             })
         }
     );
-    return readJsonResponse<EnqueueBulkControlCommandResult>(response);
+    return readJsonReply<EnqueueBulkControlCommandResult>(response);
 }
 
 export async function resetControlRun(
     input: ControlRunRequest
-): Promise<ControlRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlRunSnapshot>> {
     const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/reset`, toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -119,13 +116,13 @@ export async function resetControlRun(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    const body = await readJsonResponse<{ run: ControlRunSnapshot; }>(response);
-    return body.run;
+    const body = await readJsonReply<{ run: ControlRunSnapshot; }>(response);
+    return body.mapRight((carried) => carried.run);
 }
 
 export async function deleteControlRun(
     input: ControlRunRequest
-): Promise<void> {
+): Promise<Either<ControlRequestFailure, ControlRunDeletion>> {
     const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -133,24 +130,25 @@ export async function deleteControlRun(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    await readAcknowledgedJsonResponse(response);
+    const acknowledgement = await readJsonReply<ApiJsonValue>(response);
+    return acknowledgement.mapRight(() => ({ runId: input.runId }));
 }
 
 export async function readControlRunArtifactBundle(
     input: ControlRunRequest
-): Promise<ControlRunArtifactBundle> {
+): Promise<Either<ControlRequestFailure, ControlRunArtifactBundle>> {
     const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/artifacts`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlRunArtifactBundle>(response);
+    return readJsonReply<ControlRunArtifactBundle>(response);
 }
 
 export async function readControlRunJsonl(
     input: ControlRunRequest & Readonly<{ kind: 'events' | 'results'; }>
-): Promise<string> {
+): Promise<Either<ControlRequestFailure, string>> {
     const response = await input.fetchFn(
         new URL(
             `/runs/${encodeURIComponent(input.runId)}/${input.kind}.jsonl`,
@@ -160,19 +158,19 @@ export async function readControlRunJsonl(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readTextResponse(response);
+    return readTextReply(response);
 }
 
 export async function readControlRunFailureBundle(
     input: ControlRunRequest
-): Promise<ApiJsonValue> {
+): Promise<Either<ControlRequestFailure, ApiJsonValue>> {
     const response = await input.fetchFn(
         new URL(`/runs/${encodeURIComponent(input.runId)}/failure-bundle`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ApiJsonValue>(response);
+    return readJsonReply<ApiJsonValue>(response);
 }
 
 function toControlRunSnapshotUrl(

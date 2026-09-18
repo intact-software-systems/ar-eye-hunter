@@ -19,6 +19,7 @@ import {
     readFleetReports,
     rebuildFleetReports
 } from '../../../control-run-manager/control-fleet-report-endpoints.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlServerSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
@@ -203,7 +204,7 @@ export function useRunnerFleetController({
         }
         setError(undefined);
         try {
-            const nextResponse = options.rebuild
+            const responseOutcome = options.rebuild
                 ? await rebuildFleetReports(controlEndpoint)
                 : await readFleetReports({
                     ...controlEndpoint,
@@ -212,11 +213,21 @@ export function useRunnerFleetController({
             if (!request.isCurrent()) {
                 return;
             }
-            const nextSnapshot = await readControlServerSnapshot({
+            const nextResponse = responseOutcome.right;
+            if (nextResponse === undefined) {
+                setError(toControlFailureMessage(responseOutcome.left));
+                return;
+            }
+            const snapshotOutcome = await readControlServerSnapshot({
                 ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const nextSnapshot = snapshotOutcome.right;
+            if (nextSnapshot === undefined) {
+                setError(toControlFailureMessage(snapshotOutcome.left));
                 return;
             }
             setResponse(nextResponse);
@@ -317,10 +328,15 @@ export function useRunnerFleetController({
         setBusy('export');
         setError(undefined);
         try {
-            const bundle = await readFleetReportBundle({
+            const bundleOutcome = await readFleetReportBundle({
                 ...controlEndpoint,
                 distributedRunId: selectedReport.distributedRunId
             });
+            const bundle = bundleOutcome.right;
+            if (bundle === undefined) {
+                setError(toControlFailureMessage(bundleOutcome.left));
+                return;
+            }
             setLastExport(bundle);
             await navigator.clipboard?.writeText(json(bundle.files));
         }

@@ -1,5 +1,6 @@
 import type { ControlRunToken } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { createControlHttpFailure } from '../../control-run-manager/control-request-failure.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
 type IssueRunTokenInput = Readonly<{
@@ -31,13 +32,11 @@ export function createRecipeConsoleControlAgentLaunchApi(
                     signal: request.signal
                 });
                 if (!response.ok) {
-                    throw new ControlRunManagerHttpError(
-                        await response.text(),
-                        response.status,
-                        response.statusText
+                    return Either.ofLeft(
+                        createControlHttpFailure(response, await response.text())
                     );
                 }
-                return await response.json() as unknown;
+                return Either.ofRight(await response.json() as unknown);
             }, request.signal);
             return validateControlRunToken(
                 result.value,

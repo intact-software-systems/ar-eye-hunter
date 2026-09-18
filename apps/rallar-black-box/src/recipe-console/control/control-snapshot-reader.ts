@@ -143,15 +143,17 @@ export function createControlSnapshotReader(
         for (const runId of requestedRunIds) {
             const detail = await config.transport.response(
                 async (token, fetchFn) => {
-                    const value = await readControlRunSnapshot({
+                    const detailRun = await readControlRunSnapshot({
                         baseUrl: config.baseUrl,
                         runId,
                         token,
                         bounds: config.detailBounds,
                         fetchFn
                     });
-                    validateControlRunSnapshot(value);
-                    return value;
+                    return detailRun.mapRight((value) => {
+                        validateControlRunSnapshot(value);
+                        return value;
+                    });
                 },
                 runsAuthorization,
                 input.signal

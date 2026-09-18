@@ -8,6 +8,7 @@ import type {
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { inheritControlResponseDocument, rememberControlResponseDocument } from '../control-response-document.ts';
 import {
     decodeControlDistributedRunPlan,
@@ -19,42 +20,43 @@ import {
     type ControlDistributedRunRequest,
     type ControlEndpointRequest
 } from './control-endpoint-request.ts';
-import { readJsonResponse, readJsonResponseDocument, type ControlResponseDocument } from './control-reply-reader.ts';
+import { readJsonReply, readJsonReplyDocument } from './control-reply-reader.ts';
+import type { ControlRequestFailure } from './control-request-failure.ts';
 import { readBoundedControlArtifactResponseBytes } from './read-bounded-control-artifact-response-bytes.ts';
 
 export async function readDistributedRuns(
     input: ControlEndpointRequest
-): Promise<readonly ControlDistributedRunSnapshot[]> {
-    const document = await readDistributedRunsDocument(input);
-    const plans = decodeControlDistributedRunPlans(document.value.distributedRuns);
-    if (plans.left !== undefined) {
-        throw new Error(plans.left);
-    }
-    rememberControlResponseDocument(document.value, document.text);
-    inheritControlResponseDocument(
-        document.value,
-        document.value.distributedRuns
-    );
-    return document.value.distributedRuns;
-}
-
-async function readDistributedRunsDocument(
-    input: ControlEndpointRequest
-): Promise<ControlResponseDocument<ControlDistributedRunListResponse>> {
+): Promise<Either<ControlRequestFailure, readonly ControlDistributedRunSnapshot[]>> {
     const response = await input.fetchFn(
         new URL('/distributed-runs', toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponseDocument<ControlDistributedRunListResponse>(
-        response
+    const document = await readJsonReplyDocument<ControlDistributedRunListResponse>(response);
+    return document.flatMap(
+        (failure) => Either.ofLeft(failure),
+        (carried) => {
+            const plans = decodeControlDistributedRunPlans(carried.value.distributedRuns);
+            if (plans.left !== undefined) {
+                return Either.ofLeft({
+                    kind: 'unsupported-distributed-run',
+                    message: plans.left
+                });
+            }
+            rememberControlResponseDocument(carried.value, carried.text);
+            inheritControlResponseDocument(
+                carried.value,
+                carried.value.distributedRuns
+            );
+            return Either.ofRight(carried.value.distributedRuns);
+        }
     );
 }
 
 export async function readDistributedRun(
     input: ControlDistributedRunRequest
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     const response = await input.fetchFn(
         new URL(`/distributed-runs/${encodeURIComponent(input.distributedRunId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -70,7 +72,7 @@ export async function createDistributedRun(
         & Readonly<{
             manifest: RallarBlackBoxDistributedRunManifest;
         }>
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     const response = await input.fetchFn(
         new URL('/distributed-runs', toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -93,7 +95,7 @@ export async function readDistributedTargetResolution(
         & Readonly<{
             manifest: RallarBlackBoxDistributedRunManifest;
         }>
-): Promise<RallarBlackBoxDistributedTargetResolution> {
+): Promise<Either<ControlRequestFailure, RallarBlackBoxDistributedTargetResolution>> {
     const response = await input.fetchFn(
         new URL('/distributed-runs/resolve-targets', toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -107,18 +109,18 @@ export async function readDistributedTargetResolution(
             })
         }
     );
-    return readJsonResponse<RallarBlackBoxDistributedTargetResolution>(response);
+    return readJsonReply<RallarBlackBoxDistributedTargetResolution>(response);
 }
 
 export async function stageDistributedRun(
     input: ControlDistributedRunRequest
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     return writeDistributedRunPhase(input, 'stage');
 }
 
 export async function startDistributedRun(
     input: ControlDistributedRunRequest
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     return writeDistributedRunPhase(input, 'start');
 }
 
@@ -129,13 +131,13 @@ export async function cancelDistributedRun(
             /** Absent when the operator cancelled without naming a reason. */
             reason?: string;
         }>
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     return writeDistributedRunPhase(input, 'cancel');
 }
 
 export async function readDistributedRunArtifactBundle(
     input: ControlDistributedRunRequest
-): Promise<ControlDistributedRunArtifactBundle> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunArtifactBundle>> {
     const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
@@ -145,15 +147,13 @@ export async function readDistributedRunArtifactBundle(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlDistributedRunArtifactBundle>(response);
+    return readJsonReply<ControlDistributedRunArtifactBundle>(response);
 }
 
 export async function readDistributedRunArtifactBundleBytes(
     input: ControlDistributedRunRequest & Readonly<{ maxBytes: number; }>
-): Promise<ArrayBuffer> {
-    if (!Number.isSafeInteger(input.maxBytes) || input.maxBytes <= 0) {
-        throw new RangeError('Control artifact byte limit must be a positive safe integer.');
-    }
+): Promise<Either<ControlRequestFailure, ArrayBuffer>> {
+    assertControlArtifactByteLimit(input.maxBytes);
     const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/artifacts`,
@@ -164,6 +164,12 @@ export async function readDistributedRunArtifactBundleBytes(
     return readBoundedControlArtifactResponseBytes(response, input.maxBytes);
 }
 
+function assertControlArtifactByteLimit(maxBytes: number): void {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+        throw new RangeError('Control artifact byte limit must be a positive safe integer.');
+    }
+}
+
 async function writeDistributedRunPhase(
     input:
         & ControlDistributedRunRequest
@@ -172,7 +178,7 @@ async function writeDistributedRunPhase(
             reason?: string;
         }>,
     action: ControlDistributedRunCommandPhase
-): Promise<ControlDistributedRunSnapshot> {
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
     const response = await input.fetchFn(
         new URL(
             `/distributed-runs/${encodeURIComponent(input.distributedRunId)}/${action}`,
@@ -192,11 +198,20 @@ async function writeDistributedRunPhase(
     return readDistributedRunReply(response);
 }
 
-async function readDistributedRunReply(response: Response): Promise<ControlDistributedRunSnapshot> {
-    const distributedRun = await readJsonResponse<ControlDistributedRunSnapshot>(response);
-    const plan = decodeControlDistributedRunPlan(distributedRun, 'distributedRun');
-    if (plan.left !== undefined) {
-        throw new Error(plan.left);
-    }
-    return distributedRun;
+async function readDistributedRunReply(
+    response: Response
+): Promise<Either<ControlRequestFailure, ControlDistributedRunSnapshot>> {
+    const reply = await readJsonReply<ControlDistributedRunSnapshot>(response);
+    return reply.flatMap(
+        (failure) => Either.ofLeft(failure),
+        (distributedRun) => {
+            const plan = decodeControlDistributedRunPlan(distributedRun, 'distributedRun');
+            return plan.left === undefined
+                ? Either.ofRight(distributedRun)
+                : Either.ofLeft({
+                    kind: 'unsupported-distributed-run',
+                    message: plan.left
+                });
+        }
+    );
 }

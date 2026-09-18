@@ -1,3 +1,4 @@
+import { Either } from '@shared/resilience/Either.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 import { requestControlRetentionConfirmation, requestControlRetentionPreview } from './control-retention-request.ts';
 import {
@@ -40,11 +41,15 @@ export function createRecipeConsoleControlRetentionApi(
                 async (signal) => {
                     const result = await input.endpoint.response(
                         async (fetchFn) =>
-                            parseControlRetentionPreview(
-                                await requestControlRetentionPreview({
-                                    baseUrl: input.baseUrl,
-                                    fetchFn
-                                })
+                            // The retention request owner still reports a failed reply by
+                            // throwing; the transport reads that throw as the same failure value.
+                            Either.ofRight(
+                                parseControlRetentionPreview(
+                                    await requestControlRetentionPreview({
+                                        baseUrl: input.baseUrl,
+                                        fetchFn
+                                    })
+                                )
                             ),
                         signal
                     );
@@ -76,13 +81,15 @@ export function createRecipeConsoleControlRetentionApi(
                     try {
                         const result = await input.endpoint.response(
                             async (fetchFn) =>
-                                parseControlRetentionConfirmation(
-                                    await requestControlRetentionConfirmation({
-                                        baseUrl: input.baseUrl,
-                                        planToken: request.preview.planToken,
-                                        fetchFn
-                                    }),
-                                    request.preview
+                                Either.ofRight(
+                                    parseControlRetentionConfirmation(
+                                        await requestControlRetentionConfirmation({
+                                            baseUrl: input.baseUrl,
+                                            planToken: request.preview.planToken,
+                                            fetchFn
+                                        }),
+                                        request.preview
+                                    )
                                 ),
                             signal
                         );

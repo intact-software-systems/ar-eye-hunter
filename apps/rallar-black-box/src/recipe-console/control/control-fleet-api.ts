@@ -39,18 +39,19 @@ export function createRecipeConsoleControlFleetApi(
             try {
                 throwIfControlAborted(linked.signal);
                 const pending = input.endpoint.response(
-                    async (fetchFn) =>
-                        parseFleetReportBundleBytes(
-                            await readFleetReportBundleBytes({
-                                baseUrl: input.baseUrl,
-                                distributedRunId: request.distributedRunId,
-                                // The authorized endpoint's own fetch already carries the
-                                // Authorization header, so this reader sends none itself.
-                                token: undefined,
-                                fetchFn
-                            }),
-                            request.distributedRunId
-                        ),
+                    async (fetchFn) => {
+                        const bytes = await readFleetReportBundleBytes({
+                            baseUrl: input.baseUrl,
+                            distributedRunId: request.distributedRunId,
+                            // The authorized endpoint's own fetch already carries the
+                            // Authorization header, so this reader sends none itself.
+                            token: undefined,
+                            fetchFn
+                        });
+                        return bytes.mapRight((carried) =>
+                            parseFleetReportBundleBytes(carried, request.distributedRunId)
+                        );
+                    },
                     linked.signal
                 );
                 const result = await settleFleetSelection(

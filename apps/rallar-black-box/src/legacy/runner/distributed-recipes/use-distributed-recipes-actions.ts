@@ -1,6 +1,7 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRolePattern } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { useEffect } from 'react';
 import {
     cancelDistributedRun,
@@ -11,6 +12,7 @@ import {
     startDistributedRun
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
 import { createDefaultControlEndpointRequest } from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import {
     defaultDistributedRecipeTargetIds,
     reconcileDistributedRecipeTargetIds
@@ -113,10 +115,15 @@ export function useDistributedRecipesActions({
         try {
             await loadRun(selectedRunId);
             if (usesWorldFleetTargets && manifest) {
-                const resolution = await readDistributedTargetResolution({
+                const resolutionOutcome = await readDistributedTargetResolution({
                     ...controlEndpoint,
                     manifest
                 });
+                const resolution = resolutionOutcome.right;
+                if (resolution === undefined) {
+                    setError(toControlFailureMessage(resolutionOutcome.left));
+                    return;
+                }
                 setTargetResolutionPreview(resolution);
                 setSelectedAgentIds(resolution.targetAgentIds);
                 setLastAction(
@@ -139,14 +146,14 @@ export function useDistributedRecipesActions({
         }
     };
 
-    const ensureCreatedDistributedRun = async (): Promise<ControlDistributedRunSnapshot> => {
+    const ensureCreatedDistributedRun = async (): Promise<Either<string, ControlDistributedRunSnapshot>> => {
         if (!manifest) {
-            throw new Error(
+            return Either.ofLeft(
                 'Build a valid distributed run manifest before creating the run.'
             );
         }
         if (manifestValidation) {
-            throw new Error(manifestValidation);
+            return Either.ofLeft(manifestValidation);
         }
         const existing = selectedDistributedRun?.distributedRunId ===
                 manifest.distributedRunId
@@ -157,22 +164,31 @@ export function useDistributedRecipesActions({
                         manifest.distributedRunId
             );
         if (existing) {
-            return existing;
+            return Either.ofRight(existing);
         }
-        const created = await createDistributedRun({
+        const outcome = await createDistributedRun({
             ...controlEndpoint,
             manifest
         });
+        const created = outcome.right;
+        if (created === undefined) {
+            return Either.ofLeft(toControlFailureMessage(outcome.left));
+        }
         setSelectedDistributedRun(created);
         setDistributedRuns((current) => [created, ...current]);
-        return created;
+        return Either.ofRight(created);
     };
 
     const createRun = async (): Promise<void> => {
         setBusyAction('create');
         setError(undefined);
         try {
-            const created = await ensureCreatedDistributedRun();
+            const outcome = await ensureCreatedDistributedRun();
+            const created = outcome.right;
+            if (created === undefined) {
+                setError(outcome.left);
+                return;
+            }
             setLastAction(`Created ${created.distributedRunId}.`);
             await refresh(created.controlRunId, created.distributedRunId);
         }
@@ -189,13 +205,24 @@ export function useDistributedRecipesActions({
         setError(undefined);
         try {
             if (worldFleetBlockReason) {
-                throw new Error(worldFleetBlockReason);
+                setError(worldFleetBlockReason);
+                return;
             }
-            const created = await ensureCreatedDistributedRun();
-            const staged = await stageDistributedRun({
+            const outcome = await ensureCreatedDistributedRun();
+            const created = outcome.right;
+            if (created === undefined) {
+                setError(outcome.left);
+                return;
+            }
+            const stagedOutcome = await stageDistributedRun({
                 ...controlEndpoint,
                 distributedRunId: created.distributedRunId
             });
+            const staged = stagedOutcome.right;
+            if (staged === undefined) {
+                setError(toControlFailureMessage(stagedOutcome.left));
+                return;
+            }
             setSelectedDistributedRun(staged);
             setLastAction(`Staged ${staged.distributedRunId}.`);
             await refresh(staged.controlRunId, staged.distributedRunId);
@@ -224,10 +251,15 @@ export function useDistributedRecipesActions({
         setBusyAction('start');
         setError(undefined);
         try {
-            const started = await startDistributedRun({
+            const startedOutcome = await startDistributedRun({
                 ...controlEndpoint,
                 distributedRunId: target.distributedRunId
             });
+            const started = startedOutcome.right;
+            if (started === undefined) {
+                setError(toControlFailureMessage(startedOutcome.left));
+                return;
+            }
             setSelectedDistributedRun(started);
             setLastAction(`Started ${started.distributedRunId}.`);
             await refresh(started.controlRunId, started.distributedRunId);
@@ -252,11 +284,16 @@ export function useDistributedRecipesActions({
         setBusyAction('cancel');
         setError(undefined);
         try {
-            const cancelled = await cancelDistributedRun({
+            const cancelledOutcome = await cancelDistributedRun({
                 ...controlEndpoint,
                 distributedRunId: target.distributedRunId,
                 reason: 'Cancelled from Rallar Kit Distributed Recipes UI.'
             });
+            const cancelled = cancelledOutcome.right;
+            if (cancelled === undefined) {
+                setError(toControlFailureMessage(cancelledOutcome.left));
+                return;
+            }
             setSelectedDistributedRun(cancelled);
             setLastAction(`Cancelled ${cancelled.distributedRunId}.`);
             await refresh(cancelled.controlRunId, cancelled.distributedRunId);
@@ -281,10 +318,15 @@ export function useDistributedRecipesActions({
         setBusyAction('artifact');
         setError(undefined);
         try {
-            const bundle = await readDistributedRunArtifactBundle({
+            const bundleOutcome = await readDistributedRunArtifactBundle({
                 ...controlEndpoint,
                 distributedRunId: target.distributedRunId
             });
+            const bundle = bundleOutcome.right;
+            if (bundle === undefined) {
+                setError(toControlFailureMessage(bundleOutcome.left));
+                return;
+            }
             setArtifactBundle(bundle);
             setLastAction(
                 `Loaded distributed artifact for ${target.distributedRunId}.`

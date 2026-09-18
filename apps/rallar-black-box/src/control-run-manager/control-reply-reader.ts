@@ -1,6 +1,7 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { toError } from '@shared/resilience/to-error.ts';
-import { ControlRunManagerHttpError } from '../control-http-error.ts';
+import { createControlHttpFailure, type ControlRequestFailure } from './control-request-failure.ts';
 
 export type ControlResponseDocument<T> = Readonly<{
     value: T;
@@ -42,45 +43,47 @@ function toControlStatusMessage(response: Response): string {
     return `Control server request failed: ${response.status} ${response.statusText}`;
 }
 
-export async function readAcknowledgedJsonResponse(response: Response): Promise<void> {
-    await readJsonResponseDocument<ApiJsonValue>(response);
-}
-
-export async function readJsonResponse<T>(response: Response): Promise<T> {
-    const document = await readJsonResponseDocument<T>(response);
-    return document.value;
-}
-
-export async function readJsonResponseDocument<T>(
+export async function readJsonReply<T>(
     response: Response
-): Promise<ControlResponseDocument<T>> {
+): Promise<Either<ControlRequestFailure, T>> {
+    const document = await readJsonReplyDocument<T>(response);
+    return document.mapRight((carried) => carried.value);
+}
+
+export async function readJsonReplyDocument<T>(
+    response: Response
+): Promise<Either<ControlRequestFailure, ControlResponseDocument<T>>> {
     const text = await response.text();
     const body = decodeControlReplyBody(text);
     if (!response.ok) {
-        throw new ControlRunManagerHttpError(
-            toControlErrorMessage(response, body),
-            response.status,
-            response.statusText
+        return Either.ofLeft(
+            createControlHttpFailure(response, toControlErrorMessage(response, body))
         );
     }
     if (body.kind === 'unparsed') {
-        throw body.error;
+        return Either.ofLeft({
+            kind: 'undecodable-reply',
+            message: body.error.message
+        });
     }
-    return {
+    return Either.ofRight({
         value: (body.kind === 'json' ? body.value : {}) as T,
         text
-    };
+    });
 }
 
-export async function readTextResponse(response: Response): Promise<string> {
+export async function readTextReply(
+    response: Response
+): Promise<Either<ControlRequestFailure, string>> {
     const text = await response.text();
     if (response.ok) {
-        return text;
+        return Either.ofRight(text);
     }
     const body = decodeControlReplyBody(text);
-    throw new ControlRunManagerHttpError(
-        body.kind === 'unparsed' ? text : toControlErrorMessage(response, body),
-        response.status,
-        response.statusText
+    return Either.ofLeft(
+        createControlHttpFailure(
+            response,
+            body.kind === 'unparsed' ? text : toControlErrorMessage(response, body)
+        )
     );
 }

@@ -4,6 +4,7 @@ import {
     readDistributedRuns
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
 import { createDefaultControlEndpointRequest } from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import {
     readControlRunSnapshot,
     readControlServerSnapshot
@@ -57,7 +58,7 @@ export function useDistributedRecipesSelectionActions({
         setBusyAction('refresh');
         setError(undefined);
         try {
-            const [serverSnapshot, distributedList] = await Promise.all([
+            const [snapshotOutcome, distributedOutcome] = await Promise.all([
                 readControlServerSnapshot({
                     ...controlEndpoint,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
@@ -65,6 +66,14 @@ export function useDistributedRecipesSelectionActions({
                 readDistributedRuns(controlEndpoint)
             ]);
             if (!request.isCurrent()) {
+                return;
+            }
+            const serverSnapshot = snapshotOutcome.right;
+            const distributedList = distributedOutcome.right;
+            if (serverSnapshot === undefined || distributedList === undefined) {
+                setError(
+                    toControlFailureMessage(snapshotOutcome.left ?? distributedOutcome.left)
+                );
                 return;
             }
 
@@ -104,7 +113,7 @@ export function useDistributedRecipesSelectionActions({
             const nextDistributedRunId = diagnosticSelection?.distributedRunId ??
                 preferredDistributedRunId;
             setSelectedRunId(nextRunId);
-            const nextRun = nextRunId
+            const nextRunOutcome = nextRunId
                 ? await readControlRunSnapshot({
                     ...controlEndpoint,
                     runId: nextRunId,
@@ -114,8 +123,12 @@ export function useDistributedRecipesSelectionActions({
             if (!request.isCurrent()) {
                 return;
             }
+            if (nextRunOutcome?.left !== undefined) {
+                setError(toControlFailureMessage(nextRunOutcome.left));
+                return;
+            }
 
-            setRun(nextRun);
+            setRun(nextRunOutcome?.right);
             setSelectedDistributedRun(distributedList.find((item) =>
                 item.distributedRunId === nextDistributedRunId &&
                 (!diagnosticSelection || item.controlRunId === nextRunId)
@@ -155,12 +168,19 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await readControlRunSnapshot({
+            const loadOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(loadOutcome.left));
+                }
                 return;
             }
             setRun(loaded);
@@ -189,19 +209,33 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await readDistributedRun({
+            const loadOutcome = await readDistributedRun({
                 ...controlEndpoint,
                 distributedRunId: id
             });
             if (!request.isCurrent()) {
                 return;
             }
-            const controlRun = await readControlRunSnapshot({
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(loadOutcome.left));
+                }
+                return;
+            }
+            const controlRunOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId: loaded.controlRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const controlRun = controlRunOutcome.right;
+            if (controlRun === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(controlRunOutcome.left));
+                }
                 return;
             }
 

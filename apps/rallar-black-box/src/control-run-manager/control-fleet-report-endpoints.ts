@@ -4,13 +4,15 @@ import type {
     ControlFleetReportsResponse,
     ControlFleetRunReport
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import {
     toAuthorizationHeaders,
     toNormalizedBaseUrl,
     type ControlDistributedRunRequest,
     type ControlEndpointRequest
 } from './control-endpoint-request.ts';
-import { readJsonResponse } from './control-reply-reader.ts';
+import { readJsonReply } from './control-reply-reader.ts';
+import type { ControlRequestFailure } from './control-request-failure.ts';
 import { readBoundedControlArtifactResponseBytes } from './read-bounded-control-artifact-response-bytes.ts';
 
 const CONTROL_FLEET_REPORT_BUNDLE_TRANSFER_MAX_BYTES = 64 * 1_024 * 1_024;
@@ -22,30 +24,30 @@ export async function readFleetReports(
             /** Absent when the caller wants every report the server holds. */
             filter?: ControlFleetReportFilter;
         }>
-): Promise<ControlFleetReportsResponse> {
+): Promise<Either<ControlRequestFailure, ControlFleetReportsResponse>> {
     const url = new URL('/fleet/reports', toNormalizedBaseUrl(input.baseUrl));
     setFleetReportFilter(url, input.filter ?? {});
     const response = await input.fetchFn(url, {
         headers: toAuthorizationHeaders(input.token)
     });
-    return readJsonResponse<ControlFleetReportsResponse>(response);
+    return readJsonReply<ControlFleetReportsResponse>(response);
 }
 
 export async function readFleetReport(
     input: ControlDistributedRunRequest
-): Promise<ControlFleetRunReport> {
+): Promise<Either<ControlRequestFailure, ControlFleetRunReport>> {
     const response = await input.fetchFn(
         new URL(`/fleet/reports/${encodeURIComponent(input.distributedRunId)}`, toNormalizedBaseUrl(input.baseUrl)),
         {
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlFleetRunReport>(response);
+    return readJsonReply<ControlFleetRunReport>(response);
 }
 
 export async function readFleetReportBundle(
     input: ControlDistributedRunRequest
-): Promise<ControlFleetReportBundle> {
+): Promise<Either<ControlRequestFailure, ControlFleetReportBundle>> {
     const response = await input.fetchFn(
         new URL(
             `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
@@ -55,12 +57,12 @@ export async function readFleetReportBundle(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlFleetReportBundle>(response);
+    return readJsonReply<ControlFleetReportBundle>(response);
 }
 
 export async function readFleetReportBundleBytes(
     input: ControlDistributedRunRequest
-): Promise<ArrayBuffer> {
+): Promise<Either<ControlRequestFailure, ArrayBuffer>> {
     const response = await input.fetchFn(
         new URL(
             `/fleet/reports/${encodeURIComponent(input.distributedRunId)}/artifacts`,
@@ -78,7 +80,7 @@ export async function readFleetReportBundleBytes(
 
 export async function rebuildFleetReports(
     input: ControlEndpointRequest
-): Promise<ControlFleetReportsResponse> {
+): Promise<Either<ControlRequestFailure, ControlFleetReportsResponse>> {
     const response = await input.fetchFn(
         new URL('/fleet/reports/rebuild', toNormalizedBaseUrl(input.baseUrl)),
         {
@@ -86,7 +88,7 @@ export async function rebuildFleetReports(
             headers: toAuthorizationHeaders(input.token)
         }
     );
-    return readJsonResponse<ControlFleetReportsResponse>(response);
+    return readJsonReply<ControlFleetReportsResponse>(response);
 }
 
 function setFleetReportFilter(url: URL, filter: ControlFleetReportFilter): void {

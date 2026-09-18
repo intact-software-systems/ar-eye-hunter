@@ -30,6 +30,10 @@ import {
     toControlHttpBaseUrl
 } from '../../../control-run-manager/control-endpoint-request.ts';
 import {
+    toControlFailureMessage,
+    type ControlRequestFailure
+} from '../../../control-run-manager/control-request-failure.ts';
+import {
     readControlRunSnapshot,
     readControlServerSnapshot
 } from '../../../control-run-manager/control-run-endpoints.ts';
@@ -366,8 +370,18 @@ export function useRunnerRecipesController({
             ...controlEndpoint,
             bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
         })
-            .then(async (serverSnapshot) => {
+            .then(async (snapshotOutcome) => {
                 if (!request.isCurrent()) {
+                    return;
+                }
+                const serverSnapshot = snapshotOutcome.right;
+                if (serverSnapshot === undefined) {
+                    setControlSnapshot(undefined);
+                    setControlRun(undefined);
+                    setControlProbe({
+                        status: 'offline',
+                        detail: toControlFailureMessage(snapshotOutcome.left)
+                    });
                     return;
                 }
                 setControlSnapshot(serverSnapshot);
@@ -391,12 +405,21 @@ export function useRunnerRecipesController({
                 setControlRunId(nextRunId);
                 if (knownPreferredRunId) {
                     setAgentRunId(knownPreferredRunId);
-                    const nextControlRun = await readControlRunSnapshot({
+                    const controlRunOutcome = await readControlRunSnapshot({
                         ...controlEndpoint,
                         runId: knownPreferredRunId,
                         bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                     });
                     if (!request.isCurrent()) {
+                        return;
+                    }
+                    const nextControlRun = controlRunOutcome.right;
+                    if (nextControlRun === undefined) {
+                        setControlRun(undefined);
+                        setControlProbe({
+                            status: 'offline',
+                            detail: toControlFailureMessage(controlRunOutcome.left)
+                        });
                         return;
                     }
                     setControlRun(nextControlRun);
@@ -502,6 +525,14 @@ export function useRunnerRecipesController({
         }
     };
 
+    const reportDistributedLaunchFailure = (
+        failure: ControlRequestFailure | undefined
+    ): void => {
+        setLaunchState('failed');
+        setLaunchError(toControlFailureMessage(failure));
+        setLaunchMessage('Distributed run failed.');
+    };
+
     const runDistributedRecipe = async (): Promise<void> => {
         if (!selectedRecipe?.distributedItem) {
             setLaunchError(distributedDisabledReason);
@@ -512,12 +543,15 @@ export function useRunnerRecipesController({
         setLaunchError(undefined);
         setArtifactBundle(undefined);
         try {
-            const [serverSnapshot] = await Promise.all([
-                readControlServerSnapshot({
-                    ...controlEndpoint,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
-                })
-            ]);
+            const snapshotOutcome = await readControlServerSnapshot({
+                ...controlEndpoint,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
+            });
+            const serverSnapshot = snapshotOutcome.right;
+            if (serverSnapshot === undefined) {
+                reportDistributedLaunchFailure(snapshotOutcome.left);
+                return;
+            }
             setControlSnapshot(serverSnapshot);
             const knownRunIds = new Set(
                 serverSnapshot.runs.map((run) => run.runId)
@@ -534,11 +568,16 @@ export function useRunnerRecipesController({
             if (!nextRunId) {
                 throw new Error('Control run missing.');
             }
-            const latestControlRun = await readControlRunSnapshot({
+            const controlRunOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId: nextRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
+            const latestControlRun = controlRunOutcome.right;
+            if (latestControlRun === undefined) {
+                reportDistributedLaunchFailure(controlRunOutcome.left);
+                return;
+            }
             setControlRunId(nextRunId);
             setControlRun(latestControlRun);
             const preflight = distributedRecipePreflight(
@@ -587,20 +626,35 @@ export function useRunnerRecipesController({
             setLaunchMessage(
                 `Creating ${distributedRunId} for ${agentIds.length} agent(s).`
             );
-            const created = await createDistributedRun({
+            const createdOutcome = await createDistributedRun({
                 ...distributedControlEndpoint,
                 manifest
             });
+            const created = createdOutcome.right;
+            if (created === undefined) {
+                reportDistributedLaunchFailure(createdOutcome.left);
+                return;
+            }
             setLaunchMessage(`Staging ${created.distributedRunId}.`);
-            const staged = await stageDistributedRun({
+            const stagedOutcome = await stageDistributedRun({
                 ...distributedControlEndpoint,
                 distributedRunId: created.distributedRunId
             });
+            const staged = stagedOutcome.right;
+            if (staged === undefined) {
+                reportDistributedLaunchFailure(stagedOutcome.left);
+                return;
+            }
             setLaunchMessage(`Starting ${staged.distributedRunId}.`);
-            const started = await startDistributedRun({
+            const startedOutcome = await startDistributedRun({
                 ...distributedControlEndpoint,
                 distributedRunId: staged.distributedRunId
             });
+            const started = startedOutcome.right;
+            if (started === undefined) {
+                reportDistributedLaunchFailure(startedOutcome.left);
+                return;
+            }
             setDistributedRun(started);
             setLaunchState(
                 started.state === 'passed'
@@ -622,8 +676,11 @@ export function useRunnerRecipesController({
                 ...controlEndpoint,
                 distributedRunId: started.distributedRunId
             })
-                .then((nextDistributedRun) => {
-                    setDistributedRun(nextDistributedRun);
+                .then((outcome) => {
+                    const nextDistributedRun = outcome.right;
+                    if (nextDistributedRun !== undefined) {
+                        setDistributedRun(nextDistributedRun);
+                    }
                 })
                 .catch(() => undefined);
         }

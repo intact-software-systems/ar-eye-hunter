@@ -27,6 +27,7 @@ import {
     createDefaultControlEndpointRequest,
     toControlHttpBaseUrl
 } from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     compareDistributedRuns,
@@ -268,8 +269,13 @@ export function useRunnerRunsController({
         }
         setDistributedError(undefined);
         try {
-            const fetchedRuns = await readDistributedRuns(controlEndpoint);
+            const runsOutcome = await readDistributedRuns(controlEndpoint);
             if (!request.isCurrent()) {
+                return;
+            }
+            const fetchedRuns = runsOutcome.right;
+            if (fetchedRuns === undefined) {
+                setDistributedError(toControlFailureMessage(runsOutcome.left));
                 return;
             }
             const list = [...fetchedRuns].sort(
@@ -279,10 +285,10 @@ export function useRunnerRunsController({
                 ? list.find((item) => item.distributedRunId === preferredRunId)
                 : undefined;
             const nextDistributedRun = preferredRunId
-                ? await readDistributedRun({
+                ? (await readDistributedRun({
                     ...controlEndpoint,
                     distributedRunId: preferredRunId
-                }).catch(() => selectedFromList)
+                })).right ?? selectedFromList
                 : list[0];
             if (!request.isCurrent()) {
                 return;
@@ -290,11 +296,11 @@ export function useRunnerRunsController({
             const nextControlRunId = nextDistributedRun?.controlRunId ?? override?.controlRunId ??
                 controlRunId;
             const nextControlRun = nextControlRunId
-                ? await readControlRunSnapshot({
+                ? (await readControlRunSnapshot({
                     ...controlEndpoint,
                     runId: nextControlRunId,
                     bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
-                }).catch(() => undefined)
+                })).right
                 : undefined;
             if (!request.isCurrent()) {
                 return;
@@ -305,10 +311,10 @@ export function useRunnerRunsController({
                         isDistributedRunTerminalState(nextDistributedRun.state))
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
-                ? await readDistributedRunArtifactBundle({
+                ? (await readDistributedRunArtifactBundle({
                     ...controlEndpoint,
                     distributedRunId: nextDistributedRun.distributedRunId
-                }).catch(() => undefined)
+                })).right
                 : preferredRunId === selectedDistributedRunId
                 ? artifactBundle
                 : undefined;

@@ -13,6 +13,7 @@ import {
     createDefaultControlEndpointRequest,
     toControlHttpBaseUrl
 } from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import {
     deleteControlRun,
     enqueueBulkControlCommand,
@@ -122,11 +123,16 @@ export function RunManagerPanel({
         setBusyAction('refresh');
         setError(undefined);
         try {
-            const serverSnapshot = await readControlServerSnapshot({
+            const snapshotOutcome = await readControlServerSnapshot({
                 ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const serverSnapshot = snapshotOutcome.right;
+            if (serverSnapshot === undefined) {
+                setError(toControlFailureMessage(snapshotOutcome.left));
                 return;
             }
             setSnapshot(serverSnapshot);
@@ -147,12 +153,17 @@ export function RunManagerPanel({
                 return;
             }
             if (nextRunId) {
-                const nextRun = await readControlRunSnapshot({
+                const runOutcome = await readControlRunSnapshot({
                     ...controlEndpoint,
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 });
                 if (!request.isCurrent()) {
+                    return;
+                }
+                const nextRun = runOutcome.right;
+                if (nextRun === undefined) {
+                    setError(toControlFailureMessage(runOutcome.left));
                     return;
                 }
                 setRun(nextRun);
@@ -219,12 +230,17 @@ export function RunManagerPanel({
         setBusyAction('load-run');
         setError(undefined);
         try {
-            const loaded = await readControlRunSnapshot({
+            const loadOutcome = await readControlRunSnapshot({
                 ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                setError(toControlFailureMessage(loadOutcome.left));
                 return;
             }
             setRun(loaded);
@@ -256,13 +272,18 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const command = parseRunManagerCommandText(commandText);
-            const result = await enqueueBulkControlCommand({
+            const enqueued = await enqueueBulkControlCommand({
                 ...controlEndpoint,
                 runId: run.runId,
                 agentIds: selectedAgentIds,
                 command,
                 commandIdPrefix: runManagerCommandPrefix(command)
             });
+            const result = enqueued.right;
+            if (result === undefined) {
+                setError(toControlFailureMessage(enqueued.left));
+                return;
+            }
             setLastAction(`Queued ${result.commands.length} command(s).`);
             await refresh(run.runId);
         }
@@ -282,10 +303,15 @@ export function RunManagerPanel({
         setBusyAction('reset-run');
         setError(undefined);
         try {
-            const resetRun = await resetControlRun({
+            const resetOutcome = await resetControlRun({
                 ...controlEndpoint,
                 runId: run.runId
             });
+            const resetRun = resetOutcome.right;
+            if (resetRun === undefined) {
+                setError(toControlFailureMessage(resetOutcome.left));
+                return;
+            }
             setRun(resetRun);
             setLastAction(`Reset ${run.runId}.`);
             await refresh(run.runId);
@@ -307,10 +333,14 @@ export function RunManagerPanel({
         setBusyAction('delete-run');
         setError(undefined);
         try {
-            await deleteControlRun({
+            const deleted = await deleteControlRun({
                 ...controlEndpoint,
                 runId: deletedRunId
             });
+            if (deleted.right === undefined) {
+                setError(toControlFailureMessage(deleted.left));
+                return;
+            }
             setRun(undefined);
             setSelectedRunId('');
             setSelectedAgentIds([]);
@@ -342,10 +372,15 @@ export function RunManagerPanel({
         setBusyAction('artifact');
         setError(undefined);
         try {
-            const bundle = await readControlRunArtifactBundle({
+            const bundleOutcome = await readControlRunArtifactBundle({
                 ...controlEndpoint,
                 runId: run.runId
             });
+            const bundle = bundleOutcome.right;
+            if (bundle === undefined) {
+                setError(toControlFailureMessage(bundleOutcome.left));
+                return;
+            }
             setArtifactBundle(bundle);
             setLastAction(`Loaded artifact bundle for ${run.runId}.`);
         }
@@ -358,13 +393,7 @@ export function RunManagerPanel({
     };
 
     const copyArtifactBundle = async (): Promise<void> => {
-        const bundle = artifactBundle ??
-            (run
-                ? await readControlRunArtifactBundle({
-                    ...controlEndpoint,
-                    runId: run.runId
-                })
-                : undefined);
+        const bundle = artifactBundle ?? await readSelectedArtifactBundle();
         if (bundle) {
             setArtifactBundle(bundle);
             await navigator.clipboard?.writeText(json(bundle.files));
@@ -372,15 +401,34 @@ export function RunManagerPanel({
         }
     };
 
+    const readSelectedArtifactBundle = async (): Promise<ControlRunArtifactBundle | undefined> => {
+        if (!run) {
+            return undefined;
+        }
+        const outcome = await readControlRunArtifactBundle({
+            ...controlEndpoint,
+            runId: run.runId
+        });
+        if (outcome.right === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+        }
+        return outcome.right;
+    };
+
     const copyJsonl = async (kind: 'events' | 'results'): Promise<void> => {
         if (!run) {
             return;
         }
-        const text = await readControlRunJsonl({
+        const outcome = await readControlRunJsonl({
             ...controlEndpoint,
             runId: run.runId,
             kind
         });
+        const text = outcome.right;
+        if (text === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+            return;
+        }
         await navigator.clipboard?.writeText(text);
         setLastAction(`Copied ${kind} JSONL.`);
     };
@@ -389,10 +437,15 @@ export function RunManagerPanel({
         if (!run) {
             return;
         }
-        const bundle = await readControlRunFailureBundle({
+        const outcome = await readControlRunFailureBundle({
             ...controlEndpoint,
             runId: run.runId
         });
+        const bundle = outcome.right;
+        if (bundle === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+            return;
+        }
         await navigator.clipboard?.writeText(json(bundle));
         setLastAction('Copied failure bundle.');
     };

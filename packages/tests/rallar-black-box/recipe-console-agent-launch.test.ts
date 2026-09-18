@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { Either } from '@shared/resilience/Either.ts';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import {
     releaseReservedBrowserAgentPopups,
     reserveBrowserAgentPopups
 } from '../../../apps/rallar-black-box/src/browser-agent-popup.ts';
+import type { ControlRequestFailure } from '../../../apps/rallar-black-box/src/control-run-manager/control-request-failure.ts';
 import { createRunnerAgentLaunchActions } from '../../../apps/rallar-black-box/src/legacy/runner/recipes/runner-agent-launch-actions.ts';
 import { createRecipeConsoleControlAgentLaunchApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-agent-launch-api.ts';
 import type { RecipeConsoleControlCredentialPolicy } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
@@ -458,12 +460,26 @@ describe('legacy runner browser-agent launch compatibility', () => {
     });
 });
 
+function expectAuthorizedValue<Value>(
+    outcome: Either<ControlRequestFailure, Value>
+): Value {
+    const value = outcome.right;
+    if (value === undefined) {
+        throw new Error(`Expected an authorized value, got ${JSON.stringify(outcome.left)}.`);
+    }
+    return value;
+}
+
 describe('Recipe Console control agent-launch API', () => {
     it('mints an encoded run-scoped token through the root authorized endpoint', async () => {
         const requests: Array<{ url: string; init?: RequestInit; }> = [];
         const endpoint = {
-            async response<Value>(operation: (fetchFn: typeof fetch) => Promise<Value>) {
-                const value = await operation(async (input, init) => {
+            async response<Value>(
+                operation: (
+                    fetchFn: typeof fetch
+                ) => Promise<Either<ControlRequestFailure, Value>>
+            ) {
+                const outcome = await operation(async (input, init) => {
                     requests.push({ url: String(input), init });
                     return new Response(
                         JSON.stringify({
@@ -476,7 +492,10 @@ describe('Recipe Console control agent-launch API', () => {
                         { status: 201 }
                     );
                 });
-                return { value, authorization: 'manual' as const };
+                return {
+                    value: expectAuthorizedValue(outcome),
+                    authorization: 'manual' as const
+                };
             }
         };
         const api = createRecipeConsoleControlAgentLaunchApi({
@@ -499,8 +518,12 @@ describe('Recipe Console control agent-launch API', () => {
 
     it('rejects invalid or mismatched token payloads before they reach Execute', async () => {
         const endpoint = {
-            async response<Value>(operation: (fetchFn: typeof fetch) => Promise<Value>) {
-                const value = await operation(async () =>
+            async response<Value>(
+                operation: (
+                    fetchFn: typeof fetch
+                ) => Promise<Either<ControlRequestFailure, Value>>
+            ) {
+                const outcome = await operation(async () =>
                     new Response(
                         JSON.stringify({
                             runId: 'other-run',
@@ -512,7 +535,10 @@ describe('Recipe Console control agent-launch API', () => {
                         { status: 201 }
                     )
                 );
-                return { value, authorization: 'anonymous' as const };
+                return {
+                    value: expectAuthorizedValue(outcome),
+                    authorization: 'anonymous' as const
+                };
             }
         };
         const api = createRecipeConsoleControlAgentLaunchApi({
