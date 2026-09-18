@@ -357,7 +357,11 @@ actual shell execution to explicit local tooling or the control server.
   and Distributed Recipes tabs. `control-endpoint-request.ts` carries the
   addressed endpoint (base URL, token, fetch) and control URL normalization,
   `control-reply-reader.ts` decodes a reply body once and names the failure it
-  reports, `control-artifact-bytes.ts` reads a bounded artifact body,
+  reports, `control-request-failure.ts` owns `ControlRequestFailure`, the value
+  every reader returns instead of throwing,
+  `read-bounded-control-artifact-response-bytes.ts` reads an artifact reply under
+  its byte budget and `read-control-artifact-body-bytes.ts` accumulates the
+  bounded body itself,
   `control-run-endpoints.ts` covers snapshot loading, bulk enqueue, reset/delete,
   artifact export loading and JSONL/failure-bundle reads,
   `control-distributed-run-endpoints.ts` the distributed-run lifecycle,
