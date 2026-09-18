@@ -2,13 +2,13 @@
 import { act, createElement, Fragment } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MonitorAgentPhaseMatrix } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-agent-phase-matrix.tsx';
+import { MonitorDiagnostics } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-diagnostics.tsx';
+import { MonitorFailureLedger } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-failure-ledger.tsx';
+import { MonitorProgressEvidence } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-progress-evidence.tsx';
 import { createMonitorWindowFingerprint, MONITOR_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-window-contract.ts';
 import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import { MonitorAgentPhaseMatrix } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorAgentPhaseMatrix.tsx';
-import { MonitorDiagnostics } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnostics.tsx';
 import { MonitorEvidenceDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorEvidenceDisclosure.tsx';
-import { MonitorFailureLedger } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorFailureLedger.tsx';
-import { MonitorProgressEvidence } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorProgressEvidence.tsx';
 import { MonitorWindowTruth } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorWindowTruth.tsx';
 import { useMonitorWindow } from '../../../apps/rallar-black-box/src/recipe-console/monitor/use-monitor-window.ts';
 import { ExplicitWindowControls } from '../../../apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.tsx';

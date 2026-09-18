@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
+import { MonitorRecipeEvidence } from './monitor-recipe-evidence.tsx';
 import {
     computeMonitorRecipeEvidenceStatus,
     MONITOR_ARTIFACT_EVIDENCE_ID,
@@ -13,10 +14,10 @@ import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import { MonitorFailureEvidence } from './MonitorFailureEvidence.tsx';
 import styles from './MonitorInspector.module.css';
 import { MonitorEvidenceLinksWindow } from './MonitorInspectorWindow.tsx';
-import { MonitorRecipeEvidence } from './MonitorRecipeEvidence.tsx';
 
 export type MonitorInspectorProps = Readonly<{
     model: MonitorWorkspaceModel;
+    /** Absent until the operator selects evidence; the run's default evidence is inspected instead. */
     selection?: MonitorEvidenceSelection;
     legacyHref: string;
     sourceSearch: string;
@@ -32,39 +33,43 @@ export function MonitorInspector({
     urlState,
     onSelectEvidence
 }: MonitorInspectorProps) {
-    const active = selection ?? defaultSelection(model);
-    const heading = active ? `${labelKind(active.kind)} evidence` : 'Run evidence';
+    const active = selection ?? resolveDefaultSelection(model);
     return (
-        <section className={styles.inspector} data-monitor-inspector data-selection-kind={active?.kind ?? 'run'}>
+        <section className={styles.inspector} data-monitor-inspector data-selection-kind={active.kind}>
             <header className={styles.header}>
                 <p className={styles.eyebrow}>Evidence inspector</p>
-                <h2>{heading}</h2>
-                <ExactIdentifier
-                    value={active ? toMonitorEvidenceSelectionLabel(active) : model.monitor.distributedRunId}
+                <h2>{`${toKindLabel(active.kind)} evidence`}</h2>
+                <ExactIdentifier value={toMonitorEvidenceSelectionLabel(active)} />
+                <StatusMark
+                    label={toStatusLabel(model, active)}
+                    status={resolveSelectionStatus(model, active)}
                 />
-                <StatusMark label={statusLabel(model, active)} status={selectionStatus(model, active)} />
             </header>
-            {active
-                ? selectedEvidence(
-                    model,
-                    active,
-                    onSelectEvidence,
-                    sourceSearch,
-                    urlState
-                )
-                : <p className={styles.empty}>No inspectable evidence is available yet.</p>}
+            <SelectedEvidence
+                model={model}
+                onSelectEvidence={onSelectEvidence}
+                selection={active}
+                sourceSearch={sourceSearch}
+                urlState={urlState}
+            />
             <a className={styles.legacyLink} href={legacyHref}>Open this run in legacy Runs</a>
         </section>
     );
 }
 
-function selectedEvidence(
-    model: MonitorWorkspaceModel,
-    selection: MonitorEvidenceSelection,
-    onSelect: MonitorInspectorProps['onSelectEvidence'],
-    sourceSearch: string,
-    urlState: RecipeConsoleUrlState
-): ReactNode {
+function SelectedEvidence({
+    model,
+    selection,
+    onSelectEvidence: onSelect,
+    sourceSearch,
+    urlState
+}: Readonly<{
+    model: MonitorWorkspaceModel;
+    selection: MonitorEvidenceSelection;
+    onSelectEvidence: MonitorInspectorProps['onSelectEvidence'];
+    sourceSearch: string;
+    urlState: RecipeConsoleUrlState;
+}>): ReactNode {
     switch (selection.kind) {
         case 'failure':
             return (
@@ -77,7 +82,7 @@ function selectedEvidence(
                 />
             );
         case 'agent':
-            return agentView(model, selection.id);
+            return <AgentView agentId={selection.id} model={model} />;
         case 'recipe':
             return (
                 <MonitorRecipeEvidence
@@ -91,15 +96,18 @@ function selectedEvidence(
         case 'diagnostic':
             return <DiagnosticView model={model} eventId={selection.id} onSelect={onSelect} />;
         case 'timeline':
-            return timelineView(model, selection.id);
+            return <TimelineView id={selection.id} model={model} />;
         case 'event':
-            return eventView(model, selection.id);
+            return <EventView id={selection.id} model={model} />;
         case 'artifact':
-            return artifactView(model);
+            return <ArtifactView model={model} />;
     }
 }
 
-function agentView(model: MonitorWorkspaceModel, agentId: string): ReactNode {
+function AgentView({ model, agentId }: Readonly<{
+    model: MonitorWorkspaceModel;
+    agentId: string;
+}>) {
     const agent = model.monitor.agentProgress.find((row) => row.agentId === agentId);
     if (!agent) {
         return <MissingEvidence kind="agent" id={agentId} />;
@@ -119,7 +127,7 @@ function agentView(model: MonitorWorkspaceModel, agentId: string): ReactNode {
                     ['Failed', String(agent.failedCommandCount)],
                     ['Results', String(agent.resultCount)],
                     ['Events', String(agent.eventCount)],
-                    ['Last activity', formatEpoch(agent.lastActivityAtEpochMs)]
+                    ['Last activity', toEpochLabel(agent.lastActivityAtEpochMs)]
                 ]}
             />
         </EvidenceSection>
@@ -191,7 +199,7 @@ function DiagnosticView({ model, eventId, onSelect }: Readonly<{
                     ['Command', row.commandId ?? 'No command link'],
                     ['Type', row.diagnosticTypeId],
                     ['Topic', row.topic],
-                    ['Observed', formatEpoch(row.atEpochMs)],
+                    ['Observed', toEpochLabel(row.atEpochMs)],
                     ['Payload', row.payloadSummary]
                 ]}
             />
@@ -210,7 +218,7 @@ function DiagnosticView({ model, eventId, onSelect }: Readonly<{
     );
 }
 
-function timelineView(model: MonitorWorkspaceModel, id: string): ReactNode {
+function TimelineView({ model, id }: Readonly<{ model: MonitorWorkspaceModel; id: string; }>) {
     const row = model.monitor.timeline.find((item) => item.id === id);
     if (!row) {
         return <MissingEvidence kind="timeline item" id={id} />;
@@ -224,14 +232,14 @@ function timelineView(model: MonitorWorkspaceModel, id: string): ReactNode {
                     ['Agent', row.agentId ?? 'Run scope'],
                     ['Recipe', row.recipeId ?? 'Run scope'],
                     ['Command', row.commandId ?? 'No command link'],
-                    ['Observed', formatEpoch(row.atEpochMs)]
+                    ['Observed', toEpochLabel(row.atEpochMs)]
                 ]}
             />
         </EvidenceSection>
     );
 }
 
-function eventView(model: MonitorWorkspaceModel, id: string): ReactNode {
+function EventView({ model, id }: Readonly<{ model: MonitorWorkspaceModel; id: string; }>) {
     const row = model.monitor.events.find((item) => item.eventId === id);
     if (!row) {
         return <MissingEvidence kind="event" id={id} />;
@@ -244,14 +252,14 @@ function eventView(model: MonitorWorkspaceModel, id: string): ReactNode {
                     ['Topic', row.topic ?? 'No topic'],
                     ['Agent', row.agentId],
                     ['Command', row.commandId ?? 'No command link'],
-                    ['Observed', formatEpoch(row.atEpochMs)]
+                    ['Observed', toEpochLabel(row.atEpochMs)]
                 ]}
             />
         </EvidenceSection>
     );
 }
 
-function artifactView(model: MonitorWorkspaceModel): ReactNode {
+function ArtifactView({ model }: Readonly<{ model: MonitorWorkspaceModel; }>) {
     const artifact = model.monitor.artifact;
     return (
         <EvidenceSection title="Distributed artifact" description={artifact.message}>
@@ -305,7 +313,7 @@ function MissingEvidence({ kind, id }: Readonly<{ kind: string; id: string; }>) 
     );
 }
 
-function defaultSelection(model: MonitorWorkspaceModel): MonitorEvidenceSelection | undefined {
+function resolveDefaultSelection(model: MonitorWorkspaceModel): MonitorEvidenceSelection {
     const failure = model.monitor.failures[0];
     if (failure) {
         return { kind: 'failure', id: failure.key };
@@ -321,10 +329,10 @@ function defaultSelection(model: MonitorWorkspaceModel): MonitorEvidenceSelectio
     return { kind: 'artifact', id: MONITOR_ARTIFACT_EVIDENCE_ID };
 }
 
-function selectionStatus(model: MonitorWorkspaceModel, selection?: MonitorEvidenceSelection): OperationalStatus {
-    if (!selection) {
-        return 'disabled';
-    }
+function resolveSelectionStatus(
+    model: MonitorWorkspaceModel,
+    selection: MonitorEvidenceSelection
+): OperationalStatus {
     if (selection.kind === 'failure') {
         return 'failed';
     }
@@ -333,7 +341,7 @@ function selectionStatus(model: MonitorWorkspaceModel, selection?: MonitorEviden
         return severity === 'error' ? 'failed' : severity === 'warning' ? 'warning' : 'partial';
     }
     if (selection.kind === 'agent') {
-        return progressStatus(model.monitor.agentProgress.find((row) => row.agentId === selection.id)?.execution);
+        return toOperationalStatus(model.monitor.agentProgress.find((row) => row.agentId === selection.id)?.execution);
     }
     if (selection.kind === 'recipe') {
         return computeMonitorRecipeEvidenceStatus(
@@ -347,7 +355,7 @@ function selectionStatus(model: MonitorWorkspaceModel, selection?: MonitorEviden
     return 'partial';
 }
 
-function progressStatus(status?: DistributedRunProgressStatus): OperationalStatus {
+function toOperationalStatus(status?: DistributedRunProgressStatus): OperationalStatus {
     if (status === 'passed' || status === 'ready') {
         return 'passed';
     }
@@ -363,20 +371,20 @@ function progressStatus(status?: DistributedRunProgressStatus): OperationalStatu
     return 'partial';
 }
 
-function statusLabel(model: MonitorWorkspaceModel, selection?: MonitorEvidenceSelection): string {
-    if (!selection) {
-        return 'No evidence';
-    }
+function toStatusLabel(
+    model: MonitorWorkspaceModel,
+    selection: MonitorEvidenceSelection
+): string {
     if (selection.kind === 'artifact') {
         return model.monitor.artifact.status;
     }
-    return `${labelKind(selection.kind)} selected`;
+    return `${toKindLabel(selection.kind)} selected`;
 }
 
-function labelKind(kind: string): string {
+function toKindLabel(kind: string): string {
     return `${kind[0]?.toUpperCase() ?? ''}${kind.slice(1)}`;
 }
 
-function formatEpoch(epochMs?: number): string {
+function toEpochLabel(epochMs?: number): string {
     return epochMs === undefined ? 'Not recorded' : new Date(epochMs).toLocaleString();
 }

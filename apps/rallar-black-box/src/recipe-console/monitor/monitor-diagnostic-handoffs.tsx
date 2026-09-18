@@ -14,7 +14,7 @@ export type MonitorDiagnosticHandoffsProps = Readonly<{
     distributedRunId: string;
     failure: DistributedRunFailureRow;
     group: RallarBlackBoxDistributedGroupRef;
-    sourceSearch?: string;
+    sourceSearch: string;
     state: RecipeConsoleUrlState;
 }>;
 
@@ -24,7 +24,7 @@ export function MonitorDiagnosticHandoffs({
     distributedRunId,
     failure,
     group,
-    sourceSearch = '',
+    sourceSearch,
     state
 }: MonitorDiagnosticHandoffsProps) {
     const targets = deriveAdvancedDiagnosticHandoffTargets({
@@ -44,7 +44,7 @@ export function MonitorDiagnosticHandoffs({
         recipeId: failure.recipeId,
         commandId: failure.commandId
     };
-    const contextualSource = sourceSearchWithGroup(sourceSearch, group);
+    const contextualSource = toSourceSearchWithGroup(sourceSearch, group);
     const links = targets.flatMap((target) => {
         const href = createAdvancedLegacyHref({
             surface: target.surface,
@@ -85,7 +85,7 @@ export function MonitorDiagnosticHandoffs({
     );
 }
 
-function sourceSearchWithGroup(
+function toSourceSearchWithGroup(
     sourceSearch: string,
     group: RallarBlackBoxDistributedGroupRef
 ): string {

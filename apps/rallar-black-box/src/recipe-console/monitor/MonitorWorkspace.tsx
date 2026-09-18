@@ -6,6 +6,11 @@ import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { StatePanel } from '../ui/StatePanel.tsx';
 import { createLegacyMonitorHref } from './legacy-monitor-link.ts';
 import type { MonitorConnectionTruth } from './monitor-action-policy.ts';
+import { MonitorAgentPhaseMatrix } from './monitor-agent-phase-matrix.tsx';
+import { MonitorDiagnostics } from './monitor-diagnostics.tsx';
+import { MonitorFailureLedger } from './monitor-failure-ledger.tsx';
+import { MonitorInspector } from './monitor-inspector.tsx';
+import { MonitorProgressEvidence } from './monitor-progress-evidence.tsx';
 import {
     MONITOR_ARTIFACT_EVIDENCE_ID,
     toMonitorRecipeEvidenceIdentity,
@@ -13,12 +18,7 @@ import {
 } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import { MonitorActionBand } from './MonitorActionBand.tsx';
-import { MonitorAgentPhaseMatrix } from './MonitorAgentPhaseMatrix.tsx';
-import { MonitorDiagnostics } from './MonitorDiagnostics.tsx';
 import { MonitorEvidenceDisclosure } from './MonitorEvidenceDisclosure.tsx';
-import { MonitorFailureLedger } from './MonitorFailureLedger.tsx';
-import { MonitorInspector } from './MonitorInspector.tsx';
-import { MonitorProgressEvidence } from './MonitorProgressEvidence.tsx';
 import { MonitorRunSelector } from './MonitorRunSelector.tsx';
 import { MonitorVerdict } from './MonitorVerdict.tsx';
 import styles from './MonitorWorkspace.module.css';

@@ -1,8 +1,8 @@
 import { computeDistributedRunFailureEvidenceDestinations } from '../../distributed-recipes.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { MonitorDiagnosticHandoffs } from './monitor-diagnostic-handoffs.tsx';
 import type { MonitorEvidenceSelection } from './monitor-selection.ts';
 import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
-import { MonitorDiagnosticHandoffs } from './MonitorDiagnosticHandoffs.tsx';
 import styles from './MonitorInspector.module.css';
 import { MonitorFailureDestinationsWindow } from './MonitorInspectorWindow.tsx';
 

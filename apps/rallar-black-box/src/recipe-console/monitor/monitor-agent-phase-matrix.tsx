@@ -18,6 +18,7 @@ export function MonitorAgentPhaseMatrix({
 }: Readonly<{
     contextKey: string;
     rows: readonly DistributedRunAgentProgressRow[];
+    /** Absent until the operator selects evidence to inspect. */
     selected?: MonitorEvidenceSelection;
     onInspect(
         selection: MonitorEvidenceSelection,
@@ -105,9 +106,15 @@ export function MonitorAgentPhaseMatrix({
                                         </button>
                                     </th>
                                     <td>{row.role ?? '—'}</td>
-                                    <td>{progressMark(row.readiness)}</td>
-                                    <td>{progressMark(row.barrier, 'Not required')}</td>
-                                    <td>{progressMark(row.execution)}</td>
+                                    <td>
+                                        <ProgressMark missing="Missing" status={row.readiness} />
+                                    </td>
+                                    <td>
+                                        <ProgressMark missing="Not required" status={row.barrier} />
+                                    </td>
+                                    <td>
+                                        <ProgressMark missing="Missing" status={row.execution} />
+                                    </td>
                                     <td>{row.completedCommandCount}</td>
                                     <td>{row.failedCommandCount}</td>
                                     <td>{row.eventCount}</td>
@@ -121,7 +128,10 @@ export function MonitorAgentPhaseMatrix({
     );
 }
 
-function progressMark(status: DistributedRunAgentProgressRow['readiness'], missing = 'Missing') {
+function ProgressMark({ status, missing }: Readonly<{
+    status: DistributedRunAgentProgressRow['readiness'];
+    missing: string;
+}>) {
     const tone: OperationalStatus = status === 'running'
         ? 'running'
         : status === 'ready' || status === 'passed'

@@ -24,6 +24,7 @@ export function MonitorProgressEvidence({
     contextKey: string;
     recipes: readonly DistributedRunRecipeProgressRow[];
     readiness: readonly DistributedRunReadinessRow[];
+    /** Absent until the operator selects evidence to inspect. */
     selected?: MonitorEvidenceSelection;
     onInspect(
         selection: MonitorEvidenceSelection,
@@ -189,8 +190,8 @@ export function MonitorProgressEvidence({
                                         <ExactIdentifier value={row.agentId} />
                                         <span>{row.role ?? 'Participant'}</span>
                                     </button>
-                                    <StatusMark label={statusLabel(row.status)} status={statusTone(row.status)} />
-                                    <span>{readinessTiming(row)}</span>
+                                    <StatusMark label={toStatusLabel(row.status)} status={toStatusTone(row.status)} />
+                                    <span>{toReadinessTimingLabel(row)}</span>
                                 </li>
                             );
                         })}
@@ -201,7 +202,7 @@ export function MonitorProgressEvidence({
     );
 }
 
-function statusTone(status: DistributedRunReadinessRow['status']) {
+function toStatusTone(status: DistributedRunReadinessRow['status']) {
     if (status === 'ready' || status === 'passed') {
         return 'passed' as const;
     }
@@ -217,11 +218,11 @@ function statusTone(status: DistributedRunReadinessRow['status']) {
     return 'disabled' as const;
 }
 
-function statusLabel(status: DistributedRunReadinessRow['status']): string {
+function toStatusLabel(status: DistributedRunReadinessRow['status']): string {
     return `${status[0].toUpperCase()}${status.slice(1)}`;
 }
 
-function readinessTiming(row: DistributedRunReadinessRow): string {
+function toReadinessTimingLabel(row: DistributedRunReadinessRow): string {
     if (row.error) {
         return row.error;
     }
@@ -229,14 +230,14 @@ function readinessTiming(row: DistributedRunReadinessRow): string {
         return `${row.latencyMs} ms ACK`;
     }
     if (row.completedAtEpochMs) {
-        return `ACK ${formatTime(row.completedAtEpochMs)}`;
+        return `ACK ${toTimeLabel(row.completedAtEpochMs)}`;
     }
     if (row.queuedAtEpochMs) {
-        return `Queued ${formatTime(row.queuedAtEpochMs)}`;
+        return `Queued ${toTimeLabel(row.queuedAtEpochMs)}`;
     }
     return 'Awaiting dispatch';
 }
 
-function formatTime(value: number): string {
+function toTimeLabel(value: number): string {
     return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }

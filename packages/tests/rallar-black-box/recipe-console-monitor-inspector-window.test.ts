@@ -2,12 +2,12 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-inspector.tsx';
 import {
     createMonitorRecipeEvidenceSelectionId,
     type MonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection.ts';
 import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx';
 import type {
     DistributedRunEventRow,
     DistributedRunFailureRow,

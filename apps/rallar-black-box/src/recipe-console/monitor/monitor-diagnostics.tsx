@@ -23,8 +23,11 @@ export function MonitorDiagnostics({
     onInspect
 }: Readonly<{
     model: MonitorWorkspaceModel;
+    /** Absent when the URL applies no severity filter, so every severity is listed. */
     severity?: RecipeConsoleDiagnosticSeverity;
+    /** Absent when the URL applies no transport filter, so every transport is listed. */
     transport?: DiagnosticBridgeTransport;
+    /** Absent until the operator selects evidence to inspect. */
     selected?: MonitorEvidenceSelection;
     onFilter(patch: Partial<RecipeConsoleUrlState>): void;
     onInspect(
@@ -42,7 +45,7 @@ export function MonitorDiagnostics({
     model.monitor.runtimeDiagnostics.forEach((row, sourceOrdinal) => {
         if (
             (!severity || row.severity === severity) &&
-            matchesTransport(row, transport)
+            isMatchingDiagnosticTransport(row, transport)
         ) {
             filtered.push({ row, sourceOrdinal });
         }
@@ -80,7 +83,7 @@ export function MonitorDiagnostics({
                         value={severity ?? ''}
                         onChange={(event) =>
                             onFilter({
-                                diagnosticSeverity: valueOrUndefined(event.target.value) as
+                                diagnosticSeverity: toSelectedFilterValue(event.target.value) as
                                     | RecipeConsoleDiagnosticSeverity
                                     | undefined
                             })}
@@ -98,7 +101,9 @@ export function MonitorDiagnostics({
                         value={transport ?? ''}
                         onChange={(event) =>
                             onFilter({
-                                transport: valueOrUndefined(event.target.value) as DiagnosticBridgeTransport | undefined
+                                transport: toSelectedFilterValue(event.target.value) as
+                                    | DiagnosticBridgeTransport
+                                    | undefined
                             })}
                     >
                         <option value="">All transports</option>
@@ -191,11 +196,11 @@ function DiagnosticRow({ row, active, onInspect, sourceOrdinal }: Readonly<{
     );
 }
 
-function valueOrUndefined(value: string): string | undefined {
+function toSelectedFilterValue(value: string): string | undefined {
     return value || undefined;
 }
 
-function matchesTransport(
+function isMatchingDiagnosticTransport(
     row: DistributedRunRuntimeDiagnosticRow,
     transport: DiagnosticBridgeTransport | undefined
 ): boolean {

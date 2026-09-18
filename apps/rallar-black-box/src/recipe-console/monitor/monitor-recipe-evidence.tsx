@@ -44,7 +44,7 @@ export function MonitorRecipeEvidence({
         );
     }
     const recipe = identity
-        ? rows.find((row) => sameRecipeEvidence(row, identity))
+        ? rows.find((row) => isSameRecipeEvidence(row, identity))
         : rows[0];
     if (!recipe) {
         return (
@@ -94,12 +94,12 @@ function RoleRecipeChoices({ model, onSelectEvidence, recipeId, rows }: Readonly
                 contentClassName={styles.destinations}
                 contentId="monitor-inspector-role-recipe-choices"
                 contextKey={model.source.contextKey}
-                itemKey={(row, index) => `${recipeEvidenceId(row)}:${index}`}
+                itemKey={(row, index) => `${toRecipeEvidenceSelectionId(row)}:${index}`}
                 itemLabel="role choices"
                 items={rows}
                 label="Role recipe choices"
                 renderItem={(row) => {
-                    const rowId = recipeEvidenceId(row);
+                    const rowId = toRecipeEvidenceSelectionId(row);
                     return (
                         <button
                             onClick={() =>
@@ -129,7 +129,7 @@ function RoleRecipeChoices({ model, onSelectEvidence, recipeId, rows }: Readonly
     );
 }
 
-function recipeEvidenceId(row: DistributedRunRecipeProgressRow): string {
+function toRecipeEvidenceSelectionId(row: DistributedRunRecipeProgressRow): string {
     return createMonitorRecipeEvidenceSelectionId({
         recipeId: row.recipeId,
         role: row.role,
@@ -137,7 +137,7 @@ function recipeEvidenceId(row: DistributedRunRecipeProgressRow): string {
     });
 }
 
-function sameRecipeEvidence(
+function isSameRecipeEvidence(
     row: DistributedRunRecipeProgressRow,
     identity: MonitorRecipeEvidenceIdentity
 ): boolean {

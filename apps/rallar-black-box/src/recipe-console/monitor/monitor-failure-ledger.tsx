@@ -17,6 +17,7 @@ export function MonitorFailureLedger({
 }: Readonly<{
     contextKey: string;
     failures: readonly DistributedRunFailureRow[];
+    /** Absent until the operator selects evidence to inspect. */
     selected?: MonitorEvidenceSelection;
     onInspect(
         selection: MonitorEvidenceSelection,
@@ -80,7 +81,7 @@ export function MonitorFailureLedger({
                                     onClick={(event) =>
                                         onInspect(
                                             { kind: 'failure', id: failure.key },
-                                            evidencePatch(failure),
+                                            toFailureEvidencePatch(failure),
                                             event.currentTarget
                                         )}
                                     type="button"
@@ -104,7 +105,7 @@ export function MonitorFailureLedger({
     );
 }
 
-function evidencePatch(failure: DistributedRunFailureRow): Partial<RecipeConsoleUrlState> {
+function toFailureEvidencePatch(failure: DistributedRunFailureRow): Partial<RecipeConsoleUrlState> {
     return {
         agentId: failure.agentId,
         recipeId: failure.recipeId,
