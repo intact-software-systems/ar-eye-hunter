@@ -25,7 +25,8 @@ import {
 } from '../../../control-run-manager/control-distributed-run-endpoints.ts';
 import {
     createDefaultControlEndpointRequest,
-    toControlHttpBaseUrl
+    toControlHttpBaseUrl,
+    type ControlEndpointRequest
 } from '../../../control-run-manager/control-endpoint-request.ts';
 import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
@@ -281,15 +282,11 @@ export function useRunnerRunsController({
             const list = [...fetchedRuns].sort(
                 (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             );
-            const selectedFromList = preferredRunId
-                ? list.find((item) => item.distributedRunId === preferredRunId)
-                : undefined;
-            const nextDistributedRun = preferredRunId
-                ? (await readDistributedRun({
-                    ...controlEndpoint,
-                    distributedRunId: preferredRunId
-                })).right ?? selectedFromList
-                : list[0];
+            const nextDistributedRun = await readPreferredDistributedRun({
+                controlEndpoint,
+                preferredRunId,
+                list
+            });
             if (!request.isCurrent()) {
                 return;
             }
@@ -618,3 +615,25 @@ export function useRunnerRunsController({
 }
 
 export type RunnerRunsControllerModel = ReturnType<typeof useRunnerRunsController>;
+
+/**
+ * The distributed run the operator asked for, read fresh from the control server. A failed read
+ * falls back to the copy the list already carries; with no preferred id the newest run is shown.
+ */
+async function readPreferredDistributedRun(
+    input: Readonly<{
+        controlEndpoint: ControlEndpointRequest;
+        preferredRunId: string;
+        list: readonly ControlDistributedRunSnapshot[];
+    }>
+): Promise<ControlDistributedRunSnapshot | undefined> {
+    if (!input.preferredRunId) {
+        return input.list[0];
+    }
+    const outcome = await readDistributedRun({
+        ...input.controlEndpoint,
+        distributedRunId: input.preferredRunId
+    });
+    return outcome.right ??
+        input.list.find((item) => item.distributedRunId === input.preferredRunId);
+}
