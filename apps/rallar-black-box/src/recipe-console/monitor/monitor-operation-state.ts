@@ -18,7 +18,8 @@ export type MonitorOperationState = Readonly<{
     artifact: MonitorArtifactState;
     operationGeneration: number;
     activeOperation?: MonitorOperationAuthority;
-    operationError?: unknown;
+    /** Absent while no operation has failed since the last successful one. */
+    operationError?: Error;
 }>;
 
 export function createInitialMonitorOperationState(): MonitorOperationState {
@@ -67,7 +68,7 @@ export function completeMonitorArtifactOperation<State extends MonitorOperationS
         return state;
     }
     if (
-        bundle.distributedRunId !== distributedRunIdFromContext(
+        bundle.distributedRunId !== resolveDistributedRunIdFromContextKey(
             authority.contextKey
         )
     ) {
@@ -100,7 +101,7 @@ export function completeMonitorOperation<State extends MonitorOperationState>(
 export function failMonitorOperation<State extends MonitorOperationState>(
     state: State,
     authority: MonitorOperationAuthority,
-    error: unknown
+    error: Error
 ): State {
     if (!hasMonitorOperationAuthority(state, authority)) {
         return state;
@@ -128,32 +129,33 @@ export function hasMonitorOperationAuthority(
 
 function finishArtifactError<State extends MonitorOperationState>(
     state: State,
-    error: unknown
+    error: Error
 ): State {
     return {
         ...state,
         artifact: {
             status: 'error',
             bundle: state.artifact.bundle,
-            error: errorMessage(error)
+            error: error.message
         },
         activeOperation: undefined,
         operationError: error
     } as State;
 }
 
-function distributedRunIdFromContext(contextKey: string): string | undefined {
+function resolveDistributedRunIdFromContextKey(contextKey: string): string | undefined {
     try {
-        const value = JSON.parse(contextKey) as { distributedRunId?: unknown; };
-        return typeof value.distributedRunId === 'string'
-            ? value.distributedRunId
-            : undefined;
+        return decodeContextKeyDistributedRunId(JSON.parse(contextKey));
     }
     catch {
         return undefined;
     }
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+function decodeContextKeyDistributedRunId(value: unknown): string | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const { distributedRunId } = value as Readonly<{ distributedRunId?: unknown; }>;
+    return typeof distributedRunId === 'string' ? distributedRunId : undefined;
 }

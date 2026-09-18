@@ -104,10 +104,6 @@ export function computeExecuteAgentPopupNavigationState(
     };
 }
 
-export function decodeExecuteAgentLaunchErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-}
-
 function toPluralWord(count: number, one: string, many: string): string {
     return count === 1 ? one : many;
 }

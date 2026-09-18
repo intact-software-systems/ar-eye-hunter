@@ -1,3 +1,4 @@
+import { toErrorMessage } from '../../to-error.ts';
 import {
     ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES,
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
@@ -108,7 +109,7 @@ export function totalTooLarge(totalBytes: number): AnalyzeFileIntakeError {
 export function readFailure(basename: string, error: unknown): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'read-failed',
-        `Could not read "${basename}": ${errorMessage(error)}. No files were imported.`
+        `Could not read "${basename}": ${toReadFailureReason(error)}. No files were imported.`
     );
 }
 
@@ -228,10 +229,8 @@ function unsafePath(selectedPath: string, reason: string): AnalyzeFileIntakeErro
     );
 }
 
-function errorMessage(error: unknown): string {
-    if (error instanceof Error && error.message.trim().length > 0) {
-        return error.message.trim();
-    }
-    const message = String(error).trim();
+function toReadFailureReason(error: unknown): string {
+    const normalized = toErrorMessage(error).trim();
+    const message = normalized.length > 0 ? normalized : String(error).trim();
     return message.length > 0 ? message : 'unknown read failure';
 }

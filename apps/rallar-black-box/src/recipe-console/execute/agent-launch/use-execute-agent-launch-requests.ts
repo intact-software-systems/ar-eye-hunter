@@ -6,11 +6,11 @@ import {
     reserveBrowserAgentPopups,
     type BrowserAgentPopupReservation
 } from '../../../browser-agent-popup.ts';
+import { toErrorMessage } from '../../../to-error.ts';
 import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 import {
     computeExecuteAgentPopupNavigationState,
     computeMergedExecuteAgentLaunchCohort,
-    decodeExecuteAgentLaunchErrorMessage,
     isSameExecuteAgentIds,
     type ExecuteAgentLaunchCohort
 } from './execute-agent-launch-state.ts';
@@ -123,10 +123,10 @@ export function useExecuteAgentLaunchRequests(
             if (!controller.signal.aborted && generationRef.current === generation) {
                 releaseReservedBrowserAgentPopups(
                     reservation,
-                    decodeExecuteAgentLaunchErrorMessage(error)
+                    toErrorMessage(error)
                 );
                 reservationRef.current = undefined;
-                setMessage(decodeExecuteAgentLaunchErrorMessage(error));
+                setMessage(toErrorMessage(error));
             }
         }
         finally {
@@ -187,7 +187,7 @@ export function useExecuteAgentLaunchRequests(
         }
         catch (error) {
             if (!controller.signal.aborted && generationRef.current === generation) {
-                setMessage(decodeExecuteAgentLaunchErrorMessage(error));
+                setMessage(toErrorMessage(error));
             }
         }
         finally {
