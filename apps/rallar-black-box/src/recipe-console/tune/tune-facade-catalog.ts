@@ -1,7 +1,7 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import {
     resolveTuneFacadeManifestValidation,
     type TuneFacadeManifestValidation

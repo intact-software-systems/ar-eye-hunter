@@ -10,17 +10,6 @@ import type {
     AnalyzeTuneArtifactFacade
 } from './analyze-worker-projection-contract.ts';
 
-export type {
-    AnalyzeArtifactProjection,
-    AnalyzeArtifactWorkspaceProjection,
-    AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerAnalysisProjection,
-    AnalyzeWorkerAnalysisProjectionSections,
-    AnalyzeWorkerFailedAnalysisProjection,
-    AnalyzeWorkerPassedAnalysisProjection
-} from './analyze-worker-projection-contract.ts';
-
 export const ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE = 64;
 
 export type AnalyzeWorkerTransferFile = Readonly<{

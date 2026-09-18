@@ -15,7 +15,7 @@ import {
     projectOpaqueIdentifier,
     withinSerializedLimit
 } from './analyze-projection-bounds.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 
 export function projectAnalyzeArtifactModel(
     model: AnalyzeArtifactModel

@@ -1,4 +1,4 @@
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import styles from './AnalyzeVerdict.module.css';
 

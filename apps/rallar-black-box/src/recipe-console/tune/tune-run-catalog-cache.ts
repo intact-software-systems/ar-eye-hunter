@@ -1,5 +1,5 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import { controlSnapshotRevisionOf } from '../control/control-snapshot-revision.ts';
 import { createTuneRunCatalogWork, type TuneRunCatalogWork } from './tune-run-catalog-work.ts';
 import { buildTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';

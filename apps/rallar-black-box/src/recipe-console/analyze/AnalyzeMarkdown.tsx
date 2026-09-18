@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 type MarkdownDocument = Readonly<{

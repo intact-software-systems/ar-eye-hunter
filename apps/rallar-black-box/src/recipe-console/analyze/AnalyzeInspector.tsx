@@ -1,6 +1,6 @@
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import styles from './AnalyzeInspector.module.css';
 

@@ -2,11 +2,8 @@
 import { act, createElement, useLayoutEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-    AnalyzeEvidenceWindowProjection,
-    AnalyzeWorkerRequest,
-    AnalyzeWorkerResponse
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest, AnalyzeWorkerResponse } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import { useAnalyzeWorkspace, type AnalyzeWorkspaceController } from '../../../apps/rallar-black-box/src/recipe-console/analyze/use-analyze-workspace.ts';
 import type { RecipeConsoleControlExecutionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-execution-api.ts';
 import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';

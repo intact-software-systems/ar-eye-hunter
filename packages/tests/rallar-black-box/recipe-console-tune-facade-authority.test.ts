@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { projectTuneFacadeManifestValidation } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';

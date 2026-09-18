@@ -15,7 +15,7 @@ import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test
 import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
-import type { AnalyzeArtifactProjection } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from '../analyze/analyze-worker-projection-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';

@@ -12,7 +12,8 @@ import {
     MAX_TUNE_ROWS,
     projectOpaqueIdentifier
 } from './analyze-projection-bounds.ts';
-import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from './analyze-worker-projection-contract.ts';
 
 export function projectTuningKnob(
     knob: DistributedRunTuningKnob

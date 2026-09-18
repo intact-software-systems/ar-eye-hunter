@@ -1,5 +1,5 @@
 import type { AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
-import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { tunePerformanceRunIds } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-run-ids.ts';

@@ -1,5 +1,5 @@
 import { useMemo, useRef, type ReactNode } from 'react';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import { HistoryWorkspace, type HistoryWorkspaceProps } from '../history/HistoryWorkspace.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';

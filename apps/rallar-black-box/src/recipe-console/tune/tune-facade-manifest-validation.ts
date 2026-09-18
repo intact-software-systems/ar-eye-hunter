@@ -1,5 +1,5 @@
 import { validateDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 
 export type TuneFacadeManifestValidation = Readonly<{
     status: 'omitted' | 'valid' | 'invalid';

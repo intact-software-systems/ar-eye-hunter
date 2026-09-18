@@ -20,7 +20,7 @@ import { projectAnalyzeVerdict } from './analyze-verdict-projection.ts';
 import type {
     AnalyzeWorkerAnalysisProjection,
     AnalyzeWorkerAnalysisProjectionSections
-} from './analyze-worker-contract.ts';
+} from './analyze-worker-projection-contract.ts';
 
 export function projectAnalyzeAnalysis(
     analysis: DistributedRunAnalysis

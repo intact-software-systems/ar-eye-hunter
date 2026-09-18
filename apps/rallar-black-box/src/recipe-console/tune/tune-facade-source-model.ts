@@ -1,6 +1,6 @@
 import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import {
     resolveTuneFacadeManifestValidation,
     type TuneFacadeManifestValidation

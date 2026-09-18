@@ -1,5 +1,5 @@
 import { safeAnalyzeArtifactIdentity } from './analyze-identity-policy.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import type { AnalyzeWorkspaceAction } from './analyze-workspace-state.ts';
 
 export function analyzeCompletionNavigationIdentity(

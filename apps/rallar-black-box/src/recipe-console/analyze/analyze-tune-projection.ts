@@ -21,7 +21,8 @@ import {
     receivedMessageDeltas,
     tuneArtifactRole
 } from './analyze-tune-projection-rows.ts';
-import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from './analyze-worker-projection-contract.ts';
 
 export function projectAnalyzeTuneArtifactFacade(
     model: AnalyzeArtifactModel,

@@ -10,7 +10,8 @@ import {
     projectAuthorityIdentifier
 } from './analyze-projection-bounds.ts';
 import { projectTuneRollup } from './analyze-tune-projection-rows.ts';
-import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from './analyze-worker-projection-contract.ts';
 
 export function minimalTuneFacade(
     model: AnalyzeArtifactModel,
