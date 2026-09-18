@@ -65,7 +65,7 @@ export function ExecuteTargetWindow({
             {window.model.total > window.model.windowSize
                 ? (
                     <p className={styles.windowTruth} data-execute-window-truth="targets">
-                        {outsideCount(window.model)} targets outside this window and browseable.
+                        {computeOutsideWindowCount(window.model)} targets outside this window and browseable.
                     </p>
                 )
                 : null}
@@ -169,12 +169,12 @@ function TargetRow({ current, disabled, onToggle, row, selected, selectionLocked
                 </span>
             </td>
             <td>
-                <code>{groupLabel(row)}</code>
+                <code>{toTargetGroupLabel(row)}</code>
             </td>
-            <td>{lastEvidence(row)}</td>
+            <td>{toLastEvidenceLabel(row)}</td>
             <td>
                 <div className={styles.state}>
-                    <StatusMark label={statusLabel(row.status)} status={statusTone(row.status)} />
+                    <StatusMark label={toTargetStatusLabel(row.status)} status={toTargetStatusTone(row.status)} />
                     <span className={styles.reason}>{row.reason}</span>
                 </div>
             </td>
@@ -182,7 +182,7 @@ function TargetRow({ current, disabled, onToggle, row, selected, selectionLocked
     );
 }
 
-function statusTone(status: DistributedRecipeTargetRow['status']): OperationalStatus {
+function toTargetStatusTone(status: DistributedRecipeTargetRow['status']): OperationalStatus {
     if (status === 'matched') {
         return 'passed';
     }
@@ -194,17 +194,19 @@ function statusTone(status: DistributedRecipeTargetRow['status']): OperationalSt
     }
     return status === 'different-group' || status === 'missing-identity' ? 'partial' : 'warning';
 }
-function statusLabel(status: DistributedRecipeTargetRow['status']): string {
+function toTargetStatusLabel(status: DistributedRecipeTargetRow['status']): string {
     return status.split('-').map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(' ');
 }
-function groupLabel(row: DistributedRecipeTargetRow): string {
+function toTargetGroupLabel(row: DistributedRecipeTargetRow): string {
     const group = [row.applicationId, row.workspaceId, row.groupId].filter((value): value is string => Boolean(value));
     return group.length > 0 ? group.join(' / ') : 'Unavailable';
 }
-function lastEvidence(row: DistributedRecipeTargetRow): string {
+function toLastEvidenceLabel(row: DistributedRecipeTargetRow): string {
     const epochMs = row.lastHeartbeatAtEpochMs ?? row.lastSeenAtEpochMs;
     return epochMs === undefined ? 'Unavailable' : new Date(epochMs).toLocaleTimeString();
 }
-function outsideCount(model: Readonly<{ total: number; startIndex: number; endIndexExclusive: number; }>): number {
+function computeOutsideWindowCount(
+    model: Readonly<{ total: number; startIndex: number; endIndexExclusive: number; }>
+): number {
     return model.total - (model.endIndexExclusive - model.startIndex);
 }

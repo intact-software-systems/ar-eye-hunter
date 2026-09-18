@@ -9,11 +9,11 @@ import {
     type ExecuteTargetResolutionEvidence
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import { ExecutePreflight } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-preflight.tsx';
+import { createExecuteTargetRowKeys } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-target-window.tsx';
+import { ExecuteTargets } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-targets.tsx';
 import { createExecuteWindowFingerprint, EXECUTE_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-window-contract.ts';
 import { ExecuteManifestDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteManifestDisclosure.tsx';
 import { ExecuteRecipeInspector } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteRecipeInspector.tsx';
-import { ExecuteTargets } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargets.tsx';
-import { createExecuteTargetRowKeys } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargetWindow.tsx';
 import { ExecuteWindowedList } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteWindowedList.tsx';
 import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
@@ -158,10 +158,12 @@ describe('Recipe Console Execute pressure windows', () => {
             connection: 'live',
             controlRunId: runs[249]!.runId,
             controlRuns: runs,
+            disabled: false,
             onSelectControlRun,
             onToggle,
             rows,
-            selectedAgentIds: [rows[239]!.agentId]
+            selectedAgentIds: [rows[239]!.agentId],
+            selectionLocked: false
         }));
 
         expect(container.querySelectorAll('[data-execute-target]')).toHaveLength(100);
@@ -184,10 +186,12 @@ describe('Recipe Console Execute pressure windows', () => {
             controlRunId: 'duplicate-run',
             controlRunIssue: 'Control run identity is ambiguous.',
             controlRuns: [controlRun(0, 'duplicate-run'), controlRun(1, 'duplicate-run')],
+            disabled: false,
             onSelectControlRun,
             onToggle,
             rows: [],
-            selectedAgentIds: []
+            selectedAgentIds: [],
+            selectionLocked: false
         }));
         expect(container.querySelector('[data-searchable-listbox-key-error]')?.textContent)
             .toContain('Duplicate key duplicate-run');
@@ -327,10 +331,12 @@ describe('Recipe Console Execute pressure windows', () => {
             ...executeTargetDependencies,
             connection: 'live' as const,
             controlRuns: runs,
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle: vi.fn(),
             rows: [],
-            selectedAgentIds: []
+            selectedAgentIds: [],
+            selectionLocked: false
         };
         await render(createElement(ExecuteTargets, props));
         await click(container.querySelector('[data-searchable-listbox-trigger]'));
@@ -358,9 +364,11 @@ describe('Recipe Console Execute pressure windows', () => {
             connection: 'live' as const,
             controlRunId: 'stable-run',
             controlRuns: [],
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle: vi.fn(),
-            selectedAgentIds: [rowA.agentId, rowC.agentId]
+            selectedAgentIds: [rowA.agentId, rowC.agentId],
+            selectionLocked: false
         };
         await render(createElement(ExecuteTargets, { ...props, rows: [rowA, rowC] }));
         const focused = container.querySelector(
@@ -388,10 +396,12 @@ describe('Recipe Console Execute pressure windows', () => {
             connection: 'live',
             controlRunId: 'stable-control-run',
             controlRuns: [],
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle,
             rows: [targetRow(0)],
-            selectedAgentIds: ['agent-0000']
+            selectedAgentIds: ['agent-0000'],
+            selectionLocked: false
         } as const;
         await render(createElement(ExecuteTargets, { ...props, resolution }));
 

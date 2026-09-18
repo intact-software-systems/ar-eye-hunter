@@ -3,22 +3,25 @@ import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/dis
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetResolutionEvidence } from './execute-manifest.ts';
+import { ExecuteTargetWindow } from './execute-target-window.tsx';
 import { ExecuteAgentSetup } from './ExecuteAgentSetup.tsx';
 import { ExecuteControlRunPicker } from './ExecuteControlRunPicker.tsx';
 import { ExecuteResolutionWindow } from './ExecuteResolutionWindow.tsx';
 import styles from './ExecuteTargets.module.css';
-import { ExecuteTargetWindow } from './ExecuteTargetWindow.tsx';
 import type { ExecuteAgentLaunchModel } from './use-execute-agent-launch.ts';
 
 export type ExecuteTargetsProps = Readonly<{
     rows: readonly DistributedRecipeTargetRow[];
     controlRuns: readonly ControlRunSnapshot[];
+    /** Absent while no control run is selected. */
     controlRunId?: string;
+    /** Absent while the selected control run raises no issue. */
     controlRunIssue?: string;
-    disabled?: boolean;
-    selectionLocked?: boolean;
+    disabled: boolean;
+    selectionLocked: boolean;
     selectedAgentIds: readonly string[];
     connection: ExecuteConnectionTruth;
+    /** Absent until the control server has resolved the manifest's targets. */
     resolution?: ExecuteTargetResolutionEvidence;
     agentLaunch: ExecuteAgentLaunchModel;
     controlConnection: RecipeConsoleControlConnection;
@@ -31,8 +34,8 @@ export function ExecuteTargets({
     controlRuns,
     controlRunId,
     controlRunIssue,
-    disabled = false,
-    selectionLocked = false,
+    disabled,
+    selectionLocked,
     selectedAgentIds,
     connection,
     resolution,
@@ -45,10 +48,10 @@ export function ExecuteTargets({
     const selected = new Set(selectedAgentIds);
     const safeCount = rows.filter((row) => row.targetable).length;
     const evidenceLabel = rows.length === 0
-        ? unavailableLabel(connection)
+        ? toUnavailableLabel(connection)
         : current
         ? `${safeCount}/${rows.length} current-safe`
-        : `Last-known evidence · ${connectionLabel(connection)}`;
+        : `Last-known evidence · ${toConnectionLabel(connection)}`;
     const targetContextKey = JSON.stringify([
         'execute-targets-v1',
         controlRunId ?? null
@@ -118,7 +121,7 @@ export function ExecuteTargets({
                 : (
                     <div className={styles.empty} role="status">
                         <strong>No current target evidence</strong>
-                        <span>{unavailableLabel(connection)}</span>
+                        <span>{toUnavailableLabel(connection)}</span>
                     </div>
                 )}
             {resolution
@@ -136,11 +139,11 @@ export function ExecuteTargets({
     );
 }
 
-function statusLabel(status: DistributedRecipeTargetRow['status']): string {
+function toTargetStatusLabel(status: DistributedRecipeTargetRow['status']): string {
     return status.split('-').map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(' ');
 }
 
-function connectionLabel(connection: ExecuteConnectionTruth): string {
+function toConnectionLabel(connection: ExecuteConnectionTruth): string {
     if (connection === 'auth-required') {
         return 'Authorization required';
     }
@@ -150,10 +153,10 @@ function connectionLabel(connection: ExecuteConnectionTruth): string {
     if (connection === 'error') {
         return 'Control error';
     }
-    return statusLabel(connection as DistributedRecipeTargetRow['status']);
+    return toTargetStatusLabel(connection as DistributedRecipeTargetRow['status']);
 }
 
-function unavailableLabel(connection: ExecuteConnectionTruth): string {
+function toUnavailableLabel(connection: ExecuteConnectionTruth): string {
     switch (connection) {
         case 'connecting':
             return 'Connecting to control truth.';

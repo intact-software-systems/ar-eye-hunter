@@ -3,6 +3,7 @@ import type { RecipeConsoleControlSelection } from '../control/control-selection
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { ExecutePreflight } from './execute-preflight.tsx';
+import { ExecuteTargets } from './execute-targets.tsx';
 import { ExecuteActionRunway } from './ExecuteActionRunway.tsx';
 import { ExecuteCancelDialog } from './ExecuteCancelDialog.tsx';
 import { ExecuteCatalog } from './ExecuteCatalog.tsx';
@@ -10,7 +11,6 @@ import { ExecuteManifestDisclosure } from './ExecuteManifestDisclosure.tsx';
 import { ExecuteRecipeInspector } from './ExecuteRecipeInspector.tsx';
 import { ExecuteRunStatus } from './ExecuteRunStatus.tsx';
 import { ExecuteStartDialog } from './ExecuteStartDialog.tsx';
-import { ExecuteTargets } from './ExecuteTargets.tsx';
 import styles from './ExecuteWorkspace.module.css';
 import { useExecuteWorkflow } from './use-execute-workflow.ts';
 

@@ -2,9 +2,9 @@ import type {
     DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { StatusMark } from '../ui/StatusMark.tsx';
+import { ExecutePreflightTree } from './execute-preflight-tree.tsx';
 import styles from './ExecutePreflight.module.css';
 import { ExecutePreflightIssueList } from './ExecutePreflightIssueList.tsx';
-import { ExecutePreflightTree } from './ExecutePreflightTree.tsx';
 
 export interface ExecutePreflightProps {
     readonly entry?: DistributedRecipeCatalogEntryProjection;
