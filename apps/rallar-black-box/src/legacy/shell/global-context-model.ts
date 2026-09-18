@@ -1,8 +1,8 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../manual-workbench.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
 import type { LegacyDiagnosticContext } from '../diagnostics/context/legacy-diagnostic-context.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
 import { stringValue } from '../shared/string-value.ts';

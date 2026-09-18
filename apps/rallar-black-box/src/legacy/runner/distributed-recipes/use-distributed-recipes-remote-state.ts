@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlDistributedRunArtifactBundle,
@@ -11,7 +12,6 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 import { useMemo, useState } from 'react';
 import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
 import { deriveDistributedRunMonitor } from '../../../distributed-recipes.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {
     useLegacyDiagnosticSelectionAuthority
 } from '../../diagnostics/context/use-legacy-diagnostic-selection-authority.ts';

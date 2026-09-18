@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord
@@ -5,7 +6,6 @@ import type {
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
 import type { WebSocketCommandCenterValues } from './websocket-contracts.ts';

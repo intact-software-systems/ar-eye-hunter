@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
@@ -7,7 +8,6 @@ import type { RallarServerWorkbenchVariables } from '../../../rallar-server-work
 import { sendRallarServerRestRequest } from '../../../rallar-server-workbench/send-rallar-server-rest-request.ts';
 import { toRallarServerWorkbenchVariables } from '../../../rallar-server-workbench/to-rallar-server-workbench-variables.ts';
 import { computeRtcDiagnostics } from '../../../rtc-diagnostics.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { idleActionFeedback, type CommandCenterActionFeedback } from '../shared/action-feedback.ts';
 import type { CommandCenterRestActionLog } from '../shared/to-rest-action-log-entry.ts';

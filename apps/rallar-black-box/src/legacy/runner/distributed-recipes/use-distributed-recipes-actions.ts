@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRolePattern } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -17,7 +18,6 @@ import {
     defaultDistributedRecipeTargetIds,
     reconcileDistributedRecipeTargetIds
 } from '../../../distributed-recipes.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { sameStringArray } from '../../shared/same-string-array.ts';

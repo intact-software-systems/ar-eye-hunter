@@ -45,8 +45,6 @@ import { useSyncExternalStore } from 'react';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
-export type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
-
 type RuntimeStoreSnapshot = Readonly<{
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;

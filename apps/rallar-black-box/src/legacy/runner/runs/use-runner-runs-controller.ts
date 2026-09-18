@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlDistributedRunArtifactBundle,
@@ -48,7 +49,6 @@ import {
     DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
 } from '../../../rtc-diagnostics.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';

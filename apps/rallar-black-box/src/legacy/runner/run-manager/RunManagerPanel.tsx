@@ -1,6 +1,7 @@
 import {
     parseBlackBoxRunnerArtifactBundle
 } from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlRunArtifactBundle,
@@ -30,7 +31,6 @@ import {
     toControlRunCommandRows
 } from '../../../control-run-manager/control-run-projections.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-command-presets.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
 import { resolveRunManagerRefreshSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';

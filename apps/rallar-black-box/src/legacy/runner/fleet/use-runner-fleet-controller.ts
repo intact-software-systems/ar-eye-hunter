@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlFleetReportBundle,
@@ -22,7 +23,6 @@ import {
 import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlServerSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {
     deriveFleetWorldMapModel,
     routeEvidenceFromControlRun,

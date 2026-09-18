@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState
@@ -16,7 +17,7 @@ import {
     computeRtcPerformanceView,
     DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
 } from '../../../rtc-diagnostics.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';

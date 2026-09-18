@@ -1,9 +1,9 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json, splitCsvValues } from '../../shared/json-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { idleActionFeedback, type CommandCenterActionFeedback } from '../shared/action-feedback.ts';

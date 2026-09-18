@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type {
     RallarBlackBoxTestConfig,
@@ -12,7 +13,6 @@ import type {
     RallarServerRestMethod,
     RallarServerRestResponse
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { RallarServerWorkbenchDraft } from '../../../ui-cache/rallar-server-drafts.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 

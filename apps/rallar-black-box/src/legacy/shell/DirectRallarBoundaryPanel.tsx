@@ -1,9 +1,10 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../client-defaults.ts';
 import { runDirectRallarStatusCheck, type DirectRallarOperationResult } from '../../direct-rallar-operations.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../rallar/load-browser-rallar-facade.ts';
 import { Metric } from '../shared/Metric.tsx';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';

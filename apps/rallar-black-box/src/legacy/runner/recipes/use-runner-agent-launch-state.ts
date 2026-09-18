@@ -1,8 +1,8 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { runnerControlWsUrlFromHttpBaseUrl } from './runner-endpoints.ts';
 

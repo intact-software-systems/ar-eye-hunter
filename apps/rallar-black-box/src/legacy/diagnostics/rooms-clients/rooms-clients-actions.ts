@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either, EitherCollectors } from '@shared/resilience/Either.ts';
 import type * as React from 'react';
@@ -12,7 +13,7 @@ import type {
     RallarServerWorkbenchVariables
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { toRallarServerBlackBoxCommand } from '../../../rallar-server-workbench/to-rallar-server-black-box-command.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { recordArray, recordValue } from '../../shared/record-value.ts';

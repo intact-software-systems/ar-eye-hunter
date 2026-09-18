@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     ControlDistributedRunArtifactBundle,
@@ -50,7 +51,7 @@ import {
     type RecipeLaunchState,
     type RunnerTurnProbeStatus
 } from '../../../runner-readiness.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';

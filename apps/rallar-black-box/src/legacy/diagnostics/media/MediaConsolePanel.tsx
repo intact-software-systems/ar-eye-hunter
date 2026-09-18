@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestState
@@ -6,7 +7,7 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
 import { createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { json, parseJsonText } from '../../shared/json-presentation.ts';

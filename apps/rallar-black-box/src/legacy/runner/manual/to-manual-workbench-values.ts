@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import { decodeRallarBlackBoxConfigProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type {
     RallarBlackBoxTestConfig,
@@ -15,7 +16,6 @@ import {
     type ManualWorkbenchTransport,
     type ManualWorkbenchValues
 } from '../../../manual-workbench.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { recordValue } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
