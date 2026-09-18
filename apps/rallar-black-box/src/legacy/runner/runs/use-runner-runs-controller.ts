@@ -29,7 +29,6 @@ import {
     toControlHttpBaseUrl,
     type ControlEndpointRequest
 } from '../../../control-run-manager/control-endpoint-request.ts';
-import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     compareDistributedRuns,
@@ -51,6 +50,7 @@ import {
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
     distributedArtifactImportStatus,
@@ -276,7 +276,7 @@ export function useRunnerRunsController({
             }
             const fetchedRuns = runsOutcome.right;
             if (fetchedRuns === undefined) {
-                setDistributedError(toControlFailureMessage(runsOutcome.left));
+                setDistributedError(toRunnerFriendlyControlFailureMessage(runsOutcome.left));
                 return;
             }
             const list = [...fetchedRuns].sort(

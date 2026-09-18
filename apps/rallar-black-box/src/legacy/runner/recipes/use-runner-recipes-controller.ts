@@ -30,10 +30,7 @@ import {
     createDefaultControlEndpointRequest,
     toControlHttpBaseUrl
 } from '../../../control-run-manager/control-endpoint-request.ts';
-import {
-    toControlFailureMessage,
-    type ControlRequestFailure
-} from '../../../control-run-manager/control-request-failure.ts';
+import type { ControlRequestFailure } from '../../../control-run-manager/control-request-failure.ts';
 import {
     readControlRunSnapshot,
     readControlServerSnapshot
@@ -58,6 +55,7 @@ import type { CommandCenterGlobalValues } from '../../shell/global-context-model
 import { validateDistributedRecipeManifest } from '../distributed-recipes/distributed-manifest-validation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import { createRunnerAgentLaunchActions } from './runner-agent-launch-actions.ts';
 import { runnerApiEndpointUrl, runnerApiProbeUrl } from './runner-endpoints.ts';
@@ -381,7 +379,7 @@ export function useRunnerRecipesController({
                     setControlRun(undefined);
                     setControlProbe({
                         status: 'offline',
-                        detail: toControlFailureMessage(snapshotOutcome.left)
+                        detail: toRunnerFriendlyControlFailureMessage(snapshotOutcome.left)
                     });
                     return;
                 }
@@ -416,10 +414,11 @@ export function useRunnerRecipesController({
                     }
                     const nextControlRun = controlRunOutcome.right;
                     if (nextControlRun === undefined) {
+                        setControlSnapshot(undefined);
                         setControlRun(undefined);
                         setControlProbe({
                             status: 'offline',
-                            detail: toControlFailureMessage(controlRunOutcome.left)
+                            detail: toRunnerFriendlyControlFailureMessage(controlRunOutcome.left)
                         });
                         return;
                     }
@@ -530,8 +529,8 @@ export function useRunnerRecipesController({
         failure: ControlRequestFailure | undefined
     ): void => {
         setLaunchState('failed');
-        setLaunchError(toControlFailureMessage(failure));
-        setLaunchMessage('Distributed run failed.');
+        setLaunchError(toRunnerFriendlyControlFailureMessage(failure));
+        setLaunchMessage('Distributed recipe failed to start.');
     };
 
     const runDistributedRecipe = async (): Promise<void> => {

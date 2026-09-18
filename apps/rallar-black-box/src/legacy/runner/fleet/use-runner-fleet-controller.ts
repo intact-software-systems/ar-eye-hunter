@@ -20,7 +20,6 @@ import {
     readFleetReports,
     rebuildFleetReports
 } from '../../../control-run-manager/control-fleet-report-endpoints.ts';
-import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
 import { readControlServerSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import {
@@ -33,6 +32,7 @@ import {
 import { json } from '../../shared/json-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import { fleetAgentDetail, fleetHeatmapRows, fleetMissingLabelAgents, fleetRegionRows } from './fleet-derivations.ts';
 import {
@@ -215,7 +215,7 @@ export function useRunnerFleetController({
             }
             const nextResponse = responseOutcome.right;
             if (nextResponse === undefined) {
-                setError(toControlFailureMessage(responseOutcome.left));
+                setError(toRunnerFriendlyControlFailureMessage(responseOutcome.left));
                 return;
             }
             const snapshotOutcome = await readControlServerSnapshot({
@@ -227,7 +227,7 @@ export function useRunnerFleetController({
             }
             const nextSnapshot = snapshotOutcome.right;
             if (nextSnapshot === undefined) {
-                setError(toControlFailureMessage(snapshotOutcome.left));
+                setError(toRunnerFriendlyControlFailureMessage(snapshotOutcome.left));
                 return;
             }
             setResponse(nextResponse);
@@ -334,7 +334,7 @@ export function useRunnerFleetController({
             });
             const bundle = bundleOutcome.right;
             if (bundle === undefined) {
-                setError(toControlFailureMessage(bundleOutcome.left));
+                setError(toRunnerFriendlyControlFailureMessage(bundleOutcome.left));
                 return;
             }
             setLastExport(bundle);
