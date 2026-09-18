@@ -1,12 +1,12 @@
-import {
-    deriveFleetReportDisplaySummary,
-    deriveFleetReportFailureRows
-} from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import type {
     ControlFleetFailureSignature,
     ControlFleetReportsResponse,
     ControlFleetRunReport
-} from '../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    deriveFleetReportDisplaySummary,
+    deriveFleetReportFailureRows
+} from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 
 export function fleetDisplaySummary(
     reports: readonly ControlFleetRunReport[],

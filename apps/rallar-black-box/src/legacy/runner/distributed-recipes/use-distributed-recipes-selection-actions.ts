@@ -1,10 +1,12 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import {
-    readControlRunSnapshot,
-    readControlServerSnapshot,
     readDistributedRun,
     readDistributedRuns
-} from '../../../control-run-manager.ts';
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import {
+    readControlRunSnapshot,
+    readControlServerSnapshot
+} from '../../../control-run-manager/control-run-endpoints.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { deriveDistributedDiagnosticSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';

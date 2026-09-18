@@ -1,8 +1,5 @@
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot
-} from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,

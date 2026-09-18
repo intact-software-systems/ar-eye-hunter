@@ -1,15 +1,15 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { useMemo, useState } from 'react';
-import {
-    toControlHttpBaseUrl,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot,
-    type RallarBlackBoxDistributedTargetResolution
-} from '../../../control-run-manager.ts';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
 import { deriveDistributedRunMonitor } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {

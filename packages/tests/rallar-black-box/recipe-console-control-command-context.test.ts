@@ -1,5 +1,5 @@
+import type { ControlDistributedRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import type { ControlDistributedRunSnapshot, ControlServerSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import {
     controlCommandActiveRunLabel,

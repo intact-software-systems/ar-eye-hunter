@@ -2,10 +2,15 @@ import {
     parseBlackBoxRunnerArtifactBundle
 } from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlRunArtifactBundle,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
 import {
-    computeControlRunManagerStats,
     deleteControlRun,
     enqueueBulkControlCommand,
     readControlRunArtifactBundle,
@@ -13,14 +18,13 @@ import {
     readControlRunJsonl,
     readControlRunSnapshot,
     readControlServerSnapshot,
-    resetControlRun,
-    toControlHttpBaseUrl,
+    resetControlRun
+} from '../../../control-run-manager/control-run-endpoints.ts';
+import {
+    computeControlRunManagerStats,
     toControlRunAgentRows,
-    toControlRunCommandRows,
-    type ControlRunArtifactBundle,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
+    toControlRunCommandRows
+} from '../../../control-run-manager/control-run-projections.ts';
 import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-command-presets.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';

@@ -2,7 +2,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import { resolve } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { ControlRunManagerHttpError as CanonicalHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
-import { ControlRunManagerHttpError as LegacyHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { createRecipeConsoleControlApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
     recipeConsoleControlCredentialPolicyFromSearch,
@@ -143,7 +142,6 @@ describe('Recipe Console retention request wire format', () => {
         });
 
         await expect(failure).rejects.toBeInstanceOf(CanonicalHttpError);
-        await expect(failure).rejects.toBeInstanceOf(LegacyHttpError);
         await expect(failure).rejects.toMatchObject({
             message: `retention-${status}`,
             status,

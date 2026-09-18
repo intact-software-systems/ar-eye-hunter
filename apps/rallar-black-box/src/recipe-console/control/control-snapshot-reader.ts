@@ -3,11 +3,8 @@ import type {
     ControlServerSnapshot,
     ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    readControlRunSnapshot,
-    readControlServerSnapshot,
-    readDistributedRuns
-} from '../../control-run-manager.ts';
+import { readDistributedRuns } from '../../control-run-manager/control-distributed-run-endpoints.ts';
+import { readControlRunSnapshot, readControlServerSnapshot } from '../../control-run-manager/control-run-endpoints.ts';
 import { isControlAbortError } from './control-authorized-fetch.ts';
 import type { ControlAuthorizedTransport, RecipeConsoleControlAuthorization } from './control-authorized-transport.ts';
 import { mergeControlRunDetails } from './control-detail-run-ids.ts';

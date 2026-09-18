@@ -1,8 +1,11 @@
+import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { compareDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-history/compare-distributed-runs.ts';
 import { filterDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-history/filter-distributed-runs.ts';
 import { distributedRecipeStateTone } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-recipe-state-tone.ts';
 import { useMemo, useState } from 'react';
-import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '../../../../control-run-manager.ts';
 import { formatTime } from '../../../shared/time-format.ts';
 import { uniqueValues } from '../../../shared/unique-values.ts';
 import { DistributedRunComparePanel } from '../../distributed/DistributedRunComparePanel.tsx';

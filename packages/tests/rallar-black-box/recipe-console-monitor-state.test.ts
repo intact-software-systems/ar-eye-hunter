@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import * as distributedRecipes from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';

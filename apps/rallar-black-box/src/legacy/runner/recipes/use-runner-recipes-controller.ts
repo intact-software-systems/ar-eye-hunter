@@ -1,4 +1,10 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     getRallarBlackBoxCommandHistory,
@@ -15,17 +21,15 @@ import {
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
     createDistributedRun,
-    readControlRunSnapshot,
-    readControlServerSnapshot,
     readDistributedRun,
     stageDistributedRun,
-    startDistributedRun,
-    toControlHttpBaseUrl,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
+    startDistributedRun
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    readControlRunSnapshot,
+    readControlServerSnapshot
+} from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     createDistributedRunManifest,
     defaultDistributedRecipeTargetIds,

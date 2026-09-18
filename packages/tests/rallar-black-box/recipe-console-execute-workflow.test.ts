@@ -1,5 +1,5 @@
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import type { ControlDistributedRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 import { executeConnectionTruth } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
 import {

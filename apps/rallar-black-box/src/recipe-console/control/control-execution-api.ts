@@ -14,7 +14,7 @@ import {
     readDistributedTargetResolution,
     stageDistributedRun,
     startDistributedRun
-} from '../../control-run-manager.ts';
+} from '../../control-run-manager/control-distributed-run-endpoints.ts';
 import type { ControlAuthorizedTransport } from './control-authorized-transport.ts';
 import {
     validateControlExecutionArtifactBundle,

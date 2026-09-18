@@ -1,5 +1,5 @@
 import type { ControlRunToken } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { ControlRunManagerHttpError } from '../../control-run-manager.ts';
+import { ControlRunManagerHttpError } from '../../control-http-error.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
 type IssueRunTokenInput = Readonly<{

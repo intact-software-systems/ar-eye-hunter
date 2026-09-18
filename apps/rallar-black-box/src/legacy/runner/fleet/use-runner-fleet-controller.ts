@@ -1,20 +1,22 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlFleetReportBundle,
+    ControlFleetReportsResponse,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
     computeControlAgentBoardRows,
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
 import {
-    readControlServerSnapshot,
     readFleetReportBundle,
     readFleetReports,
-    rebuildFleetReports,
-    toControlHttpBaseUrl,
-    type ControlFleetReportBundle,
-    type ControlFleetReportsResponse,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
+    rebuildFleetReports
+} from '../../../control-run-manager/control-fleet-report-endpoints.ts';
+import { readControlServerSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {

@@ -1,4 +1,5 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRolePattern } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useEffect } from 'react';
 import {
@@ -7,9 +8,8 @@ import {
     readDistributedRunArtifactBundle,
     readDistributedTargetResolution,
     stageDistributedRun,
-    startDistributedRun,
-    type ControlDistributedRunSnapshot
-} from '../../../control-run-manager.ts';
+    startDistributedRun
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
 import {
     defaultDistributedRecipeTargetIds,
     reconcileDistributedRecipeTargetIds

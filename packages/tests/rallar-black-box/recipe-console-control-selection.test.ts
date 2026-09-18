@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { describe, expect, it } from 'vitest';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import {

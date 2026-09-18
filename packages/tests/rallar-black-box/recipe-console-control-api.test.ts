@@ -1,6 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import {
     createRecipeConsoleControlApi as createRecipeConsoleControlApiWithPolicy,
     RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS,

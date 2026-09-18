@@ -1,3 +1,4 @@
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
 import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../apps/rallar-black-box/src/control-agent-board-contract.ts';
 import {
@@ -5,11 +6,6 @@ import {
     computeControlAgentBoardSummary,
     type ComputeControlAgentBoardRowsInput
 } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-    ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type { DistributedRunAgentProgressRow } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';

@@ -1,36 +1,40 @@
+import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError as CanonicalControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
+import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { controlResponseDocumentText } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import {
     cancelDistributedRun,
-    computeControlRunManagerStats,
-    ControlRunManagerHttpError as ReexportedControlRunManagerHttpError,
     createDistributedRun,
+    readDistributedRun,
+    readDistributedRunArtifactBundle,
+    readDistributedRunArtifactBundleBytes,
+    readDistributedRuns,
+    readDistributedTargetResolution,
+    stageDistributedRun,
+    startDistributedRun
+} from '../../../apps/rallar-black-box/src/control-run-manager/control-distributed-run-endpoints.ts';
+import { toControlHttpBaseUrl } from '../../../apps/rallar-black-box/src/control-run-manager/control-endpoint-request.ts';
+import {
+    readFleetReport,
+    readFleetReportBundle,
+    readFleetReportBundleBytes,
+    readFleetReports,
+    rebuildFleetReports
+} from '../../../apps/rallar-black-box/src/control-run-manager/control-fleet-report-endpoints.ts';
+import {
     deleteControlRun,
     enqueueBulkControlCommand,
     readControlRunArtifactBundle,
     readControlRunFailureBundle,
     readControlRunJsonl,
     readControlRunSnapshot,
-    readControlServerSnapshot,
-    readDistributedRun,
-    readDistributedRunArtifactBundle,
-    readDistributedRunArtifactBundleBytes,
-    readDistributedRuns,
-    readDistributedTargetResolution,
-    readFleetReport,
-    readFleetReportBundle,
-    readFleetReportBundleBytes,
-    readFleetReports,
-    rebuildFleetReports,
-    stageDistributedRun,
-    startDistributedRun,
-    toControlHttpBaseUrl,
+    readControlServerSnapshot
+} from '../../../apps/rallar-black-box/src/control-run-manager/control-run-endpoints.ts';
+import {
+    computeControlRunManagerStats,
     toControlRunAgentRows,
-    toControlRunCommandRows,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+    toControlRunCommandRows
+} from '../../../apps/rallar-black-box/src/control-run-manager/control-run-projections.ts';
 import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
@@ -129,19 +133,14 @@ const runSnapshot: ControlRunSnapshot = {
 const fleetReportBundleTransferMaxBytes = 64 * 1_024 * 1_024;
 
 describe('rallar-black-box control run manager', () => {
-    it('preserves the canonical HTTP error identity through the manager export', () => {
-        expect(ReexportedControlRunManagerHttpError).toBe(
-            CanonicalControlRunManagerHttpError
-        );
-
-        const error = new CanonicalControlRunManagerHttpError(
+    it('carries the control HTTP status and message on its own error identity', () => {
+        const error = new ControlRunManagerHttpError(
             'Operator token required.',
             401,
             'Unauthorized'
         );
 
-        expect(error).toBeInstanceOf(CanonicalControlRunManagerHttpError);
-        expect(error).toBeInstanceOf(ReexportedControlRunManagerHttpError);
+        expect(error).toBeInstanceOf(ControlRunManagerHttpError);
         expect(error).toMatchObject({
             name: 'ControlRunManagerHttpError',
             message: 'Operator token required.',
@@ -373,12 +372,7 @@ describe('rallar-black-box control run manager', () => {
             status: 401,
             statusText: 'Unauthorized'
         });
-        await expect(request).rejects.toBeInstanceOf(
-            ReexportedControlRunManagerHttpError
-        );
-        await expect(request).rejects.toBeInstanceOf(
-            CanonicalControlRunManagerHttpError
-        );
+        await expect(request).rejects.toBeInstanceOf(ControlRunManagerHttpError);
     });
 
     it.each([

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
+import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ControlRunSnapshot, ControlServerSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
 import {

@@ -1,5 +1,13 @@
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '@shared-test/rallar-bb-test/assert/assert-value-operators.ts';
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
+import type {
+    ControlAgentSnapshot,
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunCommandLink,
+    ControlDistributedRunSnapshot,
+    ControlQueuedCommandSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '@shared-test/rallar-bb-test/diagnostics.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
@@ -9,14 +17,6 @@ import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type {
-    ControlAgentSnapshot,
-    ControlDistributedRunArtifactBundle,
-    ControlDistributedRunCommandLink,
-    ControlDistributedRunSnapshot,
-    ControlQueuedCommandSnapshot,
-    ControlRunSnapshot
-} from './control-run-manager.ts';
 
 export type DistributedRunSeedId =
     | 'passed-clean'

@@ -1,3 +1,4 @@
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { computeIndexedControlAgentBoardRows } from './compute-indexed-control-agent-board-rows.ts';
 import type {
     ComputeControlAgentBoardRowsInput,
@@ -10,11 +11,7 @@ import {
     controlAgentRunParticipation,
     syntheticControlAgentRow
 } from './control-agent-board-model.ts';
-import {
-    toControlRunAgentRows,
-    type ControlDistributedRunSnapshot,
-    type ControlRunAgentRow
-} from './control-run-manager.ts';
+import { toControlRunAgentRows, type ControlRunAgentRow } from './control-run-manager/control-run-projections.ts';
 import { isControlSelectionIndexBoundToSnapshot } from './control-selection-index-binding.ts';
 import {
     distributedRecipeTargetRows,

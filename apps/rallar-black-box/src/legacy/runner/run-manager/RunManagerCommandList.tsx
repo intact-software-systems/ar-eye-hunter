@@ -1,4 +1,4 @@
-import type { ControlRunCommandRow } from '../../../control-run-manager.ts';
+import type { ControlRunCommandRow } from '../../../control-run-manager/control-run-projections.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 

@@ -1,7 +1,5 @@
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlRunSnapshot
-} from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     createDistributedRunManifest,
     defaultDistributedRecipeTargetIds,

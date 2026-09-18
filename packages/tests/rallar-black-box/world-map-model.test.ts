@@ -1,7 +1,7 @@
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ControlAgentBoardRow } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
-import type { ControlRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { resolveFleetWorldMapLocation, type FleetWorldMapLocationInput } from '../../../apps/rallar-black-box/src/world-map-geo-fixtures.ts';
 import { deriveFleetWorldMapModel, routeEvidenceFromControlRun } from '../../../apps/rallar-black-box/src/world-map-model.ts';
 import {

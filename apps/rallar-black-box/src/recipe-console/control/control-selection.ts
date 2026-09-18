@@ -1,4 +1,10 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import type {
+    ControlAgentSnapshot,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../control-agent-board-contract.ts';
@@ -6,12 +12,6 @@ import {
     computeControlAgentBoardRows,
     computeControlAgentBoardSummary
 } from '../../control-agent-board.ts';
-import type {
-    ControlAgentSnapshot,
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-    ControlServerSnapshot
-} from '../../control-run-manager.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type { ControlQueryStatus } from './control-query.ts';
 import { deriveControlRunSelectionPatch } from './control-run-selection-patch.ts';

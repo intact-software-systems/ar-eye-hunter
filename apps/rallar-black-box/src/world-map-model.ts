@@ -1,3 +1,4 @@
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { fleetGeographyRouteEvidenceFromControlRun } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 import type {
     ControlFleetAgentLabel,
@@ -6,7 +7,6 @@ import type {
     ControlFleetRunReport
 } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import type { ControlAgentBoardRow } from './control-agent-board.ts';
-import type { ControlRunSnapshot } from './control-run-manager.ts';
 import { resolveFleetWorldMapLocation, type FleetWorldMapLocation } from './world-map-geo-fixtures.ts';
 
 export const FLEET_WORLD_MAP_LAYER_IDS = [

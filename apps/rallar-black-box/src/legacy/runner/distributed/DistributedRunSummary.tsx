@@ -1,4 +1,4 @@
-import type { ControlDistributedRunSnapshot } from '../../../control-run-manager.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { distributedRecipeStateTone } from '../../../distributed-recipes.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { Metric } from '../../shared/Metric.tsx';

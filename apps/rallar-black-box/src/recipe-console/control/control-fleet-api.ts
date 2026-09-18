@@ -1,6 +1,6 @@
 import { validateControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import type { ControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import { readFleetReportBundleBytes } from '../../control-run-manager.ts';
+import { readFleetReportBundleBytes } from '../../control-run-manager/control-fleet-report-endpoints.ts';
 import { throwIfControlAborted } from './control-authorized-fetch.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 

@@ -5,6 +5,10 @@ import {
     type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type {
+    ControlDistributedRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
     ComputeControlAgentBoardRowsInput,
     ControlAgentBoardRow,
     ControlAgentRunParticipation
@@ -16,12 +20,8 @@ import {
     syntheticControlAgentRow
 } from './control-agent-board-model.ts';
 import { projectRelevantControlAgentBoardRuns, type IndexedBoardRun } from './control-agent-board-run-projection.ts';
-import {
-    toControlAgentIdentitySummary,
-    type ControlDistributedRunSnapshot,
-    type ControlRunAgentRow,
-    type ControlServerSnapshot
-} from './control-run-manager.ts';
+import type { ControlRunAgentRow } from './control-run-manager/control-run-projections.ts';
+import { toControlAgentIdentitySummary } from './control-run-manager/to-control-agent-identity-summary.ts';
 import { distributedRecipeTargetRows } from './distributed-recipes.ts';
 
 /**

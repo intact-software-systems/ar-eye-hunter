@@ -1,10 +1,10 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { ChangeEvent } from 'react';
-import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot
-} from '../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { ChangeEvent } from 'react';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../control-agent-board.ts';
 import {
     distributedRecipeStateTone,
     type DistributedRunAnalysisReport,

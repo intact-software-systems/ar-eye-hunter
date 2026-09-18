@@ -1,10 +1,11 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { ControlRunManagerHttpError } from '../../control-http-error.ts';
 import {
     resolveBlackBoxControlToken,
     shouldRefreshBlackBoxControlToken,
     type BlackBoxControlTokenSession
 } from '../../control-operator-token.ts';
-import { ControlRunManagerHttpError, type ControlRunManagerFetch } from '../../control-run-manager.ts';
+import type { ControlRunManagerFetch } from '../../control-run-manager/control-endpoint-request.ts';
 import {
     controlAuthorizationErrorMessage,
     RecipeConsoleControlAuthorizationError,

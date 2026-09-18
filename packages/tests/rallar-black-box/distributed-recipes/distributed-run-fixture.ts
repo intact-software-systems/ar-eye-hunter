@@ -1,8 +1,4 @@
-import type {
-    ControlDistributedRunArtifactBundle,
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot
-} from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
+import type { ControlDistributedRunArtifactBundle, ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     type DistributedRecipeCatalogItem
 } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';

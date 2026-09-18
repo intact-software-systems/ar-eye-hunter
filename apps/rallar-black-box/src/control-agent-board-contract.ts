@@ -1,5 +1,11 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type {
+    ControlDistributedRunCommandPhase,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunState
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -7,13 +13,7 @@ import type {
     RallarBlackBoxTestCommandKind,
     RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
-import type {
-    ControlDistributedRunCommandPhase,
-    ControlDistributedRunSnapshot,
-    ControlRunAgentRow,
-    ControlRunSnapshot,
-    ControlServerSnapshot
-} from './control-run-manager.ts';
+import type { ControlRunAgentRow } from './control-run-manager/control-run-projections.ts';
 import type {
     DistributedRecipeTargetRow,
     DistributedRunAgentProgressRow,

@@ -1,9 +1,5 @@
+import type { ControlDistributedRunArtifactBundle, ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlDistributedRunArtifactBundle,
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot
-} from '../../../../apps/rallar-black-box/src/control-run-manager.ts';
 import * as distributedRecipeCompatibility from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     computeDistributedRunFailureEvidenceDestinations,

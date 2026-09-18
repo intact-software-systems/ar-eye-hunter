@@ -1,4 +1,4 @@
-import type { ControlDistributedRunSnapshot } from '../../../control-run-manager.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunCompareSummary } from '../../../distributed-recipes.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatSignedDuration, formatSignedNumber } from '../../shared/time-format.ts';

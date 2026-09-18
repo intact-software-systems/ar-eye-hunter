@@ -5,13 +5,13 @@ import {
     rebindDistributedRunsFromSelectionIndex,
     type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import { isControlSelectionIndexBoundToSnapshot } from '../../control-selection-index-binding.ts';
 
 export type IndexedRecipeConsoleControlSelectionWork = Readonly<{

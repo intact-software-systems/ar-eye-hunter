@@ -353,10 +353,17 @@ actual shell execution to explicit local tooling or the control server.
   `to-flow-builder-runner-scenario.ts` runner scenario export.
   `src/legacy/runner/builder/` composes them into the tab controller, its
   actions, and its views.
-- `src/control-run-manager.ts`: typed control-server snapshot loading, run/agent
-  row derivation, bulk enqueue, reset/delete, artifact export loading,
-  JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
-  normalization for the Run Manager and Distributed Recipes tabs.
+- `src/control-run-manager/`: the control-server HTTP owners for the Run Manager
+  and Distributed Recipes tabs. `control-endpoint-request.ts` carries the
+  addressed endpoint (base URL, token, fetch) and control URL normalization,
+  `control-reply-reader.ts` decodes a reply body once and names the failure it
+  reports, `control-artifact-bytes.ts` reads a bounded artifact body,
+  `control-run-endpoints.ts` covers snapshot loading, bulk enqueue, reset/delete,
+  artifact export loading and JSONL/failure-bundle reads,
+  `control-distributed-run-endpoints.ts` the distributed-run lifecycle,
+  `control-fleet-report-endpoints.ts` the fleet reports, and
+  `control-run-projections.ts` plus `to-control-agent-identity-summary.ts` the
+  run/agent/command row derivations the panels render.
 - `src/fleet-world-map.tsx`, `src/world-map-model.ts`,
   `src/world-map-geo-fixtures.ts`, and `src/world-map-projection.ts`: the
   Fleet tab's deterministic SVG world map, layer state, location fallback

@@ -3,7 +3,7 @@ import type {
     ControlFleetReportBundle,
     ControlFleetRunReport,
     ControlFleetTimingDistribution
-} from '../../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { formatFleetDuration, formatPercent } from '../../shared/performance-format.ts';
 import { shortRunId } from '../../shared/run-id-presentation.ts';
 import { fleetAgentStateTone, fleetCellTitle, fleetFailureTone, shortSignatureId } from '../fleet-presentation.ts';

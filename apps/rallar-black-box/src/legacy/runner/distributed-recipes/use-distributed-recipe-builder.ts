@@ -1,7 +1,12 @@
 import type {
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
     RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetPolicyMode
+    RallarBlackBoxDistributedTargetPolicyMode,
+    RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
@@ -9,11 +14,6 @@ import {
     computeControlAgentBoardRows,
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-    RallarBlackBoxDistributedTargetResolution
-} from '../../../control-run-manager.ts';
 import {
     createDistributedRunManifest,
     deriveDistributedWorldFleetTargetGate,

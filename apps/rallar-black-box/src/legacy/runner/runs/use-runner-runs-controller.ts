@@ -1,4 +1,9 @@
 import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -14,15 +19,12 @@ import {
     computeControlAgentBoardSummary
 } from '../../../control-agent-board.ts';
 import {
-    readControlRunSnapshot,
     readDistributedRun,
     readDistributedRunArtifactBundle,
-    readDistributedRuns,
-    toControlHttpBaseUrl,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot
-} from '../../../control-run-manager.ts';
+    readDistributedRuns
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
+import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     compareDistributedRuns,
     deriveDistributedRunAnalysisReport,

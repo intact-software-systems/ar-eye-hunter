@@ -1,10 +1,10 @@
 import type { ControlServerSnapshot, ControlSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { ControlRunManagerHttpError } from '../../control-http-error.ts';
 import {
-    ControlRunManagerHttpError,
     toControlHttpBaseUrl,
     type ControlRunManagerFetch
-} from '../../control-run-manager.ts';
+} from '../../control-run-manager/control-endpoint-request.ts';
 import {
     createRecipeConsoleControlAgentLaunchApi,
     type RecipeConsoleControlAgentLaunchApi
