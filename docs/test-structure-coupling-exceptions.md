@@ -2487,6 +2487,38 @@ moved or changed test.
       }
     },
     {
+      "id": "analyze-window-pending-pager-issues-no-second-request",
+      "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
+      "domain": "Recipe Console Analyze evidence window pagination",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "While an evidence-window request is in flight the pager controls stay mounted and disabled, and clicking one issues no second window request. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
+      "coverageRelation": "The test renders the pending window, reads that both pager buttons are still mounted with aria-disabled=true, clicks each of them, and reads the window-request count; the rendered rows are identical whether the click was refused or served, so the absent request is the only witness that it was refused.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "requestWindow on the Analyze workspace controller, which posts a window request to the accepted Analyze worker",
+        "observableEffect": "Each call posts a window request and advances the client's window generation.",
+        "requiredConstraint": "A click on a disabled pager control while a window request is pending issues zero window requests.",
+        "failureRationale": "A second request advances the window generation, so the reply to the in-flight request is discarded as stale and the operator's page never arrives while the rendered rows stay unchanged."
+      }
+    },
+    {
+      "id": "analyze-window-failure-retry-searches-exactly-once",
+      "sharedCoverageGroup": "analyze-evidence-window-pending-and-failure-controls",
+      "domain": "Recipe Console Analyze evidence window failure recovery",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The evidence-window failure banner's retry control reissues the evidence search exactly once per click. Executable assertion: \u201ckeeps pending controls mounted, blocks repeat cursor requests, and reports failure\u201d.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure",
+      "coverageRelation": "The test renders the failed window, reads the operator failure sentence, clicks the retry control once and reads the search count; the controller is a test double that re-renders nothing, so the call count is the only witness that one search left the view.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "retryEvidenceSearch on the Analyze workspace controller, which reissues the current query as a search on the accepted Analyze worker",
+        "observableEffect": "Each call posts a search request and advances the client's query generation, resetting its window generation.",
+        "requiredConstraint": "One click on the retry control issues exactly one evidence search.",
+        "failureRationale": "A retry that issues nothing strands the operator on the failure banner, and a retry that issues twice advances the query generation under its own first reply, so that reply is discarded as stale and the window stays empty."
+      }
+    },
+    {
       "id": "analyze-worker-crashed-candidate-keeps-accepted-worker",
       "domain": "Recipe Console Analyze worker replacement safety",
       "owner": "Rallar Black Box maintainers",
@@ -2659,6 +2691,28 @@ moved or changed test.
       "owner": "Shared RTC benchmark maintainers",
       "rationale": "Keeps the published listener benchmark timing boundary explicit across construction, connection, and reset instead of implying a narrower interval.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-dfef48ce28b3a297",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-window-pending-pager-issues-no-second-request",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The unmade window request is the only witness that a disabled pager control refused the click instead of reissuing the same cursor under the pending request.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure"
+    },
+    {
+      "id": "test-structure-coupling-13609ed5d3f1823f",
+      "path": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "analyze-window-failure-retry-searches-exactly-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The controller is a test double, so the single search call is the only witness that the failure banner's retry control reissued the query once rather than never or twice.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-analyze-window-ui.test.ts#keeps pending controls mounted, blocks repeat cursor requests, and reports failure"
     },
     {
       "id": "test-structure-coupling-10af8255a405b3b0",
