@@ -7,7 +7,7 @@ import { createControlSnapshotRevisionSession } from '../../../apps/rallar-black
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { createTuneCandidateKnobIndex } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-candidate-knob-index.ts';
 import { createTuneRunCatalogCache, tuneRunCatalogCacheWorkForTest } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog-cache.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { createTuneRunPickerModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-picker-model.ts';
 import type { TuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import { TuneKnobInventory } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobInventory.tsx';
@@ -42,7 +42,7 @@ describe('Recipe Console Tune scale windowing', () => {
         );
         const performanceRunIds = ['run-000123', 'run-004999'];
 
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             controlRuns,
             distributedRuns,
             performanceRunIds

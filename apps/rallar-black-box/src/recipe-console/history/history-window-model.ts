@@ -6,7 +6,7 @@ import {
     projectDistributedRunHistoryLabels,
     type DistributedRunHistoryLabels
 } from '@shared-test/rallar-bb-test/distributed-run-history/project-distributed-run-history-labels.ts';
-import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneQuarantinedRun } from '../tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog, type TuneQuarantineCode, type TuneQuarantinedRun } from '../tune/tune-run-catalog.ts';
 import { historyRowSelectionActions, type HistoryRowSelectionActions } from './history-url-patches.ts';
 import type { RecipeConsoleHistoryCollection, RecipeConsoleHistoryProvenance } from './history-window-collection.ts';
 
@@ -67,7 +67,7 @@ export function computeRecipeConsoleHistoryWindow(
     const catalogRuns = visible
         .map((entry) => entry.run)
         .filter((run) => collection.distributedIdCounts.get(run.distributedRunId) === 1);
-    const catalog = buildTuneRunCatalog({
+    const catalog = computeTuneRunCatalog({
         distributedRuns: catalogRuns,
         controlRuns: toBoundedCatalogControls(catalogRuns, collection.controlsById),
         includePerformanceEvidence: false

@@ -26,7 +26,11 @@ export function TuneCommandTiming({
                     <p className={styles.eyebrow}>Command latency</p>
                     <h2>Command timing</h2>
                 </div>
-                <span>{timing?.count ?? 0} samples</span>
+                <span>
+                    {timing?.count === undefined
+                        ? 'Samples unknown'
+                        : `${timing.count} samples`}
+                </span>
             </header>
             {timing?.count !== undefined && timing.count > 0
                 ? (

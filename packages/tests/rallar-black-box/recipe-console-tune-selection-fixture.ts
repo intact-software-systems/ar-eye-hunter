@@ -3,7 +3,7 @@ import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/s
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { tunePerformanceRunIds } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-run-ids.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import {
     computeTuneSelectionModel,
     type TuneSelectionModel
@@ -29,7 +29,7 @@ export function toTuneSelectionModelFromQuery(
 ): TuneSelectionModel {
     return computeTuneSelectionModel({
         urlState: input.urlState,
-        catalog: buildTuneRunCatalog({
+        catalog: computeTuneRunCatalog({
             distributedRuns: input.query.snapshot?.distributedRuns ?? [],
             controlRuns: input.query.snapshot?.runs ?? [],
             retainedArtifact: input.retainedArtifact,

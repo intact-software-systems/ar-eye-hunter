@@ -4,7 +4,7 @@ import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { deriveTuneSourceModelFromFacade, tuneFacadeIsCurrentFocus } from './tune-facade-source-model.ts';
 import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
-import { buildTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
+import { computeTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
 import { deriveTuneSourceModel, type TuneSourceIssue, type TuneSourceModel } from './tune-source-model.ts';
 
 export function deriveTuneWorkspaceSourceModel(
@@ -22,7 +22,7 @@ export function deriveTuneWorkspaceSourceModel(
 ): TuneSourceModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
     const facade = input.retained.model;
-    const catalog = input.catalog ?? buildTuneRunCatalog({
+    const catalog = input.catalog ?? computeTuneRunCatalog({
         distributedRuns: input.query.snapshot?.distributedRuns ?? [],
         controlRuns: input.query.snapshot?.runs ?? [],
         retainedFacade: facade,

@@ -1,5 +1,4 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import {
@@ -84,7 +83,7 @@ export function projectTuneFacadeCatalog(
         );
     }
     const distributedRun = facadeSnapshot(facade, manifest);
-    const analysis = facade.analysis as unknown as DistributedRunAnalysis;
+    const analysis = facade.analysis;
     const artifactEvidence = {
         distributedRun,
         analysis,

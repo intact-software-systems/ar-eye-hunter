@@ -4,7 +4,7 @@ import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/re
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { projectTuneFacadeManifestValidation } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';
 import { deriveTuneSourceModelFromFacade } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-source-model.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { tuneSourceIssueKey } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-issue.ts';
 import { tuneRightSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-url-patches.ts';
 import { deriveTuneWorkspaceSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
@@ -252,7 +252,7 @@ describe('Recipe Console Tune facade authority', () => {
             compareLeft: 'baseline',
             compareRight: 'candidate'
         });
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             distributedRuns: controlQuery.snapshot?.distributedRuns ?? [],
             controlRuns: controlQuery.snapshot?.runs ?? [],
             retainedFacade: retained,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAnalyzeArtifactModel, type AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import { validateTuneCatalogSelections } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-catalog-selection-validation.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { computeTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import { deriveTuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import type {
@@ -170,7 +170,7 @@ describe('Recipe Console Tune model hardening', () => {
             baseline,
             malformed
         ], [control('control-baseline'), control('control-invalid')]);
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
@@ -201,7 +201,7 @@ describe('Recipe Console Tune model hardening', () => {
         const querySnapshot = query('live', [
             malformed
         ], [control('control-invalid')]);
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
@@ -229,7 +229,7 @@ describe('Recipe Console Tune model hardening', () => {
             [candidate],
             [control('control-valid')]
         );
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
@@ -266,7 +266,7 @@ describe('Recipe Console Tune model hardening', () => {
             [candidate],
             [control('control-valid')]
         );
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
@@ -305,7 +305,7 @@ describe('Recipe Console Tune model hardening', () => {
             [candidate],
             [control('control-valid')]
         );
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             includePerformanceEvidence: false,
@@ -350,9 +350,9 @@ describe('Recipe Console Tune model hardening', () => {
                 throwingManifest
             ]
         ) {
-            let catalog: ReturnType<typeof buildTuneRunCatalog> | undefined;
+            let catalog: ReturnType<typeof computeTuneRunCatalog> | undefined;
             expect(() => {
-                catalog = buildTuneRunCatalog({
+                catalog = computeTuneRunCatalog({
                     distributedRuns: [malformed],
                     controlRuns: [],
                     performanceRunIds: ['different-selected-run']
@@ -381,7 +381,7 @@ describe('Recipe Console Tune model hardening', () => {
         const querySnapshot = query('live', [
             malformed
         ], [control('control-invalid')]);
-        const deferred = buildTuneRunCatalog({
+        const deferred = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['different-selected-run']
@@ -398,7 +398,7 @@ describe('Recipe Console Tune model hardening', () => {
             performanceDerivations: 0
         });
 
-        const selected = buildTuneRunCatalog({
+        const selected = computeTuneRunCatalog({
             distributedRuns: querySnapshot.snapshot?.distributedRuns ?? [],
             controlRuns: querySnapshot.snapshot?.runs ?? [],
             performanceRunIds: ['deep-invalid']
@@ -429,7 +429,7 @@ describe('Recipe Console Tune model hardening', () => {
 
     it('quarantines repeated distributed IDs and refuses duplicate control pairing', () => {
         const duplicated = [run('dup', 'control-dup', 3_000), run('dup', 'control-dup', 2_000), run('dup', 'control-dup', 1_000)];
-        const duplicatedCatalog = buildTuneRunCatalog({
+        const duplicatedCatalog = computeTuneRunCatalog({
             distributedRuns: duplicated,
             controlRuns: [control('control-dup')]
         });
@@ -447,7 +447,7 @@ describe('Recipe Console Tune model hardening', () => {
     });
 
     it('keeps delimiter-bearing unsafe identity tuples distinct in quarantine', () => {
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             distributedRuns: [
                 run('a\u0000b', 'c'),
                 run('a', 'b\u0000c')
@@ -466,7 +466,7 @@ describe('Recipe Console Tune model hardening', () => {
         const rtlControlId = 'control-مرحبا-שלום-界';
         const unsafeRunId = 'run-\u202Ehidden';
         const unsafeControlId = 'control-unsafe-direction';
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             distributedRuns: [
                 run(rtlRunId, rtlControlId),
                 run(unsafeRunId, unsafeControlId)
