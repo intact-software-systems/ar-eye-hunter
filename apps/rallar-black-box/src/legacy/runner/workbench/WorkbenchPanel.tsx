@@ -1,16 +1,16 @@
-import type { Either } from '@shared/resilience/Either.ts';
-import { useMemo, useState } from 'react';
 import {
-    RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
     toRecipeFixtureText
-} from '../../../recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { useMemo, useState } from 'react';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { CommandExamplePicker } from '../../shared/schema/CommandExamplePicker.tsx';
 import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
+import { RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE } from './rallar-black-box-manual-command-example.ts';
 
 export function WorkbenchPanel({
     busy,

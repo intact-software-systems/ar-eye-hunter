@@ -1,13 +1,11 @@
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { createRallarBlackBoxRtcRealtimeStabilityRecipe } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { describe, expect, it } from 'vitest';
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
     deriveRunVerdictView
 } from '../../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import {
-    createRallarBlackBoxRtcRealtimeStabilityRecipe
-} from '../../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 import { distributedArtifactBundle, distributedControlRun, distributedRun } from './distributed-run-fixture.ts';
 
 describe('distributed recipes verdict', () => {

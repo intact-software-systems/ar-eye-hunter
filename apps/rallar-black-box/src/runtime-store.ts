@@ -38,11 +38,11 @@ import type {
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { useSyncExternalStore } from 'react';
-import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from './recipe-fixtures.ts';
 import { runSimulatedProviderCommand } from './run-simulated-provider-command.ts';
 
 type RuntimeStoreSnapshot = Readonly<{

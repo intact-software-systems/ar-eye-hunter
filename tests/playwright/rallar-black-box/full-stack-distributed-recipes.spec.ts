@@ -7,30 +7,30 @@ import {
     type Page,
     type TestInfo
 } from '@playwright/test';
-import type {
-    ControlDistributedRunArtifactBundle as AppControlDistributedRunArtifactBundle,
-    ControlDistributedRunSnapshot as AppControlDistributedRunSnapshot,
-    ControlRunSnapshot as AppControlRunSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import {
     deriveDistributedRunMonitor,
     deriveDistributedRunWarningRegressionReport
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    createRallarBlackBoxEnsureGroupRequestId,
-    createRallarBlackBoxRtcRealtimeRecipe,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
-} from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
-import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlCommandEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import { createRallarBlackBoxEnsureGroupRequestId } from '../../../packages/shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    createRallarBlackBoxRtcRealtimeRecipe,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
+} from '../../../packages/shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../../packages/shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
     FULL_STACK_CONTROL_BASE_URL,
     FULL_STACK_CONTROL_WS_URL,
@@ -102,7 +102,7 @@ type ControlEvent = Readonly<{
     payload?: unknown;
 }>;
 
-type ControlRunSnapshot = Readonly<{
+type ControlRunReply = Readonly<{
     agents?: readonly Readonly<{
         agentId?: string;
         connected?: boolean;
@@ -592,10 +592,10 @@ function scriptedControlResult(
 async function fetchControlRun(
     request: APIRequestContext,
     runId: string
-): Promise<ControlRunSnapshot> {
+): Promise<ControlRunReply> {
     const response = await request.get(`${FULL_STACK_CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`);
     expect(response.ok()).toBe(true);
-    return await response.json() as ControlRunSnapshot;
+    return await response.json() as ControlRunReply;
 }
 
 async function enqueueCommand(
@@ -1070,7 +1070,7 @@ async function waitForRealtimePositionPayload(
 }
 
 function retainedRealtimeRecipeEvidence(
-    run: ControlRunSnapshot,
+    run: ControlRunReply,
     distributedRun: DistributedRunSnapshot
 ): Readonly<{
     compactedStartResults: readonly Readonly<{
@@ -1387,7 +1387,7 @@ test.describe('full-stack distributed recipes with simulated agents', () => {
             });
 
             const passed = await runToPassed(request, manifest);
-            expect(passed.targetAgentIds.sort()).toEqual(handles.map((handle) => handle.agentId).sort());
+            expect([...passed.targetAgentIds].sort()).toEqual(handles.map((handle) => handle.agentId).sort());
             expect(passed.rollup.summary.passedParticipants).toBe(3);
             expect(passed.commandLinks.filter((link) => link.phase === 'stage')).toHaveLength(3);
             expect(passed.commandLinks.filter((link) => link.phase === 'start')).toHaveLength(3);
@@ -1771,9 +1771,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             ]);
             const wsArtifact = await fetchDistributedArtifact(request, wsDistributedRunId);
             const wsWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: wsPassed as AppControlDistributedRunSnapshot,
-                controlRun: await fetchControlRun(request, runId) as AppControlRunSnapshot,
-                artifactBundle: wsArtifact as AppControlDistributedRunArtifactBundle,
+                distributedRun: wsPassed as ControlDistributedRunSnapshot,
+                controlRun: await fetchControlRun(request, runId) as ControlRunSnapshot,
+                artifactBundle: wsArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [wsMessageId],
                     failOnDiagnosticSeverities: ['error']
@@ -1848,9 +1848,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             const rtcArtifact = await fetchDistributedArtifact(request, rtcDistributedRunId);
             expect(rtcArtifact.files?.['distributed-run.json']).toContain(rtcMessageId);
             const rtcWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: rtcPassed as AppControlDistributedRunSnapshot,
-                controlRun: await fetchControlRun(request, runId) as AppControlRunSnapshot,
-                artifactBundle: rtcArtifact as AppControlDistributedRunArtifactBundle,
+                distributedRun: rtcPassed as ControlDistributedRunSnapshot,
+                controlRun: await fetchControlRun(request, runId) as ControlRunSnapshot,
+                artifactBundle: rtcArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [rtcMessageId],
                     failOnDiagnosticSeverities: ['error']
@@ -1907,9 +1907,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             const realtimeControlRun = await fetchControlRun(request, runId);
             const realtimeArtifact = await fetchDistributedArtifact(request, realtimeDistributedRunId);
             const realtimeMonitor = deriveDistributedRunMonitor({
-                distributedRun: realtimePassed as AppControlDistributedRunSnapshot,
-                controlRun: realtimeControlRun as AppControlRunSnapshot,
-                artifactBundle: realtimeArtifact as AppControlDistributedRunArtifactBundle
+                distributedRun: realtimePassed as ControlDistributedRunSnapshot,
+                controlRun: realtimeControlRun as ControlRunSnapshot,
+                artifactBundle: realtimeArtifact as ControlDistributedRunArtifactBundle
             });
             const retainedRealtimeEvidence = retainedRealtimeRecipeEvidence(
                 realtimeControlRun,
@@ -1944,9 +1944,9 @@ test.describe('full-stack distributed recipes with live Rallar data', () => {
             expect(realtimeMonitor.compositeDrilldowns).toEqual([]);
 
             const realtimeWarningReport = deriveDistributedRunWarningRegressionReport({
-                distributedRun: realtimePassed as AppControlDistributedRunSnapshot,
-                controlRun: realtimeControlRun as AppControlRunSnapshot,
-                artifactBundle: realtimeArtifact as AppControlDistributedRunArtifactBundle,
+                distributedRun: realtimePassed as ControlDistributedRunSnapshot,
+                controlRun: realtimeControlRun as ControlRunSnapshot,
+                artifactBundle: realtimeArtifact as ControlDistributedRunArtifactBundle,
                 expectation: {
                     messageEvidence: [
                         realtimeDistributedRunId,

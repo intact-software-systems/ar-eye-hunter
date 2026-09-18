@@ -1,14 +1,14 @@
 import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import { distributedRecipeCommandPreview } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-command-preview.ts';
 import { distributedRecipePreflight } from '@shared-test/rallar-bb-test/distributed-recipe-preflight/distributed-recipe-preflight.ts';
-import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
-import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import {
     normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
-} from '../../../../recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { validateSchemaAuthoringValue } from '../../../../schema-authoring.ts';
 import { SchemaCapabilitySummary } from '../../../shared/schema/SchemaAuthoringPanel.tsx';
 import { DistributedRecipePreflightPanel } from '../DistributedRecipePreflightPanel.tsx';

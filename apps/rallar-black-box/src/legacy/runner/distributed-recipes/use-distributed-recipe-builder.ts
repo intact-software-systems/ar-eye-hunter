@@ -8,6 +8,11 @@ import type {
     RallarBlackBoxDistributedTargetPolicyMode,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { useMemo, useState } from 'react';
 import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
@@ -22,11 +27,6 @@ import {
     reconcileDistributedRecipeTargetIds,
     type DistributedRunAgentProgressRow
 } from '../../../distributed-recipes.ts';
-import {
-    RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
-} from '../../../recipe-fixtures.ts';
 import { validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';

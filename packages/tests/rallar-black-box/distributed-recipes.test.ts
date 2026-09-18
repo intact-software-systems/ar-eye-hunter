@@ -1,4 +1,21 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { createRallarBlackBoxEnsureGroupRequestId } from '@shared-test/rallar-bb-test/fixtures/live-rtc-setup.ts';
+import {
+    createRallarBlackBoxProviderParityLiveRecipe,
+    createRallarBlackBoxRtcSmokeRecipe
+} from '@shared-test/rallar-bb-test/fixtures/rtc-live-recipes.ts';
+import {
+    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID
+} from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
+import {
+    createRallarBlackBoxRtcRealtimeRecipe,
+    createRallarBlackBoxRtcRealtimeStabilityRecipe,
+    RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
+    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import {
     defaultDistributedRecipeTargetIds,
@@ -14,19 +31,6 @@ import {
     DISTRIBUTED_RECIPE_CATALOG,
     distributedRecipeMatches
 } from '../../../apps/rallar-black-box/src/legacy/runner/distributed-recipes/distributed-recipe-catalog.ts';
-import {
-    createRallarBlackBoxEnsureGroupRequestId,
-    createRallarBlackBoxProviderParityLiveRecipe,
-    createRallarBlackBoxRtcRealtimeRecipe,
-    createRallarBlackBoxRtcRealtimeStabilityRecipe,
-    createRallarBlackBoxRtcSmokeRecipe,
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_REALTIME_INTERVAL_MS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
-} from '../../../apps/rallar-black-box/src/recipe-fixtures.ts';
 import {
     configuredDistributedRecipeCatalogItem as sharedConfiguredDistributedRecipeCatalogItem,
     createRallarBlackBoxTestRuntime,
