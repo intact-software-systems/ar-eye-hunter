@@ -229,6 +229,9 @@ export function createControlAuthorizedTransport(
             if (cached.kind === 'value') {
                 return { value: cached.value, authorization: 'brokered' };
             }
+            if (cached.kind === 'failure') {
+                throw toControlOperationError(cached.failure);
+            }
             input.endpoint.challenge = cached.challenge;
         }
         brokeredToken = undefined;
@@ -320,21 +323,23 @@ export function createControlAuthorizedTransport(
     };
 }
 
-/** What a retry with the cached brokered token produced: the value, or the next challenge. */
+/**
+ * What a retry with the cached brokered token produced: the value, the next authorization
+ * challenge, or a failure no token answers.
+ */
 type CachedTokenAttempt<Value> =
     | Readonly<{ kind: 'value'; value: Value; }>
-    | Readonly<{ kind: 'challenge'; challenge: ControlHttpRequestFailure; }>;
+    | Readonly<{ kind: 'challenge'; challenge: ControlHttpRequestFailure; }>
+    | Readonly<{ kind: 'failure'; failure: ControlRequestFailure; }>;
 
 function toCachedTokenAttempt<Value>(
     cached: Either<ControlRequestFailure, Value>
 ): CachedTokenAttempt<Value> {
     return cached.fold<CachedTokenAttempt<Value>>(
-        (failure) => {
-            if (!isControlAuthorizationFailure(failure)) {
-                throw toControlOperationError(failure);
-            }
-            return { kind: 'challenge', challenge: failure };
-        },
+        (failure) =>
+            isControlAuthorizationFailure(failure)
+                ? { kind: 'challenge', challenge: failure }
+                : { kind: 'failure', failure },
         (value) => ({ kind: 'value', value })
     );
 }
