@@ -1,4 +1,5 @@
 import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useRef } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { createAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
@@ -168,7 +169,7 @@ export function useAnalyzeOperations(
                     failAnalyzeWorkspaceOperation(
                         previous,
                         authority,
-                        error
+                        toError(error)
                     )
                 );
                 pendingRef.current = undefined;

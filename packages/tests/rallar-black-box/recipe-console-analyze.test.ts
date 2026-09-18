@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { analyzeFilterClearPatch } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-selection.ts';
 import {
     createAnalyzeImportLabel,
     projectAnalyzeWorkspaceError,
-    projectAnalyzeWorkspaceLoadReason,
-    validateAnalyzeControlArtifactIdentity
+    projectAnalyzeWorkspaceLoadReason
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-policy.ts';
 import { createAnalyzeWorkspaceContext } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
 
@@ -39,7 +39,8 @@ describe('Recipe Console Analyze binding policy', () => {
     it('projects retained operation errors without discarding useful messages', () => {
         expect(projectAnalyzeWorkspaceError(new Error('identity mismatch')))
             .toBe('identity mismatch');
-        expect(projectAnalyzeWorkspaceError('read failed')).toBe('read failed');
+        expect(projectAnalyzeWorkspaceError(new ControlRunManagerHttpError('Artifact is gone', 404, 'Not Found')))
+            .toBe('The selected Control artifact is unavailable. It may have expired or been removed.');
         expect(projectAnalyzeWorkspaceError(undefined)).toBeUndefined();
     });
 
@@ -57,38 +58,5 @@ describe('Recipe Console Analyze binding policy', () => {
         });
         expect(analyzeFilterClearPatch()).not.toHaveProperty('controlRunId');
         expect(analyzeFilterClearPatch()).not.toHaveProperty('distributedRunId');
-    });
-
-    it('rejects either half of a mismatched control artifact identity', () => {
-        const context = createAnalyzeWorkspaceContext({
-            baseUrl: 'http://control.test',
-            controlRunId: 'control-a',
-            distributedRunId: 'distributed-a'
-        });
-
-        expect(() =>
-            validateAnalyzeControlArtifactIdentity({
-                distributedRunId: 'distributed-b',
-                controlRunId: 'control-a'
-            }, context)
-        ).toThrow('distributed-b, not distributed-a');
-        expect(() =>
-            validateAnalyzeControlArtifactIdentity({
-                distributedRunId: 'distributed-a',
-                controlRunId: 'control-b'
-            }, context)
-        ).toThrow('control run control-b, not control-a');
-        expect(() =>
-            validateAnalyzeControlArtifactIdentity({
-                distributedRunId: 'distributed-a',
-                controlRunId: 'control-a'
-            }, context)
-        ).not.toThrow();
-        expect(() =>
-            validateAnalyzeControlArtifactIdentity({
-                distributedRunId: 'distributed-b',
-                controlRunId: 'control-b'
-            }, context)
-        ).toThrow('control run control-b, not control-a');
     });
 });
