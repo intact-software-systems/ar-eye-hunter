@@ -12,17 +12,17 @@ import {
     type AnalyzeTransferFileLike
 } from './analyze-file-contract.ts';
 import {
-    acceptedFileMetadata,
-    fileTooLarge,
-    prepareAnalyzeArtifactFileIntake,
-    readFailure,
-    totalTooLarge
+    computeAnalyzeArtifactFileIntake,
+    createFileTooLargeError,
+    createReadFailureError,
+    createTotalTooLargeError,
+    toAcceptedFileMetadata
 } from './analyze-file-intake-policy.ts';
 
 export async function readAnalyzeArtifactFiles(
     selectedFiles: readonly AnalyzeFileLike[]
 ): Promise<AnalyzeArtifactFileIntake> {
-    const prepared = prepareAnalyzeArtifactFileIntake(selectedFiles);
+    const prepared = computeAnalyzeArtifactFileIntake(selectedFiles);
     const texts: [string, string][] = [];
     const acceptedFiles: AnalyzeAcceptedFile[] = [];
     for (const selected of prepared.accepted) {
@@ -34,11 +34,11 @@ export async function readAnalyzeArtifactFiles(
             }
         }
         catch (error) {
-            throw readFailure(selected.basename, error);
+            throw createReadFailureError(selected.basename, error);
         }
 
         texts.push([selected.basename, contents]);
-        acceptedFiles.push(acceptedFileMetadata(selected));
+        acceptedFiles.push(toAcceptedFileMetadata(selected));
     }
 
     return {
@@ -52,7 +52,7 @@ export async function readAnalyzeArtifactFiles(
 export async function readAnalyzeArtifactTransferFiles(
     selectedFiles: readonly AnalyzeTransferFileLike[]
 ): Promise<AnalyzeArtifactTransferIntake> {
-    const prepared = prepareAnalyzeArtifactFileIntake(selectedFiles);
+    const prepared = computeAnalyzeArtifactFileIntake(selectedFiles);
     const files: AnalyzeTransferFile[] = [];
     const acceptedFiles: AnalyzeAcceptedFile[] = [];
     const transferList: ArrayBuffer[] = [];
@@ -75,16 +75,16 @@ export async function readAnalyzeArtifactTransferFiles(
             }
         }
         catch (error) {
-            throw readFailure(selected.basename, error);
+            throw createReadFailureError(selected.basename, error);
         }
 
         const actualSize = bytes.byteLength;
         if (actualSize > ANALYZE_ARTIFACT_MAX_FILE_BYTES) {
-            throw fileTooLarge(selected.basename, actualSize);
+            throw createFileTooLargeError(selected.basename, actualSize);
         }
         totalActualBytes += actualSize;
         if (totalActualBytes > ANALYZE_ARTIFACT_MAX_TOTAL_BYTES) {
-            throw totalTooLarge(totalActualBytes);
+            throw createTotalTooLargeError(totalActualBytes);
         }
         if (actualSize !== selected.file.size) {
             throw new AnalyzeFileIntakeError(
@@ -96,7 +96,7 @@ export async function readAnalyzeArtifactTransferFiles(
         seenBuffers.add(bytes);
         files.push({ name: selected.basename, bytes });
         transferList.push(bytes);
-        acceptedFiles.push(acceptedFileMetadata(selected));
+        acceptedFiles.push(toAcceptedFileMetadata(selected));
     }
 
     return {

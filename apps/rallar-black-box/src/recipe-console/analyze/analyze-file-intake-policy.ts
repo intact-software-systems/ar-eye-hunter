@@ -6,10 +6,10 @@ import {
     ANALYZE_ARTIFACT_MAX_TOTAL_BYTES,
     AnalyzeFileIntakeError,
     type AnalyzeAcceptedFile,
+    type AnalyzeArtifactFileIntakePlan,
     type AnalyzeIgnoredFile,
     type AnalyzeSelectedFileMetadata,
-    type NormalizedSelectedFile,
-    type PreparedAnalyzeArtifactFileIntake
+    type NormalizedSelectedFile
 } from './analyze-file-contract.ts';
 
 const AUTHORITATIVE_BASENAMES = new Set<string>(
@@ -20,9 +20,9 @@ const UNSAFE_PATH_CHARACTER = /[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/u
 const UNSAFE_WINDOWS_CHARACTER = /[<>:"|?*]/u;
 const ENCODED_PATH_CHARACTER = /%(?:2e|2f|5c)/iu;
 
-export function prepareAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFileMetadata>(
+export function computeAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFileMetadata>(
     selectedFiles: readonly TFile[]
-): PreparedAnalyzeArtifactFileIntake<TFile> {
+): AnalyzeArtifactFileIntakePlan<TFile> {
     if (selectedFiles.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT) {
         throw new AnalyzeFileIntakeError(
             'too-many-files',
@@ -42,13 +42,13 @@ export function prepareAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFi
             );
         }
         if (size > ANALYZE_ARTIFACT_MAX_FILE_BYTES) {
-            throw fileTooLarge(selected.basename, size);
+            throw createFileTooLargeError(selected.basename, size);
         }
         totalSelectedBytes += size;
     }
 
     if (totalSelectedBytes > ANALYZE_ARTIFACT_MAX_TOTAL_BYTES) {
-        throw totalTooLarge(totalSelectedBytes);
+        throw createTotalTooLargeError(totalSelectedBytes);
     }
 
     const accepted = normalizedFiles
@@ -78,7 +78,7 @@ export function prepareAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFi
     return { accepted, ignoredFiles, totalSelectedBytes };
 }
 
-export function acceptedFileMetadata<TFile extends AnalyzeSelectedFileMetadata>(
+export function toAcceptedFileMetadata<TFile extends AnalyzeSelectedFileMetadata>(
     selected: NormalizedSelectedFile<TFile>
 ): AnalyzeAcceptedFile {
     return {
@@ -92,21 +92,21 @@ export function acceptedFileMetadata<TFile extends AnalyzeSelectedFileMetadata>(
     };
 }
 
-export function fileTooLarge(basename: string, size: number): AnalyzeFileIntakeError {
+export function createFileTooLargeError(basename: string, size: number): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'file-too-large',
         `File "${basename}" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${size} bytes).`
     );
 }
 
-export function totalTooLarge(totalBytes: number): AnalyzeFileIntakeError {
+export function createTotalTooLargeError(totalBytes: number): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'total-too-large',
         `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${totalBytes} bytes).`
     );
 }
 
-export function readFailure(basename: string, error: unknown): AnalyzeFileIntakeError {
+export function createReadFailureError(basename: string, error: unknown): AnalyzeFileIntakeError {
     return new AnalyzeFileIntakeError(
         'read-failed',
         `Could not read "${basename}": ${toReadFailureReason(error)}. No files were imported.`

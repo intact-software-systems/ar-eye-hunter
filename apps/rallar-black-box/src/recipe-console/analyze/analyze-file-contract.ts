@@ -107,7 +107,7 @@ export type NormalizedSelectedFile<TFile extends AnalyzeSelectedFileMetadata> = 
     sourcePath: string;
 }>;
 
-export type PreparedAnalyzeArtifactFileIntake<TFile extends AnalyzeSelectedFileMetadata> = Readonly<{
+export type AnalyzeArtifactFileIntakePlan<TFile extends AnalyzeSelectedFileMetadata> = Readonly<{
     accepted: readonly NormalizedSelectedFile<TFile>[];
     ignoredFiles: readonly AnalyzeIgnoredFile[];
     totalSelectedBytes: number;

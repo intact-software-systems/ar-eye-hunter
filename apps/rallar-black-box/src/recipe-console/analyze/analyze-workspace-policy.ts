@@ -16,7 +16,7 @@ export function createAnalyzeInterruptedError(message: string): Error {
     return error;
 }
 
-export function projectAnalyzeWorkspaceError(
+export function toAnalyzeWorkspaceErrorMessage(
     error: Error | undefined
 ): string | undefined {
     if (error === undefined) {
@@ -28,7 +28,7 @@ export function projectAnalyzeWorkspaceError(
     return error.message;
 }
 
-export function projectAnalyzeWorkspaceLoadReason(
+export function resolveAnalyzeWorkspaceLoadReason(
     context: AnalyzeWorkspaceContext | undefined,
     execution: RecipeConsoleControlConnection['execution'],
     busyAction: AnalyzeWorkspaceAction | undefined

@@ -3,8 +3,8 @@ import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/c
 import { analyzeFilterClearPatch } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-selection.ts';
 import {
     createAnalyzeImportLabel,
-    projectAnalyzeWorkspaceError,
-    projectAnalyzeWorkspaceLoadReason
+    resolveAnalyzeWorkspaceLoadReason,
+    toAnalyzeWorkspaceErrorMessage
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-policy.ts';
 import { createAnalyzeWorkspaceContext } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
 
@@ -24,24 +24,24 @@ describe('Recipe Console Analyze binding policy', () => {
             baseUrl: 'http://control.test',
             distributedRunId: 'distributed-1'
         });
-        const execution = {} as Parameters<typeof projectAnalyzeWorkspaceLoadReason>[1];
+        const execution = {} as Parameters<typeof resolveAnalyzeWorkspaceLoadReason>[1];
 
-        expect(projectAnalyzeWorkspaceLoadReason(undefined, execution, undefined))
+        expect(resolveAnalyzeWorkspaceLoadReason(undefined, execution, undefined))
             .toContain('Select a distributed run');
-        expect(projectAnalyzeWorkspaceLoadReason(context, undefined, undefined))
+        expect(resolveAnalyzeWorkspaceLoadReason(context, undefined, undefined))
             .toContain('cannot load artifacts');
-        expect(projectAnalyzeWorkspaceLoadReason(context, execution, 'load-control'))
+        expect(resolveAnalyzeWorkspaceLoadReason(context, execution, 'load-control'))
             .toContain('still running');
-        expect(projectAnalyzeWorkspaceLoadReason(context, execution, undefined))
+        expect(resolveAnalyzeWorkspaceLoadReason(context, execution, undefined))
             .toBeUndefined();
     });
 
     it('projects retained operation errors without discarding useful messages', () => {
-        expect(projectAnalyzeWorkspaceError(new Error('identity mismatch')))
+        expect(toAnalyzeWorkspaceErrorMessage(new Error('identity mismatch')))
             .toBe('identity mismatch');
-        expect(projectAnalyzeWorkspaceError(new ControlRunManagerHttpError('Artifact is gone', 404, 'Not Found')))
+        expect(toAnalyzeWorkspaceErrorMessage(new ControlRunManagerHttpError('Artifact is gone', 404, 'Not Found')))
             .toBe('The selected Control artifact is unavailable. It may have expired or been removed.');
-        expect(projectAnalyzeWorkspaceError(undefined)).toBeUndefined();
+        expect(toAnalyzeWorkspaceErrorMessage(undefined)).toBeUndefined();
     });
 
     it('clears only Analyze evidence filters and keeps run identity intact', () => {
