@@ -142,8 +142,8 @@ function expectControlValue<Value>(outcome: Either<ControlRequestFailure, Value>
     return value;
 }
 
-function expectControlFailure(
-    outcome: Either<ControlRequestFailure, unknown>
+function expectControlFailure<Value>(
+    outcome: Either<ControlRequestFailure, Value>
 ): ControlRequestFailure {
     const failure = outcome.left;
     if (failure === undefined) {
