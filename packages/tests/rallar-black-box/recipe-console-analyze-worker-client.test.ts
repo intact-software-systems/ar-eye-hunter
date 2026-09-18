@@ -756,7 +756,8 @@ function completeResponse(
             }
         },
         initialWindow: emptyWindow(),
-        telemetry: telemetry()
+        telemetry: telemetry(),
+        controlIdentityValidated: false
     };
 }
 

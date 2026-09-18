@@ -208,7 +208,7 @@ export function createAnalyzeWorkerRuntime(
             ) {
                 throw new AnalyzeControlEnvelopeIdentityError();
             }
-            let controlIdentityValidated: true | undefined;
+            let controlIdentityValidated = false;
             if (candidate.artifact.source === 'control') {
                 const expected = candidate.artifact.expectedControlIdentity;
                 if (
@@ -265,9 +265,7 @@ export function createAnalyzeWorkerRuntime(
                         : {}),
                     exportBytes,
                     telemetry,
-                    ...(controlIdentityValidated
-                        ? { controlIdentityValidated }
-                        : {})
+                    controlIdentityValidated
                 },
                 transfer: [exportBytes]
             });
