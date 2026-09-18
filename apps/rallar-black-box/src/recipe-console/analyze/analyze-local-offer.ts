@@ -4,7 +4,7 @@ import {
     type AnalyzeFileLike,
     type AnalyzeTransferFileLike
 } from './analyze-file-boundary.ts';
-import type { AnalyzeWorkerArtifactOffer } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerLocalFilesOffer } from './analyze-worker-contract.ts';
 import { createAnalyzeImportLabel } from './analyze-workspace-policy.ts';
 
 export type AnalyzeImportFile = AnalyzeFileLike & Partial<AnalyzeTransferFileLike>;
@@ -12,7 +12,7 @@ export type AnalyzeImportFile = AnalyzeFileLike & Partial<AnalyzeTransferFileLik
 export async function createAnalyzeLocalOffer(
     files: readonly AnalyzeImportFile[],
     generatedAtEpochMs: number
-): Promise<AnalyzeWorkerArtifactOffer> {
+): Promise<AnalyzeWorkerLocalFilesOffer> {
     if (files.every((file) => typeof file.arrayBuffer === 'function')) {
         const intake = await readAnalyzeArtifactTransferFiles(
             files as readonly AnalyzeTransferFileLike[]
@@ -44,7 +44,7 @@ export async function createAnalyzeLocalOffer(
 
 function encodeTransferFiles(
     files: Readonly<Record<string, string | undefined>>
-): AnalyzeWorkerArtifactOffer['files'] {
+): AnalyzeWorkerLocalFilesOffer['files'] {
     return Object.entries(files)
         .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
         .sort(([left], [right]) => left.localeCompare(right))

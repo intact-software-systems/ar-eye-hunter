@@ -183,15 +183,16 @@ export function createAnalyzeWorkerRuntime(
         startedOperationGeneration = operationGeneration;
         const startedAt = now();
         try {
+            const offer = candidate.artifact;
             const parseStartedAt = now();
-            const decoded = decodeAnalyzeWorkerArtifactOffer(candidate.artifact);
+            const decoded = decodeAnalyzeWorkerArtifactOffer(offer);
             const prepared = prepareAnalyzeArtifactModel({
                 files: decoded.files,
-                source: candidate.artifact.source,
-                label: candidate.artifact.label,
+                source: offer.source,
+                label: offer.label,
                 generatedAtEpochMs: decoded.generatedAtEpochMs,
                 artifactSchemaVersion: decoded.artifactSchemaVersion,
-                ignoredFiles: candidate.artifact.ignoredFiles
+                ignoredFiles: offer.source === 'local-files' ? offer.ignoredFiles : []
             });
             const parseDurationMs = analyzeWorkerDuration(now(), parseStartedAt);
             const collections = await computeDistributedArtifactEvidenceCollections(
@@ -209,12 +210,11 @@ export function createAnalyzeWorkerRuntime(
                 throw new AnalyzeControlEnvelopeIdentityError();
             }
             let controlIdentityValidated = false;
-            if (candidate.artifact.source === 'control') {
-                const expected = candidate.artifact.expectedControlIdentity;
+            if (offer.source === 'control') {
                 if (
-                    !expected || !await analyzeControlIdentityMatchesDigest(
+                    !await analyzeControlIdentityMatchesDigest(
                         model.identity,
-                        expected
+                        offer.expectedControlIdentity
                     )
                 ) {
                     throw new AnalyzeControlEnvelopeIdentityError();

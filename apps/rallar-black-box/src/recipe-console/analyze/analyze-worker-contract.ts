@@ -2,7 +2,7 @@ import type {
     DistributedArtifactEvidenceEntry,
     DistributedArtifactEvidenceWindowQuery
 } from '@shared-test/rallar-bb-test/mod.ts';
-import type { AnalyzeArtifactIgnoredFile, AnalyzeArtifactSource } from './analyze-artifact-model.ts';
+import type { AnalyzeArtifactIgnoredFile } from './analyze-artifact-model.ts';
 import type { AnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import type {
     AnalyzeArtifactProjection,
@@ -17,21 +17,24 @@ export type AnalyzeWorkerTransferFile = Readonly<{
     bytes: ArrayBuffer;
 }>;
 
-export type AnalyzeWorkerArtifactOffer = Readonly<{
-    source: AnalyzeArtifactSource;
+export type AnalyzeWorkerLocalFilesOffer = Readonly<{
+    source: 'local-files';
     label: string;
-    /** Absent when the offered artifact records no generation time of its own. */
-    generatedAtEpochMs?: number;
-    /** Absent when the offered artifact declares no schema version. */
-    artifactSchemaVersion?: number;
+    generatedAtEpochMs: number;
     files: readonly AnalyzeWorkerTransferFile[];
-    /** Absent unless the offer carries a raw Control response envelope instead of loose files. */
-    controlEnvelope?: ArrayBuffer;
-    /** Absent unless a Control identity digest must match before the analysis is accepted. */
-    expectedControlIdentity?: AnalyzeControlIdentityDigest;
-    /** Absent when the offer's producer records no ignored-file list. */
-    ignoredFiles?: readonly AnalyzeArtifactIgnoredFile[];
+    ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
 }>;
+
+export type AnalyzeWorkerControlOffer = Readonly<{
+    source: 'control';
+    label: string;
+    controlEnvelope: ArrayBuffer;
+    expectedControlIdentity: AnalyzeControlIdentityDigest;
+}>;
+
+export type AnalyzeWorkerArtifactOffer =
+    | AnalyzeWorkerLocalFilesOffer
+    | AnalyzeWorkerControlOffer;
 
 export type AnalyzeWorkerRequest =
     | Readonly<{
@@ -174,9 +177,15 @@ export type AnalyzeWorkerResponse =
     }>
     | Readonly<{
         type: 'failed';
-        /** Absent when the failure belongs to an RPC request rather than to an artifact offer. */
+        /**
+         * Absent when the failure belongs to an RPC request, and when a message the worker
+         * rejected as invalid carries no generation it could be attributed to.
+         */
         operationGeneration?: number;
-        /** Absent when the failure belongs to an artifact offer rather than to an RPC request. */
+        /**
+         * Absent when the failure belongs to an artifact offer, and when a message the worker
+         * rejected as invalid carries no request id it could be attributed to.
+         */
         requestId?: number;
         error: AnalyzeWorkerErrorProjection;
     }>

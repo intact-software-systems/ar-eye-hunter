@@ -4,7 +4,10 @@ import {
     ANALYZE_ARTIFACT_MAX_FILE_COUNT,
     ANALYZE_ARTIFACT_MAX_TOTAL_BYTES
 } from './analyze-file-boundary.ts';
-import type { AnalyzeWorkerArtifactOffer } from './analyze-worker-contract.ts';
+import type {
+    AnalyzeWorkerArtifactOffer,
+    AnalyzeWorkerLocalFilesOffer
+} from './analyze-worker-contract.ts';
 
 const ANALYZE_CONTROL_ENVELOPE_MAX_BYTES = 64 * 1_024 * 1_024;
 
@@ -12,17 +15,24 @@ export type AnalyzeDecodedArtifactOffer = Readonly<{
     files: Readonly<Record<string, string>>;
     sourceFileCount: number;
     sourceBytes: number;
-    generatedAtEpochMs?: number;
+    generatedAtEpochMs: number;
+    /** Absent for a loose-file offer; only a Control envelope declares a schema version. */
     artifactSchemaVersion?: number;
+    /** Absent for a loose-file offer; only a Control envelope names the run it belongs to. */
     declaredDistributedRunId?: string;
 }>;
 
 export function decodeAnalyzeWorkerArtifactOffer(
     artifact: AnalyzeWorkerArtifactOffer
 ): AnalyzeDecodedArtifactOffer {
-    if (artifact.controlEnvelope) {
-        return decodeControlEnvelope(artifact.controlEnvelope);
-    }
+    return artifact.source === 'control'
+        ? decodeControlEnvelope(artifact.controlEnvelope)
+        : decodeTransferFiles(artifact);
+}
+
+function decodeTransferFiles(
+    artifact: AnalyzeWorkerLocalFilesOffer
+): AnalyzeDecodedArtifactOffer {
     if (artifact.files.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT) {
         throw new Error('too-many-transfer-files');
     }
@@ -46,8 +56,7 @@ export function decodeAnalyzeWorkerArtifactOffer(
         files: decoded,
         sourceFileCount: artifact.files.length,
         sourceBytes,
-        generatedAtEpochMs: artifact.generatedAtEpochMs,
-        artifactSchemaVersion: artifact.artifactSchemaVersion
+        generatedAtEpochMs: artifact.generatedAtEpochMs
     };
 }
 

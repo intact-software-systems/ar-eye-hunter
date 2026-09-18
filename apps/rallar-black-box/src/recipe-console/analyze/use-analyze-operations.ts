@@ -231,7 +231,6 @@ export function useAnalyzeOperations(
                     `Control artifact ${context.distributedRunId}`,
                     MAX_METADATA_BYTES
                 ),
-                files: [],
                 controlEnvelope: bundle.bytes,
                 expectedControlIdentity
             };

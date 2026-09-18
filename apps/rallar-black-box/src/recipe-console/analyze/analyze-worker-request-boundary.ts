@@ -19,28 +19,38 @@ const ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES = 64 * 1_024 * 1_024;
 export function isAnalyzeWorkerArtifactOffer(
     value: unknown
 ): value is AnalyzeWorkerArtifactOffer {
+    if (!isRecord(value) || !boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES)) {
+        return false;
+    }
+    if (value.source === 'control') {
+        return isControlOffer(value);
+    }
+    return value.source === 'local-files' && isLocalFilesOffer(value);
+}
+
+function isControlOffer(value: Record<string, unknown>): boolean {
+    return onlyKeys(value, [
+        'source',
+        'label',
+        'controlEnvelope',
+        'expectedControlIdentity'
+    ]) && value.controlEnvelope instanceof ArrayBuffer &&
+        value.controlEnvelope.byteLength <= ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES &&
+        isAnalyzeControlIdentityDigest(value.expectedControlIdentity);
+}
+
+function isLocalFilesOffer(value: Record<string, unknown>): boolean {
     if (
-        !isRecord(value) || !onlyKeys(value, [
+        !onlyKeys(value, [
             'source',
             'label',
             'generatedAtEpochMs',
-            'artifactSchemaVersion',
             'files',
-            'controlEnvelope',
-            'ignoredFiles',
-            'expectedControlIdentity'
-        ])
-    ) {
-        return false;
-    }
-    if (
-        (value.source !== 'local-files' && value.source !== 'control') ||
-        !boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES) ||
-        !optionalFiniteNumber(value.generatedAtEpochMs) ||
-        !optionalSafeInteger(value.artifactSchemaVersion) ||
+            'ignoredFiles'
+        ]) || !finiteNumber(value.generatedAtEpochMs) ||
         !Array.isArray(value.files) ||
         value.files.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT ||
-        !validIgnoredFiles(value.ignoredFiles)
+        !isIgnoredFileList(value.ignoredFiles)
     ) {
         return false;
     }
@@ -59,14 +69,7 @@ export function isAnalyzeWorkerArtifactOffer(
             return false;
         }
     }
-    if (value.source === 'control') {
-        return value.files.length === 0 &&
-            value.controlEnvelope instanceof ArrayBuffer &&
-            value.controlEnvelope.byteLength <= ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES &&
-            isAnalyzeControlIdentityDigest(value.expectedControlIdentity);
-    }
-    return value.controlEnvelope === undefined &&
-        value.expectedControlIdentity === undefined;
+    return true;
 }
 
 export function isAnalyzeWorkerRequest(value: unknown): value is AnalyzeWorkerRequest {
@@ -215,14 +218,15 @@ function evidenceQuery(value: unknown): boolean {
         numberFields.every((key) => optionalFiniteNumber(value[key]));
 }
 
-function validIgnoredFiles(value: unknown): boolean {
-    return value === undefined || (Array.isArray(value) &&
-        value.length <= ANALYZE_ARTIFACT_MAX_FILE_COUNT && value.every((file) =>
+function isIgnoredFileList(value: unknown): boolean {
+    return Array.isArray(value) &&
+        value.length <= ANALYZE_ARTIFACT_MAX_FILE_COUNT &&
+        value.every((file) =>
             isRecord(file) && onlyKeys(file, ['basename', 'sourcePath', 'reason']) &&
             boundedString(file.basename, ANALYZE_WORKER_MAX_FILE_NAME_BYTES) &&
             boundedString(file.sourcePath, ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES) &&
             boundedString(file.reason, ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES)
-        ));
+        );
 }
 
 function boundedString(value: unknown, maxBytes: number): value is string {
@@ -251,10 +255,10 @@ function positiveSafeInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-function optionalFiniteNumber(value: unknown): value is number | undefined {
-    return value === undefined || (typeof value === 'number' && Number.isFinite(value));
+function finiteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
 }
 
-function optionalSafeInteger(value: unknown): value is number | undefined {
-    return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value));
+function optionalFiniteNumber(value: unknown): value is number | undefined {
+    return value === undefined || finiteNumber(value);
 }
