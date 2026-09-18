@@ -1,5 +1,6 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { lazy, Suspense, type ReactNode } from 'react';
+import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
 import type { AdvancedWorkspaceProps } from '../advanced/advanced-workspace-contract.ts';
 import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import type {
@@ -8,7 +9,7 @@ import type {
 } from '../control/control-api.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { FleetWorkspaceProps } from '../fleet/fleet-workspace-contract.ts';
-import type { RecipeConsoleUrlState, RecipeConsoleView } from '../routing/url-state-contract.ts';
+import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { StatePanel } from '../ui/StatePanel.tsx';
 
 const TuneWorkspace = lazy(() => import('../tune/TuneWorkspace.tsx'));
@@ -48,7 +49,7 @@ export function RecipeConsoleActiveWork({
     fleet: FleetWorkspaceProps;
     monitorWork: ReactNode;
     tune: TuneWorkInput;
-    view: RecipeConsoleView;
+    view: DiagnosticBridgeSourceView;
 }>) {
     switch (view) {
         case 'execute':

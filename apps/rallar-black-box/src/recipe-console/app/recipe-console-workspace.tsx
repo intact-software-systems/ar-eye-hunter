@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
 import { AnalyzeWorkspace } from '../analyze/AnalyzeWorkspace.tsx';
 import { useAnalyzeWorkspace } from '../analyze/use-analyze-workspace.ts';
 import { ControlCommandContext } from '../control/ControlCommandContext.tsx';
@@ -6,7 +7,6 @@ import { useRecipeConsoleControlWorkspace } from '../control/use-control-workspa
 import { ExecuteWorkspace } from '../execute/execute-workspace.tsx';
 import { recipeConsoleMonitorControlRunSelectionPatch } from '../monitor/monitor-selection.ts';
 import { MonitorWorkspace } from '../monitor/MonitorWorkspace.tsx';
-import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { useRecipeConsoleUrlState } from '../routing/use-recipe-console-url-state.ts';
 import type { RecipeConsoleAccountSettings } from '../shell/AccountSettingsPanel.tsx';
 import { RecipeConsoleShell } from '../shell/RecipeConsoleShell.tsx';
@@ -144,7 +144,7 @@ export function RecipeConsoleWorkspace({ accountSettings }: Readonly<{
                     presentation.inspector === 'rail')
         ), [presentation.inspector, urlState.state.view]);
 
-    function navigate(view: RecipeConsoleView): void {
+    function navigate(view: DiagnosticBridgeSourceView): void {
         urlState.navigate({ view });
         setInspectorContent(undefined);
         setSelectionLabel(undefined);

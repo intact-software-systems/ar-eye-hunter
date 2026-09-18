@@ -1,7 +1,7 @@
 import type { DistributedRunRuntimeDiagnosticRow } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
+import type { DiagnosticBridgeTransport } from '../../app/diagnostic-bridge-url-contract.ts';
 import type {
     RecipeConsoleDiagnosticSeverity,
-    RecipeConsoleTransport,
     RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
@@ -24,7 +24,7 @@ export function MonitorDiagnostics({
 }: Readonly<{
     model: MonitorWorkspaceModel;
     severity?: RecipeConsoleDiagnosticSeverity;
-    transport?: RecipeConsoleTransport;
+    transport?: DiagnosticBridgeTransport;
     selected?: MonitorEvidenceSelection;
     onFilter(patch: Partial<RecipeConsoleUrlState>): void;
     onInspect(
@@ -98,7 +98,7 @@ export function MonitorDiagnostics({
                         value={transport ?? ''}
                         onChange={(event) =>
                             onFilter({
-                                transport: valueOrUndefined(event.target.value) as RecipeConsoleTransport | undefined
+                                transport: valueOrUndefined(event.target.value) as DiagnosticBridgeTransport | undefined
                             })}
                     >
                         <option value="">All transports</option>
@@ -197,7 +197,7 @@ function valueOrUndefined(value: string): string | undefined {
 
 function matchesTransport(
     row: DistributedRunRuntimeDiagnosticRow,
-    transport: RecipeConsoleTransport | undefined
+    transport: DiagnosticBridgeTransport | undefined
 ): boolean {
     if (!transport) {
         return true;

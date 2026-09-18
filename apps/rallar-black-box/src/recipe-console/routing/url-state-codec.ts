@@ -1,9 +1,8 @@
+import { RECIPE_CONSOLE_OWNED_URL_KEYS } from './url-key-policy.ts';
 import {
-    LEGACY_APP_URL_ALIAS_KEYS,
     RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES,
     RECIPE_CONSOLE_FAILURE_CATEGORIES,
     RECIPE_CONSOLE_FLEET_MAP_LAYERS,
-    RECIPE_CONSOLE_OWNED_URL_KEYS,
     RECIPE_CONSOLE_RUN_STATUSES,
     RECIPE_CONSOLE_TIMING_METRICS,
     RECIPE_CONSOLE_TRANSPORTS,
@@ -37,9 +36,6 @@ export function serializeRecipeConsoleUrl(
     const params = new URLSearchParams(baseSearch);
     deleteSensitiveUrlKeys(params);
     for (const key of RECIPE_CONSOLE_OWNED_URL_KEYS) {
-        params.delete(key);
-    }
-    for (const key of LEGACY_APP_URL_ALIAS_KEYS) {
         params.delete(key);
     }
 

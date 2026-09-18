@@ -1,5 +1,6 @@
 import { useCallback, useRef, type ReactNode, type RefObject } from 'react';
-import type { RecipeConsoleUrlIssue, RecipeConsoleView } from '../routing/url-state-contract.ts';
+import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
+import type { RecipeConsoleUrlIssue } from '../routing/url-state-contract.ts';
 import type { OperationalStatus } from '../ui/StatusMark.tsx';
 import type { AccountSettingsPanelProps } from './AccountSettingsPanel.tsx';
 import { InspectorHost } from './InspectorHost.tsx';
@@ -10,12 +11,12 @@ import { useRecipeConsolePresentation } from './use-responsive-presentation.ts';
 
 export type RecipeConsoleShellProps = Readonly<{
     accountSettings: AccountSettingsPanelProps;
-    currentView: RecipeConsoleView;
+    currentView: DiagnosticBridgeSourceView;
     urlIssues: readonly RecipeConsoleUrlIssue[];
     commandBarContext: ReactNode;
     commandBarStatus: OperationalStatus;
     commandBarStatusLabel: string;
-    onNavigate(view: RecipeConsoleView): void;
+    onNavigate(view: DiagnosticBridgeSourceView): void;
     onCopyLink(): void;
     onRefresh(): void;
     workContent: ReactNode;

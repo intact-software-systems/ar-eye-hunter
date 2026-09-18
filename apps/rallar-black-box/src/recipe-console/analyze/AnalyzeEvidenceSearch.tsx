@@ -1,10 +1,10 @@
 import type { DistributedArtifactEvidenceEntry } from '@shared-test/rallar-bb-test/mod.ts';
 import { useState, type FormEvent } from 'react';
+import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from '../routing/url-key-policy.ts';
 import {
     RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES,
     RECIPE_CONSOLE_RUN_STATUSES,
     RECIPE_CONSOLE_TRANSPORTS,
-    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
     type RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
 import {

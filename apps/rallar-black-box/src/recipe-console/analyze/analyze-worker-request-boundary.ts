@@ -1,4 +1,4 @@
-import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from '../routing/url-state-contract.ts';
+import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from '../routing/url-key-policy.ts';
 import { isAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import {
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,

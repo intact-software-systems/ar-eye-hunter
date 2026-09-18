@@ -1,8 +1,10 @@
 import {
-    RECIPE_CONSOLE_FLEET_MAP_LAYERS,
     RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS,
     RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
-    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
+    RECIPE_CONSOLE_URL_STRING_MAX_BYTES
+} from './url-key-policy.ts';
+import {
+    RECIPE_CONSOLE_FLEET_MAP_LAYERS,
     type RecipeConsoleFleetMapLayer,
     type RecipeConsoleUrlIssue,
     type RecipeConsoleUrlState

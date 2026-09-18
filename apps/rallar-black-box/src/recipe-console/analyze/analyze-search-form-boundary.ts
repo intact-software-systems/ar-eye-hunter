@@ -1,4 +1,5 @@
-import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES, type RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from '../routing/url-key-policy.ts';
+import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { isRecipeConsoleUrlString } from '../routing/url-state-helpers.ts';
 
 export const ANALYZE_SEARCH_ERROR_ID = 'analyze-search-form-error';

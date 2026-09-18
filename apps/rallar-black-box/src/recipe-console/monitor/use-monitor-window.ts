@@ -1,4 +1,5 @@
-import type { RecipeConsoleDiagnosticSeverity, RecipeConsoleTransport } from '../routing/url-state-contract.ts';
+import type { DiagnosticBridgeTransport } from '../../app/diagnostic-bridge-url-contract.ts';
+import type { RecipeConsoleDiagnosticSeverity } from '../routing/url-state-contract.ts';
 import { useExplicitWindow, useExplicitWindowFocusRecovery } from '../ui/use-explicit-window.ts';
 import {
     createMonitorWindowFingerprint,
@@ -14,7 +15,7 @@ export function useMonitorWindow(
         section: MonitorWindowSection;
         total: number;
         diagnosticSeverity?: RecipeConsoleDiagnosticSeverity;
-        transport?: RecipeConsoleTransport;
+        transport?: DiagnosticBridgeTransport;
     }>
 ) {
     const fingerprint = createMonitorWindowFingerprint(input);

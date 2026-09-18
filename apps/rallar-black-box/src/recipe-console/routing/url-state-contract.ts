@@ -2,13 +2,11 @@ import { RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES } from '@shared-test/ra
 import {
     DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
     DIAGNOSTIC_BRIDGE_TRANSPORTS,
-    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
     type DiagnosticBridgeSourceView,
     type DiagnosticBridgeTransport
 } from '../../app/diagnostic-bridge-url-contract.ts';
 
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
-export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES = DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
 
 export const RECIPE_CONSOLE_VIEWS = DIAGNOSTIC_BRIDGE_SOURCE_VIEWS;
 
@@ -53,60 +51,7 @@ export const RECIPE_CONSOLE_FLEET_MAP_LAYERS = [
     'observed-routes'
 ] as const;
 
-export const RECIPE_CONSOLE_OWNED_URL_KEYS = [
-    'v',
-    'experience',
-    'view',
-    'controlRunId',
-    'distributedRunId',
-    'agentId',
-    'recipeId',
-    'commandId',
-    'diagnosticSeverity',
-    'transport',
-    'historyQuery',
-    'historyGroup',
-    'historyRecipeId',
-    'historyProfile',
-    'failureCategory',
-    'status',
-    'from',
-    'to',
-    'compareLeft',
-    'compareRight',
-    'timingMetric',
-    'fleetRegion',
-    'fleetMapLayers',
-    'legacySurface'
-] as const;
-
-export const LEGACY_APP_URL_ALIAS_KEYS = [
-    'mode',
-    'workspace',
-    'appMode',
-    'tab',
-    'advancedSurface',
-    'advanced'
-] as const;
-
-export const RECIPE_CONSOLE_SENSITIVE_URL_KEYS = [
-    'agentSessionTicket',
-    'controlToken',
-    'rallarPassword',
-    'rallarToken',
-    'accessToken',
-    'refreshToken',
-    'password',
-    'token'
-] as const;
-
-export const RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS = [
-    'controlUrl'
-] as const;
-
-export type RecipeConsoleView = DiagnosticBridgeSourceView;
 export type RecipeConsoleDiagnosticSeverity = typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];
-export type RecipeConsoleTransport = DiagnosticBridgeTransport;
 export type RecipeConsoleRunStatus = typeof RECIPE_CONSOLE_RUN_STATUSES[number];
 export type RecipeConsoleFailureCategory = typeof RECIPE_CONSOLE_FAILURE_CATEGORIES[number];
 export type RecipeConsoleTimingMetric = typeof RECIPE_CONSOLE_TIMING_METRICS[number];
@@ -115,33 +60,55 @@ export type RecipeConsoleFleetMapLayer = typeof RECIPE_CONSOLE_FLEET_MAP_LAYERS[
 export type RecipeConsoleUrlState = Readonly<{
     v: 1;
     experience: 'recipe-console';
-    view: RecipeConsoleView;
+    view: DiagnosticBridgeSourceView;
+    /** Absent until the operator selects a control run. */
     controlRunId?: string;
+    /** Absent until the operator selects a distributed run. */
     distributedRunId?: string;
+    /** Absent until the operator selects an agent. */
     agentId?: string;
+    /** Absent until the operator selects a recipe. */
     recipeId?: string;
+    /** Absent until the operator selects a command. */
     commandId?: string;
+    /** Absent until the operator filters Monitor diagnostics by severity. */
     diagnosticSeverity?: RecipeConsoleDiagnosticSeverity;
-    transport?: RecipeConsoleTransport;
+    /** Absent until the operator filters Monitor diagnostics by transport. */
+    transport?: DiagnosticBridgeTransport;
+    /** Absent until the operator types a History search. */
     historyQuery?: string;
+    /** Absent until the operator filters History by group. */
     historyGroup?: string;
+    /** Absent until the operator filters History by recipe. */
     historyRecipeId?: string;
+    /** Absent until the operator filters History by profile. */
     historyProfile?: string;
+    /** Absent until the operator filters History by failure category. */
     failureCategory?: RecipeConsoleFailureCategory;
+    /** Absent until the operator filters History by run status. */
     status?: RecipeConsoleRunStatus;
+    /** Absent until the operator sets the start of a History time range. */
     from?: number;
+    /** Absent until the operator sets the end of a History time range. */
     to?: number;
+    /** Absent until the operator picks a Tune baseline run. */
     compareLeft?: string;
+    /** Absent until the operator picks a Tune candidate run. */
     compareRight?: string;
+    /** Absent until the operator picks a Tune timing metric. */
     timingMetric?: RecipeConsoleTimingMetric;
+    /** Absent until the operator selects a Fleet region. */
     fleetRegion?: string;
+    /** Absent until the operator chooses which Fleet map layers to show. */
     fleetMapLayers?: readonly RecipeConsoleFleetMapLayer[];
+    /** Absent outside the Advanced view, which is the only view that opens a legacy surface. */
     legacySurface?: string;
 }>;
 
 export type RecipeConsoleUrlIssue = Readonly<{
     field: string;
     code: 'missing' | 'invalid' | 'duplicate' | 'normalized' | 'inapplicable';
+    /** Absent when the parameter was missing, so there is no rejected value to show. */
     value?: string;
     message: string;
 }>;
