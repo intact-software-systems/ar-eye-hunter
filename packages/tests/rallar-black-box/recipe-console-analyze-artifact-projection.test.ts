@@ -11,6 +11,11 @@ import {
     projectAnalyzeEvidenceWindow,
     projectAnalyzeTuneArtifactFacade
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-projection.ts';
+import {
+    boundedText,
+    MAX_SUMMARY_BYTES,
+    PROJECTION_OMISSION_MESSAGE
+} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-projection-bounds.ts';
 import { deriveTuneWorkspaceSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
 import type { DistributedArtifactEvidenceEntry, DistributedArtifactEvidenceWindow } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
@@ -50,10 +55,10 @@ describe('Recipe Console Analyze artifact projection', () => {
         const projection = projectAnalyzeArtifactModel(model);
 
         expect(projection.analysis.spa?.verdict).toEqual(model.analysis.spa?.verdict);
-        if (model.analysis.ok) {
+        if (model.analysis.ok || projection.analysis.ok) {
             throw new Error('Scale fixture must describe a failed run.');
         }
-        expect(projection.analysis.failure?.affectedAgents).toEqual(model.analysis.failure.affectedAgents);
+        expect(projection.analysis.failure.affectedAgents).toEqual(model.analysis.failure.affectedAgents);
         expect(projection.analysis.targetResolution?.targetAgentIds)
             .toEqual(model.analysis.targetResolution?.targetAgentIds);
         expect(projection.analysis.spa).not.toHaveProperty('report');
@@ -179,6 +184,26 @@ describe('Recipe Console Analyze artifact projection', () => {
         });
         expect(projection.primaryResultFailure?.failureDetails)
             .not.toHaveProperty('stack');
+    });
+
+    it('keeps the failed verdict actionable when the projection falls back to its bounded form', () => {
+        const model = hostileAnalyzeModel();
+
+        const projection = projectAnalyzeArtifactModel(model);
+
+        expect(projection.issueMarkdown).toBe(PROJECTION_OMISSION_MESSAGE);
+        if (projection.analysis.ok) {
+            throw new Error('The hostile fixture must project a failed run.');
+        }
+        if (model.analysis.ok) {
+            throw new Error('The hostile fixture must describe a failed run.');
+        }
+        expect(projection.analysis.failure.title)
+            .toBe(boundedText(model.analysis.failure.title, MAX_SUMMARY_BYTES));
+        expect(projection.analysis.failure.nextAction)
+            .toBe(boundedText(model.analysis.failure.nextAction));
+        expect(projection.analysis.fixProposalMarkdown)
+            .toBe(boundedText(model.analysis.fixProposalMarkdown));
     });
 
     it('keeps the retained stack in the normal primary-result projection', () => {

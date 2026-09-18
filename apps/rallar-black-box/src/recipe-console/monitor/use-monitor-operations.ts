@@ -1,6 +1,6 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { toError } from '../../to-error.ts';
 import { projectControlOperationError } from '../control/control-operation-error.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { downloadDistributedRunArtifact } from '../control/distributed-run-artifact-download.ts';

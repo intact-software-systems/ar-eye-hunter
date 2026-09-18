@@ -1,4 +1,4 @@
-import { toErrorMessage } from '../../to-error.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import {
     ANALYZE_ARTIFACT_AUTHORITATIVE_BASENAMES,
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
@@ -230,7 +230,7 @@ function unsafePath(selectedPath: string, reason: string): AnalyzeFileIntakeErro
 }
 
 function toReadFailureReason(error: unknown): string {
-    const normalized = toErrorMessage(error).trim();
+    const normalized = toError(error).message.trim();
     const message = normalized.length > 0 ? normalized : String(error).trim();
     return message.length > 0 ? message : 'unknown read failure';
 }

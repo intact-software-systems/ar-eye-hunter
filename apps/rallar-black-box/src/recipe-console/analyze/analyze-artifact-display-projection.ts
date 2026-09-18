@@ -2,7 +2,7 @@ import type {
     DistributedArtifactInventoryItem,
     DistributedArtifactWorkspaceIssue
 } from '@shared-test/rallar-bb-test/mod.ts';
-import { minimalAnalyzeAnalysis, projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
+import { projectAnalyzeAnalysis, projectMinimalAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
 import {
     boundedText,
@@ -160,7 +160,7 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
                 message: PROJECTION_OMISSION_MESSAGE
             }]
         },
-        analysis: minimalAnalyzeAnalysis(model.analysis),
+        analysis: projectMinimalAnalyzeAnalysis(model.analysis),
         issueMarkdown: PROJECTION_OMISSION_MESSAGE,
         provenance: projectProvenance(model, false),
         ...(model.firstActionableEvidenceId

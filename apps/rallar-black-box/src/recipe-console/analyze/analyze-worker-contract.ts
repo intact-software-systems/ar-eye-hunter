@@ -15,7 +15,10 @@ export type {
     AnalyzeArtifactWorkspaceProjection,
     AnalyzeEvidenceWindowProjection,
     AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerAnalysisProjection
+    AnalyzeWorkerAnalysisProjection,
+    AnalyzeWorkerAnalysisProjectionSections,
+    AnalyzeWorkerFailedAnalysisProjection,
+    AnalyzeWorkerPassedAnalysisProjection
 } from './analyze-worker-projection-contract.ts';
 
 export const ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE = 64;

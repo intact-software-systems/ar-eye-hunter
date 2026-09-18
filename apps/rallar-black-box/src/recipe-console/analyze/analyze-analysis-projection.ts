@@ -17,18 +17,44 @@ import {
     projectOpaqueKey
 } from './analyze-projection-bounds.ts';
 import { projectAnalyzeVerdict } from './analyze-verdict-projection.ts';
-import type { AnalyzeWorkerAnalysisProjection } from './analyze-worker-contract.ts';
+import type {
+    AnalyzeWorkerAnalysisProjection,
+    AnalyzeWorkerAnalysisProjectionSections
+} from './analyze-worker-contract.ts';
 
 export function projectAnalyzeAnalysis(
     analysis: DistributedRunAnalysis
 ): AnalyzeWorkerAnalysisProjection {
+    const sections = projectAnalysisSections(analysis);
+    return analysis.ok
+        ? { ...sections, ok: true }
+        : {
+            ...sections,
+            ok: false,
+            failure: projectFailure(analysis.failure),
+            fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown)
+        };
+}
+
+export function projectMinimalAnalyzeAnalysis(
+    analysis: DistributedRunAnalysis
+): AnalyzeWorkerAnalysisProjection {
+    const sections = projectMinimalAnalysisSections(analysis);
+    return analysis.ok
+        ? { ...sections, ok: true }
+        : {
+            ...sections,
+            ok: false,
+            failure: projectFailure(analysis.failure),
+            fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown)
+        };
+}
+
+function projectAnalysisSections(
+    analysis: DistributedRunAnalysis
+): AnalyzeWorkerAnalysisProjectionSections {
     return {
-        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
-        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
-        status: boundedText(analysis.status, MAX_METADATA_BYTES),
-        ok: analysis.ok,
+        ...projectAnalysisIdentity(analysis),
         ...(analysis.group ? { group: projectGroup(analysis.group) } : {}),
         summary: {
             ...(analysis.summary.agents === undefined ? {} : { agents: finiteNumber(analysis.summary.agents) }),
@@ -45,7 +71,6 @@ export function projectAnalyzeAnalysis(
                     : {})
             })
         ),
-        ...(analysis.ok ? {} : { failure: projectFailure(analysis.failure) }),
         ...(analysis.performance === undefined
             ? {}
             : { performance: projectAnalyzePerformance(analysis.performance) }),
@@ -54,23 +79,17 @@ export function projectAnalyzeAnalysis(
             : {}),
         ...(analysis.spa === undefined ? {} : { spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) } }),
         summaryMarkdown: boundedText(analysis.summaryMarkdown),
-        ...(analysis.ok ? {} : { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }),
         ...(analysis.performanceMarkdown === undefined
             ? {}
             : { performanceMarkdown: boundedText(analysis.performanceMarkdown) })
     };
 }
 
-export function minimalAnalyzeAnalysis(
+function projectMinimalAnalysisSections(
     analysis: DistributedRunAnalysis
-): AnalyzeWorkerAnalysisProjection {
+): AnalyzeWorkerAnalysisProjectionSections {
     return {
-        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
-        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
-        status: boundedText(analysis.status, MAX_METADATA_BYTES),
-        ok: analysis.ok,
+        ...projectAnalysisIdentity(analysis),
         summary: { ...analysis.summary },
         parseWarnings: [],
         ...(analysis.spa === undefined
@@ -87,6 +106,16 @@ export function minimalAnalyzeAnalysis(
                 }
             }),
         summaryMarkdown: PROJECTION_OMISSION_MESSAGE
+    };
+}
+
+function projectAnalysisIdentity(analysis: DistributedRunAnalysis) {
+    return {
+        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
+        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
+        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
+        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
+        status: boundedText(analysis.status, MAX_METADATA_BYTES)
     };
 }
 

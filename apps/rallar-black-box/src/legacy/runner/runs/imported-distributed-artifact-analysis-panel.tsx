@@ -1,5 +1,4 @@
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { distributedRecipeStateTone } from '../../../distributed-recipes.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatDuration } from '../../shared/time-format.ts';
 import { CausalTrailPanel } from '../evidence/CausalTrailPanel.tsx';
@@ -15,6 +14,7 @@ export function ImportedDistributedArtifactAnalysisPanel({
     status
 }: {
     analysis: DistributedRunAnalysis;
+    /** Absent when the panel renders an analysis that no local file import produced. */
     status?: DistributedArtifactImportStatus;
 }) {
     const failure = analysis.ok ? undefined : analysis.failure;
@@ -26,11 +26,7 @@ export function ImportedDistributedArtifactAnalysisPanel({
     const slowestStreamAgent = streamTiming?.slowestAgents[0];
     const artifactVerdict = analysis.spa?.verdict;
     const causalTrail = artifactVerdict?.causalTrail ?? [];
-    const stateTone = analysis.ok
-        ? 'good'
-        : failure
-        ? 'bad'
-        : distributedRecipeStateTone(analysis.status);
+    const stateTone = analysis.ok ? 'good' : 'bad';
 
     return (
         <section className="distributed-subpanel imported-distributed-artifact-analysis">

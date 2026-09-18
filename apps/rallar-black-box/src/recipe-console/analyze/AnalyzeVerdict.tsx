@@ -12,7 +12,7 @@ export function AnalyzeVerdict({
     onInspectResult?(trigger: HTMLButtonElement): void;
 }>) {
     const { analysis } = model;
-    const failure = analysis.failure;
+    const failure = analysis.ok ? undefined : analysis.failure;
     return (
         <section
             className={styles.verdict}

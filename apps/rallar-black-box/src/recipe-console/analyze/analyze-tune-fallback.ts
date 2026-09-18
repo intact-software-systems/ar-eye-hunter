@@ -1,4 +1,4 @@
-import { minimalAnalyzeAnalysis } from './analyze-analysis-projection.ts';
+import { projectMinimalAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import { projectAnalyzeIdentity, projectWorkspaceIssue } from './analyze-artifact-display-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
 import {
@@ -124,7 +124,7 @@ export function minimalTuneFacade(
                 failures: []
             }) as typeof run.rollup
         },
-        analysis: minimalAnalyzeAnalysis(model.analysis),
+        analysis: projectMinimalAnalyzeAnalysis(model.analysis),
         receivedMessageDeltas: {
             entries: [],
             total: receivedMessageAgentCount,

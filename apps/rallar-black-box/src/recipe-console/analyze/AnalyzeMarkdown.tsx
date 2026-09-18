@@ -62,7 +62,7 @@ function markdownDocuments(model: AnalyzeArtifactProjection): readonly MarkdownD
     return [
         { id: 'issue', label: 'Issue Markdown', value: model.issueMarkdown },
         { id: 'summary', label: 'Summary', value: model.analysis.summaryMarkdown },
-        model.analysis.fixProposalMarkdown
+        !model.analysis.ok && model.analysis.fixProposalMarkdown
             ? { id: 'fix', label: 'Fix proposal', value: model.analysis.fixProposalMarkdown }
             : undefined,
         model.analysis.performanceMarkdown

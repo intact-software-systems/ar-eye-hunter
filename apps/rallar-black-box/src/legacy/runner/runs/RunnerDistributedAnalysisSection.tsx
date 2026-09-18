@@ -23,7 +23,7 @@ import { DistributedRunMonitorPanel } from '../distributed/DistributedRunMonitor
 import { DistributedRunSummary } from '../distributed/DistributedRunSummary.tsx';
 import type { DistributedArtifactImportStatus } from './distributed-artifact-import.ts';
 import { DistributedRunAnalysisReportPanel } from './DistributedRunAnalysisReportPanel.tsx';
-import { ImportedDistributedArtifactAnalysisPanel } from './ImportedDistributedArtifactAnalysisPanel.tsx';
+import { ImportedDistributedArtifactAnalysisPanel } from './imported-distributed-artifact-analysis-panel.tsx';
 
 type RunnerDistributedAnalysisSectionProps = Readonly<{
     selectedDistributedRun?: ControlDistributedRunSnapshot;

@@ -1,4 +1,5 @@
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useEffect, useRef, useState } from 'react';
 import {
     navigateReservedBrowserAgentPopups,
@@ -6,7 +7,6 @@ import {
     reserveBrowserAgentPopups,
     type BrowserAgentPopupReservation
 } from '../../../browser-agent-popup.ts';
-import { toErrorMessage } from '../../../to-error.ts';
 import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 import {
     computeExecuteAgentPopupNavigationState,
@@ -123,10 +123,10 @@ export function useExecuteAgentLaunchRequests(
             if (!controller.signal.aborted && generationRef.current === generation) {
                 releaseReservedBrowserAgentPopups(
                     reservation,
-                    toErrorMessage(error)
+                    toError(error).message
                 );
                 reservationRef.current = undefined;
-                setMessage(toErrorMessage(error));
+                setMessage(toError(error).message);
             }
         }
         finally {
@@ -187,7 +187,7 @@ export function useExecuteAgentLaunchRequests(
         }
         catch (error) {
             if (!controller.signal.aborted && generationRef.current === generation) {
-                setMessage(toErrorMessage(error));
+                setMessage(toError(error).message);
             }
         }
         finally {
