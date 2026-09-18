@@ -102,7 +102,7 @@ export function useAnalyzeOperations(
         });
     }, [input.connection.execution, input.context, workspace.setState]);
 
-    const perform = useCallback(async (
+    const runArtifactOperation = useCallback(async (
         action: AnalyzeWorkspaceAction,
         operationContext: AnalyzeWorkspaceContext | undefined,
         loadOffer: (
@@ -197,14 +197,14 @@ export function useAnalyzeOperations(
         if (files.length === 0) {
             return false;
         }
-        return perform('import-local', undefined, async (signal) => {
+        return runArtifactOperation('import-local', undefined, async (signal) => {
             const offer = await createAnalyzeLocalOffer(files, Date.now());
             if (signal.aborted) {
                 throw createAnalyzeInterruptedError('Artifact import was interrupted.');
             }
             return offer;
         });
-    }, [perform]);
+    }, [runArtifactOperation]);
 
     const loadControlArtifact = useCallback(async (): Promise<boolean> => {
         const { connection } = inputRef.current;
@@ -217,7 +217,7 @@ export function useAnalyzeOperations(
             ...boundaryRef.current,
             contextKey: context.key
         };
-        return perform('load-control', context, async (signal) => {
+        return runArtifactOperation('load-control', context, async (signal) => {
             const [bundle, expectedControlIdentity] = await Promise.all([
                 execution.exportRunArtifactBytes({
                     distributedRunId: context.distributedRunId,
@@ -247,7 +247,7 @@ export function useAnalyzeOperations(
                 expectedControlIdentity
             });
         });
-    }, [perform]);
+    }, [runArtifactOperation]);
 
     const search = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
