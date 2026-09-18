@@ -2380,6 +2380,97 @@ moved or changed test.
         "failureRationale": "An inner resend may duplicate a message after an uncertain native failure and would misrepresent multiple submissions as one QueueBox attempt."
       }
     }
+,
+    {
+      "id": "agent-launch-one-control-token-per-simulated-agent",
+      "domain": "Recipe Console browser-agent launch authority",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Preparing simulated agents mints exactly one run-scoped control token per agent, so no agent shares or reuses another agent's authority. Executable assertion: \"prepares exact simulated identities with distinct least-privilege control tokens\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#prepares exact simulated identities with distinct least-privilege control tokens",
+      "coverageRelation": "The named test prepares three agents and reads the distinct token each launch URL carries; the mint count is what separates three least-privilege tokens from one token copied three times, which the launch URLs alone cannot show.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Control server run-scoped token endpoint",
+        "observableEffect": "One issueRunToken call per prepared agent, three for three agents.",
+        "requiredConstraint": "Every prepared agent causes exactly one token mint; none is minted twice and none is skipped.",
+        "failureRationale": "A skipped mint silently reuses another agent's authority, and a repeated mint leaves a live unused token on the control server for the run's lifetime."
+      }
+    },
+    {
+      "id": "agent-launch-legacy-compatibility-mints-no-agent-ticket",
+      "domain": "Recipe Console browser-agent launch authority",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The explicit anonymous and interactive-login legacy launch path issues no browser-rallar agent ticket at all. Executable assertion: \"keeps explicit anonymous and interactive-login compatibility at the legacy boundary\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#keeps explicit anonymous and interactive-login compatibility at the legacy boundary",
+      "coverageRelation": "The named test drives the legacy launch and reads the launch URL it produces; an unused ticket would not appear in that URL, so the absence of any ticket request is the only witness that the legacy path stayed credential-free.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "Rallar server browser-agent ticket endpoint",
+        "observableEffect": "No issueAgentTickets call for a legacy anonymous or interactive-login launch.",
+        "requiredConstraint": "The legacy compatibility path requests no agent ticket, whatever the launch URL ends up carrying.",
+        "failureRationale": "A ticket minted and then discarded spends a real session credential the operator never sees and never revokes."
+      }
+    },
+    {
+      "id": "agent-launch-links-copied-in-one-clipboard-write",
+      "domain": "Recipe Console browser-agent launch authority",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Copying agent links writes the operator's clipboard exactly once, with every link in that single write. Executable assertion: \"copies multiple secured agent links that share the legacy run token\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#copies multiple secured agent links that share the legacy run token",
+      "coverageRelation": "The named test reads the copied text and its two links out of the write call; a per-link write would leave the same final clipboard content, so the write count is the only witness that both links were offered together.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Operator clipboard write port",
+        "observableEffect": "One clipboard write carrying every prepared agent link.",
+        "requiredConstraint": "A copy action writes the clipboard once, never once per agent.",
+        "failureRationale": "A write per agent leaves the operator holding only the last link while the panel reports that every link was copied."
+      }
+    },
+    {
+      "id": "agent-launch-popup-reserved-once-per-requested-agent",
+      "domain": "Recipe Console browser-agent popup reservation",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Reserving browser-agent popups opens exactly one window per requested agent, including the agents the browser blocks. Executable assertion: \"reserves synchronously, reports blocked IDs, and navigates only prepared windows with replace\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reserves synchronously, reports blocked IDs, and navigates only prepared windows with replace",
+      "coverageRelation": "The named test reads the reserved and blocked agent ids the reservation reports; those lists are the same whether the blocked agent was attempted once or not at all, so the open count is the only witness that each agent got its own synchronous attempt.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Browser window.open popup port",
+        "observableEffect": "One window.open call per requested agent id, three for three agents.",
+        "requiredConstraint": "Every requested agent is attempted exactly once, inside the operator gesture that authorises the popups.",
+        "failureRationale": "A retry outside the gesture is blocked by the browser, and a skipped attempt reports an agent as blocked that was never offered a window."
+      }
+    },
+    {
+      "id": "agent-launch-released-popups-closed-exactly-once",
+      "domain": "Recipe Console browser-agent popup reservation",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Releasing a reservation closes every window it holds exactly once, after writing the operator's reason into it. Executable assertion: \"closes every unused blank window after preparation failure or invalidation\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#closes every unused blank window after preparation failure or invalidation",
+      "coverageRelation": "The named test reads the reason text each released window shows; a window closed twice, or closed before the reason was written, shows the same text, so the close count is the only witness that each window was disposed of once and in that order.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Reserved browser-agent popup windows",
+        "observableEffect": "Exactly one close() per reserved window after its reason is written.",
+        "requiredConstraint": "Each released window is closed once; none is left open and none is closed twice.",
+        "failureRationale": "A window left open keeps a blank popup on the operator's screen for the session, and a second close on an already-closed window throws out of the release path and strands the rest."
+      }
+    },
+    {
+      "id": "agent-launch-closed-popup-never-navigated",
+      "domain": "Recipe Console browser-agent popup reservation",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Navigating prepared links replaces the location of every still-open reserved window exactly once and never navigates one the operator already closed. Executable assertion: \"reports a reserved popup closed before prepared links are navigated\".",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reports a reserved popup closed before prepared links are navigated",
+      "coverageRelation": "The named test reads the navigated and closed agent ids the navigation reports; those lists are computed before the windows are touched, so only the replace counts show that the open window was actually navigated and the closed one was actually left alone.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "Reserved browser-agent popup location",
+        "observableEffect": "One location.replace on the still-open window, and none on the window the operator closed.",
+        "requiredConstraint": "A prepared link navigates its own open window once, and a closed window is never navigated.",
+        "failureRationale": "Navigating a closed window raises a cross-origin error that aborts the remaining launches, and a second replace loses the agent's one-time launch link from history."
+      }
+    }
   ],
   "entries": [
     {
@@ -5538,6 +5629,94 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The instrumented setTimeout and clearTimeout registry is the only witness of how many poll timers are active before and after unmount.",
       "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-control.spec.ts#owns one poll timer across views and clears it when Recipe Console unmounts"
+    },
+    {
+      "id": "test-structure-coupling-b4b5a27fe8e9e221",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-one-control-token-per-simulated-agent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Three mints for three prepared agents is what separates three least-privilege tokens from one token reused, which the launch URLs the same test reads cannot show.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#prepares exact simulated identities with distinct least-privilege control tokens"
+    },
+    {
+      "id": "test-structure-coupling-a3b0b6dc6867c9c7",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-legacy-compatibility-mints-no-agent-ticket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent ticket request is the only place the legacy launch's credential-free promise is visible; the URL it builds looks identical either way.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#keeps explicit anonymous and interactive-login compatibility at the legacy boundary"
+    },
+    {
+      "id": "test-structure-coupling-e1d9a39c0dfa1695",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-links-copied-in-one-clipboard-write",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single write is what the two links are read out of, so it pins both that the copy happened once and that it carried every link.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#copies multiple secured agent links that share the legacy run token"
+    },
+    {
+      "id": "test-structure-coupling-9203a464a554aae2",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-popup-reserved-once-per-requested-agent",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "Three opens for three agents shows the blocked agent was attempted inside the gesture rather than skipped before it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reserves synchronously, reports blocked IDs, and navigates only prepared windows with replace"
+    },
+    {
+      "id": "test-structure-coupling-c6b265efab92e37c",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-released-popups-closed-exactly-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single close on the first window proves the release disposed of it once, beside the reason text the same case reads from it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#closes every unused blank window after preparation failure or invalidation"
+    },
+    {
+      "id": "test-structure-coupling-fe88e7f966516a87",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-released-popups-closed-exactly-once",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The second window carries the same once-only close, so the release is proven for every window it holds, not only the first.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#closes every unused blank window after preparation failure or invalidation"
+    },
+    {
+      "id": "test-structure-coupling-881ce5733a3edef1",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-closed-popup-never-navigated",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The single replace on the open window is the only witness that the prepared link reached it, since the reported navigated ids are computed beforehand.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reports a reserved popup closed before prepared links are navigated"
+    },
+    {
+      "id": "test-structure-coupling-56f501f8da9eb4b3",
+      "path": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "agent-launch-closed-popup-never-navigated",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar Black Box maintainers",
+      "rationale": "The absent replace on the operator-closed window is the only witness that navigation skipped it rather than raising on it.",
+      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts#reports a reserved popup closed before prepared links are navigated"
     }
   ]
 }
