@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
+import { Either } from '@shared/resilience/Either.ts';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlRetentionCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
+import type { ControlRetentionRefusal } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-refusal.ts';
 import type { ControlRetentionPreview } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
 import { HistoryWorkspace } from '../../../apps/rallar-black-box/src/recipe-console/history/HistoryWorkspace.tsx';
 import type { HistoryWorkspaceProps } from '../../../apps/rallar-black-box/src/recipe-console/history/HistoryWorkspace.tsx';
@@ -52,19 +54,23 @@ const URL_STATE: RecipeConsoleUrlState = {
     timingMetric: 'stream-drift'
 };
 
+function accepted<Value>(value: Value): Either<ControlRetentionRefusal, Value> {
+    return Either.ofRight<ControlRetentionRefusal, Value>(value);
+}
+
 function retentionFixture(confirmError?: unknown) {
     const lifetime = new AbortController();
     const api: RecipeConsoleControlRetentionApi = {
-        preview: vi.fn(async () => RAW_PREVIEW),
+        preview: vi.fn(async () => accepted(RAW_PREVIEW)),
         confirm: vi.fn(async () => {
             if (confirmError) {
                 throw confirmError;
             }
-            return {
+            return accepted({
                 deletedRunIds: ['control-delete'],
                 retainedRuns: 2,
                 maxRuns: 1
-            };
+            });
         })
     };
     const load = vi.fn(async () => api);
@@ -129,7 +135,11 @@ describe('History retention integration', () => {
         const order: string[] = [];
         vi.mocked(fixture.api.confirm).mockImplementation(async () => {
             order.push('confirm');
-            return { deletedRunIds: ['control-delete'], retainedRuns: 2, maxRuns: 1 };
+            return accepted({
+                deletedRunIds: ['control-delete'],
+                retainedRuns: 2,
+                maxRuns: 1
+            });
         });
         const refreshAfterCurrent = vi.fn(async () => {
             order.push('refresh');

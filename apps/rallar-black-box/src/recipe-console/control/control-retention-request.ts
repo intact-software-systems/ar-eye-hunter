@@ -30,12 +30,6 @@ export function requestControlRetentionConfirmation(
     return requestRetention(input.fetchFn, url);
 }
 
-export function requestLegacyControlRetentionCleanup(
-    input: ControlRetentionRequestInput
-): Promise<Either<ControlRequestFailure, unknown>> {
-    return requestRetention(input.fetchFn, retentionCleanupUrl(input.baseUrl));
-}
-
 function retentionCleanupUrl(baseUrl: string): URL {
     return new URL('/retention/cleanup', new URL(baseUrl));
 }

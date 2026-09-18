@@ -7,14 +7,16 @@ import {
     TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 import { createControlLazyCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-lazy-capability.ts';
+import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
+import type { ControlRetentionRefusal } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-refusal.ts';
 import {
     requestControlRetentionConfirmation,
-    requestControlRetentionPreview,
-    requestLegacyControlRetentionCleanup
+    requestControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-request.ts';
 import {
     parseControlRetentionConfirmation,
-    parseControlRetentionPreview
+    parseControlRetentionPreview,
+    type ControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 import { analyzeSourceFile } from '../helpers/source-analysis';
@@ -92,8 +94,21 @@ function authorization(init: RequestInit | undefined): string | null {
     return new Headers(init?.headers).get('Authorization');
 }
 
+async function acceptedPreview(
+    retention: RecipeConsoleControlRetentionApi
+): Promise<ControlRetentionPreview> {
+    const outcome = await retention.preview({});
+    const preview = outcome.right;
+    if (preview === undefined) {
+        throw new Error(
+            `Expected an accepted retention preview, got: ${outcome.left?.message}`
+        );
+    }
+    return preview;
+}
+
 describe('Recipe Console retention request wire format', () => {
-    it('serializes preview, confirmation, and legacy compatibility without bodies or inherited secrets', async () => {
+    it('serializes preview and confirmation without bodies or inherited secrets', async () => {
         const requests: Array<{ url: URL; init?: RequestInit; }> = [];
         const fetchFn = async (input: RequestInfo | URL, init?: RequestInit) => {
             requests.push({ url: new URL(String(input)), init });
@@ -107,12 +122,9 @@ describe('Recipe Console retention request wire format', () => {
             planToken: 'opaque +&/token',
             fetchFn
         });
-        await requestLegacyControlRetentionCleanup({ baseUrl, fetchFn });
-
         expect(requests.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
             '/retention/cleanup?dryRun=true',
-            '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken',
-            '/retention/cleanup'
+            '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken'
         ]);
         for (const request of requests) {
             expect(request.init?.method).toBe('POST');
@@ -383,7 +395,7 @@ describe('Recipe Console authorized retention API', () => {
 
         const first = await api.retention.load();
         const second = await api.retention.load();
-        const preview = await first.preview({});
+        const preview = await acceptedPreview(first);
 
         expect(first).toBe(second);
         expect(preview).toMatchObject({ planToken: PREVIEW.planToken });
@@ -425,10 +437,10 @@ describe('Recipe Console authorized retention API', () => {
             });
             const retention = await api.retention.load();
 
-            const preview = await retention.preview({});
+            const preview = await acceptedPreview(retention);
             const confirmation = await retention.confirm({ preview });
 
-            expect(confirmation).toEqual(CONFIRMATION);
+            expect(confirmation.right).toEqual(CONFIRMATION);
             expect(requests).toEqual([
                 { path: '/retention/cleanup', query: '?dryRun=true', auth: null },
                 {
@@ -519,7 +531,7 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
 
-        await (await api.retention.load()).preview({});
+        await acceptedPreview(await api.retention.load());
 
         expect(requests).toEqual([{
             url: 'https://caller-control.test/retention/cleanup?dryRun=true',
@@ -586,7 +598,7 @@ describe('Recipe Console authorized retention API', () => {
         });
     });
 
-    it('brands previews to one API context and refuses cross-endpoint confirmation locally', async () => {
+    it('refuses cross-endpoint confirmation locally with a failure value, not a throw', async () => {
         let endpointBRequests = 0;
         const firstApi = createRecipeConsoleControlApi({
             controlUrl: 'https://control-a.test',
@@ -603,12 +615,16 @@ describe('Recipe Console authorized retention API', () => {
                 return Response.json(CONFIRMATION);
             }
         });
-        const preview = await (await firstApi.retention.load()).preview({});
+        const preview = await acceptedPreview(await firstApi.retention.load());
         const secondRetention = await secondApi.retention.load();
 
-        await expect(secondRetention.confirm({ preview })).rejects.toThrow(
-            /current control connection/i
-        );
+        const refused = await secondRetention.confirm({ preview });
+
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual<ControlRetentionRefusal>({
+            code: 'foreign-preview',
+            message: 'The retention preview does not belong to the current control connection.'
+        });
         expect(endpointBRequests).toBe(0);
         expect(firstApi.retention.generation).not.toBe(
             secondApi.retention.generation
@@ -648,7 +664,7 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
         const retention = await api.retention.load();
-        const preview = await retention.preview({});
+        const preview = await acceptedPreview(retention);
         api.close();
 
         await expect(retention.confirm({ preview })).rejects.toMatchObject({
@@ -657,7 +673,7 @@ describe('Recipe Console authorized retention API', () => {
         expect(requests).toBe(1);
     });
 
-    it('rejects a new preview while confirmation is in flight and never leaves a pre-cleanup preview current', async () => {
+    it('refuses a new preview while confirmation is in flight and never leaves a pre-cleanup preview current', async () => {
         let resolveConfirmation!: (response: Response) => void;
         const confirmation = new Promise<Response>((resolve) => {
             resolveConfirmation = resolve;
@@ -675,15 +691,20 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
         const retention = await api.retention.load();
-        const preview = await retention.preview({});
+        const preview = await acceptedPreview(retention);
         const pendingConfirmation = retention.confirm({ preview });
 
-        await expect(retention.preview({})).rejects.toThrow(/confirmation.*progress/i);
+        const refused = await retention.preview({});
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual<ControlRetentionRefusal>({
+            code: 'confirmation-in-progress',
+            message: 'Retention confirmation is in progress.'
+        });
         expect(requests).toBe(2);
         resolveConfirmation(Response.json(CONFIRMATION));
-        await expect(pendingConfirmation).resolves.toEqual(CONFIRMATION);
+        expect((await pendingConfirmation).right).toEqual(CONFIRMATION);
 
-        await expect(retention.preview({})).resolves.toMatchObject({
+        expect(await acceptedPreview(retention)).toMatchObject({
             planToken: PREVIEW.planToken
         });
         expect(requests).toBe(3);

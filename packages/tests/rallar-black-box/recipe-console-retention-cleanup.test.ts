@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
+import { Either } from '@shared/resilience/Either.ts';
 import { createElement, StrictMode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlRetentionCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import type { RecipeConsoleControlRetentionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
+import type { ControlRetentionRefusal } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-refusal.ts';
 import type {
     ControlRetentionConfirmation,
     ControlRetentionPreview
@@ -80,11 +82,19 @@ function deferred<Value>(): Deferred<Value> {
     return { promise, resolve, reject };
 }
 
+function accepted<Value>(value: Value): Either<ControlRetentionRefusal, Value> {
+    return Either.ofRight<ControlRetentionRefusal, Value>(value);
+}
+
+function refused(refusal: ControlRetentionRefusal): Either<ControlRetentionRefusal, never> {
+    return Either.ofLeft<ControlRetentionRefusal, never>(refusal);
+}
+
 function fixture(overrides: Partial<RecipeConsoleControlRetentionApi> = {}) {
     const lifetime = new AbortController();
     const api: RecipeConsoleControlRetentionApi = {
-        preview: vi.fn(async () => RAW_PREVIEW),
-        confirm: vi.fn(async () => CONFIRMATION),
+        preview: vi.fn(async () => accepted(RAW_PREVIEW)),
+        confirm: vi.fn(async () => accepted(CONFIRMATION)),
         ...overrides
     };
     const load = vi.fn(async () => api);
@@ -198,7 +208,7 @@ describe('Recipe Console retention cleanup controller', () => {
             wouldDeleteDistributedRunIds: [],
             wouldDeleteFleetReportIds: []
         } as ControlRetentionPreview;
-        const setup = fixture({ preview: vi.fn(async () => raw) });
+        const setup = fixture({ preview: vi.fn(async () => accepted(raw)) });
         await render({ capability: setup.capability });
         await act(async () => current?.preview());
 
@@ -209,7 +219,7 @@ describe('Recipe Console retention cleanup controller', () => {
     });
 
     it('serializes double preview calls and suppresses a superseded result', async () => {
-        const pending = deferred<ControlRetentionPreview>();
+        const pending = deferred<Either<ControlRetentionRefusal, ControlRetentionPreview>>();
         const setup = fixture({ preview: vi.fn(() => pending.promise) });
         await render({ capability: setup.capability });
 
@@ -223,7 +233,7 @@ describe('Recipe Console retention cleanup controller', () => {
         expect(setup.load).toHaveBeenCalledTimes(1);
         expect(setup.api.preview).toHaveBeenCalledTimes(1);
 
-        pending.resolve(RAW_PREVIEW);
+        pending.resolve(accepted(RAW_PREVIEW));
         await act(async () => first);
         expect(current?.state.status).toBe('preview-ready');
     });
@@ -318,6 +328,46 @@ describe('Recipe Console retention cleanup controller', () => {
         });
     });
 
+    it('shows a refused preview value as the same error state a thrown failure produced', async () => {
+        const setup = fixture({
+            preview: vi.fn(async () =>
+                refused({
+                    code: 'confirmation-in-progress',
+                    message: 'Retention confirmation is in progress.'
+                })
+            )
+        });
+        await render({ capability: setup.capability });
+        await act(async () => current?.preview());
+
+        expect(current?.state).toEqual({
+            status: 'error',
+            message: 'Retention confirmation is in progress.'
+        });
+        expect(current?.canConfirm).toBe(false);
+    });
+
+    it('shows a refused confirmation value over the stale plan', async () => {
+        const setup = fixture({
+            confirm: vi.fn(async () =>
+                refused({
+                    code: 'foreign-preview',
+                    message: 'The retention preview does not belong to the current control connection.'
+                })
+            )
+        });
+        await render({ capability: setup.capability });
+        await act(async () => current?.preview());
+        await act(async () => current?.confirm());
+
+        expect(current?.state).toMatchObject({
+            status: 'error',
+            message: 'The retention preview does not belong to the current control connection.',
+            preview: { current: false }
+        });
+        expect(current?.canConfirm).toBe(false);
+    });
+
     it('silently resets a current AbortError without exposing it', async () => {
         const setup = fixture({
             preview: vi.fn(async () => {
@@ -361,8 +411,8 @@ describe('Recipe Console retention cleanup controller', () => {
     it('invalidates a completed preview on capability identity replacement', async () => {
         const first = fixture();
         const secondApi: RecipeConsoleControlRetentionApi = {
-            preview: vi.fn(async () => RAW_PREVIEW),
-            confirm: vi.fn(async () => CONFIRMATION)
+            preview: vi.fn(async () => accepted(RAW_PREVIEW)),
+            confirm: vi.fn(async () => accepted(CONFIRMATION))
         };
         const secondLoad = vi.fn(async () => secondApi);
         const replacement: RecipeConsoleControlRetentionCapability = {
@@ -393,7 +443,7 @@ describe('Recipe Console retention cleanup controller', () => {
     });
 
     it('aborts in-flight work on signal/context drift and never calls back after drift', async () => {
-        const confirmation = deferred<ControlRetentionConfirmation>();
+        const confirmation = deferred<Either<ControlRetentionRefusal, ControlRetentionConfirmation>>();
         const afterConfirmed = vi.fn();
         const first = fixture({ confirm: vi.fn(() => confirmation.promise) });
         const second = fixture();
@@ -413,7 +463,7 @@ describe('Recipe Console retention cleanup controller', () => {
             preview: { current: false }
         });
 
-        confirmation.resolve(CONFIRMATION);
+        confirmation.resolve(accepted(CONFIRMATION));
         await act(async () => pending);
         expect(afterConfirmed).not.toHaveBeenCalled();
         expect(current?.state.status).toBe('unavailable');
