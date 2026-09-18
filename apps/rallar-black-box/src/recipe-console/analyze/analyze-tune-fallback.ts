@@ -38,9 +38,7 @@ export function minimalTuneFacade(
         generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
         manifestSummary: {
             distributedRunId: projectAuthorityIdentifier(manifest.distributedRunId),
-            ...(manifest.controlRunId
-                ? { controlRunId: projectAuthorityIdentifier(manifest.controlRunId) }
-                : {}),
+            controlRunId: projectAuthorityIdentifier(manifest.controlRunId),
             ...(manifest.displayName
                 ? { displayName: boundedText(manifest.displayName, MAX_SUMMARY_BYTES) }
                 : {}),
@@ -55,7 +53,7 @@ export function minimalTuneFacade(
                 ),
                 groupId: boundedText(manifest.group.groupId, MAX_METADATA_BYTES)
             },
-            ...(manifest.startMode ? { startMode: manifest.startMode } : {}),
+            startMode: manifest.startMode,
             recipeIds: {
                 entries: [],
                 total: manifest.recipes.length,
@@ -87,7 +85,6 @@ export function minimalTuneFacade(
             limitations: [],
             omittedLimitations: totalLimitations
         },
-        candidateManifestOmittedReason: 'manifest-too-large',
         selection: {
             ...(selection.focusRunId
                 ? { focusRunId: projectAuthorityIdentifier(selection.focusRunId) }

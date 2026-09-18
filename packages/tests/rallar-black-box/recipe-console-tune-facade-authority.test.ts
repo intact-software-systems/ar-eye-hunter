@@ -136,14 +136,18 @@ function facade(
     return {
         identity: {
             distributedRunId: input.distributedRunId,
-            controlRunId: input.controlRunId
+            distributedRunIdExact: true,
+            controlRunId: input.controlRunId,
+            controlRunIdExact: true
         },
         support: 'supported',
+        supportIssues: { entries: [], total: 0, omitted: 0 },
         generatedAtEpochMs: 2_600,
         manifestSummary: {
             distributedRunId: input.distributedRunId,
             controlRunId: input.controlRunId,
             group: run.manifest.group,
+            startMode: run.manifest.startMode,
             recipeIds: { entries: ['recipe-a'], total: 1, omitted: 0 },
             targetPolicy: {
                 mode: 'selected-agents',
@@ -161,7 +165,7 @@ function facade(
             omittedLimitations: 0
         },
         ...(input.candidateManifest === false
-            ? { candidateManifestOmittedReason: 'manifest-too-large' as const }
+            ? {}
             : { candidateManifest: run.manifest }),
         selection: {
             focusRunId: input.focusRunId,

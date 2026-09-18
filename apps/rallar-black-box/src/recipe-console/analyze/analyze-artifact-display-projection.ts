@@ -73,15 +73,11 @@ export function projectAnalyzeIdentity(
         : undefined;
     return {
         distributedRunId,
-        ...(distributedRunId === identity.distributedRunId
-            ? {}
-            : { distributedRunIdExact: false }),
+        distributedRunIdExact: distributedRunId === identity.distributedRunId,
         ...(controlRunId
             ? {
                 controlRunId,
-                ...(controlRunId === identity.controlRunId
-                    ? {}
-                    : { controlRunIdExact: false })
+                controlRunIdExact: controlRunId === identity.controlRunId
             }
             : {})
     };

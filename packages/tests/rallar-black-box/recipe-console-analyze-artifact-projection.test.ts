@@ -85,7 +85,12 @@ describe('Recipe Console Analyze artifact projection', () => {
         });
 
         expect(projection.distributedRunId).toBe(distributedRunId);
-        expect(projection.identity).toEqual({ distributedRunId, controlRunId });
+        expect(projection.identity).toEqual({
+            distributedRunId,
+            distributedRunIdExact: true,
+            controlRunId,
+            controlRunIdExact: true
+        });
     });
 
     it('keeps URL-safe multibyte identities exact across Tune authority surfaces', () => {
@@ -306,7 +311,6 @@ describe('Recipe Console Analyze artifact projection', () => {
             ANALYZE_PROJECTION_MAX_SERIALIZED_BYTES
         );
         expect(facade).not.toHaveProperty('candidateManifest');
-        expect(facade.candidateManifestOmittedReason).toBe('manifest-too-large');
         expect(facade.selection.artifactRole).toBe('focus');
         expect(facade.identity.distributedRunId).toMatch(/^opaque-id:/);
         expect(facade.manifestSummary.group.applicationId).toContain('…');

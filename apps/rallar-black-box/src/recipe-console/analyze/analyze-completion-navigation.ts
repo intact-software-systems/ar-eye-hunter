@@ -16,10 +16,14 @@ export function analyzeCompletionNavigationIdentity(
     if (!input.expectedDistributedRunId) {
         return undefined;
     }
-    const exact = {
+    const exact: AnalyzeArtifactProjection['identity'] = {
         distributedRunId: input.expectedDistributedRunId,
+        distributedRunIdExact: true,
         ...(input.expectedControlRunId
-            ? { controlRunId: input.expectedControlRunId }
+            ? {
+                controlRunId: input.expectedControlRunId,
+                controlRunIdExact: true
+            }
             : {})
     };
     const safe = safeAnalyzeArtifactIdentity(exact);

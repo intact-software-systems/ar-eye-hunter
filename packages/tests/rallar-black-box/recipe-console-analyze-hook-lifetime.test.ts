@@ -953,7 +953,12 @@ function completeResponse(
         projection: {
             distributedRunId,
             controlRunId: 'control-a',
-            identity: { distributedRunId, controlRunId: 'control-a' },
+            identity: {
+                distributedRunId,
+                distributedRunIdExact: true,
+                controlRunId: 'control-a',
+                controlRunIdExact: true
+            },
             workspace: {
                 source: 'loose-files',
                 support: 'supported',
@@ -1064,8 +1069,14 @@ function tuneResponse(
         tuneGeneration: request.tuneGeneration,
         requestId: request.requestId,
         facade: {
-            identity: { distributedRunId: 'dist-a', controlRunId: 'control-a' },
+            identity: {
+                distributedRunId: 'dist-a',
+                distributedRunIdExact: true,
+                controlRunId: 'control-a',
+                controlRunIdExact: true
+            },
             support: 'supported',
+            supportIssues: { entries: [], total: 0, omitted: 0 },
             generatedAtEpochMs: 1,
             manifestSummary: {
                 distributedRunId: 'dist-a',
@@ -1075,6 +1086,7 @@ function tuneResponse(
                     workspaceId: 'workspace',
                     groupId: 'group'
                 },
+                startMode: 'manual',
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
                     mode: 'selected-agents',

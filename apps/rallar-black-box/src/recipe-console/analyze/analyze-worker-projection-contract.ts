@@ -30,6 +30,11 @@ export type AnalyzeArtifactWorkspaceProjection = Readonly<{
     source: DistributedArtifactWorkspaceSource;
     support: DistributedArtifactWorkspaceSupport;
     generatedAtEpochMs: number;
+    /**
+     * Absent when the loaded files declare no schema version of their own. This is the artifact's
+     * own declaration; the analysis section's `artifactSchemaVersion` is the analyzer's and is
+     * always present.
+     */
     artifactSchemaVersion?: number;
     inventory: readonly DistributedArtifactInventoryItem[];
     issues: readonly DistributedArtifactWorkspaceIssue[];
@@ -77,11 +82,14 @@ export type AnalyzeWorkerAnalysisProjection =
 
 export type AnalyzeArtifactProjection = Readonly<{
     distributedRunId: string;
+    /** Absent when the analysed artifact names no control run. */
     controlRunId?: string;
     identity: Readonly<{
         distributedRunId: string;
-        distributedRunIdExact?: boolean;
+        distributedRunIdExact: boolean;
+        /** Absent when the analysed artifact names no control run. */
         controlRunId?: string;
+        /** Absent with `controlRunId`; the projection always writes it beside one. */
         controlRunIdExact?: boolean;
     }>;
     workspace: AnalyzeArtifactWorkspaceProjection;
@@ -99,7 +107,9 @@ export type AnalyzeArtifactProjection = Readonly<{
         workspaceIgnoredFileCount: number;
         ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
     }>;
+    /** Absent when no evidence row is a failure the operator should open first. */
     firstActionableEvidenceId?: string;
+    /** Absent when the analysis ties no primary recipe result to a failure. */
     primaryResultFailure?: AnalyzePrimaryResultFailure;
 }>;
 
@@ -107,7 +117,9 @@ export type AnalyzeEvidenceWindowProjection = Readonly<{
     entries: readonly DistributedArtifactEvidenceEntry[];
     rangeStart: number;
     rangeEnd: number;
+    /** Absent on the first window of a search, which has no earlier page. */
     previousCursor?: string;
+    /** Absent on the last window of a search, which has no later page. */
     nextCursor?: string;
     counts: DistributedArtifactEvidenceWindowCounts;
     totalMatchesIsComplete: boolean;
@@ -117,7 +129,7 @@ export type AnalyzeEvidenceWindowProjection = Readonly<{
 export type AnalyzeTuneArtifactFacade = Readonly<{
     identity: AnalyzeArtifactProjection['identity'];
     support: DistributedArtifactWorkspaceSupport;
-    supportIssues?: Readonly<{
+    supportIssues: Readonly<{
         entries: readonly DistributedArtifactWorkspaceIssue[];
         total: number;
         omitted: number;
@@ -125,10 +137,11 @@ export type AnalyzeTuneArtifactFacade = Readonly<{
     generatedAtEpochMs: number;
     manifestSummary: Readonly<{
         distributedRunId: string;
-        controlRunId?: string;
+        controlRunId: string;
+        /** Absent when the manifest author gives the run no display name. */
         displayName?: string;
         group: RallarBlackBoxDistributedGroupRef;
-        startMode?: RallarBlackBoxDistributedStartMode;
+        startMode: RallarBlackBoxDistributedStartMode;
         recipeIds: Readonly<{
             entries: readonly string[];
             total: number;
@@ -136,6 +149,7 @@ export type AnalyzeTuneArtifactFacade = Readonly<{
         }>;
         targetPolicy: Readonly<{
             mode: RallarBlackBoxDistributedTargetPolicyMode;
+            /** Absent when the target policy accepts however many agents it resolves. */
             expectedParticipantCount?: number;
             configuredAgentCount: number;
             configuredRoleCount: number;
@@ -150,12 +164,19 @@ export type AnalyzeTuneArtifactFacade = Readonly<{
         limitations: readonly DistributedRunTuningInventoryLimitation[];
         omittedLimitations: number;
     }>;
+    /**
+     * Absent when the manifest falls outside the facade's bounded transfer window, so the facade
+     * carries only `manifestSummary` and the candidate preview stays reference-only.
+     */
     candidateManifest?: RallarBlackBoxDistributedRunManifest;
-    candidateManifestOmittedReason?: 'inventory-windowed' | 'manifest-too-large';
     selection: Readonly<{
+        /** Absent when the Tune URL names no focus run. */
         focusRunId?: string;
+        /** Absent when the Tune URL names no left comparison run. */
         compareLeft?: string;
+        /** Absent when the Tune URL names no right comparison run. */
         compareRight?: string;
+        /** Absent when the Tune URL names no timing metric, so the view keeps its own default. */
         timingMetric?: string;
         artifactRole: 'focus' | 'compare-left' | 'compare-right' | 'unrelated';
     }>;
@@ -182,7 +203,9 @@ export type AnalyzeTuneArtifactFacade = Readonly<{
         entries: readonly Readonly<{
             agentId: string;
             receivedMessages: number;
+            /** Absent when the analysis records no expected inbound count for the agent. */
             expectedMessages?: number;
+            /** Absent with `expectedMessages`, and when their difference is not finite. */
             delta?: number;
         }>[];
         total: number;

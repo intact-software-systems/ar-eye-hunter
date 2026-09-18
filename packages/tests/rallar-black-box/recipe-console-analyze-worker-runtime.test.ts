@@ -59,7 +59,9 @@ describe('Recipe Console Analyze worker runtime', () => {
             expect(complete).toBeDefined();
             expect(complete?.projection.identity).toEqual({
                 distributedRunId: 'recipe-console-scale-distributed-run',
-                controlRunId: 'recipe-console-scale-control-run'
+                distributedRunIdExact: true,
+                controlRunId: 'recipe-console-scale-control-run',
+                controlRunIdExact: true
             });
             expect(complete?.initialWindow.entries.length).toBeLessThanOrEqual(64);
             expect(complete?.telemetry).toMatchObject({

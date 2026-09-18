@@ -37,9 +37,9 @@ export function deriveTuneSourceModelFromFacade(
         input.manifestValidation
     );
     const candidateManifestValid = manifestValidation.status === 'valid';
-    const supportIssueMessage = facade.supportIssues?.entries.find(
+    const supportIssueMessage = facade.supportIssues.entries.find(
         (issue) => issue.severity === 'error'
-    )?.message ?? facade.supportIssues?.entries[0]?.message;
+    )?.message ?? facade.supportIssues.entries[0]?.message;
     const matchingRole = facade.selection.artifactRole === 'focus' ||
         facade.selection.artifactRole === 'compare-right';
     if (!matchingRole) {

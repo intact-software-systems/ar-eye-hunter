@@ -57,9 +57,7 @@ export function projectAnalyzeTuneArtifactFacade(
         generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
         manifestSummary: {
             distributedRunId: projectAuthorityIdentifier(manifest.distributedRunId),
-            ...(manifest.controlRunId
-                ? { controlRunId: projectAuthorityIdentifier(manifest.controlRunId) }
-                : {}),
+            controlRunId: projectAuthorityIdentifier(manifest.controlRunId),
             ...(manifest.displayName
                 ? { displayName: boundedText(manifest.displayName, MAX_SUMMARY_BYTES) }
                 : {}),
@@ -74,7 +72,7 @@ export function projectAnalyzeTuneArtifactFacade(
                 ),
                 groupId: boundedText(manifest.group.groupId, MAX_METADATA_BYTES)
             },
-            ...(manifest.startMode ? { startMode: manifest.startMode } : {}),
+            startMode: manifest.startMode,
             recipeIds: {
                 entries: recipeIds.map((value) => projectOpaqueIdentifier(value)),
                 total: manifest.recipes.length,
@@ -110,13 +108,7 @@ export function projectAnalyzeTuneArtifactFacade(
                 inventory.limitations.length - MAX_TUNE_ROWS
             )
         },
-        ...(candidateManifest
-            ? { candidateManifest }
-            : {
-                candidateManifestOmittedReason: inventory.knobs.length > MAX_TUNE_ROWS
-                    ? 'inventory-windowed' as const
-                    : 'manifest-too-large' as const
-            }),
+        ...(candidateManifest ? { candidateManifest } : {}),
         selection: {
             ...(selection.focusRunId
                 ? { focusRunId: projectAuthorityIdentifier(selection.focusRunId) }
