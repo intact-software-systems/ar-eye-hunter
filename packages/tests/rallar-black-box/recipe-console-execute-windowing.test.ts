@@ -644,17 +644,25 @@ function createInspectorEntry(prefix: string): DistributedRecipeCatalogEntryProj
 }
 
 function createManifestDraft(distributedRunId: string): ExecuteManifestDraft {
-    const draft = createExecuteManifestDraft({
+    const created = createExecuteManifestDraft({
         controlRunId: 'control-run',
         distributedRunId,
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
         selectedAgentIds: ['agent'],
         selectedRecipe: catalogEntry
     });
-    if (draft.right === undefined) {
-        throw new Error(`The windowing fixture manifest must be creatable: ${draft.left}`);
+    const draft = created.right;
+    assertWindowingManifestDraft(draft, created.left);
+    return draft;
+}
+
+function assertWindowingManifestDraft(
+    draft: ExecuteManifestDraft | undefined,
+    issue: string | undefined
+): asserts draft is ExecuteManifestDraft {
+    if (!draft) {
+        throw new Error(`The windowing fixture manifest must be creatable: ${issue}`);
     }
-    return draft.right;
 }
 
 function createControlRun(index: number, runId = `control-run-${String(index).padStart(4, '0')}`): ControlRunSnapshot {
