@@ -6,20 +6,20 @@ import type { RecipeConsoleControlConnection } from '../control/ControlConnectio
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { deriveExecuteActionPolicy } from './execute-action-policy.ts';
 import {
-    currentExecuteTargetResolutionEvidence,
-    deriveExecuteManifest,
-    projectExecuteManifest
+    createExecuteManifestDraft,
+    resolveExecuteTargetResolutionEvidence,
+    toExecuteManifestDraft
 } from './execute-manifest.ts';
 import { deriveExecuteNextAction } from './execute-next-action.ts';
 import { projectExecuteOperationError } from './execute-operation-error.ts';
 import {
-    executeConnectionTruth,
-    executeOperationContextKey,
-    executeRunConfigurationIssue,
-    executeSafeTargetLabel,
-    executeTruthContextKey,
-    singleRunRecipe,
-    singleRunRecipeId
+    resolveExecuteConnectionTruth,
+    resolveExecuteRunConfigurationIssue,
+    resolveSingleRunRecipe,
+    resolveSingleRunRecipeId,
+    toExecuteOperationContextKey,
+    toExecuteSafeTargetLabel,
+    toExecuteTruthContextKey
 } from './execute-workflow-context.ts';
 import {
     deriveExecuteRecipeSelection,
@@ -49,7 +49,7 @@ export function useExecuteWorkflow(
     const [resolution, setResolution] = useState<BoundExecuteResolution>();
     const [optimisticRun, setOptimisticRun] = useState<BoundExecuteOptimisticRun>();
     const group = input.selection.groupContext.group;
-    const truthContextKey = executeTruthContextKey({
+    const truthContextKey = toExecuteTruthContextKey({
         baseUrl: input.connection.baseUrl,
         controlRunId: input.selection.controlRunId
     });
@@ -67,7 +67,7 @@ export function useExecuteWorkflow(
                 : undefined
         );
     }, [truthContextKey]);
-    const restoredRecipeId = input.urlState.recipeId ?? singleRunRecipeId(run);
+    const restoredRecipeId = input.urlState.recipeId ?? resolveSingleRunRecipeId(run);
     const baseCatalog = useMemo(() =>
         projectDistributedRecipeCatalog({
             configuration: {
@@ -82,7 +82,7 @@ export function useExecuteWorkflow(
         input.connection.bootstrap.apiBaseUrl
     ]);
     const catalog = useMemo(() => {
-        const storedRecipe = singleRunRecipe(run);
+        const storedRecipe = resolveSingleRunRecipe(run);
         if (!storedRecipe) {
             return baseCatalog;
         }
@@ -105,7 +105,7 @@ export function useExecuteWorkflow(
             query,
             profile
         }), [catalog.entries, profile, query]);
-    const connection = executeConnectionTruth(input.connection);
+    const connection = resolveExecuteConnectionTruth(input.connection);
     const draft = useExecuteDraft({
         connection: input.connection,
         selection: input.selection,
@@ -121,7 +121,7 @@ export function useExecuteWorkflow(
         if (awaitingExplicitRun) {
             return;
         }
-        const runRecipeId = singleRunRecipeId(run);
+        const runRecipeId = resolveSingleRunRecipeId(run);
         if (!input.urlState.recipeId && runRecipeId) {
             input.replace({ recipeId: runRecipeId });
         }
@@ -142,7 +142,7 @@ export function useExecuteWorkflow(
     const targetRows = draft.targetRows;
     const generatedManifest = !run && distributedRunId && input.selection.controlRun &&
             recipeSelection.selected
-        ? deriveExecuteManifest({
+        ? createExecuteManifestDraft({
             distributedRunId,
             controlRunId: input.selection.controlRun.runId,
             group,
@@ -150,14 +150,15 @@ export function useExecuteWorkflow(
             selectedAgentIds
         })
         : undefined;
-    const manifest = run ? projectExecuteManifest(run.manifest) : generatedManifest;
+    const requestedManifest = run ? toExecuteManifestDraft(run.manifest) : generatedManifest;
+    const manifest = requestedManifest?.right;
     const operationContextKey = manifest
-        ? executeOperationContextKey(truthContextKey, manifest.fingerprint)
+        ? toExecuteOperationContextKey(truthContextKey, manifest.fingerprint)
         : '';
     const currentResolution = manifest &&
             resolution?.contextKey === operationContextKey
-        ? currentExecuteTargetResolutionEvidence({
-            manifest: manifest.manifest,
+        ? resolveExecuteTargetResolutionEvidence({
+            manifestFingerprint: manifest.fingerprint,
             evidence: resolution.evidence
         })
         : undefined;
@@ -166,11 +167,12 @@ export function useExecuteWorkflow(
             input.connection.query.snapshot?.distributedRuns &&
             !run
     );
-    const configurationIssue = executeRunConfigurationIssue({
+    const configurationIssue = resolveExecuteRunConfigurationIssue({
         run,
         controlRunId: input.selection.controlRunId,
         recipeId: recipeSelection.selected?.item.recipe.recipeId
     });
+    const workflowIssue = configurationIssue ?? requestedManifest?.left ?? draft.draftIssue;
     const selectedTargetsSafe = selectedAgentIds.length > 0 &&
         selectedAgentIds.every((agentId) => targetRows.some((row) => row.agentId === agentId && row.targetable));
     const policyFacts = {
@@ -221,7 +223,7 @@ export function useExecuteWorkflow(
                 distributedRunId: undefined,
                 commandId: undefined
             }),
-        onSelectTargets: draft.selectTargets
+        onSelectTargets: draft.setSelectedTargets
     });
     const nextAction = deriveExecuteNextAction({
         connection,
@@ -246,8 +248,8 @@ export function useExecuteWorkflow(
         resolution: currentResolution,
         run,
         unknownDistributedRunId,
-        mutationError: operations.mutationError ?? (configurationIssue
-            ? projectExecuteOperationError(new Error(configurationIssue))
+        mutationError: operations.mutationError ?? (workflowIssue
+            ? projectExecuteOperationError(new Error(workflowIssue))
             : undefined),
         policy,
         agentLaunch,
@@ -256,7 +258,7 @@ export function useExecuteWorkflow(
         selectionLocked,
         startOpen: operations.startOpen,
         cancelOpen: operations.cancelOpen,
-        safeTargetLabel: executeSafeTargetLabel({
+        safeTargetLabel: toExecuteSafeTargetLabel({
             connection,
             rows: targetRows,
             selectedAgentIds

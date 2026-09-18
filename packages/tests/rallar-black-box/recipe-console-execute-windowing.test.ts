@@ -3,7 +3,11 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import { deriveExecuteManifest, type ExecuteTargetResolutionEvidence } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
+import {
+    createExecuteManifestDraft,
+    type ExecuteManifestDraft,
+    type ExecuteTargetResolutionEvidence
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import { ExecutePreflight } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-preflight.tsx';
 import { createExecuteWindowFingerprint, EXECUTE_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-window-contract.ts';
 import { ExecuteManifestDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteManifestDisclosure.tsx';
@@ -468,13 +472,7 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('unmounts closed manifest detail and windows all late validation errors when opened', async () => {
-        const base = deriveExecuteManifest({
-            controlRunId: 'control-run',
-            distributedRunId: 'distributed-run',
-            group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
-            selectedAgentIds: ['agent'],
-            selectedRecipe: catalogEntry
-        });
+        const base = manifestDraft('distributed-run');
         const errors = Array.from({ length: 240 }, (_, index) => ({
             source: 'contract' as const,
             path: `$.errors[${index}]`,
@@ -619,14 +617,18 @@ function inspectorEntry(prefix: string) {
     };
 }
 
-function manifestDraft(distributedRunId: string) {
-    return deriveExecuteManifest({
+function manifestDraft(distributedRunId: string): ExecuteManifestDraft {
+    const draft = createExecuteManifestDraft({
         controlRunId: 'control-run',
         distributedRunId,
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
         selectedAgentIds: ['agent'],
         selectedRecipe: catalogEntry
     });
+    if (draft.right === undefined) {
+        throw new Error(`The windowing fixture manifest must be creatable: ${draft.left}`);
+    }
+    return draft.right;
 }
 
 function controlRun(index: number, runId = `control-run-${String(index).padStart(4, '0')}`): ControlRunSnapshot {

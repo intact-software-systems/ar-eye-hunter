@@ -4,9 +4,10 @@ import type { RecipeConsoleControlConnection } from '../control/ControlConnectio
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetSelection } from './execute-workflow-state.ts';
 
-export function executeTruthContextKey(
+export function toExecuteTruthContextKey(
     input: Readonly<{
         baseUrl: string;
+        /** Absent while no control run is selected. */
         controlRunId?: string;
     }>
 ): string {
@@ -16,14 +17,14 @@ export function executeTruthContextKey(
     });
 }
 
-export function executeOperationContextKey(
+export function toExecuteOperationContextKey(
     truthContextKey: string,
     manifestFingerprint: string
 ): string {
     return JSON.stringify({ truthContextKey, fingerprint: manifestFingerprint });
 }
 
-export function executeConnectionTruth(
+export function resolveExecuteConnectionTruth(
     connection: RecipeConsoleControlConnection
 ): ExecuteConnectionTruth {
     if (connection.query.lastError?.credentialTrustRequired === true) {
@@ -44,26 +45,14 @@ export function executeConnectionTruth(
     return connection.query.status;
 }
 
-export function manifestRecipeIds(
-    manifest: ControlDistributedRunSnapshot['manifest']
-): readonly string[] {
-    return [
-        ...new Set(
-            manifest.recipes.map((selection) => selection.recipeId ?? selection.recipe?.recipeId).filter((
-                value
-            ): value is string => Boolean(value))
-        )
-    ].sort();
-}
-
-export function singleRunRecipeId(
+export function resolveSingleRunRecipeId(
     run: ControlDistributedRunSnapshot | undefined
 ): string | undefined {
-    const recipeIds = run ? manifestRecipeIds(run.manifest) : [];
+    const recipeIds = run ? toManifestRecipeIds(run.manifest) : [];
     return recipeIds.length === 1 ? recipeIds[0] : undefined;
 }
 
-export function singleRunRecipe(
+export function resolveSingleRunRecipe(
     run: ControlDistributedRunSnapshot | undefined
 ): RallarBlackBoxTestRecipe | undefined {
     const recipes = (run?.manifest.recipes ?? [])
@@ -72,7 +61,7 @@ export function singleRunRecipe(
     return recipes.length === 1 ? recipes[0] : undefined;
 }
 
-export function authoritativeTargetIds(
+export function resolveAuthoritativeTargetIds(
     run: ControlDistributedRunSnapshot
 ): readonly string[] {
     const targetPolicy = run.manifest.targetPolicy;
@@ -83,10 +72,13 @@ export function authoritativeTargetIds(
     ].sort();
 }
 
-export function executeRunConfigurationIssue(
+export function resolveExecuteRunConfigurationIssue(
     input: Readonly<{
+        /** Absent while the console has no stored distributed run to check. */
         run?: ControlDistributedRunSnapshot;
+        /** Absent while no control run is selected. */
         controlRunId?: string;
+        /** Absent while no recipe is selected. */
         recipeId?: string;
     }>
 ): string | undefined {
@@ -96,14 +88,14 @@ export function executeRunConfigurationIssue(
     if (input.run.controlRunId !== input.controlRunId) {
         return 'The selected distributed run belongs to a different control run.';
     }
-    const recipeIds = manifestRecipeIds(input.run.manifest);
+    const recipeIds = toManifestRecipeIds(input.run.manifest);
     if (recipeIds.length !== 1 || recipeIds[0] !== input.recipeId) {
         return 'The selected recipe does not match the authoritative stored run manifest.';
     }
     return undefined;
 }
 
-export function sameTargetSelection(
+export function isSameTargetSelection(
     left: ExecuteTargetSelection | undefined,
     right: ExecuteTargetSelection
 ): boolean {
@@ -112,7 +104,7 @@ export function sameTargetSelection(
         left.agentIds.every((value, index) => value === right.agentIds[index]);
 }
 
-export function executeSafeTargetLabel(
+export function toExecuteSafeTargetLabel(
     input: Readonly<{
         connection: ExecuteConnectionTruth;
         rows: readonly Readonly<{ targetable: boolean; }>[];
@@ -123,4 +115,16 @@ export function executeSafeTargetLabel(
     return input.connection === 'live' || input.connection === 'partial'
         ? `${input.selectedAgentIds.length} selected · ${safe} recipe-safe`
         : `0 current · ${safe} last-known recipe-safe`;
+}
+
+function toManifestRecipeIds(
+    manifest: ControlDistributedRunSnapshot['manifest']
+): readonly string[] {
+    return [
+        ...new Set(
+            manifest.recipes.map((selection) => selection.recipeId ?? selection.recipe?.recipeId).filter((
+                value
+            ): value is string => Boolean(value))
+        )
+    ].sort();
 }

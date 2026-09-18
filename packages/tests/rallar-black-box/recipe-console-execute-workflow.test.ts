@@ -1,7 +1,7 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { describe, expect, it } from 'vitest';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import { executeConnectionTruth } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
+import { resolveExecuteConnectionTruth } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
 import {
     classifyExecuteMutationResponse,
     createExecuteTargetContextKey,
@@ -98,7 +98,7 @@ describe('Recipe Console Execute pure workflow state', () => {
             }
         } as RecipeConsoleControlConnection;
 
-        expect(executeConnectionTruth(connection)).toBe('error');
+        expect(resolveExecuteConnectionTruth(connection)).toBe('error');
     });
 
     it('keeps credential trust blocking distinct from ordinary authorization', () => {
@@ -115,7 +115,7 @@ describe('Recipe Console Execute pure workflow state', () => {
             }
         } as RecipeConsoleControlConnection;
 
-        expect(executeConnectionTruth(connection)).toBe('credential-trust');
+        expect(resolveExecuteConnectionTruth(connection)).toBe('credential-trust');
     });
 
     it('selects the approved canonical default independent of catalog order', () => {
