@@ -13,7 +13,9 @@ const httpFailure: ControlRequestFailure = {
 describe('an optional control read inside the distributed refresh', () => {
     it('answers with the value the control server returned', async () => {
         await expect(
-            readAvailableControlValue(Promise.resolve(Either.ofRight('run-1')))
+            readAvailableControlValue(
+                Promise.resolve(Either.ofRight<ControlRequestFailure, string>('run-1'))
+            )
         ).resolves.toBe('run-1');
     });
 
