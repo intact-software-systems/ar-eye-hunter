@@ -858,7 +858,12 @@ describe('Recipe Console Monitor coherent state', () => {
             id: 'failure-a'
         });
         state = setMonitorCancelArm(state, context.key, 'cancel-arm-a');
-        const pending = beginMonitorOperation(state, context.key, 'load-artifact');
+        const pending = beginMonitorOperation({
+            state,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: state.operationGeneration + 1
+        });
         state = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
@@ -1073,7 +1078,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
                 { runs: [controlRun()], distributedRuns: [distributedRun()] }
             )
         );
-        const loading = beginMonitorOperation(state, context.key, 'load-artifact');
+        const loading = beginMonitorOperation({
+            state,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: state.operationGeneration + 1
+        });
         state = completeMonitorArtifactOperation(
             loading.state,
             loading.authority,
@@ -1084,7 +1094,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('retains a same-run prior bundle while pending and after failure', () => {
         const ready = withCurrentArtifact();
-        const pending = beginMonitorOperation(ready, context.key, 'load-artifact');
+        const pending = beginMonitorOperation({
+            state: ready,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: ready.operationGeneration + 1
+        });
         const provenance = Object.assign(new Error('artifact endpoint failed'), {
             status: 403,
             authorizationRequired: true
@@ -1109,7 +1124,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('rejects artifact identity mismatches without replacing prior evidence', () => {
         const ready = withCurrentArtifact();
-        const pending = beginMonitorOperation(ready, context.key, 'export-artifact');
+        const pending = beginMonitorOperation({
+            state: ready,
+            contextKey: context.key,
+            action: 'export-artifact',
+            generation: ready.operationGeneration + 1
+        });
         const mismatched = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
@@ -1125,13 +1145,18 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('uses context-bound generations to ignore abort-resistant late responses', () => {
         const state = withCurrentArtifact();
-        const first = beginMonitorOperation(
+        const first = beginMonitorOperation({
             state,
-            context.key,
-            'load-artifact',
-            50
-        );
-        const second = beginMonitorOperation(first.state, context.key, 'export-artifact');
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: 50
+        });
+        const second = beginMonitorOperation({
+            state: first.state,
+            contextKey: context.key,
+            action: 'export-artifact',
+            generation: first.state.operationGeneration + 1
+        });
         const afterLateFailure = failMonitorOperation(
             second.state,
             first.authority,

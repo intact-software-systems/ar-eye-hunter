@@ -84,20 +84,20 @@ export function useMonitorOperations(
         const controller = new AbortController();
         requestRef.current = controller;
         const generation = ++generationRef.current;
-        const started = beginMonitorOperation(
-            input.state,
-            context.key,
+        const started = beginMonitorOperation({
+            state: input.state,
+            contextKey: context.key,
             action,
             generation
-        );
+        });
         const authority = started.authority;
         input.setState((previous) =>
-            beginMonitorOperation(
-                previous,
-                context.key,
+            beginMonitorOperation({
+                state: previous,
+                contextKey: context.key,
                 action,
-                authority.generation
-            ).state
+                generation: authority.generation
+            }).state
         );
         let succeeded = false;
         try {

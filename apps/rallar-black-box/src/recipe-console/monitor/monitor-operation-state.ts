@@ -37,13 +37,18 @@ export function createInitialMonitorOperationState(): MonitorOperationState {
     };
 }
 
+export interface BeginMonitorOperationInput<State extends MonitorOperationState> {
+    readonly state: State;
+    readonly contextKey: string;
+    readonly action: MonitorAction;
+    readonly generation: number;
+}
+
 export function beginMonitorOperation<State extends MonitorOperationState>(
-    state: State,
-    contextKey: string,
-    action: MonitorAction,
-    generation = state.operationGeneration + 1
+    input: BeginMonitorOperationInput<State>
 ): Readonly<{ state: State; authority: MonitorOperationAuthority; }> {
-    const nextGeneration = Math.max(generation, state.operationGeneration + 1);
+    const { state, contextKey, action } = input;
+    const nextGeneration = Math.max(input.generation, state.operationGeneration + 1);
     const authority = { contextKey, generation: nextGeneration, action };
     if (state.contextKey !== contextKey) {
         return { state, authority };
