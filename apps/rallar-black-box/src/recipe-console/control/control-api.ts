@@ -1,6 +1,6 @@
 import type { ControlServerSnapshot, ControlSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 import {
     toControlHttpBaseUrl,
     type ControlRunManagerFetch
@@ -168,7 +168,7 @@ function controlProtocolError(error: unknown): RecipeConsoleControlProtocolError
 }
 
 function isProtocolCandidate(error: unknown): boolean {
-    return !(error instanceof ControlRunManagerHttpError) &&
+    return !(error instanceof ControlHttpError) &&
         !(
             error && typeof error === 'object' &&
             'authorizationRequired' in error && error.authorizationRequired === true

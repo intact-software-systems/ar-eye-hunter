@@ -1,6 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 import {
     resolveBlackBoxControlToken,
     shouldRefreshBlackBoxControlToken,
@@ -113,9 +113,9 @@ export function createControlAuthorizedTransport(
             if (
                 brokerResponse &&
                 !brokerResponse.ok &&
-                !(error instanceof ControlRunManagerHttpError)
+                !(error instanceof ControlHttpError)
             ) {
-                throw new ControlRunManagerHttpError(
+                throw new ControlHttpError(
                     controlAuthorizationErrorMessage(error),
                     brokerResponse.status,
                     brokerResponse.statusText
@@ -352,27 +352,10 @@ async function runControlOperation<Value>(
         signal: AbortSignal | undefined;
     }>
 ): Promise<Either<ControlRequestFailure, Value>> {
-    try {
-        throwIfControlAborted(input.signal);
-        const outcome = await input.operation(input.token, input.fetchFn);
-        throwIfControlAborted(input.signal);
-        return outcome;
-    }
-    catch (error) {
-        throwIfControlAborted(input.signal);
-        // Control endpoints this transport also serves - retention, and operations that validate
-        // their own reply - still report an HTTP failure by throwing. Read that as the same
-        // failure value so one recovery path answers both.
-        if (error instanceof ControlRunManagerHttpError) {
-            return Either.ofLeft({
-                kind: 'http',
-                status: error.status,
-                statusText: error.statusText,
-                message: error.message
-            });
-        }
-        throw error;
-    }
+    throwIfControlAborted(input.signal);
+    const outcome = await input.operation(input.token, input.fetchFn);
+    throwIfControlAborted(input.signal);
+    return outcome;
 }
 
 function toControlOperationError(failure: ControlRequestFailure): Error {
@@ -381,6 +364,6 @@ function toControlOperationError(failure: ControlRequestFailure): Error {
         : new Error(failure.message);
 }
 
-function toControlHttpError(failure: ControlHttpRequestFailure): ControlRunManagerHttpError {
-    return new ControlRunManagerHttpError(failure.message, failure.status, failure.statusText);
+function toControlHttpError(failure: ControlHttpRequestFailure): ControlHttpError {
+    return new ControlHttpError(failure.message, failure.status, failure.statusText);
 }

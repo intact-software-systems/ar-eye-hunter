@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
+import { ControlHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { analyzeFilterClearPatch } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-selection.ts';
 import {
     createAnalyzeImportLabel,
@@ -39,7 +39,7 @@ describe('Recipe Console Analyze binding policy', () => {
     it('projects retained operation errors without discarding useful messages', () => {
         expect(toAnalyzeWorkspaceErrorMessage(new Error('identity mismatch')))
             .toBe('identity mismatch');
-        expect(toAnalyzeWorkspaceErrorMessage(new ControlRunManagerHttpError('Artifact is gone', 404, 'Not Found')))
+        expect(toAnalyzeWorkspaceErrorMessage(new ControlHttpError('Artifact is gone', 404, 'Not Found')))
             .toBe('The selected Control artifact is unavailable. It may have expired or been removed.');
         expect(toAnalyzeWorkspaceErrorMessage(undefined)).toBeUndefined();
     });

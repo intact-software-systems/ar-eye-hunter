@@ -1,4 +1,4 @@
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { AnalyzeWorkspaceAction, AnalyzeWorkspaceContext } from './analyze-workspace-state.ts';
 
@@ -22,7 +22,7 @@ export function toAnalyzeWorkspaceErrorMessage(
     if (error === undefined) {
         return undefined;
     }
-    if (error instanceof ControlRunManagerHttpError && error.status === 404) {
+    if (error instanceof ControlHttpError && error.status === 404) {
         return 'The selected Control artifact is unavailable. It may have expired or been removed.';
     }
     return error.message;

@@ -1,7 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { resolve } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { ControlRunManagerHttpError as CanonicalHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { createRecipeConsoleControlApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
     recipeConsoleControlCredentialPolicyFromSearch,
@@ -129,41 +128,61 @@ describe('Recipe Console retention request wire format', () => {
         [400, 'Bad Request'],
         [409, 'Conflict'],
         [413, 'Payload Too Large']
-    ])('retains canonical HTTP %s provenance', async (status, statusText) => {
+    ])('retains canonical HTTP %s provenance as a failure value', async (status, statusText) => {
         const fetchFn = async () =>
             Response.json(
                 { error: `retention-${status}` },
                 { status, statusText }
             );
 
-        const failure = requestControlRetentionPreview({
+        const refused = await requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn
         });
 
-        await expect(failure).rejects.toBeInstanceOf(CanonicalHttpError);
-        await expect(failure).rejects.toMatchObject({
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual({
+            kind: 'http',
             message: `retention-${status}`,
             status,
             statusText
         });
     });
 
+    it('names the request itself when a failed reply carries no server sentence', async () => {
+        const refused = await requestControlRetentionPreview({
+            baseUrl: 'https://control.test',
+            fetchFn: async () => Response.json({}, { status: 409, statusText: 'Conflict' })
+        });
+
+        expect(refused.left).toEqual({
+            kind: 'http',
+            message: 'Control server request failed: 409 Conflict',
+            status: 409,
+            statusText: 'Conflict'
+        });
+    });
+
     it('keeps non-JSON success parse failures and non-JSON HTTP status separate', async () => {
+        // A 2xx body that is not JSON is the server breaking its own protocol, not a retention
+        // outcome, so it stays a thrown value the transport maps to a reachable protocol error.
         await expect(requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn: async () => new Response('not-json')
         })).rejects.toBeInstanceOf(SyntaxError);
 
-        await expect(requestControlRetentionPreview({
+        const refused = await requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn: async () =>
                 new Response('not-json', {
                     status: 409,
                     statusText: 'Conflict'
                 })
-        })).rejects.toMatchObject({
-            name: 'ControlRunManagerHttpError',
+        });
+
+        expect(refused.left).toEqual({
+            kind: 'http',
+            message: 'Control server request failed: 409 Conflict',
             status: 409,
             statusText: 'Conflict'
         });

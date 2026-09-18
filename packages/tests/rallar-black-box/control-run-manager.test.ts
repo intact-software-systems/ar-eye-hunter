@@ -1,7 +1,7 @@
 import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
+import { ControlHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import { controlResponseDocumentText } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import {
     cancelDistributedRun,
@@ -154,15 +154,15 @@ function expectControlFailure<Value>(
 
 describe('rallar-black-box control run manager', () => {
     it('carries the control HTTP status and message on its own error identity', () => {
-        const error = new ControlRunManagerHttpError(
+        const error = new ControlHttpError(
             'Operator token required.',
             401,
             'Unauthorized'
         );
 
-        expect(error).toBeInstanceOf(ControlRunManagerHttpError);
+        expect(error).toBeInstanceOf(ControlHttpError);
         expect(error).toMatchObject({
-            name: 'ControlRunManagerHttpError',
+            name: 'ControlHttpError',
             message: 'Operator token required.',
             status: 401,
             statusText: 'Unauthorized'

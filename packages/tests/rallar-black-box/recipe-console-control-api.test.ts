@@ -1,6 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
+import { ControlHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import {
     createRecipeConsoleControlApi as createRecipeConsoleControlApiWithPolicy,
     RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS,
@@ -1210,7 +1210,7 @@ describe('Recipe Console control API', () => {
         expect(result.completeness).toBe('partial');
         expect(result.distributedRunsSource).toBe('unavailable');
         expect(result.authorization).toBe('anonymous');
-        expect(result.partialError).toBeInstanceOf(ControlRunManagerHttpError);
+        expect(result.partialError).toBeInstanceOf(ControlHttpError);
         expect(result.partialError).toMatchObject({
             message: 'Distributed runs are temporarily unavailable.',
             status: 503
@@ -1238,7 +1238,7 @@ describe('Recipe Console control API', () => {
                 snapshot: { runs: [] },
                 completeness: 'partial',
                 partialError: {
-                    name: 'ControlRunManagerHttpError',
+                    name: 'ControlHttpError',
                     status
                 }
             });
@@ -1651,7 +1651,7 @@ describe('Recipe Console control API', () => {
         });
 
         await expect(api.readSnapshot({})).rejects.toMatchObject({
-            name: 'ControlRunManagerHttpError',
+            name: 'ControlHttpError',
             message: 'Operator token required.',
             status: 401,
             statusText: 'Unauthorized'
