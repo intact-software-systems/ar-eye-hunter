@@ -8,7 +8,7 @@ import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { StatePanel } from '../ui/StatePanel.tsx';
 import { historyFilterPresetApplyPatch, type HistoryFilterPreset } from './history-filter-contract.ts';
-import { createRecipeConsoleHistoryCollection, deriveRecipeConsoleHistoryWindow } from './history-model.ts';
+import { computeRecipeConsoleHistoryWindow, createRecipeConsoleHistoryCollection } from './history-model.ts';
 import { HistoryFilters } from './HistoryFilters.tsx';
 import { HistoryHeader } from './HistoryHeader.tsx';
 import { HistoryRetentionWorkspace } from './HistoryRetentionWorkspace.tsx';
@@ -44,7 +44,7 @@ export function HistoryWorkspace({
         }), [query, urlState]);
     const historyWindow = useHistoryWindow(collection);
     const model = useMemo(() =>
-        deriveRecipeConsoleHistoryWindow(
+        computeRecipeConsoleHistoryWindow(
             collection,
             historyWindow.model.startIndex
         ), [collection, historyWindow.model.startIndex]);
