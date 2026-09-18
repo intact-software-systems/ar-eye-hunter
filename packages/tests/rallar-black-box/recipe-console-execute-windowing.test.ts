@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/agent-launch/use-execute-agent-launch.ts';
 import {
     createExecuteManifestDraft,
     type ExecuteManifestDraft,
@@ -15,7 +16,6 @@ import { createExecuteWindowFingerprint, EXECUTE_WINDOW_BUDGETS } from '../../..
 import { ExecuteManifestDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteManifestDisclosure.tsx';
 import { ExecuteRecipeInspector } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteRecipeInspector.tsx';
 import { ExecuteWindowedList } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteWindowedList.tsx';
-import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     projectDistributedRecipeCatalog,

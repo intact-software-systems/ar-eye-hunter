@@ -24,7 +24,7 @@ import {
 import {
     useExecuteAgentLaunch,
     type ExecuteAgentLaunchModel
-} from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/agent-launch/use-execute-agent-launch.ts';
 import { controlWebSocketUrlFromHttpBaseUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 

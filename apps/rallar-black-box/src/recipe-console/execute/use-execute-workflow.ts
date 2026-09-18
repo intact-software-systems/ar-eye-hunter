@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { useExecuteAgentLaunch } from './agent-launch/use-execute-agent-launch.ts';
 import { deriveExecuteActionPolicy } from './execute-action-policy.ts';
 import {
     createExecuteManifestDraft,
@@ -27,7 +28,6 @@ import {
     recipeConsoleExecuteRecipeSelectionPatch,
     reconcileExecuteRunTruth
 } from './execute-workflow-state.ts';
-import { useExecuteAgentLaunch } from './use-execute-agent-launch.ts';
 import { useExecuteDraft } from './use-execute-draft.ts';
 import {
     useExecuteOperations,

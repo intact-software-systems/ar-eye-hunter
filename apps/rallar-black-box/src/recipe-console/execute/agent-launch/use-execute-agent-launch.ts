@@ -1,8 +1,8 @@
 import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../runner-agent-launch.ts';
-import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
+import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 import { executeAgentLaunchBlocker } from './execute-agent-launch-blocker.ts';
 import { executeAgentLaunchRunIdSync } from './execute-agent-launch-state.ts';
 import { useExecuteAgentCohort } from './use-execute-agent-cohort.ts';

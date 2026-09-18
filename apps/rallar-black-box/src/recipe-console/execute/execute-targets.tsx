@@ -1,6 +1,7 @@
 import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRecipeTargetRow } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import type { ExecuteAgentLaunchModel } from './agent-launch/use-execute-agent-launch.ts';
 import type { ExecuteConnectionTruth } from './execute-action-policy.ts';
 import type { ExecuteTargetResolutionEvidence } from './execute-manifest.ts';
 import { ExecuteTargetWindow } from './execute-target-window.tsx';
@@ -8,7 +9,6 @@ import { ExecuteAgentSetup } from './ExecuteAgentSetup.tsx';
 import { ExecuteControlRunPicker } from './ExecuteControlRunPicker.tsx';
 import { ExecuteResolutionWindow } from './ExecuteResolutionWindow.tsx';
 import styles from './ExecuteTargets.module.css';
-import type { ExecuteAgentLaunchModel } from './use-execute-agent-launch.ts';
 
 export type ExecuteTargetsProps = Readonly<{
     rows: readonly DistributedRecipeTargetRow[];

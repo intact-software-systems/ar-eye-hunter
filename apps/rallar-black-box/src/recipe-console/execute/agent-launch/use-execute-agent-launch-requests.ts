@@ -5,8 +5,8 @@ import {
     releaseReservedBrowserAgentPopups,
     reserveBrowserAgentPopups,
     type BrowserAgentPopupReservation
-} from '../../browser-agent-popup.ts';
-import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+} from '../../../browser-agent-popup.ts';
+import type { RecipeConsoleControlConnection } from '../../control/ControlConnectionProvider.tsx';
 import {
     executeAgentLaunchErrorMessage,
     mergeExecuteAgentLaunchCohort,
