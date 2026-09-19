@@ -57,8 +57,7 @@ for (const transport of transports) {
                     timeoutMs: 30_000,
                     visibleInbox: true
                 });
-                await smoke.finalizeAgent(agentA);
-                await smoke.finalizeAgent(agentB);
+                await Promise.all([smoke.finalizeAgent(agentA), smoke.finalizeAgent(agentB)]);
                 await smoke.expectEvidence('delivery');
             }
             finally {
@@ -175,8 +174,7 @@ for (const transport of transports) {
                     readyPeerId: connectedA.sessionId,
                     reconnectSuppressed: false
                 });
-                await smoke.finalizeAgent(agentA);
-                await smoke.finalizeAgent(agentB);
+                await Promise.all([smoke.finalizeAgent(agentA), smoke.finalizeAgent(agentB)]);
                 await smoke.expectEvidence('reload');
             }
             finally {
@@ -265,8 +263,7 @@ test('browser-rallar provider suppresses WS reconnect after intentional disconne
             readyPeerId: connectedA.sessionId,
             reconnectSuppressed: false
         });
-        await smoke.finalizeAgent(agentA);
-        await smoke.finalizeAgent(agentB);
+        await Promise.all([smoke.finalizeAgent(agentA), smoke.finalizeAgent(agentB)]);
         await smoke.expectEvidence('disconnect');
     }
     finally {
