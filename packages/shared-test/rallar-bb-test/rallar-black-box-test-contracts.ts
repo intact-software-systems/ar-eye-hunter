@@ -818,6 +818,10 @@ export interface RallarBlackBoxTestRtcStreamFrameObservation {
     readonly ok: boolean;
     /** Present only when the in-flight limit dropped the frame before it was sent. */
     readonly dropped?: true;
+    /** Present only when a typed-message send result was decoded for the frame. */
+    readonly queued?: boolean;
+    /** Present only when a typed-message send result was decoded for the frame. */
+    readonly enqueued?: boolean;
     /** Absent when no send result was decoded for the frame. */
     readonly backpressured?: boolean;
     /** Absent when the send result did not decode. */

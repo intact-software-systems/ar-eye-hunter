@@ -30,7 +30,7 @@ import type {
 } from '../black-box-rallar-runtime-contract.ts';
 import type { BlackBoxRallarRuntimeInstallationTarget } from '../black-box-rallar-runtime.ts';
 import type { BlackBoxBrowserRallarRuntimeDependency } from '../browser-rallar-runtime-composition.ts';
-import { requireBlackBoxRallarInput } from '../decode-black-box-rallar-command-input.ts';
+import { decodeBlackBoxCommandNumber, requireBlackBoxRallarInput } from '../decode-black-box-rallar-command-input.ts';
 import { BlackBoxRallarDirectorController } from '../director-controller.ts';
 import { BlackBoxRallarFormationController } from '../formation/formation-controller.ts';
 import { createBlackBoxRallarLifecycleController } from '../lifecycle-controller.ts';
@@ -167,8 +167,11 @@ export class BlackBoxRallarConnectionRuntime {
     #messagingSurface(): Pick<BlackBoxRallarRuntime, BlackBoxRallarConnectionRuntime.MessagingMethod> {
         const { rtcSend, wsSend, deliveryLedger } = this.#controllers;
         return {
-            send: async (input) =>
-                await rtcSend.send(requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input))),
+            send: async (input, deadlineEpochMs) =>
+                await rtcSend.send(
+                    requireBlackBoxRallarInput(decodeBlackBoxRallarSendCommand(input)),
+                    decodeBlackBoxCommandNumber(deadlineEpochMs)
+                ),
             sendWs: async (input) =>
                 await wsSend.sendWs(requireBlackBoxRallarInput(decodeBlackBoxRallarWsSendInput(input))),
             sendMessage: async (input) =>
@@ -352,12 +355,13 @@ function createProductControllers(
             emitError: diagnostics.emitError,
             now: input.clock.now
         }),
-        ...createMessagingControllers(foundation)
+        ...createMessagingControllers(foundation, input.clock)
     };
 }
 
 function createMessagingControllers(
-    foundation: BlackBoxRallarConnectionRuntime.Foundation
+    foundation: BlackBoxRallarConnectionRuntime.Foundation,
+    clock: BlackBoxRallarConnectionRuntime.Input['clock']
 ): Pick<
     BlackBoxRallarConnectionRuntime.Controllers,
     'messagingResources' | 'subscriptions' | 'typedChannels' | 'rtcSend' | 'wsSend' | 'deliveryLedger'
@@ -379,6 +383,8 @@ function createMessagingControllers(
         }),
         typedChannels,
         rtcSend: new BlackBoxRallarRtcSendController({
+            now: clock.now,
+            operationSignal: lifecycle.operationSignal,
             messages: rallar.messages,
             realtime: rallar.realtime,
             resources,

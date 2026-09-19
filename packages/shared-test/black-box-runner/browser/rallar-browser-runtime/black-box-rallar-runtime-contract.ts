@@ -64,7 +64,8 @@ export interface BlackBoxRallarRuntime {
     connect(
         config: BlackBoxRallarConnectionConfig
     ): Promise<BlackBoxRallarConnectDiagnostics>;
-    send(input: unknown): Promise<BlackBoxRallarSendDiagnostics>;
+    /** An absent deadline gives typed-message admission its default wait budget; realtime sends ignore it. */
+    send(input: unknown, deadlineEpochMs?: number): Promise<BlackBoxRallarSendDiagnostics>;
     sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
     sendMessage(input: unknown): Promise<BlackBoxRallarMessageSendDiagnostics>;
     observeDelivery(input: unknown): Promise<BlackBoxRallarDeliveryObservation>;

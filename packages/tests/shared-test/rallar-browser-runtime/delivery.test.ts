@@ -6,15 +6,31 @@ import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browse
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
+import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/create-rallar-black-box-browser-test-runtime.ts';
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
+import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
+import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
 import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
 import { openFacadeDelivery } from './browser-runtime-facade-test-double.ts';
+
+interface DeliveryFixture {
+    readonly registry: BrowserRallarDeliveryRegistry;
+    readonly handle: RallarMessageHandle;
+    readonly msgId: string;
+}
+
+interface RtcRecipeRuntime {
+    readonly native: BlackBoxRallarRuntime;
+    readonly runtime: RallarBlackBoxBrowserTestRuntime;
+}
 
 const connection = {
     connection: 'aliceAlm',
@@ -41,7 +57,7 @@ const unknownObservation = {
     enqueued: false
 };
 
-function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined) {
+function openDelivery(verdict: ALDeliveryAdmissionVerdict | undefined): DeliveryFixture {
     const handle = openFacadeDelivery('ws', verdict);
     return { registry: facade.deliveries, handle, msgId: handle.msgId };
 }
@@ -341,45 +357,16 @@ it('carries the earlier absolute command deadline into a pending admission wait'
     expect(await native.readReceipts(query)).toMatchObject({ state: 'submitted', attempts: 0 });
 });
 
-it.each([
-    { verdict: { kind: 'refused', reason: 'oversized', detail: 'Payload exceeds 8 bytes.' } as const, state: 'rejected', ok: false },
-    { verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 } as const, state: 'queued', ok: true }
-])('uses the typed RTC $state lifecycle in the command outcome', async ({ verdict, state, ok }) => {
-    const native = await loadRuntime();
-    const delivery = openDelivery(verdict);
-    facade.behavior.rtcMessageSend.mockResolvedValue(delivery.handle);
-    await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
-    vi.stubGlobal('window', { __blackBoxRallar: native });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
-    const outcome = await runtime.execute({
-        kind: 'rtc.send',
-        commandId: 'typed-rtc',
-        transport: 'messages.rtc',
-        send: { typeId: 'alm.conformance', payload: { text: 'sample' } }
-    });
-    expect(outcome.ok).toBe(ok);
-    expect(outcome.value).toMatchObject({ message: { state }, sendObservation: { status: state, ok } });
-    if (!ok) {
-        expect(outcome.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_FAILED', message: expect.stringContaining('Payload exceeds 8 bytes.') });
-    }
-});
-
-it('projects typed RTC lifecycle evidence for each stream frame', async () => {
-    const native = await loadRuntime();
-    facade.behavior.rtcMessageSend.mockResolvedValue(openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 }).handle);
-    await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
-    vi.stubGlobal('window', { __blackBoxRallar: native });
-    const runtime = createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime() });
-    const running = runtime.execute({
-        kind: 'rtc.stream',
-        commandId: 'typed-stream',
-        transport: 'messages.rtc',
-        count: 1,
-        intervalMs: 1,
-        send: { typeId: 'alm.conformance', payload: true }
-    });
+it('reports a typed RTC rejection as a failed recipe command with its reason', async () => {
+    const { runtime } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    const running = runtime.execute({ kind: 'rtc.send', commandId: 'rejected-rtc', transport: 'messages.rtc', send: { payload: true } });
     await vi.advanceTimersByTimeAsync(0);
-    expect((await running).value).toMatchObject({ observations: [{ status: 'queued', ok: true }] });
+    admission.resolve({ kind: 'refused', reason: 'oversized', detail: 'Payload exceeds 8 bytes.' });
+    const result = await running;
+    expect(result.ok).toBe(false);
+    expect(result.value).toMatchObject({ message: { state: 'rejected' }, sendObservation: { status: 'rejected', ok: false } });
+    expect(result.error).toMatchObject({ code: 'RALLAR_BB_RTC_SEND_FAILED', message: expect.stringContaining('Payload exceeds 8 bytes.') });
 });
 
 it('keeps the authored bounded-rejection cancellation probe aligned with a real terminal handle', async () => {
@@ -408,4 +395,209 @@ it('keeps the authored bounded-rejection cancellation probe aligned with a real 
             expect(result.value).toMatchObject({ state: 'rejected' });
         }
     }
+});
+
+function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
+    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message): Promise<ALOutboundEnqueueResult> => {
+        const verdict = await admission.promise;
+        return { message, verdict, status: toALOutboundEnqueueStatus(verdict), entries: [] };
+    });
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    return admission;
+}
+
+async function connectRtcRecipeRuntime(): Promise<RtcRecipeRuntime> {
+    const native = await loadRuntime();
+    await native.connect({ ...connection, rallar: { ...connection.rallar, transport: 'messages.rtc', typeId: 'alm.conformance' } });
+    vi.stubGlobal('window', { __blackBoxRallar: native });
+    return { native, runtime: createRallarBlackBoxBrowserTestRuntime({ rallarRuntime: createSpaBrowserRallarRuntime(), now: Date.now }) };
+}
+
+it.each([
+    { reason: 'rate-limited' as const, backpressured: true },
+    { reason: 'circuit-open' as const, backpressured: true },
+    { reason: 'no-route' as const, backpressured: false }
+])('waits for delayed RTC $reason admission before evaluating loop backpressure', async ({ reason, backpressured }) => {
+    const { runtime } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    let settled = false;
+    const running = runtime.execute({
+        kind: 'loop',
+        commandId: 'admission-loop',
+        count: 1,
+        continueOnFailure: true,
+        thresholds: { failOnBackpressure: true },
+        commands: [{ kind: 'rtc.send', commandId: 'admission-send', transport: 'messages.rtc', send: { payload: true } }]
+    });
+    void running.then(() => {
+        settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    expect(settled).toBe(false);
+    admission.resolve({ kind: 'unroutable', reason, detail: reason });
+    const result = await running;
+    expect(result.value).toMatchObject({ sends: { backpressureCount: backpressured ? 1 : 0 } });
+    expect(result.value).toMatchObject({ thresholdFailures: backpressured ? [expect.objectContaining({ category: 'backpressure' })] : undefined });
+});
+
+it.each([
+    { reason: 'rate-limited' as const, backpressured: true },
+    { reason: 'circuit-open' as const, backpressured: true },
+    { reason: 'no-route' as const, backpressured: false }
+])('waits for delayed RTC $reason admission before evaluating stream backpressure', async ({ reason, backpressured }) => {
+    const { runtime } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    const running = runtime.execute({
+        kind: 'rtc.stream',
+        commandId: 'admission-stream',
+        transport: 'messages.rtc',
+        count: 1,
+        intervalMs: 1,
+        continueOnSendFailure: true,
+        thresholds: { maxBackpressureCount: 0 },
+        send: { payload: true }
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    admission.resolve({ kind: 'unroutable', reason, detail: reason });
+    const result = await running;
+    expect(result.ok).toBe(!backpressured);
+    expect(result.value).toMatchObject({
+        backpressureCount: backpressured ? 1 : 0,
+        observations: [{ status: 'failed', backpressured, queued: false, enqueued: false }]
+    });
+});
+
+it.each(['rtc.send', 'rtc.stream'] as const)('projects delayed durable admission through %s without waiting for delivery', async (kind) => {
+    const { runtime } = await connectRtcRecipeRuntime();
+    const admission = deferRtcAdmission();
+    const running = runtime.execute({ kind, commandId: 'durable', transport: 'messages.rtc', count: 1, intervalMs: 1, send: { payload: true } });
+    await vi.advanceTimersByTimeAsync(20);
+    admission.resolve({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    const result = await running;
+    expect(result.ok).toBe(true);
+    expect(result.value).toMatchObject(
+        kind === 'rtc.send'
+            ? { sendObservation: { status: 'queued', queued: true, enqueued: true, backpressured: false } }
+            : { observations: [{ status: 'queued', queued: true, enqueued: true, backpressured: false }] }
+    );
+});
+
+it.each(['messages.rtc', undefined] as const)('bounds a pending RTC admission with the earlier deadline for transport %s', async (transport) => {
+    vi.setSystemTime(1_000);
+    const { runtime } = await connectRtcRecipeRuntime();
+    deferRtcAdmission();
+    let settled = false;
+    const running = runtime.execute({
+        kind: 'rtc.send',
+        commandId: 'bounded-rtc',
+        transport,
+        timeoutMs: 500,
+        deadlineEpochMs: 1_037,
+        send: { payload: true, ttlMs: 60_000 }
+    });
+    void running.then(() => {
+        settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(36);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    expect((await running).value).toMatchObject({ sendObservation: { status: 'submitted', enqueued: false } });
+});
+
+it('uses the default 5,000 ms RTC admission budget and clears the wait when the runtime closes', async () => {
+    const { native } = await connectRtcRecipeRuntime();
+    deferRtcAdmission();
+    let settled = false;
+    const running = native.send({ payload: true, ttlMs: 60_000 });
+    void running.then(() => {
+        settled = true;
+    }, () => {
+        settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    const closed = expect(running).rejects.toThrow('Rallar send completed after the runtime closed.');
+    await native.close();
+    await closed;
+    expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(['rtc.send', 'rtc.stream'] as const)('clamps an elapsed %s deadline instead of waiting for admission', async (kind) => {
+    vi.setSystemTime(2_000);
+    const { runtime } = await connectRtcRecipeRuntime();
+    deferRtcAdmission();
+    const running = runtime.execute({
+        kind,
+        commandId: 'elapsed-rtc',
+        transport: 'messages.rtc',
+        timeoutMs: 500,
+        deadlineEpochMs: 1_000,
+        count: 1,
+        intervalMs: 1,
+        send: { payload: true, ttlMs: 60_000 }
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect((await running).value).toMatchObject(
+        kind === 'rtc.send'
+            ? { sendObservation: { status: 'submitted' } }
+            : { observations: [{ status: 'submitted', enqueued: false, backpressured: false }] }
+    );
+});
+
+it('returns the still-submitted RTC evidence when the default admission budget ends', async () => {
+    const { native } = await connectRtcRecipeRuntime();
+    deferRtcAdmission();
+    const running = native.send({ payload: true, ttlMs: 60_000 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await running).toMatchObject({ message: { state: 'submitted', enqueued: false, backpressured: false } });
+    expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(['messages.rtc', undefined] as const)('shares the stream command deadline across delayed frames for transport %s', async (transport) => {
+    vi.setSystemTime(1_000);
+    const { runtime } = await connectRtcRecipeRuntime();
+    deferRtcAdmission();
+    const running = runtime.execute({
+        kind: 'rtc.stream',
+        commandId: 'bounded-stream',
+        transport,
+        timeoutMs: 500,
+        deadlineEpochMs: 1_037,
+        count: 2,
+        intervalMs: 20,
+        send: { payload: true, ttlMs: 60_000 }
+    });
+    await vi.advanceTimersByTimeAsync(37);
+    expect((await running).value).toMatchObject({
+        observations: [
+            { status: 'submitted', durationMs: 37, enqueued: false, backpressured: false },
+            { status: 'submitted', durationMs: 17, enqueued: false, backpressured: false }
+        ]
+    });
+});
+
+it('deducts sender connection time from the RTC admission deadline', async () => {
+    vi.setSystemTime(1_000);
+    const { native } = await connectRtcRecipeRuntime();
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    const connection = Promise.withResolvers<typeof fixture.middleware>();
+    fixture.connect.mockReturnValue(connection.promise);
+    vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockReturnValue(new Promise(() => undefined));
+    facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
+    let settled = false;
+    const running = native.send({ payload: true, ttlMs: 60_000 }, 1_037);
+    void running.then(() => {
+        settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    connection.resolve(fixture.middleware);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    expect(await running).toMatchObject({ message: { state: 'submitted', enqueued: false } });
+    expect(vi.getTimerCount()).toBe(0);
 });

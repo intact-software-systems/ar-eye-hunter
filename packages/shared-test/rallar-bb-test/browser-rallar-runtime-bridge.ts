@@ -22,24 +22,24 @@ let runtimeImportPromise: Promise<void> | undefined;
 export function createSpaBrowserRallarRuntime(): RallarBlackBoxBrowserRallarRuntime {
     return {
         authenticate: async (config) =>
-            await (await resolveBrowserRallarRuntime()).authenticate(decodeBlackBoxRallarConnectionConfig(config)),
+            await (await readBrowserRallarRuntime()).authenticate(decodeBlackBoxRallarConnectionConfig(config)),
         connect: async (config) =>
-            await (await resolveBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config)),
-        send: async (input) => await (await resolveBrowserRallarRuntime()).send(input),
-        sendWs: async (input) => await (await resolveBrowserRallarRuntime()).sendWs(input),
-        sendMessage: async (input) => await (await resolveBrowserRallarRuntime()).sendMessage(input),
-        observeDelivery: async (input) => await (await resolveBrowserRallarRuntime()).observeDelivery(input),
-        cancelDelivery: async (input) => await (await resolveBrowserRallarRuntime()).cancelDelivery(input),
-        readReceipts: async (input) => await (await resolveBrowserRallarRuntime()).readReceipts(input),
-        injectFault: async (input) => await (await resolveBrowserRallarRuntime()).injectFault(input),
-        readStorageCounters: async (input) => await (await resolveBrowserRallarRuntime()).readStorageCounters(input),
-        refreshRoom: async (options) => await (await resolveBrowserRallarRuntime()).refreshRoom(options),
-        waitForRoom: async (options) => await (await resolveBrowserRallarRuntime()).waitForRoom(options),
+            await (await readBrowserRallarRuntime()).connect(decodeBlackBoxRallarConnectionConfig(config)),
+        send: async (input, deadlineEpochMs) => await (await readBrowserRallarRuntime()).send(input, deadlineEpochMs),
+        sendWs: async (input) => await (await readBrowserRallarRuntime()).sendWs(input),
+        sendMessage: async (input) => await (await readBrowserRallarRuntime()).sendMessage(input),
+        observeDelivery: async (input) => await (await readBrowserRallarRuntime()).observeDelivery(input),
+        cancelDelivery: async (input) => await (await readBrowserRallarRuntime()).cancelDelivery(input),
+        readReceipts: async (input) => await (await readBrowserRallarRuntime()).readReceipts(input),
+        injectFault: async (input) => await (await readBrowserRallarRuntime()).injectFault(input),
+        readStorageCounters: async (input) => await (await readBrowserRallarRuntime()).readStorageCounters(input),
+        refreshRoom: async (options) => await (await readBrowserRallarRuntime()).refreshRoom(options),
+        waitForRoom: async (options) => await (await readBrowserRallarRuntime()).waitForRoom(options),
         director: createSpaBrowserRallarDirectorRuntime(),
         formation: createSpaBrowserRallarFormationRuntime(),
-        close: async () => await (await resolveBrowserRallarRuntime()).close(),
+        close: async () => await (await readBrowserRallarRuntime()).close(),
         health: async (input) =>
-            await (await resolveBrowserRallarRuntime()).health({
+            await (await readBrowserRallarRuntime()).health({
                 includeRtcDiagnostics: input?.includeRtcDiagnostics === true
             })
     };
@@ -74,13 +74,13 @@ export function createBrowserWebSocketFactory(): RallarBlackBoxBrowserWebSocketF
 
 function createSpaBrowserRallarDirectorRuntime(): RallarBlackBoxBrowserRallarDirectorRuntime {
     return {
-        appoint: async (input) => await (await resolveBrowserRallarRuntime()).director.appoint(input),
-        resign: async (input) => await (await resolveBrowserRallarRuntime()).director.resign(input),
-        status: async (input) => await (await resolveBrowserRallarRuntime()).director.status(input),
-        relayStart: async (input) => await (await resolveBrowserRallarRuntime()).director.relayStart(input),
-        intent: async (input) => await (await resolveBrowserRallarRuntime()).director.intent(input),
-        syncRequest: async (input) => await (await resolveBrowserRallarRuntime()).director.syncRequest(input),
-        relayStop: async (input) => await (await resolveBrowserRallarRuntime()).director.relayStop(input)
+        appoint: async (input) => await (await readBrowserRallarRuntime()).director.appoint(input),
+        resign: async (input) => await (await readBrowserRallarRuntime()).director.resign(input),
+        status: async (input) => await (await readBrowserRallarRuntime()).director.status(input),
+        relayStart: async (input) => await (await readBrowserRallarRuntime()).director.relayStart(input),
+        intent: async (input) => await (await readBrowserRallarRuntime()).director.intent(input),
+        syncRequest: async (input) => await (await readBrowserRallarRuntime()).director.syncRequest(input),
+        relayStop: async (input) => await (await readBrowserRallarRuntime()).director.relayStop(input)
     };
 }
 
@@ -94,20 +94,20 @@ function createSpaBrowserRallarFormationRuntime(): RallarBlackBoxBrowserRallarFo
                 ...(input.landing === undefined ? {} : { landing: input.landing })
             }));
             const reason = typeof input.reason === 'string' ? input.reason : undefined;
-            return await (await resolveBrowserRallarRuntime()).formation.command({
+            return await (await readBrowserRallarRuntime()).formation.command({
                 ...room,
                 input: commandInput,
                 ...(reason === undefined ? {} : { reason })
             });
         },
         readiness: async (input) =>
-            await (await resolveBrowserRallarRuntime()).formation.readiness(
+            await (await readBrowserRallarRuntime()).formation.readiness(
                 requireDecoded(decodeBlackBoxRallarFormationRoom(input))
             )
     };
 }
 
-async function resolveBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
+async function readBrowserRallarRuntime(): Promise<BlackBoxRallarRuntime> {
     const targetWindow = readBrowserWindow();
     if (!targetWindow.__blackBoxRallar) {
         runtimeImportPromise ??= import('@shared-test/black-box-runner/browser/rallar-browser-runtime.ts').then(

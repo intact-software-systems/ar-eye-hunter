@@ -8,6 +8,7 @@ import type {
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSendObservation
 } from '../rallar-black-box-test-contracts.ts';
+import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 
 import { createBrowserCommandAbortScope, withBrowserCommandAbort } from './browser-command-cancellation.ts';
 import type { CommandWithId, RallarBlackBoxBrowserRallarConnectionConfig } from './browser-command-contracts.ts';
@@ -133,12 +134,16 @@ export class BrowserRtcCommands {
         context: RallarBlackBoxTestCommandContext,
         payload: RallarMessagePayload
     ): Promise<RallarBlackBoxTestCommandOutcome> {
+        const deadlineEpochMs = computeWaitDeadlineEpochMs(command, this.environment.now());
         const send = await this.readRtcSendInput(command, context, payload);
         const abort = createBrowserCommandAbortScope(command, context, this.environment.now);
         const sendStartedAtEpochMs = this.environment.now();
         try {
             const result = decodeRtcSendResult(
-                await withBrowserCommandAbort(requireBrowserCommandRuntime(this.environment).send(send), abort.signal)
+                await withBrowserCommandAbort(
+                    requireBrowserCommandRuntime(this.environment).send(send, deadlineEpochMs),
+                    abort.signal
+                )
             );
             return this.recordRtcSendOutcome({ command, context, result, sendStartedAtEpochMs });
         }

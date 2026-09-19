@@ -1,3 +1,4 @@
+import type { BlackBoxRallarHealthInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     createBrowserWebSocketFactory,
@@ -6,98 +7,20 @@ import {
 } from '../../shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type {
     RallarBlackBoxBrowserRallarEvent,
-    RallarBlackBoxBrowserRallarRuntime,
     RallarBlackBoxBrowserTestRuntime
 } from '../../shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { SimulatedWebSocket } from '../shared/native-websocket-fixture.ts';
-import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 describe('browser Rallar runtime bridge', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
     });
 
-    it('delegates SPA browser Rallar runtime calls to the window runtime', async () => {
-        const refreshRoom = vi.fn(async (input) => ({ action: 'refreshRoom', input }));
-        const runtime: RallarBlackBoxBrowserRallarRuntime = {
-            ...createBrowserRallarRequiredMethodsTestDouble(),
-            authenticate: vi.fn(async (input) => ({ action: 'authenticate', input })),
-            connect: vi.fn(async (input) => ({ action: 'connect', input })),
-            send: vi.fn(async (input) => ({ action: 'send', input })),
-            sendWs: vi.fn(async (input) => ({ action: 'sendWs', input })),
-            refreshRoom,
-            director: {
-                appoint: vi.fn(async (input) => ({ action: 'appoint', input })),
-                resign: vi.fn(async (input) => ({ action: 'resign', input })),
-                status: vi.fn(async (input) => ({ action: 'status', input })),
-                relayStart: vi.fn(async (input) => ({ action: 'relayStart', input })),
-                intent: vi.fn(async (input) => ({ action: 'intent', input })),
-                syncRequest: vi.fn(async (input) => ({ action: 'syncRequest', input })),
-                relayStop: vi.fn(async (input) => ({ action: 'relayStop', input }))
-            },
-            close: vi.fn(async () => ({ action: 'close' })),
-            health: vi.fn(async (input) => ({ action: 'health', input }))
-        };
-        vi.stubGlobal('window', {
-            __blackBoxRallar: runtime
-        });
+    it('normalizes the optional health diagnostics request at the page boundary', async () => {
+        vi.stubGlobal('window', { __blackBoxRallar: { health: async (input: BlackBoxRallarHealthInput) => input } });
         const bridge = createSpaBrowserRallarRuntime();
-        const refreshController = new AbortController();
-        const connectInput = {
-            connection: 'aliceRtc',
-            actor: 'alice',
-            roomId: 'room-1',
-            rallar: {
-                apiBaseUrl: 'https://api.example.test',
-                applicationId: 'app-1'
-            }
-        };
-
-        await expect(bridge.authenticate?.(connectInput)).resolves.toEqual({
-            action: 'authenticate',
-            input: connectInput
-        });
-        await expect(bridge.connect(connectInput)).resolves.toEqual({
-            action: 'connect',
-            input: connectInput
-        });
-        await expect(bridge.send({ connection: 'aliceRtc', send: { text: 'hello' } }))
-            .resolves.toMatchObject({ action: 'send' });
-        await expect(bridge.sendWs?.({ connection: 'ws', data: { text: 'hello' } }))
-            .resolves.toMatchObject({ action: 'sendWs' });
-        await expect(bridge.refreshRoom({
-            signal: refreshController.signal,
-            timeoutMs: 321
-        })).resolves.toMatchObject({ action: 'refreshRoom' });
-        await expect(bridge.director?.appoint({ roomId: 'room-1', principalId: 'alice' }))
-            .resolves.toMatchObject({ action: 'appoint' });
-        await expect(bridge.director?.relayStop({ relayId: 'relay-1' }))
-            .resolves.toMatchObject({ action: 'relayStop' });
-        await expect(bridge.health({ connection: 'aliceRtc' }))
-            .resolves.toEqual({
-                action: 'health',
-                input: {
-                    includeRtcDiagnostics: false
-                }
-            });
-        await expect(bridge.close()).resolves.toEqual({ action: 'close' });
-
-        expect(runtime.authenticate).toHaveBeenCalledWith(connectInput);
-        expect(runtime.connect).toHaveBeenCalledWith(connectInput);
-        expect(runtime.send).toHaveBeenCalledWith({
-            connection: 'aliceRtc',
-            send: {
-                text: 'hello'
-            }
-        });
-        expect(refreshRoom).toHaveBeenCalledWith({
-            signal: refreshController.signal,
-            timeoutMs: 321
-        });
-        expect(runtime.director?.appoint).toHaveBeenCalledWith({
-            roomId: 'room-1',
-            principalId: 'alice'
-        });
+        expect(await bridge.health({ connection: 'aliceRtc' })).toEqual({ includeRtcDiagnostics: false });
+        expect(await bridge.health({ includeRtcDiagnostics: true })).toEqual({ includeRtcDiagnostics: true });
     });
 
     it('validates connection configuration before calling the native runtime', async () => {

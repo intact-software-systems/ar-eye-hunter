@@ -489,7 +489,12 @@ wall-clock cadence, and returns one aggregate result with planned, attempted,
 completed, failed, dropped, and backpressured frame counts. It also records
 send duration percentiles (`p50Ms`, `p95Ms`, `p99Ms`, and `maxMs`), achieved
 schedule/completion Hz, pacing drift, jitter, threshold failures, and sampled
-frame observations.
+frame observations. Typed RTC sends and frames wait for admission within the earlier
+command timeout or absolute deadline; an otherwise unbounded send uses a 5,000 ms
+admission budget. Message TTL remains independent. Frame observations report
+`queued` from lifecycle state, `enqueued` from durable admission, and
+`backpressured` for rate-limited or circuit-open admission, never for no-route.
+`queued` and `enqueued` are absent when a frame has no decoded typed-message send result.
 
 `rtc.stream` differs from `loop` plus `rtc.send`: `loop` intentionally awaits
 each child command and is best for deterministic command-rate workflows,

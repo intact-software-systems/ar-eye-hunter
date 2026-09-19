@@ -1,5 +1,7 @@
+import { computeWaitDeadlineEpochMs } from '@shared-test/rallar-bb-test/wait/wait-for-event.ts';
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRealtimeSendResult, RallarRtcSendInput } from '@shared-web/browser/rallar.ts';
+import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
@@ -38,6 +40,8 @@ export namespace BlackBoxRallarRtcSendController {
         readonly health: BlackBoxRallarHealthReader;
         readonly diagnostics: BlackBoxRallarRuntimeDiagnostics;
         requireConfig(): BlackBoxRallarConnectionConfig;
+        now(): number;
+        operationSignal(): AbortSignal;
     }
 }
 
@@ -45,6 +49,13 @@ interface RealtimeSendTarget {
     readonly config: BlackBoxRallarConnectionConfig;
     readonly transport: BlackBoxRallarRealtimeSendDiagnostics['transport'];
     readonly lease: BlackBoxRallarMessagingLease;
+}
+
+interface RtcMessageSendTarget {
+    readonly config: BlackBoxRallarConnectionConfig;
+    readonly lease: BlackBoxRallarMessagingLease;
+    readonly deadlineEpochMs: number;
+    readonly signal: AbortSignal;
 }
 
 interface RealtimeSendSummary {
@@ -65,7 +76,10 @@ export class BlackBoxRallarRtcSendController {
     }
 
     /** A send whose fields do not decode fails like a transport failure, with its send_failed diagnostic. */
-    send = async (command: BlackBoxRallarSendCommand): Promise<BlackBoxRallarSendDiagnostics> => {
+    send = async (
+        command: BlackBoxRallarSendCommand,
+        deadlineEpochMs: number | undefined
+    ): Promise<BlackBoxRallarSendDiagnostics> => {
         const config = this.#input.requireConfig();
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, LATE_SEND_MESSAGE);
@@ -74,8 +88,12 @@ export class BlackBoxRallarRtcSendController {
             return transport === 'messages.rtc'
                 ? await this.#sendMessagesRtc(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarSendInput(command, 'messages.rtc')),
-                    config,
-                    lease
+                    {
+                        config,
+                        lease,
+                        deadlineEpochMs: computeWaitDeadlineEpochMs({ deadlineEpochMs }, this.#input.now()),
+                        signal: this.#input.operationSignal()
+                    }
                 )
                 : await this.#sendRealtime(
                     requireBlackBoxRallarInput(decodeBlackBoxRallarSendInput(command, 'realtime')),
@@ -168,9 +186,9 @@ export class BlackBoxRallarRtcSendController {
 
     async #sendMessagesRtc(
         normalized: BlackBoxRallarSendInput,
-        config: BlackBoxRallarConnectionConfig,
-        lease: BlackBoxRallarMessagingLease
+        target: RtcMessageSendTarget
     ): Promise<BlackBoxRallarMessagesRtcSendDiagnostics> {
+        const { config, lease, deadlineEpochMs, signal } = target;
         const request = toRtcSendRequest(normalized, config);
         const context = {
             roomId: request.roomId,
@@ -186,12 +204,18 @@ export class BlackBoxRallarRtcSendController {
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.rtc.send_started', context);
         const handle = await this.#input.messages.rtc.send(request);
         this.#input.resources.assertCurrent(lease, LATE_SEND_MESSAGE);
+        const outcome = await handle.wait({
+            until: AL_DELIVERY_ADMITTED_STATES,
+            timeoutMs: Math.max(0, deadlineEpochMs - this.#input.now()),
+            signal
+        });
+        this.#input.resources.assertCurrent(lease, LATE_SEND_MESSAGE);
         const diagnostics: BlackBoxRallarMessagesRtcSendDiagnostics = {
             connection: config.connection,
             actor: config.actor,
             transport: 'messages.rtc',
             ...context,
-            message: toDeliveryObservation(handle.msgId, handle.lifecycle()),
+            message: toDeliveryObservation(handle.msgId, outcome.lifecycle),
             health: this.#input.health.getLaneHealth(config)
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.rtc.send_completed', diagnostics);

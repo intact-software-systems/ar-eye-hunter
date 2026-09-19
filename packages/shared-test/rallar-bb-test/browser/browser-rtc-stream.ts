@@ -16,6 +16,7 @@ import {
     type RallarBlackBoxRtcStreamPlaceholderContext,
     type RallarBlackBoxRtcStreamPlan
 } from '../rtc-stream.ts';
+import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 
 import {
     createBrowserCommandAbortScope,
@@ -47,7 +48,7 @@ interface StreamFrame {
 
 type StreamFrameOutcome = Pick<
     RallarBlackBoxTestRtcStreamFrameObservation,
-    'ok' | 'status' | 'backpressured' | 'errorCode'
+    'ok' | 'status' | 'queued' | 'enqueued' | 'backpressured' | 'errorCode'
 >;
 
 interface UnsentFrameEnd {
@@ -80,6 +81,7 @@ export namespace BrowserRtcStream {
 export class BrowserRtcStream {
     private readonly environment: BrowserCommandEnvironment;
     private readonly command: RtcStreamCommand;
+    private readonly admissionDeadlineEpochMs: number | undefined;
     private readonly context: RallarBlackBoxTestCommandContext;
     private readonly plan: RallarBlackBoxRtcStreamPlan;
     private readonly rallarRuntime: RallarBlackBoxBrowserRallarRuntime;
@@ -96,6 +98,9 @@ export class BrowserRtcStream {
     constructor(input: BrowserRtcStream.Input) {
         const { command, context, environment } = input;
         this.command = command;
+        this.admissionDeadlineEpochMs = command.timeoutMs !== undefined || command.deadlineEpochMs !== undefined
+            ? computeWaitDeadlineEpochMs(command, environment.now())
+            : undefined;
         this.context = context;
         this.environment = environment;
         this.plan = computeRallarBlackBoxRtcStreamPlan({
@@ -204,7 +209,10 @@ export class BrowserRtcStream {
     private async sendFrame(frame: StreamFrame, send: RallarMessagePayload): Promise<void> {
         try {
             const decoded = decodeRtcSendResult(
-                await withBrowserCommandAbort(this.rallarRuntime.send(send), this.abort.signal)
+                await withBrowserCommandAbort(
+                    this.rallarRuntime.send(send, this.admissionDeadlineEpochMs),
+                    this.abort.signal
+                )
             );
             const completedAtEpochMs = this.environment.now();
             this.observations.push({
@@ -216,6 +224,9 @@ export class BrowserRtcStream {
                         return {
                             ok: failure === undefined,
                             status: toRtcSendStatus(result),
+                            ...(result.kind === 'delivery'
+                                ? { queued: result.state === 'queued', enqueued: result.enqueued }
+                                : {}),
                             backpressured: isRtcSendBackpressured(result),
                             errorCode: failure?.code
                         };
@@ -322,7 +333,7 @@ export class BrowserRtcStream {
         });
     }
 
-    private recordDiagnostic(topic: string, data: RallarBlackBoxTestRecord): void {
+    private recordDiagnostic(topic: string, detail: RallarBlackBoxTestRecord): void {
         const { command, context } = this;
         context.recordEvent({
             kind: 'diagnostic',
@@ -337,7 +348,7 @@ export class BrowserRtcStream {
                 commandId: command.commandId,
                 connection: command.connection,
                 transport: command.transport,
-                detail: data,
+                detail,
                 source: 'browser-adapter'
             })
         });

@@ -64,7 +64,8 @@ export interface RallarBlackBoxBrowserRoomRefreshOptions {
 export interface RallarBlackBoxBrowserRallarRuntime {
     authenticate(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
     connect(config: RallarBlackBoxBrowserRallarConnectionConfig): Promise<unknown>;
-    send(input: RallarMessagePayload): Promise<unknown>;
+    /** The deadline bounds typed-message admission; absence uses the page default budget. */
+    send(input: RallarMessagePayload, deadlineEpochMs?: number): Promise<unknown>;
     sendWs?(input: RallarMessagePayload): Promise<unknown>;
     sendMessage: RallarBlackBoxBrowserRallarRuntimeMethod;
     observeDelivery: RallarBlackBoxBrowserRallarRuntimeMethod;
