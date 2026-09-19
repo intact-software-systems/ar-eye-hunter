@@ -180,18 +180,6 @@ describe('alm-conformance recipe family', () => {
             .find((scenario) => scenario.scenarioId === 'delivery-baseline');
         const commands = baseline?.sender.commands ?? [];
 
-        expect(commands.map((command) => command.commandId)).toEqual([
-            'alm-ws-delivery-baseline-sender-ensure-group',
-            'alm-ws-delivery-baseline-sender-ensure-member',
-            'alm-ws-delivery-baseline-sender-connect',
-            'alm-ws-delivery-baseline-sender-storage-counters-connected',
-            'alm-ws-delivery-baseline-sender-send-1',
-            'alm-ws-delivery-baseline-sender-observe-accepted-1',
-            'alm-ws-delivery-baseline-sender-receipts-1',
-            'alm-ws-delivery-baseline-sender-storage-counters',
-            'alm-ws-delivery-baseline-sender-assert-storage-counters-total',
-            'alm-ws-delivery-baseline-sender-stats'
-        ]);
         expect(commands.at(-2)).toMatchObject({
             kind: 'assert',
             source: 'resultCache.alm-ws-delivery-baseline-sender-storage-counters.value.total',

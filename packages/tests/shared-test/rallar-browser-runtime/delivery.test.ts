@@ -1,3 +1,12 @@
+import 'fake-indexeddb/auto';
+import {
+    afterEach,
+    beforeEach,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
 import type {
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarMessageSendInput
@@ -12,13 +21,26 @@ import { createRallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-t
 import { BROWSER_DELIVERY_RETENTION } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
+import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
+import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
+import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
-import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import { createDefaultOutboundTestRuntime, runOutboundWorkTask } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import { decodeOutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
+import {
+    events,
+    facade,
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 import { openFacadeDelivery } from './browser-runtime-facade-test-double.ts';
 
 interface DeliveryFixture {
@@ -170,28 +192,65 @@ it('cancels owner attempts, preserves handles on reconnect and ends waits on an 
     }
 });
 
-it('bounds a genuinely pending admission and observation with no storage polling', async () => {
+it('bounds a production pending admission and observes it without additional storage reads', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     const runtime = await loadRuntime();
-    const delivery = openDelivery({ kind: 'pending' });
-    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    const observer = createCountingIndexedDbOperationObserver();
+    const backend = new IndexedDbAdmissionBackend({
+        schemaId: AL_ADMISSION_SCHEMA_ID,
+        onStorageReset: () => {},
+        dbName: `pending-observation-${crypto.randomUUID()}`,
+        storeName: 'entries',
+        nowMs: Date.now,
+        newWriteToken: crypto.randomUUID.bind(crypto),
+        observer
+    });
+    const admissionStore = createALOutboundAdmissionStore({
+        nowMs: Date.now,
+        canonicalScope: 'pending-observation',
+        decodePrepared: decodeOutboundTestPayload,
+        namespace: 'pending-observation',
+        backend,
+        supersedenceTrackTtlMs: 60_000,
+        retention: normalizeALRuntimeStoreRetention()
+    });
+    const outbound = createDefaultOutboundTestRuntime({
+        queueEngine: new InboxOutboxEngine(),
+        stores: { admissionStore, workQueue: backend.workQueue },
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const admissionStored = Promise.withResolvers<void>();
+    const releaseAdmission = Promise.withResolvers<void>();
+    vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mockImplementation(async (message) => {
+        const admitted = await outbound.enqueueIfAbsent(message);
+        await runOutboundWorkTask(outbound);
+        admissionStored.resolve();
+        await releaseAdmission.promise;
+        return admitted;
+    });
+    facade.behavior.typedSend.mockImplementation(async (payload, options) =>
+        await fixture.sender.sendTyped({ ...options, typeId: 'alm.conformance', topicId: 'room.conformance', payload })
+    );
     await runtime.connect(connection);
-    const storageBefore = await runtime.readStorageCounters({ reset: false });
     const sending = runtime.sendMessage({ ...send, timeoutMs: 37, ttlMs: 60_000 });
+    await admissionStored.promise;
+    const storageBefore = observer.getCounts();
+    expect(storageBefore.byKind.read).toBeGreaterThan(0);
+    expect(storageBefore.byKind.write).toBeGreaterThan(0);
     await vi.advanceTimersByTimeAsync(37);
     expect(await sending).toMatchObject({ status: 'submitted' });
     const observing = runtime.observeDelivery({ ...query, state: ['acknowledged'], timeoutMs: 100 });
     const timedOut = expect(observing).rejects.toThrow('Delivery handle h-1 did not reach [acknowledged]; last state submitted');
     await vi.advanceTimersByTimeAsync(100);
     await timedOut;
-    expect(await runtime.readStorageCounters({ reset: false })).toEqual(storageBefore);
-    delivery.registry.record({
-        kind: 'admission',
-        msgId: delivery.msgId,
-        carrier: 'ws',
-        atMs: Date.now(),
-        verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }
-    });
-    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', attempts: 0 });
+    expect(observer.getCounts()).toEqual(storageBefore);
+    releaseAdmission.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 100 })).toMatchObject({ state: 'queued', enqueued: true, attempts: 0 });
+    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', enqueued: true, attempts: 0 });
+    expect(observer.getCounts()).toEqual(storageBefore);
 });
 
 it.each(AL_DELIVERY_STATES)('decodes the shared %s state and returns a lost observation', async (state) => {
@@ -600,4 +659,68 @@ it('deducts sender connection time from the RTC admission deadline', async () =>
     expect(settled).toBe(true);
     expect(await running).toMatchObject({ message: { state: 'submitted', enqueued: false } });
     expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(
+    [
+        { scenarioId: 'deadline-expiry', state: 'queued' },
+        { scenarioId: 'delivery-baseline', state: 'queued' },
+        { scenarioId: 'ordering-resync', state: 'queued' },
+        { scenarioId: 'deadline-expiry', state: 'transport-accepted' },
+        { scenarioId: 'delivery-baseline', state: 'transport-accepted' },
+        { scenarioId: 'ordering-resync', state: 'transport-accepted' },
+        { scenarioId: 'deadline-expiry', state: 'rejected' },
+        { scenarioId: 'deadline-expiry', state: 'failed' }
+    ] as const
+)('requires successful admission for $scenarioId after the handle reaches $state', async ({ scenarioId, state }) => {
+    const { runtime } = await connectRtcRecipeRuntime();
+    const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
+    if (state === 'rejected' || state === 'failed') {
+        vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message) => ({
+            message,
+            entries: [],
+            verdict: state === 'rejected'
+                ? { kind: 'refused', reason: 'unsupported', detail: 'Admission refused.' }
+                : { kind: 'failed', detail: 'Admission failed.' },
+            status: 'failed'
+        }));
+    }
+    facade.behavior.typedSend.mockImplementation(async (payload, options) => {
+        const handle = await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', payload });
+        await handle.wait({ until: ['queued'], timeoutMs: 100 });
+        if (state === 'transport-accepted') {
+            fixture.registry.record({ kind: 'attempt-started', carrier: 'rtc', msgId: handle.msgId, atMs: Date.now(), attemptId: 'attempt-1' });
+            fixture.registry.record({
+                kind: 'attempt-settled',
+                carrier: 'rtc',
+                msgId: handle.msgId,
+                atMs: Date.now(),
+                attemptId: 'attempt-1',
+                outcome: 'sent',
+                submissionAttempted: true,
+                detail: undefined,
+                willRetry: false
+            });
+        }
+        return handle;
+    });
+    const scenario = createAlmConformanceRecipes({
+        group: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+        carrier: 'rtc',
+        typeId: 'alm.conformance',
+        senderConnection: 'aliceAlm',
+        receiverConnection: 'receiver',
+        deadlineMs: 18_000
+    }).find((entry) => entry.scenarioId === scenarioId)!;
+    const commands = scenario.sender.commands.filter((command) =>
+        command.kind === 'messages.send' || command.kind === 'messages.observe' ||
+        (command.kind === 'assert' && !command.source.includes('storage-counters'))
+    );
+    const running = runtime.execute({ kind: 'recipe.run', commandId: 'conformance', recipe: { ...scenario.sender, commands } });
+    await vi.advanceTimersByTimeAsync(3_000);
+    const result = await running;
+    expect(result.ok, result.error?.message).toBe(state !== 'rejected' && state !== 'failed');
+    if (state === 'rejected' || state === 'failed') {
+        expect(runtime.state().failures.some((failure) => failure.error?.code === 'RALLAR_BLACK_BOX_ASSERT_FAILED')).toBe(true);
+    }
 });

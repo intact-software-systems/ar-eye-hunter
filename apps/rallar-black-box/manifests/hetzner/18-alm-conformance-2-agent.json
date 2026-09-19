@@ -283,13 +283,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-deadline-expiry-sender-observe-accepted-1",
+            "commandId": "alm-ws-deadline-expiry-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-deadline-expiry-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-deadline-expiry-sender-assert-admitted-1",
+            "source": "resultCache.alm-ws-deadline-expiry-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -397,13 +415,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-ws-delivery-baseline-sender-observe-accepted-1",
+            "commandId": "alm-ws-delivery-baseline-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-ws-delivery-baseline-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-baseline-sender-assert-admitted-1",
+            "source": "resultCache.alm-ws-delivery-baseline-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "messages.receipts",
@@ -713,13 +749,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-deadline-expiry-sender-observe-accepted-1",
+            "commandId": "alm-rtc-deadline-expiry-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-deadline-expiry-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-deadline-expiry-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-deadline-expiry-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -837,13 +891,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-delivery-baseline-sender-observe-accepted-1",
+            "commandId": "alm-rtc-delivery-baseline-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-baseline-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-baseline-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-delivery-baseline-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "messages.receipts",
@@ -986,13 +1058,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-ordering-resync-sender-observe-accepted-1",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-ordering-resync-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "messages.send",
@@ -1018,13 +1108,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-ordering-resync-sender-observe-accepted-2",
+            "commandId": "alm-rtc-ordering-resync-sender-observe-admitted-2",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-ordering-resync-send-2",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-ordering-resync-sender-assert-admitted-2",
+            "source": "resultCache.alm-rtc-ordering-resync-sender-observe-admitted-2.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -1325,13 +1433,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-observe-accepted-1",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-deadline-expiry-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-deadline-expiry-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-deadline-expiry-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -1449,13 +1575,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-observe-accepted-1",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-baseline-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-baseline-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-baseline-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "messages.receipts",
@@ -1598,13 +1742,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-accepted-1",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-1",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "messages.send",
@@ -1630,13 +1792,31 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-accepted-2",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-2",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-ordering-resync-send-2",
             "state": [
-              "accepted"
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
             ],
             "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-assert-admitted-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-ordering-resync-sender-observe-admitted-2.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",

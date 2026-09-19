@@ -1,3 +1,5 @@
+import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -59,7 +61,7 @@ interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
 }
 
 interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
-    readonly state: 'accepted' | 'rejected';
+    readonly state: 'admitted' | 'rejected';
 }
 
 interface AlmConformanceAssertInput extends AlmConformanceMessageStepInput {
@@ -260,7 +262,7 @@ function toDeadlineExpirySenderCommands(
             payload: { marker: sender.scenarioId },
             delivery: { ttlMs: EXPIRY_TTL_MS }
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' })
+        ...toAdmissionCommands({ ...sender, index: 1 })
     ];
 }
 
@@ -274,7 +276,7 @@ function toDeliveryBaselineSenderCommands(
             payload: { marker: sender.scenarioId },
             delivery: {}
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
+        ...toAdmissionCommands({ ...sender, index: 1 }),
         toReceiptsCommand({ ...sender, index: 1 }),
         toStorageCountersCommand(sender, 'storage-counters'),
         toStorageCountersAssertCommand(sender)
@@ -303,14 +305,14 @@ function toOrderingResyncSenderCommands(
             payload: { marker: sender.scenarioId, seq: 1 },
             delivery: { reliability: 'at-least-once', orderingKey, seq: 1 }
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
+        ...toAdmissionCommands({ ...sender, index: 1 }),
         toSendCommand({
             ...sender,
             index: 2,
             payload: { marker: sender.scenarioId, seq: RESYNC_GAP_SEQ },
             delivery: { reliability: 'at-least-once', orderingKey, seq: RESYNC_GAP_SEQ }
         }),
-        toObserveCommand({ ...sender, index: 2, state: 'accepted' })
+        ...toAdmissionCommands({ ...sender, index: 2 })
     ];
 }
 
@@ -464,12 +466,28 @@ function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTe
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),
         connection: observe.input.senderConnection,
         handleId: toSendHandleId(observe),
-        state: [observe.state],
+        state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : ['rejected'],
         timeoutMs: toBudgetMs(
             OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
             observe.input.deadlineMs
         )
     };
+}
+
+/** A terminal wait also resolves for rejection or failure; the recipe must prove successful admission. */
+function toAdmissionCommands(admission: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    const observation = toObserveCommand({ ...admission, state: 'admitted' });
+    return [
+        observation,
+        {
+            kind: 'assert',
+            commandId: toCommandId(admission, `assert-admitted-${admission.index}`),
+            source: `resultCache.${observation.commandId}.value.state`,
+            operator: 'matches',
+            expected: '^(accepted|queued|transport-accepted|acknowledged)$',
+            timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, admission.input.deadlineMs)
+        }
+    ];
 }
 
 function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarBlackBoxTestCommand {
