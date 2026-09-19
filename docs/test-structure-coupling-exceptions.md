@@ -3039,6 +3039,21 @@ moved or changed test.
         "requiredConstraint": "An explicit WS-only send must never enter RTC admission.",
         "failureRationale": "A correct WS envelope and queued handle can coexist with an erroneous extra RTC send; only exclusion of that carrier proves the selected strategy."
       }
+    },
+    {
+      "id": "authoritative-group-cache-refresh-no-topology-work",
+      "domain": "Browser authoritative room cache freshness",
+      "owner": "Rallar shared-web maintainers",
+      "summary": "An exact current authoritative observation renews local cache age without scheduling topology mutation or reconnection.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts#emits only truthful Refreshed and preserves content without downstream topology work",
+      "coverageRelation": "The test adopts an equal full snapshot through the real authoritative adoption and observed cache lifecycle, checks a truthful Refreshed event and unchanged content, and observes the group-manager topology ports.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcGroupManager.acceptGroupUpdate and WebRtcGroupManager.ensureAllGroupsConnected",
+        "observableEffect": "acceptGroupUpdate updates a group and requests reconciliation; ensureAllGroupsConnected independently requests reconciliation of connections.",
+        "requiredConstraint": "A cache-age-only authoritative refresh must invoke neither topology-update nor connection-reconciliation port.",
+        "failureRationale": "An unchanged snapshot and a Refreshed event do not exclude unnecessary reconciliation or reconnection work. These port absences protect cache-only renewal from triggering topology work."
+      }
     }
   ],
   "entries": [
@@ -6891,6 +6906,28 @@ moved or changed test.
       "owner": "Rallar browser maintainers",
       "rationale": "Absence at the RTC admission port proves the explicit WS-only selection does not also publish over RTC.",
       "semanticCoverage": "packages/tests/shared-web/messages/browser-typed-message-channels.test.ts#uses WS only for typed channel send when strategy is ws"
+    },
+    {
+      "id": "test-structure-coupling-18a0469ec2269441",
+      "path": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authoritative-group-cache-refresh-no-topology-work",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared-web maintainers",
+      "rationale": "The acceptGroupUpdate absence directly guards the owned topology side-effect boundary during cache-only freshness renewal; content and event assertions alone cannot establish that absence.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts#emits only truthful Refreshed and preserves content without downstream topology work"
+    },
+    {
+      "id": "test-structure-coupling-149a0a0f09904b24",
+      "path": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "authoritative-group-cache-refresh-no-topology-work",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared-web maintainers",
+      "rationale": "The ensureAllGroupsConnected absence directly guards the owned topology side-effect boundary during cache-only freshness renewal; content and event assertions alone cannot establish that absence.",
+      "semanticCoverage": "packages/tests/shared-web/state-cache/authoritative-group-freshness.test.ts#emits only truthful Refreshed and preserves content without downstream topology work"
     }
   ]
 }

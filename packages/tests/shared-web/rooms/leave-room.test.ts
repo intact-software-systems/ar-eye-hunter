@@ -14,15 +14,16 @@ const roomWorkflowMocks = readRoomWorkflowMocks();
 describe('room leave operations', () => {
     beforeEach(resetRoomWorkflowTestRuntime);
 
-    it('exposes the owning leave operation entry', async () => {
-        const { leaveRoom } = await import('@shared-web/browser/rooms/leave-room.ts');
-        expect(typeof leaveRoom).toBe('function');
-    });
-
     it('returns and hydrates the workflow snapshot while clearing current', async () => {
         const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const currentRoom = createRoomSnapshot('room-1', ['session-1']);
-        const leftRoom = createRoomSnapshot('room-1', []);
+        const leftRoom = {
+            ...currentRoom,
+            causalRevision: { ...currentRoom.causalRevision, presenceRevision: 2 },
+            group: { ...currentRoom.group, presenceVersion: 2 },
+            activeSessions: [],
+            onlineMemberCount: 0
+        };
         const signal = new AbortController().signal;
         seedRoomSnapshots([currentRoom]);
         resolveLeaveWith(leftRoom);
@@ -57,7 +58,13 @@ describe('room leave operations', () => {
         const newRoom = createRoomSnapshot('new-room', ['session-1']);
         seedRoomSnapshots([oldRoom]);
         resolveCreateWith(newRoom);
-        resolveLeaveWith(createRoomSnapshot('old-room', []));
+        resolveLeaveWith({
+            ...oldRoom,
+            causalRevision: { ...oldRoom.causalRevision, presenceRevision: 2 },
+            group: { ...oldRoom.group, presenceVersion: 2 },
+            activeSessions: [],
+            onlineMemberCount: 0
+        });
         const facade = createRallarFacade();
         await facade.rooms.create('New Room');
         roomWorkflowMocks.operationLog.length = 0;

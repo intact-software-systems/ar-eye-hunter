@@ -29,7 +29,8 @@ import { WebRtcOverlayMulticastService } from '@shared/multicast/web-rtc-overlay
 import {
     configureGroupStateSnapshotRepository,
     findGroupStateSnapshotByRef,
-    readableGroupStateSnapshotCache
+    readableGroupStateSnapshotCache,
+    setGroupStateSnapshot
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
@@ -255,6 +256,122 @@ describe('RTC room authority recovery', () => {
     });
 });
 
+describe('authoritative room observation freshness', () => {
+    it.each(['authoritative-refresh', 'first-authoritative-read', 'expired-session', 'expired-original', 'no-refresh', 'untrusted-duplicate'] as const)(
+        'preserves the original cache expiry unless a current authoritative read renews it: %s',
+        async (scenario) => {
+            vi.useFakeTimers();
+            vi.setSystemTime(1_000);
+            const nativeRuntime = installNativeRtcRuntime();
+            const senderRepository = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+            const receiverGroups = new LatestRepository<string, GroupSnapshot>();
+            const initial = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+            const snapshot: GroupSnapshot = {
+                ...initial,
+                activeSessions: initial.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: scenario === 'expired-session' ? 60_000 : 300_000 }))
+            };
+            if (scenario !== 'first-authoritative-read') {
+                setGroupStateSnapshot(snapshot);
+            }
+            receiverGroups.set(toScopedOverlayId(room), snapshot);
+            const reads: string[] = [];
+            vi.stubGlobal('fetch', (url: string | URL | Request) => {
+                reads.push(String(url));
+                return Promise.resolve(snapshotResponse(snapshot, 'valid'));
+            });
+            onTestFinished(() => {
+                senderRepository.dispose();
+                receiverGroups.dispose();
+                nativeRuntime.dispose();
+                vi.restoreAllMocks();
+                vi.useRealTimers();
+            });
+
+            vi.setSystemTime(51_000);
+            if (scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate') {
+                const controller = new AbortController();
+                const response = await readStateGroupSnapshot(room.groupId, room, {
+                    authSession: {
+                        clientId: 'sender',
+                        username: 'sender',
+                        sessionId: 'sender',
+                        accessToken: 'fixture-token',
+                        expiresAtEpochMs: 300_000
+                    },
+                    signal: controller.signal
+                });
+                controller.signal.throwIfAborted();
+                expect(response.snapshot).toEqual(snapshot);
+                expect(await acceptAuthoritativeGroupStateSnapshot(response.snapshot, room)).toBe(scenario === 'first-authoritative-read');
+            }
+            else if (scenario === 'untrusted-duplicate') {
+                expect(setGroupStateSnapshot(snapshot)).toBe(false);
+            }
+            expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
+            expect(reads).toHaveLength(scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate' ? 1 : 0);
+
+            vi.setSystemTime(62_000);
+            const sender = new NativeAuthorityEndpoint({
+                sessionId: 'sender',
+                peerId: 'receiver',
+                nativeRuntime,
+                groups: readableGroupStateSnapshotCache(),
+                refresh: undefined
+            });
+            const receiver = new NativeAuthorityEndpoint({
+                sessionId: 'receiver',
+                peerId: 'sender',
+                nativeRuntime,
+                groups: receiverGroups,
+                refresh: undefined
+            });
+            onTestFinished(() => {
+                receiver.close();
+                sender.close();
+            });
+            await sender.native.open();
+            await receiver.native.open();
+            const message = newALMulticastMessage(
+                'sender',
+                { topicId: 'room.messages', contextId: 'room', resourceId: 'freshness' },
+                room,
+                'freshness.message',
+                { value: 1 },
+                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
+            );
+            if (scenario === 'expired-original') {
+                vi.setSystemTime(92_000);
+            }
+            const admission = await sender.multicast.enqueueIfAbsent(message);
+            await vi.advanceTimersByTimeAsync(0);
+            await sender.transferTo(receiver);
+
+            if (scenario === 'authoritative-refresh' || scenario === 'first-authoritative-read') {
+                expect(admission.verdict).toMatchObject({ kind: 'admitted' });
+                expect(sender.messages().map((sent) => sent.id.msgId)).toEqual([message.id.msgId]);
+                expect(receiver.delivered.map((received) => received.id.msgId)).toEqual([message.id.msgId]);
+                expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
+                expect(receiver.delivered[0]).toMatchObject({
+                    id: message.id,
+                    targets: { mode: 'multicast', groupRef: room },
+                    payload: message.payload,
+                    constraints: { expiresAtMs: 92_000 }
+                });
+            }
+            else {
+                if (scenario === 'no-refresh' || scenario === 'untrusted-duplicate') {
+                    expect(findGroupStateSnapshotByRef(room)).toBeUndefined();
+                }
+                else {
+                    expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
+                }
+                expect(sender.messages()).toEqual([]);
+                expect(receiver.delivered).toEqual([]);
+            }
+        }
+    );
+});
+
 function snapshotResponse(snapshot: GroupSnapshot, scenario: string): Response {
     const authority = scenario === 'wrong-scope'
         ? createGroupSnapshotFixture({ ...room, workspaceId: 'wrong', sessionIds: ['sender', 'receiver'] })
@@ -309,7 +426,7 @@ class NativeAuthorityEndpoint {
             faultPort: createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc',
             dataChannelName: 'reliable',
-            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 }
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
         }, input.nativeRuntime);
         this.connection.service.ensurePeerConnectionStarted(input.peerId, true);
         this.native = this.connection.nativePeer(input.peerId).channels[0];
