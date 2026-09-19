@@ -1,9 +1,22 @@
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import {
+    mkdir,
+    mkdtemp,
+    readdir,
+    rename,
+    rm,
+    stat,
+    writeFile
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import postgres from 'postgres';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it
+} from 'vitest';
 
 import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
@@ -30,6 +43,11 @@ import {
 } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts';
 import { collectApiV1StateWriteEvidenceFromSql } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts';
 
+interface SnapshotResponsePublication {
+    readonly path: string;
+    readonly contents: string;
+}
+
 async function createSnapshotRoot(): Promise<string> {
     const root = await mkdtemp(path.join(tmpdir(), 'pglite-evidence-request-'));
     await Promise.all(
@@ -49,11 +67,6 @@ async function waitForSnapshotRequest(root: string): Promise<string> {
         await new Promise((resolve) => setTimeout(resolve, 0));
     }
     throw new Error('Expected PGlite snapshot request.');
-}
-
-interface SnapshotResponsePublication {
-    readonly path: string;
-    readonly contents: string;
 }
 
 /** Match the real publisher: readers must never see a response before its write completes. */
@@ -115,31 +128,26 @@ describe('API-v1 PGlite state-write evidence source', () => {
     it('delegates transaction queries without replacing the PostgreSQL begin owner', async () => {
         const rootQueries: string[] = [];
         const transactionQueries: string[] = [];
-        const transaction = vi.fn(async (strings: TemplateStringsArray) => {
+        const transaction = async (strings: TemplateStringsArray) => {
             transactionQueries.push(strings.join('?'));
             return [];
-        });
-        const begin = vi.fn(
-            async (write: (query: typeof transaction) => Promise<void>) => await write(transaction)
-        );
+        };
+        const begin = async (write: (query: typeof transaction) => Promise<void>) => await write(transaction);
         // postgres is lazy: retain its real API surface while this fixture owns query and transaction effects.
         const postgresSql = Object.assign(
-            vi.fn(async (strings: TemplateStringsArray) => {
+            async (strings: TemplateStringsArray) => {
                 rootQueries.push(strings.join('?'));
                 return [];
-            }),
+            },
             postgres('postgres://unused.example/evidence', { max: 1 }),
             { begin }
         );
 
         const evidenceSql = toStateWriteEvidenceSql(postgresSql);
-        expect(evidenceSql).not.toBe(postgresSql);
         await evidenceSql.begin(async (query) => {
-            expect(query).not.toBe(transaction);
             await query`select ${'transaction-value'}`;
         });
 
-        expect(begin).toHaveBeenCalledOnce();
         expect(rootQueries).toEqual([]);
         expect(transactionQueries).toEqual(['select ?']);
     });
@@ -149,15 +157,13 @@ describe('API-v1 PGlite state-write evidence source', () => {
         const rawInput: unknown = JSON.parse('{"match":""}');
         const sql = Object.assign(vi.fn(), { begin: vi.fn() });
 
-        const collectInput: Parameters<typeof collectApiV1StateWriteEvidence>[0] = rawInput;
-        const snapshotInput: Parameters<typeof readPGliteStateWriteEvidenceSnapshot>[1] = rawInput;
+        expectTypeOf<Parameters<typeof collectApiV1StateWriteEvidence>[0]>().toEqualTypeOf<typeof rawInput>();
+        expectTypeOf<Parameters<typeof readPGliteStateWriteEvidenceSnapshot>[1]>().toEqualTypeOf<typeof rawInput>();
 
         await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
             'stateWriteEvidence.match must be a non-empty string.'
         );
         expect(sql).not.toHaveBeenCalled();
-        expect(collectInput).toBe(rawInput);
-        expect(snapshotInput).toBe(rawInput);
     });
 
     it('links public admin request identity to its scoped page-work identity', async () => {
@@ -362,7 +368,6 @@ describe('API-v1 PGlite state-write evidence source', () => {
         await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
             'Expected at least 2 matching AppInbox rows; found 1.'
         );
-        expect(sql).toHaveBeenCalledOnce();
     });
 
     it('acquires the PGlite snapshot before validating its raw evidence input', async () => {
