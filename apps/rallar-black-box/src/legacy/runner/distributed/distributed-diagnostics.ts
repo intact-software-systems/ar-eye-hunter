@@ -28,8 +28,6 @@ export function distributedDiagnosticSearchText(
         row.groupId,
         row.roomId,
         row.laneId,
-        row.expectedLaneId,
-        row.observedLaneId,
         row.peerId,
         row.remotePeerId,
         row.senderId,

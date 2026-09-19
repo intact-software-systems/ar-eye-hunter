@@ -7,10 +7,10 @@ import type {
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
     RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
+import type { RallarBlackBoxDistributedRunRollup } from './distributed/distributed-run-rollup.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetAggregateReport,
@@ -107,9 +107,17 @@ export type ControlDistributedRunListResponse = Readonly<{
     distributedRuns: readonly ControlDistributedRunSnapshot[];
 }>;
 
+/**
+ * A control-server snapshot as one poll observed it. The server's own `/runs` reply and its
+ * persisted document always carry both collections below; a reader that could not obtain one
+ * leaves it absent rather than substituting an empty collection, so "no distributed runs exist"
+ * and "this poll did not see the distributed runs" stay distinguishable.
+ */
 export type ControlServerSnapshot = Readonly<{
     runs: readonly ControlRunSnapshot[];
+    /** Absent when the poll could not read the distributed-run collection at all. */
     distributedRuns?: readonly ControlDistributedRunSnapshot[];
+    /** Absent when the reply carried no fleet-report collection for this poll to read. */
     fleetReports?: readonly ControlFleetRunReport[];
 }>;
 

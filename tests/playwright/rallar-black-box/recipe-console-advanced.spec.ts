@@ -119,7 +119,7 @@ const LAZY_TARGETS = [
     ['runner.recipes', 'RunnerRecipesPanel'],
     ['runner.runs', 'RunnerRunsPanel'],
     ['runner.fleet', 'RunnerFleetPanel'],
-    ['runner.builder', 'FlowBuilderPanel'],
+    ['runner.builder', 'flow-builder-panel'],
     ['legacy.distributed-recipes', 'DistributedRecipesPanel'],
     ['legacy.run-manager', 'RunManagerPanel'],
     ['legacy.shared-test-catalog', 'SharedTestPanel'],
@@ -614,8 +614,8 @@ test('default Recipe Console does not load or poll inactive legacy routes except
                 timeouts: 1
             });
         const coldResources = [...resources];
-        expect(hasNamedChunk(coldResources, 'RecipeConsoleApp')).toBe(true);
-        expect(hasNamedChunk(coldResources, 'LegacyExperience')).toBe(false);
+        expect(hasNamedChunk(coldResources, 'recipe-console-app')).toBe(true);
+        expect(hasNamedChunk(coldResources, 'legacy-experience')).toBe(false);
         for (const [, chunk] of LAZY_TARGETS) {
             expect(hasNamedChunk(coldResources, chunk), chunk).toBe(false);
         }
@@ -642,7 +642,7 @@ test('default Recipe Console does not load or poll inactive legacy routes except
                 intervals: 0,
                 timeouts: 0
             });
-        expect(hasNamedChunk(resources, 'LegacyExperience')).toBe(true);
+        expect(hasNamedChunk(resources, 'legacy-experience')).toBe(true);
         for (const selector of STATEFUL_EXCEPTION_SELECTORS) {
             await expect(
                 page.locator(selector),

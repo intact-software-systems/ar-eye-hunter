@@ -327,19 +327,47 @@ actual shell execution to explicit local tooling or the control server.
   for the operational shell.
 - `src/direct-rallar-operations.ts`: direct browser Rallar facade operations
   used by Rallar-mode UI actions.
-- `src/ui-persistence.ts`: reload-safe tab, selected-command, Manual Rallar,
-  Event Stream, and Rallar Server draft persistence with storage-time redaction.
-- `src/rallar-server-workbench.ts`: request construction, endpoint presets, auth
-  header injection, response parsing, redaction, cURL export, black-box command
-  export, collection templates, variable substitution, assertions, extraction,
-  and collection recipe export for the Rallar Server tab.
-- `src/flow-builder.ts`: flow templates, variable substitution, SPA recipe
-  export, runner scenario export, and flow-step insertion for the Flow Builder
-  tab.
-- `src/control-run-manager.ts`: typed control-server snapshot loading, run/agent
-  row derivation, bulk enqueue, reset/delete, artifact export loading,
-  JSONL/failure-bundle fetches, distributed-run lifecycle calls, and control URL
-  normalization for the Run Manager and Distributed Recipes tabs.
+- `src/ui-cache/`: the browser-local UI cache owners. `rallar-black-box-ui-storage.ts`
+  holds the storage port and cache keys, `decode-cached-values.ts` the cached-value
+  decoders, `app-shell-preferences.ts` the reload-safe tab and selected command,
+  `event-filters.ts` the Event Stream filters, `manual-workbench-draft.ts` the Manual
+  Rallar draft, `rallar-server-drafts.ts` the Rallar Server request and collection
+  drafts, and `to-redacted-json-editor-text.ts` the storage-time redaction. A cached
+  entry that does not decode is discarded and the caller's defaults apply.
+- `src/rallar-server-workbench/`: the Rallar Server tab owners. Endpoint presets
+  and drafts (`rallar-server-endpoint-presets.ts`,
+  `to-rallar-server-endpoint-draft.ts`, `to-rallar-server-workbench-variables.ts`),
+  request translation with auth header injection
+  (`decode-rallar-server-request-text.ts`, `to-rallar-server-rest-request.ts`),
+  sending and response parsing (`send-rallar-server-rest-request.ts`), redaction
+  (`redact-rallar-server-value.ts`), cURL and black-box command export, OpenAPI
+  endpoint reads; `collections/` owns the REST collection templates, variable
+  substitution, assertions, extraction, and recipe export.
+  `rallar-server-workbench-contracts.ts` holds their contracts.
+- `src/flow-builder/`: the Flow Builder tab owners. `flow-builder-contracts.ts`
+  holds the authored flow and template contracts, `flow-builder-templates.ts`
+  the templates, `flow-builder-steps.ts` flow-step insertion,
+  `flow-builder-variables.ts` variable substitution,
+  `decode-flow-builder-definition-text.ts` and `to-flow-builder-text.ts` the
+  flow JSON codec, `to-flow-builder-recipe.ts` SPA recipe export, and
+  `to-flow-builder-runner-scenario.ts` runner scenario export.
+  `src/legacy/runner/builder/` composes them into the tab controller, its
+  actions, and its views.
+- `src/control-run-manager/`: the control-server HTTP owners for the Run Manager
+  and Distributed Recipes tabs. `control-endpoint-request.ts` carries the
+  addressed endpoint (base URL, token, fetch) and control URL normalization,
+  `control-reply-reader.ts` decodes a reply body once and names the failure it
+  reports, `control-request-failure.ts` owns `ControlRequestFailure`, the value
+  every reader returns instead of throwing,
+  `read-bounded-control-artifact-response-bytes.ts` reads an artifact reply under
+  its byte budget and `read-control-artifact-body-bytes.ts` accumulates the
+  bounded body itself,
+  `control-run-endpoints.ts` covers snapshot loading, bulk enqueue, reset/delete,
+  artifact export loading and JSONL/failure-bundle reads,
+  `control-distributed-run-endpoints.ts` the distributed-run lifecycle,
+  `control-fleet-report-endpoints.ts` the fleet reports, and
+  `control-run-projections.ts` plus `to-control-agent-identity-summary.ts` the
+  run/agent/command row derivations the panels render.
 - `src/fleet-world-map.tsx`, `src/world-map-model.ts`,
   `src/world-map-geo-fixtures.ts`, and `src/world-map-projection.ts`: the
   Fleet tab's deterministic SVG world map, layer state, location fallback
@@ -361,27 +389,37 @@ actual shell execution to explicit local tooling or the control server.
 - `src/browser-rallar-runtime.ts`: lazy bridge used by black-box-runner command
   execution and runner-owned Manual Rallar recipes, not by direct Rallar-mode
   WebSocket/RTC/Data/Media tabs.
-- `src/runtime-store.ts`: app state store, bootstrap modes, local command
-  execution, and control client integration.
-- `src/control-client.ts`: browser WebSocket control client.
+- `src/runtime-store.ts`: app state store, bootstrap modes, and control client
+  integration.
+- `src/run-simulated-provider-command.ts`: the in-page command runtime the store
+  installs for the simulated provider; it refuses every other provider mode.
+- `packages/shared-test/rallar-bb-test/control-client.ts`: the browser WebSocket
+  control client the app imports directly.
 - `packages/shared-test/rallar-bb-test/control-protocol.ts`: protocol envelopes
   and command validation consumed by the app and control server.
-- `src/manual-workbench.ts`: manual UI command builders and received-message
-  derivation.
+- `src/manual-workbench.ts`: Manual Rallar values, payload presets, payload
+  decoding, recipe text, and received-message derivation.
+  `src/manual-workbench/` owns the command builders
+  (`manual-workbench-commands.ts`, `manual-command-fields.ts`) and the RTC
+  delivery-matrix and not-yet-in-sync probes (`manual-rtc-probe-commands.ts`);
+  `src/legacy/runner/manual/` composes them into the workbench hooks, actions,
+  and views.
 - `src/rtc-diagnostics.ts`: event-derived RTC diagnostics.
 - `src/topology-graph.ts`: graphology topology derivation used by the Sigma
   view.
-- `src/shared-test-handoff-fixtures.ts`: browser-safe re-export of the
-  shared-test recipe catalog, artifact contract, coverage handoff, artifact
-  parser, distributed-run helpers, command capabilities, and schema validators
-  for command-center work.
-- `src/run-manager-presets.ts`: schema-validated Run Manager command presets.
+- `packages/shared-test/black-box-runner/artifacts/handoff-contract.ts` and
+  `artifacts/artifact-reader.ts`: the browser-safe recipe catalog, artifact
+  contract, coverage handoff and artifact parser the command-center panels import
+  under their owners' names; schema validators and command capabilities come from
+  `packages/shared-test/rallar-bb-test/schema.ts` and its `schema/` owners.
+- `src/run-manager-command-presets.ts`: schema-validated Run Manager command
+  presets.
 - `apps/rallar-black-box-control-server`: local control server used for
   orchestration, smoke tests, optional snapshot persistence, and redacted run
   artifact export.
 - `packages/shared-test/rallar-bb-test`: shared command/result/event/runtime
   contract.
-- `packages/shared-test/rallar-bb-test/provider-parity.ts`: portable SPA/runner
+- `packages/shared-test/rallar-bb-test/provider-parity/`: portable SPA/runner
   parity recipes, runner conversion, and report comparison helpers.
 - `packages/shared-test/black-box-runner/artifacts/handoff-contract.ts`: shared-test
   recipe catalog, artifact contract, and coverage ownership contract consumed by

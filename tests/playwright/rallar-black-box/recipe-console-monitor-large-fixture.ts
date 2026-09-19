@@ -14,7 +14,7 @@ import type {
 import type {
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
-} from '../../../packages/shared-test/rallar-bb-test/types.ts';
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const LARGE_MONITOR_CONTROL_RUN_ID = 'monitor-large-control-live';
 const LARGE_MONITOR_DISTRIBUTED_RUN_ID = 'monitor-large-distributed-live';
@@ -238,7 +238,9 @@ function createLargeControlRun(
                     providerMode: 'browser-rallar',
                     browserName: 'chromium',
                     region: 'eu-north',
-                    tags: [largeMonitorRole(index)]
+                    tags: [largeMonitorRole(index)],
+                    sessionLabel: `${agentId}-principal:${agentId}-session`,
+                    updatedAtEpochMs: BASE_EPOCH_MS + 8_000
                 },
                 connectionSequence: 1,
                 reconnectCount: 0,
@@ -322,8 +324,14 @@ function createLargeDistributedRun(
                 agentId,
                 role: largeMonitorRole(index),
                 recipeIds: [LARGE_MONITOR_COMMON_RECIPE_ID],
-                required: true
-            }))
+                variables: {}
+            })),
+            variables: {},
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [...stageLinks, ...failureLinks, ...compositeLinks],
         rollup: {
@@ -331,12 +339,10 @@ function createLargeDistributedRun(
             ok: false,
             summary: {
                 participants: agentIds.length,
-                requiredParticipants: agentIds.length,
                 readyParticipants: agentIds.length,
                 passedParticipants: Math.max(0, agentIds.length - 1),
                 failedParticipants: 1,
                 recipes: LARGE_MONITOR_COUNTS.recipes,
-                requiredRecipes: LARGE_MONITOR_COUNTS.recipes,
                 passedRecipes: LARGE_MONITOR_COUNTS.recipes - 1,
                 failedRecipes: 1,
                 blockingFailures: LARGE_MONITOR_FAILURE_COUNT
@@ -354,7 +360,7 @@ function largeMonitorRecipeSelections() {
             recipe: LARGE_MONITOR_RECIPE,
             role: largeMonitorRole(index),
             profile: `large-profile-${String(index).padStart(3, '0')}`,
-            required: true
+            variables: {}
         })
     );
     const unique = Array.from(
@@ -371,7 +377,7 @@ function largeMonitorRecipeSelections() {
                     name: `Large unique recipe ${index + 1}`,
                     commands: [{ kind: 'health' as const }]
                 },
-                required: true
+                variables: {}
             };
         }
     );

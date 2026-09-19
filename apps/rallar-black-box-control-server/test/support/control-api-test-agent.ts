@@ -18,7 +18,9 @@ export async function registerAgent(
             workspaceId: 'default',
             groupId: 'bb-group',
             region: 'eu-north',
-            provider: 'black-box-test'
+            provider: 'black-box-test',
+            sessionLabel: agentId,
+            updatedAtEpochMs: Date.now()
         },
         resume: {
             completedCommandIds: []

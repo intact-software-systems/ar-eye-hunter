@@ -1410,7 +1410,9 @@ describe('Recipe Console Fleet evidence UI', () => {
                     longitude: 10.7522,
                     label: 'Explicit live location',
                     precision: 'exact'
-                }
+                },
+                sessionLabel: 'agent-session',
+                updatedAtEpochMs: 1_000
             }
         });
         const connection = {

@@ -1,4 +1,4 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessageHandle, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type {
     RallarMessage,
     RallarMessageSelectorInput,
@@ -10,12 +10,14 @@ import type {
     RallarTypedWsSendOptions,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
+import type { RallarRoomState } from '@shared-web/browser/rooms/rallar-room-contracts.ts';
 import {
     createRallarAuthorityBrowserMatch,
     RallarGameAuthorityClient,
     type RallarGameAuthorityClientConfig,
     type RallarGameAuthorityClientRallarFacade
 } from '@shared-web/game/mod.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -23,7 +25,8 @@ import {
     type RallarGameAuthorityEnvelope,
     type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMessageDelivery } from './messages/test-message-delivery.ts';
 
 interface Command {
     readonly action: string;
@@ -68,6 +71,85 @@ const authority: RallarGameAuthorityRef = {
 };
 
 describe('Rallar Game Authority browser client', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it.each(['queued', 'rejected', 'superseded', 'timeout'] as const)('waits for command admission and cleans pending commands on %s', async (state) => {
+        vi.useFakeTimers();
+        const delivery = createMessageDelivery('ws', undefined);
+        const fake = createFakeRallar(delivery.handle);
+        const client = createClient(fake);
+        await client.start();
+        let completed = false;
+        const sending = client.sendCommand({ action: 'dash' }).then((result) => {
+            completed = true;
+            return result;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        if (state === 'timeout') {
+            await vi.advanceTimersByTimeAsync(30_000);
+        }
+        else {
+            delivery.registry.record({
+                kind: 'admission',
+                carrier: 'ws',
+                msgId: delivery.handle.msgId,
+                atMs: Date.now(),
+                verdict: state === 'queued'
+                    ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
+                    : state === 'rejected'
+                    ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
+                    : { kind: 'superseded', detail: 'Replaced' }
+            });
+        }
+        const result = await sending;
+        expect(result).toMatchObject({ status: state === 'queued' ? 'sent' : 'failed', raw: delivery.handle });
+        expect(client.status().pendingCommandCount).toBe(state === 'queued' ? 1 : 0);
+        if (state === 'rejected' || state === 'superseded') {
+            expect(result.reason).toBe(state === 'rejected' ? 'Denied' : 'Replaced');
+        }
+        expect(vi.getTimerCount()).toBe(0);
+        client.stop();
+    });
+
+    it.each(['queued', 'rejected', 'superseded', 'timeout'] as const)('records peer presence only after %s admission', async (state) => {
+        vi.useFakeTimers();
+        const delivery = createMessageDelivery('rtc', undefined);
+        const fake = createFakeRallar(delivery.handle);
+        const client = createClient(fake, { peerAssist: { enabled: true } });
+        await client.start();
+        let completed = false;
+        const sending = client.publishPresence({ x: 1 }).then((result) => {
+            completed = true;
+            return result;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        expect(client.status().peerAssist.lastPresenceAtEpochMs).toBeUndefined();
+        if (state === 'timeout') {
+            await vi.advanceTimersByTimeAsync(5_000);
+        }
+        else {
+            delivery.registry.record({
+                kind: 'admission',
+                carrier: 'rtc',
+                msgId: delivery.handle.msgId,
+                atMs: Date.now(),
+                verdict: state === 'queued'
+                    ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
+                    : state === 'rejected'
+                    ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
+                    : { kind: 'superseded', detail: 'Replaced' }
+            });
+        }
+        expect(await sending).toMatchObject({ status: state === 'queued' ? 'sent' : 'failed', transport: 'rtc', raw: delivery.handle });
+        expect(client.status().peerAssist.lastPresenceAtEpochMs !== undefined).toBe(state === 'queued');
+        expect(vi.getTimerCount()).toBe(0);
+        client.stop();
+    });
+
     it('subscribes to expected WS and RTC surfaces on start', async () => {
         const fake = createFakeRallar();
         const client = createClient(fake);
@@ -317,9 +399,9 @@ describe('Rallar Game Authority browser client', () => {
 });
 
 function createClient(
-    fake: ReturnType<typeof createFakeRallar>,
+    fake: FakeAuthorityRallar,
     overrides: Partial<RallarGameAuthorityClientConfig<Command, Snapshot, Event, Presence>> = {}
-) {
+): RallarGameAuthorityClient<Command, Snapshot, Event, Presence> {
     return new RallarGameAuthorityClient<Command, Snapshot, Event, Presence>({
         rallar: fake.rallar,
         protocol: 'test.authority.v1',
@@ -342,9 +424,9 @@ function envelope<T>(input: AuthorityEnvelopeFixtureInput<T>): RallarGameAuthori
     });
 }
 
-function createFakeRallar() {
+function createFakeRallar(sendHandle?: RallarMessageHandle): FakeAuthorityRallar {
     const lifecycle = createFakeAuthorityLifecycle();
-    const messages = createFakeAuthorityMessages();
+    const messages = createFakeAuthorityMessages(sendHandle);
     const rallar = toAuthorityFacadeTestDouble({
         session: () => lifecycle.session,
         subscriptions: createSubscriptionScope,
@@ -374,7 +456,7 @@ function createFakeRallar() {
     };
 }
 
-function createFakeAuthorityLifecycle() {
+function createFakeAuthorityLifecycle(): FakeAuthorityLifecycle {
     const roomChangeHandlers: Array<(state: RallarMessagePayload) => void | Promise<void>> = [];
     const rtcStatusHandlers: Array<(status: RallarRtcStatus) => void | Promise<void>> = [];
     const session = {
@@ -420,26 +502,16 @@ function createFakeAuthorityLifecycle() {
     };
 }
 
-function createFakeAuthorityMessages() {
+function createFakeAuthorityMessages(sendHandle?: RallarMessageHandle): FakeAuthorityMessages {
     const wsMessageHandlers: Array<MessageSubscription> = [];
     const rtcMessageHandlers: Array<MessageSubscription> = [];
     const wsSends: RallarWsSendInput<RallarMessagePayload>[] = [];
     const wsSend: FakeWsSend = async (input) => {
         wsSends.push(input);
-        return {
-            transport: 'ws',
-            status: 'enqueued',
-            message: input,
-            entries: []
-        };
+        return sendHandle ?? createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle;
     };
     const rtcSend: FakeRtcSend = async (input) => {
-        return {
-            transport: 'rtc',
-            status: 'enqueued',
-            message: input,
-            entries: []
-        };
+        return sendHandle ?? createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle;
     };
 
     return {
@@ -463,28 +535,14 @@ interface FakeMessageOperationsInput {
 }
 
 interface FakeWsSend {
-    (input: RallarWsSendInput<RallarMessagePayload>): Promise<FakeWsSendResult>;
+    (input: RallarWsSendInput<RallarMessagePayload>): Promise<RallarMessageHandle>;
 }
 
 interface FakeRtcSend {
-    (input: RallarRtcSendInput<RallarMessagePayload>): Promise<FakeRtcSendResult>;
+    (input: RallarRtcSendInput<RallarMessagePayload>): Promise<RallarMessageHandle>;
 }
 
-interface FakeWsSendResult {
-    readonly transport: 'ws';
-    readonly status: 'enqueued';
-    readonly message: RallarWsSendInput<RallarMessagePayload>;
-    readonly entries: readonly never[];
-}
-
-interface FakeRtcSendResult {
-    readonly transport: 'rtc';
-    readonly status: 'enqueued';
-    readonly message: RallarRtcSendInput<RallarMessagePayload>;
-    readonly entries: readonly never[];
-}
-
-function createFakeMessageOperations(input: FakeMessageOperationsInput) {
+function createFakeMessageOperations(input: FakeMessageOperationsInput): FakeAuthorityMessageOperations {
     return {
         ws: createFakeMessageTransport(input.wsMessageHandlers, input.wsSend),
         rtc: createFakeMessageTransport(input.rtcMessageHandlers, input.rtcSend),
@@ -499,7 +557,7 @@ function createFakeMessageOperations(input: FakeMessageOperationsInput) {
 function createFakeMessageTransport<TSend extends FakeWsSend | FakeRtcSend>(
     subscriptions: MessageSubscription[],
     send: TSend
-) {
+): FakeAuthorityMessageTransport<TSend> {
     return {
         send,
         onMessage: (
@@ -517,7 +575,7 @@ interface FakeRoomMessageChannelInput extends FakeMessageOperationsInput {
     readonly definition: RallarRoomMessageChannelDefinition;
 }
 
-function createFakeRoomMessageChannel(input: FakeRoomMessageChannelInput) {
+function createFakeRoomMessageChannel(input: FakeRoomMessageChannelInput): FakeAuthorityRoomMessageChannel {
     const subscribe = (
         subscriptions: MessageSubscription[],
         handler: (
@@ -566,12 +624,12 @@ interface MessageSubscription {
 
 async function emit<T>(
     subscriptions: readonly MessageSubscription[],
-    message: RallarMessage<T>
+    message: RallarMessage<RallarGameAuthorityEnvelope<T>>
 ): Promise<void> {
     await Promise.all(
         subscriptions
             .filter((subscription) => selectorMatches(subscription.selector, message.typeId))
-            .map((subscription) => subscription.handler(toAuthorityMessageTestDouble(message)))
+            .map((subscription) => subscription.handler(message))
     );
 }
 
@@ -592,7 +650,11 @@ function message<T>(input: AuthorityMessageFixtureInput<T>): RallarMessage<T> {
         roomId: 'room-1',
         senderId: input.senderId,
         payload: input.payload,
-        raw: {} as RallarMessage<T>['raw'],
+        raw: {
+            id: { v: 2, msgId: 'authority-fixture', senderId: input.senderId, ts: 1_000 },
+            route: { topicId: 'game.authority', contextId: 'room-1', resourceId: 'resource-1' },
+            payload: { typeId: input.typeId, contentType: 'application/json', resource: JSON.stringify(input.payload) }
+        },
         receivedAtEpochMs: Date.now()
     };
 }
@@ -603,13 +665,7 @@ function toAuthorityFacadeTestDouble(
     return members as RallarGameAuthorityClientRallarFacade;
 }
 
-function toAuthorityMessageTestDouble<T>(
-    message: RallarMessage<T>
-): RallarMessage<RallarMessagePayload> {
-    return message as object as RallarMessage<RallarMessagePayload>;
-}
-
-function createSubscriptionScope() {
+function createSubscriptionScope(): import('@shared-web/browser/rallar.ts').RallarSubscriptionScope {
     const unsubscribes: Array<() => void> = [];
     return {
         add(unsubscribe?: (() => void) | null) {
@@ -634,4 +690,47 @@ function remove<T>(values: T[], value: T): void {
     if (index >= 0) {
         values.splice(index, 1);
     }
+}
+
+interface FakeAuthorityLifecycleHandlers {
+    readonly roomChangeHandlers: Array<(state: RallarMessagePayload) => void | Promise<void>>;
+    readonly rtcStatusHandlers: Array<(status: RallarRtcStatus) => void | Promise<void>>;
+}
+interface FakeAuthorityMessageHandlers {
+    readonly wsMessageHandlers: MessageSubscription[];
+    readonly rtcMessageHandlers: MessageSubscription[];
+    readonly wsSends: RallarWsSendInput<RallarMessagePayload>[];
+}
+interface FakeAuthorityRallar extends FakeAuthorityLifecycleHandlers, FakeAuthorityMessageHandlers {
+    readonly rallar: RallarGameAuthorityClientRallarFacade;
+    emitWs<T>(typeId: string, senderId: string, payload: RallarGameAuthorityEnvelope<T>): Promise<void>;
+    emitRtc<T>(typeId: string, senderId: string, payload: RallarGameAuthorityEnvelope<T>): Promise<void>;
+}
+interface FakeAuthorityLifecycle {
+    readonly session: AuthSession;
+    readonly handlers: FakeAuthorityLifecycleHandlers;
+    readonly rooms: { state(): RallarRoomState; onChange(handler: (state: RallarMessagePayload) => void | Promise<void>): () => void; };
+    readonly rtc: Pick<RallarGameAuthorityClientRallarFacade['rtc'], 'status' | 'onStatus'>;
+}
+interface FakeAuthorityMessages {
+    readonly handlers: FakeAuthorityMessageHandlers;
+    readonly wsSend: FakeWsSend;
+    readonly rtcSend: FakeRtcSend;
+    readonly operations: FakeAuthorityMessageOperations;
+}
+interface FakeAuthorityMessageOperations {
+    readonly ws: FakeAuthorityMessageTransport<FakeWsSend>;
+    readonly rtc: FakeAuthorityMessageTransport<FakeRtcSend>;
+    room(definition: RallarRoomMessageChannelDefinition): FakeAuthorityRoomMessageChannel;
+}
+interface FakeAuthorityMessageTransport<TSend> {
+    readonly send: TSend;
+    onMessage(selector: RallarMessageSelectorInput, handler: (message: RallarMessage<RallarMessagePayload>) => void | Promise<void>): () => void;
+}
+interface FakeAuthorityRoomMessageChannel {
+    send(payload: RallarMessagePayload, options?: RallarTypedMessageSendOptions<RallarMessagePayload>): Promise<RallarMessageHandle>;
+    sendRtc(payload: RallarMessagePayload, options?: RallarTypedRtcSendOptions<RallarMessagePayload>): Promise<RallarMessageHandle>;
+    sendWs(payload: RallarMessagePayload, options?: RallarTypedWsSendOptions<RallarMessagePayload>): Promise<RallarMessageHandle>;
+    onRtc(handler: (payload: RallarMessagePayload, message: RallarMessage<RallarMessagePayload>) => void | Promise<void>): () => void;
+    onWs(handler: (payload: RallarMessagePayload, message: RallarMessage<RallarMessagePayload>) => void | Promise<void>): () => void;
 }

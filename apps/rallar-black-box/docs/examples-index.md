@@ -34,20 +34,22 @@ The richer JSON recipe set lives under `packages/shared-test/black-box-runner/ex
 `packages/shared-test/black-box-runner/tests/`; both are indexed by
 `packages/shared-test/black-box-runner/recipe-matrix.json`.
 
-The SPA re-exports a browser-safe fixture catalog and artifact contract from:
+The SPA imports the browser-safe fixture catalog and artifact contract from their
+shared-test owners:
 
 ```text
-apps/rallar-black-box/src/shared-test-handoff-fixtures.ts
+packages/shared-test/black-box-runner/artifacts/handoff-contract.ts
+packages/shared-test/black-box-runner/artifacts/artifact-reader.ts
 ```
 
-That bridge exposes:
+Those owners expose:
 
-- `RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG`
-- `RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT`
-- `RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF`
-- `parseRallarBlackBoxSharedTestArtifactBundle(...)`
-- `validateRallarBlackBoxSharedTestRecipeCatalog(...)`
-- `validateRallarBlackBoxSharedTestRecipeCatalogEntryFixture(...)`
+- `BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG`
+- `BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT`
+- `BLACK_BOX_RUNNER_COVERAGE_HANDOFF`
+- `parseBlackBoxRunnerArtifactBundle(...)`
+- `validateBlackBoxRunnerRecipeCatalog(...)`
+- `validateBlackBoxRunnerRecipeCatalogEntryFixture(...)`
 
 The preserved SPA `Shared Test` tab, available from Recipe Console `Advanced` or
 `/?experience=legacy&workspace=black-box-runner&tab=shared-test`, renders the browser-safe fixture catalog and validates
@@ -90,6 +92,6 @@ Shared-test runner artifacts use this file shape:
 - optional `reduced-plan.json`
 - optional `matrix-summary.json`
 
-Use `parseRallarBlackBoxSharedTestArtifactBundle(...)` before rendering uploaded artifacts. The parser validates
+Use `parseBlackBoxRunnerArtifactBundle(...)` before rendering uploaded artifacts. The parser validates
 required files, event kinds, summaries, artifact indexes, expanded recipes, redaction placeholders,
 expanded-plan/reduced-plan replay data, matrix summaries, and legacy schema compatibility.

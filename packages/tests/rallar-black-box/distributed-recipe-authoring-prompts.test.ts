@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     DISTRIBUTED_RECIPE_PROMPT_TEMPLATES,
-    distributedRecipeSchemaContextText,
-    distributedRecipeSchemaSnippets,
     redactDistributedRecipePromptVariables,
-    renderDistributedRecipePromptTemplate,
-    renderDistributedRecipeValidationFeedback
+    toDistributedRecipePromptText,
+    toDistributedRecipeSchemaContextText,
+    toDistributedRecipeSchemaSnippets,
+    toDistributedRecipeValidationFeedbackText
 } from '../../../apps/rallar-black-box/src/distributed-recipe-authoring-prompts.ts';
 
 describe('distributed recipe authoring prompts', () => {
@@ -25,14 +25,14 @@ describe('distributed recipe authoring prompts', () => {
     });
 
     it('renders schema and capability context for browser-agent and distributed manifests', () => {
-        const snippets = distributedRecipeSchemaSnippets();
+        const snippets = toDistributedRecipeSchemaSnippets();
         expect(snippets).toHaveLength(2);
         expect(snippets[0].text).toContain('Rallar black-box browser-agent recipe');
         expect(snippets[0].text).toContain('"commands"');
         expect(snippets[1].text).toContain('Rallar black-box distributed run manifest');
         expect(snippets[1].text).toContain('"targetPolicy"');
 
-        const context = distributedRecipeSchemaContextText();
+        const context = toDistributedRecipeSchemaContextText();
         expect(context).toContain('Relevant Command Capabilities');
         expect(context).toContain('ws.send: WebSocket Send');
         expect(context).toContain('rtc.send: RTC Send');
@@ -61,7 +61,7 @@ describe('distributed recipe authoring prompts', () => {
     });
 
     it('renders a copyable prompt with redacted global context and validation feedback', () => {
-        const prompt = renderDistributedRecipePromptTemplate('rtc-realtime-position', {
+        const prompt = toDistributedRecipePromptText('rtc-realtime-position', {
             variables: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
@@ -74,8 +74,10 @@ describe('distributed recipe authoring prompts', () => {
                 title: 'Distributed Manifest',
                 ok: false,
                 parseOk: true,
+                issues: [],
                 schemaErrorText: '$.recipes[0].recipe: Missing required property commands',
-                preflightWarnings: ['recipes[0] uses live RTC traffic']
+                preflightWarnings: ['recipes[0] uses live RTC traffic'],
+                preflightErrors: []
             }
         });
 
@@ -89,12 +91,14 @@ describe('distributed recipe authoring prompts', () => {
     });
 
     it('formats validation feedback for copy-back prompts', () => {
-        const feedback = renderDistributedRecipeValidationFeedback({
+        const feedback = toDistributedRecipeValidationFeedbackText({
             target: 'recipe',
             title: 'Recipe JSON',
             ok: false,
             parseOk: true,
+            issues: [],
             schemaErrorText: '$.commands: Missing required property commands',
+            preflightWarnings: [],
             preflightErrors: ['recipes[0].commands[0] has no loop child commands.']
         });
 

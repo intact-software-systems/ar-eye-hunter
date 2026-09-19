@@ -1,10 +1,11 @@
-// deno-lint-ignore-file no-explicit-any
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
-import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
+import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
 import {
-    containsValue,
-    sameJsonValue,
+    hasContainedText,
+    isSameJsonValue,
     type PayloadPathLookup
 } from '../wait/wait-event-match.ts';
 
@@ -24,121 +25,132 @@ export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'matchesShapeComplete'
 ] as const;
 
+type PresentValueAssertOperator = Exclude<RallarBlackBoxTestAssertOperator, 'exists' | 'notEquals'>;
+
+/** A recipe expectation and the evidence it is compared with, both in JSON form. */
+interface AssertComparison {
+    readonly actual: ApiJsonValue;
+    /** Absent when the recipe names no expected value. */
+    readonly expected: ApiJsonValue | undefined;
+}
+
 export function isRallarBlackBoxAssertOperator(
     value: unknown
 ): value is RallarBlackBoxTestAssertOperator {
     return typeof value === 'string' &&
-        RALLAR_BLACK_BOX_ASSERT_OPERATORS.includes(value as RallarBlackBoxTestAssertOperator);
+        RALLAR_BLACK_BOX_ASSERT_OPERATORS.some((operator) => operator === value);
 }
 
-export function assertValueMatches(
+export function isAssertOperatorSatisfied(
     source: PayloadPathLookup,
     operator: RallarBlackBoxTestAssertOperator,
-    expected: unknown
+    expected: ApiJsonValue | undefined
 ): boolean {
     switch (operator) {
-        case 'equals':
-            return source.exists && sameJsonValue(source.value, expected);
-        case 'notEquals':
-            return !source.exists || !sameJsonValue(source.value, expected);
-        case 'contains':
-            return source.exists && containsAssertValue(source.value, expected);
         case 'exists':
-            return expected === undefined
-                ? source.exists
-                : source.exists === Boolean(expected);
-        case 'gte':
-            return source.exists &&
-                typeof source.value === 'number' &&
-                typeof expected === 'number' &&
-                source.value >= expected;
-        case 'lte':
-            return source.exists &&
-                typeof source.value === 'number' &&
-                typeof expected === 'number' &&
-                source.value <= expected;
-        case 'gt':
-            return source.exists &&
-                boundedNumberMatches(source.value, expected, (actual, bound) => actual > bound);
-        case 'lt':
-            return source.exists &&
-                boundedNumberMatches(source.value, expected, (actual, bound) => actual < bound);
-        case 'between':
-            return source.exists && betweenMatches(source.value, expected);
-        case 'length':
-            return source.exists && lengthMatches(source.value, expected);
-        case 'matches':
-            return source.exists && regexMatches(source.value, expected);
-        case 'matchesShape':
-            return source.exists &&
-                CompareJson.compatible(expected, source.value).isEqual;
-        case 'matchesShapeComplete':
-            return source.exists &&
-                CompareJson
-                    .compatibleComplete(expected, source.value)
-                    .isEqual;
+            return expected === undefined ? source.exists : source.exists === Boolean(expected);
+        case 'notEquals':
+            return !source.exists || !isSameJsonValue(source.value, expected);
+        default:
+            return source.exists && isPresentValueOperatorSatisfied(operator, { actual: source.value, expected });
     }
 }
 
-// Runner comparator parity: gt/lt/between/length/matches coerce with Number()
-// and require finite bounds, unlike the historical strictly-numeric gte/lte.
-function boundedNumberMatches(
-    value: any,
-    bound: any,
-    satisfies: (actual: number, bound: number) => boolean
+/** gt, lt, between, length and matches coerce like the runner comparators; gte and lte stay strictly numeric. */
+function isPresentValueOperatorSatisfied(
+    operator: PresentValueAssertOperator,
+    comparison: AssertComparison
 ): boolean {
-    const actualNumber = Number(value);
-    const boundNumber = Number(bound);
-    return Number.isFinite(actualNumber) &&
-        Number.isFinite(boundNumber) &&
-        satisfies(actualNumber, boundNumber);
+    const { actual, expected } = comparison;
+    switch (operator) {
+        case 'equals':
+            return isSameJsonValue(actual, expected);
+        case 'contains':
+            return isContainsSatisfied(comparison);
+        case 'gte':
+            return typeof actual === 'number' && typeof expected === 'number' && actual >= expected;
+        case 'lte':
+            return typeof actual === 'number' && typeof expected === 'number' && actual <= expected;
+        case 'gt':
+            return isBoundSatisfied(toCoercedNumber(actual), toCoercedNumber(expected), 'above');
+        case 'lt':
+            return isBoundSatisfied(toCoercedNumber(actual), toCoercedNumber(expected), 'below');
+        case 'between':
+            return isBetweenSatisfied(toCoercedNumber(actual), toBetweenBounds(expected));
+        case 'length':
+            return computeCollectionLength(actual) === Number(expected);
+        case 'matches':
+            return typeof actual === 'string' && isPatternMatch(actual, String(expected));
+        case 'matchesShape':
+            return CompareJson.compatible(expected, actual).isEqual;
+        case 'matchesShapeComplete':
+            return CompareJson.compatibleComplete(expected, actual).isEqual;
+    }
 }
 
-function betweenMatches(value: any, expected: any): boolean {
-    const bounds = Array.isArray(expected) ? expected.map(Number) : [];
-    const actualNumber = Number(value);
-    if (bounds.length !== 2 || bounds.some((bound) => !Number.isFinite(bound))) {
+function isContainsSatisfied(comparison: AssertComparison): boolean {
+    const { actual, expected } = comparison;
+    if (Array.isArray(actual)) {
+        return actual.some((entry) => isSameJsonValue(entry, expected));
+    }
+    if (typeof actual === 'string') {
+        return actual.includes(String(expected));
+    }
+    if (actual !== null && typeof actual === 'object') {
+        return typeof expected === 'string'
+            ? hasContainedText(actual, expected)
+            : Object.values(actual).some((entry) => isSameJsonValue(entry, expected));
+    }
+    return hasContainedText(actual, String(expected));
+}
+
+function isBoundSatisfied(
+    actual: number | undefined,
+    bound: number | undefined,
+    direction: 'above' | 'below'
+): boolean {
+    if (actual === undefined || bound === undefined) {
         return false;
     }
-    return Number.isFinite(actualNumber) && actualNumber >= bounds[0] && actualNumber <= bounds[1];
+    return direction === 'above' ? actual > bound : actual < bound;
 }
 
-function lengthMatches(value: any, expected: any): boolean {
-    const expectedLength = Number(expected);
-    const actualLength = Array.isArray(value) || typeof value === 'string'
-        ? value.length
-        : undefined;
-    return actualLength !== undefined && actualLength === expectedLength;
+function isBetweenSatisfied(
+    actual: number | undefined,
+    bounds: readonly [number, number] | undefined
+): boolean {
+    return actual !== undefined && bounds !== undefined && actual >= bounds[0] && actual <= bounds[1];
 }
 
-function regexMatches(value: any, expected: any): boolean {
-    if (typeof value !== 'string') {
-        return false;
-    }
+function isPatternMatch(text: string, pattern: string): boolean {
     try {
-        return new RegExp(String(expected)).test(value);
+        return new RegExp(pattern).test(text);
     }
     catch (_error) {
         return false;
     }
 }
 
-function containsAssertValue(value: unknown, expected: unknown): boolean {
-    if (Array.isArray(value)) {
-        return value.some((entry) => sameJsonValue(entry, expected));
+/** Absent when Number() does not coerce the value to a finite number. */
+function toCoercedNumber(value: ApiJsonValue | undefined): number | undefined {
+    if (value === undefined) {
+        return undefined;
     }
+    const coerced = Number(value);
+    return Number.isFinite(coerced) ? coerced : undefined;
+}
 
-    if (typeof value === 'string') {
-        return value.includes(String(expected));
+/** Absent unless the value is a pair whose members coerce to finite numbers. */
+function toBetweenBounds(value: ApiJsonValue | undefined): readonly [number, number] | undefined {
+    if (!Array.isArray(value) || value.length !== 2) {
+        return undefined;
     }
+    const lower = Number(value[0]);
+    const upper = Number(value[1]);
+    return Number.isFinite(lower) && Number.isFinite(upper) ? [lower, upper] : undefined;
+}
 
-    if (value && typeof value === 'object') {
-        if (typeof expected === 'string') {
-            return containsValue(value, expected);
-        }
-        return Object.values(value)
-            .some((entry) => sameJsonValue(entry, expected));
-    }
-
-    return containsValue(value, String(expected));
+/** Absent unless the value is an array or text. */
+function computeCollectionLength(value: ApiJsonValue): number | undefined {
+    return Array.isArray(value) || typeof value === 'string' ? value.length : undefined;
 }

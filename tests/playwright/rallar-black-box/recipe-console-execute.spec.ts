@@ -44,7 +44,9 @@ function agent(
             groupId: options.groupId ?? GROUP.groupId,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north'
+            region: 'eu-north',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: now - 500
         },
         connectionSequence: 1,
         reconnectCount: 0,
@@ -121,7 +123,7 @@ function distributedRun(
         error?: ControlDistributedRunSnapshot['error'];
     }> = {}
 ): ControlDistributedRunSnapshot {
-    const targetAgentIds = [...(manifest.targetPolicy.agentIds ?? [])];
+    const targetAgentIds = [...selectedAgentIds(manifest)];
     const ready = ['ready', 'running', 'passed'].includes(state)
         ? targetAgentIds.length
         : 0;
@@ -139,12 +141,10 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: ready,
                 passedParticipants: state === 'passed' ? targetAgentIds.length : 0,
                 failedParticipants: state === 'failed' ? targetAgentIds.length : 0,
                 recipes: manifest.recipes.length,
-                requiredRecipes: manifest.recipes.length,
                 passedRecipes: state === 'passed' ? manifest.recipes.length : 0,
                 failedRecipes: state === 'failed' ? manifest.recipes.length : 0,
                 blockingFailures: state === 'failed' ? 1 : 0
@@ -155,9 +155,13 @@ function distributedRun(
     };
 }
 
+function selectedAgentIds(manifest: RallarBlackBoxDistributedRunManifest): readonly string[] {
+    return manifest.targetPolicy.mode === 'selected-agents' ? manifest.targetPolicy.agentIds : [];
+}
+
 function targetResolution(
     manifest: RallarBlackBoxDistributedRunManifest,
-    targetAgentIds = manifest.targetPolicy.agentIds ?? []
+    targetAgentIds = selectedAgentIds(manifest)
 ): RallarBlackBoxDistributedTargetResolution {
     return {
         group: manifest.group,
@@ -173,7 +177,7 @@ function targetResolution(
                     (recipe) => recipe.recipeId ?? recipe.recipe?.recipeId ?? ''
                 )
                 .filter(Boolean),
-            required: true
+            variables: {}
         })),
         blockers: [],
         summary: {
@@ -185,6 +189,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: { 'all-agents': targetAgentIds.length },
             regions: { 'eu-north': targetAgentIds.length },
@@ -444,8 +449,7 @@ async function installLifecycleControl(
                             resolutionCalls,
                             body.manifest
                         ) ??
-                            body.manifest.targetPolicy.agentIds ??
-                            []
+                            selectedAgentIds(body.manifest)
                     )
                 );
             }
@@ -1024,7 +1028,7 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
             {
                 recipeId: catalogItem.recipe.recipeId,
                 recipe: catalogItem.recipe,
-                required: true
+                variables: {}
             }
         ],
         targetPolicy: {
@@ -1033,7 +1037,12 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
             expectedParticipantCount: 2
         },
         ackTimeoutMs: 15_000,
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        roleAssignments: [],
+        barrier: { enabled: false },
+        groupAssertions: [],
+        metadata: {}
     };
     const restored = distributedRun(manifest, 'ready', Date.now());
     await installLiveControl(context, {
@@ -1068,7 +1077,7 @@ test('restores an existing Execute run from a copied v1 URL', async ({ context, 
 test('refuses Stage when fresh target resolution drifts', async ({ context, page }) => {
     const mock = await installLifecycleControl(context, {
         resolutionTargetIds(call, manifest) {
-            const selected = manifest.targetPolicy.agentIds ?? [];
+            const selected = selectedAgentIds(manifest);
             return call === 3 ? selected.slice(0, 1) : selected;
         }
     });

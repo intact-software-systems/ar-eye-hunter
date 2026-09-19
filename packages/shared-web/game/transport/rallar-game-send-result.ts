@@ -1,6 +1,6 @@
 import type {
     RallarDirectorRelaySendResult,
-    RallarMessageSendResult,
+    RallarMessageHandle,
     RallarRealtimeSendResult
 } from '@shared-web/browser/rallar.ts';
 
@@ -16,7 +16,7 @@ export interface RallarGameSendResult {
         | 'stopped';
     readonly transport?: 'local' | 'ws' | 'rtc' | 'realtime' | 'director-relay';
     readonly reason?: string;
-    readonly ws?: RallarMessageSendResult;
+    readonly ws?: RallarMessageHandle;
     readonly realtime?: readonly RallarRealtimeSendResult[];
     readonly relay?: RallarDirectorRelaySendResult;
 }

@@ -227,6 +227,7 @@ describe('Rallar WS lifecycle', () => {
         webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         }));
@@ -234,6 +235,7 @@ describe('Rallar WS lifecycle', () => {
         rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(async (message) => ({
             status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         }));

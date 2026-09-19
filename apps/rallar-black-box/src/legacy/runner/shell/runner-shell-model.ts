@@ -1,12 +1,15 @@
-import { selectRallarBlackBoxActiveCommand } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { getRallarBlackBoxActiveCommand } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { commandId } from '../../shared/command-presentation.ts';
 import type { CommandQueueRow } from '../runner-contracts.ts';
 
 export function deriveQueue(
     state: RallarBlackBoxTestState
 ): readonly CommandQueueRow[] {
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
+    const activeCommand = getRallarBlackBoxActiveCommand(state);
     const resultCache = state.resultCache;
     return (state.loadedRecipe?.commands ?? []).map((command, index) => {
         const id = commandId(command, index);

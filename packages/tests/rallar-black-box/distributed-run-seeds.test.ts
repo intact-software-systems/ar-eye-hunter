@@ -7,10 +7,14 @@ import {
 import {
     createSyntheticDistributedRunSeed,
     DISTRIBUTED_RUN_SEEDS,
-    distributedRunSeedIdFromValue
+    resolveDistributedRunSeedId
 } from '../../../apps/rallar-black-box/src/distributed-run-seeds.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import { computeRtcDiagnostics, computeRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import { computeDistributedRunArtifactAnalysis } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
+/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
 function verdictFor(seedId: Parameters<typeof createSyntheticDistributedRunSeed>[0]) {
     const seed = createSyntheticDistributedRunSeed(seedId);
@@ -69,8 +73,8 @@ describe('synthetic distributed run seeds', () => {
             'artifact-missing'
         ]);
 
-        expect(distributedRunSeedIdFromValue('failed-command')).toBe('failed-command');
-        expect(distributedRunSeedIdFromValue('unknown')).toBeUndefined();
+        expect(resolveDistributedRunSeedId('failed-command')).toBe('failed-command');
+        expect(resolveDistributedRunSeedId('unknown')).toBeUndefined();
 
         const first = createSyntheticDistributedRunSeed('failed-command');
         const second = createSyntheticDistributedRunSeed('failed-command');
@@ -80,6 +84,30 @@ describe('synthetic distributed run seeds', () => {
         expect(first.distributedRun.distributedRunId).toBe('seed-failed-command');
         expect(first.controlRun.runId).toBe('seed-control-failed-command');
         expect(first.artifactBundle?.distributedRunId).toBe('seed-failed-command');
+    });
+
+    it('writes artifact bundles the distributed run analysis reads without parse warnings', () => {
+        const seeds = DISTRIBUTED_RUN_SEEDS
+            .map((entry) => createSyntheticDistributedRunSeed(entry.id))
+            .flatMap((seed) => seed.artifactBundle === undefined ? [] : [{ seed, bundle: seed.artifactBundle }]);
+
+        expect(seeds.map(({ seed }) => seed.distributedRun.distributedRunId)).toEqual([
+            'seed-passed-clean',
+            'seed-passed-warnings',
+            'seed-failed-command',
+            'seed-high-latency-rtc'
+        ]);
+        for (const { seed, bundle } of seeds) {
+            const analysis = computeDistributedRunArtifactAnalysis({
+                files: bundle.files,
+                generatedAtEpochMs: seed.generatedAtEpochMs
+            });
+            expect(analysis.left, seed.distributedRun.distributedRunId).toBeUndefined();
+            expect(analysis.right?.analysis.parseWarnings, seed.distributedRun.distributedRunId).toEqual([]);
+            expect(JSON.parse(bundle.files['failures.json'] ?? ''), seed.distributedRun.distributedRunId).toEqual({
+                failures: seed.distributedRun.rollup.failures
+            });
+        }
     });
 
     it('derives a clean passed verdict from the passed-clean seed', () => {
@@ -96,7 +124,18 @@ describe('synthetic distributed run seeds', () => {
     });
 
     it('derives pass-with-review wording from evidence warning seeds', () => {
-        const { verdict } = verdictFor('passed-warnings');
+        const { verdict, seed, monitor } = verdictFor('passed-warnings');
+        const diagnostic = seed.controlRun.events.find((event) => event.kind === 'diagnostic');
+        expect(diagnostic?.payload).toMatchObject({
+            diagnosticSchemaVersion: 1,
+            diagnosticTypeId: 'rallar.browser.realtime.synthetic_seed',
+            topic: 'rallar.browser.realtime.synthetic_seed',
+            severity: 'warning',
+            transport: 'messages.rtc',
+            message: 'Synthetic RTC evidence includes a warning diagnostic.',
+            source: 'distributed-run-seed'
+        });
+        expect(monitor.runtimeDiagnostics).toHaveLength(1);
 
         expect(verdict).toMatchObject({
             title: 'Outcome passed; evidence needs review',
@@ -139,8 +178,8 @@ describe('synthetic distributed run seeds', () => {
     it('feeds high-latency distributed agents into RTC performance charts', () => {
         const { monitor } = verdictFor('high-latency-rtc');
         const state = emptyRtcState();
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(state),
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(state, DIAGNOSTICS_NOW_EPOCH_MS),
             state,
             distributedMonitor: monitor,
             histogramBucketCount: 4

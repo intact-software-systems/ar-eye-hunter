@@ -1,4 +1,7 @@
-import type { RallarBlackBoxTestRedactionOptions } from './types.ts';
+import type {
+    RallarBlackBoxTestRecord,
+    RallarBlackBoxTestRedactionOptions
+} from './rallar-black-box-test-contracts.ts';
 
 export const RALLAR_BLACK_BOX_REDACTED_VALUE = '<redacted>';
 
@@ -20,65 +23,69 @@ const DEFAULT_KEY_SUBSTRINGS = [
     'encryption'
 ];
 
-function normalizeKey(value: string): string {
-    return value.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '');
+interface RedactionPolicy {
+    readonly exactKeys: ReadonlySet<string>;
+    readonly keySubstrings: readonly string[];
+    readonly secretValues: readonly string[];
+    readonly replacement: string;
 }
 
-function shouldRedactKey(
-    key: string,
-    options: RallarBlackBoxTestRedactionOptions = {}
-): boolean {
-    const normalized = normalizeKey(key);
-    const exactKeys = new Set((options.keys ?? []).map(normalizeKey));
-    if (exactKeys.has(normalized)) {
-        return true;
-    }
-
-    const substrings = options.keySubstrings ?? DEFAULT_KEY_SUBSTRINGS;
-    return substrings.some((substring) => normalized.includes(normalizeKey(substring)));
-}
-
-function shouldRedactString(
-    value: string,
-    options: RallarBlackBoxTestRedactionOptions = {}
-): boolean {
-    return (options.secretValues ?? [])
-        .filter((secret) => secret.length > 0)
-        .some((secret) => value.includes(secret));
-}
-
+/**
+ * The copy is typed as the value passed in although a redacted leaf becomes the replacement text: callers only
+ * serialize or display redacted evidence, and every container keeps its shape.
+ */
 export function redactRallarBlackBoxValue<T>(
     value: T,
     options: RallarBlackBoxTestRedactionOptions = {}
 ): T {
-    const replacement = options.replacement ?? RALLAR_BLACK_BOX_REDACTED_VALUE;
+    return toRedactedValue(value, toRedactionPolicy(options)) as T;
+}
 
-    function redact(current: unknown, key?: string): unknown {
-        if (key && shouldRedactKey(key, options)) {
-            return replacement;
-        }
+function toRedactionPolicy(options: RallarBlackBoxTestRedactionOptions): RedactionPolicy {
+    return {
+        exactKeys: new Set((options.keys ?? []).map(toNormalizedKey)),
+        keySubstrings: (options.keySubstrings ?? DEFAULT_KEY_SUBSTRINGS).map(toNormalizedKey),
+        secretValues: (options.secretValues ?? []).filter((secret) => secret.length > 0),
+        replacement: options.replacement ?? RALLAR_BLACK_BOX_REDACTED_VALUE
+    };
+}
 
-        if (typeof current === 'string') {
-            return shouldRedactString(current, options)
-                ? replacement
-                : current;
-        }
-
-        if (Array.isArray(current)) {
-            return current.map((item) => redact(item));
-        }
-
-        if (!current || typeof current !== 'object') {
-            return current;
-        }
-
-        return Object.fromEntries(
-            Object.entries(current).map(([childKey, childValue]) => [
-                childKey,
-                redact(childValue, childKey)
-            ])
-        );
+/** Evidence of any shape reaches redaction, so each level is narrowed before it is copied. */
+function toRedactedValue(value: unknown, policy: RedactionPolicy): unknown {
+    if (typeof value === 'string') {
+        return hasSecretValue(value, policy) ? policy.replacement : value;
     }
+    if (Array.isArray(value)) {
+        return value.map((item) => toRedactedValue(item, policy));
+    }
+    if (!isRedactableRecord(value)) {
+        return value;
+    }
+    return Object.fromEntries(
+        Object.entries(value).map(([key, child]) => [
+            key,
+            isRedactedKey(key, policy) ? policy.replacement : toRedactedValue(child, policy)
+        ])
+    );
+}
 
-    return redact(value) as T;
+/** An error or class instance is copied by its own enumerable fields, like a plain record. */
+function isRedactableRecord(value: unknown): value is RallarBlackBoxTestRecord {
+    return typeof value === 'object' && value !== null;
+}
+
+function toNormalizedKey(key: string): string {
+    return key.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '');
+}
+
+function isRedactedKey(key: string, policy: RedactionPolicy): boolean {
+    const normalized = toNormalizedKey(key);
+    return key.length > 0 && (
+        policy.exactKeys.has(normalized) ||
+        policy.keySubstrings.some((substring) => normalized.includes(substring))
+    );
+}
+
+function hasSecretValue(value: string, policy: RedactionPolicy): boolean {
+    return policy.secretValues.some((secret) => value.includes(secret));
 }

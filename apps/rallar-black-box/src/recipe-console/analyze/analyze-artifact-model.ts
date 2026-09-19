@@ -1,9 +1,10 @@
 import {
-    composeDistributedArtifactIssueMarkdown,
-    deriveDistributedArtifactEvidenceIndex,
-    deriveDistributedArtifactWorkspace,
-    distributedArtifactPipelineJsonRecord,
-    type DeriveDistributedArtifactEvidenceIndexInput,
+    computeDistributedArtifactEvidenceIndex,
+    computeDistributedArtifactWorkspace,
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
+    DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS,
+    toDistributedArtifactIssueMarkdown,
+    type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceIndex,
     type DistributedArtifactPipelineTelemetry,
     type DistributedArtifactWorkspace,
@@ -87,7 +88,7 @@ export type PreparedAnalyzeArtifactModel = Readonly<{
     portableFiles: Readonly<Record<string, string>>;
     ignoredFiles: readonly AnalyzeArtifactIgnoredFile[];
     selectedArtifactFileCount: number;
-    evidenceInput: DeriveDistributedArtifactEvidenceIndexInput;
+    evidenceInput: ComputeDistributedArtifactEvidenceIndexInput;
     pipelineTelemetry: DistributedArtifactPipelineTelemetry;
 }>;
 
@@ -122,7 +123,7 @@ export function deriveAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput
 ): DerivedAnalyzeArtifactModel {
     const prepared = prepareAnalyzeArtifactModel(input);
-    const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+    const evidenceIndex = computeDistributedArtifactEvidenceIndex(
         prepared.evidenceInput
     );
     return {
@@ -134,7 +135,7 @@ export function deriveAnalyzeArtifactModel(
 export function prepareAnalyzeArtifactModel(
     input: AnalyzeArtifactModelInput
 ): PreparedAnalyzeArtifactModel {
-    const derived = deriveDistributedArtifactWorkspace({
+    const derived = computeDistributedArtifactWorkspace({
         files: input.files,
         generatedAtEpochMs: input.generatedAtEpochMs,
         artifactSchemaVersion: input.artifactSchemaVersion
@@ -144,7 +145,8 @@ export function prepareAnalyzeArtifactModel(
 
     const analysis = workspace.analysis;
     const snapshots = workspace.snapshots;
-    if (!analysis || !snapshots) {
+    const monitor = derived.monitor;
+    if (!analysis || !snapshots || !monitor) {
         throw new AnalyzeArtifactModelError(
             'unusable-distributed-artifact',
             `${input.label} does not contain usable distributed-run analysis and snapshots.`,
@@ -153,16 +155,13 @@ export function prepareAnalyzeArtifactModel(
     }
 
     const portableFiles = normalizedPortableFiles(derived.parsed.projectedFiles);
-    const evidenceInput: DeriveDistributedArtifactEvidenceIndexInput = {
+    const evidenceInput: ComputeDistributedArtifactEvidenceIndexInput = {
         analysis,
         snapshots,
-        monitor: derived.monitor,
-        parsedControlRun: distributedArtifactPipelineJsonRecord(
-            derived.parsed,
-            'control-run.json'
-        ),
+        monitor,
+        parsed: derived.parsed,
         sourceFileNames: Object.keys(portableFiles),
-        sourceFiles: derived.parsed.projectedFiles
+        limits: DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS
     };
     const ignoredFiles = normalizedIgnoredFiles(input.ignoredFiles ?? []);
     const selectedArtifactFileCount = selectedInputFileCount(derived.parsed);
@@ -216,22 +215,22 @@ export function finalizeAnalyzeArtifactModel(
         analysis,
         snapshots,
         evidenceIndex,
-        issueMarkdown: composeDistributedArtifactIssueMarkdown({
+        issueMarkdown: toDistributedArtifactIssueMarkdown({
             analysis,
-            index: evidenceIndex
+            evidence: evidenceIndex.entries,
+            limits: DEFAULT_DISTRIBUTED_ARTIFACT_ISSUE_MARKDOWN_LIMITS
         }),
         portableEnvelope: {
-            artifactSchemaVersion: workspace.artifactSchemaVersion ??
-                analysis.artifactSchemaVersion ?? 1,
+            artifactSchemaVersion: workspace.artifactSchemaVersion ?? analysis.artifactSchemaVersion,
             distributedRunId: analysis.distributedRunId,
-            generatedAtEpochMs: workspace.generatedAtEpochMs,
+            generatedAtEpochMs: analysis.generatedAtEpochMs,
             files: portableFiles
         },
         provenance: {
             source: input.source,
             label: input.label,
             workspaceSource: workspace.source,
-            generatedAtEpochMs: workspace.generatedAtEpochMs,
+            generatedAtEpochMs: analysis.generatedAtEpochMs,
             selectedFileCount: selectedArtifactFileCount + ignoredFiles.length,
             artifactFileCount: Object.keys(portableFiles).length,
             loadedFileCount: workspace.inventory.filter(

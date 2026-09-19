@@ -1,5 +1,8 @@
+import { Either } from '@shared/resilience/Either.ts';
+
 import type { RallarBlackBoxControlAgentMessagingCapability } from '../distributed-run.ts';
-import type { RallarBlackBoxTestMessagesCarrier, RallarBlackBoxTestRecord } from '../types.ts';
+import type { RallarBlackBoxTestMessagesCarrier } from '../rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 
 const CONTROL_AGENT_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'ws',
@@ -17,9 +20,9 @@ export const CONTROL_AGENT_MESSAGING_CAPABILITY: RallarBlackBoxControlAgentMessa
 
 export function decodeControlAgentMessagingCapability(
     value: unknown
-): RallarBlackBoxControlAgentMessagingCapability | undefined {
-    if (!isMessagingCapabilityRecord(value)) {
-        return undefined;
+): Either<string, RallarBlackBoxControlAgentMessagingCapability> {
+    if (!isJsonRecordValue(value)) {
+        return Either.ofLeft('capabilities.messaging must be a JSON object');
     }
     if (
         typeof value.supported !== 'boolean' ||
@@ -27,26 +30,21 @@ export function decodeControlAgentMessagingCapability(
         typeof value.storageCounters !== 'boolean' ||
         typeof value.reload !== 'boolean'
     ) {
-        return undefined;
+        return Either.ofLeft('capabilities.messaging must report supported, faults, storageCounters and reload');
     }
     if (!Array.isArray(value.carriers) || !value.carriers.every(isMessagesCarrier)) {
-        return undefined;
+        return Either.ofLeft('capabilities.messaging.carriers must list known message carriers');
     }
 
-    return {
+    return Either.ofRight({
         supported: value.supported,
         carriers: value.carriers,
         faults: value.faults,
         storageCounters: value.storageCounters,
         reload: value.reload
-    };
-}
-
-function isMessagingCapabilityRecord(value: unknown): value is RallarBlackBoxTestRecord {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    });
 }
 
 function isMessagesCarrier(value: unknown): value is RallarBlackBoxTestMessagesCarrier {
-    return typeof value === 'string' &&
-        CONTROL_AGENT_MESSAGES_CARRIERS.includes(value as RallarBlackBoxTestMessagesCarrier);
+    return typeof value === 'string' && CONTROL_AGENT_MESSAGES_CARRIERS.some((carrier) => carrier === value);
 }

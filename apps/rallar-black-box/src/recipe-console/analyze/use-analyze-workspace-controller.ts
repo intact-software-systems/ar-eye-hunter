@@ -11,13 +11,13 @@ import {
     recipeConsoleAnalyzeControlRunSelectionPatch,
     recipeConsoleAnalyzeDistributedRunSelectionPatch
 } from './analyze-selection.ts';
+import type { AnalyzeWorkerTelemetry } from './analyze-worker-contract.ts';
 import type {
     AnalyzeArtifactProjection,
     AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerTelemetry
-} from './analyze-worker-contract.ts';
-import { projectAnalyzeWorkspaceError, projectAnalyzeWorkspaceLoadReason } from './analyze-workspace-policy.ts';
+    AnalyzeTuneArtifactFacade
+} from './analyze-worker-projection-contract.ts';
+import { resolveAnalyzeWorkspaceLoadReason, toAnalyzeWorkspaceErrorMessage } from './analyze-workspace-policy.ts';
 import { type AnalyzeWorkspaceContext, type AnalyzeWorkspaceState } from './analyze-workspace-state.ts';
 
 export function useAnalyzeWorkspaceController(
@@ -108,14 +108,14 @@ export function useAnalyzeWorkspaceController(
         controlRunId: input.selection.controlRunId,
         distributedRunId: input.requestedDistributedRunId,
         status: input.state.artifactStatus,
-        error: projectAnalyzeWorkspaceError(input.state.operationError) ??
+        error: toAnalyzeWorkspaceErrorMessage(input.state.operationError) ??
             input.workerUnavailable,
         busyAction: input.state.activeOperation?.action,
         canLoad: Boolean(
             input.context && input.connection.execution &&
                 !input.state.activeOperation
         ),
-        loadReason: projectAnalyzeWorkspaceLoadReason(
+        loadReason: resolveAnalyzeWorkspaceLoadReason(
             input.context,
             input.connection.execution,
             input.state.activeOperation?.action

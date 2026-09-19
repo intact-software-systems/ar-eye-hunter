@@ -1,10 +1,12 @@
+import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord
-} from '../../types.ts';
+} from '../../rallar-black-box-test-contracts.ts';
 
 import { ALM_CONFORMANCE_CARRIERS, type AlmConformanceCarrier } from './alm-conformance-carriers.ts';
 
@@ -22,6 +24,7 @@ export interface AlmConformanceScenario {
         | 'bounded-rejection'
         | 'deadline-expiry'
         | 'delivery-baseline'
+        | 'delivery-lifecycle'
         | 'ordering-resync';
     readonly sender: RallarBlackBoxTestRecipe;
     readonly receiver: RallarBlackBoxTestRecipe;
@@ -48,6 +51,7 @@ interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {
 
 interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
+    readonly ack?: 'receiver';
     readonly reliability?: 'at-least-once';
     readonly orderingKey?: string;
     readonly seq?: number;
@@ -59,7 +63,7 @@ interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
 }
 
 interface AlmConformanceObserveInput extends AlmConformanceMessageStepInput {
-    readonly state: 'accepted' | 'rejected' | 'cancelled';
+    readonly state: 'admitted' | ALDeliveryState;
 }
 
 interface AlmConformanceAssertInput extends AlmConformanceMessageStepInput {
@@ -151,6 +155,13 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
         toReceiverCommands: toDeliveryBaselineReceiverCommands
     },
     {
+        scenarioId: 'delivery-lifecycle',
+        tags: SMOKE_TAGS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
+        toSenderCommands: toDeliveryLifecycleSenderCommands,
+        toReceiverCommands: toDeliveryLifecycleReceiverCommands
+    },
+    {
         scenarioId: 'ordering-resync',
         tags: FULL_TAGS,
         carriers: RTC_CARRIERS,
@@ -231,7 +242,10 @@ function toBoundedRejectionSenderCommands(
         }),
         toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
         toCancelCommand({ ...sender, index: 1 }),
-        toObserveCommand({ ...sender, index: 1, state: 'cancelled' })
+        {
+            ...toObserveCommand({ ...sender, index: 1, state: 'rejected' }),
+            commandId: toCommandId(sender, 'observe-rejected-after-cancel-1')
+        }
     ];
 }
 
@@ -254,10 +268,19 @@ function toDeadlineExpirySenderCommands(
         toSendCommand({
             ...sender,
             index: 1,
-            payload: { marker: sender.scenarioId },
-            delivery: { ttlMs: EXPIRY_TTL_MS }
+            payload: { marker: sender.scenarioId, carrier: sender.input.carrier },
+            delivery: { ttlMs: EXPIRY_TTL_MS, ack: 'receiver' }
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' })
+        ...toAdmissionCommands({ ...sender, index: 1 }),
+        toObserveCommand({ ...sender, index: 1, state: 'expired' }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-expired-1',
+            resultName: 'observe-expired-1',
+            field: 'state',
+            operator: 'equals',
+            expected: 'expired'
+        })
     ];
 }
 
@@ -271,7 +294,7 @@ function toDeliveryBaselineSenderCommands(
             payload: { marker: sender.scenarioId },
             delivery: {}
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
+        ...toAdmissionCommands({ ...sender, index: 1 }),
         toReceiptsCommand({ ...sender, index: 1 }),
         toStorageCountersCommand(sender, 'storage-counters'),
         toStorageCountersAssertCommand(sender)
@@ -289,6 +312,267 @@ function toDeliveryBaselineReceiverCommands(
     })];
 }
 
+/** Each retained specimen explicitly releases its own hold; recipe failure uses runtime cleanup. */
+function toDeliveryLifecycleSenderCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        ...toSubmissionSpecimenCommands(sender),
+        ...toRetainedCancellationCommands(sender),
+        ...toSupersedenceCommands(sender)
+    ];
+}
+
+function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const state = sender.input.carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
+    const observation = `observe-${state}-1`;
+    return [
+        toSendCommand({
+            ...sender,
+            index: 1,
+            payload: toLifecyclePayload(sender, 'submission'),
+            delivery: { ack: 'receiver' }
+        }),
+        toObserveCommand({ ...sender, index: 1, state }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-submitted-state-1',
+            resultName: observation,
+            field: 'state',
+            operator: 'equals',
+            expected: state
+        }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-submitted-1',
+            resultName: observation,
+            field: 'submitted',
+            operator: 'equals',
+            expected: true
+        }),
+        toReceiptsCommand({ ...sender, index: 1 }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-confirmed-1',
+            resultName: 'receipts-1',
+            field: 'confirmedHopPeerIds.length',
+            operator: sender.input.carrier === 'ws' ? 'equals' : 'gt',
+            expected: 0
+        }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-unconfirmed-1',
+            resultName: 'receipts-1',
+            field: 'unconfirmedHopPeerIds.length',
+            operator: 'equals',
+            expected: 0
+        }),
+        ...toSubmittedCancellationCommands(sender)
+    ];
+}
+
+function toSubmittedCancellationCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toCancelCommand({ ...sender, index: 1 }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-submitted-after-cancel-1',
+            resultName: 'cancel-1',
+            field: 'submitted',
+            operator: 'equals',
+            expected: true
+        }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-state-after-cancel-1',
+            resultName: 'cancel-1',
+            field: 'state',
+            operator: 'matches',
+            expected: sender.input.carrier === 'ws' ? '^(cancelled|transport-accepted)$' : '^acknowledged$'
+        })
+    ];
+}
+
+function toRetainedCancellationCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        ...toLifecycleFaultCommands(sender, 'cancel-hold', 'until-cleared'),
+        toSendCommand({
+            ...sender,
+            index: 2,
+            payload: toLifecyclePayload(sender, 'cancellation'),
+            delivery: { ack: 'receiver' }
+        }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 2 }),
+        toCancelCommand({ ...sender, index: 2 }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-cancelled-2',
+            resultName: 'cancel-2',
+            field: 'state',
+            operator: 'equals',
+            expected: 'cancelled'
+        }),
+        ...toLifecycleFaultCommands(sender, 'cancel-release', 0)
+    ];
+}
+
+function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        ...toLifecycleFaultCommands(sender, 'supersede-hold', 'until-cleared'),
+        toSendCommand({
+            ...sender,
+            index: 3,
+            payload: toLifecyclePayload(sender, 'supersedence', 'old'),
+            delivery: { ack: 'receiver', seq: 1 }
+        }),
+        ...toRetainedEvidenceCommands({ ...sender, index: 3 }),
+        toSendCommand({
+            ...sender,
+            index: 4,
+            payload: toLifecyclePayload(sender, 'supersedence', 'replacement'),
+            delivery: { ack: 'receiver', seq: 2 }
+        }),
+        ...toAdmissionCommands({ ...sender, index: 4 }),
+        toObserveCommand({ ...sender, index: 3, state: 'superseded' }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-superseded-3',
+            resultName: 'observe-superseded-3',
+            field: 'state',
+            operator: 'equals',
+            expected: 'superseded'
+        }),
+        ...toLifecycleFaultCommands(sender, 'supersede-release', 0)
+    ];
+}
+
+function toRetainedEvidenceCommands(step: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    const observation = `observe-admitted-${step.index}`;
+    return [
+        ...toAdmissionCommands(step),
+        toResultAssertion({
+            step: step,
+            name: `assert-enqueued-${step.index}`,
+            resultName: observation,
+            field: 'enqueued',
+            operator: 'equals',
+            expected: true
+        }),
+        toResultAssertion({
+            step: step,
+            name: `assert-retained-${step.index}`,
+            resultName: observation,
+            field: 'state',
+            operator: 'matches',
+            expected: '^(accepted|queued)$'
+        }),
+        toResultAssertion({
+            step: step,
+            name: `assert-unsubmitted-${step.index}`,
+            resultName: observation,
+            field: 'submitted',
+            operator: 'equals',
+            expected: false
+        })
+    ];
+}
+
+function toDeliveryLifecycleReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
+        toLifecycleWait({
+            step: receiver,
+            name: 'receive-submission',
+            payload: toLifecyclePayload(receiver, 'submission'),
+            absent: false
+        }),
+        toLifecycleWait({
+            step: receiver,
+            name: 'absent-cancelled',
+            payload: toLifecyclePayload(receiver, 'cancellation'),
+            absent: true
+        }),
+        toLifecycleWait({
+            step: receiver,
+            name: 'receive-replacement',
+            payload: toLifecyclePayload(receiver, 'supersedence', 'replacement'),
+            absent: false
+        }),
+        toLifecycleWait({
+            step: receiver,
+            name: 'absent-old',
+            payload: toLifecyclePayload(receiver, 'supersedence', 'old'),
+            absent: true
+        })
+    ];
+}
+
+function toLifecyclePayload(
+    step: AlmConformanceStepInput,
+    specimen: 'submission' | 'cancellation' | 'supersedence',
+    revision?: 'old' | 'replacement'
+): Readonly<Record<string, string>> {
+    return { marker: 'delivery-lifecycle', specimen, carrier: step.input.carrier, ...(revision ? { revision } : {}) };
+}
+
+interface AlmConformancePayloadWaitInput {
+    readonly step: AlmConformanceStepInput;
+    readonly name: string;
+    readonly payload: Readonly<Record<string, string>>;
+    readonly absent: boolean;
+}
+
+function toLifecycleWait({ step, name, payload, absent }: AlmConformancePayloadWaitInput): RallarBlackBoxTestCommand {
+    return {
+        kind: 'wait',
+        commandId: toCommandId(step, name),
+        match: {
+            kind: 'message',
+            connection: step.input.receiverConnection,
+            payloadPath: 'data.payload',
+            equals: payload
+        },
+        ...(absent ? { absent: true } : {}),
+        timeoutMs: step.input.deadlineMs + (absent ? 0 : NON_EXPIRING_SEND_TIMEOUT_MS) - RESPONSE_MARGIN_MS
+    };
+}
+
+function toLifecycleFaultCommands(
+    step: AlmConformanceStepInput,
+    name: string,
+    remaining: 'until-cleared' | 0
+): readonly RallarBlackBoxTestCommand[] {
+    return toFaultCarriers(step.input.carrier).map((carrier) => ({
+        kind: 'fault.inject',
+        commandId: toCommandId(step, `${name}-${carrier}`),
+        faultId: `hold-${carrier}-${toScenarioTypeId(step)}`,
+        carrier,
+        match: { typeId: toScenarioTypeId(step) },
+        action: carrier === 'ws' ? 'not-ready' : 'drop',
+        remaining,
+        timeoutMs: toBudgetMs(FAULT_TIMEOUT_MS, step.input.deadlineMs)
+    }));
+}
+
+interface AlmConformanceResultAssertionInput {
+    readonly step: AlmConformanceStepInput;
+    readonly name: string;
+    readonly resultName: string;
+    readonly field: string;
+    readonly operator: 'equals' | 'matches' | 'gt';
+    readonly expected: string | number | boolean;
+}
+
+function toResultAssertion(
+    { step, name, resultName, field, operator, expected }: AlmConformanceResultAssertionInput
+): RallarBlackBoxTestCommand {
+    return {
+        kind: 'assert',
+        commandId: toCommandId(step, name),
+        source: `resultCache.${toCommandId(step, resultName)}.value.${field}`,
+        operator,
+        expected,
+        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
+    };
+}
+
 function toOrderingResyncSenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
@@ -300,14 +584,14 @@ function toOrderingResyncSenderCommands(
             payload: { marker: sender.scenarioId, seq: 1 },
             delivery: { reliability: 'at-least-once', orderingKey, seq: 1 }
         }),
-        toObserveCommand({ ...sender, index: 1, state: 'accepted' }),
+        ...toAdmissionCommands({ ...sender, index: 1 }),
         toSendCommand({
             ...sender,
             index: 2,
             payload: { marker: sender.scenarioId, seq: RESYNC_GAP_SEQ },
             delivery: { reliability: 'at-least-once', orderingKey, seq: RESYNC_GAP_SEQ }
         }),
-        toObserveCommand({ ...sender, index: 2, state: 'accepted' })
+        ...toAdmissionCommands({ ...sender, index: 2 })
     ];
 }
 
@@ -333,6 +617,7 @@ function toOrderingResyncReceiverCommands(
 function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackBoxTestRecipe {
     const carrier = recipe.input.carrier;
     return {
+        schemaVersion: 1,
         recipeId: `alm-${carrier}-${recipe.scenarioId}-${recipe.role}`,
         name: `ALM conformance ${recipe.scenarioId} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
@@ -460,12 +745,30 @@ function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTe
         commandId: toCommandId(observe, `observe-${observe.state}-${observe.index}`),
         connection: observe.input.senderConnection,
         handleId: toSendHandleId(observe),
-        state: [observe.state],
+        state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : [observe.state],
         timeoutMs: toBudgetMs(
-            OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
+            observe.state === 'expired' || observe.state === 'acknowledged'
+                ? NON_EXPIRING_SEND_TIMEOUT_MS
+                : OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
             observe.input.deadlineMs
         )
     };
+}
+
+/** A terminal wait also resolves for rejection or failure; the recipe must prove successful admission. */
+function toAdmissionCommands(admission: AlmConformanceMessageStepInput): readonly RallarBlackBoxTestCommand[] {
+    const observation = toObserveCommand({ ...admission, state: 'admitted' });
+    return [
+        observation,
+        {
+            kind: 'assert',
+            commandId: toCommandId(admission, `assert-admitted-${admission.index}`),
+            source: `resultCache.${observation.commandId}.value.state`,
+            operator: 'matches',
+            expected: '^(accepted|queued|transport-accepted|acknowledged)$',
+            timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, admission.input.deadlineMs)
+        }
+    ];
 }
 
 function toCancelCommand(cancel: AlmConformanceMessageStepInput): RallarBlackBoxTestCommand {
@@ -579,7 +882,7 @@ function toFaultCarriers(
 }
 
 function toScenarioTypeId(step: AlmConformanceStepInput): string {
-    return `${step.input.typeId}.${step.scenarioId}`;
+    return `${step.input.typeId}.${step.input.carrier}.${step.scenarioId}`;
 }
 
 function toCommandId(step: AlmConformanceStepInput, name: string): string {
@@ -594,8 +897,8 @@ function toEnsureRequestId(
     step: AlmConformanceStepInput,
     operation: 'group' | 'member'
 ): string {
-    return `alm-conformance-{runId}-${step.input.carrier}-${step.scenarioId}` +
-        `-${step.role}-${operation}-{runtimeIdentity}`;
+    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioId}` +
+        `-${step.role}-${operation}`;
 }
 
 function toConnectionName(step: AlmConformanceStepInput): string {

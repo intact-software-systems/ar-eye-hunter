@@ -1,4 +1,5 @@
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { projectControlOperationError } from '../control/control-operation-error.ts';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
@@ -83,20 +84,20 @@ export function useMonitorOperations(
         const controller = new AbortController();
         requestRef.current = controller;
         const generation = ++generationRef.current;
-        const started = beginMonitorOperation(
-            input.state,
-            context.key,
+        const started = beginMonitorOperation({
+            state: input.state,
+            contextKey: context.key,
             action,
             generation
-        );
+        });
         const authority = started.authority;
         input.setState((previous) =>
-            beginMonitorOperation(
-                previous,
-                context.key,
+            beginMonitorOperation({
+                state: previous,
+                contextKey: context.key,
                 action,
-                authority.generation
-            ).state
+                generation: authority.generation
+            }).state
         );
         let succeeded = false;
         try {
@@ -112,7 +113,7 @@ export function useMonitorOperations(
                     failMonitorOperation(
                         previous,
                         authority,
-                        error
+                        toError(error)
                     )
                 );
             }

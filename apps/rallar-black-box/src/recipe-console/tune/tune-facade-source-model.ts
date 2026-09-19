@@ -1,13 +1,15 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
-import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import {
     resolveTuneFacadeManifestValidation,
     type TuneFacadeManifestValidation
 } from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
-import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
+import {
+    hasTunePerformanceEvidence,
+    resolveTuneAnalysisPerformance
+} from './tune-performance-evidence.ts';
 import { tuneOmittedInventoryMessage } from './tune-source-issue.ts';
 import type { TuneSourceIssue, TuneSourceIssueCode, TuneSourceModel } from './tune-source-model.ts';
 
@@ -20,6 +22,7 @@ export function deriveTuneSourceModelFromFacade(
     }>
 ): TuneSourceModel {
     const facade = input.facade;
+    const performance = resolveTuneAnalysisPerformance(facade.analysis);
     const inventory: DistributedRunTuningInventory = {
         knobs: facade.tuningInventory.knobs,
         limitations: facade.tuningInventory.limitations
@@ -27,9 +30,7 @@ export function deriveTuneSourceModelFromFacade(
     const complete = facade.tuningInventory.omittedKnobs === 0 &&
         facade.tuningInventory.omittedLimitations === 0;
     const decisions = deriveDistributedRunTuningDecisions({
-        analysis: facade.support === 'supported'
-            ? facade.analysis as DistributedRunAnalysis
-            : undefined,
+        analysis: facade.support === 'supported' ? facade.analysis : undefined,
         inventory,
         completeness: complete ? 'complete' : 'partial'
     });
@@ -40,9 +41,9 @@ export function deriveTuneSourceModelFromFacade(
         input.manifestValidation
     );
     const candidateManifestValid = manifestValidation.status === 'valid';
-    const supportIssueMessage = facade.supportIssues?.entries.find(
+    const supportIssueMessage = facade.supportIssues.entries.find(
         (issue) => issue.severity === 'error'
-    )?.message ?? facade.supportIssues?.entries[0]?.message;
+    )?.message ?? facade.supportIssues.entries[0]?.message;
     const matchingRole = facade.selection.artifactRole === 'focus' ||
         facade.selection.artifactRole === 'compare-right';
     if (!matchingRole) {
@@ -66,7 +67,7 @@ export function deriveTuneSourceModelFromFacade(
             )
         );
     }
-    if (!hasTunePerformanceEvidence(facade.analysis.performance)) {
+    if (!hasTunePerformanceEvidence(performance)) {
         addIssue(issues, 'missing-performance', 'No command or RTC stream performance samples are available.');
     }
     if (!facade.candidateManifest) {
@@ -98,7 +99,7 @@ export function deriveTuneSourceModelFromFacade(
         facade.candidateManifest && !candidateManifestValid
             ? 'The candidate manifest is invalid.'
             : undefined,
-        !hasTunePerformanceEvidence(facade.analysis.performance)
+        !hasTunePerformanceEvidence(performance)
             ? 'Performance evidence is required before creating a candidate.'
             : undefined,
         identity.quarantined ? 'The run identity is unsafe.' : undefined
@@ -119,7 +120,7 @@ export function deriveTuneSourceModelFromFacade(
         },
         manifest: candidateManifestValid ? facade.candidateManifest : undefined,
         analysis: facade.analysis,
-        performance: facade.analysis.performance,
+        performance,
         inventory,
         decisions,
         identity,

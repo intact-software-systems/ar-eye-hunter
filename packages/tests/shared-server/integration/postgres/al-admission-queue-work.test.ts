@@ -567,13 +567,14 @@ async function runOutboundWorkBatch(
     stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>
 ): Promise<void> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
     try {
         await runtime.ready();
@@ -653,6 +654,7 @@ async function readSupersedenceDecision(
         msg: message,
         planner: () => ({
             msg: message,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [toALOutboundTransportMessage(message)],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }

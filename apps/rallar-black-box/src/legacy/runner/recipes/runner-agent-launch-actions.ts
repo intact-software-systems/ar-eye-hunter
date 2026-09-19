@@ -1,3 +1,4 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { createBrowserAgentLaunchService } from '../../../browser-agent-launch-service.ts';
 import {
@@ -7,7 +8,6 @@ import {
 } from '../../../browser-agent-popup.ts';
 import { runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { runnerBrowserOrigin } from './runner-endpoints.ts';
 
 type RunnerAgentLaunchActionsInput = Readonly<{

@@ -1,55 +1,128 @@
 import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseBlackBoxRunnerArtifactIndex } from '../../../packages/shared-test/black-box-runner/artifacts/artifact-reader.ts';
-import { resolveDistributedArtifactEvidenceCatalogEntryIds } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
-import { distributedArtifactEvidenceCatalogWorkForTest } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-catalog.ts';
-import { deduplicateArtifactEvidenceEntries } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-utils.ts';
 import {
-    distributedArtifactEvidenceWindowWorkForTest,
-    issueDistributedArtifactEvidenceCursorForTest,
-    resetDistributedArtifactEvidenceWindowWorkForTest
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
-import {
-    deriveDistributedArtifactEvidenceCollections,
-    deriveDistributedArtifactEvidenceIndex,
+    DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS,
     MAX_DISTRIBUTED_ARTIFACT_EVIDENCE_CATALOG_ENTRIES,
-    searchDistributedArtifactEvidence,
-    searchDistributedArtifactEvidenceWindow,
-    type DeriveDistributedArtifactEvidenceIndexInput,
+    type ComputeDistributedArtifactEvidenceIndexInput,
     type DistributedArtifactEvidenceCatalog,
     type DistributedArtifactEvidenceCursor
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence.ts';
-import { createDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
-import { createRecipeConsoleScaleFixture, type RecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-contracts.ts';
+import { computeDistributedArtifactEvidenceIndex } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-index.ts';
+import {
+    computeDistributedArtifactEvidenceCollections,
+    searchDistributedArtifactEvidenceWindow
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence-window.ts';
+import { computeDistributedArtifactEvidenceSource } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/compute-distributed-artifact-evidence-source.ts';
+import { searchDistributedArtifactEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-evidence/search-distributed-artifact-evidence.ts';
+import { computeDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-workspace.ts';
+import {
+    createDefaultRecipeConsoleScaleFixture,
+    createRecipeConsoleScaleFixture,
+    type RecipeConsoleScaleFixture
+} from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 function inputForFixture(
     fixture: RecipeConsoleScaleFixture
-): DeriveDistributedArtifactEvidenceIndexInput {
-    const workspace = createDistributedArtifactWorkspace({
+): ComputeDistributedArtifactEvidenceIndexInput {
+    const { workspace, monitor, parsed } = computeDistributedArtifactWorkspace({
         files: fixture.files,
         generatedAtEpochMs: fixture.generatedAtEpochMs,
         artifactSchemaVersion: fixture.artifactSchemaVersion
     });
-    if (!workspace.analysis || !workspace.snapshots) {
+    if (!workspace.analysis || !workspace.snapshots || !monitor) {
         throw new Error('Expected a valid distributed scale workspace.');
     }
     return {
         analysis: workspace.analysis,
         snapshots: workspace.snapshots,
+        monitor,
+        parsed,
         sourceFileNames: Object.keys(fixture.files),
-        sourceFiles: fixture.files
+        limits: DEFAULT_DISTRIBUTED_ARTIFACT_EVIDENCE_LIMITS
     };
 }
 
 async function catalogForFixture(
     fixture: RecipeConsoleScaleFixture
 ): Promise<DistributedArtifactEvidenceCatalog> {
-    return (await deriveDistributedArtifactEvidenceCollections(
+    return (await computeDistributedArtifactEvidenceCollections(
         inputForFixture(fixture)
     )).catalog;
 }
 
 type JsonRecord = Record<string, unknown>;
+
+interface DigestWatch {
+    calls: number;
+    peakInFlight: number;
+}
+
+interface WindowWork {
+    cursorVerifications: number;
+    entryReads: number;
+}
+
+interface WindowWorkWatch {
+    readonly work: WindowWork;
+    readonly stop: () => void;
+}
+
+/** Counts cursor signature checks and reads of the catalog's entries until the watch stops. */
+function startWindowWorkWatch(catalog: DistributedArtifactEvidenceCatalog): WindowWorkWatch {
+    const work: WindowWork = { cursorVerifications: 0, entryReads: 0 };
+    const entries = catalog.entries;
+    const verify = crypto.subtle.verify.bind(crypto.subtle);
+    const spy = vi.spyOn(crypto.subtle, 'verify').mockImplementation((algorithm, key, signature, data) => {
+        work.cursorVerifications += 1;
+        return verify(algorithm, key, signature, data);
+    });
+    Object.defineProperty(catalog, 'entries', {
+        configurable: true,
+        value: new Proxy(entries, {
+            get(target, property, receiver) {
+                if (typeof property === 'string' && /^\d+$/.test(property)) {
+                    work.entryReads += 1;
+                }
+                return Reflect.get(target, property, receiver);
+            }
+        })
+    });
+    return {
+        work,
+        stop: () => {
+            spy.mockRestore();
+            Object.defineProperty(catalog, 'entries', { configurable: true, value: entries });
+        }
+    };
+}
+
+/** Counts SHA-256 digests and the most that run at once while the catalog is computed. */
+async function computeCatalogWatchingDigests(
+    input: ComputeDistributedArtifactEvidenceIndexInput
+): Promise<Readonly<{ catalog: DistributedArtifactEvidenceCatalog; digests: DigestWatch; }>> {
+    const digests: DigestWatch = { calls: 0, peakInFlight: 0 };
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    let inFlight = 0;
+    const spy = vi.spyOn(crypto.subtle, 'digest').mockImplementation(async (algorithm, data) => {
+        digests.calls += 1;
+        inFlight += 1;
+        digests.peakInFlight = Math.max(digests.peakInFlight, inFlight);
+        try {
+            return await digest(algorithm, data);
+        }
+        finally {
+            inFlight -= 1;
+        }
+    });
+    try {
+        const { catalog } = await computeDistributedArtifactEvidenceCollections(input);
+        return { catalog, digests };
+    }
+    finally {
+        spy.mockRestore();
+    }
+}
 
 function decodeCursorBody(cursor: DistributedArtifactEvidenceCursor): JsonRecord {
     const [body] = cursor.split('.');
@@ -58,8 +131,8 @@ function decodeCursorBody(cursor: DistributedArtifactEvidenceCursor): JsonRecord
 
 describe('distributed artifact evidence catalog windows', () => {
     it('preserves the legacy index/search contract while traversing all 15k evidence without gaps', async () => {
-        const fixture = createRecipeConsoleScaleFixture();
-        const { index, catalog } = await deriveDistributedArtifactEvidenceCollections(
+        const fixture = createDefaultRecipeConsoleScaleFixture();
+        const { index, catalog } = await computeDistributedArtifactEvidenceCollections(
             inputForFixture(fixture)
         );
 
@@ -113,8 +186,10 @@ describe('distributed artifact evidence catalog windows', () => {
         let cursor: DistributedArtifactEvidenceCursor | undefined;
         let firstWindow: Awaited<ReturnType<typeof searchDistributedArtifactEvidenceWindow>> | undefined;
         let lastWindow: Awaited<ReturnType<typeof searchDistributedArtifactEvidenceWindow>> | undefined;
-        resetDistributedArtifactEvidenceWindowWorkForTest(catalog);
+        const pagingWatch = startWindowWorkWatch(catalog);
+        let cursorSearches = 0;
         do {
+            cursorSearches += cursor ? 1 : 0;
             const result = await searchDistributedArtifactEvidenceWindow(catalog, {
                 cursor,
                 windowSize: 64
@@ -156,6 +231,7 @@ describe('distributed artifact evidence catalog windows', () => {
                 : []
         );
         while (previousCursor) {
+            cursorSearches += 1;
             const result = await searchDistributedArtifactEvidenceWindow(catalog, {
                 cursor: previousCursor,
                 windowSize: 64
@@ -166,16 +242,12 @@ describe('distributed artifact evidence catalog windows', () => {
             backwardPages.push(result.window.entries.map((entry) => entry.id));
             previousCursor = result.window.previousCursor;
         }
+        pagingWatch.stop();
         expect(backwardPages.reverse().flat()).toEqual(collected);
-        expect(distributedArtifactEvidenceWindowWorkForTest(catalog)).toEqual({
-            cursorVerificationAttempts: 468,
-            queryBuildCount: 1,
-            queryCacheHits: 468,
-            matchEvaluations: 15_003,
-            matchIndexWrites: 15_003,
-            windowIndexReads: 29_979,
-            peakMatchIndexCapacity: 15_003
-        });
+        // Each cursor is verified once, and paging matches the catalog once rather than once per window.
+        expect(cursorSearches).toBe(468);
+        expect(pagingWatch.work.cursorVerifications).toBe(cursorSearches);
+        expect(pagingWatch.work.entryReads).toBeLessThan(4 * catalog.entries.length);
 
         for (
             const [windowSize, expected] of [
@@ -217,10 +289,10 @@ describe('distributed artifact evidence catalog windows', () => {
 
     it('caps at 20,000 while retaining the primary failure, latest diagnostic, and stable newest rows', async () => {
         const fixture = createRecipeConsoleScaleFixture({ artifactRowCount: 20_004 });
-        const [catalog, repeated] = await Promise.all([
-            catalogForFixture(fixture),
-            catalogForFixture(fixture)
-        ]);
+        const input = inputForFixture(fixture);
+        const sourceRowCount = computeDistributedArtifactEvidenceSource(input).rawEntries.length;
+        const { catalog, digests } = await computeCatalogWatchingDigests(input);
+        const repeated = await catalogForFixture(fixture);
 
         expect(catalog.limit).toBe(20_000);
         expect(catalog.entries).toHaveLength(20_000);
@@ -232,25 +304,16 @@ describe('distributed artifact evidence catalog windows', () => {
             retainedEntryCount: 20_000,
             indexOmittedEntryCount: 7
         });
-        const catalogWork = distributedArtifactEvidenceCatalogWorkForTest(catalog);
-        expect(catalogWork).toMatchObject({
-            sourceEntriesVisited: 20_007,
-            canonicalDigestsComputed: 20_007,
-            exactRepeatsDropped: 0,
-            distinctEntries: 20_007,
-            peakCanonicalBatchSize: 128,
-            peakRetainedEntryReferences: 20_003,
-            sortedRetainedEntries: 20_000,
-            retainedModelDigests: 20_000,
-            haystacksBuilt: 20_000,
-            rawSearchAssociationReads: 20_007
-        });
-        expect(catalogWork.retainedRawSearchValues).toBeLessThanOrEqual(20_000);
-        expect(catalogWork.maxRetainedRawSearchValueLength).toBeLessThanOrEqual(2_000);
+        // Every source row is digested once, at most one batch at a time, and no exact repeat is dropped.
+        expect(sourceRowCount).toBe(catalog.totalEntries);
+        expect(digests.calls).toBeGreaterThanOrEqual(sourceRowCount);
+        expect(digests.calls).toBeLessThanOrEqual(sourceRowCount + 2);
+        expect(digests.peakInFlight).toBe(128);
         expect(catalog.entries.some((entry) => entry.id === catalog.primaryFailureId)).toBe(true);
         expect(catalog.entries.some((entry) => entry.id === catalog.latestDiagnosticId)).toBe(true);
+        const scaleAnalysis = input.analysis;
         expect(catalog.entries.find((entry) => entry.kind === 'result' && entry.status === 'failed')).toMatchObject({
-            commandId: inputForFixture(fixture).analysis.failure?.commandId,
+            commandId: scaleAnalysis.ok ? undefined : scaleAnalysis.failure.commandId,
             failureDetails: {
                 code: 'SCALE_UPSTREAM_UNAVAILABLE',
                 message: expect.stringContaining('Expected HTTP 200')
@@ -305,7 +368,7 @@ describe('distributed artifact evidence catalog windows', () => {
     it('rejects malformed, tampered, foreign, stale, query-bound, and out-of-range cursors', async () => {
         const fixture = createRecipeConsoleScaleFixture({ artifactRowCount: 120 });
         const input = inputForFixture(fixture);
-        const firstCollections = await deriveDistributedArtifactEvidenceCollections(input);
+        const firstCollections = await computeDistributedArtifactEvidenceCollections(input);
         const first = await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
             query: { query: 'scale' },
             windowSize: 10
@@ -326,24 +389,19 @@ describe('distributed artifact evidence catalog windows', () => {
         const signatureBytes = Buffer.from(cursorSignature ?? '', 'base64url');
         signatureBytes[0] = (signatureBytes[0] ?? 0) ^ 0xff;
         const tamperedSignature = `${cursorBody}.${signatureBytes.toString('base64url')}`;
-        resetDistributedArtifactEvidenceWindowWorkForTest(firstCollections.catalog);
-        expect(
-            await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
-                cursor: tamperedSignature,
-                query: { query: 'scale' },
-                windowSize: 10
-            })
-        ).toMatchObject({ ok: false, rejection: { code: 'cursor-tampered' } });
-        expect(distributedArtifactEvidenceWindowWorkForTest(firstCollections.catalog))
-            .toEqual({
-                cursorVerificationAttempts: 1,
-                queryBuildCount: 0,
-                queryCacheHits: 0,
-                matchEvaluations: 0,
-                matchIndexWrites: 0,
-                windowIndexReads: 0,
-                peakMatchIndexCapacity: 0
-            });
+        const tamperedWatch = startWindowWorkWatch(firstCollections.catalog);
+        // A query no earlier window matched, so any matching before the signature check would read the catalog.
+        const tampered = await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
+            cursor: tamperedSignature,
+            query: { query: 'scale unmatched probe' },
+            windowSize: 10
+        });
+        tamperedWatch.stop();
+        expect(tampered).toMatchObject({ ok: false, rejection: { code: 'cursor-tampered' } });
+        expect(tamperedWatch.work, 'a tampered cursor is refused before any evidence is matched').toEqual({
+            cursorVerifications: 1,
+            entryReads: 0
+        });
         expect(
             await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
                 cursor,
@@ -351,16 +409,24 @@ describe('distributed artifact evidence catalog windows', () => {
                 windowSize: 10
             })
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-query-mismatch' } });
-        const outOfRange = await issueDistributedArtifactEvidenceCursorForTest(
-            firstCollections.catalog,
-            { query: { query: 'scale' }, windowSize: 10, offset: Number.MAX_SAFE_INTEGER }
-        );
+        const shrinking = await computeDistributedArtifactEvidenceCollections(input);
+        const shrinkingFirst = await searchDistributedArtifactEvidenceWindow(shrinking.catalog, {
+            query: { query: 'scale' },
+            windowSize: 10
+        });
+        if (!shrinkingFirst.ok || !shrinkingFirst.window.nextCursor) {
+            throw new Error('Expected a next cursor.');
+        }
+        Object.defineProperty(shrinking.catalog, 'entries', { value: shrinking.catalog.entries.slice(0, 5) });
+        // Another query replaces the single cached match index, so the cursor's query is matched again.
+        await searchDistributedArtifactEvidenceWindow(shrinking.catalog, { query: { query: 'other' } });
         expect(
-            await searchDistributedArtifactEvidenceWindow(firstCollections.catalog, {
-                cursor: outOfRange,
+            await searchDistributedArtifactEvidenceWindow(shrinking.catalog, {
+                cursor: shrinkingFirst.window.nextCursor,
                 query: { query: 'scale' },
                 windowSize: 10
-            })
+            }),
+            'a signed cursor past the matches of a catalog whose entries changed under it'
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-out-of-range' } });
 
         expect(Object.keys(decodeCursorBody(cursor)).sort()).toEqual([
@@ -377,7 +443,7 @@ describe('distributed artifact evidence catalog windows', () => {
         expect(cursor).not.toContain('scale-command');
         expect(cursor).not.toContain('scale');
 
-        const staleCollections = await deriveDistributedArtifactEvidenceCollections(input);
+        const staleCollections = await computeDistributedArtifactEvidenceCollections(input);
         expect(
             await searchDistributedArtifactEvidenceWindow(staleCollections.catalog, {
                 cursor,
@@ -387,7 +453,7 @@ describe('distributed artifact evidence catalog windows', () => {
         ).toMatchObject({ ok: false, rejection: { code: 'cursor-stale-model' } });
 
         const foreignInput = inputForFixture(fixture);
-        const foreignCollections = await deriveDistributedArtifactEvidenceCollections({
+        const foreignCollections = await computeDistributedArtifactEvidenceCollections({
             ...foreignInput,
             analysis: {
                 ...foreignInput.analysis,
@@ -470,33 +536,7 @@ describe('distributed artifact evidence catalog windows', () => {
         }
     }, 60_000);
 
-    it('preserves distinct stable-ID collisions while deduplicating exact repeats', async () => {
-        const base = {
-            id: 'event:collision',
-            kind: 'event' as const,
-            sourceFile: 'events.jsonl',
-            summary: 'first',
-            payloadSummary: 'payload-a'
-        };
-        const sourceEntries = [
-            base,
-            { ...base },
-            { ...base, summary: 'second', payloadSummary: 'payload-b' }
-        ];
-        const legacyEntries = deduplicateArtifactEvidenceEntries(sourceEntries);
-        const [entries, repeated] = await Promise.all([
-            resolveDistributedArtifactEvidenceCatalogEntryIds(sourceEntries),
-            resolveDistributedArtifactEvidenceCatalogEntryIds(sourceEntries)
-        ]);
-
-        expect(legacyEntries).toEqual([
-            { ...base, summary: 'second', payloadSummary: 'payload-b' }
-        ]);
-        expect(entries).toHaveLength(2);
-        expect(new Set(entries.map((entry) => entry.id)).size).toBe(2);
-        expect(entries[1]?.id).toMatch(/^event:collision:collision:[A-Za-z0-9_-]{43}$/);
-        expect(repeated.map((entry) => entry.id)).toEqual(entries.map((entry) => entry.id));
-
+    it('preserves distinct stable-ID collisions while the index keeps one row per id', async () => {
         const fixture = createRecipeConsoleScaleFixture({ artifactRowCount: 6 });
         const eventRows = (fixture.files['events.jsonl'] ?? '').split('\n').map((line) => JSON.parse(line) as JsonRecord);
         const sourceEvent = eventRows[0] ?? {};
@@ -517,8 +557,9 @@ describe('distributed artifact evidence catalog windows', () => {
             }
         };
         const input = inputForFixture(collisionFixture);
-        const collections = await deriveDistributedArtifactEvidenceCollections(input);
-        const legacy = deriveDistributedArtifactEvidenceIndex(input);
+        const collections = await computeDistributedArtifactEvidenceCollections(input);
+        const repeated = await computeDistributedArtifactEvidenceCollections(input);
+        const legacy = computeDistributedArtifactEvidenceIndex(input);
 
         expect(collections.index).toEqual(legacy);
         expect(searchDistributedArtifactEvidence(collections.index, {
@@ -535,9 +576,11 @@ describe('distributed artifact evidence catalog windows', () => {
         expect(first).toMatchObject({ ok: true, window: { counts: { retainedMatches: 1 } } });
         expect(second).toMatchObject({ ok: true, window: { counts: { retainedMatches: 1 } } });
         if (first.ok && second.ok) {
-            expect(first.window.entries[0]?.id).not.toBe(second.window.entries[0]?.id);
+            const collidingIds = [first.window.entries[0]?.id, second.window.entries[0]?.id];
+            expect(collidingIds[0]).not.toBe(collidingIds[1]);
+            expect(collidingIds.filter((id) => /:collision:[A-Za-z0-9_-]{43}$/.test(id ?? ''))).toHaveLength(1);
         }
-        expect(entries.map((entry) => entry.summary).sort()).toEqual(['first', 'second']);
+        expect(repeated.catalog.entries.map((entry) => entry.id)).toEqual(collections.catalog.entries.map((entry) => entry.id));
     });
 
     it('associates high-collision searches with linear bounded catalog work', async () => {
@@ -560,7 +603,9 @@ describe('distributed artifact evidence catalog windows', () => {
                 'events.jsonl': eventRows.map((row) => JSON.stringify(row)).join('\n')
             }
         };
-        const catalog = await catalogForFixture(collisionFixture);
+        const input = inputForFixture(collisionFixture);
+        const sourceRowCount = computeDistributedArtifactEvidenceSource(input).rawEntries.length;
+        const { catalog, digests } = await computeCatalogWatchingDigests(input);
 
         for (const index of [0, 1_000, 1_999]) {
             const result = await searchDistributedArtifactEvidenceWindow(catalog, {
@@ -573,19 +618,12 @@ describe('distributed artifact evidence catalog windows', () => {
                 window: { counts: { retainedMatches: 1 } }
             });
         }
-        const work = distributedArtifactEvidenceCatalogWorkForTest(catalog);
-        expect(work.sourceEntriesVisited).toBe(2_008);
-        expect(work.canonicalDigestsComputed).toBe(work.sourceEntriesVisited);
-        expect(work.rawSearchAssociationReads).toBe(work.sourceEntriesVisited);
-        expect(work.exactRepeatsDropped).toBe(0);
-        expect(work.distinctEntries).toBe(work.sourceEntriesVisited);
-        expect(work.peakCanonicalBatchSize).toBe(128);
-        expect(work.peakRetainedEntryReferences).toBeLessThanOrEqual(20_002);
-        expect(work.sortedRetainedEntries).toBe(work.distinctEntries);
-        expect(work.retainedModelDigests).toBe(work.distinctEntries);
-        expect(work.haystacksBuilt).toBe(work.distinctEntries);
-        expect(work.retainedRawSearchValues).toBeLessThanOrEqual(work.distinctEntries);
-        expect(work.maxRetainedRawSearchValueLength).toBeLessThanOrEqual(2_000);
+        expect(sourceRowCount).toBe(2_008);
+        expect(catalog.totalEntries).toBe(sourceRowCount);
+        expect(catalog.entries).toHaveLength(sourceRowCount);
+        expect(digests.calls).toBeGreaterThanOrEqual(sourceRowCount);
+        expect(digests.calls).toBeLessThanOrEqual(sourceRowCount + 2);
+        expect(digests.peakInFlight).toBe(128);
     }, 60_000);
 
     it('keeps raw-distinct bounded-identical rows while dropping a true repeat', async () => {
@@ -603,7 +641,11 @@ describe('distributed artifact evidence catalog windows', () => {
             }
         });
         const alpha = rawVariant('raw-identity-alphaunique');
-        eventRows.splice(0, 1, alpha, { ...alpha }, rawVariant('raw-identity-betaunique'));
+        const pastSearchLimit = {
+            ...sourceEvent,
+            value: { ...sourceValue, message: 'Catalog raw search limit probe.', aFiller: 'x'.repeat(2_100), rawOnlyToken: 'raw-identity-gammaunique' }
+        };
+        eventRows.splice(0, 1, alpha, { ...alpha }, rawVariant('raw-identity-betaunique'), pastSearchLimit);
         const rawIdentityFixture: RecipeConsoleScaleFixture = {
             ...fixture,
             files: {
@@ -612,9 +654,9 @@ describe('distributed artifact evidence catalog windows', () => {
             }
         };
         const input = inputForFixture(rawIdentityFixture);
-        const collections = await deriveDistributedArtifactEvidenceCollections(input);
+        const collections = await computeDistributedArtifactEvidenceCollections(input);
 
-        expect(collections.index).toEqual(deriveDistributedArtifactEvidenceIndex(input));
+        expect(collections.index).toEqual(computeDistributedArtifactEvidenceIndex(input));
         for (
             const token of [
                 'raw-identity-alphaunique',
@@ -631,13 +673,16 @@ describe('distributed artifact evidence catalog windows', () => {
                 window: { counts: { retainedMatches: 1 } }
             });
         }
+        expect(
+            await searchDistributedArtifactEvidenceWindow(collections.catalog, {
+                query: { query: 'raw-identity-gammaunique' }
+            }),
+            'a raw value is searched only up to the text limit'
+        ).toMatchObject({ ok: true, window: { counts: { retainedMatches: 0 } } });
         const matchingRows = collections.catalog.entries.filter((entry) => entry.summary === 'Catalog bounded identity probe.');
         expect(matchingRows).toHaveLength(2);
         expect(new Set(matchingRows.map((entry) => entry.id)).size).toBe(2);
-        const work = distributedArtifactEvidenceCatalogWorkForTest(collections.catalog);
-        expect(work.exactRepeatsDropped).toBe(1);
-        expect(work.distinctEntries).toBe(work.sourceEntriesVisited - 1);
-        expect(work.rawSearchAssociationReads).toBe(work.sourceEntriesVisited);
+        expect(collections.catalog.totalEntries).toBe(computeDistributedArtifactEvidenceSource(input).rawEntries.length - 1);
     });
 
     it('keeps generic artifact-index compaction in its standalone reader', async () => {

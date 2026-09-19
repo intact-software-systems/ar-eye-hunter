@@ -1,4 +1,9 @@
 // @vitest-environment happy-dom
+import {
+    parseBlackBoxRunnerArtifactBundle,
+    type BlackBoxRunnerArtifactBundleFiles,
+    type BlackBoxRunnerParsedArtifactBundle
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { act, createElement } from 'react';
@@ -11,11 +16,6 @@ import {
     SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE
 } from '../../../apps/rallar-black-box/src/legacy/runner/shared-test/shared-test-artifact-index-presentation.ts';
 import { SharedTestArtifactIndexPanel } from '../../../apps/rallar-black-box/src/legacy/runner/shared-test/SharedTestArtifactIndexPanel.tsx';
-import {
-    parseRallarBlackBoxSharedTestArtifactBundle,
-    type RallarBlackBoxSharedTestArtifactBundleFiles,
-    type RallarBlackBoxSharedTestParsedArtifactBundle
-} from '../../../apps/rallar-black-box/src/shared-test-handoff-fixtures.ts';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const legacySharedTestRoot = resolve(
@@ -30,12 +30,12 @@ const fixtureRoot = resolve(
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
-type SharedTestArtifactIndex = NonNullable<RallarBlackBoxSharedTestParsedArtifactBundle['views']['artifactIndex']>;
+type SharedTestArtifactIndex = NonNullable<BlackBoxRunnerParsedArtifactBundle['views']['artifactIndex']>;
 
 function fixtureFiles(
     includeIndex = true
-): RallarBlackBoxSharedTestArtifactBundleFiles {
-    const files: RallarBlackBoxSharedTestArtifactBundleFiles = {
+): BlackBoxRunnerArtifactBundleFiles {
+    const files: BlackBoxRunnerArtifactBundleFiles = {
         'report.json': fixture('report.json'),
         'events.jsonl': fixture('events.jsonl'),
         'failures.json': fixture('failures.json'),
@@ -52,7 +52,7 @@ function fixture(fileName: string): string {
 }
 
 function fixtureArtifactIndex(): SharedTestArtifactIndex {
-    const parsed = parseRallarBlackBoxSharedTestArtifactBundle(fixtureFiles());
+    const parsed = parseBlackBoxRunnerArtifactBundle(fixtureFiles());
     if (!parsed.value?.views.artifactIndex) {
         throw new Error('Expected the v1 Shared Test fixture artifact index.');
     }
@@ -225,7 +225,7 @@ function artifactIndexInvariantConflictCases(): readonly Readonly<{
 
 describe('legacy Shared Test artifact-index compaction', () => {
     it('keeps producer counts distinct from the loaded truncation marker', () => {
-        const parsed = parseRallarBlackBoxSharedTestArtifactBundle(fixtureFiles());
+        const parsed = parseBlackBoxRunnerArtifactBundle(fixtureFiles());
         const artifactIndex = parsed.value?.views.artifactIndex;
 
         expect(parsed.ok).toBe(true);
@@ -428,7 +428,7 @@ describe('legacy Shared Test artifact-index compaction', () => {
     });
 
     it('preserves the valid no-index fallback', () => {
-        const parsed = parseRallarBlackBoxSharedTestArtifactBundle(
+        const parsed = parseBlackBoxRunnerArtifactBundle(
             fixtureFiles(false)
         );
 

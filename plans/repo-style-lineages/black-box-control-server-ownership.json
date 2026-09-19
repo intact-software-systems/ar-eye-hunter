@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/control-service.ts",
+        "blob": "94be0d6d75d36c35488b49da20f236050721f741"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/control-command-queue-policy.ts",
+        "apps/rallar-black-box-control-server/src/control-evidence-compaction.ts",
+        "apps/rallar-black-box-control-server/src/control-runtime-retention.ts",
+        "apps/rallar-black-box-control-server/src/control-service-snapshots.ts",
+        "apps/rallar-black-box-control-server/src/control-service-state.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-commands.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-evaluation.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-lifecycle.ts",
+        "apps/rallar-black-box-control-server/src/distributed/distributed-run-targeting.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/main.ts",
+        "blob": "40b2dd84a4c559e5242add1e5a1222049d8f2598"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/control-agent-sockets.ts",
+        "apps/rallar-black-box-control-server/src/http/control-http-responses.ts",
+        "apps/rallar-black-box-control-server/src/routes/agent-routes-write.ts",
+        "apps/rallar-black-box-control-server/src/routes/command-request-codec.ts",
+        "apps/rallar-black-box-control-server/src/routes/control-http-router.ts",
+        "apps/rallar-black-box-control-server/src/routes/control-route-errors.ts",
+        "apps/rallar-black-box-control-server/src/routes/control-route-requests.ts",
+        "apps/rallar-black-box-control-server/src/routes/control-socket-route.ts",
+        "apps/rallar-black-box-control-server/src/routes/distributed-run-request-codec.ts",
+        "apps/rallar-black-box-control-server/src/routes/distributed-run-routes-admin.ts",
+        "apps/rallar-black-box-control-server/src/routes/distributed-run-routes-read.ts",
+        "apps/rallar-black-box-control-server/src/routes/fleet-report-routes-admin.ts",
+        "apps/rallar-black-box-control-server/src/routes/fleet-report-routes-read.ts",
+        "apps/rallar-black-box-control-server/src/routes/retention-routes-admin.ts",
+        "apps/rallar-black-box-control-server/src/routes/run-routes-admin.ts",
+        "apps/rallar-black-box-control-server/src/routes/run-routes-read.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/control-fleet.ts",
+        "blob": "62b4b8bff5caa0ac6f68b14a9e66a488538669bb"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-aggregate-report.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-evidence.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-failure-guidance.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-failure-signatures.ts",
+        "apps/rallar-black-box-control-server/src/fleet/control-fleet-statistics.ts",
+        "apps/rallar-black-box-control-server/src/fleet/create-control-fleet-report-bundle.ts",
+        "apps/rallar-black-box-control-server/src/fleet/create-control-fleet-run-report.ts"
+      ]
+    }
+  ]
+}

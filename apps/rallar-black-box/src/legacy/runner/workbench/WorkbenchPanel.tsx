@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react';
 import {
-    RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    recipeFixtureText
-} from '../../../recipe-fixtures.ts';
+    toRecipeFixtureText
+} from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import type { Either } from '@shared/resilience/Either.ts';
+import { useMemo, useState } from 'react';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { CommandExamplePicker } from '../../shared/schema/CommandExamplePicker.tsx';
 import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
+import { RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE } from './rallar-black-box-manual-command-example.ts';
 
 export function WorkbenchPanel({
     busy,
@@ -25,7 +26,7 @@ export function WorkbenchPanel({
     const [fixtureId, setFixtureId] = useState(
         loadedFixtureId ?? RALLAR_BLACK_BOX_RECIPE_FIXTURES[0].fixtureId
     );
-    const [recipeText, setRecipeText] = useState(() => recipeFixtureText(fixtureId));
+    const [recipeText, setRecipeText] = useState(() => toRecipeFixtureText(fixtureId));
     const [commandText, setCommandText] = useState(() =>
         JSON.stringify(RALLAR_BLACK_BOX_MANUAL_COMMAND_EXAMPLE, null, 2)
     );
@@ -51,9 +52,17 @@ export function WorkbenchPanel({
         }
     };
 
+    const runDecodedAction = async <T,>(
+        action: () => Promise<Either<string, T>>
+    ): Promise<void> => {
+        setLocalError(undefined);
+        const outcome = await action();
+        setLocalError(outcome.left);
+    };
+
     const selectFixture = (nextFixtureId: string): void => {
         setFixtureId(nextFixtureId);
-        setRecipeText(recipeFixtureText(nextFixtureId));
+        setRecipeText(toRecipeFixtureText(nextFixtureId));
         setLocalError(undefined);
     };
 
@@ -96,7 +105,7 @@ export function WorkbenchPanel({
                         <button
                             type="button"
                             onClick={() =>
-                                runAction(() =>
+                                runDecodedAction(() =>
                                     rallarBlackBoxRuntimeStore.loadRecipeFromJson(
                                         recipeText,
                                         fixtureId
@@ -156,8 +165,8 @@ export function WorkbenchPanel({
                     <button
                         type="button"
                         onClick={() =>
-                            runAction(() =>
-                                rallarBlackBoxRuntimeStore.executeCommandFromJson(
+                            runDecodedAction(() =>
+                                rallarBlackBoxRuntimeStore.runCommandFromJsonText(
                                     commandText
                                 )
                             )}

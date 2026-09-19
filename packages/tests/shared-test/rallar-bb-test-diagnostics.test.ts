@@ -2,13 +2,58 @@ import { describe, expect, it } from 'vitest';
 import {
     createRallarBlackBoxBrowserTestRuntime,
     createRallarBlackBoxTestRuntime,
-    normalizeRallarBlackBoxRuntimeDiagnostic,
-    selectRallarBlackBoxDiagnostics,
+    toRallarBlackBoxDiagnostics,
+    toRallarBlackBoxRuntimeDiagnostic,
     type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { createBrowserRallarRequiredMethodsTestDouble } from './browser-rallar-required-methods-test-double.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
+    it('keeps a payload record subject fact only when it decodes, and resolves the type and topic ids once', () => {
+        const unreadable = toRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.browser.rtc.lane_state',
+            severity: 'warning',
+            source: 'unit-test',
+            payload: {
+                transport: 'carrier-pigeon',
+                commandId: 7,
+                connection: ' ',
+                actor: { name: 'alice' },
+                atEpochMs: 'late',
+                typeId: 42,
+                topicId: false,
+                lane: 'rtc-realtime'
+            }
+        });
+        const readable = toRallarBlackBoxRuntimeDiagnostic({
+            topic: 'rallar.browser.rtc.lane_state',
+            severity: 'warning',
+            source: 'unit-test',
+            payload: {
+                transport: 'messages.rtc',
+                commandId: 'rtc-connect-1',
+                connection: 'aliceRtc',
+                actor: 'alice',
+                atEpochMs: 1_000
+            },
+            detail: { typeId: 'room.state', topicId: 'room.topic' }
+        });
+
+        expect(unreadable).toMatchObject({ lane: 'rtc-realtime' });
+        for (const key of ['transport', 'commandId', 'connection', 'actor', 'atEpochMs', 'typeId', 'topicId']) {
+            expect(unreadable).not.toHaveProperty(key);
+        }
+        expect(readable).toMatchObject({
+            transport: 'messages.rtc',
+            commandId: 'rtc-connect-1',
+            connection: 'aliceRtc',
+            actor: 'alice',
+            atEpochMs: 1_000,
+            typeId: 'room.state',
+            topicId: 'room.topic'
+        });
+    });
+
     it('normalizes transport diagnostics so wait and assert can match them', async () => {
         const runtime = createRallarBlackBoxTestRuntime();
         runtime.recordEvent({
@@ -16,12 +61,12 @@ describe('rallar-bb-test runtime diagnostics', () => {
             topic: 'rallar.browser.ws.unhandled_message',
             transport: 'ws',
             severity: 'warning',
-            payload: normalizeRallarBlackBoxRuntimeDiagnostic({
+            payload: toRallarBlackBoxRuntimeDiagnostic({
                 topic: 'rallar.browser.ws.unhandled_message',
                 transport: 'ws',
                 severity: 'warning',
                 message: 'Unhandled WS message: room.unknown',
-                data: {
+                detail: {
                     typeId: 'room.unknown',
                     payload: {
                         text: 'ignored'
@@ -66,6 +111,23 @@ describe('rallar-bb-test runtime diagnostics', () => {
         expect(assertResult.ok).toBe(true);
     });
 
+    it('names the producer of a simulated runtime command diagnostic', async () => {
+        const runtime = createRallarBlackBoxTestRuntime();
+
+        await runtime.execute({
+            kind: 'rtc.send',
+            commandId: 'simulated-send',
+            send: { data: { text: 'hello' } }
+        });
+
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
+            .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
+        expect(diagnostic?.payload).toMatchObject({
+            diagnosticTypeId: 'rallar.bb.fake.rtc.send',
+            source: 'simulated-runtime'
+        });
+    });
+
     it('normalizes browser Rallar RTC warning events from the adapter bridge', () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime();
 
@@ -82,7 +144,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
             }
         });
 
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())[0];
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())[0];
         expect(diagnostic).toMatchObject({
             topic: 'rallar.browser.rtc.data_channel_label_mismatch',
             connection: 'aliceRtc',
@@ -101,6 +163,41 @@ describe('rallar-bb-test runtime diagnostics', () => {
         });
     });
 
+    it('records browser event evidence in the JSON form the control connection carries, all the way down', () => {
+        const runtime = createRallarBlackBoxBrowserTestRuntime();
+        const cyclic: { self?: object; } = {};
+        cyclic.self = cyclic;
+
+        runtime.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.lane_state',
+            connection: 'aliceRtc',
+            data: {
+                lane: {
+                    changedAt: new Date(0),
+                    unset: undefined,
+                    retry: () => 'not evidence',
+                    peers: ['bob-session', undefined]
+                }
+            }
+        });
+        runtime.receiveRallarBrowserEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.rtc.lane_cycle',
+            connection: 'aliceRtc',
+            data: cyclic
+        });
+
+        const [recorded, unrepresentable] = toRallarBlackBoxDiagnostics(runtime.state());
+        expect(recorded?.payload).toHaveProperty('data', {
+            lane: {
+                changedAt: '1970-01-01T00:00:00.000Z',
+                peers: ['bob-session', null]
+            }
+        });
+        expect(unrepresentable?.payload).not.toHaveProperty('data.self');
+    });
+
     it('normalizes browser-adapter RTC send failures as structured diagnostics', async () => {
         const runtime = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -108,7 +205,9 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 connect: async () => ({ connected: true }),
                 send: async () => ({
                     status: 'no-peers',
+                    transport: 'realtime',
                     peerIds: ['bob-session'],
+                    results: [],
                     health: []
                 }),
                 refreshRoom: async () => undefined,
@@ -128,7 +227,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 }
             }
         });
-        const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
+        const diagnostic = toRallarBlackBoxDiagnostics(runtime.state())
             .find((event) => event.topic === 'rallar.bb.rtc.send_failed');
 
         expect(result.status).toBe('failed');

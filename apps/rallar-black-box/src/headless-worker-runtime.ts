@@ -1,3 +1,4 @@
+import { toError } from '@shared/resilience/to-error.ts';
 import type { ConsoleMessage, Page, Request } from 'playwright';
 
 type DistributedRunSnapshot = Readonly<{
@@ -29,6 +30,11 @@ export type WaitForHeadlessWorkerAgentRegistrationInput = Readonly<{
     ): Promise<HeadlessWorkerRegistrationSnapshot>;
     sleep(ms: number, signal?: AbortSignal): Promise<void>;
     now(): number;
+    /**
+     * The agent page's own status line. An agent that refuses to start never reaches the control
+     * run snapshot, so its reason is only on the page.
+     */
+    readAgentPageStatus(): Promise<string | undefined>;
 }>;
 
 export type WaitForDistributedRunTerminalInput = Readonly<{
@@ -201,6 +207,28 @@ export async function waitForHeadlessWorkerExit(
 }
 
 export async function waitForHeadlessWorkerAgentRegistration(
+    input: WaitForHeadlessWorkerAgentRegistrationInput
+): Promise<void> {
+    try {
+        await pollForHeadlessWorkerAgentRegistration(input);
+    }
+    catch (error) {
+        throw await toAgentRegistrationFailure(error, input);
+    }
+}
+
+/** The wait's own failure, named together with whatever the agent page says about itself. */
+async function toAgentRegistrationFailure(
+    error: unknown,
+    input: WaitForHeadlessWorkerAgentRegistrationInput
+): Promise<Error> {
+    const pageStatus = await input.readAgentPageStatus().catch(() => undefined);
+    return pageStatus === undefined || pageStatus === ''
+        ? toError(error)
+        : new Error(`${toError(error).message} Agent page status: ${pageStatus}`);
+}
+
+async function pollForHeadlessWorkerAgentRegistration(
     input: WaitForHeadlessWorkerAgentRegistrationInput
 ): Promise<void> {
     const deadline = input.now() + input.timeoutMs;

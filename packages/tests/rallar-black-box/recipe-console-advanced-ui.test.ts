@@ -14,7 +14,7 @@ import type { RecipeConsoleUrlIssue, RecipeConsoleUrlState } from '../../../apps
 
 const ADVANCED_ROOT = 'apps/rallar-black-box/src/recipe-console/advanced';
 const ACTIVE_WORK_PATH = 'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
-const WORKSPACE_PATH = 'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleWorkspace.tsx';
+const WORKSPACE_PATH = 'apps/rallar-black-box/src/recipe-console/app/recipe-console-workspace.tsx';
 
 const URL_STATE: RecipeConsoleUrlState = {
     v: 1,

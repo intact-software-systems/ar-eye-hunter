@@ -1,8 +1,9 @@
-import type { RallarDataStoreOptions } from '@shared-web/browser/rallar-data.ts';
-import type { RallarMessageSendResult, RallarRealtimeJsonSendInput, RallarRtcSendInput, RallarWsSendInput } from '@shared-web/browser/rallar.ts';
+import type { RallarDataFacade, RallarDataStore, RallarDataStoreOptions } from '@shared-web/browser/rallar-data.ts';
+import type { RallarFacade, RallarRealtimeJsonSendInput, RallarRtcSendInput, RallarWsSendInput } from '@shared-web/browser/rallar.ts';
 import { vi } from 'vitest';
+import { createMessageDelivery } from '../messages/test-message-delivery.ts';
 
-export function createFakeRallar() {
+export function createFakeRallar(): FakeBrowserAiRallar {
     const store = createFakeDataStore();
     return {
         store,
@@ -36,13 +37,15 @@ export function createFakeRallar() {
         messages: {
             rtc: {
                 send: vi.fn(
-                    async <TValue>(_input: RallarRtcSendInput<TValue>) => createFakeMessageSendResult('rtc')
+                    async <TValue>(_input: RallarRtcSendInput<TValue>) =>
+                        createMessageDelivery('rtc', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle
                 ),
                 onMessage: () => noopUnsubscribe
             },
             ws: {
                 send: vi.fn(
-                    async <TValue>(_input: RallarWsSendInput<TValue>) => createFakeMessageSendResult('ws')
+                    async <TValue>(_input: RallarWsSendInput<TValue>) =>
+                        createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle
                 ),
                 onMessage: () => noopUnsubscribe
             },
@@ -52,7 +55,7 @@ export function createFakeRallar() {
     };
 }
 
-function createFakeDataStore() {
+function createFakeDataStore(): RallarDataStore<never> {
     return {
         name: 'rallar-ai-results',
         repositoryId: 'rallar-ai-results',
@@ -87,36 +90,15 @@ function createFakeDataStore() {
     };
 }
 
-function createFakeMessageSendResult(
-    transport: 'rtc' | 'ws'
-): RallarMessageSendResult {
-    return {
-        transport,
-        status: 'enqueued',
-        message: {
-            id: {
-                v: 2,
-                msgId: `${transport}-message-1`,
-                ts: 1_000,
-                senderId: 'peer-a'
-            },
-            route: {
-                topicId: 'room.ai',
-                resourceId: 'result-1',
-                contextId: 'room-1'
-            },
-            payload: {
-                typeId: 'generated',
-                contentType: 'application/json',
-                resource: '{}'
-            }
-        },
-        entries: []
-    };
-}
-
 function noopUnsubscribe(): void {}
 
 function unusedByBrowserAi(): never {
     throw new Error('member is not exercised by the browser AI facade');
+}
+
+export interface FakeBrowserAiRallar {
+    readonly store: RallarDataStore<never>;
+    readonly data: RallarDataFacade;
+    readonly realtime: RallarFacade['realtime'];
+    readonly messages: RallarFacade['messages'];
 }

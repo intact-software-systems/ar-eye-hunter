@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { projectTuneFacadeManifestValidation } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-manifest-validation.ts';
 import { deriveTuneSourceModelFromFacade } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-facade-source-model.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
+import { resolveTuneAnalysisPerformance } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-evidence.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { tuneSourceIssueKey } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-issue.ts';
 import { tuneRightSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-url-patches.ts';
 import { deriveTuneWorkspaceSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
@@ -15,6 +15,7 @@ import type {
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import * as manifestValidation from '../../../packages/shared-test/rallar-bb-test/distributed-run-validation.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 const urlState = (
     patch: Partial<RecipeConsoleUrlState> = {}
@@ -50,7 +51,14 @@ function distributedRun(
                 groupId: 'group-a'
             },
             targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
-            recipes: [{ recipeId: 'recipe-a' }]
+            recipes: [{ recipeId: 'recipe-a', variables: {} }],
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'passed',
@@ -58,12 +66,10 @@ function distributedRun(
             failures: [],
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 1,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 1,
                 failedRecipes: 0,
                 groupAssertions: 0,
@@ -131,14 +137,18 @@ function facade(
     return {
         identity: {
             distributedRunId: input.distributedRunId,
-            controlRunId: input.controlRunId
+            distributedRunIdExact: true,
+            controlRunId: input.controlRunId,
+            controlRunIdExact: true
         },
         support: 'supported',
+        supportIssues: { entries: [], total: 0, omitted: 0 },
         generatedAtEpochMs: 2_600,
         manifestSummary: {
             distributedRunId: input.distributedRunId,
             controlRunId: input.controlRunId,
             group: run.manifest.group,
+            startMode: run.manifest.startMode,
             recipeIds: { entries: ['recipe-a'], total: 1, omitted: 0 },
             targetPolicy: {
                 mode: 'selected-agents',
@@ -156,7 +166,7 @@ function facade(
             omittedLimitations: 0
         },
         ...(input.candidateManifest === false
-            ? { candidateManifestOmittedReason: 'manifest-too-large' as const }
+            ? {}
             : { candidateManifest: run.manifest }),
         selection: {
             focusRunId: input.focusRunId,
@@ -175,6 +185,7 @@ function facade(
             targetAgentIds: { entries: run.targetAgentIds, total: 1, omitted: 0 }
         },
         analysis: {
+            detail: 'full',
             generatedAtEpochMs: 2_600,
             distributedRunId: input.distributedRunId,
             controlRunId: input.controlRunId,
@@ -243,7 +254,7 @@ describe('Recipe Console Tune facade authority', () => {
             compareLeft: 'baseline',
             compareRight: 'candidate'
         });
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             distributedRuns: controlQuery.snapshot?.distributedRuns ?? [],
             controlRuns: controlQuery.snapshot?.runs ?? [],
             retainedFacade: retained,
@@ -275,7 +286,7 @@ describe('Recipe Console Tune facade authority', () => {
             candidateManifest: false
         });
         const baseline = distributedRun('baseline', 'control-baseline');
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([baseline], [controlRun('control-baseline')]),
             retainedFacade: retained,
             urlState: urlState({
@@ -350,7 +361,7 @@ describe('Recipe Console Tune facade authority', () => {
                 recipeIds: { entries: ['visible-only'], total: 2, omitted: 1 }
             }
         } satisfies AnalyzeTuneArtifactFacade;
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([baseline], [controlRun('control-baseline')]),
             retainedFacade: retained,
             urlState: urlState({
@@ -383,7 +394,7 @@ describe('Recipe Console Tune facade authority', () => {
                 }
             }
         } satisfies AnalyzeTuneArtifactFacade;
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: query([], []),
             retainedFacade: retained,
             urlState: urlState({ distributedRunId: 'role-map-artifact' })
@@ -531,7 +542,7 @@ describe('Recipe Console Tune facade authority', () => {
             [baseline, candidate],
             [controlRun('control-baseline'), controlRun('control-candidate')]
         );
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             query: controlQuery,
             retainedFacade: retained,
             urlState: urlState({
@@ -573,7 +584,7 @@ describe('Recipe Console Tune facade authority', () => {
         expect(model.focusRunId).toBe('candidate');
         expect(model.provenance.source).toBe('control');
         expect(model.performance?.commandTiming.p95Ms).toBe(100);
-        expect(model.retained.inspection?.performance?.commandTiming.p95Ms).toBe(900);
+        expect(resolveTuneAnalysisPerformance(model.retained.inspection)?.commandTiming.p95Ms).toBe(900);
     });
 
     it('preserves the exact retained error while keeping live control authoritative', () => {

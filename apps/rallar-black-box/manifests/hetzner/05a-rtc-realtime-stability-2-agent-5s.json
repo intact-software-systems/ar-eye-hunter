@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-realtime-stability",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-realtime-stability",
         "name": "RTC realtime stability stream",
         "description": "Connect RTC and send a lower-rate stream intended as a green realtime stability baseline.",
@@ -195,28 +196,24 @@
         ]
       },
       "profile": "rtc",
-      "required": true
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
     "expectedParticipantCount": 2
   },
+  "variables": {},
+  "roleAssignments": [],
   "ackTimeoutMs": 30000,
   "barrier": {
     "enabled": true,
     "timeoutMs": 15000
   },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
-  },
+  "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,

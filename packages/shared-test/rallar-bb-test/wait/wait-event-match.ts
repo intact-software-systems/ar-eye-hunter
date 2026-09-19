@@ -1,150 +1,109 @@
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../types.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-export type PayloadPathLookup = Readonly<{
-    exists: boolean;
-    value?: unknown;
-}>;
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 
-function normalisePayloadPath(path: string): string {
-    if (path.startsWith('$.payload.')) {
-        return path.slice('$.payload.'.length);
-    }
-    if (path.startsWith('payload.')) {
-        return path.slice('payload.'.length);
-    }
-    if (path.startsWith('$.')) {
-        return path.slice('$.'.length);
-    }
-    return path;
+/** A path either reaches a value in its JSON form or it does not. */
+export type PayloadPathLookup =
+    | Readonly<{ exists: false; }>
+    | Readonly<{ exists: true; value: ApiJsonValue; }>;
+
+type WaitEventRoutingKey = keyof RallarBlackBoxTestWaitMatch & keyof RallarBlackBoxTestEvent;
+
+const MISSING_PATH_VALUE: PayloadPathLookup = { exists: false };
+const PAYLOAD_PATH_PREFIXES = ['$.payload.', 'payload.', '$.'];
+const WAIT_EVENT_ROUTING_KEYS: readonly WaitEventRoutingKey[] = [
+    'kind',
+    'topic',
+    'commandId',
+    'connection',
+    'transport',
+    'severity'
+];
+
+/**
+ * An absent or blank path reads the whole payload. The reached value is read in the JSON form the control connection
+ * carries it, so a member without a JSON form is not reached.
+ */
+export function decodePayloadPathValue(payload: unknown, path: string | undefined): PayloadPathLookup {
+    return decodePathSegmentsValue(payload, toPayloadPathSegments(path));
 }
 
-export function lookupPayloadPath(payload: unknown, path: string | undefined): PayloadPathLookup {
-    if (!path || path.trim().length === 0) {
-        return {
-            exists: payload !== undefined,
-            value: payload
-        };
-    }
-
-    let current = payload;
-    const segments = normalisePayloadPath(path)
-        .split('.')
-        .filter((segment) => segment.length > 0);
-    for (const segment of segments) {
-        if ((Array.isArray(current) || typeof current === 'string') && segment === 'length') {
-            current = current.length;
-            continue;
-        }
-
-        if (Array.isArray(current)) {
-            const index = Number(segment);
-            if (!Number.isInteger(index) || index < 0 || index >= current.length) {
-                return { exists: false };
-            }
-            current = current[index];
-            continue;
-        }
-
-        if (!current || typeof current !== 'object') {
-            return { exists: false };
-        }
-
-        const record = current as Record<string, unknown>;
-        if (!Object.prototype.hasOwnProperty.call(record, segment)) {
-            return { exists: false };
-        }
-        current = record[segment];
-    }
-
-    return {
-        exists: true,
-        value: current
-    };
+export function isSameJsonValue(left: ApiJsonValue | undefined, right: ApiJsonValue | undefined): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function sameJsonValue(left: unknown, right: unknown): boolean {
-    try {
-        return JSON.stringify(left) === JSON.stringify(right);
-    }
-    catch (_error) {
-        return Object.is(left, right);
-    }
+export function hasContainedText(value: ApiJsonValue | undefined, expected: string): boolean {
+    return typeof value === 'string'
+        ? value.includes(expected)
+        : (JSON.stringify(value) ?? String(value)).includes(expected);
 }
 
-export function containsValue(value: unknown, expected: string): boolean {
-    if (typeof value === 'string') {
-        return value.includes(expected);
-    }
-    try {
-        const serialized = JSON.stringify(value);
-        return typeof serialized === 'string'
-            ? serialized.includes(expected)
-            : String(value).includes(expected);
-    }
-    catch (_error) {
-        return String(value).includes(expected);
-    }
-}
-
-export function waitEventMatches(
-    event: RallarBlackBoxTestEvent,
-    match: RallarBlackBoxTestWaitMatch
-): boolean {
-    if (match.sinceEpochMs !== undefined && event.atEpochMs < match.sinceEpochMs) {
-        return false;
-    }
-    if (match.kind !== undefined && event.kind !== match.kind) {
-        return false;
-    }
-    if (match.topic !== undefined && event.topic !== match.topic) {
-        return false;
-    }
-    if (match.commandId !== undefined && event.commandId !== match.commandId) {
-        return false;
-    }
-    if (match.connection !== undefined && event.connection !== match.connection) {
-        return false;
-    }
-    if (match.transport !== undefined && event.transport !== match.transport) {
-        return false;
-    }
-    if (match.severity !== undefined && event.severity !== match.severity) {
-        return false;
-    }
-
-    if (
-        match.payloadPath !== undefined ||
-        match.equals !== undefined ||
-        match.contains !== undefined ||
-        match.exists !== undefined
-    ) {
-        const lookup = lookupPayloadPath(event.payload, match.payloadPath);
-        if (match.exists !== undefined && lookup.exists !== match.exists) {
-            return false;
-        }
-        if (match.exists !== false && !lookup.exists) {
-            return false;
-        }
-        if (match.equals !== undefined && !sameJsonValue(lookup.value, match.equals)) {
-            return false;
-        }
-        if (match.contains !== undefined && !containsValue(lookup.value, match.contains)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-export function findWaitEvent(
+/** The latest matching event wins. */
+export function resolveLatestWaitEvent(
     events: readonly RallarBlackBoxTestEvent[],
     match: RallarBlackBoxTestWaitMatch
 ): RallarBlackBoxTestEvent | undefined {
     for (let index = events.length - 1; index >= 0; index--) {
-        const event = events[index];
-        if (waitEventMatches(event, match)) {
-            return event;
+        if (isWaitEventMatch(events[index], match)) {
+            return events[index];
         }
     }
     return undefined;
+}
+
+function toPayloadPathSegments(path: string | undefined): readonly string[] {
+    if (path === undefined || path.trim().length === 0) {
+        return [];
+    }
+    const prefix = PAYLOAD_PATH_PREFIXES.find((candidate) => path.startsWith(candidate));
+    return (prefix === undefined ? path : path.slice(prefix.length))
+        .split('.')
+        .filter((segment) => segment.length > 0);
+}
+
+function isWaitEventMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxTestWaitMatch): boolean {
+    if (match.sinceEpochMs !== undefined && event.atEpochMs < match.sinceEpochMs) {
+        return false;
+    }
+    return WAIT_EVENT_ROUTING_KEYS.every((key) => match[key] === undefined || event[key] === match[key]) &&
+        isWaitEventPayloadMatch(event, match);
+}
+
+function isWaitEventPayloadMatch(event: RallarBlackBoxTestEvent, match: RallarBlackBoxTestWaitMatch): boolean {
+    const { payloadPath, equals, contains, exists } = match;
+    if (payloadPath === undefined && equals === undefined && contains === undefined && exists === undefined) {
+        return true;
+    }
+    const lookup = decodePayloadPathValue(event.payload, payloadPath);
+    const value = lookup.exists ? lookup.value : undefined;
+    return (exists === undefined ? lookup.exists : lookup.exists === exists) &&
+        (equals === undefined || isSameJsonValue(value, equals)) &&
+        (contains === undefined || hasContainedText(value, contains));
+}
+
+function decodePathSegmentsValue(value: unknown, segments: readonly string[]): PayloadPathLookup {
+    const [segment, ...rest] = segments;
+    if (segment === undefined) {
+        const json = decodeJsonValue(value);
+        return json === undefined ? MISSING_PATH_VALUE : { exists: true, value: json };
+    }
+    if ((Array.isArray(value) || typeof value === 'string') && segment === 'length') {
+        return decodePathSegmentsValue(value.length, rest);
+    }
+    if (Array.isArray(value)) {
+        const index = Number(segment);
+        if (!Number.isInteger(index) || index < 0 || index >= value.length) {
+            return MISSING_PATH_VALUE;
+        }
+        // JSON writes an array element that has no JSON form as null.
+        const hasJsonForm = value[index] !== undefined &&
+            typeof value[index] !== 'function' &&
+            typeof value[index] !== 'symbol';
+        return decodePathSegmentsValue(hasJsonForm ? value[index] : null, rest);
+    }
+    return isJsonRecordValue(value) && Object.hasOwn(value, segment)
+        ? decodePathSegmentsValue(value[segment], rest)
+        : MISSING_PATH_VALUE;
 }

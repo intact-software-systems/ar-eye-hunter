@@ -1,11 +1,9 @@
-import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import { toError } from '../resilience/to-error.ts';
-// dprint-ignore
 import type {
     GroupId,
     OverlayInfo,
     PeerId
 } from '../api/api-config.ts';
+import { toWebRtcGroupKey } from '../api/api-type-utils.ts';
 import {
     readActiveClientSessionIds,
     type AnyClientPresence,
@@ -13,12 +11,13 @@ import {
 } from '../api/group-client-views.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
+import { toError } from '../resilience/to-error.ts';
 import {
     isRtcRttCanonicalReporter,
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers
 } from '../rtc/rtt-reporting-policy.ts';
-import type { WebRtcConnectionService } from './web-rtc-connection-service.ts';
+import type { QRtcPeerDto, WebRtcConnectionService } from './web-rtc-connection-service.ts';
 import { WebRtcGroupService } from './web-rtc-group-service.ts';
 import { selectGroupDialPeerIds } from './webrtc-group-dial-policy.ts';
 import {
@@ -69,7 +68,7 @@ export namespace WebRtcGroupManager {
 }
 
 export class WebRtcGroupManager {
-    private static readonly SETUP_COMPLETION_CALLBACK_ID = 'webrtc-group-manager:setup-completion';
+    private static readonly PEER_RECOVERY_CALLBACK_ID = 'webrtc-group-manager:peer-recovery';
 
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
@@ -105,31 +104,64 @@ export class WebRtcGroupManager {
     }
 
     /**
-     * Setup completion frees an in-flight slot, deleting a desired setup needs
-     * another attempt, and retained peers expire without an external event. The
+     * Setup completion frees an in-flight slot; desired peers and lanes recover
+     * after closure, and retained peers expire without an external event. The
      * composition root starts these wakes once the service and manager exist;
      * shutdown stops them before tearing peers down so removal cannot dial them
      * back.
      */
     startReconcileWakes(): void {
         this.reconcileWakesActive = true;
-        this.rtcQBox.onRtcPeerLifecycleDo(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID, {
-            onCreated: () => {},
-            onDeleted: (peer) => this.wakeAfterSetupEnded(peer.peerId),
-            onEstablished: () => this.wakeAfterSetupEnded()
+        this.rtcQBox.onRtcPeerLifecycleDo(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID, {
+            onCreated: (peer) => this.observePeerLanes(peer),
+            onDeleted: (peer) => {
+                this.stopObservingPeerLanes(peer);
+                this.wakeAfterPeerChanged(peer.peerId);
+            },
+            onEstablished: () => this.wakeAfterPeerChanged()
         });
+        for (const peerId of this.rtcQBox.knownPeerIds()) {
+            const peer = this.rtcQBox.readPeer(peerId);
+            if (peer) {
+                this.observePeerLanes(peer);
+            }
+        }
         this.startRetainedExpiryWake();
     }
 
     stopReconcileWakes(): void {
         this.reconcileWakesActive = false;
         this.stopRetainedExpiryWake();
-        this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.SETUP_COMPLETION_CALLBACK_ID);
+        this.rtcQBox.removeRtcPeerLifecycleById(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID);
+        for (const peerId of this.rtcQBox.knownPeerIds()) {
+            const peer = this.rtcQBox.readPeer(peerId);
+            if (peer) {
+                this.stopObservingPeerLanes(peer);
+            }
+        }
         // A wake already on the microtask queue observes the inactive latch and stands down.
         this.waitingDialCount = 0;
     }
 
-    /** Settles after the reconcile that a pending setup-ending wake or an in-flight update will run. */
+    private observePeerLanes(peer: QRtcPeerDto): void {
+        for (const channel of peer.channels.values()) {
+            channel.onRtcCallbacksDo(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID, {
+                onClose: async () => {
+                    if (this.rtcQBox.readPeer(peer.peerId) === peer && channel.isReadyToConnect()) {
+                        this.wakeAfterPeerChanged(peer.peerId);
+                    }
+                }
+            });
+        }
+    }
+
+    private stopObservingPeerLanes(peer: QRtcPeerDto): void {
+        for (const channel of peer.channels.values()) {
+            channel.removeRtcCallbackById(WebRtcGroupManager.PEER_RECOVERY_CALLBACK_ID);
+        }
+    }
+
+    /** Settles after reconciliation requested by a peer lifecycle event or an in-flight update. */
     whenReconciled(): Promise<void> {
         return this.scheduledWake ?? this.reconcileInFlight ?? Promise.resolve();
     }
@@ -359,21 +391,21 @@ export class WebRtcGroupManager {
         }
     }
 
-    private wakeAfterSetupEnded(removedPeerId?: PeerId): void {
-        // A pass runs synchronously, so an ending observed while it runs is one
+    private wakeAfterPeerChanged(changedPeerId?: PeerId): void {
+        // A pass runs synchronously, so a change observed while it runs is one
         // the pass caused itself and already accounted for.
-        const removedDesiredPeer = removedPeerId !== undefined &&
-            this.isPeerDialAllowedByAnyGroup(removedPeerId);
+        const changedDesiredPeer = changedPeerId !== undefined &&
+            this.isPeerDialAllowedByAnyGroup(changedPeerId);
         if (
             !this.reconcileWakesActive ||
-            (this.waitingDialCount === 0 && !removedDesiredPeer) ||
+            (this.waitingDialCount === 0 && !changedDesiredPeer) ||
             this.reconcilePassRunning ||
             this.scheduledWake
         ) {
             return;
         }
         // Deferred past the notification that raised it, so every observer sees
-        // the ending before the dials it releases.
+        // the change before the dials it releases.
         this.scheduledWake = Promise.resolve()
             .then(() => {
                 this.scheduledWake = undefined;
@@ -383,7 +415,7 @@ export class WebRtcGroupManager {
                 return this.reconcileAllGroups();
             })
             .catch((caught) => {
-                console.error('Failed to reconcile groups after a setup ended', toError(caught));
+                console.error('Failed to reconcile groups after a peer changed', toError(caught));
             });
     }
 

@@ -50,7 +50,14 @@ function distributedRun(
                 groupId: 'ci-analyze'
             },
             recipes: [],
-            targetPolicy: { mode: 'all-online-group-members' }
+            targetPolicy: { mode: 'all-online-group-members' },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: {
@@ -58,12 +65,10 @@ function distributedRun(
             ok: false,
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 0,
-                requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 groupAssertions: 0,

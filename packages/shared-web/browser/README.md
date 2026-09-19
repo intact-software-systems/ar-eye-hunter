@@ -200,8 +200,9 @@ Message ownership is concentrated under [`messages/`](./messages/):
 - [BrowserRallarMessagesController](./messages/browser-rallar-messages-controller.ts)
   constructs the completed capability and exposes its lifecycle owners.
 - [BrowserRallarMessageSender](./messages/browser-rallar-message-sender.ts)
-  owns RTC/WS envelope construction, scoped targets, QueueBox enqueue results,
-  and queue wake-up decisions.
+  owns RTC/WS envelope construction and scoped targets, returning a `RallarMessageHandle`
+  immediately after submission. Consumers await admission with `handle.wait(...)` and inspect
+  its lifecycle; the delivery registry observes carrier settlements in memory.
 - [BrowserTypedMessageChannels](./messages/browser-typed-message-channels.ts)
   owns typed channels and the current RTC-with-WS and WS-then-RTC policies.
 - [BrowserRallarMessageSubscriptions](./messages/browser-rallar-message-subscriptions.ts)

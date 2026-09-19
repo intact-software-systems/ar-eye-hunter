@@ -1,4 +1,4 @@
-import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { RallarMessage, RallarMessageHandle } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type {
     RallarCallHandle,
@@ -13,11 +13,15 @@ import type {
     RallarCallStartInput,
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
-import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMediaSourceKind, RallarMediaSourceStatus } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    validateRallarGroupRef,
+    validateRallarNonNegativeInteger,
+    validateRallarRouteId
+} from '@shared/api/rallar-validation.ts';
 
 const RALLAR_CALL_SIGNAL_TOPIC_ID = 'app.rallar.calls';
 const RALLAR_CALL_INVITE_TYPE_ID = 'app.rallar.calls.invite.v1';
@@ -40,14 +44,16 @@ export namespace BrowserCallSignalRuntime {
     }
 
     export interface Input {
-        connect(): Promise<ApiMiddleware>;
+        connect(): Promise<void>;
+        nowMs(): number;
+        createCallId(): string;
         readSession(): AuthSession | undefined;
         requireSession(): AuthSession;
         resolveRoomRef(room?: string | GroupRef): GroupRef | undefined;
         resolveTargetPeerIds(input?: RallarCallInviteInput): readonly string[];
-        readonly messages: RallarMessagesOperations;
+        readonly messages: { readonly ws: Pick<RallarMessagesOperations['ws'], 'onMessage'>; };
         readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
-        sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageSendResult>;
+        sendWsUnicast<T>(input: SignalSendInput<T>): Promise<RallarMessageHandle>;
         startCall(input: RallarCallStartInput): Promise<RallarCallHandle>;
     }
 
@@ -70,9 +76,9 @@ export class BrowserCallSignalRuntime {
 
     public async invite(input: RallarCallInviteInput): Promise<RallarCallInviteResult> {
         await this.input.connect();
-        const callId = input.callId ?? crypto.randomUUID();
+        const callId = input.callId ?? this.input.createCallId();
         const peerIds = this.input.resolveTargetPeerIds(input);
-        const payload = this.toSignalPayload({
+        const payload = this.createSignalPayload({
             kind: 'invite',
             callId,
             toPeerIds: peerIds,
@@ -86,10 +92,10 @@ export class BrowserCallSignalRuntime {
     }
 
     public onSignal(listener: RallarCallSignalListener): RallarUnsubscribe {
-        return this.input.messages.ws.onMessage<RallarMessage['payload']>(
+        return this.input.messages.ws.onMessage<unknown>(
             { topicId: RALLAR_CALL_SIGNAL_TOPIC_ID },
             async (message) => {
-                const event = this.toSignalEvent(message);
+                const event = toSignalEvent(message, this.input.readSession()?.sessionId);
                 if (event) {
                     await listener(event);
                 }
@@ -98,49 +104,29 @@ export class BrowserCallSignalRuntime {
     }
 
     public onInvite(listener: RallarCallInviteListener): RallarUnsubscribe {
-        return this.input.messages.ws.onMessage<RallarMessage['payload']>(
+        return this.input.messages.ws.onMessage<unknown>(
             {
                 topicId: RALLAR_CALL_SIGNAL_TOPIC_ID,
                 typeId: RALLAR_CALL_INVITE_TYPE_ID
             },
             async (message) => {
-                const invite = this.toIncomingInvite(message);
-                if (invite) {
-                    await listener(invite);
+                const event = toSignalEvent(message, this.input.readSession()?.sessionId);
+                if (event?.kind === 'invite') {
+                    await listener(this.createIncomingInvite(event));
                 }
             }
         );
     }
 
-    private toSignalPayload(
+    private createSignalPayload(
         input: BrowserCallSignalRuntime.SignalPayloadInput
     ): RallarCallSignalPayload {
-        const session = this.input.requireSession();
-        return {
-            kind: input.kind,
-            callId: input.callId,
-            fromPeerId: session.sessionId,
-            toPeerIds: [...new Set(input.toPeerIds)],
-            roomRef: input.invite.roomRef ??
-                (input.invite.roomId
-                    ? this.input.resolveRoomRef(input.invite.roomId)
-                    : undefined),
-            membership: input.invite.membership,
-            data: {
-                laneIds: input.invite.data?.lanes
-                    ? [...new Set(input.invite.data.lanes)]
-                    : []
-            },
-            media: {
-                audio: input.invite.media?.audio,
-                video: input.invite.media?.video,
-                screen: this.input.readSourceStatus('screen')
-                    ?.state === 'open'
-            },
-            message: input.invite.message,
-            reason: input.reason,
-            occurredAtEpochMs: Date.now()
-        };
+        const fromPeerId = this.input.requireSession().sessionId;
+        const roomRef = input.invite.roomRef ??
+            (input.invite.roomId ? this.input.resolveRoomRef(input.invite.roomId) : undefined);
+        const screenOpen = this.input.readSourceStatus('screen')?.state === 'open';
+        const occurredAtEpochMs = this.input.nowMs();
+        return toSignalPayload({ input, fromPeerId, roomRef, screenOpen, occurredAtEpochMs });
     }
 
     private async sendSignals(
@@ -148,7 +134,7 @@ export class BrowserCallSignalRuntime {
         payload: RallarCallSignalPayload
     ): Promise<readonly RallarCallSignalSend[]> {
         const uniquePeerIds = [...new Set(peerIds)]
-            .filter((peerId) => peerId !== this.input.requireSession().sessionId);
+            .filter((peerId) => peerId !== payload.fromPeerId);
         return await Promise.all(
             uniquePeerIds.map(async (peerId) => ({
                 peerId,
@@ -165,47 +151,9 @@ export class BrowserCallSignalRuntime {
         );
     }
 
-    private isSignalForCurrentSession(payload: RallarCallSignalPayload): boolean {
-        const sessionId = this.input.readSession()?.sessionId;
-        if (!sessionId || payload.fromPeerId === sessionId) {
-            return false;
-        }
-        return payload.toPeerIds.length === 0 || payload.toPeerIds.includes(sessionId);
-    }
-
-    private toSignalEvent(
-        message: RallarMessage
-    ): RallarCallSignalEvent | undefined {
-        const payload = normalizeRallarCallSignalPayload(message.payload);
-        if (!payload) {
-            return undefined;
-        }
-        if (!this.isSignalForCurrentSession(payload)) {
-            return undefined;
-        }
-        return {
-            kind: payload.kind,
-            callId: payload.callId,
-            fromPeerId: payload.fromPeerId,
-            toPeerIds: payload.toPeerIds,
-            roomRef: payload.roomRef,
-            membership: payload.membership,
-            dataLaneIds: payload.data?.laneIds ?? [],
-            media: payload.media ?? {},
-            message: payload.message,
-            reason: payload.reason,
-            payload,
-            raw: { ...message, payload }
-        };
-    }
-
-    private toIncomingInvite(
-        message: RallarMessage
-    ): RallarIncomingCallInvite | undefined {
-        const event = this.toSignalEvent(message);
-        if (!event || event.kind !== 'invite') {
-            return undefined;
-        }
+    private createIncomingInvite(
+        event: RallarCallSignalEvent
+    ): RallarIncomingCallInvite {
         return {
             ...event,
             kind: 'invite',
@@ -221,7 +169,7 @@ export class BrowserCallSignalRuntime {
         const startInput = toAcceptedLocalCallInput(event, input);
         await this.sendSignals(
             [event.fromPeerId],
-            this.toSignalPayload({
+            this.createSignalPayload({
                 kind: 'accepted',
                 callId: event.callId,
                 toPeerIds: [event.fromPeerId],
@@ -237,7 +185,7 @@ export class BrowserCallSignalRuntime {
     ): Promise<readonly RallarCallSignalSend[]> {
         return await this.sendSignals(
             [event.fromPeerId],
-            this.toSignalPayload({
+            this.createSignalPayload({
                 kind: 'declined',
                 callId: event.callId,
                 toPeerIds: [event.fromPeerId],
@@ -293,20 +241,109 @@ function toCallSignalTypeId(kind: RallarCallSignalKind): string {
     }
 }
 
-function normalizeRallarCallSignalPayload(
-    value: RallarMessage['payload']
-): RallarCallSignalPayload | undefined {
-    if (typeof value !== 'object' || value === null) {
+interface SignalPayloadFacts {
+    readonly input: BrowserCallSignalRuntime.SignalPayloadInput;
+    readonly fromPeerId: string;
+    readonly roomRef?: GroupRef;
+    readonly screenOpen: boolean;
+    readonly occurredAtEpochMs: number;
+}
+
+function toSignalPayload(facts: SignalPayloadFacts): RallarCallSignalPayload {
+    const { input } = facts;
+    return {
+        kind: input.kind,
+        callId: input.callId,
+        fromPeerId: facts.fromPeerId,
+        toPeerIds: [...new Set(input.toPeerIds)],
+        roomRef: facts.roomRef,
+        membership: input.invite.membership,
+        data: { laneIds: [...new Set(input.invite.data?.lanes ?? [])] },
+        media: { audio: input.invite.media?.audio, video: input.invite.media?.video, screen: facts.screenOpen },
+        message: input.invite.message,
+        reason: input.reason,
+        occurredAtEpochMs: facts.occurredAtEpochMs
+    };
+}
+
+function toSignalEvent(
+    message: RallarMessage<unknown>,
+    sessionId: string | undefined
+): RallarCallSignalEvent | undefined {
+    const payload = normalizeRallarCallSignalPayload(message.payload);
+    if (
+        !payload || !sessionId || payload.fromPeerId === sessionId ||
+        (payload.toPeerIds.length > 0 && !payload.toPeerIds.includes(sessionId))
+    ) {
         return undefined;
     }
-    const candidate = value as Partial<RallarCallSignalPayload>;
-    const isValid = (
-        candidate.kind === 'invite' || candidate.kind === 'accepted' ||
-        candidate.kind === 'declined' || candidate.kind === 'cancelled'
-    ) && typeof candidate.callId === 'string' &&
-        typeof candidate.fromPeerId === 'string' &&
-        Array.isArray(candidate.toPeerIds) &&
-        candidate.toPeerIds.every((peerId) => typeof peerId === 'string') &&
-        typeof candidate.occurredAtEpochMs === 'number';
-    return isValid ? candidate as RallarCallSignalPayload : undefined;
+    return {
+        kind: payload.kind,
+        callId: payload.callId,
+        fromPeerId: payload.fromPeerId,
+        toPeerIds: payload.toPeerIds,
+        roomRef: payload.roomRef,
+        membership: payload.membership,
+        dataLaneIds: payload.data?.laneIds ?? [],
+        media: payload.media ?? {},
+        message: payload.message,
+        reason: payload.reason,
+        payload,
+        raw: { ...message, payload }
+    };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isSignalRoomRef(value: unknown): value is GroupRef {
+    return isRecord(value) && validateRallarGroupRef(value).ok &&
+        validateRallarRouteId(value.workspaceId, '$.workspaceId', 'Workspace ID').ok;
+}
+
+function isSignalData(value: unknown): value is { readonly laneIds: readonly string[]; } {
+    return isRecord(value) && isStringArray(value.laneIds);
+}
+
+function isSignalMedia(value: unknown): value is RallarCallSignalPayload['media'] {
+    return isRecord(value) && ['audio', 'video', 'screen'].every(
+        (key) => value[key] === undefined || typeof value[key] === 'boolean'
+    );
+}
+
+function normalizeRallarCallSignalPayload(value: unknown): RallarCallSignalPayload | undefined {
+    if (
+        !isRecord(value) ||
+        !(value.kind === 'invite' || value.kind === 'accepted' || value.kind === 'declined' ||
+            value.kind === 'cancelled') ||
+        typeof value.callId !== 'string' || typeof value.fromPeerId !== 'string' ||
+        !isStringArray(value.toPeerIds) || typeof value.occurredAtEpochMs !== 'number' ||
+        !validateRallarNonNegativeInteger(value.occurredAtEpochMs).ok ||
+        (value.roomRef !== undefined && !isSignalRoomRef(value.roomRef)) ||
+        (value.membership !== undefined && value.membership !== 'fixed' && value.membership !== 'live') ||
+        (value.data !== undefined && !isSignalData(value.data)) ||
+        (value.media !== undefined && !isSignalMedia(value.media)) ||
+        (value.message !== undefined && typeof value.message !== 'string') ||
+        (value.reason !== undefined && typeof value.reason !== 'string')
+    ) {
+        return undefined;
+    }
+    return {
+        kind: value.kind,
+        callId: value.callId,
+        fromPeerId: value.fromPeerId,
+        toPeerIds: value.toPeerIds,
+        occurredAtEpochMs: value.occurredAtEpochMs,
+        roomRef: value.roomRef,
+        membership: value.membership,
+        data: value.data,
+        media: value.media,
+        message: value.message,
+        reason: value.reason
+    };
 }

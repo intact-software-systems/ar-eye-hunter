@@ -71,14 +71,7 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
     {
         moduleId: '@shared-web/browser/rallar-messages.ts',
         sourcePath: 'packages/shared-web/browser/rallar-messages.ts',
-        expectedRuntimeExports: [
-            'configureApiClient',
-            'matchesRallarMessageSelector',
-            'normalizeRallarMessageSelector',
-            'normalizeApiBaseUrl',
-            'readApiBaseUrl',
-            'toRoomFormationDenial'
-        ],
+        expectedRuntimeExports: [],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
             'createRallarDataFacade',
@@ -165,6 +158,15 @@ describe('shared-web browser entrypoints', () => {
             expect(collectRuntimeFullFacadeReferences(sourceFile)).toEqual([]);
         });
     }
+
+    it('keeps the messages entry point type-only and exposes lifecycle constants from core', async () => {
+        const messages = await import('@shared-web/browser/rallar-messages.ts');
+        const core = await import('@shared-web/browser/rallar-core.ts');
+        const canonical = await import('@shared/alm/delivery/al-delivery-lifecycle.ts');
+        expect(Object.keys(messages)).toEqual([]);
+        expect(core.AL_DELIVERY_STATES).toBe(canonical.AL_DELIVERY_STATES);
+        expect(core.AL_DELIVERY_ADMITTED_STATES).toBe(canonical.AL_DELIVERY_ADMITTED_STATES);
+    });
 
     it('keeps public facade contracts independent from the full facade entrypoint', () => {
         const references = PUBLIC_FACADE_MODULES.flatMap((filePath) =>

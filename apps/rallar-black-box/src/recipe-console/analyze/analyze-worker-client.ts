@@ -90,14 +90,17 @@ export function createAnalyzeWorkerClient(
             callbacks.onUnavailable?.('timeout', 'candidate');
         }, watchdogMs);
         try {
-            post(owner.worker, {
-                type: 'offer',
-                operationGeneration: generation,
-                artifact
-            }, [
-                ...artifact.files.map((file) => file.bytes),
-                ...(artifact.controlEnvelope ? [artifact.controlEnvelope] : [])
-            ]);
+            post(
+                owner.worker,
+                {
+                    type: 'offer',
+                    operationGeneration: generation,
+                    artifact
+                },
+                artifact.source === 'control'
+                    ? [artifact.controlEnvelope]
+                    : artifact.files.map((file) => file.bytes)
+            );
         }
         catch (error) {
             if (candidate === owner) {

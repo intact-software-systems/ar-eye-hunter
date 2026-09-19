@@ -165,6 +165,7 @@ function agent(
             clientId: `client-${id}`,
             sessionId: `session-${id}`,
             ...GROUP,
+            sessionLabel: `principal-${id}:session-${id}`,
             updatedAtEpochMs
         },
         connectionSequence: 1,
@@ -187,13 +188,19 @@ function distributedManifest(
         controlRunId,
         displayName: `Scale run ${distributedRunId}`,
         group: GROUP,
-        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE }],
+        recipes: [{ recipeId: RECIPE.recipeId, recipe: RECIPE, variables: {} }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: agentIds.length,
             agentIds
         },
-        startMode: 'manual'
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -221,12 +228,10 @@ function distributedRun(
             failures: [],
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: targetAgentIds.length,
                 passedParticipants: targetAgentIds.length,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 1,
                 failedRecipes: 0,
                 groupAssertions: 0,

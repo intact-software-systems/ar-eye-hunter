@@ -268,13 +268,13 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...resolution.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true },
-                            { agentId: agent, role: 'manifest-later', required: true }
+                            { agentId: agent, role: 'manifest-first', variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', variables: {}, recipeIds: [] }
                         ]
                     },
                     targetResolution: targetResolution(agent, [
-                        { agentId: agent, role: 'resolution-first', required: true },
-                        { agentId: agent, role: 'resolution-later', required: true }
+                        { agentId: agent, role: 'resolution-first', recipeIds: [], variables: {} },
+                        { agentId: agent, role: 'resolution-later', recipeIds: [], variables: {} }
                     ])
                 },
                 {
@@ -282,8 +282,8 @@ describe('control snapshot selection index', () => {
                     manifest: {
                         ...manifest.manifest,
                         roleAssignments: [
-                            { agentId: agent, role: 'manifest-first', required: true },
-                            { agentId: agent, role: 'manifest-later', required: true }
+                            { agentId: agent, role: 'manifest-first', variables: {}, recipeIds: [] },
+                            { agentId: agent, role: 'manifest-later', variables: {}, recipeIds: [] }
                         ]
                     }
                 },
@@ -336,12 +336,10 @@ describe('control snapshot selection index', () => {
                     ...manifestNullish.manifest,
                     roleAssignments: [{
                         agentId: agent,
-                        role: undefined,
-                        required: true
+                        role: undefined
                     }, {
                         agentId: agent,
-                        role: 'manifest-later-must-not-win',
-                        required: true
+                        role: 'manifest-later-must-not-win'
                     }] as unknown as NonNullable<ControlDistributedRunSnapshot['manifest']['roleAssignments']>
                 }
             }, {
@@ -351,19 +349,18 @@ describe('control snapshot selection index', () => {
                     roleAssignments: [{
                         agentId: agent,
                         role: 'manifest-fallback',
-                        required: true
+                        variables: {},
+                        recipeIds: []
                     }]
                 },
                 targetResolution: targetResolution(
                     agent,
                     [{
                         agentId: agent,
-                        role: null,
-                        required: true
+                        role: null
                     }, {
                         agentId: agent,
-                        role: 'resolution-later-must-not-win',
-                        required: true
+                        role: 'resolution-later-must-not-win'
                     }] as unknown as NonNullable<ControlDistributedRunSnapshot['targetResolution']>['roleAssignments']
                 )
             }]
@@ -690,7 +687,15 @@ function distributedRun(
                 groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] }
+            targetPolicy: { mode: 'selected-agents', agentIds: [] },
+            schemaVersion: 1,
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         state,
         createdAtEpochMs: updatedAtEpochMs,
@@ -702,12 +707,10 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 0,
-                requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 groupAssertions: 0,
@@ -760,6 +763,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},

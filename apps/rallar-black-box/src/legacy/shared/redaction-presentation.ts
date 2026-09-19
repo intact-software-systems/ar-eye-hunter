@@ -1,5 +1,8 @@
+import type {
+    RallarBlackBoxTestRedactionOptions,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import type { RallarBlackBoxTestRedactionOptions, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { json } from './json-presentation.ts';
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AnalyzeArtifactModel } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import { resolveTuneAnalysisPerformance } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-performance-evidence.ts';
 import { deriveTuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import type {
     ControlDistributedRunSnapshot,
@@ -46,15 +47,22 @@ function distributedRun(
             targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
             ackTimeoutMs: 1_000,
             recipes: options.referenceOnly
-                ? [{ recipeId: 'recipe-a' }]
+                ? [{ recipeId: 'recipe-a', variables: {} }]
                 : [{
                     recipeId: 'recipe-a',
                     recipe: {
                         schemaVersion: 1,
                         recipeId: 'recipe-a',
                         commands: [{ kind: 'health', commandId }]
-                    }
-                }]
+                    },
+                    variables: {}
+                }],
+            variables: {},
+            roleAssignments: [],
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'passed',
@@ -62,12 +70,10 @@ function distributedRun(
             failures: [],
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 1,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 1,
                 failedRecipes: 0,
                 groupAssertions: 0,
@@ -222,7 +228,7 @@ describe('Recipe Console Tune source model', () => {
             });
             expect(model.provenance).toMatchObject({ source: 'control', detail: 'bounded' });
             expect(model.performance?.commandTiming.p95Ms).toBe(100);
-            expect(model.retained.inspection?.performance?.commandTiming.p95Ms).toBe(950);
+            expect(resolveTuneAnalysisPerformance(model.retained.inspection)?.commandTiming.p95Ms).toBe(950);
             expect(model.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
                 retained.status === 'error' ? 'retained-context-error' : 'retained-mismatch'
             ]));

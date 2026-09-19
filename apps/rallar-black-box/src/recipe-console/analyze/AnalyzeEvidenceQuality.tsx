@@ -1,5 +1,5 @@
 import { analyzeArtifactIdentityIssues } from './analyze-identity-policy.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 export function AnalyzeEvidenceQuality({

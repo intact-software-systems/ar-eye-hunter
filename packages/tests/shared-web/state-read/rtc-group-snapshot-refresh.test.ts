@@ -17,10 +17,10 @@ describe('RTC group-snapshot refresh', () => {
         });
         const message = roomMessage(6);
 
-        await refresh.afterInboundAdmission(
+        await expect(refresh.afterInboundAdmission(
             message,
             { kind: 'not-admitted', reason: 'not-yet-in-sync' }
-        );
+        )).resolves.toBe(true);
 
         expect(refreshGroupSnapshot).toHaveBeenCalledWith(
             roomRef,
@@ -35,7 +35,7 @@ describe('RTC group-snapshot refresh', () => {
             refreshGroupSnapshot
         });
 
-        await refresh.afterInboundAdmission(roomMessage(6), { kind: 'admitted' });
+        await expect(refresh.afterInboundAdmission(roomMessage(6), { kind: 'admitted' })).resolves.toBe(false);
 
         expect(refreshGroupSnapshot).not.toHaveBeenCalled();
     });
@@ -52,12 +52,12 @@ describe('RTC group-snapshot refresh', () => {
         const first = refresh.afterInboundAdmission(message, acceptance);
         const second = refresh.afterInboundAdmission(message, acceptance);
         response.resolve();
-        await Promise.all([first, second]);
+        expect(await Promise.all([first, second])).toEqual([true, true]);
 
         expect(refreshGroupSnapshot).toHaveBeenCalledOnce();
     });
 
-    it('leaves failed refreshes to the retained QueueBox retry', async () => {
+    it('reports failure without re-entry and permits a later independent refresh', async () => {
         const refreshGroupSnapshot = vi.fn()
             .mockRejectedValueOnce(new Error('point read failed'))
             .mockResolvedValueOnce(undefined);
@@ -65,8 +65,8 @@ describe('RTC group-snapshot refresh', () => {
         const message = roomMessage(6);
         const acceptance = { kind: 'not-admitted' as const, reason: 'not-yet-in-sync' };
 
-        await expect(refresh.afterInboundAdmission(message, acceptance)).resolves.toBeUndefined();
-        await refresh.afterInboundAdmission(message, acceptance);
+        await expect(refresh.afterInboundAdmission(message, acceptance)).resolves.toBe(false);
+        await expect(refresh.afterInboundAdmission(message, acceptance)).resolves.toBe(true);
 
         expect(refreshGroupSnapshot).toHaveBeenCalledTimes(2);
     });
@@ -94,8 +94,8 @@ describe('RTC group-snapshot refresh', () => {
         await vi.waitFor(() => expect(refreshSignal).toBeDefined());
         refresh.dispose();
         response.resolve();
-        await active;
-        await refresh.afterInboundAdmission(roomMessage(7), acceptance);
+        await expect(active).resolves.toBe(false);
+        await expect(refresh.afterInboundAdmission(roomMessage(7), acceptance)).resolves.toBe(false);
 
         expect(refreshSignal?.aborted).toBe(true);
         expect(authorityAdopted).toBe(false);

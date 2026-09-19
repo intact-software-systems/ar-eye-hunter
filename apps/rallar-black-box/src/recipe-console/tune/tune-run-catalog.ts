@@ -6,8 +6,12 @@ import type {
     DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { deriveDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import { computeDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-run-performance/compute-distributed-run-snapshot-performance.ts';
+import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
+import type {
+    AnalyzeTuneArtifactFacade,
+    AnalyzeWorkerAnalysisProjection
+} from '../analyze/analyze-worker-projection-contract.ts';
 import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
 import {
     projectTuneFacadeManifestValidation,
@@ -22,27 +26,43 @@ import {
 } from './tune-run-catalog-safety.ts';
 import { createTuneRunCatalogWork, type TuneRunCatalogWork } from './tune-run-catalog-work.ts';
 
+/**
+ * The analysis an option carries: the analyzer's own value when the option was built from a loaded
+ * artifact model, and the Analyze worker's bounded projection of one when it was built from the
+ * retained facade the worker transferred.
+ */
+export type TuneRunAnalysisEvidence = DistributedRunAnalysis | AnalyzeWorkerAnalysisProjection;
+
 export type TuneRunOption = Readonly<{
     key: string;
     distributedRunId: string;
     controlRunId: string;
     source: 'control' | 'artifact' | 'artifact+control';
     distributedRun: ControlDistributedRunSnapshot;
+    /** Absent when no control run pairs with this distributed run, or more than one does. */
     controlRun?: ControlRunSnapshot;
-    analysis?: DistributedRunAnalysis;
+    /** Absent for a control-only option, which carries no analysed artifact. */
+    analysis?: TuneRunAnalysisEvidence;
+    /** Absent when the option derives no performance evidence for this poll. */
     performance?: DistributedRunPerformanceAnalysis;
     identity: TuneIdentitySurfaces;
     pairStatus: 'paired' | 'missing' | 'ambiguous';
     manifestValidation: 'validated' | 'selection-required';
+    /** Absent for a control-only option, whose manifest comes from the control snapshot itself. */
     manifestAuthority?: 'authoritative' | 'summary-projection';
+    /** Absent for a control-only option, which carries no bounded recipe-identity window. */
     recipeIdentityComplete?: boolean;
+    /** Absent until a control snapshot row backs this option. */
     controlEvidence?: TuneRunEvidence;
-    artifactEvidence?: TuneRunEvidence & Readonly<{ analysis: DistributedRunAnalysis; }>;
+    /** Absent until an analysed artifact or retained facade backs this option. */
+    artifactEvidence?: TuneRunEvidence & Readonly<{ analysis: TuneRunAnalysisEvidence; }>;
 }>;
 
 export type TuneRunEvidence = Readonly<{
     distributedRun: ControlDistributedRunSnapshot;
+    /** Absent when no control run pairs with this distributed run, or more than one does. */
     controlRun?: ControlRunSnapshot;
+    /** Absent when this evidence derives no performance for the selected run. */
     performance?: DistributedRunPerformanceAnalysis;
     pairStatus: 'paired' | 'missing' | 'ambiguous';
 }>;
@@ -52,6 +72,7 @@ export type TuneQuarantineCode = 'ambiguous-run' | 'unsafe-identity' | 'invalid-
 export type TuneQuarantinedRun = Readonly<{
     key: string;
     distributedRunId: string;
+    /** Absent when the quarantined identity names no control run at all. */
     controlRunId?: string;
     codes: readonly TuneQuarantineCode[];
     issues: readonly string[];
@@ -62,23 +83,29 @@ export type TuneRunCatalog = Readonly<{
     optionsByDistributedRunId: ReadonlyMap<string, TuneRunOption>;
     quarantined: readonly TuneQuarantinedRun[];
     includePerformanceEvidence: boolean;
+    /** Absent when no retained facade was offered to this build. */
     retainedFacadeManifestValidation?: TuneFacadeManifestValidation;
     work: TuneRunCatalogWork;
 }>;
 
-export function buildTuneRunCatalog(
-    _input: Readonly<{
+export function computeTuneRunCatalog(
+    input: Readonly<{
         distributedRuns: readonly ControlDistributedRunSnapshot[];
         controlRuns: readonly ControlRunSnapshot[];
+        /** Absent when the caller accepts the default, which derives performance evidence. */
         includePerformanceEvidence?: boolean;
-        retainedArtifact?: import('../analyze/analyze-artifact-model.ts').AnalyzeArtifactModel;
+        /** Absent when no analysed artifact is retained for this workspace. */
+        retainedArtifact?: AnalyzeArtifactModel;
+        /** Absent with `retainedArtifact`. */
         retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
+        /** Absent when the Tune URL names no focus run. */
         retainedArtifactFocusRunId?: string;
+        /** Absent when the Analyze worker transferred no retained facade. */
         retainedFacade?: AnalyzeTuneArtifactFacade;
+        /** Absent when every run validates its manifest instead of only the selected ones. */
         performanceRunIds?: readonly string[];
     }>
 ): TuneRunCatalog {
-    const input = _input;
     const work = createTuneRunCatalogWork();
     const includePerformanceEvidence = input.includePerformanceEvidence !== false;
     const performanceRunIds = boundedTunePerformanceRunIds(input.performanceRunIds);
@@ -102,22 +129,19 @@ export function buildTuneRunCatalog(
     const options = new Map<string, TuneRunOption>();
     const quarantined = new Map<string, Omit<TuneQuarantinedRun, 'key'>>();
     let retainedFacadeManifestValidation: TuneFacadeManifestValidation | undefined;
-    const quarantine = (
-        distributedRunId: string,
-        controlRunId: string | undefined,
-        codes: readonly TuneQuarantineCode[],
-        issues: readonly string[]
-    ): void => {
-        const identityKey = JSON.stringify([distributedRunId, controlRunId ?? null]);
-        quarantined.set(identityKey, { distributedRunId, controlRunId, codes, issues });
+    const quarantine = (run: Omit<TuneQuarantinedRun, 'key'>): void => {
+        const identityKey = JSON.stringify([run.distributedRunId, run.controlRunId ?? null]);
+        quarantined.set(identityKey, run);
     };
 
     for (const [distributedRunId, rows] of distributedGroups) {
         work.distributedIdentitiesVisited += 1;
         if (rows.length !== 1) {
-            quarantine(distributedRunId, undefined, ['ambiguous-run'], [
-                'Duplicate distributed run identity is ambiguous.'
-            ]);
+            quarantine({
+                distributedRunId,
+                codes: ['ambiguous-run'],
+                issues: ['Duplicate distributed run identity is ambiguous.']
+            });
             continue;
         }
         const distributedRun = rows[0];
@@ -140,16 +164,16 @@ export function buildTuneRunCatalog(
             identity.quarantined || !identity.controlRunId || !identity.reactKey ||
             manifestIssues.length > 0
         ) {
-            quarantine(
-                distributedRun.distributedRunId,
-                distributedRun.controlRunId,
-                manifestIssues.length > 0
+            quarantine({
+                distributedRunId: distributedRun.distributedRunId,
+                controlRunId: distributedRun.controlRunId,
+                codes: manifestIssues.length > 0
                     ? ['invalid-manifest']
                     : ['unsafe-identity'],
-                identity.quarantined
+                issues: identity.quarantined
                     ? identity.issues
                     : manifestIssues
-            );
+            });
             continue;
         }
         work.controlPairLookups += 1;
@@ -168,7 +192,7 @@ export function buildTuneRunCatalog(
             work.performanceDerivations += 1;
         }
         const performance = controlRun && derivesPerformance
-            ? deriveDistributedRunSnapshotPerformance({ distributedRun, controlRun })
+            ? computeDistributedRunSnapshotPerformance({ distributedRun, controlRun })
             : undefined;
         const controlEvidence: TuneRunEvidence = {
             distributedRun,
@@ -208,12 +232,12 @@ export function buildTuneRunCatalog(
             )
         });
         if (projection.kind === 'quarantine') {
-            quarantine(
-                projection.distributedRunId,
-                projection.controlRunId,
-                projection.codes,
-                projection.issues
-            );
+            quarantine({
+                distributedRunId: projection.distributedRunId,
+                controlRunId: projection.controlRunId,
+                codes: projection.codes,
+                issues: projection.issues
+            });
         }
         else {
             options.set(projection.option.distributedRunId, projection.option);
@@ -232,12 +256,12 @@ export function buildTuneRunCatalog(
             manifestValidation: retainedFacadeManifestValidation
         });
         if (projection.kind === 'quarantine') {
-            quarantine(
-                projection.distributedRunId,
-                projection.controlRunId,
-                projection.codes,
-                projection.issues
-            );
+            quarantine({
+                distributedRunId: projection.distributedRunId,
+                controlRunId: projection.controlRunId,
+                codes: projection.codes,
+                issues: projection.issues
+            });
         }
         else {
             options.set(projection.option.distributedRunId, projection.option);

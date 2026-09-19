@@ -1,10 +1,10 @@
-import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot
-} from '../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../control-agent-board.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type RecipeConsoleControlSelectionIssue = Readonly<{

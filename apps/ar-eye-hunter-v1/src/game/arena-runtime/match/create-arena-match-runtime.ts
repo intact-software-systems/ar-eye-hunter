@@ -1,24 +1,20 @@
-import { rallar } from '@shared-web/browser/rallar.ts';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
-import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
-import type {
-    ArenaEvent,
-    ArenaSnapshot,
-    GameRealtimeMessage,
-    MatchStartIntent,
-    PickupAccepted,
-    PlayerHitAccepted
-} from '../../types.ts';
-import { handleArenaMatchInput } from './handlers/handle-arena-match-input.ts';
-import { handleArenaMatchIntent } from './handlers/handle-arena-match-intent.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 
-export interface ArenaMatchRuntimeInput {
-    readonly acceptDirectorOutput: (message: GameRealtimeMessage) => void;
-    readonly acceptMatchStartIntent: (intent: MatchStartIntent) => Promise<void>;
-    readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
-    readonly acceptPickup: (accepted: PickupAccepted) => void;
-    readonly acceptPlayerHit: (accepted: PlayerHitAccepted) => void;
+import { createArenaRallarGameMatch, type ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
+import type { ArenaEvent, ArenaSnapshot, GameRealtimeMessage } from '../../types.ts';
+import type { ArenaPeerMessageHandlers } from '../messages/use-arena-peer-message-handlers.ts';
+import type { ArenaStateAcceptance } from '../state/use-arena-state-acceptance.ts';
+import { acceptArenaMatchInput } from './handlers/accept-arena-match-input.ts';
+import { acceptArenaMatchIntent } from './handlers/accept-arena-match-intent.ts';
+
+export interface ArenaMatchRuntimeInput
+    extends
+        Pick<ArenaStateAcceptance, 'acceptMatchStartIntent' | 'acceptPickup' | 'acceptPlayerHit'>,
+        ArenaPeerMessageHandlers {
+    readonly nowMs: () => number;
+    readonly acceptDirectorOutput: (message: GameRealtimeMessage, isCurrent: () => boolean) => void;
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
     readonly arenaSnapshotRef: RefObject<ArenaSnapshot | undefined>;
     readonly isCurrentNetworkGeneration: (generation: number) => boolean;
@@ -40,23 +36,23 @@ export function createArenaMatchRuntime(
         readSnapshot: () => input.arenaSnapshotRef.current,
         onPresence: (envelope) => {
             if (isCurrent()) {
-                input.acceptMotionMessage(envelope.senderId, envelope.payload);
+                input.acceptMotionMessage(envelope.senderId, envelope.payload, isCurrent);
             }
         },
-        onInput: (envelope) => handleArenaMatchInput(input, generation, envelope),
-        onIntent: (envelope) => handleArenaMatchIntent(input, generation, envelope),
+        onInput: (envelope) => acceptArenaMatchInput(input, generation, envelope),
+        onIntent: (envelope) => acceptArenaMatchIntent(input, generation, envelope),
         onEvent: (envelope) => {
             if (isCurrent()) {
-                input.acceptDirectorOutput(envelope.payload);
+                input.acceptDirectorOutput(envelope.payload, isCurrent);
             }
         },
         onSnapshot: (envelope) => {
             if (!isCurrent()) {
                 return;
             }
-            input.setArenaSnapshot(envelope.payload);
-            input.setActiveEvent(envelope.payload.activeEvent);
-            input.setRemoteEvents(envelope.payload.events);
+            input.setArenaSnapshot((previous) => isCurrent() ? envelope.payload : previous);
+            input.setActiveEvent((previous) => isCurrent() ? envelope.payload.activeEvent : previous);
+            input.setRemoteEvents((previous) => isCurrent() ? envelope.payload.events : previous);
         },
         onSyncRequest: async () => {
             if (!isCurrent()) {

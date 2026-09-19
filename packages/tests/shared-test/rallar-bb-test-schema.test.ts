@@ -3,24 +3,28 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { controlOpenApiSpec } from '../../../apps/rallar-black-box-control-server/src/routes/swagger-routes.ts';
-import { buildFlowBuilderRecipe, buildFlowBuilderRunnerScenario, FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder.ts';
-import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
+import { FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder/flow-builder-templates.ts';
+import { toFlowBuilderRecipe } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts';
+import { toFlowBuilderRunnerScenario } from '../../../apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts';
+import { toManualRecipeText, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-command-presets.ts';
 import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
 import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema,
-    validateRallarBlackBoxRecipeCompatibility
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '../../shared-test/rallar-bb-test/schema.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema
+} from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
@@ -57,21 +61,21 @@ function expectValid(schema: Parameters<typeof validateJsonSchema>[0], value: un
     expect(result.ok, result.ok ? undefined : formatJsonSchemaValidationErrors(result.errors)).toBe(true);
 }
 
-type GoldenCompatibilityCorpus = Readonly<{
-    schemaVersion: 1;
-    validRecipes: readonly RallarBlackBoxTestRecipe[];
-    validDistributedManifests: readonly unknown[];
-    invalidRecipes: readonly Readonly<{
+interface GoldenCompatibilityCorpus {
+    readonly schemaVersion: 1;
+    readonly validRecipes: readonly RallarBlackBoxTestRecipe[];
+    readonly validDistributedManifests: readonly unknown[];
+    readonly invalidRecipes: readonly Readonly<{
         caseId: string;
         value: unknown;
         expectedErrors: readonly string[];
     }>[];
-    invalidDistributedManifests: readonly Readonly<{
+    readonly invalidDistributedManifests: readonly Readonly<{
         caseId: string;
         value: unknown;
         expectedErrors: readonly string[];
     }>[];
-}>;
+}
 
 function readGoldenCompatibilityCorpus(): GoldenCompatibilityCorpus {
     return readJsonFile(goldenCompatibilityCorpusPath) as GoldenCompatibilityCorpus;
@@ -126,7 +130,9 @@ function jsonCodeBlocks(markdown: string): readonly unknown[] {
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
-    it('keeps catalog compatibility badges authoritative when preflight alone is clean', () => {
+    it('keeps catalog schema badges authoritative when preflight alone is clean', () => {
+        const recipe: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'schema-invalid-preflight-clean', commands: [{ kind: 'health' }] };
+        Reflect.set(recipe, 'schemaVersion', 2);
         const projection = projectDistributedRecipeCatalog({
             items: [{
                 itemId: 'schema-invalid-preflight-clean',
@@ -137,19 +143,14 @@ describe('rallar-bb-test capability and schema contract', () => {
                 prerequisites: ['connected browser control agents'],
                 live: false,
                 source: 'app-local',
-                recipe: {
-                    schemaVersion: 2,
-                    recipeId: 'schema-invalid-preflight-clean',
-                    commands: [{ kind: 'health' }]
-                } as unknown as RallarBlackBoxTestRecipe
+                recipe
             }]
         });
 
         expect(projection.entries[0]?.preflight.errors).toEqual([]);
         expect(projection.entries[0]?.schema).toMatchObject({
             ok: false,
-            status: 'invalid',
-            legacy: false
+            status: 'invalid'
         });
         expect(projection.entries[0]?.schema.errors.join('\n')).toContain('$.schemaVersion');
     });
@@ -188,9 +189,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));
         }
 
-        const flow = FLOW_BUILDER_TEMPLATES[0].flow;
-        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, buildFlowBuilderRecipe(flow));
-        expectValid(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, buildFlowBuilderRunnerScenario(flow));
+        const flowRecipeInput = { flow: FLOW_BUILDER_TEMPLATES[0].flow, overrides: {}, createRequestId: () => 'schema-request' };
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, toFlowBuilderRecipe(flowRecipeInput));
+        expectValid(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, toFlowBuilderRunnerScenario(flowRecipeInput));
 
         const manualEntry: ManualActionHistoryEntry = {
             actionId: 'action-1',
@@ -199,7 +200,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             commandIds: ['manual-health-1'],
             commands: [{ kind: 'health', commandId: 'manual-health-1' }]
         };
-        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, JSON.parse(manualRecipeSnippet([manualEntry])));
+        expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, JSON.parse(toManualRecipeText([manualEntry])));
 
         for (const preset of RUN_MANAGER_COMMAND_PRESETS) {
             expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, preset.command);
@@ -298,15 +299,6 @@ describe('rallar-bb-test capability and schema contract', () => {
 
         for (const recipe of [...corpus.validRecipes, ...inlineRecipes]) {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
-            const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
-            expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-            if (recipe.schemaVersion === undefined) {
-                expect(compatibility.warnings.map((warning) => warning.path)).toContain('$.schemaVersion');
-            }
-            else {
-                expect(compatibility.warnings).toEqual([]);
-                expect(compatibility.schemaVersion).toBe(RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION);
-            }
         }
 
         for (const manifest of corpus.validDistributedManifests) {
@@ -328,6 +320,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             const result = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, invalid.value);
             expect(result.ok, invalid.caseId).toBe(false);
             if (!result.ok) {
+                // Every invalid manifest writes the full contract, so it fails only for the defect it pins.
+                expect(result.errors, invalid.caseId).toHaveLength(invalid.expectedErrors.length);
                 const text = formatJsonSchemaValidationErrors(result.errors);
                 invalid.expectedErrors.forEach((expected) => {
                     expect(text, invalid.caseId).toContain(expected);
@@ -344,16 +338,11 @@ describe('rallar-bb-test capability and schema contract', () => {
             if (block && typeof block === 'object' && 'distributedRunId' in block) {
                 expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, block);
                 for (const recipe of inlineRecipesInManifest(block)) {
-                    const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
-                    expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-                    expect(compatibility.warnings).toEqual([]);
+                    expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipe);
                 }
             }
             else {
                 expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, block);
-                const compatibility = validateRallarBlackBoxRecipeCompatibility(block);
-                expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
-                expect(compatibility.warnings).toEqual([]);
             }
         }
     });
@@ -688,7 +677,9 @@ describe('rallar-bb-test capability and schema contract', () => {
         });
 
         expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, {
+            schemaVersion: 1,
             distributedRunId: 'distributed-schema-run',
+            controlRunId: 'distributed-schema-run',
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
@@ -698,19 +689,23 @@ describe('rallar-bb-test capability and schema contract', () => {
                 {
                     recipeId: 'health-only',
                     role: 'all-agents',
-                    required: true
+                    variables: {}
                 }
             ],
             targetPolicy: {
                 mode: 'all-online-group-members',
                 expectedParticipantCount: 2
             },
+            variables: {},
+            roleAssignments: [],
             ackTimeoutMs: 5_000,
             barrier: {
                 enabled: true,
                 timeoutMs: 5_000
             },
-            startMode: 'manual'
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         });
 
         const spec = controlOpenApiSpec(new Request('http://localhost:5180/api/openapi.json')) as {
@@ -737,7 +732,37 @@ describe('rallar-bb-test capability and schema contract', () => {
             title: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.title,
             type: 'object'
         });
-        expect(JSON.stringify(commandSchema)).toContain('#/components/schemas/RallarBlackBoxTestCommand');
+        const publishedCommandSchema = JSON.parse(JSON.stringify(commandSchema)) as JsonSchema;
+        const publishedManifestSchema = JSON.parse(JSON.stringify(manifestSchema)) as JsonSchema;
+        const leaf: RallarBlackBoxTestRecipe = { schemaVersion: 1, recipeId: 'leaf', commands: [{ kind: 'health' }] };
+        let recipe = leaf;
+        for (let depth = 0; depth < 4; depth += 1) {
+            recipe = { schemaVersion: 1, recipeId: `parent-${depth}`, commands: [{ kind: 'recipe.run', recipe }] };
+        }
+        const command = { kind: 'recipe.load', recipe };
+        const manifest = {
+            schemaVersion: 1,
+            distributedRunId: 'published-schema',
+            controlRunId: 'published-schema',
+            group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            recipes: [{ recipeId: recipe.recipeId, role: 'all-agents', recipe, variables: {} }],
+            targetPolicy: { mode: 'all-online-group-members' },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
+        };
+        expectValid(publishedCommandSchema, command);
+        expectValid(publishedManifestSchema, manifest);
+        Reflect.deleteProperty(leaf, 'schemaVersion');
+        expect(validateJsonSchema(publishedCommandSchema, command).ok).toBe(false);
+        expect(validateJsonSchema(publishedManifestSchema, manifest).ok).toBe(false);
+        Reflect.set(leaf, 'schemaVersion', 2);
+        expect(validateJsonSchema(publishedCommandSchema, command).ok).toBe(false);
+        expect(validateJsonSchema(publishedManifestSchema, manifest).ok).toBe(false);
         expect(JSON.stringify(manifestSchema)).toContain('Rallar black-box distributed run manifest');
 
         const commandExamples = spec

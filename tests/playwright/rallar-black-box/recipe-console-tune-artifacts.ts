@@ -1,6 +1,6 @@
 import type { ControlResultEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunArtifactBundle } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxTestRtcStreamResultValue } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRtcStreamResultValue } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AnalyzeUploadFile } from './recipe-console-analyze-artifacts.ts';
 import {
     createTuneControlRun,
@@ -90,27 +90,24 @@ function createTuneStreamSummary(): RallarBlackBoxTestRtcStreamResultValue {
             const dropped = index >= 23;
             const startDriftMs = index < 6 ? 28 : 4;
             const durationMs = dropped
-                ? undefined
+                ? 0
                 : index === 22
                 ? 92
                 : index === 21
                 ? 68
                 : 12 + index;
+            const frameStartedAtEpochMs = startedAtEpochMs + index * 33 + startDriftMs;
             return {
                 index,
                 iteration: index + 1,
                 commandId: TUNE_STREAM_COMMAND_ID,
                 scheduledAtEpochMs: startedAtEpochMs + index * 33,
-                startedAtEpochMs: dropped
-                    ? undefined
-                    : startedAtEpochMs + index * 33 + startDriftMs,
-                completedAtEpochMs: dropped || durationMs === undefined
-                    ? undefined
-                    : startedAtEpochMs + index * 33 + startDriftMs + durationMs,
+                startedAtEpochMs: frameStartedAtEpochMs,
+                completedAtEpochMs: frameStartedAtEpochMs + durationMs,
                 startDriftMs,
                 durationMs,
                 ok: !dropped && index !== 22,
-                dropped,
+                ...(dropped ? { dropped: true as const } : {}),
                 backpressured: index >= 18 && index <= 21,
                 status: dropped ? 'dropped' : index === 22 ? 'failed' : 'ok',
                 errorCode: index >= 23 && index <= 24

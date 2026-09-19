@@ -7,11 +7,11 @@ import {
 } from 'vitest';
 import type { WsInteraction } from '../../shared-test/black-box-runner/ws/ws-wait-expectations.ts';
 
-import { executeRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import { runRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import { decodeRemoteBrowserObservations } from '../../shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts';
 
-function emptySnapshot(): Response {
+function toEmptySnapshotResponse(): Response {
     return Response.json({ runId: 'observation-run', results: [], events: [] });
 }
 
@@ -25,16 +25,14 @@ function waitInteraction(): WsInteraction {
 describe('remote-browser observation lifecycle', () => {
     afterEach(() => vi.useRealTimers());
 
-    it('surfaces a polling failure through the owning wait', async () => {
+    it('reports a polling failure as the failure of the owning wait', async () => {
         vi.useFakeTimers();
         let initial = true;
         const provider = createRallarRemoteBrowserRtcProvider({
-            runId: 'observation-run',
-            pollIntervalMs: 5,
             fetch: async () => {
                 if (initial) {
                     initial = false;
-                    return emptySnapshot();
+                    return toEmptySnapshotResponse();
                 }
                 throw new Error('Control polling disconnected');
             }
@@ -42,11 +40,64 @@ describe('remote-browser observation lifecycle', () => {
 
         const waiting = provider.wait(waitInteraction(), { interaction: { request: {} } }, {
             dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: { runId: 'observation-run', pollIntervalMs: 5 } },
             rtcMessages: {}
         });
         const outcome = waiting.then((result) => ({ result }), (error) => ({ error }));
         await vi.advanceTimersByTimeAsync(100);
-        expect(await outcome).toEqual({ error: new Error('Control polling disconnected') });
+        expect(await outcome).toMatchObject({
+            result: { status: 'FAILURE', result: 'Remote RTC wait failed', actual: { exception: 'Control polling disconnected' } }
+        });
+    });
+
+    it('reports a polling failure while a send waits for its expectation as the failure of the send', async () => {
+        let reads = 0;
+        const sentCommandIds: string[] = [];
+        const provider = createRallarRemoteBrowserRtcProvider({
+            fetch: async (_input, init) => {
+                if (init?.method === 'POST') {
+                    const { commandId } = JSON.parse(String(init.body));
+                    sentCommandIds.push(commandId);
+                    return Response.json({ accepted: true }, { status: 202 });
+                }
+                reads++;
+                if (reads > 2) {
+                    throw new Error('Send observation polling failed');
+                }
+                return Response.json({
+                    runId: 'observation-run',
+                    results: sentCommandIds.map((commandId) => ({
+                        kind: 'result',
+                        protocolVersion: 1,
+                        runId: 'observation-run',
+                        agentId: 'agent',
+                        commandId,
+                        ok: true
+                    })),
+                    events: []
+                });
+            }
+        });
+        const interaction = {
+            request: { action: 'send', connection: 'alice', send: { topic: 'sent' } },
+            response: { message: { topic: 'never-arrives' }, withinMs: 20 }
+        };
+
+        const result = await provider.send(interaction, { interaction }, {
+            dependencies: { now: Date.now, createUuid: () => 'unused' },
+            options: {
+                rallarRemoteBrowser: { runId: 'observation-run', agentId: 'agent', pollIntervalMs: 1, timeoutMs: 100 }
+            },
+            rtcConnections: { alice: {} },
+            rtcMessages: {},
+            rtcCloseEvents: {}
+        });
+
+        expect(result).toMatchObject({
+            status: 'FAILURE',
+            result: 'Remote RTC send failed',
+            actual: { exception: 'Send observation polling failed' }
+        });
     });
 
     it('finishes in-flight observation work before returning from the wait', async () => {
@@ -54,12 +105,10 @@ describe('remote-browser observation lifecycle', () => {
         const pendingRead = Promise.withResolvers<Response>();
         let initial = true;
         const provider = createRallarRemoteBrowserRtcProvider({
-            runId: 'observation-run',
-            pollIntervalMs: 5,
             fetch: async () => {
                 if (initial) {
                     initial = false;
-                    return emptySnapshot();
+                    return toEmptySnapshotResponse();
                 }
                 return pendingRead.promise;
             }
@@ -67,6 +116,7 @@ describe('remote-browser observation lifecycle', () => {
         let settled = false;
         const waiting = provider.wait(waitInteraction(), { interaction: { request: {} } }, {
             dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: { runId: 'observation-run', pollIntervalMs: 5 } },
             rtcMessages: {}
         })
             .finally(() => {
@@ -78,7 +128,7 @@ describe('remote-browser observation lifecycle', () => {
             expect(settled).toBe(false);
         }
         finally {
-            pendingRead.resolve(emptySnapshot());
+            pendingRead.resolve(toEmptySnapshotResponse());
             await waiting;
         }
         expect(settled).toBe(true);
@@ -87,33 +137,60 @@ describe('remote-browser observation lifecycle', () => {
     it('decodes an event carrying the messages.ws connect transport', () => {
         const decoded = decodeRemoteBrowserObservations({
             runId: 'observation-run',
-            value: {
+            results: [],
+            events: [{
+                kind: 'event',
+                protocolVersion: 1,
                 runId: 'observation-run',
-                results: [],
-                events: [{
-                    kind: 'event',
-                    protocolVersion: 1,
-                    runId: 'observation-run',
-                    agentId: 'agent',
+                agentId: 'agent',
+                eventId: 'ws-carrier-event',
+                atEpochMs: 1,
+                payload: {
+                    kind: 'message',
                     eventId: 'ws-carrier-event',
+                    topic: 'rallar.browser.messages.ws.message',
+                    connection: 'alice',
                     atEpochMs: 1,
-                    payload: {
-                        kind: 'message',
-                        eventId: 'ws-carrier-event',
-                        topic: 'rallar.browser.messages.ws.message',
-                        connection: 'alice',
-                        atEpochMs: 1,
-                        transport: 'messages.ws'
-                    }
-                }]
-            }
-        });
+                    transport: 'messages.ws'
+                }
+            }]
+        }, 'observation-run');
 
-        expect(decoded.events[0].payload.transport).toBe('messages.ws');
+        expect(decoded.right?.events[0].payload.transport).toBe('messages.ws');
+    });
+
+    it('decodes only the declared members of an event projection', () => {
+        const projection = {
+            kind: 'message',
+            eventId: 'declared-event',
+            topic: 'rallar.browser.rtc.message',
+            atEpochMs: 1,
+            commandId: 'command',
+            connection: 'alice',
+            actor: 'alice',
+            transport: 'realtime',
+            severity: 'info',
+            payload: { data: { text: 'hello' } }
+        };
+        const decoded = decodeRemoteBrowserObservations({
+            runId: 'observation-run',
+            results: [],
+            events: [{
+                kind: 'event',
+                protocolVersion: 1,
+                runId: 'observation-run',
+                agentId: 'agent',
+                eventId: 'declared-event',
+                atEpochMs: 1,
+                payload: { ...projection, undeclared: 'dropped' }
+            }]
+        }, 'observation-run');
+
+        expect(decoded.right?.events[0].payload).toEqual(projection);
     });
 });
 
-function forbiddenSnapshot(transport: 'RTC' | 'WS'): Response {
+function toForbiddenSnapshotResponse(transport: 'RTC' | 'WS'): Response {
     return Response.json({
         runId: 'observation-run',
         results: [],
@@ -149,15 +226,10 @@ for (
             vi.useFakeTimers();
             const pendingRead = Promise.withResolvers<Response>();
             let reads = 0;
-            const options = {
-                runId: 'observation-run',
-                agentId: 'agent',
-                pollIntervalMs: 1,
-                fetch: async () => ++reads === 1 ? emptySnapshot() : pendingRead.promise
-            };
+            const fetch = async () => ++reads === 1 ? toEmptySnapshotResponse() : pendingRead.promise;
             const context = {
-                dependencies: { now: Date.now, createUuid: () => 'unused' },
-                options: { rallarRemoteBrowser: options },
+                dependencies: { now: Date.now, createUuid: () => 'unused', fetch },
+                options: { rallarRemoteBrowser: { runId: 'observation-run', agentId: 'agent', pollIntervalMs: 1 } },
                 rtcMessages: {},
                 wsMessages: {},
                 wsConnections: {},
@@ -171,9 +243,9 @@ for (
             };
             let settled = false;
             const waiting = (transport === 'RTC'
-                ? createRallarRemoteBrowserRtcProvider(options).wait(interaction, { interaction }, context)
-                : executeRemoteWsInteraction(interaction, { interaction }, context))
-                .then((result) => ({ result }), (error: unknown) => ({ error }))
+                ? createRallarRemoteBrowserRtcProvider({ fetch }).wait(interaction, { interaction }, context)
+                : runRemoteWsInteraction(interaction, { interaction }, context))
+                .then((result) => ({ result }), (error) => ({ error }))
                 .finally(() => {
                     settled = true;
                 });
@@ -184,19 +256,14 @@ for (
             }
             else {
                 pendingRead.resolve(
-                    outcome === 'empty' ? emptySnapshot() : forbiddenSnapshot(transport)
+                    outcome === 'empty' ? toEmptySnapshotResponse() : toForbiddenSnapshotResponse(transport)
                 );
             }
             const result = await waiting;
             expect(settledBeforeRead).toBe(false);
             expect(reads).toBe(2);
             if (outcome === 'failure') {
-                if (transport === 'RTC') {
-                    expect(result).toEqual({ error: new Error('Owned observation failed') });
-                }
-                else {
-                    expect(result).toMatchObject({ result: { status: 'FAILURE', actual: { exception: 'Owned observation failed' } } });
-                }
+                expect(result).toMatchObject({ result: { status: 'FAILURE', actual: { exception: 'Owned observation failed' } } });
             }
             else {
                 expect(result).toMatchObject({

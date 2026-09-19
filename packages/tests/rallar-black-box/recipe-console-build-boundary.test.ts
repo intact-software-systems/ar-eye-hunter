@@ -76,8 +76,8 @@ describe('Recipe Console build boundary', () => {
         expect(graph.mainStaticClosure.size).toBeGreaterThan(1);
         expect(graph.mainDynamicEntries.size).toBeGreaterThan(2);
         expect([...graph.mainDynamicExperienceEntries]).toEqual([
-            'src/recipe-console/app/RecipeConsoleApp.tsx',
-            'src/legacy/shell/LegacyExperience.tsx'
+            'src/recipe-console/app/recipe-console-app.tsx',
+            'src/legacy/shell/legacy-experience.tsx'
         ]);
         expect(graph.recipeConsoleStaticClosure.size).toBeGreaterThan(1);
         expect(graph.legacyStaticClosure.size).toBeGreaterThan(1);
@@ -126,7 +126,7 @@ describe('Recipe Console build boundary', () => {
             dynamicImports?: string[];
         }>;
 
-        const legacyEntry = Object.entries(manifest).find(([, entry]) => entry.src?.endsWith('/legacy/shell/LegacyExperience.tsx'));
+        const legacyEntry = Object.entries(manifest).find(([, entry]) => entry.src?.endsWith('/legacy/shell/legacy-experience.tsx'));
         expect(legacyEntry).toBeDefined();
         for (const [label, safeEntry] of graph.legacySafeDynamicEntries) {
             const withStaticLeak = structuredClone(manifest);
@@ -191,7 +191,7 @@ describe('Recipe Console build boundary', () => {
             statefulOwnerChunk?.text ?? ''
         );
 
-        const recipeChunk = Object.values(manifest).find((entry) => entry.src?.endsWith('/recipe-console/app/RecipeConsoleApp.tsx'));
+        const recipeChunk = Object.values(manifest).find((entry) => entry.src?.endsWith('/recipe-console/app/recipe-console-app.tsx'));
         expect(recipeChunk).toBeDefined();
         const workerClientEntry = Object.entries(manifest).find(([, entry]) => entry.src?.endsWith('/recipe-console/analyze/analyze-worker-client.ts'));
         const workerFactoryEntry = Object.entries(manifest).find(([, entry]) => entry.src?.endsWith('/recipe-console/analyze/analyze-worker-factory.ts'));

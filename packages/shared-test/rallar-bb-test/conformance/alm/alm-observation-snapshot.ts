@@ -1,5 +1,5 @@
 import { Either } from '../../../../shared/resilience/Either.ts';
-import type { RallarBlackBoxTestRecord } from '../../types.ts';
+import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';
@@ -43,7 +43,7 @@ export interface ALMObservationSnapshot {
 interface ALMObservationDiagnostic {
     readonly atEpochMs: number;
     readonly topic: string;
-    readonly data: RallarBlackBoxTestRecord;
+    readonly detail: RallarBlackBoxTestRecord;
 }
 
 /**
@@ -57,9 +57,9 @@ export function decodeALMObservationSnapshot(
     if (!isRecord(value)) {
         return Either.ofLeft(['snapshot is not an object']);
     }
-    const runId = toText(value.runId);
-    const events = toRecordArray(value.events);
-    const results = toRecordArray(value.results);
+    const runId = decodeText(value.runId);
+    const events = decodeRecordArray(value.events);
+    const results = decodeRecordArray(value.results);
     const firstEventAtEpochMs = toFirstEventAtEpochMs(events ?? []);
     if (runId === undefined || events === undefined || results === undefined || firstEventAtEpochMs === undefined) {
         return Either.ofLeft(toSnapshotIssues({ runId, events, results, firstEventAtEpochMs }));
@@ -68,9 +68,11 @@ export function decodeALMObservationSnapshot(
     return Either.ofRight({
         runId,
         firstEventAtEpochMs,
-        commitPhases: toTopic(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toCommitPhase).filter(isPresent),
-        rtcLifecycles: toTopic(diagnostics, RTC_LIFECYCLE_TOPIC).map(toRtcLifecycle).filter(isPresent),
-        storageCounters: toTopic(diagnostics, STORAGE_COUNTERS_TOPIC).map(toStorageCounter).filter(isPresent),
+        commitPhases: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toCommitPhase).filter(isPresent),
+        rtcLifecycles: toTopicDiagnostics(diagnostics, RTC_LIFECYCLE_TOPIC).map(toRtcLifecycle).filter(isPresent),
+        storageCounters: toTopicDiagnostics(diagnostics, STORAGE_COUNTERS_TOPIC).map(toStorageCounter).filter(
+            isPresent
+        ),
         commandResults: results.map(toCommandResult).filter(isPresent)
     });
 }
@@ -95,7 +97,7 @@ function toSnapshotIssues(
 
 function toFirstEventAtEpochMs(events: readonly RallarBlackBoxTestRecord[]): number | undefined {
     return events
-        .map((event) => toFiniteNumber(event.atEpochMs))
+        .map((event) => decodeFiniteNumber(event.atEpochMs))
         .filter(isPresent)
         .reduce<number | undefined>(
             (earliest, atEpochMs) => earliest !== undefined && earliest < atEpochMs ? earliest : atEpochMs,
@@ -103,7 +105,7 @@ function toFirstEventAtEpochMs(events: readonly RallarBlackBoxTestRecord[]): num
         );
 }
 
-function toTopic(
+function toTopicDiagnostics(
     diagnostics: readonly ALMObservationDiagnostic[],
     topic: string
 ): readonly ALMObservationDiagnostic[] {
@@ -113,10 +115,10 @@ function toTopic(
 function toCommitPhase(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationCommitPhase | undefined {
-    const origin = toText(diagnostic.data.origin);
-    const readDurationMs = toFiniteNumber(diagnostic.data.readDurationMs);
-    const readOperationCount = toFiniteNumber(diagnostic.data.readOperationCount);
-    return diagnostic.data.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined ||
+    const origin = decodeText(diagnostic.detail.origin);
+    const readDurationMs = decodeFiniteNumber(diagnostic.detail.readDurationMs);
+    const readOperationCount = decodeFiniteNumber(diagnostic.detail.readOperationCount);
+    return diagnostic.detail.kind !== COMMIT_PHASES_DIAGNOSTIC_KIND || origin === undefined ||
             readDurationMs === undefined || readOperationCount === undefined || readOperationCount <= 0
         ? undefined
         : { atEpochMs: diagnostic.atEpochMs, origin, readDurationMs, readOperationCount };
@@ -125,20 +127,20 @@ function toCommitPhase(
 function toRtcLifecycle(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationRtcLifecycle | undefined {
-    const status = toRecord(diagnostic.data.status);
-    const sessionId = toText(status?.sessionId);
+    const status = decodeRecord(diagnostic.detail.status);
+    const sessionId = decodeText(status?.sessionId);
     return status === undefined || sessionId === undefined ? undefined : {
         atEpochMs: diagnostic.atEpochMs,
         sessionId,
-        knownPeerIds: toTextArray(status.knownPeerIds),
-        readyPeerIds: toTextArray(status.readyPeerIds)
+        knownPeerIds: decodeTextArray(status.knownPeerIds),
+        readyPeerIds: decodeTextArray(status.readyPeerIds)
     };
 }
 
 function toStorageCounter(
     diagnostic: ALMObservationDiagnostic
 ): ALMObservationStorageCounters | undefined {
-    const workPageCount = toFiniteNumber(toRecord(diagnostic.data.byKind)?.[WORK_PAGE_COUNTER_KIND]);
+    const workPageCount = decodeFiniteNumber(decodeRecord(diagnostic.detail.byKind)?.[WORK_PAGE_COUNTER_KIND]);
     return workPageCount === undefined
         ? undefined
         : { atEpochMs: diagnostic.atEpochMs, workPageCount };
@@ -150,12 +152,12 @@ function toStorageCounter(
  * the failing step's own code is the one that discriminates, so it is preferred when present.
  */
 function toCommandResult(entry: RallarBlackBoxTestRecord): ALMObservationCommandResult | undefined {
-    const commandId = toText(entry.commandId);
-    const result = toRecord(entry.result);
-    const error = toRecord(entry.error);
-    const recipeId = toText(toRecord(result?.value)?.recipeId);
-    const durationMs = toFiniteNumber(result?.durationMs);
-    const failureCode = toText(toRecord(error?.details)?.code) ?? toText(error?.code);
+    const commandId = decodeText(entry.commandId);
+    const result = decodeRecord(entry.result);
+    const error = decodeRecord(entry.error);
+    const recipeId = decodeText(decodeRecord(result?.value)?.recipeId);
+    const durationMs = decodeFiniteNumber(result?.durationMs);
+    const failureCode = decodeText(decodeRecord(error?.details)?.code) ?? decodeText(error?.code);
     if (commandId === undefined) {
         return undefined;
     }
@@ -166,13 +168,13 @@ function toCommandResult(entry: RallarBlackBoxTestRecord): ALMObservationCommand
 }
 
 function toDiagnostic(event: RallarBlackBoxTestRecord): ALMObservationDiagnostic | undefined {
-    const envelope = toRecord(event.payload);
-    const atEpochMs = toFiniteNumber(event.atEpochMs);
-    const topic = toText(envelope?.topic);
-    const data = toRecord(toRecord(envelope?.payload)?.data);
-    return atEpochMs === undefined || topic === undefined || data === undefined
+    const envelope = decodeRecord(event.payload);
+    const atEpochMs = decodeFiniteNumber(event.atEpochMs);
+    const topic = decodeText(envelope?.topic);
+    const detail = decodeRecord(decodeRecord(envelope?.payload)?.data);
+    return atEpochMs === undefined || topic === undefined || detail === undefined
         ? undefined
-        : { atEpochMs, topic, data };
+        : { atEpochMs, topic, detail };
 }
 
 function isRecord(value: unknown): value is RallarBlackBoxTestRecord {
@@ -183,22 +185,22 @@ function isPresent<TValue>(value: TValue | undefined): value is TValue {
     return value !== undefined;
 }
 
-function toRecord(value: unknown): RallarBlackBoxTestRecord | undefined {
+function decodeRecord(value: unknown): RallarBlackBoxTestRecord | undefined {
     return isRecord(value) ? value : undefined;
 }
 
-function toRecordArray(value: unknown): readonly RallarBlackBoxTestRecord[] | undefined {
-    return Array.isArray(value) ? value.map(toRecord).filter(isPresent) : undefined;
+function decodeRecordArray(value: unknown): readonly RallarBlackBoxTestRecord[] | undefined {
+    return Array.isArray(value) ? value.map(decodeRecord).filter(isPresent) : undefined;
 }
 
-function toTextArray(value: unknown): readonly string[] {
-    return Array.isArray(value) ? value.map(toText).filter(isPresent) : [];
+function decodeTextArray(value: unknown): readonly string[] {
+    return Array.isArray(value) ? value.map(decodeText).filter(isPresent) : [];
 }
 
-function toText(value: unknown): string | undefined {
+function decodeText(value: unknown): string | undefined {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-function toFiniteNumber(value: unknown): number | undefined {
+function decodeFiniteNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }

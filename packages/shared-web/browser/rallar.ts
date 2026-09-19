@@ -128,11 +128,14 @@ export type {
     RallarMediaSourceState,
     RallarMediaSourceStatus,
     RallarMessage,
+    RallarMessageDeliveryListener,
+    RallarMessageDeliveryOutcome,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessageSendBase,
-    RallarMessageSendResult,
     RallarMessageTransport,
+    RallarMessageWaitOptions,
     RallarMicrophoneSourceStartOptions,
     RallarOnChangeOptions,
     RallarPeopleEventOptions,
@@ -262,3 +265,10 @@ export type {
 } from '@shared-web/browser/rallar-facade-contract.ts';
 
 export const rallar: RallarFacade = createRallarFacade();
+
+export type {
+    ALDeliveryAttempt,
+    ALDeliveryEvidence,
+    ALDeliveryLifecycle,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';

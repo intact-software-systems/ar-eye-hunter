@@ -45,7 +45,7 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
                 name: 'Analyze RTC relay',
                 commands: [{ kind: 'health', commandId: ANALYZE_COMMAND_ID }]
             },
-            required: true
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
@@ -56,9 +56,14 @@ export function createAnalyzeManifest(): RallarBlackBoxDistributedRunManifest {
             agentId: ANALYZE_AGENT_ID,
             role: 'receiver',
             recipeIds: [ANALYZE_RECIPE_ID],
-            required: true
+            variables: {}
         }],
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -87,28 +92,25 @@ export function createAnalyzeDistributedRun(): ControlDistributedRunSnapshot {
             ok: false,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1
             },
             failures: [{
-                kind: 'command',
-                key: `command:${ANALYZE_COMMAND_ID}`,
+                kind: 'participant',
+                key: ANALYZE_AGENT_ID,
                 state: 'failed',
-                agentId: ANALYZE_AGENT_ID,
-                recipeId: ANALYZE_RECIPE_ID,
-                commandId: ANALYZE_COMMAND_ID,
                 error: {
                     code: 'RTC_NO_RELAY',
                     message: ANALYZE_FAILURE_MESSAGE
-                },
-                atEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500
+                }
             }]
         }
     };
@@ -133,7 +135,9 @@ export function createAnalyzeControlRun(): ControlRunSnapshot {
                 workspaceId: 'default',
                 groupId: 'analyze-ci',
                 region: 'eu-north',
-                providerMode: 'browser-rallar'
+                providerMode: 'browser-rallar',
+                sessionLabel: 'analyze-principal:analyze-session',
+                updatedAtEpochMs: ANALYZE_BASE_EPOCH_MS + 1_500
             },
             connectionSequence: 3,
             reconnectCount: 2,

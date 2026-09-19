@@ -10,7 +10,7 @@ import {
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
-import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     createDefaultALOutboundDequeueResilience,
@@ -21,9 +21,9 @@ import * as shared from '@shared/mod.ts';
 import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
-import type { OnQRtcMessageCallback } from '@shared/webrtc/qrtc-client-callbacks.ts';
 
 import { createGroupSnapshotFixture } from '../shared-web/authoritative-group-fixtures.ts';
+import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from './native-rtc-connection-fixture.ts';
 import { RtcEndpointFixture } from './rtc-endpoint-fixture.ts';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
 
@@ -37,7 +37,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
     it.each(['specific', 'wildcard'] as const)('marks a message rejected by the %s consumer NON_RETRYABLE', async (consumer) => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const rejected: string[] = [];
         const callback = {
             onMessage: async (message: shared.ALMessage) => {
@@ -75,7 +75,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('keeps accepted channel work unclaimed until a matching consumer registers', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const message = createUnicast({ acknowledge: false, exclusive: false });
         await fixture.receive(message, 'peer-1');
         const keys = await fixture.stores.workQueue.getAllKeys();
@@ -93,11 +93,11 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('restarts owned delivery without requiring new channel ingress', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const message = createUnicast({ acknowledge: false, exclusive: false });
         await fixture.receive(message, 'peer-1');
         fixture.service.dispose();
-        const resumed = createRtcReceiveFixture(fixture.stores);
+        const resumed = new RtcReceiveFixture(fixture.stores);
         const delivered: string[] = [];
         resumed.service.onInboxMessageDo('tasks.job.v1', {
             onMessage: async (incoming) => {
@@ -112,7 +112,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
     it.each([-1, 0, 1])('checks remaining consumer expiry after a handler returns at deadline %+i ms', async (offsetMs) => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const expiresAtMs = Date.now() + 1_000;
         const delivered: string[] = [];
         fixture.service.onInboxMessageDo('tasks.job.v1', {
@@ -136,7 +136,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
     it('retries an ordinary consumer failure and completes after the consumer succeeds', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const attempts: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -172,7 +172,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('does not publish admitted channel work after its owning streamer is disposed', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -193,7 +193,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('stops later consumers when disposed during a handler', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const started = Promise.withResolvers<void>();
         const resume = Promise.withResolvers<void>();
         onTestFinished(() => resume.resolve());
@@ -220,7 +220,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('delivers a repeated channel message once and acknowledges its message identity', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -241,10 +241,10 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
     it('requests current room authority when durable admission waits for a newer snapshot', async () => {
         const roomAuthorityRefresh = {
-            afterInboundAdmission: vi.fn(async () => undefined),
+            afterInboundAdmission: vi.fn(async () => false),
             dispose: vi.fn()
         };
-        const fixture = createRtcReceiveFixture(
+        const fixture = new RtcReceiveFixture(
             shared.createDefaultInMemoryALInboundRuntimeStores(),
             roomAuthorityRefresh
         );
@@ -264,10 +264,10 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
 
     it('disposes the owned room-authority refresh with the receive runtime', () => {
         let disposed = false;
-        const fixture = createRtcReceiveFixture(
+        const fixture = new RtcReceiveFixture(
             shared.createDefaultInMemoryALInboundRuntimeStores(),
             {
-                afterInboundAdmission: async () => undefined,
+                afterInboundAdmission: async () => false,
                 dispose: () => {
                     disposed = true;
                 }
@@ -280,7 +280,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it.each([true, false])('routes exclusive delivery to a specific consumer when registered=%s, otherwise the catch-all', async (specific) => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async () => {
@@ -301,7 +301,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('receives an ordered gap through the channel, emits repair controls, then releases local delivery', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -329,7 +329,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 
     it('keeps child controls out of application delivery and acknowledges upstream after both children', async () => {
-        const fixture = createRtcReceiveFixture();
+        const fixture = new RtcReceiveFixture();
         const delivered: string[] = [];
         fixture.service.onAllInboxMessagesDo({
             onMessage: async (message) => {
@@ -370,163 +370,99 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
     });
 });
 
-interface RtcReceiveFixture {
+class RtcReceiveFixture {
     readonly service: shared.WebRtcRxStreamerService;
     readonly stores: shared.ALInboundRuntimeStores;
-    receive(message: shared.ALMessage, peerId: string): Promise<void>;
-    outbound(): Promise<shared.ALMessage[]>;
-}
+    private readonly nativeRuntime = installNativeRtcRuntime();
+    private readonly connection;
+    private readonly multicast: shared.WebRtcOverlayMulticastManager;
+    private readonly groups = new shared.LatestRepository<string, GroupSnapshot>();
+    private readonly overlays = new shared.LatestRepository<string, shared.OverlayInfo>();
+    private readonly ready: Promise<void[]>;
 
-function createRtcReceiveFixture(
-    stores = shared.createDefaultInMemoryALInboundRuntimeStores(),
-    roomAuthorityRefresh?: shared.WebRtcRxStreamerService.Input['roomAuthorityRefresh']
-): RtcReceiveFixture {
-    const transport = createRtcReceiveTransport();
-    const multicast = createRtcRoomMulticast(transport.connections);
-    const service = shared.createDefaultWebRtcRxStreamerService({
-        multicast,
-        sessionId: 'self',
-        inboundStores: stores,
-        roomAuthorityRefresh
-    });
-    for (const peer of transport.peers.values()) {
-        service.addPeer(peer);
+    constructor(
+        stores = shared.createDefaultInMemoryALInboundRuntimeStores(),
+        roomAuthorityRefresh?: shared.WebRtcRxStreamerService.Input['roomAuthorityRefresh']
+    ) {
+        this.stores = stores;
+        this.connection = createNativeRtcConnectionFixture({
+            sessionId: 'self',
+            token: 'test-token',
+            faultPort: createPassThroughTransportFaultPort(),
+            iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc-signaling'
+        }, this.nativeRuntime);
+        const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
+        this.groups.accept('group-1', {
+            ...snapshot,
+            activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+        });
+        this.overlays.accept('group-1', {
+            sourceGroupStateCausalRevision: snapshot.causalRevision,
+            provenance: 'server',
+            state: 'active',
+            overlayId: 'group-1',
+            groupRef: roomRef,
+            topology: 'tree',
+            name: 'test',
+            createdByClientId: 'owner',
+            createdAtEpochMs: 1,
+            nextHopSessionIds: ['peer-2', 'peer-3'],
+            degreeLimit: 2,
+            overlayVersion: 1,
+            updatedAtEpochMs: 1
+        });
+        this.multicast = new shared.WebRtcOverlayMulticastManager({
+            connectionService: this.connection.service,
+            groupCache: this.groups,
+            overlayCache: this.overlays,
+            multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, this.connection.service),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            circuitBreaker: shared.toCircuitBreaker(),
+            rateLimiter: shared.toRateLimiter(),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        this.service = shared.createDefaultWebRtcRxStreamerService({
+            multicast: this.multicast,
+            sessionId: 'self',
+            inboundStores: stores,
+            roomAuthorityRefresh
+        });
+        this.service.setRttReportingPeerIds([]);
+        const openings: Promise<void>[] = [];
+        for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
+            this.connection.service.ensurePeerConnectionStarted(peerId, true);
+            this.service.addPeer(this.connection.service.readPeer(peerId)!);
+            openings.push(this.connection.nativePeer(peerId).channels[0].open());
+        }
+        this.ready = Promise.all(openings);
+        onTestFinished(() => this.close());
     }
-    onTestFinished(() => {
-        service.dispose();
-        for (const peer of transport.peers.values()) {
-            service.removePeer(peer);
-        }
-        multicast.dispose();
-    });
-    return {
-        service,
-        stores,
-        async receive(message: shared.ALMessage, peerId: string): Promise<void> {
-            await transport.receive(message, peerId);
-            await waitForALInboundWork();
-        },
-        async outbound(): Promise<shared.ALMessage[]> {
-            return [...transport.sent];
-        }
-    };
-}
 
-interface RtcChannelPorts {
-    readonly signaler: shared.QRtcSignalingTransport;
-    readonly iceCandidates: shared.IceConfig;
-    readonly receivers: Map<string, OnQRtcMessageCallback>;
-    readonly sent: shared.ALMessage[];
-}
-
-interface RtcReceiveTransport {
-    readonly connections: shared.WebRtcConnectionService;
-    readonly peers: Map<string, shared.QRtcPeerDto>;
-    readonly sent: shared.ALMessage[];
-    receive(message: shared.ALMessage, peerId: string): Promise<void>;
-}
-
-function createRtcReceiveTransport(): RtcReceiveTransport {
-    const peers = new Map<string, shared.QRtcPeerDto>();
-    const receivers = new Map<string, OnQRtcMessageCallback>();
-    const sent: shared.ALMessage[] = [];
-    const signaler = { send: async () => undefined, connect: async () => undefined };
-    const iceCandidates = { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 };
-    const connections = new shared.WebRtcConnectionService(signaler, {
-        sessionId: 'self',
-        token: 'test-token',
-        faultPort: createPassThroughTransportFaultPort(),
-        iceCandidates,
-        dataChannelName: 'test',
-        rtcSignalingTopicId: 'rtc-signaling'
-    });
-    vi.spyOn(connections, 'readyPeerIdsForLane').mockImplementation(() => [...peers.keys()]);
-    vi.spyOn(connections, 'readPeer').mockImplementation((peerId) => peers.get(peerId));
-    for (const peerId of ['peer-1', 'peer-2', 'peer-3']) {
-        peers.set(peerId, createRtcChannelPeer(peerId, { signaler, iceCandidates, receivers, sent }));
+    async receive(message: shared.ALMessage, peerId: string): Promise<void> {
+        await this.ready;
+        await this.connection.nativePeer(peerId).channels[0].receive(JSON.stringify(message));
+        await waitForALInboundWork();
     }
-    return {
-        connections,
-        peers,
-        sent,
-        async receive(message: shared.ALMessage, peerId: string): Promise<void> {
-            const callback = receivers.get(peerId);
-            if (!callback) {
-                throw new Error(`No RTC receive subscription for ${peerId}`);
-            }
-            await callback.onMessage(message, new MessageEvent('message', { data: JSON.stringify(message) }));
-        }
-    };
-}
 
-function createRtcChannelPeer(peerId: string, ports: RtcChannelPorts): shared.QRtcPeerDto {
-    const connection = new shared.QRtcPeerConnection(ports.signaler, {
-        sessionId: 'self',
-        peerSessionId: peerId,
-        token: 'test-token',
-        iceCandidates: ports.iceCandidates,
-        isPolite: false
-    });
-    const channel = new shared.QRtcDataChannel(connection, {
-        faultPort: createPassThroughTransportFaultPort(),
-        peerId,
-        dataChannelName: 'test'
-    });
-    vi.spyOn(channel, 'onRtcMessageDo').mockImplementation((_id, callback) => {
-        ports.receivers.set(peerId, callback);
-        return channel;
-    });
-    vi.spyOn(channel, 'readHealth').mockReturnValue({ ...channel.readHealth(), readyState: 'open' });
-    vi.spyOn(channel, 'sendJson').mockImplementation((message) => {
-        ports.sent.push(decodePersistedALMessageValue(message));
-        return { status: 'sent', bufferedAmount: 0 };
-    });
-    return {
-        peerId,
-        connection,
-        channel,
-        channels: new Map([['reliable', channel]]),
-        media: new shared.QRtcMediaChannel(connection, { peerId })
-    };
-}
+    async outbound(): Promise<shared.ALMessage[]> {
+        return this.connection.service.knownPeerIds().flatMap((peerId) =>
+            this.connection.nativePeer(peerId).channels[0].sent.map((frame) => decodePersistedALMessage(String(frame)))
+        );
+    }
 
-function createRtcRoomMulticast(
-    connections: shared.WebRtcConnectionService
-): shared.WebRtcOverlayMulticastManager {
-    const snapshot = createGroupSnapshotFixture({ ...roomRef, sessionIds: ['self', 'peer-1', 'peer-2', 'peer-3'] });
-    const groupCache = new shared.LatestRepository<string, GroupSnapshot>();
-    groupCache.accept('group-1', {
-        ...snapshot,
-        activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
-    });
-    const overlayCache = new shared.LatestRepository<string, shared.OverlayInfo>();
-    overlayCache.accept('group-1', {
-        sourceGroupStateCausalRevision: snapshot.causalRevision,
-        provenance: 'server',
-        state: 'active',
-        overlayId: 'group-1',
-        groupRef: roomRef,
-        topology: 'tree',
-        name: 'test',
-        createdByClientId: 'owner',
-        createdAtEpochMs: 1,
-        nextHopSessionIds: ['peer-2', 'peer-3'],
-        degreeLimit: 2,
-        overlayVersion: 1,
-        updatedAtEpochMs: 1
-    });
-    return new shared.WebRtcOverlayMulticastManager({
-        connectionService: connections,
-        groupCache,
-        overlayCache,
-        multicasterFactory: (overlayId) => new shared.WebRtcOverlayMulticastService(overlayId, connections),
-        qosProvider: undefined,
-        outboundDiagnostics: undefined,
-        outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
-        circuitBreaker: shared.toCircuitBreaker(),
-        rateLimiter: shared.toRateLimiter(),
-        dequeueResilience: createDefaultALOutboundDequeueResilience()
-    });
+    private close(): void {
+        this.service.dispose();
+        this.multicast.dispose();
+        this.connection.dispose();
+        this.groups.dispose();
+        this.overlays.dispose();
+        this.nativeRuntime.dispose();
+    }
 }
 
 function createUnicast(input: { readonly acknowledge: boolean; readonly exclusive: boolean; }): shared.ALMessage {

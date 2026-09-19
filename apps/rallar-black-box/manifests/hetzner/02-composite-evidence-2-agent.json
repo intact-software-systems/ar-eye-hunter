@@ -91,24 +91,23 @@
         ]
       },
       "profile": "composite",
-      "required": true
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
     "expectedParticipantCount": 2
   },
+  "variables": {},
+  "roleAssignments": [],
   "ackTimeoutMs": 30000,
-  "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
+  "barrier": {
+    "enabled": false
   },
+  "startMode": "manual",
+  "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
     "rolePattern": "all-agents",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,

@@ -1,6 +1,6 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, it } from 'vitest';
-import { ControlRunManagerHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { ControlHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
 import {
     createRecipeConsoleControlApi as createRecipeConsoleControlApiWithPolicy,
     RECIPE_CONSOLE_CONTROL_DETAIL_BOUNDS,
@@ -40,14 +40,19 @@ const DISTRIBUTED_MANIFEST = {
         workspaceId: 'workspace-a',
         groupId: 'group-a'
     },
-    recipes: [{ recipeId: 'recipe-a' }],
+    recipes: [{ recipeId: 'recipe-a', variables: {} }],
     targetPolicy: {
         mode: 'selected-agents',
         agentIds: ['agent-a'],
         expectedParticipantCount: 1
     },
+    variables: {},
+    roleAssignments: [],
+    ackTimeoutMs: 15_000,
+    barrier: { enabled: false },
     startMode: 'manual',
-    ackTimeoutMs: 15_000
+    groupAssertions: [],
+    metadata: {}
 } as const;
 
 function authSession(clientId: string, sessionId: string): AuthSession {
@@ -94,13 +99,7 @@ function protocolDistributedRun(
         updatedAtEpochMs: 1,
         targetAgentIds: [],
         commandLinks: [],
-        manifest: {
-            group: {
-                applicationId: 'app-a',
-                workspaceId: 'workspace-a',
-                groupId: 'group-a'
-            }
-        },
+        manifest: { ...DISTRIBUTED_MANIFEST, distributedRunId },
         rollup: { summary: { blockingFailures: 0 } },
         ...overrides
     };
@@ -126,6 +125,7 @@ function protocolTargetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -1210,7 +1210,7 @@ describe('Recipe Console control API', () => {
         expect(result.completeness).toBe('partial');
         expect(result.distributedRunsSource).toBe('unavailable');
         expect(result.authorization).toBe('anonymous');
-        expect(result.partialError).toBeInstanceOf(ControlRunManagerHttpError);
+        expect(result.partialError).toBeInstanceOf(ControlHttpError);
         expect(result.partialError).toMatchObject({
             message: 'Distributed runs are temporarily unavailable.',
             status: 503
@@ -1238,7 +1238,7 @@ describe('Recipe Console control API', () => {
                 snapshot: { runs: [] },
                 completeness: 'partial',
                 partialError: {
-                    name: 'ControlRunManagerHttpError',
+                    name: 'ControlHttpError',
                     status
                 }
             });
@@ -1331,24 +1331,27 @@ describe('Recipe Console control API', () => {
             'Control server snapshot distributedRuns[0].state must be a known distributed-run state.'
         ],
         [
-            [{
-                distributedRunId: 'distributed-target-resolution',
-                controlRunId: 'run-a',
-                state: 'running',
-                updatedAtEpochMs: 1,
+            [protocolDistributedRun('distributed-target-resolution', {
                 targetAgentIds: ['agent-a'],
-                commandLinks: [],
-                manifest: {
-                    group: {
-                        applicationId: 'app-a',
-                        workspaceId: 'workspace-a',
-                        groupId: 'group-a'
-                    }
-                },
-                rollup: { summary: { blockingFailures: 0 } },
                 targetResolution: {}
-            }],
-            'Control server snapshot distributedRuns[0].targetResolution.roleAssignments must be an array.'
+            })],
+            'Control server snapshot distributedRuns[0].targetResolution.group must name applicationId, workspaceId and groupId.'
+        ],
+        [
+            [protocolDistributedRun('distributed-old-manifest', {
+                manifest: { ...DISTRIBUTED_MANIFEST, groupAssertions: undefined }
+            })],
+            'Control server snapshot distributedRuns[0].manifest is not a distributed run manifest:\n' +
+            '$: Missing required property groupAssertions.'
+        ],
+        [
+            [protocolDistributedRun('distributed-old-resolution', {
+                targetAgentIds: ['agent-a'],
+                targetResolution: protocolTargetResolution({
+                    roleAssignments: [{ role: 'sender', agentId: 'agent-a' }]
+                })
+            })],
+            'Control server snapshot distributedRuns[0].targetResolution.roleAssignments[0].recipeIds must be an array of strings.'
         ]
     ])('retains usable runs when embedded optional distributed context is malformed %#', async (
         distributedRuns,
@@ -1648,7 +1651,7 @@ describe('Recipe Console control API', () => {
         });
 
         await expect(api.readSnapshot({})).rejects.toMatchObject({
-            name: 'ControlRunManagerHttpError',
+            name: 'ControlHttpError',
             message: 'Operator token required.',
             status: 401,
             statusText: 'Unauthorized'

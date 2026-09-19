@@ -9,13 +9,16 @@ import type {
 import {
     cancelDistributedRun,
     createDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    fetchDistributedRunArtifactBundleBytes,
-    resolveDistributedTargets,
+    readDistributedRunArtifactBundle,
+    readDistributedRunArtifactBundleBytes,
+    readDistributedTargetResolution,
     stageDistributedRun,
     startDistributedRun
-} from '../../control-run-manager.ts';
-import type { ControlAuthorizedTransport } from './control-authorized-transport.ts';
+} from '../../control-run-manager/control-distributed-run-endpoints.ts';
+import type {
+    ControlAuthorizedOperation,
+    ControlAuthorizedTransport
+} from './control-authorized-transport.ts';
 import {
     validateControlExecutionArtifactBundle,
     validateControlExecutionRun,
@@ -73,14 +76,16 @@ export function createRecipeConsoleControlExecutionApi(
         async resolveTargets(request) {
             const result = await input.transport.response(
                 async (token, fetchFn) => {
-                    const value = await resolveDistributedTargets({
+                    const resolution = await readDistributedTargetResolution({
                         baseUrl: input.baseUrl,
                         manifest: request.manifest,
                         token,
                         fetchFn
                     });
-                    validateControlExecutionTargetResolution(value);
-                    return value;
+                    return resolution.mapRight((value) => {
+                        validateControlExecutionTargetResolution(value);
+                        return value;
+                    });
                 },
                 writeAuthorization,
                 request.signal
@@ -139,14 +144,16 @@ export function createRecipeConsoleControlExecutionApi(
         async exportRunArtifact(request) {
             const result = await input.transport.response(
                 async (token, fetchFn) => {
-                    const value = await fetchDistributedRunArtifactBundle({
+                    const bundle = await readDistributedRunArtifactBundle({
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
                         fetchFn
                     });
-                    validateControlExecutionArtifactBundle(value);
-                    return value;
+                    return bundle.mapRight((value) => {
+                        validateControlExecutionArtifactBundle(value);
+                        return value;
+                    });
                 },
                 artifactAuthorization,
                 request.signal
@@ -156,7 +163,7 @@ export function createRecipeConsoleControlExecutionApi(
         async exportRunArtifactBytes(request) {
             const result = await input.transport.response(
                 (token, fetchFn) =>
-                    fetchDistributedRunArtifactBundleBytes({
+                    readDistributedRunArtifactBundleBytes({
                         baseUrl: input.baseUrl,
                         distributedRunId: request.distributedRunId,
                         token,
@@ -174,14 +181,16 @@ export function createRecipeConsoleControlExecutionApi(
     };
 
     async function runMutation(
-        operation: Parameters<ControlAuthorizedTransport['response']>[0],
+        operation: ControlAuthorizedOperation<ControlDistributedRunSnapshot>,
         signal: AbortSignal | undefined
     ): Promise<ControlDistributedRunSnapshot> {
         const result = await input.transport.response(
             async (token, fetchFn) => {
-                const value = await operation(token, fetchFn) as ControlDistributedRunSnapshot;
-                validateControlExecutionRun(value);
-                return value;
+                const distributedRun = await operation(token, fetchFn);
+                return distributedRun.mapRight((value) => {
+                    validateControlExecutionRun(value);
+                    return value;
+                });
             },
             writeAuthorization,
             signal

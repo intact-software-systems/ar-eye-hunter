@@ -4,6 +4,8 @@ import type {
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
+import { decodeControlDistributedRunPlan } from '../../decode-control-distributed-run-plan.ts';
+
 export function validateControlServerCoreSnapshot(value: unknown): void {
     const snapshot = rootSnapshotRecord(value);
     const runs = requiredArray(snapshot, 'runs', 'runs');
@@ -162,15 +164,11 @@ function validateDistributedRun(value: unknown, path: string): void {
         );
     });
 
-    const manifest = requiredRecord(run.manifest, `${path}.manifest`);
-    const group = requiredRecord(manifest.group, `${path}.manifest.group`);
-    for (const field of ['applicationId', 'workspaceId', 'groupId'] as const) {
-        requiredString(group, field, `${path}.manifest.group.${field}`);
+    requiredRecord(run.manifest, `${path}.manifest`);
+    const plan = decodeControlDistributedRunPlan(run, path);
+    if (plan.left !== undefined) {
+        throw new Error(plan.left);
     }
-    validateRoleAssignments(
-        manifest.roleAssignments,
-        `${path}.manifest.roleAssignments`
-    );
 
     const rollup = requiredRecord(run.rollup, `${path}.rollup`);
     const summary = requiredRecord(rollup.summary, `${path}.rollup.summary`);
@@ -179,35 +177,6 @@ function validateDistributedRun(value: unknown, path: string): void {
         'blockingFailures',
         `${path}.rollup.summary.blockingFailures`
     );
-
-    if (run.targetResolution !== undefined) {
-        const resolution = requiredRecord(
-            run.targetResolution,
-            `${path}.targetResolution`
-        );
-        const roleAssignments = requiredArray(
-            resolution,
-            'roleAssignments',
-            `${path}.targetResolution.roleAssignments`
-        );
-        validateRoleAssignments(
-            roleAssignments,
-            `${path}.targetResolution.roleAssignments`
-        );
-    }
-}
-
-function validateRoleAssignments(value: unknown, path: string): void {
-    if (value === undefined) {
-        return;
-    }
-    if (!Array.isArray(value)) {
-        throw new Error(`Control server snapshot ${path} must be an array.`);
-    }
-    value.forEach((assignment, index) => {
-        const record = requiredRecord(assignment, `${path}[${index}]`);
-        requiredString(record, 'agentId', `${path}[${index}].agentId`);
-    });
 }
 
 function rootSnapshotRecord(value: unknown): Record<string, unknown> {

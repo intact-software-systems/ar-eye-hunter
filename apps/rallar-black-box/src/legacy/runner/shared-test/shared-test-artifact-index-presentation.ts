@@ -1,7 +1,9 @@
-import type { RallarBlackBoxSharedTestParsedArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
+import type {
+    BlackBoxRunnerParsedArtifactBundle
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
 export const SHARED_TEST_COMPACTION_SUMMARY_WINDOW_SIZE = 24;
 type SharedTestArtifactIndex = NonNullable<
-    RallarBlackBoxSharedTestParsedArtifactBundle[
+    BlackBoxRunnerParsedArtifactBundle[
         'views'
     ]['artifactIndex']
 >;

@@ -176,9 +176,9 @@ function EvidenceDestination({ destination, onSelect }: Readonly<{
                 onSelect(
                     { kind: destination.kind, id: destination.id },
                     {
-                        agentId: destination.agentId,
-                        recipeId: destination.recipeId,
-                        commandId: destination.commandId
+                        agentId: 'agentId' in destination ? destination.agentId : undefined,
+                        recipeId: 'recipeId' in destination ? destination.recipeId : undefined,
+                        commandId: 'commandId' in destination ? destination.commandId : undefined
                     }
                 )}
             type="button"

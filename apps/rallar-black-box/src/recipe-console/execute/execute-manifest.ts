@@ -1,22 +1,24 @@
 import type {
     DistributedRecipeCatalogEntryProjection
 } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import { buildDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { createDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/create-distributed-run-manifest.ts';
 import {
     validateDistributedRunManifest,
-    type DistributedRunManifestValidationResult
+    type DistributedRunManifestValidationIssue
 } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 export const EXECUTE_ACK_TIMEOUT_MS = 15_000;
 
 export type ExecuteManifestDraft = Readonly<{
     manifest: RallarBlackBoxDistributedRunManifest;
-    validation: DistributedRunManifestValidationResult;
+    validationIssues: readonly DistributedRunManifestValidationIssue[];
     rawJson: string;
     fingerprint: string;
 }>;
@@ -35,6 +37,7 @@ export type ExecuteTargetResolutionIssueCode =
 export type ExecuteTargetResolutionIssue = Readonly<{
     code: ExecuteTargetResolutionIssueCode;
     message: string;
+    /** Absent when the issue is about the whole resolution rather than one named agent. */
     agentId?: string;
 }>;
 
@@ -56,23 +59,23 @@ export function createExecuteDistributedRunId(
         recipeId: string;
         requestedAtEpochMs: number;
     }>
-): string {
+): Either<string, string> {
     if (
         !Number.isSafeInteger(input.requestedAtEpochMs) ||
         input.requestedAtEpochMs < 0
     ) {
-        throw new Error('Execute requestedAtEpochMs must be a non-negative safe integer.');
+        return Either.ofLeft('Execute requestedAtEpochMs must be a non-negative safe integer.');
     }
-    return [
+    return Either.ofRight([
         'dist',
-        idSegment(input.group.groupId, 'group'),
-        idSegment(input.recipeId, 'recipe'),
-        idSegment(input.controlRunId, 'control'),
+        toIdSegment(input.group.groupId, 'group'),
+        toIdSegment(input.recipeId, 'recipe'),
+        toIdSegment(input.controlRunId, 'control'),
         String(input.requestedAtEpochMs)
-    ].join('-');
+    ].join('-'));
 }
 
-export function deriveExecuteManifest(
+export function createExecuteManifestDraft(
     input: Readonly<{
         distributedRunId: string;
         controlRunId: string;
@@ -80,9 +83,9 @@ export function deriveExecuteManifest(
         selectedRecipe: DistributedRecipeCatalogEntryProjection;
         selectedAgentIds: readonly string[];
     }>
-): ExecuteManifestDraft {
-    const selectedAgentIds = uniqueSorted(input.selectedAgentIds);
-    const manifest = buildDistributedRunManifest({
+): Either<string, ExecuteManifestDraft> {
+    const selectedAgentIds = toSortedUniqueIds(input.selectedAgentIds);
+    return toExecuteManifestDraft(createDistributedRunManifest({
         distributedRunId: input.distributedRunId,
         controlRunId: input.controlRunId,
         displayName: input.selectedRecipe.item.title,
@@ -92,38 +95,45 @@ export function deriveExecuteManifest(
         targetPolicyMode: 'selected-agents',
         rolePattern: 'all-agents',
         ackTimeoutMs: EXECUTE_ACK_TIMEOUT_MS,
+        barrier: { enabled: false },
         startMode: 'manual',
-        expectedParticipantCount: selectedAgentIds.length
-    });
-    return projectExecuteManifest(manifest);
+        expectedParticipantCount: selectedAgentIds.length,
+        groupAssertions: [],
+        createdBy: 'rallar-black-box-spa'
+    }));
 }
-export function projectExecuteManifest(
+
+export function toExecuteManifestDraft(
     manifest: RallarBlackBoxDistributedRunManifest
-): ExecuteManifestDraft {
-    return {
+): Either<string, ExecuteManifestDraft> {
+    return computeExecuteManifestFingerprint(manifest).mapRight((fingerprint) => ({
         manifest,
-        validation: validateDistributedRunManifest(manifest),
+        validationIssues: validateDistributedRunManifest(manifest),
         rawJson: JSON.stringify(manifest, null, 2),
-        fingerprint: executeManifestFingerprint(manifest)
-    };
+        fingerprint
+    }));
 }
 
-export function executeManifestFingerprint(value: unknown): string {
-    return canonicalValue(value, new Set<object>());
+export function computeExecuteManifestFingerprint(
+    manifest: RallarBlackBoxDistributedRunManifest
+): Either<string, string> {
+    return decodeCanonicalValueText(manifest, new Set<object>());
 }
 
-export function compareExecuteTargetResolution(
+export function computeExecuteTargetResolutionComparison(
     input: Readonly<{
         manifest: RallarBlackBoxDistributedRunManifest;
         resolution: RallarBlackBoxDistributedTargetResolution;
     }>
 ): ExecuteTargetResolutionComparison {
     const issues: ExecuteTargetResolutionIssue[] = [];
-    const selected = [...(input.manifest.targetPolicy.agentIds ?? [])];
+    const selected = input.manifest.targetPolicy.mode === 'selected-agents'
+        ? [...input.manifest.targetPolicy.agentIds]
+        : [];
     const resolved = [...input.resolution.targetAgentIds];
     const selectedSet = new Set(selected);
 
-    if (!sameGroup(input.manifest.group, input.resolution.group)) {
+    if (!isSameGroup(input.manifest.group, input.resolution.group)) {
         issues.push({
             code: 'group-mismatch',
             message: 'Resolved targets belong to a different application, workspace, or group.'
@@ -147,16 +157,67 @@ export function compareExecuteTargetResolution(
             message: 'The server resolution contains a duplicate target agent ID.'
         });
     }
-    if (!sameStrings(uniqueSorted(selected), uniqueSorted(resolved))) {
+    if (!isSameIdList(toSortedUniqueIds(selected), toSortedUniqueIds(resolved))) {
         issues.push({
             code: 'target-mismatch',
             message: 'Server-resolved target IDs no longer exactly match the selected safe IDs.'
         });
     }
+    issues.push(...computeExecuteResolutionCountIssues(input, selectedSet, resolved));
+    for (const blocker of input.resolution.blockers) {
+        if (!selectedSet.has(blocker.agentId)) {
+            continue;
+        }
+        issues.push({
+            code: 'selected-target-blocked',
+            message: blocker.reason,
+            agentId: blocker.agentId
+        });
+    }
 
+    return { ok: issues.length === 0, issues };
+}
+
+export function createExecuteTargetResolutionEvidence(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        manifestFingerprint: string;
+        resolution: RallarBlackBoxDistributedTargetResolution;
+    }>
+): ExecuteTargetResolutionEvidence {
+    return {
+        manifestFingerprint: input.manifestFingerprint,
+        resolution: input.resolution,
+        comparison: computeExecuteTargetResolutionComparison({
+            manifest: input.manifest,
+            resolution: input.resolution
+        })
+    };
+}
+
+export function resolveExecuteTargetResolutionEvidence(
+    input: Readonly<{
+        manifestFingerprint: string;
+        evidence: ExecuteTargetResolutionEvidence;
+    }>
+): ExecuteTargetResolutionEvidence | undefined {
+    return input.evidence.manifestFingerprint === input.manifestFingerprint
+        ? input.evidence
+        : undefined;
+}
+
+function computeExecuteResolutionCountIssues(
+    input: Readonly<{
+        manifest: RallarBlackBoxDistributedRunManifest;
+        resolution: RallarBlackBoxDistributedTargetResolution;
+    }>,
+    selected: ReadonlySet<string>,
+    resolved: readonly string[]
+): readonly ExecuteTargetResolutionIssue[] {
+    const issues: ExecuteTargetResolutionIssue[] = [];
     const expected = input.manifest.targetPolicy.expectedParticipantCount;
     if (
-        expected !== selectedSet.size ||
+        expected !== selected.size ||
         input.resolution.summary.expectedParticipantCount !== expected
     ) {
         issues.push({
@@ -176,119 +237,106 @@ export function compareExecuteTargetResolution(
             message: 'The server reports missing expected participants.'
         });
     }
-    for (const blocker of input.resolution.blockers) {
-        if (!selectedSet.has(blocker.agentId)) {
-            continue;
-        }
-        issues.push({
-            code: 'selected-target-blocked',
-            message: blocker.reason,
-            agentId: blocker.agentId
-        });
-    }
-
-    return { ok: issues.length === 0, issues };
+    return issues;
 }
 
-export function createExecuteTargetResolutionEvidence(
-    input: Readonly<{
-        manifest: RallarBlackBoxDistributedRunManifest;
-        resolution: RallarBlackBoxDistributedTargetResolution;
-    }>
-): ExecuteTargetResolutionEvidence {
-    return {
-        manifestFingerprint: executeManifestFingerprint(input.manifest),
-        resolution: input.resolution,
-        comparison: compareExecuteTargetResolution(input)
-    };
-}
-
-export function currentExecuteTargetResolutionEvidence(
-    input: Readonly<{
-        manifest: RallarBlackBoxDistributedRunManifest;
-        evidence?: ExecuteTargetResolutionEvidence;
-    }>
-): ExecuteTargetResolutionEvidence | undefined {
-    if (
-        !input.evidence ||
-        input.evidence.manifestFingerprint !==
-            executeManifestFingerprint(input.manifest)
-    ) {
-        return undefined;
-    }
-    return input.evidence;
-}
-
-function canonicalValue(value: unknown, ancestors: Set<object>): string {
+function decodeCanonicalValueText(
+    value: unknown,
+    ancestors: Set<object>
+): Either<string, string> {
     if (value === null) {
-        return 'null';
+        return Either.ofRight('null');
     }
     if (value === undefined) {
-        return 'undefined';
+        return Either.ofRight('undefined');
     }
     if (typeof value === 'string') {
-        return `string${frame(value)}`;
+        return Either.ofRight(`string${toFramedText(value)}`);
     }
     if (typeof value === 'boolean') {
-        return value ? 'boolean1' : 'boolean0';
+        return Either.ofRight(value ? 'boolean1' : 'boolean0');
     }
     if (typeof value === 'number') {
-        return `number${numberValue(value)}`;
+        return Either.ofRight(`number${toNumberText(value)}`);
     }
     if (typeof value === 'bigint') {
-        return `bigint${value.toString()}`;
+        return Either.ofRight(`bigint${value.toString()}`);
     }
     if (typeof value !== 'object') {
-        throw new Error(`Execute manifest fingerprint cannot encode ${typeof value}.`);
+        return Either.ofLeft(`Execute manifest fingerprint cannot encode ${typeof value}.`);
     }
     if (ancestors.has(value)) {
-        throw new Error('Execute manifest fingerprint cannot encode cyclic values.');
+        return Either.ofLeft('Execute manifest fingerprint cannot encode cyclic values.');
     }
     ancestors.add(value);
     try {
-        if (Array.isArray(value)) {
-            if (Object.getOwnPropertySymbols(value).length > 0) {
-                throw new Error('Execute manifest fingerprint cannot encode symbol keys.');
-            }
-            const indexedKeys = new Set(
-                Array.from({ length: value.length }, (_, index) => String(index))
-            );
-            if (Object.keys(value).some((key) => !indexedKeys.has(key))) {
-                throw new Error(
-                    'Execute manifest fingerprint cannot encode custom array properties.'
-                );
-            }
-            const items = Array.from(
-                { length: value.length },
-                (_, index) =>
-                    Object.prototype.hasOwnProperty.call(value, index)
-                        ? frame(`present${frame(canonicalValue(value[index], ancestors))}`)
-                        : frame('hole')
-            ).join('');
-            return `array${frame(String(value.length))}${frame(items)}`;
-        }
-        const prototype = Object.getPrototypeOf(value) as object | null;
-        if (prototype !== Object.prototype && prototype !== null) {
-            throw new Error('Execute manifest fingerprint requires plain JSON objects.');
-        }
-        if (Object.getOwnPropertySymbols(value).length > 0) {
-            throw new Error('Execute manifest fingerprint cannot encode symbol keys.');
-        }
-        const record = value as Record<string, unknown>;
-        const keys = Object.keys(record).sort();
-        const body = keys.map((key) =>
-            frame(canonicalValue(key, ancestors)) +
-            frame(canonicalValue(record[key], ancestors))
-        ).join('');
-        const objectKind = prototype === null ? 'null-object' : 'object';
-        return `${objectKind}${frame(String(keys.length))}${frame(body)}`;
+        return Array.isArray(value)
+            ? decodeCanonicalArrayText(value, ancestors)
+            : decodeCanonicalObjectText(value, ancestors);
     }
     finally {
         ancestors.delete(value);
     }
 }
 
-function numberValue(value: number): string {
+function decodeCanonicalArrayText(
+    value: readonly ApiJsonValue[],
+    ancestors: Set<object>
+): Either<string, string> {
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+        return Either.ofLeft('Execute manifest fingerprint cannot encode symbol keys.');
+    }
+    const indexedKeys = new Set(
+        Array.from({ length: value.length }, (_, index) => String(index))
+    );
+    if (Object.keys(value).some((key) => !indexedKeys.has(key))) {
+        return Either.ofLeft('Execute manifest fingerprint cannot encode custom array properties.');
+    }
+    let items = '';
+    for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) {
+            items += toFramedText('hole');
+            continue;
+        }
+        const item = decodeCanonicalValueText(value[index], ancestors);
+        if (item.right === undefined) {
+            return item;
+        }
+        items += toFramedText(`present${toFramedText(item.right)}`);
+    }
+    return Either.ofRight(
+        `array${toFramedText(String(value.length))}${toFramedText(items)}`
+    );
+}
+
+function decodeCanonicalObjectText(
+    value: object,
+    ancestors: Set<object>
+): Either<string, string> {
+    const prototype = Object.getPrototypeOf(value) as object | null;
+    if (prototype !== Object.prototype && prototype !== null) {
+        return Either.ofLeft('Execute manifest fingerprint requires plain JSON objects.');
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+        return Either.ofLeft('Execute manifest fingerprint cannot encode symbol keys.');
+    }
+    const record = value as Readonly<Record<string, ApiJsonValue>>;
+    const keys = Object.keys(record).sort();
+    let body = '';
+    for (const key of keys) {
+        const member = decodeCanonicalValueText(record[key], ancestors);
+        if (member.right === undefined) {
+            return member;
+        }
+        body += toFramedText(`string${toFramedText(key)}`) + toFramedText(member.right);
+    }
+    const objectKind = prototype === null ? 'null-object' : 'object';
+    return Either.ofRight(
+        `${objectKind}${toFramedText(String(keys.length))}${toFramedText(body)}`
+    );
+}
+
+function toNumberText(value: number): string {
     if (Number.isNaN(value)) {
         return 'NaN';
     }
@@ -304,21 +352,21 @@ function numberValue(value: number): string {
     return String(value);
 }
 
-function frame(value: string): string {
+function toFramedText(value: string): string {
     return `${value.length}:${value}`;
 }
 
-function idSegment(value: string, fallback: string): string {
+function toIdSegment(value: string, emptySegment: string): string {
     return value.trim().toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || fallback;
+        .replace(/^-+|-+$/g, '') || emptySegment;
 }
 
-function uniqueSorted(values: readonly string[]): readonly string[] {
+function toSortedUniqueIds(values: readonly string[]): readonly string[] {
     return [...new Set(values)].sort();
 }
 
-function sameGroup(
+function isSameGroup(
     left: RallarBlackBoxDistributedGroupRef,
     right: RallarBlackBoxDistributedGroupRef
 ): boolean {
@@ -327,7 +375,7 @@ function sameGroup(
         left.groupId === right.groupId;
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+function isSameIdList(left: readonly string[], right: readonly string[]): boolean {
     return left.length === right.length &&
         left.every((value, index) => value === right[index]);
 }

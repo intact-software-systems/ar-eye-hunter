@@ -1,7 +1,8 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useState, type FormEvent } from 'react';
 import { authenticateRallarBlackBox, authErrorMessage, bootstrapPatchFromAuthSession } from '../../auth-flow.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../rallar/load-browser-rallar-facade.ts';
 
 export function LoginScreen({

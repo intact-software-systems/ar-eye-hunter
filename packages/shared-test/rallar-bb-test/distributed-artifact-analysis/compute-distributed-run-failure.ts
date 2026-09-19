@@ -1,0 +1,264 @@
+import type { ControlDistributedRunSnapshot } from '../control-snapshots.ts';
+import type { DistributedRunFailureAnalysis } from '../distributed-artifact-analysis.ts';
+import type { DistributedFailureExplanation } from '../distributed-run-analysis/distributed-failure-explanation-contracts.ts';
+import type { DistributedRunAnalysisReport } from '../distributed-run-analysis/distributed-run-analysis-report.ts';
+import { toDistributedFailureExplanation } from '../distributed-run-analysis/to-distributed-failure-explanation.ts';
+import {
+    resolveFirstDistributedFailure,
+    toDistributedRunRecordedFailures
+} from '../distributed-run-observation/distributed-run-failure-rows.ts';
+import type { DistributedRunFailureRow } from '../distributed-run-observation/distributed-run-row-contracts.ts';
+import { computeControlRequestFailure } from './compute-control-request-failure.ts';
+import { computeStreamPerformanceFailure, computeStreamTimeoutFailure } from './compute-stream-failure.ts';
+import type { DistributedRunEventEvidence } from './decode-distributed-run-event-evidence.ts';
+import type {
+    DistributedRunBundledFailure,
+    DistributedRunFleetFailureSignature,
+    DistributedRunFleetReportEvidence
+} from './decode-distributed-run-report-evidence.ts';
+import type { DistributedRunResultEvidence } from './decode-distributed-run-result-evidence.ts';
+import {
+    resolveEvidenceFileForAction,
+    resolveFailureCategory,
+    resolveMinimalFixArea,
+    resolveVerificationCommand,
+    TERMINAL_FAILURE_STATES,
+    toAffectedAgents
+} from './distributed-run-failure-vocabulary.ts';
+import type { ControlPostFailureArtifact } from './to-distributed-run-artifact-content.ts';
+
+const UNCLASSIFIED_CATEGORY = 'unknown';
+
+export interface DistributedRunFailureInput {
+    readonly distributedRun: ControlDistributedRunSnapshot;
+    /** Absent when the artifacts hold no readable fleet-report.json. */
+    readonly fleetReport?: DistributedRunFleetReportEvidence;
+    /** Absent when failures.json lists no failures. */
+    readonly bundledFailure?: DistributedRunBundledFailure;
+    /** Absent when the runner recorded no failed control request. */
+    readonly controlPostFailure?: ControlPostFailureArtifact;
+    readonly results: readonly DistributedRunResultEvidence[];
+    readonly events: readonly DistributedRunEventEvidence[];
+    /** Undefined when control-run.json is unavailable, because the report reads the control run. */
+    readonly spaReport: DistributedRunAnalysisReport | undefined;
+}
+
+/**
+ * The first focus of a run that did not pass, from the most specific evidence to the least: a failed
+ * control request, stream thresholds, receiver delivery, fleet signatures, failed results, stalled
+ * streams, the report's next action (without the control run the report reads, the first failure
+ * distributed-run.json records), failures.json, runtime diagnostics, and finally the run state.
+ */
+export function computeDistributedRunFailure(input: DistributedRunFailureInput): DistributedRunFailureAnalysis {
+    return (input.controlPostFailure ? computeControlRequestFailure(input.controlPostFailure) : undefined) ??
+        computeStreamPerformanceFailure(input.results, input.events) ??
+        computeReceiverDeliveryFailure(input.results) ??
+        computeFleetSignatureFailure(input.fleetReport?.firstFailureSignature, input.results) ??
+        computeFailedResultFailure(input.results) ??
+        computeStreamTimeoutFailure(input.distributedRun, input.events) ??
+        (input.spaReport
+            ? computeReportActionFailure(input.spaReport)
+            : computeRecordedRunFailure(input.distributedRun)) ??
+        computeBundledFailure(input.bundledFailure) ??
+        computeDiagnosticFailure(input.events) ??
+        computeRunStateFailure(input.distributedRun);
+}
+
+function computeReceiverDeliveryFailure(
+    results: readonly DistributedRunResultEvidence[]
+): DistributedRunFailureAnalysis | undefined {
+    const failedResult = results.find((result) => {
+        const text = result.deliveryFailureTexts.join(' ').toLowerCase();
+        return isFailedResult(result) &&
+            (text.includes('stats.counters.messages') || (text.includes('receiver') && text.includes('delivery')));
+    });
+    if (!failedResult) {
+        return undefined;
+    }
+    const minimalFix = 'RTC receiver delivery';
+    return {
+        category: 'receiver-delivery',
+        title: 'Receiver delivery threshold failed.',
+        likelyCause: 'A receiver observed fewer RTC messages than the recipe threshold required.',
+        nextAction:
+            'Inspect receiver stats, topology profile, stream fanout, and lowest receiver delivery counts before changing thresholds.',
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: toAffectedAgents(failedResult.agentId),
+        affectedRegions: [],
+        commandId: failedResult.commandId,
+        evidenceFile: 'results.jsonl'
+    };
+}
+
+function computeFleetSignatureFailure(
+    signature: DistributedRunFleetFailureSignature | undefined,
+    results: readonly DistributedRunResultEvidence[]
+): DistributedRunFailureAnalysis | undefined {
+    if (!signature) {
+        return undefined;
+    }
+    const minimalFix = resolveMinimalFixArea({
+        category: signature.category,
+        transport: signature.transport,
+        text: [signature.title, signature.normalizedMessage, signature.likelyCause].filter(Boolean).join(' ')
+    });
+    return {
+        category: signature.category ?? UNCLASSIFIED_CATEGORY,
+        title: signature.title ?? 'Fleet failure signature',
+        likelyCause: signature.likelyCause ?? signature.normalizedMessage ??
+            'The fleet report grouped this run as failed.',
+        nextAction: signature.nextAction ?? 'Open the run artifacts and inspect the affected agent evidence.',
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: signature.affectedAgents,
+        affectedRegions: signature.affectedRegions,
+        commandId: signature.commandId ?? results.find(isFailedResult)?.commandId,
+        recipeId: signature.recipeId,
+        evidenceFile: 'fleet-report.json'
+    };
+}
+
+function computeFailedResultFailure(
+    results: readonly DistributedRunResultEvidence[]
+): DistributedRunFailureAnalysis | undefined {
+    const failedResult = results.find(isFailedResult);
+    if (!failedResult) {
+        return undefined;
+    }
+    const message = failedResult.failureMessage ?? failedResult.message ?? 'Command result failed';
+    const category = resolveFailureCategory(failedResult.failureCode, message);
+    const minimalFix = resolveMinimalFixArea({
+        category,
+        transport: failedResult.transport,
+        text: `${failedResult.action ?? ''} ${message}`
+    });
+    return {
+        category,
+        title: message,
+        likelyCause: message,
+        nextAction: 'Open the failing command result and compare expected vs observed payload evidence.',
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: toAffectedAgents(failedResult.agentId),
+        affectedRegions: [],
+        commandId: failedResult.commandId,
+        evidenceFile: 'results.jsonl'
+    };
+}
+
+function computeReportActionFailure(
+    spaReport: DistributedRunAnalysisReport
+): DistributedRunFailureAnalysis | undefined {
+    const action = spaReport.nextActions[0];
+    return action
+        ? toExplanationFailure(action, spaReport.firstFailure, resolveEvidenceFileForAction(action.category))
+        : undefined;
+}
+
+/** The first failure distributed-run.json records, explained the way the report explains it. */
+function computeRecordedRunFailure(
+    distributedRun: ControlDistributedRunSnapshot
+): DistributedRunFailureAnalysis | undefined {
+    const failure = resolveFirstDistributedFailure(toDistributedRunRecordedFailures(distributedRun));
+    return failure
+        ? toExplanationFailure(toDistributedFailureExplanation(failure), failure, 'distributed-run.json')
+        : undefined;
+}
+
+function toExplanationFailure(
+    explanation: DistributedFailureExplanation,
+    failure: DistributedRunFailureRow | DistributedRunAnalysisReport['firstFailure'],
+    evidenceFile: string
+): DistributedRunFailureAnalysis {
+    const minimalFix = resolveMinimalFixArea({
+        category: explanation.category,
+        transport: undefined,
+        text: `${explanation.title} ${explanation.likelyCause} ${explanation.nextAction}`
+    });
+    return {
+        category: explanation.category,
+        title: explanation.title,
+        likelyCause: explanation.likelyCause,
+        nextAction: explanation.nextAction,
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: toAffectedAgents(failure?.agentId),
+        affectedRegions: [],
+        commandId: failure?.commandId,
+        recipeId: failure?.recipeId,
+        evidenceFile
+    };
+}
+
+function computeBundledFailure(
+    bundledFailure: DistributedRunBundledFailure | undefined
+): DistributedRunFailureAnalysis | undefined {
+    if (!bundledFailure) {
+        return undefined;
+    }
+    const message = bundledFailure.errorMessage ?? bundledFailure.message ?? 'Failure bundle entry';
+    const minimalFix = resolveMinimalFixArea({
+        category: resolveFailureCategory(bundledFailure.code, message),
+        transport: undefined,
+        text: message
+    });
+    return {
+        category: resolveFailureCategory(bundledFailure.code, message),
+        title: message,
+        likelyCause: message,
+        nextAction: 'Open failures.json and the matching control-run command evidence.',
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: toAffectedAgents(bundledFailure.agentId),
+        affectedRegions: [],
+        commandId: bundledFailure.commandId,
+        evidenceFile: 'failures.json'
+    };
+}
+
+function computeDiagnosticFailure(
+    events: readonly DistributedRunEventEvidence[]
+): DistributedRunFailureAnalysis | undefined {
+    const diagnostic = events.find((event) => event.severity === 'error' || event.severity === 'warning');
+    if (!diagnostic) {
+        return undefined;
+    }
+    const message = diagnostic.message ?? 'Runtime diagnostic correlated with failed run';
+    const minimalFix = resolveMinimalFixArea({
+        category: 'diagnostic',
+        transport: diagnostic.transport,
+        text: message
+    });
+    return {
+        category: 'diagnostic',
+        title: message,
+        likelyCause: message,
+        nextAction: 'Inspect the runtime diagnostic event and nearby command evidence.',
+        minimalFixArea: minimalFix,
+        verificationCommand: resolveVerificationCommand(minimalFix),
+        affectedAgents: toAffectedAgents(diagnostic.agentId),
+        affectedRegions: [],
+        commandId: diagnostic.commandId,
+        evidenceFile: 'events.jsonl'
+    };
+}
+
+function computeRunStateFailure(distributedRun: ControlDistributedRunSnapshot): DistributedRunFailureAnalysis {
+    const state = distributedRun.state;
+    return {
+        category: TERMINAL_FAILURE_STATES.has(state) ? 'runtime' : UNCLASSIFIED_CATEGORY,
+        title: `Distributed run ended with state ${state}.`,
+        likelyCause: 'The distributed run did not pass, but no specific failure evidence was exported.',
+        nextAction: 'Refresh the control server artifacts with larger bounds and inspect the raw run snapshot.',
+        minimalFixArea: 'artifact coverage',
+        verificationCommand: resolveVerificationCommand('artifact coverage'),
+        affectedAgents: [],
+        affectedRegions: [],
+        evidenceFile: 'distributed-run.json'
+    };
+}
+
+function isFailedResult(result: DistributedRunResultEvidence): boolean {
+    return result.status?.toUpperCase() === 'FAILURE' || result.ok === false;
+}

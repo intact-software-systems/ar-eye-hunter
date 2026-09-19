@@ -174,6 +174,10 @@ Results:
 - Added contract tests for lifecycle states, valid manifests, invalid standalone manifests, scheduled/role-map
   validation, participant readiness, running/passed rollups, optional failures, required failures, timeouts, and
   cancellations.
+- Later removed (2026-09-17) because nothing acted on them: the manifest's secret refs, artifact policy and
+  `targetPolicy.includeOfflineExpectedAgents`; the recipe selection and role assignment `required` flags, which never
+  changed the verdict; and the rollup's required counters and per-failure `required` flag. Every recipe selection and
+  role assignment counts toward the verdict.
 - Added `packages/shared-test/rallar-bb-test/docs/distributed-run-contract.md`.
 
 Verification:
@@ -224,13 +228,13 @@ Results:
 - The control server stores the latest identity on agent snapshots and preserves it through snapshot persistence/restore.
 - The control-server OpenAPI document now exposes `ControlAgentIdentity` on agent snapshots and heartbeat envelopes.
 - Run Manager agent rows now carry identity metadata and show a compact identity summary when available.
-- Added shared target-resolution helpers:
-  - `resolveGroupMemberControlAgentMatches(...)`
-  - `resolveDistributedTargetAgentIds(...)`
-- The matcher explains matched, unmatched, offline, stale, duplicate-session, agent-without-member, and
-  agent-without-identity cases.
+- Added shared target-resolution helpers `resolveGroupMemberControlAgentMatches(...)` and
+  `resolveDistributedTargetAgentIds(...)`; no consumer adopted them and both were later removed in favour of
+  `resolveDistributedRunTargets(...)`.
 - Added tests for control-client identity registration, control-server identity storage, Run Manager identity summaries,
   group-member matching, and target-policy filtering.
+- The planned "include offline expected agents" control never gained a reader; its manifest setting was removed on
+  2026-09-17.
 
 Verification:
 
@@ -577,7 +581,7 @@ Context:
 - These signals are important during live distributed testing because they can explain missing messages, confusing
   routing, or unexpected RTC lane behavior.
 - Shared-test Iteration 11 now provides
-  `normalizeRallarBlackBoxRuntimeDiagnostic(...)` and bridges the known WS/RTC warning patterns into browser-agent
+  `toRallarBlackBoxRuntimeDiagnostic(...)` and bridges the known WS/RTC warning patterns into browser-agent
   diagnostic events. This SPA iteration should consume that contract instead of inventing a separate diagnostic shape.
 
 Work:

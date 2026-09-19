@@ -1,4 +1,4 @@
-import type { ControlFleetRunReport } from '../../../../control-run-manager.ts';
+import type { ControlFleetRunReport } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { formatTime } from '../../../shared/time-format.ts';
 import type { FleetFilterState } from '../fleet-types.ts';
 

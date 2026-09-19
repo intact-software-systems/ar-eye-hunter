@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "recipeId": "rallar-server-rtc-connect-send",
   "name": "Rallar Server RTC connect and send",
   "description": "Uses the current logged-in browser-rallar session to create or reuse bb-group, join it, connect over RTC, and send a JSON payload.",

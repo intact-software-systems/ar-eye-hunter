@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import type { ExecuteAgentLaunchModel } from './agent-launch/use-execute-agent-launch.ts';
 import styles from './ExecuteAgentSetup.module.css';
-import type { ExecuteAgentLaunchModel } from './use-execute-agent-launch.ts';
 
 export function ExecuteAgentSetup({
     connection,

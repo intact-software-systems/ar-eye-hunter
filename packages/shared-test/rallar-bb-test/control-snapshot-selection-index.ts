@@ -6,7 +6,7 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from './control-snapshots.ts';
-import { isDistributedRunTerminalState } from './distributed-run.ts';
+import { isDistributedRunTerminalState } from './distributed/distributed-run-rollup.ts';
 
 export type ControlSnapshotSelectionIndex = Readonly<{
     hasDistributedRunCollection: boolean;

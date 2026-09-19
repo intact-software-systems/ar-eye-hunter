@@ -4,25 +4,25 @@ import {
     it
 } from 'vitest';
 
+import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
+import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
+
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario,
     type CreateAlmConformanceRecipesInput
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema
-} from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 /** `ordering-resync` is withheld from `ws`: its first hop must be RTC. */
 const CARRIER_SCENARIO_IDS = {
-    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline'],
-    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync'],
-    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle'],
+    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync'],
+    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
 } as const;
 
 function conformanceInput(
@@ -59,6 +59,34 @@ describe('ALM conformance recipe validation', () => {
                 ).toBe(true);
             }
         }
+    });
+
+    it.each([
+        { name: 'actual fallback run', runId: 'alm-rtc-with-ws-fallback-1789846914072-83fc' },
+        { name: 'oversized runtime identities', runId: `oversized-run-${'r'.repeat(1_000)}` }
+    ])('keeps expanded mutation identities API-valid and distinct for $name', ({ runId }) => {
+        const requestIds = new Set<string>();
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const recipe of recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))) {
+                const values = {
+                    session: undefined,
+                    wsTicket: undefined,
+                    config: { runId, agentId: `${recipe.metadata?.role}-${'a'.repeat(1_000)}` }
+                };
+                for (const command of recipe.commands) {
+                    if (command.kind !== 'http.request') {
+                        continue;
+                    }
+                    const template = command.request.path!.split('/').at(-1)!;
+                    const requestId = replaceCommandPlaceholders(template, values);
+                    expect(assertApiMutationRequestId(requestId)).toBe(requestId);
+                    expect(replaceCommandPlaceholders(template, values)).toBe(requestId);
+                    expect(requestIds.has(requestId), command.commandId).toBe(false);
+                    requestIds.add(requestId);
+                }
+            }
+        }
+        expect(requestIds.size).toBe(56);
     });
 
     it('accepts every command over the control protocol', () => {

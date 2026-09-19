@@ -1,4 +1,4 @@
-import type { ControlRunAgentRow } from '../../../control-run-manager.ts';
+import type { ControlRunAgentRow } from '../../../control-run-manager/control-run-projections.ts';
 import { formatTime } from '../../shared/time-format.ts';
 
 export function RunManagerAgentRow({

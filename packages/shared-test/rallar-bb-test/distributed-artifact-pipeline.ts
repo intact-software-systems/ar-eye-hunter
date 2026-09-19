@@ -317,8 +317,9 @@ function resolveProjection(
         invalidSchemaMessage: artifactSchemaVersion === undefined
             ? `${candidate.fileName} has an invalid artifactSchemaVersion.`
             : undefined,
-        fatalMessage,
-        fatalCode: ambiguous ? 'ambiguous-envelope' : 'incompatible-file'
+        fatal: fatalMessage === undefined
+            ? undefined
+            : { code: ambiguous ? 'ambiguous-envelope' : 'incompatible-file', message: fatalMessage }
     };
     return {
         projection,

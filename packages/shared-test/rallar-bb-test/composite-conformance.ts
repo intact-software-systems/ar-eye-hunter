@@ -1,11 +1,10 @@
 import {
-    summarizeRallarBlackBoxCompositeResults,
+    computeRallarBlackBoxCompositeResultSummary,
     type RallarBlackBoxCompositeResultSummary
 } from './composite-results.ts';
 import {
     createRallarBlackBoxCompositeConformanceRecipe
 } from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -15,7 +14,9 @@ import type {
     RallarBlackBoxTestResultStatus,
     RallarBlackBoxTestState,
     RallarBlackBoxTestTransport
-} from './types.ts';
+} from './rallar-black-box-test-contracts.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
+import { isJsonRecordValue } from './schema/json-schema-validation.ts';
 
 export type RallarBlackBoxCompositeConformanceCaseId =
     | 'looped-rtc-send'
@@ -34,101 +35,193 @@ export type RallarBlackBoxCompositeConformanceProviderId =
     | 'browser-rallar'
     | 'remote-browser-control';
 
-export type RallarBlackBoxCompositeConformanceRequirement = Readonly<{
-    env?: readonly string[];
-    httpServices?: readonly Readonly<{
-        name: string;
-        env: string;
-        default?: string;
-    }>[];
-    playwright?: boolean;
-    controlServer?: boolean;
-}>;
+export type RallarBlackBoxCompositeConformanceCompositeKind = Extract<
+    RallarBlackBoxTestCommand['kind'],
+    'loop' | 'parallel'
+>;
 
-export type RallarBlackBoxCompositeConformanceCase = Readonly<{
-    caseId: RallarBlackBoxCompositeConformanceCaseId;
-    title: string;
-    intent: string;
-    expectedStatus: RallarBlackBoxTestResultStatus;
-    requiredCommandKinds: readonly RallarBlackBoxTestCommand['kind'][];
-    requiredCompositeKinds: readonly Extract<RallarBlackBoxTestCommand['kind'], 'loop' | 'parallel'>[];
-    requiredEventTopics?: readonly string[];
-    expectedFailureCodes?: readonly string[];
-    liveSafe: boolean;
-}>;
+export interface RallarBlackBoxCompositeConformanceHttpService {
+    readonly name: string;
+    readonly env: string;
+    readonly default: string;
+}
 
-export type RallarBlackBoxCompositeConformanceProvider = Readonly<{
-    providerId: RallarBlackBoxCompositeConformanceProviderId;
-    title: string;
-    mode: 'deterministic' | 'live-gated';
-    runtimeSurface: 'local-runtime' | 'browser-adapter' | 'control-server';
-    supportedCaseIds: readonly RallarBlackBoxCompositeConformanceCaseId[];
-    requires?: RallarBlackBoxCompositeConformanceRequirement;
-    capabilityDifferences: readonly string[];
-}>;
+export interface RallarBlackBoxCompositeConformanceRequirement {
+    readonly env: readonly string[];
+    readonly httpServices: readonly RallarBlackBoxCompositeConformanceHttpService[];
+    readonly playwright: boolean;
+    readonly controlServer: boolean;
+}
 
-export type RallarBlackBoxCompositeConformanceRecipeOptions = Readonly<{
-    recipeIdPrefix?: string;
-    runId?: string;
-    agentId?: string;
-    environment?: string;
-    apiBaseUrl?: string;
-    actor?: string;
-    sessionId?: string;
-    roomId?: string;
-    connection?: string;
-    wsConnection?: string;
-    transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
-    providerMode?: 'simulated' | 'browser-rallar' | 'rallar-remote-browser';
-    timeoutMs?: number;
-    applicationId?: string;
-    workspaceId?: string;
-}>;
+export interface RallarBlackBoxCompositeConformanceCase {
+    readonly caseId: RallarBlackBoxCompositeConformanceCaseId;
+    readonly title: string;
+    readonly intent: string;
+    readonly expectedStatus: RallarBlackBoxTestResultStatus;
+    readonly requiredCommandKinds: readonly RallarBlackBoxTestCommand['kind'][];
+    readonly requiredCompositeKinds: readonly RallarBlackBoxCompositeConformanceCompositeKind[];
+    readonly requiredEventTopics: readonly string[];
+    readonly expectedFailureCodes: readonly string[];
+    readonly liveSafe: boolean;
+}
 
-export type RallarBlackBoxCompositeConformanceMatrixEntry = Readonly<{
-    entryId: string;
-    artifactName: string;
-    caseId: RallarBlackBoxCompositeConformanceCaseId;
-    providerId: RallarBlackBoxCompositeConformanceProviderId;
-    mode: 'deterministic' | 'live-gated';
-    supported: boolean;
-    skipReason?: string;
-    case: RallarBlackBoxCompositeConformanceCase;
-    provider: RallarBlackBoxCompositeConformanceProvider;
-    recipe: RallarBlackBoxTestRecipe;
-    requires?: RallarBlackBoxCompositeConformanceRequirement;
-}>;
+export interface RallarBlackBoxCompositeConformanceProviderIdentity {
+    readonly providerId: RallarBlackBoxCompositeConformanceProviderId;
+    readonly title: string;
+    readonly runtimeSurface: 'local-runtime' | 'browser-adapter' | 'control-server';
+    readonly supportedCaseIds: readonly RallarBlackBoxCompositeConformanceCaseId[];
+    readonly capabilityDifferences: readonly string[];
+}
 
-export type RallarBlackBoxCompositeConformanceReport = Readonly<{
-    schemaVersion: 1;
-    entryId: string;
-    artifactName: string;
-    caseId: RallarBlackBoxCompositeConformanceCaseId;
-    providerId: RallarBlackBoxCompositeConformanceProviderId;
-    status: 'passed' | 'failed' | 'skipped';
-    skipReason?: string;
-    expected: Readonly<{
-        resultStatus: RallarBlackBoxTestResultStatus;
-        requiredCommandKinds: readonly RallarBlackBoxTestCommand['kind'][];
-        requiredCompositeKinds: readonly Extract<RallarBlackBoxTestCommand['kind'], 'loop' | 'parallel'>[];
-        requiredEventTopics: readonly string[];
-        expectedFailureCodes: readonly string[];
+export interface RallarBlackBoxCompositeConformanceDeterministicProvider
+    extends RallarBlackBoxCompositeConformanceProviderIdentity {
+    readonly mode: 'deterministic';
+}
+
+export interface RallarBlackBoxCompositeConformanceLiveGatedProvider
+    extends RallarBlackBoxCompositeConformanceProviderIdentity {
+    readonly mode: 'live-gated';
+    readonly requires: RallarBlackBoxCompositeConformanceRequirement;
+}
+
+export type RallarBlackBoxCompositeConformanceProvider =
+    | RallarBlackBoxCompositeConformanceDeterministicProvider
+    | RallarBlackBoxCompositeConformanceLiveGatedProvider;
+
+export interface RallarBlackBoxCompositeConformanceRecipeSettings {
+    readonly recipeIdPrefix: string;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly environment: string;
+    readonly apiBaseUrl: string;
+    readonly actor: string;
+    readonly sessionId: string;
+    readonly roomId: string;
+    readonly connection: string;
+    readonly wsConnection: string;
+    /** Absent when each case sends on its own transport: messages.rtc for parallel groups, realtime otherwise. */
+    readonly transport?: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>;
+    readonly timeoutMs: number;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+}
+
+export interface RallarBlackBoxCompositeConformanceRecipeOptions
+    extends RallarBlackBoxCompositeConformanceRecipeSettings {
+    readonly providerMode: 'simulated' | 'browser-rallar' | 'rallar-remote-browser';
+}
+
+export interface CreateRallarBlackBoxCompositeConformanceMatrixInput {
+    readonly caseIds: readonly RallarBlackBoxCompositeConformanceCaseId[];
+    readonly providerIds: readonly RallarBlackBoxCompositeConformanceProviderId[];
+    readonly recipeSettings: RallarBlackBoxCompositeConformanceRecipeSettings;
+}
+
+export interface RallarBlackBoxCompositeConformanceMatrixEntryIdentity {
+    readonly entryId: string;
+    readonly artifactName: string;
+    readonly caseId: RallarBlackBoxCompositeConformanceCaseId;
+    readonly providerId: RallarBlackBoxCompositeConformanceProviderId;
+    readonly case: RallarBlackBoxCompositeConformanceCase;
+    readonly provider: RallarBlackBoxCompositeConformanceProvider;
+    readonly recipe: RallarBlackBoxTestRecipe;
+}
+
+export interface RallarBlackBoxCompositeConformanceSupportedEntry
+    extends RallarBlackBoxCompositeConformanceMatrixEntryIdentity {
+    readonly supported: true;
+}
+
+export interface RallarBlackBoxCompositeConformanceUnsupportedEntry
+    extends RallarBlackBoxCompositeConformanceMatrixEntryIdentity {
+    readonly supported: false;
+    readonly skipReason: string;
+}
+
+export type RallarBlackBoxCompositeConformanceMatrixEntry =
+    | RallarBlackBoxCompositeConformanceSupportedEntry
+    | RallarBlackBoxCompositeConformanceUnsupportedEntry;
+
+export type RallarBlackBoxCompositeConformanceOutcome =
+    | Readonly<{ kind: 'skipped'; skipReason: string; }>
+    | Readonly<{
+        kind: 'ran';
+        result: RallarBlackBoxTestResult;
+        state: RallarBlackBoxTestState;
+        redaction: RallarBlackBoxTestRedactionOptions;
     }>;
-    observed?: Readonly<{
-        resultStatus: RallarBlackBoxTestResultStatus;
-        ok: boolean;
-        commandIds: readonly string[];
-        commandKinds: readonly RallarBlackBoxTestCommand['kind'][];
-        eventTopics: readonly string[];
-        diagnostics: number;
-        failures: number;
-        compositeSummary?: RallarBlackBoxCompositeResultSummary;
-        failureCodes: readonly string[];
-    }>;
-    capabilityDifferences: readonly string[];
-    diagnostics?: readonly unknown[];
-    redactedFailures?: readonly unknown[];
-}>;
+
+export interface RallarBlackBoxCompositeConformanceExpectation {
+    readonly resultStatus: RallarBlackBoxTestResultStatus;
+    readonly requiredCommandKinds: readonly RallarBlackBoxTestCommand['kind'][];
+    readonly requiredCompositeKinds: readonly RallarBlackBoxCompositeConformanceCompositeKind[];
+    readonly requiredEventTopics: readonly string[];
+    readonly expectedFailureCodes: readonly string[];
+}
+
+export interface RallarBlackBoxCompositeConformanceObservation {
+    readonly resultStatus: RallarBlackBoxTestResultStatus;
+    readonly ok: boolean;
+    readonly commandIds: readonly string[];
+    readonly commandKinds: readonly RallarBlackBoxTestCommand['kind'][];
+    readonly eventTopics: readonly string[];
+    readonly diagnostics: number;
+    readonly failures: number;
+    /** Absent when the command history holds no loop or parallel result. */
+    readonly compositeSummary?: RallarBlackBoxCompositeResultSummary;
+    readonly failureCodes: readonly string[];
+}
+
+export type RallarBlackBoxCompositeConformanceDiagnostic = Pick<
+    RallarBlackBoxTestEvent,
+    'topic' | 'commandId' | 'severity' | 'payload'
+>;
+
+export interface RallarBlackBoxCompositeConformanceReportIdentity {
+    readonly schemaVersion: 1;
+    readonly entryId: string;
+    readonly artifactName: string;
+    readonly caseId: RallarBlackBoxCompositeConformanceCaseId;
+    readonly providerId: RallarBlackBoxCompositeConformanceProviderId;
+}
+
+export interface RallarBlackBoxCompositeConformanceSkippedReport
+    extends RallarBlackBoxCompositeConformanceReportIdentity {
+    readonly status: 'skipped';
+    readonly skipReason: string;
+    readonly expected: RallarBlackBoxCompositeConformanceExpectation;
+    readonly capabilityDifferences: readonly string[];
+}
+
+export interface RallarBlackBoxCompositeConformanceRunReport extends RallarBlackBoxCompositeConformanceReportIdentity {
+    readonly status: 'passed' | 'failed';
+    readonly expected: RallarBlackBoxCompositeConformanceExpectation;
+    readonly observed: RallarBlackBoxCompositeConformanceObservation;
+    readonly capabilityDifferences: readonly string[];
+    readonly diagnostics: readonly RallarBlackBoxCompositeConformanceDiagnostic[];
+    readonly redactedFailures: readonly RallarBlackBoxTestResult[];
+}
+
+export type RallarBlackBoxCompositeConformanceReport =
+    | RallarBlackBoxCompositeConformanceSkippedReport
+    | RallarBlackBoxCompositeConformanceRunReport;
+
+export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_DEFAULT_RECIPE_SETTINGS:
+    RallarBlackBoxCompositeConformanceRecipeSettings = {
+        recipeIdPrefix: 'composite-conformance',
+        runId: 'rallar-composite-conformance-run',
+        agentId: 'local-conformance-agent',
+        environment: 'local',
+        apiBaseUrl: 'http://localhost:8080',
+        actor: 'alice',
+        sessionId: 'alice-session',
+        roomId: 'rallar-conformance-room',
+        connection: 'conformanceRtc',
+        wsConnection: 'conformanceWs',
+        timeoutMs: 5_000,
+        applicationId: 'rallar-server',
+        workspaceId: 'default'
+    };
 
 export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackBoxCompositeConformanceCase[] = [
     {
@@ -139,6 +232,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         requiredCommandKinds: ['configure', 'rtc.connect', 'loop', 'rtc.send', 'stats', 'close'],
         requiredCompositeKinds: ['loop'],
         requiredEventTopics: ['rallar.bb.rtc.connected', 'rallar.conformance.message'],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -159,6 +253,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         ],
         requiredCompositeKinds: ['parallel'],
         requiredEventTopics: ['rallar.bb.ws.message', 'rallar.conformance.message'],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -169,6 +264,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         requiredCommandKinds: ['configure', 'rtc.connect', 'rtc.send', 'wait', 'assert', 'stats', 'close'],
         requiredCompositeKinds: [],
         requiredEventTopics: ['rallar.conformance.message'],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -178,6 +274,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         expectedStatus: 'cancelled',
         requiredCommandKinds: ['configure', 'loop', 'health', 'recipe.cancel'],
         requiredCompositeKinds: ['loop'],
+        requiredEventTopics: [],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -195,6 +293,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         ],
         requiredCompositeKinds: [],
         requiredEventTopics: ['rallar.conformance.message'],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -226,6 +325,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         expectedStatus: 'ok',
         requiredCommandKinds: ['configure', 'loop', 'http.request', 'assert', 'stats'],
         requiredCompositeKinds: ['loop'],
+        requiredEventTopics: [],
+        expectedFailureCodes: [],
         liveSafe: true
     },
     {
@@ -235,6 +336,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         expectedStatus: 'failed',
         requiredCommandKinds: ['configure', 'loop', 'assert'],
         requiredCompositeKinds: ['loop'],
+        requiredEventTopics: [],
         expectedFailureCodes: ['RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED'],
         liveSafe: true
     },
@@ -249,7 +351,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES: readonly RallarBlackB
         expectedFailureCodes: ['RALLAR_BB_RTC_NO_PEERS'],
         liveSafe: true
     }
-] as const;
+];
 
 export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS: readonly RallarBlackBoxCompositeConformanceProvider[] = [
     {
@@ -305,7 +407,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS: readonly RallarBl
                     default: 'http://localhost:8080'
                 }
             ],
-            playwright: true
+            playwright: true,
+            controlServer: false
         },
         capabilityDifferences: [
             'Uses browser adapter diagnostics and real browser transport readiness.',
@@ -351,6 +454,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS: readonly RallarBl
                     default: 'http://localhost:5180'
                 }
             ],
+            playwright: false,
             controlServer: true
         },
         capabilityDifferences: [
@@ -358,197 +462,180 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS: readonly RallarBl
             'Artifacts should retain control-run IDs and agent IDs for join-key lookup.'
         ]
     }
-] as const;
+];
 
-export function rallarBlackBoxCompositeConformanceCaseById(
-    caseId: RallarBlackBoxCompositeConformanceCaseId
-): RallarBlackBoxCompositeConformanceCase {
-    const found = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES
-        .find((entry) => entry.caseId === caseId);
-    if (!found) {
-        throw new Error(`Unknown composite conformance case: ${caseId}`);
-    }
-    return found;
-}
-
-export function rallarBlackBoxCompositeConformanceProviderById(
-    providerId: RallarBlackBoxCompositeConformanceProviderId
-): RallarBlackBoxCompositeConformanceProvider {
-    const found = RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS
-        .find((entry) => entry.providerId === providerId);
-    if (!found) {
-        throw new Error(`Unknown composite conformance provider: ${providerId}`);
-    }
-    return found;
-}
-
+/** Entries follow the order of the requested provider and case ids. */
 export function createRallarBlackBoxCompositeConformanceMatrix(
-    options: Readonly<{
-        caseIds?: readonly RallarBlackBoxCompositeConformanceCaseId[];
-        providerIds?: readonly RallarBlackBoxCompositeConformanceProviderId[];
-        recipeOptions?: RallarBlackBoxCompositeConformanceRecipeOptions;
-    }> = {}
+    input: CreateRallarBlackBoxCompositeConformanceMatrixInput
 ): readonly RallarBlackBoxCompositeConformanceMatrixEntry[] {
-    const cases = (options.caseIds ?? RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES.map((entry) => entry.caseId))
-        .map(rallarBlackBoxCompositeConformanceCaseById);
-    const providers =
-        (options.providerIds ?? RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS.map((entry) => entry.providerId))
-            .map(rallarBlackBoxCompositeConformanceProviderById);
-
+    const cases = input.caseIds.flatMap((caseId) =>
+        RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES.filter((entry) => entry.caseId === caseId)
+    );
+    const providers = input.providerIds.flatMap((providerId) =>
+        RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS.filter((entry) => entry.providerId === providerId)
+    );
     return providers.flatMap((provider) =>
-        cases.map((testCase) => {
-            const supported = provider.supportedCaseIds.includes(testCase.caseId);
-            const entryId = `${provider.providerId}:${testCase.caseId}`;
-            return {
-                entryId,
-                artifactName: entryId.replace(/:/g, '-'),
-                caseId: testCase.caseId,
-                providerId: provider.providerId,
-                mode: provider.mode,
-                supported,
-                skipReason: supported
-                    ? undefined
-                    : `${provider.providerId} does not support ${testCase.caseId}.`,
-                case: testCase,
-                provider,
-                recipe: createRallarBlackBoxCompositeConformanceRecipe(testCase.caseId, {
-                    providerMode: provider.providerId === 'browser-rallar'
-                        ? 'browser-rallar'
-                        : provider.providerId === 'remote-browser-control'
-                        ? 'rallar-remote-browser'
-                        : 'simulated',
-                    ...(options.recipeOptions ?? {})
-                }),
-                requires: provider.requires
-            } satisfies RallarBlackBoxCompositeConformanceMatrixEntry;
-        })
+        cases.map((testCase) => toMatrixEntry(provider, testCase, input.recipeSettings))
     );
 }
 
+/** A skipped outcome or an unsupported entry reports skipped; otherwise the observation decides pass or fail. */
 export function toRallarBlackBoxCompositeConformanceReport(
     entry: RallarBlackBoxCompositeConformanceMatrixEntry,
-    input: Readonly<{
-        result?: RallarBlackBoxTestResult;
-        state?: RallarBlackBoxTestState;
-        skipReason?: string;
-        redaction?: RallarBlackBoxTestRedactionOptions;
-    }> = {}
+    outcome: RallarBlackBoxCompositeConformanceOutcome
 ): RallarBlackBoxCompositeConformanceReport {
-    if (!entry.supported || input.skipReason) {
-        return {
-            schemaVersion: 1,
-            entryId: entry.entryId,
-            artifactName: entry.artifactName,
-            caseId: entry.caseId,
-            providerId: entry.providerId,
-            status: 'skipped',
-            skipReason: input.skipReason ?? entry.skipReason,
-            expected: expectedReport(entry.case),
-            capabilityDifferences: entry.provider.capabilityDifferences
-        };
+    if (outcome.kind === 'skipped') {
+        return toSkippedReport(entry, outcome.skipReason);
+    }
+    if (!entry.supported) {
+        return toSkippedReport(entry, entry.skipReason);
     }
 
-    const result = input.result;
-    const state = input.state;
-    const commandHistory = state?.commandHistory ?? (result ? [result] : []);
-    const eventTopics = (state?.events ?? []).map((event) => event.topic);
-    const diagnostics = (state?.events ?? []).filter((event) => event.kind === 'diagnostic');
-    const failures = state?.failures ?? commandHistory.filter((commandResult) => !commandResult.ok);
-    const failureCodes = collectFailureCodes(result, failures);
-    const compositeResults = commandHistory.filter(isCompositeResult);
-    const observed = result
-        ? {
-            resultStatus: result.status,
-            ok: result.ok,
-            commandIds: commandHistory.map((commandResult) => commandResult.commandId),
-            commandKinds: commandHistory.map((commandResult) => commandResult.kind),
-            eventTopics,
-            diagnostics: diagnostics.length,
-            failures: failures.length,
-            compositeSummary: compositeResults.length > 0
-                ? summarizeRallarBlackBoxCompositeResults(compositeResults, {
-                    redaction: input.redaction
-                })
-                : undefined,
-            failureCodes
-        }
-        : undefined;
-
-    const passed = Boolean(
-        observed &&
-            observed.resultStatus === entry.case.expectedStatus &&
-            containsAll(observed.commandKinds, entry.case.requiredCommandKinds) &&
-            containsAll(
-                observed.commandKinds,
-                entry.case.requiredCompositeKinds
-            ) &&
-            containsAll(observed.eventTopics, entry.case.requiredEventTopics ?? []) &&
-            containsAll(observed.failureCodes, entry.case.expectedFailureCodes ?? [])
-    );
-
+    const { state, redaction } = outcome;
+    const diagnostics = state.events.filter((event) => event.kind === 'diagnostic');
+    const observed = toObservation(outcome, diagnostics.length);
     return {
         schemaVersion: 1,
         entryId: entry.entryId,
         artifactName: entry.artifactName,
         caseId: entry.caseId,
         providerId: entry.providerId,
-        status: passed ? 'passed' : 'failed',
-        expected: expectedReport(entry.case),
+        status: isCaseSatisfied(entry.case, observed) ? 'passed' : 'failed',
+        expected: toExpectation(entry.case),
         observed,
         capabilityDifferences: entry.provider.capabilityDifferences,
-        diagnostics: diagnostics.map((event) => redactDiagnostic(event, input.redaction)),
-        redactedFailures: failures.map((failure) => redactRallarBlackBoxValue(failure, input.redaction))
+        diagnostics: diagnostics.map((event) => toRedactedDiagnostic(event, redaction)),
+        redactedFailures: state.failures.map((failure) => redactRallarBlackBoxValue(failure, redaction))
     };
 }
 
-function expectedReport(
+function toMatrixEntry(
+    provider: RallarBlackBoxCompositeConformanceProvider,
+    testCase: RallarBlackBoxCompositeConformanceCase,
+    recipeSettings: RallarBlackBoxCompositeConformanceRecipeSettings
+): RallarBlackBoxCompositeConformanceMatrixEntry {
+    const entryId = `${provider.providerId}:${testCase.caseId}`;
+    const identity: RallarBlackBoxCompositeConformanceMatrixEntryIdentity = {
+        entryId,
+        artifactName: entryId.replace(/:/g, '-'),
+        caseId: testCase.caseId,
+        providerId: provider.providerId,
+        case: testCase,
+        provider,
+        recipe: createRallarBlackBoxCompositeConformanceRecipe(testCase.caseId, {
+            ...recipeSettings,
+            providerMode: toRecipeProviderMode(provider.providerId)
+        })
+    };
+    return provider.supportedCaseIds.includes(testCase.caseId)
+        ? { ...identity, supported: true }
+        : { ...identity, supported: false, skipReason: `${provider.providerId} does not support ${testCase.caseId}.` };
+}
+
+function toRecipeProviderMode(
+    providerId: RallarBlackBoxCompositeConformanceProviderId
+): RallarBlackBoxCompositeConformanceRecipeOptions['providerMode'] {
+    switch (providerId) {
+        case 'browser-rallar':
+            return 'browser-rallar';
+        case 'remote-browser-control':
+            return 'rallar-remote-browser';
+        case 'in-memory-local':
+            return 'simulated';
+    }
+}
+
+function toSkippedReport(
+    entry: RallarBlackBoxCompositeConformanceMatrixEntry,
+    skipReason: string
+): RallarBlackBoxCompositeConformanceSkippedReport {
+    return {
+        schemaVersion: 1,
+        entryId: entry.entryId,
+        artifactName: entry.artifactName,
+        caseId: entry.caseId,
+        providerId: entry.providerId,
+        status: 'skipped',
+        skipReason,
+        expected: toExpectation(entry.case),
+        capabilityDifferences: entry.provider.capabilityDifferences
+    };
+}
+
+function toObservation(
+    outcome: Extract<RallarBlackBoxCompositeConformanceOutcome, Readonly<{ kind: 'ran'; }>>,
+    diagnosticCount: number
+): RallarBlackBoxCompositeConformanceObservation {
+    const { result, state } = outcome;
+    const compositeResults = state.commandHistory.filter((entry) => entry.kind === 'loop' || entry.kind === 'parallel');
+    return {
+        resultStatus: result.status,
+        ok: result.ok,
+        commandIds: state.commandHistory.map((commandResult) => commandResult.commandId),
+        commandKinds: state.commandHistory.map((commandResult) => commandResult.kind),
+        eventTopics: state.events.map((event) => event.topic),
+        diagnostics: diagnosticCount,
+        failures: state.failures.length,
+        compositeSummary: compositeResults.length > 0
+            ? computeRallarBlackBoxCompositeResultSummary(compositeResults, outcome.redaction)
+            : undefined,
+        failureCodes: toFailureCodes(result, state.failures)
+    };
+}
+
+function isCaseSatisfied(
+    testCase: RallarBlackBoxCompositeConformanceCase,
+    observed: RallarBlackBoxCompositeConformanceObservation
+): boolean {
+    return observed.resultStatus === testCase.expectedStatus &&
+        hasAllValues(observed.commandKinds, testCase.requiredCommandKinds) &&
+        hasAllValues(observed.commandKinds, testCase.requiredCompositeKinds) &&
+        hasAllValues(observed.eventTopics, testCase.requiredEventTopics) &&
+        hasAllValues(observed.failureCodes, testCase.expectedFailureCodes);
+}
+
+function toExpectation(
     testCase: RallarBlackBoxCompositeConformanceCase
-): RallarBlackBoxCompositeConformanceReport['expected'] {
+): RallarBlackBoxCompositeConformanceExpectation {
     return {
         resultStatus: testCase.expectedStatus,
         requiredCommandKinds: testCase.requiredCommandKinds,
         requiredCompositeKinds: testCase.requiredCompositeKinds,
-        requiredEventTopics: testCase.requiredEventTopics ?? [],
-        expectedFailureCodes: testCase.expectedFailureCodes ?? []
+        requiredEventTopics: testCase.requiredEventTopics,
+        expectedFailureCodes: testCase.expectedFailureCodes
     };
 }
 
-function containsAll<T>(actual: readonly T[], expected: readonly T[]): boolean {
+function hasAllValues<T>(actual: readonly T[], expected: readonly T[]): boolean {
     return expected.every((value) => actual.includes(value));
 }
 
-function isCompositeResult(result: RallarBlackBoxTestResult): boolean {
-    return result.kind === 'loop' || result.kind === 'parallel';
-}
-
-function collectFailureCodes(
-    result: RallarBlackBoxTestResult | undefined,
+function toFailureCodes(
+    result: RallarBlackBoxTestResult,
     failures: readonly RallarBlackBoxTestResult[]
 ): readonly string[] {
-    const values = [
-        result?.error,
-        ...failures.map((failure) => failure.error)
+    const codes = [result.error, ...failures.map((failure) => failure.error)].flatMap(decodeErrorCodes);
+    return [...new Set(codes)].sort();
+}
+
+/** Codes nested anywhere in an error, including its details, count as failure codes. */
+function decodeErrorCodes(value: unknown): readonly string[] {
+    if (Array.isArray(value)) {
+        return value.flatMap(decodeErrorCodes);
+    }
+    if (!isJsonRecordValue(value)) {
+        return [];
+    }
+    return [
+        ...(typeof value.code === 'string' ? [value.code] : []),
+        ...Object.values(value).flatMap(decodeErrorCodes)
     ];
-    const codes = new Set<string>();
-    values.forEach((error) => collectErrorCodes(error, codes));
-    return [...codes].sort();
 }
 
-function collectErrorCodes(value: unknown, codes: Set<string>): void {
-    if (!value || typeof value !== 'object') {
-        return;
-    }
-    const record = value as Record<string, unknown>;
-    if (typeof record.code === 'string') {
-        codes.add(record.code);
-    }
-    Object.values(record).forEach((entry) => collectErrorCodes(entry, codes));
-}
-
-function redactDiagnostic(
+function toRedactedDiagnostic(
     event: RallarBlackBoxTestEvent,
-    redaction: RallarBlackBoxTestRedactionOptions | undefined
-): unknown {
+    redaction: RallarBlackBoxTestRedactionOptions
+): RallarBlackBoxCompositeConformanceDiagnostic {
     return redactRallarBlackBoxValue({
         topic: event.topic,
         commandId: event.commandId,

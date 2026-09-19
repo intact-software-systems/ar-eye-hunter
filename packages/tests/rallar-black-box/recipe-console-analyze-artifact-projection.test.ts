@@ -11,6 +11,11 @@ import {
     projectAnalyzeEvidenceWindow,
     projectAnalyzeTuneArtifactFacade
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-projection.ts';
+import {
+    boundedText,
+    MAX_SUMMARY_BYTES,
+    PROJECTION_OMISSION_MESSAGE
+} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-projection-bounds.ts';
 import { deriveTuneWorkspaceSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-workspace-source-model.ts';
 import type { DistributedArtifactEvidenceEntry, DistributedArtifactEvidenceWindow } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
@@ -50,8 +55,13 @@ describe('Recipe Console Analyze artifact projection', () => {
         const projection = projectAnalyzeArtifactModel(model);
 
         expect(projection.analysis.spa?.verdict).toEqual(model.analysis.spa?.verdict);
-        expect(projection.analysis.failure?.affectedAgents)
-            .toEqual(model.analysis.failure?.affectedAgents);
+        if (model.analysis.ok || projection.analysis.ok) {
+            throw new Error('Scale fixture must describe a failed run.');
+        }
+        expect(projection.analysis.failure.affectedAgents).toEqual(model.analysis.failure.affectedAgents);
+        if (projection.analysis.detail !== 'full') {
+            throw new Error('Scale fixture must project its full display detail.');
+        }
         expect(projection.analysis.targetResolution?.targetAgentIds)
             .toEqual(model.analysis.targetResolution?.targetAgentIds);
         expect(projection.analysis.spa).not.toHaveProperty('report');
@@ -78,7 +88,12 @@ describe('Recipe Console Analyze artifact projection', () => {
         });
 
         expect(projection.distributedRunId).toBe(distributedRunId);
-        expect(projection.identity).toEqual({ distributedRunId, controlRunId });
+        expect(projection.identity).toEqual({
+            distributedRunId,
+            distributedRunIdExact: true,
+            controlRunId,
+            controlRunIdExact: true
+        });
     });
 
     it('keeps URL-safe multibyte identities exact across Tune authority surfaces', () => {
@@ -177,6 +192,52 @@ describe('Recipe Console Analyze artifact projection', () => {
         });
         expect(projection.primaryResultFailure?.failureDetails)
             .not.toHaveProperty('stack');
+    });
+
+    it('keeps the failed verdict actionable when the projection falls back to its bounded form', () => {
+        const model = hostileAnalyzeModel();
+
+        const projection = projectAnalyzeArtifactModel(model);
+
+        expect(projection.issueMarkdown).toBe(PROJECTION_OMISSION_MESSAGE);
+        if (projection.analysis.ok) {
+            throw new Error('The hostile fixture must project a failed run.');
+        }
+        if (model.analysis.ok) {
+            throw new Error('The hostile fixture must describe a failed run.');
+        }
+        expect(projection.analysis.failure.title)
+            .toBe(boundedText(model.analysis.failure.title, MAX_SUMMARY_BYTES));
+        expect(projection.analysis.failure.nextAction)
+            .toBe(boundedText(model.analysis.failure.nextAction));
+        expect(projection.analysis.fixProposalMarkdown)
+            .toBe(boundedText(model.analysis.fixProposalMarkdown));
+    });
+
+    it('tags each projection with the display detail it actually carries', () => {
+        const fixture = createRecipeConsoleScaleFixture({ eventCount: 6, resultCount: 3 });
+        const full = projectAnalyzeArtifactModel(createAnalyzeArtifactModel({
+            files: fixture.files,
+            source: 'local-files',
+            label: 'Projection fixture',
+            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
+        }));
+        const bounded = projectAnalyzeArtifactModel(hostileAnalyzeModel());
+
+        expect(full.analysis.detail).toBe('full');
+        expect(bounded.analysis.detail).toBe('bounded');
+        // A bounded projection states the omission through its tag; it never carries a display
+        // section holding a placeholder sentence instead of the analysis's own text.
+        expect(bounded.analysis).not.toHaveProperty('summaryMarkdown');
+        expect(bounded.analysis).not.toHaveProperty('performanceMarkdown');
+        expect(bounded.analysis).not.toHaveProperty('performance');
+        expect(bounded.analysis).not.toHaveProperty('targetResolution');
+        expect(bounded.analysis).not.toHaveProperty('group');
+        if (full.analysis.detail !== 'full') {
+            throw new Error('The scale fixture must project its full display detail.');
+        }
+        expect(typeof full.analysis.summaryMarkdown).toBe('string');
     });
 
     it('keeps the retained stack in the normal primary-result projection', () => {
@@ -279,7 +340,6 @@ describe('Recipe Console Analyze artifact projection', () => {
             ANALYZE_PROJECTION_MAX_SERIALIZED_BYTES
         );
         expect(facade).not.toHaveProperty('candidateManifest');
-        expect(facade.candidateManifestOmittedReason).toBe('manifest-too-large');
         expect(facade.selection.artifactRole).toBe('focus');
         expect(facade.identity.distributedRunId).toMatch(/^opaque-id:/);
         expect(facade.manifestSummary.group.applicationId).toContain('…');
@@ -299,8 +359,8 @@ describe('Recipe Console Analyze artifact projection', () => {
             artifactSchemaVersion: fixture.artifactSchemaVersion
         });
         const performance = base.analysis.performance;
-        if (!performance) {
-            throw new Error('Scale fixture must include performance.');
+        if (performance === undefined) {
+            throw new Error('The scale fixture carries a control run, so its analysis measures performance.');
         }
         const model = {
             ...base,
@@ -309,7 +369,11 @@ describe('Recipe Console Analyze artifact projection', () => {
                 performance: {
                     ...performance,
                     receiverDelivery: {
-                        sampleCount: 2,
+                        sampleCount: 3,
+                        minReceivedMessages: 4,
+                        medianReceivedMessages: 8,
+                        p95ReceivedMessages: Number.MAX_VALUE,
+                        maxReceivedMessages: Number.MAX_VALUE,
                         lowestAgents: [
                             {
                                 agentId: 'measured-agent',

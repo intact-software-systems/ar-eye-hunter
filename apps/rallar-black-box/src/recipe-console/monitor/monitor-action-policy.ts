@@ -1,7 +1,5 @@
-import {
-    isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedRunState
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedRunState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type {
     ControlQueryAuthorization,
     ControlQueryError,

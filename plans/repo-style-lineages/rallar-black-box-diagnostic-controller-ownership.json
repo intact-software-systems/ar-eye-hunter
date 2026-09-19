@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx",
+        "blob": "419a354110c5ffb75351ae24042e20760587ff85"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-contracts.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-evidence.tsx",
+        "apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-panel.tsx",
+        "apps/rallar-black-box/src/legacy/diagnostics/auth/use-auth-command-center-controller.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts",
+        "blob": "e37763007c97026495695b3e8503cb64467c42a8"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/rtc-realtime-facade-session.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/to-rtc-realtime-recipe.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/to-rtc-realtime-send-inputs.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts",
+        "blob": "6cd44d5e4f3ac0021076f75841fec9292ac0d8fb"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-collection-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-request-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-collection-controller.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-collection-draft.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-defaults.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-request-controller.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-request-draft.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/rallar-server-workbench.ts",
+        "blob": "8c9fff436df429972e4b1c073572efacaffba48a"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/compute-rallar-server-rest-assertions.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-collection-value.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-json-path.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/to-lower-case-rallar-server-headers.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-collection-step-request-input.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-extracted-variables.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-rest-collection-recipe.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/decode-rallar-server-open-api-endpoints.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/decode-rallar-server-request-text.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/rallar-server-endpoint-presets.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/rallar-server-workbench-contracts.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/read-rallar-server-open-api-endpoints.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/redact-rallar-server-value.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/send-rallar-server-rest-request.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-base-url.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-black-box-command.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-curl.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-endpoint-draft.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-rest-request.ts",
+        "apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-workbench-variables.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-parsing.ts",
+        "blob": "80ec115c113e62ff4a5c31d2e92383adcbc17e84"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rallar-server/decode-rallar-server-collection-text.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/shared/rest-action-log.ts",
+        "blob": "dd026813d6809703bd3115b2f4cc02521a87150b"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/shared/to-rest-action-log-entry.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts",
+        "blob": "ff4714bc207876b6927556534e3ce1331b796e63"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-actions.ts",
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/to-rooms-clients-rows.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts",
+        "blob": "eaf80ad2a0c99a31f2eb9035e659a6288226bf5c"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/to-rooms-clients-preset-request-input.ts"
+      ]
+    }
+  ]
+}

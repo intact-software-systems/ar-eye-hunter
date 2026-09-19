@@ -1,10 +1,8 @@
-import {
-    DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS,
-    type DistributedRecipeRolePattern,
-    type DistributedRecipeTargetPolicyMode
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS } from '@shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-role-pattern.ts';
 import type {
+    RallarBlackBoxDistributedRolePattern,
     RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode,
     RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
@@ -12,8 +10,8 @@ import { ControlAgentBoardPanel } from '../../agents/ControlAgentBoardPanel.tsx'
 
 type DistributedTargetResolutionPanelProps = Readonly<{
     targetRowCount: number;
-    targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    rolePattern: DistributedRecipeRolePattern;
+    targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
+    rolePattern: RallarBlackBoxDistributedRolePattern;
     usesWorldFleetTargets: boolean;
     expectedParticipantCount: number;
     ackTimeoutMs: number;
@@ -28,8 +26,8 @@ type DistributedTargetResolutionPanelProps = Readonly<{
     agentRows: readonly ControlAgentBoardRow[];
     agentSummary: ControlAgentBoardSummary;
     selectedAgentIds: ReadonlySet<string>;
-    onTargetPolicyModeChange(value: DistributedRecipeTargetPolicyMode): void;
-    onRolePatternChange(value: DistributedRecipeRolePattern): void;
+    onTargetPolicyModeChange(value: RallarBlackBoxDistributedTargetPolicyMode): void;
+    onRolePatternChange(value: RallarBlackBoxDistributedRolePattern): void;
     onExpectedParticipantCountChange(value: number): void;
     onAckTimeoutMsChange(value: number): void;
     onBarrierEnabledChange(value: boolean): void;
@@ -54,7 +52,7 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         onChange={(event) =>
                             props.onTargetPolicyModeChange(
                                 event.target
-                                    .value as DistributedRecipeTargetPolicyMode
+                                    .value as RallarBlackBoxDistributedTargetPolicyMode
                             )}
                     >
                         <option value="selected-agents">Selected agents</option>
@@ -75,7 +73,7 @@ export function DistributedTargetResolutionPanel(props: DistributedTargetResolut
                         value={props.rolePattern}
                         onChange={(event) =>
                             props.onRolePatternChange(
-                                event.target.value as DistributedRecipeRolePattern
+                                event.target.value as RallarBlackBoxDistributedRolePattern
                             )}
                     >
                         {DISTRIBUTED_RECIPE_ROLE_PATTERN_OPTIONS.map((option) => (

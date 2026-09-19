@@ -3,11 +3,14 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createAdvancedRecipeConsoleReturnHref } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
+import { MonitorDiagnosticHandoffs } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-diagnostic-handoffs.tsx';
+import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-inspector.tsx';
 import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import { MonitorDiagnosticHandoffs } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx';
-import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import type { DistributedRunFailureRow, DistributedRunRuntimeDiagnosticRow } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type {
+    DistributedRunFailureRow,
+    DistributedRunRuntimeDiagnosticRow
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;

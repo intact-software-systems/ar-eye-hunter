@@ -285,10 +285,13 @@ it('emits expected-session and duplicate-session diagnostics', async () => {
 });
 
 it('records an AL outbound admission diagnostics event into the agent event log', async () => {
-    // The recorder attaches at construction, independent of any connection.
-    await loadRuntime();
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
 
-    facade.rallar.diagnostics.outboundDiagnostics.sink({
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.outboundDiagnostics?.({
         kind: 'sender-queue-wait',
         senderId: 'sender-1',
         origin: 'send',
@@ -314,10 +317,13 @@ it('records an AL outbound admission diagnostics event into the agent event log'
 });
 
 it('records an AL inbound admission diagnostics event into the agent event log', async () => {
-    // The recorder attaches at construction, independent of any connection.
-    await loadRuntime();
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
 
-    facade.rallar.diagnostics.inboundDiagnostics.sink({
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.inboundDiagnostics?.({
         kind: 'admission-outcome',
         workerId: 'al-inbound:worker-1',
         msgId: 'msg-7',
@@ -343,10 +349,13 @@ it('records an AL inbound admission diagnostics event into the agent event log',
 });
 
 it('records an AL storage reset diagnostics event into the agent event log', async () => {
-    // The recorder attaches at construction, independent of any connection.
-    await loadRuntime();
+    const runtime = await loadRuntime();
+    await runtime.connect({
+        connection: 'diagnostics',
+        rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' }
+    });
 
-    facade.rallar.diagnostics.storageReset.sink({
+    facade.records.defaultWrites.at(-1)?.diagnosticsPorts?.onStorageReset?.({
         dbName: 'rallar-al-runtime',
         previousSchemaId: 'rallar-alm-2026-08-f1',
         schemaId: 'rallar-alm-2026-09-f2',
@@ -365,4 +374,26 @@ it('records an AL storage reset diagnostics event into the agent event log', asy
             }
         })
     ]));
+});
+
+it('records synchronous connection producer diagnostics once across reconnect', async () => {
+    const runtime = await loadRuntime();
+    const connect = { connection: 'early', rallar: { apiBaseUrl: 'https://api.example.test', applicationId: 'app-1', username: 'alice', password: 'secret' } };
+    facade.behavior.connect.mockImplementation(async () => {
+        const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
+        ports?.outboundDiagnostics?.({
+            kind: 'sender-queue-wait',
+            senderId: 'early',
+            origin: 'send',
+            queued: false,
+            queuedBehindOrigin: 'none',
+            durationMs: 0
+        });
+        ports?.onStorageReset?.({ dbName: 'early', previousSchemaId: undefined, schemaId: 'current', reason: 'schema-id-mismatch' });
+    });
+    await runtime.connect(connect);
+    await runtime.close();
+    await runtime.connect(connect);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.outbound_diagnostics')).toHaveLength(2);
+    expect(events.filter((event) => event.topic === 'rallar.browser.alm.storage_reset')).toHaveLength(2);
 });

@@ -1,10 +1,10 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { ChangeEvent } from 'react';
-import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot
-} from '../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { ChangeEvent } from 'react';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../control-agent-board.ts';
 import {
     distributedRecipeStateTone,
     type DistributedRunAnalysisReport,
@@ -23,7 +23,7 @@ import { DistributedRunMonitorPanel } from '../distributed/DistributedRunMonitor
 import { DistributedRunSummary } from '../distributed/DistributedRunSummary.tsx';
 import type { DistributedArtifactImportStatus } from './distributed-artifact-import.ts';
 import { DistributedRunAnalysisReportPanel } from './DistributedRunAnalysisReportPanel.tsx';
-import { ImportedDistributedArtifactAnalysisPanel } from './ImportedDistributedArtifactAnalysisPanel.tsx';
+import { ImportedDistributedArtifactAnalysisPanel } from './imported-distributed-artifact-analysis-panel.tsx';
 
 type RunnerDistributedAnalysisSectionProps = Readonly<{
     selectedDistributedRun?: ControlDistributedRunSnapshot;

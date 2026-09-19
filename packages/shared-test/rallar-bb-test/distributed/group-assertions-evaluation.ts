@@ -1,17 +1,17 @@
-// deno-lint-ignore-file no-explicit-any
 import type {
     RallarBlackBoxDistributedRecipeResult,
     RallarBlackBoxDistributedRunItemState,
     RallarBlackBoxDistributedRunManifest
 } from '../distributed-run.ts';
+import type { RallarBlackBoxTestRedactionOptions } from '../rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
-import type { RallarBlackBoxTestRedactionOptions } from '../types.ts';
-import { evaluateGroupAssertionAggregate, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
+import { computeGroupAssertionVerdict, type GroupAssertionVerdict } from './group-assertions-aggregates.ts';
 import {
-    collectGroupAssertionEvidence,
+    computeGroupAssertionEvidenceRows,
     type DistributedGroupAssertionParticipant,
     type DistributedGroupAssertionRecipeEvidence,
-    type GroupAssertionEvidenceRow
+    type GroupAssertionEvidenceRow,
+    type ResolvedGroupAssertionEvidenceRow
 } from './group-assertions-evidence.ts';
 import {
     RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING,
@@ -19,8 +19,20 @@ import {
     RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
     type RallarBlackBoxDistributedGroupAssertion,
     type RallarBlackBoxDistributedGroupAssertionResult,
-    type RallarBlackBoxGroupAssertionAgentRow
+    type RallarBlackBoxGroupAssertionAgentRow,
+    type RallarBlackBoxGroupAssertionAgentVerdict,
+    type RallarBlackBoxGroupAssertionParticipantCounts,
+    type RallarBlackBoxMatchingGroupAssertionResult
 } from './group-assertions.ts';
+
+export interface ComputeDistributedGroupAssertionResultsInput {
+    readonly manifest: RallarBlackBoxDistributedRunManifest;
+    readonly participants: readonly DistributedGroupAssertionParticipant[];
+    readonly recipeResults: readonly RallarBlackBoxDistributedRecipeResult[];
+    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
+    /** Absent when recorded evidence values are reported without redaction. */
+    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+}
 
 const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] = [
     'passed',
@@ -31,22 +43,35 @@ const COMPLETED_RECIPE_STATES: readonly RallarBlackBoxDistributedRunItemState[] 
     'skipped'
 ];
 
-export interface EvaluateDistributedGroupAssertionsInput {
-    readonly manifest: RallarBlackBoxDistributedRunManifest;
-    readonly participants: readonly DistributedGroupAssertionParticipant[];
-    readonly recipeResults: readonly RallarBlackBoxDistributedRecipeResult[];
-    readonly recipeEvidence: readonly DistributedGroupAssertionRecipeEvidence[];
-    readonly redaction?: RallarBlackBoxTestRedactionOptions;
+type GroupAssertionOutcome = Pick<
+    RallarBlackBoxMatchingGroupAssertionResult,
+    'ok' | 'missingAgentIds' | 'violatingAgentIds' | 'perAgent' | 'error'
+>;
+
+interface ToGroupAssertionResultInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly counts: RallarBlackBoxGroupAssertionParticipantCounts;
+    readonly outcome: GroupAssertionOutcome;
+}
+
+interface ToGroupAssertionOutcomeInput {
+    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
+    readonly perAgent: readonly RallarBlackBoxGroupAssertionAgentRow[];
+    readonly verdict: GroupAssertionVerdict;
+    readonly evidenceOk: boolean;
+    readonly missingAgentIds: readonly string[];
+    readonly brokenEvidence: readonly GroupAssertionEvidenceRow[];
+    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
 }
 
 // Coordinator-side evaluation over the frozen participant set. Returns
 // undefined while dispatched recipes are still executing; the control-server
 // rollup calls this on every refresh, so the first fully completed pass is
 // the one that decides.
-export function evaluateDistributedGroupAssertions(
-    input: EvaluateDistributedGroupAssertionsInput
+export function computeDistributedGroupAssertionResults(
+    input: ComputeDistributedGroupAssertionResultsInput
 ): readonly RallarBlackBoxDistributedGroupAssertionResult[] | undefined {
-    const groupAssertions = input.manifest.groupAssertions ?? [];
+    const groupAssertions = input.manifest.groupAssertions;
     if (groupAssertions.length === 0) {
         return undefined;
     }
@@ -56,12 +81,12 @@ export function evaluateDistributedGroupAssertions(
     if (!complete) {
         return undefined;
     }
-    return groupAssertions.map((assertion) => evaluateGroupAssertion(assertion, input));
+    return groupAssertions.map((assertion) => computeGroupAssertionResult(assertion, input));
 }
 
-function evaluateGroupAssertion(
+function computeGroupAssertionResult(
     assertion: RallarBlackBoxDistributedGroupAssertion,
-    input: EvaluateDistributedGroupAssertionsInput
+    input: ComputeDistributedGroupAssertionResultsInput
 ): RallarBlackBoxDistributedGroupAssertionResult {
     const scopeRole = assertion.scope?.role;
     const scopedParticipants = scopeRole === undefined
@@ -71,44 +96,64 @@ function evaluateGroupAssertion(
         return toNoParticipantsResult(assertion);
     }
 
-    const rows = collectGroupAssertionEvidence({
+    const rows = computeGroupAssertionEvidenceRows({
         source: assertion.source,
         participants: scopedParticipants,
         recipeEvidence: input.recipeEvidence
     });
-    const resolved = rows.filter((row) => row.status === 'resolved');
+    const resolved = rows.filter((row): row is ResolvedGroupAssertionEvidenceRow => row.status === 'resolved');
     const requiredParticipants = assertion.minParticipants ?? scopedParticipants.length;
-    const brokenEvidence = rows.filter((row) => row.status === 'duplicate' || row.status === 'unresolved');
-    const missingAgentIds = rows
-        .filter((row) => row.status === 'missing')
-        .map((row) => row.agentId);
-    const evidenceOk = brokenEvidence.length === 0 && resolved.length >= requiredParticipants;
-    const verdict = evaluateGroupAssertionAggregate(assertion, resolved);
+    const brokenEvidence = rows.filter((row) => row.status !== 'resolved' && row.status !== 'missing');
+    const verdict = computeGroupAssertionVerdict(assertion, resolved);
 
+    return toGroupAssertionResult({
+        assertion,
+        counts: {
+            expected: scopedParticipants.length,
+            required: requiredParticipants,
+            withEvidence: resolved.length
+        },
+        outcome: toGroupAssertionOutcome({
+            assertion,
+            perAgent: toRedactedAgentRows(rows, verdict, input.redaction),
+            verdict,
+            evidenceOk: brokenEvidence.length === 0 && resolved.length >= requiredParticipants,
+            missingAgentIds: rows.filter((row) => row.status === 'missing').map((row) => row.agentId),
+            brokenEvidence,
+            redaction: input.redaction
+        })
+    });
+}
+
+function toGroupAssertionOutcome(input: ToGroupAssertionOutcomeInput): GroupAssertionOutcome {
+    const ok = input.evidenceOk && input.verdict.ok;
+    return {
+        ok,
+        missingAgentIds: input.missingAgentIds,
+        violatingAgentIds: input.verdict.violatingAgentIds,
+        perAgent: input.perAgent,
+        error: ok ? undefined : toGroupAssertionError(input)
+    };
+}
+
+function toGroupAssertionResult(input: ToGroupAssertionResultInput): RallarBlackBoxDistributedGroupAssertionResult {
+    const { assertion } = input;
+    if (assertion.aggregate === 'allEqual' || assertion.aggregate === 'allEqualWithin') {
+        return {
+            groupAssertionId: assertion.groupAssertionId,
+            aggregate: assertion.aggregate,
+            participants: input.counts,
+            ...input.outcome
+        };
+    }
+    const matching = input.outcome.perAgent
+        .filter((row) => row.evidence === 'resolved' && row.verdict === 'matching')
+        .length;
     return {
         groupAssertionId: assertion.groupAssertionId,
         aggregate: assertion.aggregate,
-        ok: evidenceOk && verdict.ok,
-        participants: {
-            expected: scopedParticipants.length,
-            required: requiredParticipants,
-            withEvidence: resolved.length,
-            matching: verdict.matchingCount
-        },
-        missingAgentIds,
-        violatingAgentIds: verdict.violatingAgentIds,
-        perAgent: toRedactedAgentRows(rows, verdict, input.redaction),
-        error: evidenceOk && verdict.ok
-            ? undefined
-            : toGroupAssertionError({
-                assertion,
-                rows,
-                verdict,
-                evidenceOk,
-                missingAgentIds,
-                brokenEvidence,
-                redaction: input.redaction
-            })
+        participants: { ...input.counts, matching },
+        ...input.outcome
     };
 }
 
@@ -117,29 +162,29 @@ function toRedactedAgentRows(
     verdict: GroupAssertionVerdict,
     redaction: RallarBlackBoxTestRedactionOptions | undefined
 ): readonly RallarBlackBoxGroupAssertionAgentRow[] {
-    return rows.map((row) => ({
-        agentId: row.agentId,
-        role: row.role,
-        evidence: row.status,
-        verdict: row.status === 'resolved' ? verdict.verdictByAgentId.get(row.agentId) : undefined,
-        value: row.status === 'resolved'
-            ? redactRallarBlackBoxValue(row.value, redaction)
-            : undefined
-    }));
-}
-
-interface ToGroupAssertionErrorInput {
-    readonly assertion: RallarBlackBoxDistributedGroupAssertion;
-    readonly rows: readonly GroupAssertionEvidenceRow[];
-    readonly verdict: GroupAssertionVerdict;
-    readonly evidenceOk: boolean;
-    readonly missingAgentIds: readonly string[];
-    readonly brokenEvidence: readonly GroupAssertionEvidenceRow[];
-    readonly redaction: RallarBlackBoxTestRedactionOptions | undefined;
+    const matchingAgentIds = new Set(verdict.kind === 'predicate' ? verdict.matchingAgentIds : []);
+    const violatingAgentIds = new Set(verdict.violatingAgentIds);
+    const toAgentVerdict = (agentId: string): RallarBlackBoxGroupAssertionAgentVerdict =>
+        verdict.kind === 'predicate'
+            ? matchingAgentIds.has(agentId) ? 'matching' : 'not-matching'
+            : violatingAgentIds.has(agentId)
+            ? 'violating'
+            : 'agreeing';
+    return rows.map((row) =>
+        row.status === 'resolved'
+            ? {
+                agentId: row.agentId,
+                role: row.role,
+                evidence: row.status,
+                verdict: toAgentVerdict(row.agentId),
+                value: redactRallarBlackBoxValue(row.value, redaction)
+            }
+            : { agentId: row.agentId, role: row.role, evidence: row.status }
+    );
 }
 
 function toGroupAssertionError(
-    input: ToGroupAssertionErrorInput
+    input: ToGroupAssertionOutcomeInput
 ): RallarBlackBoxDistributedGroupAssertionResult['error'] {
     const assertion = input.assertion;
     const details = redactRallarBlackBoxValue({
@@ -151,7 +196,7 @@ function toGroupAssertionError(
         brokenEvidenceAgentIds: input.brokenEvidence.map((row) => row.agentId),
         violatingAgentIds: input.verdict.violatingAgentIds,
         aggregateDetail: input.verdict.detail,
-        perAgent: toRedactedAgentRows(input.rows, input.verdict, input.redaction)
+        perAgent: input.perAgent
     }, input.redaction);
 
     if (!input.evidenceOk) {
@@ -178,17 +223,18 @@ function toNoParticipantsResult(
     const scopeText = assertion.scope?.role === undefined
         ? 'the frozen participant set is empty'
         : `no frozen participant holds role ${assertion.scope.role}`;
-    return {
-        groupAssertionId: assertion.groupAssertionId,
-        aggregate: assertion.aggregate,
-        ok: false,
-        participants: { expected: 0, required: assertion.minParticipants ?? 0, withEvidence: 0 },
-        missingAgentIds: [],
-        violatingAgentIds: [],
-        perAgent: [],
-        error: {
-            code: RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
-            message: `Group assertion ${assertion.groupAssertionId} cannot evaluate: ${scopeText}.`
+    return toGroupAssertionResult({
+        assertion,
+        counts: { expected: 0, required: assertion.minParticipants ?? 0, withEvidence: 0 },
+        outcome: {
+            ok: false,
+            missingAgentIds: [],
+            violatingAgentIds: [],
+            perAgent: [],
+            error: {
+                code: RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS,
+                message: `Group assertion ${assertion.groupAssertionId} cannot evaluate: ${scopeText}.`
+            }
         }
-    };
+    });
 }

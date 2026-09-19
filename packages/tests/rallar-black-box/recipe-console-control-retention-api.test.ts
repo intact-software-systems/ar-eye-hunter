@@ -1,22 +1,24 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { resolve } from 'node:path';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { ControlRunManagerHttpError as CanonicalHttpError } from '../../../apps/rallar-black-box/src/control-http-error.ts';
-import { ControlRunManagerHttpError as LegacyHttpError } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { createRecipeConsoleControlApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import {
     recipeConsoleControlCredentialPolicyFromSearch,
     TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 import { createControlLazyCapability } from '../../../apps/rallar-black-box/src/recipe-console/control/control-lazy-capability.ts';
+import type {
+    ControlRetentionRefusal,
+    RecipeConsoleControlRetentionApi
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-api.ts';
 import {
     requestControlRetentionConfirmation,
-    requestControlRetentionPreview,
-    requestLegacyControlRetentionCleanup
+    requestControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-request.ts';
 import {
     parseControlRetentionConfirmation,
-    parseControlRetentionPreview
+    parseControlRetentionPreview,
+    type ControlRetentionPreview
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 import { analyzeSourceFile } from '../helpers/source-analysis';
@@ -94,8 +96,21 @@ function authorization(init: RequestInit | undefined): string | null {
     return new Headers(init?.headers).get('Authorization');
 }
 
+async function acceptedPreview(
+    retention: RecipeConsoleControlRetentionApi
+): Promise<ControlRetentionPreview> {
+    const outcome = await retention.preview({});
+    const preview = outcome.right;
+    if (preview === undefined) {
+        throw new Error(
+            `Expected an accepted retention preview, got: ${outcome.left?.message}`
+        );
+    }
+    return preview;
+}
+
 describe('Recipe Console retention request wire format', () => {
-    it('serializes preview, confirmation, and legacy compatibility without bodies or inherited secrets', async () => {
+    it('serializes preview and confirmation without bodies or inherited secrets', async () => {
         const requests: Array<{ url: URL; init?: RequestInit; }> = [];
         const fetchFn = async (input: RequestInfo | URL, init?: RequestInit) => {
             requests.push({ url: new URL(String(input)), init });
@@ -109,12 +124,10 @@ describe('Recipe Console retention request wire format', () => {
             planToken: 'opaque +&/token',
             fetchFn
         });
-        await requestLegacyControlRetentionCleanup({ baseUrl, fetchFn });
 
         expect(requests.map(({ url }) => `${url.pathname}${url.search}`)).toEqual([
             '/retention/cleanup?dryRun=true',
-            '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken',
-            '/retention/cleanup'
+            '/retention/cleanup?planToken=opaque+%2B%26%2Ftoken'
         ]);
         for (const request of requests) {
             expect(request.init?.method).toBe('POST');
@@ -130,42 +143,61 @@ describe('Recipe Console retention request wire format', () => {
         [400, 'Bad Request'],
         [409, 'Conflict'],
         [413, 'Payload Too Large']
-    ])('retains canonical HTTP %s provenance', async (status, statusText) => {
+    ])('retains canonical HTTP %s provenance as a failure value', async (status, statusText) => {
         const fetchFn = async () =>
             Response.json(
                 { error: `retention-${status}` },
                 { status, statusText }
             );
 
-        const failure = requestControlRetentionPreview({
+        const refused = await requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn
         });
 
-        await expect(failure).rejects.toBeInstanceOf(CanonicalHttpError);
-        await expect(failure).rejects.toBeInstanceOf(LegacyHttpError);
-        await expect(failure).rejects.toMatchObject({
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual({
+            kind: 'http',
             message: `retention-${status}`,
             status,
             statusText
         });
     });
 
+    it('names the request itself when a failed reply carries no server sentence', async () => {
+        const refused = await requestControlRetentionPreview({
+            baseUrl: 'https://control.test',
+            fetchFn: async () => Response.json({}, { status: 409, statusText: 'Conflict' })
+        });
+
+        expect(refused.left).toEqual({
+            kind: 'http',
+            message: 'Control server request failed: 409 Conflict',
+            status: 409,
+            statusText: 'Conflict'
+        });
+    });
+
     it('keeps non-JSON success parse failures and non-JSON HTTP status separate', async () => {
+        // A 2xx body that is not JSON is the server breaking its own protocol, not a retention
+        // outcome, so it stays a thrown value the transport maps to a reachable protocol error.
         await expect(requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn: async () => new Response('not-json')
         })).rejects.toBeInstanceOf(SyntaxError);
 
-        await expect(requestControlRetentionPreview({
+        const refused = await requestControlRetentionPreview({
             baseUrl: 'https://control.test',
             fetchFn: async () =>
                 new Response('not-json', {
                     status: 409,
                     statusText: 'Conflict'
                 })
-        })).rejects.toMatchObject({
-            name: 'ControlRunManagerHttpError',
+        });
+
+        expect(refused.left).toEqual({
+            kind: 'http',
+            message: 'Control server request failed: 409 Conflict',
             status: 409,
             statusText: 'Conflict'
         });
@@ -366,7 +398,7 @@ describe('Recipe Console authorized retention API', () => {
 
         const first = await api.retention.load();
         const second = await api.retention.load();
-        const preview = await first.preview({});
+        const preview = await acceptedPreview(first);
 
         expect(first).toBe(second);
         expect(preview).toMatchObject({ planToken: PREVIEW.planToken });
@@ -408,10 +440,10 @@ describe('Recipe Console authorized retention API', () => {
             });
             const retention = await api.retention.load();
 
-            const preview = await retention.preview({});
+            const preview = await acceptedPreview(retention);
             const confirmation = await retention.confirm({ preview });
 
-            expect(confirmation).toEqual(CONFIRMATION);
+            expect(confirmation.right).toEqual(CONFIRMATION);
             expect(requests).toEqual([
                 { path: '/retention/cleanup', query: '?dryRun=true', auth: null },
                 {
@@ -502,7 +534,7 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
 
-        await (await api.retention.load()).preview({});
+        await acceptedPreview(await api.retention.load());
 
         expect(requests).toEqual([{
             url: 'https://caller-control.test/retention/cleanup?dryRun=true',
@@ -569,7 +601,7 @@ describe('Recipe Console authorized retention API', () => {
         });
     });
 
-    it('brands previews to one API context and refuses cross-endpoint confirmation locally', async () => {
+    it('refuses cross-endpoint confirmation locally with a failure value, not a throw', async () => {
         let endpointBRequests = 0;
         const firstApi = createRecipeConsoleControlApi({
             controlUrl: 'https://control-a.test',
@@ -586,12 +618,16 @@ describe('Recipe Console authorized retention API', () => {
                 return Response.json(CONFIRMATION);
             }
         });
-        const preview = await (await firstApi.retention.load()).preview({});
+        const preview = await acceptedPreview(await firstApi.retention.load());
         const secondRetention = await secondApi.retention.load();
 
-        await expect(secondRetention.confirm({ preview })).rejects.toThrow(
-            /current control connection/i
-        );
+        const refused = await secondRetention.confirm({ preview });
+
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual<ControlRetentionRefusal>({
+            code: 'foreign-preview',
+            message: 'The retention preview does not belong to the current control connection.'
+        });
         expect(endpointBRequests).toBe(0);
         expect(firstApi.retention.generation).not.toBe(
             secondApi.retention.generation
@@ -631,7 +667,7 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
         const retention = await api.retention.load();
-        const preview = await retention.preview({});
+        const preview = await acceptedPreview(retention);
         api.close();
 
         await expect(retention.confirm({ preview })).rejects.toMatchObject({
@@ -640,7 +676,7 @@ describe('Recipe Console authorized retention API', () => {
         expect(requests).toBe(1);
     });
 
-    it('rejects a new preview while confirmation is in flight and never leaves a pre-cleanup preview current', async () => {
+    it('refuses a new preview while confirmation is in flight and never leaves a pre-cleanup preview current', async () => {
         let resolveConfirmation!: (response: Response) => void;
         const confirmation = new Promise<Response>((resolve) => {
             resolveConfirmation = resolve;
@@ -658,15 +694,20 @@ describe('Recipe Console authorized retention API', () => {
             }
         });
         const retention = await api.retention.load();
-        const preview = await retention.preview({});
+        const preview = await acceptedPreview(retention);
         const pendingConfirmation = retention.confirm({ preview });
 
-        await expect(retention.preview({})).rejects.toThrow(/confirmation.*progress/i);
+        const refused = await retention.preview({});
+        expect(refused.right).toBeUndefined();
+        expect(refused.left).toEqual<ControlRetentionRefusal>({
+            code: 'confirmation-in-progress',
+            message: 'Retention confirmation is in progress.'
+        });
         expect(requests).toBe(2);
         resolveConfirmation(Response.json(CONFIRMATION));
-        await expect(pendingConfirmation).resolves.toEqual(CONFIRMATION);
+        expect((await pendingConfirmation).right).toEqual(CONFIRMATION);
 
-        await expect(retention.preview({})).resolves.toMatchObject({
+        expect(await acceptedPreview(retention)).toMatchObject({
             planToken: PREVIEW.planToken
         });
         expect(requests).toBe(3);

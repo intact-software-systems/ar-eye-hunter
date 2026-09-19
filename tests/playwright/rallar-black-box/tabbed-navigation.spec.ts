@@ -4,6 +4,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createInitialALDeliveryLifecycle } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { createGroupSnapshotFixture } from '../../../packages/tests/shared-web/authoritative-group-fixtures.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -30,6 +32,20 @@ const RUNNER_SURFACE_TARGETS: Readonly<
     'shared-test': { visibleTab: 'Advanced', surfaceButton: 'Shared Test' },
     'flow-builder': { visibleTab: 'Builder' }
 };
+
+function toExplicitDistributedManifest(fields: object): object {
+    return {
+        schemaVersion: 1,
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {},
+        ...fields
+    };
+}
 
 async function openRunnerSurface(page: Page, tab: RunnerSurfaceTab): Promise<void> {
     const target = RUNNER_SURFACE_TARGETS[tab];
@@ -672,7 +688,7 @@ test('does not poll control runs while direct Rallar tabs are active', async ({ 
 });
 
 test('keeps Quick Test group stable after create subscribe and send', async ({ page }) => {
-    await page.addInitScript(() => {
+    await page.addInitScript(({ groupSnapshot, sentLifecycle }) => {
         const session = {
             clientId: 'alice-client',
             accessToken: 'secret-token-value',
@@ -706,16 +722,20 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         ? input.groupId
                         : 'generated-server-group-id';
                     return {
+                        ...groupSnapshot,
                         group: {
+                            ...groupSnapshot.group,
                             groupId,
-                            displayName: input.displayName
+                            displayName: typeof input.displayName === 'string' ? input.displayName : groupId
                         }
                     };
                 },
                 join: async (groupId: string) => {
                     (window as any).__quickJoinInputs.push(groupId);
                     return {
+                        ...groupSnapshot,
                         group: {
+                            ...groupSnapshot.group,
                             groupId,
                             displayName: groupId
                         }
@@ -730,9 +750,12 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                     send: async (input: Record<string, unknown>) => {
                         (window as any).__quickSendInputs.push(input);
                         return {
-                            status: 'sent',
-                            transport: 'ws',
-                            input
+                            msgId: sentLifecycle.msgId,
+                            typeId: sentLifecycle.typeId,
+                            lifecycle: () => sentLifecycle,
+                            onEvent: () => () => undefined,
+                            wait: async () => ({ status: 'settled', lifecycle: sentLifecycle }),
+                            cancel: () => undefined
                         };
                     },
                     onMessage: () => () => undefined
@@ -749,6 +772,20 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                 health: () => ({ connected: true })
             }
         };
+    }, {
+        groupSnapshot: createGroupSnapshotFixture({
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'rallar',
+            sessionIds: ['alice-session']
+        }),
+        sentLifecycle: createInitialALDeliveryLifecycle({
+            msgId: 'quick-test-ws-message',
+            typeId: 'room.quick-test.ws.send',
+            ackMode: 'none',
+            expiresAtMs: Date.now() + 60_000,
+            submittedAtMs: Date.now()
+        })
     });
 
     await page.goto(
@@ -1645,99 +1682,130 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(runState.locator('.metric').filter({ hasText: 'RTC' })).toContainText('ready');
     await expect(runState.locator('.metric').filter({ hasText: 'Room' })).toContainText('awesome');
 
-    await page.evaluate(() => {
-        (window as any).__lastRallarWsSend = undefined;
-        (window as any).__rallarCallLog = [];
-        (window as any).__rallarWsMessageHandler = undefined;
-        let connected = false;
-        const session = {
-            clientId: 'alice-client',
-            accessToken: 'secret-token-value',
-            username: 'alice',
-            sessionId: 'alice-session',
-            expiresAtEpochMs: Date.now() + 60_000
-        };
-        (window as any).__rallarDirectFacade = {
-            configure: (config: unknown) => {
-                (window as any).__rallarCallLog.push({
-                    kind: 'configure',
-                    config
-                });
-            },
-            setDefaults: (defaults: unknown) => {
-                (window as any).__rallarCallLog.push({
-                    kind: 'setDefaults',
-                    defaults
-                });
-            },
-            defaults: () => ({}),
-            status: () => connected ? 'connected' : 'idle',
-            isConnected: () => connected,
-            session: () => session,
-            auth: {
-                restore: () => session
-            },
-            start: async (config: unknown) => {
-                connected = true;
-                (window as any).__rallarCallLog.push({
-                    kind: 'start',
-                    config
-                });
-                return { session, connected: true };
-            },
-            connect: async () => {
-                connected = true;
-                return { status: 'connected' };
-            },
-            disconnect: async () => {
-                connected = false;
-            },
-            rooms: {
-                current: () => undefined,
-                list: () => [],
-                create: async (input: unknown) => input,
-                join: async (groupId: string) => ({ groupId })
-            },
-            people: {
-                list: () => []
-            },
-            messages: {
-                ws: {
-                    send: async (input: unknown) => {
-                        if (!connected) {
-                            throw new Error('Rallar direct facade is not connected.');
+    await page.evaluate(
+        ({ joinedGroupSnapshot, sentLifecycle }) => {
+            (window as any).__lastRallarWsSend = undefined;
+            (window as any).__rallarCallLog = [];
+            (window as any).__rallarWsMessageHandler = undefined;
+            let connected = false;
+            const session = {
+                clientId: 'alice-client',
+                accessToken: 'secret-token-value',
+                username: 'alice',
+                sessionId: 'alice-session',
+                expiresAtEpochMs: Date.now() + 60_000
+            };
+            (window as any).__rallarDirectFacade = {
+                configure: (config: unknown) => {
+                    (window as any).__rallarCallLog.push({
+                        kind: 'configure',
+                        config
+                    });
+                },
+                setDefaults: (defaults: unknown) => {
+                    (window as any).__rallarCallLog.push({
+                        kind: 'setDefaults',
+                        defaults
+                    });
+                },
+                defaults: () => ({}),
+                status: () => connected ? 'connected' : 'idle',
+                isConnected: () => connected,
+                session: () => session,
+                auth: {
+                    restore: () => session
+                },
+                start: async (config: unknown) => {
+                    connected = true;
+                    (window as any).__rallarCallLog.push({
+                        kind: 'start',
+                        config
+                    });
+                    return { session, connected: true };
+                },
+                connect: async () => {
+                    connected = true;
+                    return { status: 'connected' };
+                },
+                disconnect: async () => {
+                    connected = false;
+                },
+                rooms: {
+                    current: () => undefined,
+                    list: () => [],
+                    create: async (input: Record<string, unknown>) => ({
+                        ...joinedGroupSnapshot,
+                        group: {
+                            ...joinedGroupSnapshot.group,
+                            groupId: typeof input.groupId === 'string'
+                                ? input.groupId
+                                : joinedGroupSnapshot.group.groupId
                         }
-                        (window as any).__rallarCallLog.push({
-                            kind: 'messages.ws.send',
-                            input
-                        });
-                        (window as any).__lastRallarWsSend = input;
-                        return {
-                            status: 'sent',
-                            transport: 'ws',
-                            input
-                        };
-                    },
-                    onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
-                        (window as any).__rallarWsMessageHandler = handler;
-                        return () => {
-                            (window as any).__rallarWsMessageHandler = undefined;
-                        };
+                    }),
+                    join: async (groupId: string) => ({
+                        ...joinedGroupSnapshot,
+                        group: { ...joinedGroupSnapshot.group, groupId }
+                    })
+                },
+                people: {
+                    list: () => []
+                },
+                messages: {
+                    ws: {
+                        send: async (input: unknown) => {
+                            if (!connected) {
+                                throw new Error('Rallar direct facade is not connected.');
+                            }
+                            (window as any).__rallarCallLog.push({
+                                kind: 'messages.ws.send',
+                                input
+                            });
+                            (window as any).__lastRallarWsSend = input;
+                            return {
+                                msgId: sentLifecycle.msgId,
+                                typeId: sentLifecycle.typeId,
+                                lifecycle: () => sentLifecycle,
+                                onEvent: () => () => undefined,
+                                wait: async () => ({ status: 'settled', lifecycle: sentLifecycle }),
+                                cancel: () => undefined
+                            };
+                        },
+                        onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
+                            (window as any).__rallarWsMessageHandler = handler;
+                            return () => {
+                                (window as any).__rallarWsMessageHandler = undefined;
+                            };
+                        }
                     }
+                },
+                ws: {
+                    status: () => ({ readyState: 'open', isOpen: connected }),
+                    waitForOpen: async () => ({ status: 'open' })
+                },
+                rtc: {
+                    status: () => ({ readyPeerIds: ['bob-session'] })
+                },
+                realtime: {
+                    health: () => ({ connected })
                 }
-            },
-            ws: {
-                status: () => ({ readyState: 'open', isOpen: connected }),
-                waitForOpen: async () => ({ status: 'open' })
-            },
-            rtc: {
-                status: () => ({ readyPeerIds: ['bob-session'] })
-            },
-            realtime: {
-                health: () => ({ connected })
-            }
-        };
-    });
+            };
+        },
+        {
+            joinedGroupSnapshot: createGroupSnapshotFixture({
+                applicationId: 'rallar-server',
+                workspaceId: 'default',
+                groupId: 'awesome',
+                sessionIds: ['alice-session']
+            }),
+            sentLifecycle: createInitialALDeliveryLifecycle({
+                msgId: 'ws-probe-message',
+                typeId: 'room.black-box.ws.probe',
+                ackMode: 'none',
+                expiresAtMs: Date.now() + 60_000,
+                submittedAtMs: Date.now()
+            })
+        }
+    );
     await page.getByLabel('Rallar workspace mode')
         .getByRole('button', { name: /Rallar Direct live/ })
         .click();
@@ -2131,7 +2199,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         },
         recipes: [{
             recipeId: 'ai-health-recipe',
-            required: true,
+            variables: {},
             recipe: {
                 schemaVersion: 1,
                 recipeId: 'ai-health-recipe',
@@ -2145,8 +2213,13 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
             mode: 'all-online-group-members',
             expectedParticipantCount: 1
         },
+        variables: {},
+        roleAssignments: [],
         ackTimeoutMs: 30000,
-        startMode: 'manual'
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
     await authoring.getByRole('textbox', { name: 'Generated JSON' }).fill(JSON.stringify(generatedManifest, null, 2));
     const generatedValidation = authoring.getByRole('region', { name: 'Generated JSON validation' });
@@ -2218,6 +2291,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -2244,15 +2318,14 @@ test('uses fresh world-fleet target previews after loading an older distributed 
         updatedAtEpochMs: Date.now() - 5_000,
         targetAgentIds: staleResolution.targetAgentIds,
         targetResolution: staleResolution,
-        manifest: {
-            schemaVersion: 1,
+        manifest: toExplicitDistributedManifest({
             distributedRunId: 'dist-stale-world',
             controlRunId: 'demo-run',
             displayName: 'Stale world fleet run',
             group,
             recipes: [{
                 recipeId: 'stale-health',
-                required: true,
+                variables: {},
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'stale-health',
@@ -2262,24 +2335,23 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             targetPolicy: {
                 mode: 'all-online-group-members',
                 expectedParticipantCount: 2
-            },
-            ackTimeoutMs: 30_000,
-            startMode: 'manual'
-        },
+            }
+        }),
         commandLinks: [],
         rollup: {
             state: 'draft',
             ok: false,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []
@@ -2375,7 +2447,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-a',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
                     }
                 },
                 queuedAtEpochMs: now - 5_000,
@@ -2392,7 +2464,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     commandId: 'start-b',
                     command: {
                         kind: 'recipe.run',
-                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                        recipe: { schemaVersion: 1, recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
                     }
                 },
                 queuedAtEpochMs: now - 5_000,
@@ -2467,6 +2539,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                             commandId: 'root-parallel:g1:left:c1:frame-loop',
                                             originalCommandId: 'frame-loop',
                                             parentCommandId: 'root-parallel',
+                                            path: '$.groups[0=left].commands[0]',
+                                            sourceRecipePath: '$.groups[0].commands[0]',
+                                            childIndex: 0,
                                             commandIndex: 0,
                                             groupId: 'left',
                                             groupIndex: 0,
@@ -2491,6 +2566,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                                 'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
                                                             originalCommandId: 'position-send',
                                                             parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                            path: '$.iterations[1].commands[0]',
+                                                            sourceRecipePath: '$.commands[0]',
+                                                            childIndex: 0,
                                                             commandIndex: 0,
                                                             iteration: 1,
                                                             result: {
@@ -2510,6 +2588,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                                 'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
                                                             originalCommandId: 'position-send',
                                                             parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
+                                                            path: '$.iterations[2].commands[0]',
+                                                            sourceRecipePath: '$.commands[0]',
+                                                            childIndex: 1,
                                                             commandIndex: 0,
                                                             iteration: 2,
                                                             result: {
@@ -2541,6 +2622,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                 commandId: 'root-parallel:g2:right:c1:wait-ready',
                                                 originalCommandId: 'wait-ready',
                                                 parentCommandId: 'root-parallel',
+                                                path: '$.groups[1=right].commands[0]',
+                                                sourceRecipePath: '$.groups[1].commands[0]',
+                                                childIndex: 0,
                                                 commandIndex: 0,
                                                 groupId: 'right',
                                                 groupIndex: 1,
@@ -2573,6 +2657,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                 commandId: 'root-parallel:g2:right:c2:assert-event-count',
                                                 originalCommandId: 'assert-event-count',
                                                 parentCommandId: 'root-parallel',
+                                                path: '$.groups[1=right].commands[1]',
+                                                sourceRecipePath: '$.groups[1].commands[1]',
+                                                childIndex: 1,
                                                 commandIndex: 1,
                                                 groupId: 'right',
                                                 groupIndex: 1,
@@ -2676,9 +2763,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                         transport: 'realtime',
                         groupId: 'bb-group',
                         peerId: 'agent-b',
-                        expectedChannelLabel: 'rtc-realtime',
-                        observedChannelLabel: 'rtc-data-channel',
-                        accepted: false,
+                        laneId: 'rtc-data-channel',
                         source: 'browser-rallar-runtime'
                     }
                 }
@@ -2698,8 +2783,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
         startedAtEpochMs: now - 5_000,
         completedAtEpochMs: now - 3_800,
         targetAgentIds: ['agent-a', 'agent-b'],
-        manifest: {
-            schemaVersion: 1,
+        manifest: toExplicitDistributedManifest({
             distributedRunId: 'dist-diagnostics',
             controlRunId: 'demo-run',
             displayName: 'Diagnostics distributed',
@@ -2708,13 +2792,13 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: 'diagnostic-recipe', required: true }],
+            recipes: [{ recipeId: 'diagnostic-recipe', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],
                 expectedParticipantCount: 2
             }
-        },
+        }),
         commandLinks: [
             {
                 phase: 'start',
@@ -2736,21 +2820,21 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             ok: false,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 2,
                 passedParticipants: 1,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 1
             },
             failures: [{
                 kind: 'recipe',
                 key: 'diagnostic-recipe',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RECIPE_FAILED',
                     message: 'Receiver did not observe payload.'

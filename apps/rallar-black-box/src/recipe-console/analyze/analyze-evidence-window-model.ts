@@ -1,5 +1,5 @@
 import type { ExplicitWindowModel } from '../ui/explicit-window-model.ts';
-import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-projection-contract.ts';
 
 /**
  * Adapts the worker's one-based cursor range to the shared explicit-window

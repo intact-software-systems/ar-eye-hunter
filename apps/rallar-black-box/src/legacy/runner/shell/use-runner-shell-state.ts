@@ -1,10 +1,13 @@
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCommandHistory
-} from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+    getRallarBlackBoxActiveCommand,
+    getRallarBlackBoxCommandHistory
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../ui-persistence.ts';
+import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../ui-cache/app-shell-preferences.ts';
 import type { LegacyDiagnosticContext } from '../../diagnostics/context/legacy-diagnostic-context.ts';
 import { useNow } from '../../shared/use-now.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
@@ -16,8 +19,8 @@ export function useRunnerShellState(
     diagnosticContext?: LegacyDiagnosticContext
 ) {
     const queueRows = useMemo(() => deriveQueue(state), [state]);
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
+    const history = getRallarBlackBoxCommandHistory(state);
+    const activeCommand = getRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
     const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>(() =>
         initialRunnerCommandId(

@@ -42,6 +42,7 @@ export function distributedManifest() {
             {
                 recipeId: 'api-health',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'api-health',
                     commands: [
                         {
@@ -49,14 +50,20 @@ export function distributedManifest() {
                             commandId: 'api-health-command'
                         }
                     ]
-                }
+                },
+                variables: {}
             }
         ],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a']
         },
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 1_000,
+        barrier: { enabled: false },
         startMode: 'manual',
-        ackTimeoutMs: 1_000
+        groupAssertions: [],
+        metadata: {}
     };
 }

@@ -88,7 +88,6 @@ function distributedRun(
             kind: 'recipe' as const,
             key: recipeId,
             state: 'failed' as const,
-            required: true,
             error: {
                 code: input.failureCode,
                 message: `${input.failureCode} happened`
@@ -121,8 +120,16 @@ function distributedRun(
                     schemaVersion: 1,
                     recipeId,
                     commands: [{ kind: 'health', commandId: `command-${input.id}` }]
-                }
-            }]
+                },
+                variables: {}
+            }],
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state,
@@ -130,12 +137,10 @@ function distributedRun(
             failures: failure,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: state === 'passed' ? 1 : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,
@@ -695,7 +700,8 @@ describe('Recipe Console retention selection reconciliation', () => {
             urlState: afterCleanup,
             snapshot: { runs: [survivor], distributedRuns: [] },
             bootstrapGroup,
-            queryStatus: 'live'
+            queryStatus: 'live',
+            nowEpochMs: 10_000
         });
 
         expect(afterCleanup.controlRunId).toBeUndefined();

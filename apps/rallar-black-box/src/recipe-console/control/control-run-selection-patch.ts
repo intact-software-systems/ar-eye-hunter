@@ -1,4 +1,4 @@
-import type { ControlDistributedRunSnapshot } from '../../control-run-manager.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export function deriveControlRunSelectionPatch(

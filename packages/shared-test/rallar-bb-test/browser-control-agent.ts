@@ -1,19 +1,35 @@
+import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
+
 import { takeAgentResumeRecord } from './alm/browser-control-agent-resume.ts';
-import { createRallarBlackBoxBrowserTestRuntime } from './browser-adapter.ts';
 import {
-    remoteControlConfig,
     resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig,
+    toRallarBlackBoxBootstrapRefusal,
     type RallarBlackBoxBootstrapConfig
 } from './browser-control-agent-config.ts';
+import { readBrowserAuthSessionPresence } from './browser-control-agent/read-browser-auth-session-presence.ts';
+import type { RallarBlackBoxBootstrapEnvironment } from './browser-control-agent/resolve-launch-value.ts';
+import { toRemoteControlConfig } from './browser-control-agent/to-remote-control-config.ts';
+import { validateRallarBlackBoxProviderConfig } from './browser-control-agent/validate-rallar-black-box-provider-config.ts';
 import {
     createBrowserWebSocketFactory,
     createSpaBrowserRallarRuntime,
     installSpaBrowserRallarEventBridge
 } from './browser-rallar-runtime-bridge.ts';
-import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from './control-client.ts';
-import { createRallarBlackBoxTestRuntime } from './runtime.ts';
-import type { RallarBlackBoxTestRuntime, RallarBlackBoxTestRuntimeStatus, RallarBlackBoxTestState } from './types.ts';
+import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
+import {
+    createDefaultRallarBlackBoxControlClient,
+    type RallarBlackBoxAgentControlClient,
+    type RallarBlackBoxControlSnapshot
+} from './control-client.ts';
+import { createRallarBlackBoxBrowserTestRuntime } from './create-rallar-black-box-browser-test-runtime.ts';
+import type {
+    RallarBlackBoxTestConfig,
+    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntimeStatus,
+    RallarBlackBoxTestState
+} from './rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from './runtime/create-rallar-black-box-test-runtime.ts';
 
 export type BrowserControlAgentRunState =
     | 'waiting'
@@ -23,40 +39,72 @@ export type BrowserControlAgentRunState =
     | 'cancelled'
     | 'reset';
 
-export type RallarBlackBoxBrowserControlAgentSnapshot = Readonly<{
-    state: RallarBlackBoxTestState;
-    control: RallarBlackBoxControlSnapshot;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    bootstrapping: boolean;
-    busy: boolean;
-    runState: BrowserControlAgentRunState;
-    lastAction?: string;
-    lastError?: string;
-}>;
+export type BrowserControlAgentStartOutcome = 'configured' | 'connecting';
 
-export type RallarBlackBoxBrowserControlAgent = Readonly<{
+export interface RallarBlackBoxBrowserControlAgentSnapshot {
+    readonly state: RallarBlackBoxTestState;
+    readonly control: RallarBlackBoxControlSnapshot;
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    readonly bootstrapping: boolean;
+    readonly busy: boolean;
+    readonly runState: BrowserControlAgentRunState;
+    /** Absent before the agent records an action. */
+    readonly lastAction?: string;
+    /** Absent while the agent carries no bootstrap failure. */
+    readonly lastError?: string;
+}
+
+export interface RallarBlackBoxBrowserControlAgent {
     getSnapshot(): RallarBlackBoxBrowserControlAgentSnapshot;
     subscribe(listener: () => void): () => void;
-    start(): Promise<void>;
+    start(): Promise<Either<string, BrowserControlAgentStartOutcome>>;
     dispose(): void;
     recordStatus(message: string): void;
-}>;
+}
 
-export type CreateRallarBlackBoxBrowserControlAgentOptions = Readonly<{
-    search?: string;
-    env?: Readonly<Record<string, string | undefined>>;
-}>;
+export interface BrowserControlAgentRuntime {
+    readonly runtime: RallarBlackBoxTestRuntime;
+    /** Absent when the simulated runtime installs no page event bridge. */
+    readonly disposeBridge?: () => void;
+}
 
-type RuntimeWithBridge = Readonly<{
-    runtime: RallarBlackBoxTestRuntime;
-    disposeBridge?: () => void;
-}>;
+/** The agent owns the runtime bridge and control client it is given, and disposes both with itself. */
+export interface CreateRallarBlackBoxBrowserControlAgentInput {
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    readonly agentRuntime: BrowserControlAgentRuntime;
+    /** Drives the same runtime as `agentRuntime`. */
+    readonly controlClient: RallarBlackBoxAgentControlClient;
+}
 
-type BrowserControlAgentListener = () => void;
+/** The launch URL, its fragment and the Vite environment of the agent page. */
+export interface CreateDefaultRallarBlackBoxBrowserControlAgentInput {
+    readonly search: string;
+    readonly env: RallarBlackBoxBootstrapEnvironment;
+    readonly hash: string;
+}
 
-export function initialControlSnapshot(
-    bootstrap: RallarBlackBoxBootstrapConfig
-): RallarBlackBoxControlSnapshot {
+const DISPOSED_AGENT_FAILURE = 'Browser control agent is disposed.';
+
+export function createRallarBlackBoxBrowserControlAgent(
+    input: CreateRallarBlackBoxBrowserControlAgentInput
+): RallarBlackBoxBrowserControlAgent {
+    return new BrowserControlAgent(input);
+}
+
+export function createDefaultRallarBlackBoxBrowserControlAgent(
+    input: CreateDefaultRallarBlackBoxBrowserControlAgentInput
+): RallarBlackBoxBrowserControlAgent {
+    const bootstrap = resolveRallarBlackBoxBootstrapConfig(input.search, input.env, input.hash);
+    const agentRuntime = createDefaultBrowserControlAgentRuntime(bootstrap.providerMode);
+    const controlClient = createDefaultRallarBlackBoxControlClient({
+        runtime: agentRuntime.runtime,
+        heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
+        statsIntervalMs: bootstrap.statsIntervalMs
+    });
+    return createRallarBlackBoxBrowserControlAgent({ bootstrap, agentRuntime, controlClient });
+}
+
+export function toInitialControlSnapshot(bootstrap: RallarBlackBoxBootstrapConfig): RallarBlackBoxControlSnapshot {
     return {
         state: 'idle',
         url: bootstrap.controlUrl,
@@ -66,25 +114,183 @@ export function initialControlSnapshot(
     };
 }
 
-function toMessage(error: unknown): string {
-    if (error instanceof Error) {
-        return error.message;
+class BrowserControlAgent implements RallarBlackBoxBrowserControlAgent {
+    private readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    private readonly agentRuntime: BrowserControlAgentRuntime;
+    private readonly controlClient: RallarBlackBoxAgentControlClient;
+    private readonly unsubscribeControl: () => void;
+    private readonly unsubscribeRuntime: () => void;
+    private readonly listeners = new Set<() => void>();
+    private disposed = false;
+    private snapshot: RallarBlackBoxBrowserControlAgentSnapshot;
+
+    constructor(input: CreateRallarBlackBoxBrowserControlAgentInput) {
+        const { bootstrap, agentRuntime, controlClient } = input;
+        this.bootstrap = bootstrap;
+        this.agentRuntime = agentRuntime;
+        this.controlClient = controlClient;
+        this.snapshot = {
+            state: agentRuntime.runtime.state(),
+            control: toInitialControlSnapshot(bootstrap),
+            bootstrap,
+            bootstrapping: false,
+            busy: false,
+            runState: 'waiting'
+        };
+        this.unsubscribeControl = controlClient.subscribe((control) => this.setSnapshot({ control }));
+        this.unsubscribeRuntime = agentRuntime.runtime.subscribe((state) => {
+            this.setSnapshot({ state, runState: toRunState(state.status, this.snapshot.runState) });
+        });
     }
 
-    if (error && typeof error === 'object' && 'message' in error) {
-        return String((error as { message: unknown; }).message);
+    getSnapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
+        return this.snapshot;
     }
 
-    return String(error);
+    subscribe(listener: () => void): () => void {
+        this.listeners.add(listener);
+        return () => {
+            this.listeners.delete(listener);
+        };
+    }
+
+    /** A disposal while the bootstrap commands run ends the start without touching the snapshot. */
+    async start(): Promise<Either<string, BrowserControlAgentStartOutcome>> {
+        if (this.disposed) {
+            return Either.ofLeft(DISPOSED_AGENT_FAILURE);
+        }
+        const refusal = toRallarBlackBoxBootstrapRefusal(this.bootstrap);
+        if (refusal !== undefined) {
+            return this.recordBootstrapFailure(refusal);
+        }
+
+        const config = toRemoteControlConfig({
+            bootstrap: this.bootstrap,
+            hasStoredAuthSession: readBrowserAuthSessionPresence()
+        });
+        const resumeRecord = takeAgentResumeRecord(this.bootstrap.runId, this.bootstrap.agentId);
+        const completedCommandIds = resumeRecord?.completedCommandIds ?? [];
+        this.setSnapshot({
+            bootstrapping: true,
+            busy: true,
+            runState: 'waiting',
+            lastAction: 'Bootstrapping remote control agent',
+            lastError: undefined
+        });
+
+        const configured = await this.configureRuntime(config);
+        if (this.disposed) {
+            return Either.ofLeft(DISPOSED_AGENT_FAILURE);
+        }
+        return configured.flatMap(
+            (failure) => this.recordBootstrapFailure(failure),
+            () => Either.ofRight(this.connectConfiguredAgent(completedCommandIds))
+        );
+    }
+
+    dispose(): void {
+        if (this.disposed) {
+            return;
+        }
+
+        this.disposed = true;
+        this.controlClient.dispose();
+        this.unsubscribeControl();
+        this.unsubscribeRuntime();
+        this.agentRuntime.disposeBridge?.();
+        this.listeners.clear();
+    }
+
+    recordStatus(message: string): void {
+        this.setSnapshot({ lastAction: message });
+    }
+
+    private async configureRuntime(
+        config: RallarBlackBoxTestConfig
+    ): Promise<Either<string, RallarBlackBoxTestConfig>> {
+        const { runtime } = this.agentRuntime;
+        try {
+            await runtime.execute({ kind: 'reset', commandId: 'reset-control-1' });
+            if (!this.disposed) {
+                await runtime.execute({ kind: 'configure', commandId: 'configure-control-1', config });
+            }
+        }
+        catch (caught) {
+            return Either.ofLeft(toError(caught).message);
+        }
+
+        const [configError] = validateRallarBlackBoxProviderConfig(config);
+        if (configError && !this.disposed) {
+            runtime.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.provider.browser_rallar.config_invalid',
+                severity: 'error',
+                payload: configError
+            });
+        }
+        return configError ? Either.ofLeft(configError.message) : Either.ofRight(config);
+    }
+
+    private connectConfiguredAgent(completedCommandIds: readonly string[]): BrowserControlAgentStartOutcome {
+        this.setSnapshot({
+            bootstrapping: false,
+            busy: false,
+            runState: 'waiting',
+            lastAction: this.bootstrap.autoConnect
+                ? 'Remote control agent configured; connecting'
+                : 'Remote control agent configured',
+            lastError: undefined
+        });
+        if (!this.bootstrap.autoConnect) {
+            return 'configured';
+        }
+
+        this.controlClient.connect({
+            url: this.bootstrap.controlUrl,
+            runId: this.bootstrap.runId,
+            agentId: this.bootstrap.agentId,
+            token: this.bootstrap.controlToken,
+            finalReportUploadUrl: this.bootstrap.finalReportUploadUrl,
+            completedCommandIds
+        });
+        return 'connecting';
+    }
+
+    private recordBootstrapFailure(failure: string): Either<string, BrowserControlAgentStartOutcome> {
+        this.setSnapshot({
+            bootstrapping: false,
+            busy: false,
+            runState: 'failed',
+            lastAction: 'Remote control bootstrap failed',
+            lastError: failure
+        });
+        return Either.ofLeft(failure);
+    }
+
+    private setSnapshot(patch: Partial<RallarBlackBoxBrowserControlAgentSnapshot>): void {
+        this.snapshot = { ...this.snapshot, ...patch };
+        this.listeners.forEach((listener) => listener());
+    }
 }
 
-function runStateForStatus(
+function createDefaultBrowserControlAgentRuntime(providerMode: RallarBlackBoxProviderMode): BrowserControlAgentRuntime {
+    if (providerMode === 'simulated') {
+        return { runtime: createRallarBlackBoxTestRuntime() };
+    }
+
+    const runtime = createRallarBlackBoxBrowserTestRuntime({
+        rallarRuntime: createSpaBrowserRallarRuntime(),
+        fetch: (request, init) => globalThis.fetch(request, init),
+        webSocketFactory: createBrowserWebSocketFactory()
+    });
+    return { runtime, disposeBridge: installSpaBrowserRallarEventBridge(runtime) };
+}
+
+function toRunState(
     status: RallarBlackBoxTestRuntimeStatus,
-    fallback: BrowserControlAgentRunState
+    current: BrowserControlAgentRunState
 ): BrowserControlAgentRunState {
     switch (status) {
-        case 'idle':
-            return fallback;
         case 'running':
             return 'running';
         case 'completed':
@@ -97,194 +303,6 @@ function runStateForStatus(
         case 'loaded':
             return 'waiting';
         default:
-            return fallback;
+            return current;
     }
-}
-
-function createRuntimeForBootstrap(
-    bootstrap: RallarBlackBoxBootstrapConfig
-): RuntimeWithBridge {
-    if (bootstrap.providerMode === 'browser-rallar' && typeof window !== 'undefined') {
-        const runtime = createRallarBlackBoxBrowserTestRuntime({
-            rallarRuntime: createSpaBrowserRallarRuntime(),
-            fetch: globalThis.fetch?.bind(globalThis) as typeof fetch | undefined,
-            webSocketFactory: createBrowserWebSocketFactory()
-        });
-        return {
-            runtime,
-            disposeBridge: installSpaBrowserRallarEventBridge(runtime)
-        };
-    }
-
-    return {
-        runtime: createRallarBlackBoxTestRuntime()
-    };
-}
-
-function recordAndThrowProviderConfigError(
-    runtime: RallarBlackBoxTestRuntime,
-    config: ReturnType<typeof remoteControlConfig>
-): void {
-    const configError = validateRallarBlackBoxProviderConfig(config);
-    if (!configError) {
-        return;
-    }
-
-    runtime.recordEvent({
-        kind: 'diagnostic',
-        topic: 'rallar.bb.provider.browser_rallar.config_invalid',
-        severity: 'error',
-        payload: configError
-    });
-    throw new Error(configError.message);
-}
-
-export function createRallarBlackBoxBrowserControlAgent(
-    options: CreateRallarBlackBoxBrowserControlAgentOptions = {}
-): RallarBlackBoxBrowserControlAgent {
-    const bootstrap = resolveRallarBlackBoxBootstrapConfig(options.search, options.env);
-    const { runtime, disposeBridge } = createRuntimeForBootstrap(bootstrap);
-    const listeners = new Set<BrowserControlAgentListener>();
-    let disposed = false;
-    let resumedCommandIds: readonly string[] = [];
-    let snapshot: RallarBlackBoxBrowserControlAgentSnapshot = {
-        state: runtime.state(),
-        control: initialControlSnapshot(bootstrap),
-        bootstrap,
-        bootstrapping: false,
-        busy: false,
-        runState: 'waiting'
-    };
-
-    const emit = () => {
-        listeners.forEach((listener) => listener());
-    };
-    const assertNotDisposed = () => {
-        if (disposed) {
-            throw new Error('Browser control agent is disposed.');
-        }
-    };
-
-    const controlClient = new RallarBlackBoxControlClient({
-        runtime,
-        token: bootstrap.controlToken,
-        heartbeatIntervalMs: bootstrap.heartbeatIntervalMs,
-        statsIntervalMs: bootstrap.statsIntervalMs,
-        finalReportUploadUrl: bootstrap.finalReportUploadUrl,
-        onSnapshot: (control) => {
-            snapshot = {
-                ...snapshot,
-                control
-            };
-            emit();
-        }
-    });
-
-    const unsubscribeRuntime = runtime.subscribe((state) => {
-        snapshot = {
-            ...snapshot,
-            state,
-            runState: runStateForStatus(state.status, snapshot.runState)
-        };
-        emit();
-    });
-
-    return {
-        getSnapshot: () => snapshot,
-        subscribe(listener) {
-            listeners.add(listener);
-            return () => {
-                listeners.delete(listener);
-            };
-        },
-        async start() {
-            assertNotDisposed();
-            const config = remoteControlConfig(bootstrap, 1);
-            const resumed = takeAgentResumeRecord(config.runId ?? bootstrap.runId, bootstrap.agentId);
-            if (resumed) {
-                resumedCommandIds = resumed.completedCommandIds;
-            }
-            snapshot = {
-                ...snapshot,
-                bootstrapping: true,
-                busy: true,
-                runState: 'waiting',
-                lastAction: 'Bootstrapping remote control agent',
-                lastError: undefined
-            };
-            emit();
-
-            try {
-                await runtime.execute({
-                    kind: 'reset',
-                    commandId: 'reset-control-1'
-                });
-                assertNotDisposed();
-                await runtime.execute({
-                    kind: 'configure',
-                    commandId: 'configure-control-1',
-                    config
-                });
-                assertNotDisposed();
-                recordAndThrowProviderConfigError(runtime, config);
-
-                snapshot = {
-                    ...snapshot,
-                    bootstrapping: false,
-                    busy: false,
-                    runState: 'waiting',
-                    lastAction: bootstrap.autoConnect
-                        ? 'Remote control agent configured; connecting'
-                        : 'Remote control agent configured',
-                    lastError: undefined
-                };
-                emit();
-
-                if (bootstrap.autoConnect) {
-                    assertNotDisposed();
-                    controlClient.connect({
-                        url: bootstrap.controlUrl,
-                        runId: config.runId ?? bootstrap.runId,
-                        agentId: bootstrap.agentId,
-                        token: bootstrap.controlToken,
-                        completedCommandIds: resumedCommandIds
-                    });
-                }
-            }
-            catch (error) {
-                if (disposed) {
-                    throw error;
-                }
-
-                snapshot = {
-                    ...snapshot,
-                    bootstrapping: false,
-                    busy: false,
-                    runState: 'failed',
-                    lastAction: 'Remote control bootstrap failed',
-                    lastError: toMessage(error)
-                };
-                emit();
-                throw error;
-            }
-        },
-        dispose() {
-            if (disposed) {
-                return;
-            }
-
-            disposed = true;
-            controlClient.dispose();
-            unsubscribeRuntime();
-            disposeBridge?.();
-            listeners.clear();
-        },
-        recordStatus(message) {
-            snapshot = {
-                ...snapshot,
-                lastAction: message
-            };
-            emit();
-        }
-    };
 }

@@ -1,8 +1,6 @@
-import type {
-    DistributedRunAnalysisReport,
-    DistributedRunMonitor,
-    RunVerdictView
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { DistributedRunAnalysisReport } from '@shared-test/rallar-bb-test/distributed-run-analysis/distributed-run-analysis-report.ts';
+import type { RunVerdictView } from '@shared-test/rallar-bb-test/distributed-run-analysis/run-verdict-view.ts';
+import type { DistributedRunMonitor } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
@@ -18,7 +16,7 @@ export type MonitorWorkspaceModel = Readonly<{
     verdict: RunVerdictView;
 }>;
 
-export function deriveMonitorWorkspaceModel(
+export function computeMonitorWorkspaceModel(
     state: MonitorWorkspaceState
 ): MonitorWorkspaceModel | undefined {
     const source = state.source;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toRunnerFriendlyControlFailureMessage } from '../../../apps/rallar-black-box/src/legacy/runner/shared/to-runner-friendly-control-failure-message.ts';
 import { runnerDisabledReason, runnerFriendlyErrorMessage, runnerReadinessStatus } from '../../../apps/rallar-black-box/src/runner-readiness.ts';
 
 describe('runner readiness', () => {
@@ -45,6 +46,38 @@ describe('runner readiness', () => {
     it('rewrites vague network errors into actionable service guidance', () => {
         expect(runnerFriendlyErrorMessage(new Error('Failed to fetch'))).toContain('Service is offline');
         expect(runnerFriendlyErrorMessage(new Error('401 Unauthorized'))).toContain('Log in again');
+    });
+
+    it('rewrites a control failure value through the same guidance the thrown error used', () => {
+        expect(
+            toRunnerFriendlyControlFailureMessage({
+                kind: 'http',
+                status: 401,
+                statusText: 'Unauthorized',
+                message: 'Control server request failed: 401 Unauthorized'
+            })
+        ).toBe('Authentication failed. Log in again and retry the recipe.');
+        expect(
+            toRunnerFriendlyControlFailureMessage({
+                kind: 'http',
+                status: 403,
+                statusText: 'Forbidden',
+                message: 'Control server request failed: 403 Forbidden'
+            })
+        ).toBe('The current user is not allowed to run this action.');
+    });
+
+    it('keeps a control failure the readiness vocabulary does not name, and names an absent one', () => {
+        expect(
+            toRunnerFriendlyControlFailureMessage({
+                kind: 'transfer-limit',
+                maxBytes: 64,
+                message: 'Control artifact response exceeds the 64-byte transfer limit.'
+            })
+        ).toBe('Control artifact response exceeds the 64-byte transfer limit.');
+        expect(toRunnerFriendlyControlFailureMessage(undefined)).toBe(
+            'The control server request failed.'
+        );
     });
 
     it('shows empty TURN/STUN as a warning without blocking recipe actions', () => {

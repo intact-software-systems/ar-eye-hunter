@@ -8,14 +8,16 @@ import {
     monitorConnectionTruth
 } from './monitor-action-policy.ts';
 import {
-    deriveMonitorDistributedRunSelection,
-    deriveMonitorRunOptions,
-    deriveMonitorUrlEvidenceSelection,
-    monitorUrlEvidenceKey,
-    recipeConsoleMonitorDistributedRunSelectionPatch,
+    computeMonitorDistributedRunSelection,
+    computeMonitorRunOptions
+} from './monitor-selection-projection.ts';
+import {
+    createMonitorDistributedRunSelectionPatch,
+    resolveMonitorUrlEvidenceSelection,
+    toMonitorUrlEvidenceKey,
     type MonitorEvidenceSelection
 } from './monitor-selection.ts';
-import { deriveMonitorWorkspaceModel } from './monitor-workspace-model.ts';
+import { computeMonitorWorkspaceModel } from './monitor-workspace-model.ts';
 import {
     createInitialMonitorWorkspaceState,
     createMonitorWorkspaceContext,
@@ -36,7 +38,7 @@ export function useMonitorWorkspace(
 ) {
     const [state, setState] = useState(createInitialMonitorWorkspaceState);
     const authoredEvidenceKeyRef = useRef<string | undefined>(undefined);
-    const urlEvidenceKey = monitorUrlEvidenceKey(input.urlState);
+    const urlEvidenceKey = toMonitorUrlEvidenceKey(input.urlState);
     const distributedRuns = input.connection.query.snapshot?.distributedRuns ?? [];
     const distributedRunsAuthoritative = (
         input.connection.query.status === 'live' ||
@@ -44,7 +46,7 @@ export function useMonitorWorkspace(
     ) && input.connection.query.snapshot?.distributedRuns !== undefined;
     const distributedSelection = useMemo(
         () =>
-            deriveMonitorDistributedRunSelection({
+            computeMonitorDistributedRunSelection({
                 controlRunId: input.selection.controlRunId,
                 requestedDistributedRunId: input.urlState.distributedRunId,
                 distributedRuns,
@@ -108,7 +110,7 @@ export function useMonitorWorkspace(
             setMonitorEvidenceSelection(
                 previous,
                 context.key,
-                deriveMonitorUrlEvidenceSelection(input.urlState)
+                resolveMonitorUrlEvidenceSelection(input.urlState)
             )
         );
     }, [context?.key, urlEvidenceKey]);
@@ -117,7 +119,7 @@ export function useMonitorWorkspace(
         ? state
         : createInitialMonitorWorkspaceState();
     const model = useMemo(
-        () => deriveMonitorWorkspaceModel(currentState),
+        () => computeMonitorWorkspaceModel(currentState),
         [currentState]
     );
     const connectionTruth = monitorConnectionTruth(input.connection.query);
@@ -147,7 +149,7 @@ export function useMonitorWorkspace(
         setState
     });
     const runOptions = useMemo(() => {
-        return deriveMonitorRunOptions({
+        return computeMonitorRunOptions({
             controlRunId: input.selection.controlRunId,
             distributedRuns,
             lastKnown: model?.source.distributedRun,
@@ -177,7 +179,7 @@ export function useMonitorWorkspace(
             )
         );
         if (Object.keys(patch).length > 0) {
-            const nextEvidenceKey = monitorUrlEvidenceKey({
+            const nextEvidenceKey = toMonitorUrlEvidenceKey({
                 ...input.urlState,
                 ...patch
             });
@@ -204,7 +206,7 @@ export function useMonitorWorkspace(
     }, [armContext, context]);
     const selectDistributedRun = useCallback((distributedRunId: string) => {
         input.navigate(
-            recipeConsoleMonitorDistributedRunSelectionPatch(distributedRunId)
+            createMonitorDistributedRunSelectionPatch(distributedRunId)
         );
     }, [input.navigate]);
 

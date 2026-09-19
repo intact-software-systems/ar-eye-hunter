@@ -3,6 +3,7 @@ import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     decodeALOutboundTransportMessage,
@@ -42,11 +43,13 @@ import { QRtcPeerConnection } from '@shared/webrtc/qrtc-peer-connection.ts';
 import { installNativeRtcRuntime, type NativeRtcRuntime } from '../native-rtc-connection-fixture.ts';
 
 let nativeRuntime: NativeRtcRuntime;
+let settlements: ALDeliverySettlement[] = [];
 
 beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
     nativeRuntime = installNativeRtcRuntime();
+    settlements = [];
 });
 
 afterEach(() => {
@@ -268,6 +271,35 @@ describe('RTC outbound transport results', () => {
             .toBeUndefined();
     });
 
+    it('carries the native submission fact from the channel into the attempt it settles', async () => {
+        const channel = createChannel({ overflow: 'queue' });
+        const native = nativeRuntime.createdConnections[0].channels[0];
+        await native.open();
+        const manager = createManager(
+            [channel],
+            createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage })
+        );
+        onTestFinished(() => manager.dispose());
+
+        await enqueueRtcAndDrain(manager, createMessage('submitted'));
+
+        expect(native.sent).toHaveLength(1);
+        expect(attemptSettlements()).toMatchObject([
+            { carrier: 'rtc', outcome: 'sent', submissionAttempted: true }
+        ]);
+
+        native.bufferedAmount = 128 * 1024;
+        await enqueueRtcAndDrain(manager, createMessage('unsubmitted'));
+        await native.close();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(attemptSettlements()[1]).toMatchObject({
+            carrier: 'rtc',
+            outcome: 'not-ready',
+            submissionAttempted: false
+        });
+    });
+
     it('reports admission without claiming a transport send while the channel is closed', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
@@ -280,6 +312,11 @@ describe('RTC outbound transport results', () => {
         expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
     });
 });
+
+/** Only the attempt outcomes, so a case can read what the carrier said about one send. */
+function attemptSettlements(): readonly Extract<ALDeliverySettlement, { kind: 'attempt-settled'; }>[] {
+    return settlements.filter((settlement) => settlement.kind === 'attempt-settled');
+}
 
 function createChannel(flowControl: RtcDataChannelFlowControlPolicy = {}, peerId = 'peer-1'): QRtcDataChannel {
     const peer = new QRtcPeerConnection({ send: async () => {} }, {
@@ -319,6 +356,7 @@ function createManager(
         },
         qosProvider,
         outboundDiagnostics: undefined,
+        outboundSettlements: (settlement) => settlements.push(settlement),
         outboundRuntime: resources,
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),

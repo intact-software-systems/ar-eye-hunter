@@ -1,6 +1,6 @@
 import type {
+    RallarMessageHandle,
     RallarMessageHandler,
-    RallarMessageSendResult,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
     RallarTypedMessageChannel,
@@ -11,7 +11,7 @@ import type { RallarMessageSelectorInput } from '@shared-web/browser/messages/ra
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export interface RallarRtcMessageLane {
-    send<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageSendResult>;
+    send<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageHandle>;
     onMessage<T = never>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>
@@ -19,7 +19,7 @@ export interface RallarRtcMessageLane {
 }
 
 export interface RallarWsMessageLane {
-    send<T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult>;
+    send<T>(input: RallarWsSendInput<T>): Promise<RallarMessageHandle>;
     onMessage<T = never>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>

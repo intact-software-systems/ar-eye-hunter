@@ -256,7 +256,7 @@
       },
       "role": "sender",
       "profile": "rtc",
-      "required": true
+      "variables": {}
     },
     {
       "recipeId": "rtc-messages-principal-multicast-receiver",
@@ -480,13 +480,15 @@
       },
       "role": "receiver",
       "profile": "rtc",
-      "required": true
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
     "expectedParticipantCount": 50
   },
+  "variables": {},
+  "roleAssignments": [],
   "roleAssignmentPolicy": {
     "mode": "ordered-targets",
     "pattern": "one-sender-many-receivers",
@@ -498,15 +500,9 @@
     "timeoutMs": 45000
   },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
-  },
+  "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-world-fleet-manifest-catalog",
     "rolePattern": "one-sender-many-receivers",
     "topologyProfile": "tree",
     "transport": "messages.rtc",

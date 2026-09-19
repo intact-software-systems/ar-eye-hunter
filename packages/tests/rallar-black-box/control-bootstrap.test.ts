@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import {
-    rallarBlackBoxProviderModeFromConfig,
-    resolveRallarBlackBoxBootstrapConfig,
-    validateRallarBlackBoxProviderConfig
-} from '../../../apps/rallar-black-box/src/runtime-store.ts';
 import viteConfig from '../../../apps/rallar-black-box/vite.config.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import { validateRallarBlackBoxProviderConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent/validate-rallar-black-box-provider-config.ts';
+import { decodeRallarBlackBoxConfigProviderMode } from '../../../packages/shared-test/rallar-bb-test/client-defaults.ts';
 
 describe('rallar-black-box control bootstrap', () => {
     it('enables remote control mode from URL autoConnect params', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?controlUrl=ws://127.0.0.1:5180/control&runId=run-url&agentId=agent-url&autoConnect=1',
-            {}
+            {},
+            ''
         );
 
         expect(bootstrap).toMatchObject({
@@ -26,7 +25,8 @@ describe('rallar-black-box control bootstrap', () => {
     it('uses control mode as an auto-connect shorthand', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             '?mode=control&agentId=agent-mode',
-            {}
+            {},
+            ''
         );
 
         expect(bootstrap.mode).toBe('control-agent');
@@ -35,7 +35,7 @@ describe('rallar-black-box control bootstrap', () => {
     });
 
     it('keeps local workbench defaults without URL or env config', () => {
-        const bootstrap = resolveRallarBlackBoxBootstrapConfig('', {});
+        const bootstrap = resolveRallarBlackBoxBootstrapConfig('', {}, '');
 
         expect(bootstrap).toMatchObject({
             mode: 'local-workbench',
@@ -62,7 +62,7 @@ describe('rallar-black-box control bootstrap', () => {
             VITE_RALLAR_AUTO_CONNECT: 'true',
             VITE_RALLAR_RUN_ID: 'run-env',
             VITE_RALLAR_AGENT_ID: 'agent-env'
-        });
+        }, '');
 
         expect(bootstrap).toMatchObject({
             mode: 'control-agent',
@@ -100,7 +100,7 @@ describe('rallar-black-box control bootstrap', () => {
             VITE_RALLAR_AGENT_BROWSER_VERSION: '126',
             VITE_RALLAR_AGENT_OS: 'linux',
             VITE_RALLAR_AGENT_TAGS: 'canary,rtc'
-        });
+        }, '');
 
         expect(bootstrap).toMatchObject({
             mode: 'local-workbench',
@@ -127,29 +127,35 @@ describe('rallar-black-box control bootstrap', () => {
         });
     });
 
-    it('uses runner agent defaults from Vite env and lets URL params override them', () => {
+    it('uses runner agent settings from Vite env, lets URL params override them and reports an unreadable count', () => {
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
             VITE_RALLAR_RUNNER_AGENT_COUNT: '3'
-        });
+        }, '');
         const fromUrl = resolveRallarBlackBoxBootstrapConfig(
             '?runnerAgentPrefix=manual&runnerAgentCount=2',
             {
                 VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
                 VITE_RALLAR_RUNNER_AGENT_COUNT: '3'
-            }
+            },
+            ''
         );
         const invalid = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_RUNNER_AGENT_PREFIX: 'controller',
             VITE_RALLAR_RUNNER_AGENT_COUNT: 'not-a-number'
-        });
+        }, '');
 
         expect(fromEnv.runnerAgentPrefix).toBe('controller');
         expect(fromEnv.runnerAgentCount).toBe(3);
+        expect(fromEnv.issues).toEqual([]);
         expect(fromUrl.runnerAgentPrefix).toBe('manual');
         expect(fromUrl.runnerAgentCount).toBe(2);
+        expect(fromUrl.issues).toEqual([]);
         expect(invalid.runnerAgentPrefix).toBe('controller');
-        expect(invalid.runnerAgentCount).toBe(1);
+        expect(invalid.issues).toEqual([{
+            launchKey: 'VITE_RALLAR_RUNNER_AGENT_COUNT',
+            message: 'VITE_RALLAR_RUNNER_AGENT_COUNT must be a positive integer, not \'not-a-number\'.'
+        }]);
     });
 
     it('lets URL fleet labels override environment labels', () => {
@@ -158,7 +164,8 @@ describe('rallar-black-box control bootstrap', () => {
             {
                 VITE_RALLAR_AGENT_REGION: 'eu-north',
                 VITE_RALLAR_AGENT_PROVIDER: 'local'
-            }
+            },
+            ''
         );
 
         expect(bootstrap).toMatchObject({
@@ -168,48 +175,68 @@ describe('rallar-black-box control bootstrap', () => {
         });
     });
 
-    it('parses explicit fleet coordinates and rejects unusable coordinate pairs', () => {
+    it('parses explicit fleet coordinates and reports unusable coordinates as launch issues', () => {
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_AGENT_LATITUDE: '59.9139',
             VITE_RALLAR_AGENT_LONGITUDE: '10.7522',
             VITE_RALLAR_AGENT_LOCATION_LABEL: 'Oslo control rack'
-        });
+        }, '');
         const fromUrl = resolveRallarBlackBoxBootstrapConfig(
             '?fleetLatitude=40.7128&fleetLongitude=-74.006&fleetLocationLabel=New%20York',
             {
                 VITE_RALLAR_AGENT_LATITUDE: '59.9139',
                 VITE_RALLAR_AGENT_LONGITUDE: '10.7522'
-            }
+            },
+            ''
         );
         const invalid = resolveRallarBlackBoxBootstrapConfig(
             '?fleetLatitude=95&fleetLongitude=not-a-number&fleetLocationLabel=bad',
-            {}
+            {},
+            ''
         );
         const malformed = resolveRallarBlackBoxBootstrapConfig(
             '?fleetLatitude=52.5abc&fleetLongitude=10.7522&fleetLocationLabel=bad',
-            {}
+            {},
+            ''
         );
 
-        expect(fromEnv).toMatchObject({
-            fleetLatitude: 59.9139,
-            fleetLongitude: 10.7522,
-            fleetLocationLabel: 'Oslo control rack'
+        expect(fromEnv.fleetLocation).toEqual({
+            latitude: 59.9139,
+            longitude: 10.7522,
+            label: 'Oslo control rack',
+            precision: 'exact'
         });
-        expect(fromUrl).toMatchObject({
-            fleetLatitude: 40.7128,
-            fleetLongitude: -74.006,
-            fleetLocationLabel: 'New York'
+        expect(fromUrl.fleetLocation).toEqual({
+            latitude: 40.7128,
+            longitude: -74.006,
+            label: 'New York',
+            precision: 'exact'
         });
-        expect(invalid.fleetLatitude).toBeUndefined();
-        expect(invalid.fleetLongitude).toBeUndefined();
-        expect(malformed.fleetLatitude).toBeUndefined();
-        expect(malformed.fleetLongitude).toBeUndefined();
+        expect(fromEnv.issues).toEqual([]);
+        expect(fromUrl.issues).toEqual([]);
+        expect(invalid.fleetLocation).toBeUndefined();
+        expect(invalid.issues).toEqual([
+            {
+                launchKey: 'fleetLatitude',
+                message: 'fleetLatitude must be a decimal number from -90 to 90, not \'95\'.'
+            },
+            {
+                launchKey: 'fleetLongitude',
+                message: 'fleetLongitude must be a decimal number from -180 to 180, not \'not-a-number\'.'
+            }
+        ]);
+        expect(malformed.fleetLocation).toBeUndefined();
+        expect(malformed.issues).toEqual([{
+            launchKey: 'fleetLatitude',
+            message: 'fleetLatitude must be a decimal number from -90 to 90, not \'52.5abc\'.'
+        }]);
     });
 
-    it('selects browser-rallar provider only when requested', () => {
+    it('selects browser-rallar provider only when requested and reports an unknown provider', () => {
         const fromUrl = resolveRallarBlackBoxBootstrapConfig(
             '?provider=browser-rallar&apiBaseUrl=https://api.example.test&rallarUsername=alice&rallarPassword=secret',
-            {}
+            {},
+            ''
         );
         const fromEnv = resolveRallarBlackBoxBootstrapConfig('', {
             VITE_RALLAR_PROVIDER: 'browser-rallar',
@@ -217,8 +244,8 @@ describe('rallar-black-box control bootstrap', () => {
             VITE_RALLAR_RESTORE_SESSION: 'true',
             VITE_RALLAR_LOGOUT_ON_CLOSE: 'true',
             VITE_RALLAR_LEAVE_ROOM_ON_CLOSE: 'false'
-        });
-        const invalid = resolveRallarBlackBoxBootstrapConfig('?provider=unknown', {});
+        }, '');
+        const invalid = resolveRallarBlackBoxBootstrapConfig('?provider=unknown', {}, '');
 
         expect(fromUrl.providerMode).toBe('browser-rallar');
         expect(fromUrl.rallarUsername).toBe('alice');
@@ -227,7 +254,11 @@ describe('rallar-black-box control bootstrap', () => {
         expect(fromEnv.rallarRestoreSession).toBe(true);
         expect(fromEnv.rallarLogoutOnClose).toBe(true);
         expect(fromEnv.rallarLeaveRoomOnClose).toBe(false);
-        expect(invalid.providerMode).toBe('simulated');
+        expect(fromEnv.issues).toEqual([]);
+        expect(invalid.issues).toEqual([{
+            launchKey: 'provider',
+            message: 'provider must be one of simulated, browser-rallar, not \'unknown\'.'
+        }]);
     });
 
     it('parses per-tab auth storage and agent session ticket handoff from launch links', () => {
@@ -244,19 +275,20 @@ describe('rallar-black-box control bootstrap', () => {
         expect(bootstrap.rallarRestoreSession).toBe(true);
     });
 
-    it('prefers a fragment control token while keeping legacy query-token links compatible', () => {
+    it('prefers a fragment control token over a query control token', () => {
         const fragment = resolveRallarBlackBoxBootstrapConfig(
-            '?mode=control&controlToken=legacy-token',
+            '?mode=control&controlToken=query-token',
             {},
             '#controlToken=fragment-token'
         );
-        const legacy = resolveRallarBlackBoxBootstrapConfig(
-            '?mode=control&controlToken=legacy-token',
-            {}
+        const query = resolveRallarBlackBoxBootstrapConfig(
+            '?mode=control&controlToken=query-token',
+            {},
+            ''
         );
 
         expect(fragment.controlToken).toBe('fragment-token');
-        expect(legacy.controlToken).toBe('legacy-token');
+        expect(query.controlToken).toBe('query-token');
     });
 
     it('validates browser-rallar provider config before real execution exists', () => {
@@ -264,7 +296,7 @@ describe('rallar-black-box control bootstrap', () => {
             control: {
                 providerMode: 'simulated'
             }
-        })).toBeUndefined();
+        })).toEqual([]);
 
         expect(
             validateRallarBlackBoxProviderConfig({
@@ -272,7 +304,7 @@ describe('rallar-black-box control bootstrap', () => {
                 control: {
                     providerMode: 'browser-rallar'
                 }
-            })?.message
+            })[0]?.message
         ).toContain('real Rallar API base URL');
 
         expect(
@@ -281,7 +313,7 @@ describe('rallar-black-box control bootstrap', () => {
                 control: {
                     providerMode: 'browser-rallar'
                 }
-            })?.message
+            })[0]?.message
         ).toContain('username/password or restoreSession=true');
 
         expect(
@@ -293,7 +325,7 @@ describe('rallar-black-box control bootstrap', () => {
                 control: {
                     providerMode: 'browser-rallar'
                 }
-            })?.message
+            })[0]?.message
         ).toContain('username/password or restoreSession=true');
 
         expect(validateRallarBlackBoxProviderConfig({
@@ -305,7 +337,7 @@ describe('rallar-black-box control bootstrap', () => {
             control: {
                 providerMode: 'browser-rallar'
             }
-        })).toBeUndefined();
+        })).toEqual([]);
 
         expect(validateRallarBlackBoxProviderConfig({
             apiBaseUrl: 'https://api.example.test',
@@ -315,12 +347,27 @@ describe('rallar-black-box control bootstrap', () => {
             control: {
                 providerMode: 'browser-rallar'
             }
-        })).toBeUndefined();
+        })).toEqual([]);
 
-        expect(rallarBlackBoxProviderModeFromConfig({
-            defaults: {
-                providerMode: 'browser-rallar'
+        expect(
+            decodeRallarBlackBoxConfigProviderMode({
+                defaults: {
+                    providerMode: 'browser-rallar'
+                }
+            }).right
+        ).toBe('simulated');
+        expect(validateRallarBlackBoxProviderConfig({
+            apiBaseUrl: 'https://api.example.test',
+            rallar: {
+                username: 'alice',
+                password: 'secret'
+            },
+            control: {
+                providerMode: 'browser-rallr'
             }
-        })).toBe('browser-rallar');
+        })).toEqual([expect.objectContaining({
+            code: 'RALLAR_BLACK_BOX_PROVIDER_CONFIG_INVALID',
+            message: 'control.providerMode must be one of simulated, browser-rallar, not \'browser-rallr\'.'
+        })]);
     });
 });

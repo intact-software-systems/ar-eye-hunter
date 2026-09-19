@@ -1,4 +1,7 @@
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import { describe, expect, it } from 'vitest';
+import { toWebSocketCommandCenterRecipeText } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/to-web-socket-command-center-recipe-text.ts';
 import type { WebSocketCommandCenterValues, WebSocketDiagnostic } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts';
 import { deriveWebSocketDiagnostics } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts';
 import {
@@ -7,7 +10,6 @@ import {
     webSocketPayloadPresetById,
     webSocketPayloadPresetText
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts';
-import { webSocketCommandCenterRecipe } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts';
 import {
     defaultWebSocketApiUrl,
     defaultWebSocketScope,
@@ -17,8 +19,13 @@ import {
     resolveWebSocketUrlTemplate,
     webSocketRoutePreview
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts';
+import type { CommandCenterGlobalValues } from '../../../apps/rallar-black-box/src/legacy/shell/global-context-model.ts';
 import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestResult, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type {
+    RallarBlackBoxTestEvent,
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const bootstrap = resolveRallarBlackBoxBootstrapConfig(
@@ -160,61 +167,50 @@ describe('WebSocket command-center presets and routing', () => {
         ).toBe('ws://localhost:8080//');
     });
 
-    it('preserves context precedence and the all-scope empty-context fallback', () => {
-        expect(
-            defaultWebSocketValuesFromContext(
-                {
-                    apiBaseUrl: 'https://global.example',
-                    applicationId: 'global-app',
-                    workspaceId: 'global-workspace',
-                    clientId: 'global-client',
-                    sessionId: 'global-session',
-                    roomId: 'global-room'
-                },
-                {
-                    apiBaseUrl: 'https://config.example',
-                    roomId: 'config-room',
-                    rallar: {
-                        applicationId: 'config-app',
-                        workspaceId: 'config-workspace'
-                    }
-                },
-                bootstrap
-            )
-        ).toEqual({
+    it('takes the scope from the global values and a blank global room from the configured or bootstrap room, else the all context', () => {
+        const globalValues: CommandCenterGlobalValues = {
             apiBaseUrl: 'https://global.example',
             applicationId: 'global-app',
             workspaceId: 'global-workspace',
-            groupId: 'global-room',
-            contextId: 'global-room'
-        });
+            clientId: 'global-client',
+            sessionId: 'global-session',
+            roomId: 'global-room'
+        };
+        const config = {
+            apiBaseUrl: 'https://config.example',
+            roomId: 'config-room',
+            rallar: { applicationId: 'config-app', workspaceId: 'config-workspace' }
+        };
+        const blankGlobalRoom = { ...globalValues, roomId: ' ' };
+        const scope = { apiBaseUrl: 'https://global.example', applicationId: 'global-app', workspaceId: 'global-workspace' };
 
-        expect(
-            defaultWebSocketValuesFromContext(
-                undefined,
-                { apiBaseUrl: '', roomId: '', rallar: {} },
-                { ...bootstrap, roomId: '' }
-            )
-        ).toMatchObject({
-            applicationId: 'rallar-black-box',
-            workspaceId: 'default',
-            groupId: '',
-            contextId: 'all'
+        expect({
+            globalRoom: defaultWebSocketValuesFromContext(globalValues, config, bootstrap),
+            configuredRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, config, bootstrap),
+            bootstrapRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, { ...config, roomId: '' }, bootstrap),
+            noRoom: defaultWebSocketValuesFromContext(blankGlobalRoom, { ...config, roomId: '' }, { ...bootstrap, roomId: '' })
+        }).toEqual({
+            globalRoom: { ...scope, groupId: 'global-room', contextId: 'global-room' },
+            configuredRoom: { ...scope, groupId: 'config-room', contextId: 'config-room' },
+            bootstrapRoom: { ...scope, groupId: 'bootstrap-room', contextId: 'bootstrap-room' },
+            noRoom: { ...scope, groupId: '', contextId: 'all' }
         });
     });
 
     it('normalizes untyped payloads while preserving typed routing overrides through copied recipes', () => {
         const recipeFor = (
             nextValues: WebSocketCommandCenterValues,
-            payload: unknown
+            payload: RallarMessagePayload
         ): Record<string, unknown> => {
             const recipe = JSON.parse(
-                webSocketCommandCenterRecipe({
+                toWebSocketCommandCenterRecipeText({
                     values: nextValues,
                     payload,
                     bootstrap,
                     providerMode: 'real',
-                    sequence: 1
+                    authSession: undefined,
+                    sequence: 1,
+                    includeRtcParity: false
                 })
             ) as { commands: readonly Record<string, unknown>[]; };
             return recipe.commands.find((command) => command.kind === 'ws.send') ?? {};
@@ -351,12 +347,13 @@ describe('WebSocket command-center presets and routing', () => {
 describe('WebSocket command-center copied recipes', () => {
     it('builds configure/open/send/close commands without changing backend contracts', () => {
         const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values: { ...values, closeCode: Number.NaN },
                 bootstrap,
                 providerMode: 'browser-rallar',
                 authSession,
                 sequence: 7,
+                includeRtcParity: false,
                 payload: {
                     deliveryMode: 'broadcast',
                     text: 'hello from rallar-black-box'
@@ -427,9 +424,26 @@ describe('WebSocket command-center copied recipes', () => {
         });
     });
 
+    it.each([false, true])('copies a strict version-1 recipe with RTC parity %s', (includeRtcParity) => {
+        const recipe = JSON.parse(
+            toWebSocketCommandCenterRecipeText({
+                values,
+                payload: { text: 'strict' },
+                bootstrap,
+                providerMode: 'browser-rallar',
+                authSession,
+                sequence: 1,
+                includeRtcParity
+            })
+        );
+
+        expect(recipe).toMatchObject({ schemaVersion: 1 });
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
+    });
+
     it('keeps copied recipe command order, parity commands, and secret redaction exact', () => {
         const recipe = JSON.parse(
-            webSocketCommandCenterRecipe({
+            toWebSocketCommandCenterRecipeText({
                 values,
                 payload: { accessToken: 'access-secret', text: 'parity' },
                 bootstrap: { ...bootstrap, rallarPassword: 'password-secret' },

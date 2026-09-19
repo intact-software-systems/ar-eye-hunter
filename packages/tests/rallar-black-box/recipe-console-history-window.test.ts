@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { RecipeConsoleControlQueryProvenance } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
 import {
+    computeRecipeConsoleHistoryWindow,
     createRecipeConsoleHistoryCollection,
-    deriveRecipeConsoleHistoryWindow,
     RECIPE_CONSOLE_HISTORY_WINDOW_SIZE
 } from '../../../apps/rallar-black-box/src/recipe-console/history/history-model.ts';
 import type { ControlServerSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
@@ -46,7 +46,7 @@ describe('Recipe Console History explicit window', () => {
         const visitedIds: string[] = [];
         const visitedKeys: string[] = [];
         for (let startIndex = 0; startIndex < collection.counts.total; startIndex += RECIPE_CONSOLE_HISTORY_WINDOW_SIZE) {
-            const model = deriveRecipeConsoleHistoryWindow(collection, startIndex);
+            const model = computeRecipeConsoleHistoryWindow(collection, startIndex);
             visitedIds.push(...model.rows.map((row) => row.distributedRunId));
             visitedKeys.push(...model.rows.map((row) => row.key));
             expect(model.rows.length).toBeLessThanOrEqual(80);
@@ -90,7 +90,7 @@ describe('Recipe Console History explicit window', () => {
             query: query(fixture.snapshot),
             urlState: { v: 1, experience: 'recipe-console', view: 'tune' }
         });
-        const model = deriveRecipeConsoleHistoryWindow(collection, 80);
+        const model = computeRecipeConsoleHistoryWindow(collection, 80);
 
         expect(model.rows).toHaveLength(80);
         expect(model.rows[0]?.key).toBe('history-row:80');
@@ -127,7 +127,7 @@ describe('Recipe Console History explicit window', () => {
             query: query(snapshot),
             urlState: { v: 1, experience: 'recipe-console', view: 'tune' }
         });
-        const model = deriveRecipeConsoleHistoryWindow(collection, 80);
+        const model = computeRecipeConsoleHistoryWindow(collection, 80);
 
         expect(model.rows.find((row) => row.distributedRunId === visibleDuplicate.distributedRunId)).toMatchObject({
             key: 'history-row:80',

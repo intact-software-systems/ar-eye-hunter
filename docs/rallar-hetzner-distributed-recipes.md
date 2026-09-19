@@ -77,7 +77,10 @@ staging without relying on SPA state. They default to
 `groupId=hetzner-headless-room`, matching the workflow defaults.
 
 The checked-in Hetzner manifests are generated from shared-test recipe builders
-and shared distributed-run manifest contracts. If a manifest fails validation in
+and shared distributed-run manifest contracts, and write every author setting
+explicitly (a disabled barrier is `{ "enabled": false }`, empty variables and
+assignments are `{}` and `[]`). Regenerate them instead of editing the JSON. If a
+manifest fails validation in
 remote browser agents, check `packages/shared-test/rallar-bb-test/schema.ts`,
 `control-protocol.ts`, and the generated manifest JSON together; these must
 agree before dispatching on `main`.
@@ -247,6 +250,15 @@ analysis/fix-proposal.md      # failed runs
 analysis/performance.md       # passed runs
 ```
 
+When the control server rejects the create request, the runner never gets a
+distributed run: the folder holds `control-post-create-error.json` (the response
+body, when there was one), `control-post-error-metadata.json` (method, path,
+HTTP and curl status, exit code), `runner-summary.json` and `manifest.json`, and
+no `distributed-run.json`. The analyzer recognises that folder as a control
+request failure and writes `analysis/analysis.json`, `analysis/summary.md` and
+`analysis/fix-proposal.md` naming the failed request, its status and the error
+body. It writes no `performance.md`, because no run exists to measure.
+
 ## Failure Handling
 
 The recipe step is allowed to fail while the workflow continues long enough to
@@ -264,8 +276,31 @@ The proposal reports the likely cause, affected agents or regions, first useful
 evidence, minimal fix area, and a focused verification command.
 
 Malformed optional artifacts and malformed JSONL rows are reported as parse
-warnings in `analysis/analysis.json` and `analysis/summary.md`. A malformed
-`distributed-run.json` remains a hard analysis error.
+warnings in `analysis/analysis.json` and `analysis/summary.md`. A missing
+`manifest.json` is a warning too: the analysis still runs, but no artifact
+bundle is formed.
+
+`distributed-run.json` must match the control server's snapshot contract. When
+it is missing, empty, not JSON, or missing a field the control server always
+writes (for example `createdAtEpochMs` or a rollup counter), the analyzer prints
+the rejection naming the file and the field, writes no analysis files, and exits
+with status 1. The one exception is the failed control request folder described
+above.
+
+The runner exports `control-run.json` only when it has a control run id and its
+GET succeeds, so the analyzer treats that file as optional evidence. When it is
+missing or does not match the control run snapshot contract, the analysis still
+runs: a parse warning names the file, `analysis/summary.md` says that performance
+and the SPA report and verdict were not analyzed, and `analysis.json` omits
+`performance` and `spa` (and, without a fleet report, the agent count). No
+`performance.md` is written, and where the failure focus would use the SPA
+report it explains the first failure `distributed-run.json` records.
+
+When `control-run.json` holds no results or events, `results.jsonl` and
+`events.jsonl` rows that name their agent, command and outcome stand in for
+them; the analysis never invents command links or placeholder identities from
+those rows. A row that cannot stand in is a parse warning naming its line and
+the missing field.
 
 ## Success Handling
 
@@ -292,7 +327,9 @@ commands, so stream frame metrics are the primary performance baseline.
 
 Download the raw distributed artifact from GitHub Actions and import its JSON
 and JSONL files in the `rallar-black-box` Runs panel with `Import CI artifact`.
-The SPA uses the same analysis core as the CLI, then shows the verdict,
+The SPA uses the same analysis core as the CLI and rejects the same
+non-conforming folders; a failed control request folder has no run to import,
+so read its `analysis/fix-proposal.md` instead. For a valid run it shows the verdict,
 likely cause, next action, minimal fix area, evidence file, warnings, and
 performance baseline beside the live distributed run monitor. Imported stream
 runs show stream frames, p50/p95/p99 stream send duration, drops, backpressure,

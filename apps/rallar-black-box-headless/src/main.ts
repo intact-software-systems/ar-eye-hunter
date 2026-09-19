@@ -1,4 +1,5 @@
-import { createRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
+import { createDefaultRallarBlackBoxBrowserControlAgent } from '@shared-test/rallar-bb-test/browser-control-agent.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { renderHeadlessStatus } from './status-view.ts';
 import './styles.css';
 
@@ -8,9 +9,10 @@ if (!root) {
 }
 const rootElement = root;
 
-const agent = createRallarBlackBoxBrowserControlAgent({
+const agent = createDefaultRallarBlackBoxBrowserControlAgent({
     search: window.location.search,
-    env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {}
+    env: (import.meta as { env?: Record<string, string | undefined>; }).env ?? {},
+    hash: window.location.hash
 });
 
 function render(): void {
@@ -20,12 +22,16 @@ function render(): void {
 agent.subscribe(render);
 render();
 
-void agent.start().catch((error) => {
-    agent.recordStatus(
-        error instanceof Error ? error.message : String(error)
-    );
+function recordStartFailure(failure: string): void {
+    agent.recordStatus(failure);
     render();
-});
+}
+
+// start() returns expected failures as values; an unexpected rejection must still reach the status line.
+void agent.start().then(
+    (started) => started.foldLeft(recordStartFailure),
+    (error) => recordStartFailure(toError(error).message)
+);
 
 window.addEventListener('pagehide', () => {
     agent.dispose();

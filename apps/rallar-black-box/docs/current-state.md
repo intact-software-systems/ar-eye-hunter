@@ -221,7 +221,8 @@ ingestion remains a separate backend concern.
 
 ## Runtime Reality
 
-The SPA runtime store defaults to the local/fake command executor from `src/runtime-store.ts` for Recipe Console,
+The SPA runtime store defaults to the simulated in-page command runtime from
+`src/run-simulated-provider-command.ts` for Recipe Console,
 black-box-runner workflows, and offline UI work. That executor emits realistic command results, diagnostics, message events, stats, and
 topology inputs for runner surfaces. Direct `Rallar` mode tabs call `@shared-web/browser/rallar.ts` or Rallar Server
 REST APIs directly. The `src/browser-rallar-runtime.ts` bridge remains for runner-owned command execution, such as the
@@ -327,7 +328,7 @@ for missing-peer, stale-agent, duplicate-session, permission, closed-transport, 
 The SPA imports shared-test handoff types at build time and renders the browser-safe fixture catalog in the preserved
 legacy `Shared Test` tab, available from Recipe Console `Advanced` or
 `/?experience=legacy&workspace=black-box-runner&tab=shared-test`. Uploaded runner artifact bundles are parsed with
-`parseRallarBlackBoxSharedTestArtifactBundle(...)` and projected
+`parseBlackBoxRunnerArtifactBundle(...)` and projected
 into imported event stream, RTC diagnostics, failure-focus, summary, and replay-recipe views. The browser still does not
 execute shell commands; runner execution remains explicit local tooling or control-server work.
 

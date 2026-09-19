@@ -7,7 +7,7 @@ import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     RALLAR_COMPANION_COVERAGE_SURFACES,
     RALLAR_FACADE_METHODS_NOT_RECIPE_COMMANDS,
-    rallarCompanionCoverageBySurface
+    resolveRallarCompanionCoverageSurface
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
 describe('Rallar companion coverage boundaries', () => {
@@ -121,7 +121,7 @@ describe('Rallar companion coverage boundaries', () => {
         ).toEqual(expectedSurfaces);
 
         expectedSurfaces.forEach((surfaceId) => {
-            const surface = rallarCompanionCoverageBySurface(surfaceId);
+            const surface = resolveRallarCompanionCoverageSurface(surfaceId);
             expect(surface).toBeDefined();
             expect(surface?.intent.length).toBeGreaterThan(0);
             expect(surface?.runnerBoundary.length).toBeGreaterThan(0);
@@ -142,11 +142,11 @@ describe('Rallar companion coverage boundaries', () => {
     });
 
     it('points facade coverage at focused shared-web suites, not the legacy broad suite', () => {
-        const auth = rallarCompanionCoverageBySurface('browser-auth-and-session');
-        const rooms = rallarCompanionCoverageBySurface(
+        const auth = resolveRallarCompanionCoverageSurface('browser-auth-and-session');
+        const rooms = resolveRallarCompanionCoverageSurface(
             'browser-room-and-people-facades'
         );
-        const realtime = rallarCompanionCoverageBySurface(
+        const realtime = resolveRallarCompanionCoverageSurface(
             'browser-message-and-realtime-facades'
         );
 

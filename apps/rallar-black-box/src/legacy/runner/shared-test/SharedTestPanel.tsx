@@ -1,4 +1,6 @@
-import { RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF } from '../../../shared-test-handoff-fixtures.ts';
+import {
+    BLACK_BOX_RUNNER_COVERAGE_HANDOFF
+} from '@shared-test/black-box-runner/artifacts/handoff-contract.ts';
 import { SharedTestArtifactImportPanel } from './SharedTestArtifactImportPanel.tsx';
 import { SharedTestCatalogPanel } from './SharedTestCatalogPanel.tsx';
 
@@ -11,11 +13,11 @@ export function SharedTestPanel() {
                 <div className="panel-heading">
                     <h2>Coverage Ownership</h2>
                     <span>
-                        {RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.length} owners
+                        {BLACK_BOX_RUNNER_COVERAGE_HANDOFF.length} owners
                     </span>
                 </div>
                 <div className="coverage-owner-grid">
-                    {RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.map(
+                    {BLACK_BOX_RUNNER_COVERAGE_HANDOFF.map(
                         (owner) => (
                             <article
                                 className="coverage-owner-row"

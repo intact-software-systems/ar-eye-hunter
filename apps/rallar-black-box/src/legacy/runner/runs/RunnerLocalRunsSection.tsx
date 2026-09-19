@@ -1,10 +1,10 @@
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntimeStatus,
     RallarBlackBoxTestStatsSnapshot
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { ReactNode } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { formatTime } from '../../shared/time-format.ts';

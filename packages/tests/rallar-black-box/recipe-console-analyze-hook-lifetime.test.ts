@@ -2,11 +2,8 @@
 import { act, createElement, useLayoutEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-    AnalyzeEvidenceWindowProjection,
-    AnalyzeWorkerRequest,
-    AnalyzeWorkerResponse
-} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest, AnalyzeWorkerResponse } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-projection-contract.ts';
 import { useAnalyzeWorkspace, type AnalyzeWorkspaceController } from '../../../apps/rallar-black-box/src/recipe-console/analyze/use-analyze-workspace.ts';
 import type { RecipeConsoleControlExecutionApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-execution-api.ts';
 import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
@@ -887,7 +884,14 @@ function distributedRun(
                 groupId: 'ci-analyze'
             },
             recipes: [],
-            targetPolicy: { mode: 'all-online-group-members' }
+            targetPolicy: { mode: 'all-online-group-members' },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: createPassedRollup()
@@ -900,12 +904,10 @@ function createPassedRollup(): ControlDistributedRunSnapshot['rollup'] {
         ok: true,
         summary: {
             participants: 0,
-            requiredParticipants: 0,
             readyParticipants: 0,
             passedParticipants: 0,
             failedParticipants: 0,
             recipes: 0,
-            requiredRecipes: 0,
             passedRecipes: 0,
             failedRecipes: 0,
             groupAssertions: 0,
@@ -951,7 +953,12 @@ function completeResponse(
         projection: {
             distributedRunId,
             controlRunId: 'control-a',
-            identity: { distributedRunId, controlRunId: 'control-a' },
+            identity: {
+                distributedRunId,
+                distributedRunIdExact: true,
+                controlRunId: 'control-a',
+                controlRunIdExact: true
+            },
             workspace: {
                 source: 'loose-files',
                 support: 'supported',
@@ -961,7 +968,9 @@ function completeResponse(
                 issues: []
             },
             analysis: {
+                detail: 'full',
                 generatedAtEpochMs: 1,
+                artifactSchemaVersion: 1,
                 distributedRunId,
                 controlRunId: 'control-a',
                 status: 'passed',
@@ -973,6 +982,20 @@ function completeResponse(
                     blockingFailures: 0
                 },
                 parseWarnings: [],
+                spa: {
+                    verdict: {
+                        verdict: 'passed',
+                        tone: 'good',
+                        title: 'Outcome passed',
+                        summary: 'summary',
+                        artifactStatus: 'valid',
+                        artifactMessage: 'Artifact bundle is valid.',
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                },
                 summaryMarkdown: 'summary'
             },
             issueMarkdown: 'issue',
@@ -1047,8 +1070,14 @@ function tuneResponse(
         tuneGeneration: request.tuneGeneration,
         requestId: request.requestId,
         facade: {
-            identity: { distributedRunId: 'dist-a', controlRunId: 'control-a' },
+            identity: {
+                distributedRunId: 'dist-a',
+                distributedRunIdExact: true,
+                controlRunId: 'control-a',
+                controlRunIdExact: true
+            },
             support: 'supported',
+            supportIssues: { entries: [], total: 0, omitted: 0 },
             generatedAtEpochMs: 1,
             manifestSummary: {
                 distributedRunId: 'dist-a',
@@ -1058,6 +1087,7 @@ function tuneResponse(
                     workspaceId: 'workspace',
                     groupId: 'group'
                 },
+                startMode: 'manual',
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
                     mode: 'selected-agents',

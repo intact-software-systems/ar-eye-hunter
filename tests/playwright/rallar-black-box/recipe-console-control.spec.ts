@@ -109,12 +109,19 @@ function activeDistributedRun(
             controlRunId,
             displayName: 'Canonical live run',
             group: GROUP,
-            recipes: [{ recipeId: 'health-only', required: true }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: targetAgentIds,
                 expectedParticipantCount: targetAgentIds.length
-            }
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'running',
         createdAtEpochMs: now - 10_000,
@@ -127,12 +134,10 @@ function activeDistributedRun(
             ok: false,
             summary: {
                 participants: targetAgentIds.length,
-                requiredParticipants: targetAgentIds.length,
                 readyParticipants: targetAgentIds.length,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 blockingFailures: 0

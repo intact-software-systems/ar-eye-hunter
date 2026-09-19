@@ -6,12 +6,12 @@ import type { ExecuteAction, ExecuteActionPolicy } from './execute-action-policy
 import { downloadExecuteArtifact } from './execute-artifact-export.ts';
 import {
     createExecuteTargetResolutionEvidence,
-    projectExecuteManifest,
+    toExecuteManifestDraft,
     type ExecuteManifestDraft,
     type ExecuteTargetResolutionEvidence
 } from './execute-manifest.ts';
 import { projectExecuteOperationError, type ExecuteOperationError } from './execute-operation-error.ts';
-import { executeOperationContextKey } from './execute-workflow-context.ts';
+import { toExecuteOperationContextKey } from './execute-workflow-context.ts';
 import { classifyExecuteMutationResponse } from './execute-workflow-state.ts';
 
 export type BoundExecuteResolution = Readonly<{
@@ -114,6 +114,7 @@ export function useExecuteOperations(
         assertCurrentOperation(signal, operationContextRef, input.operationContextKey);
         const evidence = createExecuteTargetResolutionEvidence({
             manifest: input.manifest.manifest,
+            manifestFingerprint: input.manifest.fingerprint,
             resolution: result
         });
         input.setResolution({ contextKey: input.operationContextKey, evidence });
@@ -306,17 +307,18 @@ function rebindResolution(
     run: ControlDistributedRunSnapshot,
     truthContextKey: string
 ): BoundExecuteResolution | undefined {
-    if (!previous) {
+    const projected = previous ? toExecuteManifestDraft(run.manifest).right : undefined;
+    if (!previous || !projected) {
         return undefined;
     }
-    const projected = projectExecuteManifest(run.manifest);
     const evidence = createExecuteTargetResolutionEvidence({
         manifest: run.manifest,
+        manifestFingerprint: projected.fingerprint,
         resolution: previous.evidence.resolution
     });
     return evidence.comparison.ok
         ? {
-            contextKey: executeOperationContextKey(
+            contextKey: toExecuteOperationContextKey(
                 truthContextKey,
                 projected.fingerprint
             ),

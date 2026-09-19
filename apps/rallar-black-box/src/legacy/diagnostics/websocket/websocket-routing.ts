@@ -1,6 +1,6 @@
-import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestConfig } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { stringValue } from '../../shared/string-value.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
@@ -59,42 +59,36 @@ export function resolveWebSocketUrlTemplate(
 export function defaultWebSocketTypeId(): string {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.typeId ?? 'room.manual.message'
+            .typeId ?? 'room.manual.message'
     );
 }
 
 export function defaultWebSocketTopicId(): string {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.topicId ?? defaultWebSocketTypeId()
+            .topicId ?? defaultWebSocketTypeId()
     );
 }
 
 export function defaultWebSocketScope(): WebSocketCommandCenterValues['wsScope'] {
     return (
         webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID).values
-            ?.wsScope ?? 'room'
+            .wsScope ?? 'room'
     );
 }
 
 export function defaultWebSocketValuesFromContext(
-    globalValues: CommandCenterGlobalValues | undefined,
+    globalValues: CommandCenterGlobalValues,
     config: RallarBlackBoxTestConfig | undefined,
     bootstrap: RallarBlackBoxBootstrapConfig
 ): Pick<WebSocketCommandCenterValues, 'apiBaseUrl' | 'applicationId' | 'workspaceId' | 'groupId' | 'contextId'> {
-    const groupId = stringValue(globalValues?.roomId) ??
+    const groupId = stringValue(globalValues.roomId) ??
         stringValue(config?.roomId) ??
         bootstrap.roomId;
     return {
-        apiBaseUrl: globalValues?.apiBaseUrl ??
-            config?.apiBaseUrl ??
-            bootstrap.apiBaseUrl,
-        applicationId: globalValues?.applicationId ??
-            stringValue(config?.rallar?.applicationId) ??
-            'rallar-black-box',
-        workspaceId: globalValues?.workspaceId ??
-            stringValue(config?.rallar?.workspaceId) ??
-            'default',
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
         groupId,
         contextId: groupId || 'all'
     };

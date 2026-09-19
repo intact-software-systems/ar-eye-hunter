@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
+    parseControlClientMessage,
     parseControlServerMessage,
-    validateRallarBlackBoxTestCommand,
     type ControlCommandEnvelope
-} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+} from '../../shared-test/rallar-bb-test/control-protocol.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import { toControlAgentCapabilities } from '../../shared-test/rallar-bb-test/distributed/control-agent-capabilities.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecord
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from '../../shared-test/rallar-bb-test/schema/rallar-black-box-command-capabilities.ts';
 
-function envelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
+function toControlEnvelope(commandId: string, command: RallarBlackBoxTestCommand): ControlCommandEnvelope {
     return {
         kind: 'command',
         protocolVersion: 1,
@@ -16,6 +22,33 @@ function envelope(commandId: string, command: RallarBlackBoxTestCommand): Contro
         command
     };
 }
+
+function toRegisterMessage(identity: object): string {
+    return JSON.stringify({
+        kind: 'register',
+        protocolVersion: 1,
+        runId: 'run-1',
+        agentId: 'agent-1',
+        atEpochMs: 1_000,
+        resume: { completedCommandIds: [] },
+        identity
+    });
+}
+
+const REGISTERED_IDENTITY = {
+    principalId: 'alice',
+    applicationId: 'rallar-server',
+    workspaceId: 'default',
+    groupId: 'bb-group',
+    sessionLabel: 'alice:session-1',
+    updatedAtEpochMs: 1_000,
+    location: { latitude: 60.39, longitude: 5.32, precision: 'approximate' },
+    capabilities: toControlAgentCapabilities({
+        config: undefined,
+        providerMode: 'browser-rallar',
+        apiBaseUrl: 'http://localhost:8080'
+    })
+};
 
 describe('rallar-bb-test control protocol', () => {
     it.each([
@@ -43,7 +76,7 @@ describe('rallar-bb-test control protocol', () => {
             timeoutMs: 5_000
         }
     ])('accepts $commandId', (command) => {
-        expect(validateRallarBlackBoxTestCommand(command as never)).toEqual({ ok: true });
+        expect(validateRallarBlackBoxTestCommand(command)).toEqual({ ok: true });
     });
 
     it.each([
@@ -75,7 +108,7 @@ describe('rallar-bb-test control protocol', () => {
             timeoutMs: 5_000
         }
     ])('rejects $commandId', (command) => {
-        expect(validateRallarBlackBoxTestCommand(command as never).ok).toBe(false);
+        expect(validateRallarBlackBoxTestCommand(command).ok).toBe(false);
     });
 
     it('accepts the RTC diagnostics option on health commands', () => {
@@ -87,15 +120,16 @@ describe('rallar-bb-test control protocol', () => {
         expect(validateRallarBlackBoxTestCommand({
             kind: 'health',
             includeRtcDiagnostics: 'yes'
-        } as never)).toEqual({
+        })).toEqual({
             ok: false,
-            error: 'health.includeRtcDiagnostics must be a boolean.'
+            error: 'health.includeRtcDiagnostics must be a boolean.',
+            messages: ['health.includeRtcDiagnostics must be a boolean.']
         });
     });
 
     it('accepts recipe.load containing rtc.connect readiness', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-readiness-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-readiness-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-readiness-1',
                 recipe: {
@@ -127,7 +161,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed rtc.connect readiness in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-readiness-invalid-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-readiness-invalid-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-readiness-invalid-1',
                 recipe: {
@@ -156,7 +190,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('accepts recipe.load containing rtc.stream', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-stream-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-stream-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-stream-1',
                 recipe: {
@@ -198,7 +232,7 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed rtc.stream in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-rtc-stream-invalid-1', {
+            JSON.stringify(toControlEnvelope('recipe-load-rtc-stream-invalid-1', {
                 kind: 'recipe.load',
                 commandId: 'recipe-load-rtc-stream-invalid-1',
                 recipe: {
@@ -225,9 +259,10 @@ describe('rallar-bb-test control protocol', () => {
 
     it('accepts schema-supported loop thresholds in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-loop-thresholds', {
+            JSON.stringify(toControlEnvelope('recipe-load-loop-thresholds', {
                 kind: 'recipe.load',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'loop-thresholds',
                     commands: [{
                         kind: 'loop',
@@ -253,9 +288,10 @@ describe('rallar-bb-test control protocol', () => {
 
     it('rejects malformed loop thresholds in recipe.load', () => {
         const parsed = parseControlServerMessage(
-            JSON.stringify(envelope('recipe-load-loop-thresholds-invalid', {
+            JSON.stringify(toControlEnvelope('recipe-load-loop-thresholds-invalid', {
                 kind: 'recipe.load',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'loop-thresholds-invalid',
                     commands: [{
                         kind: 'loop',
@@ -286,6 +322,127 @@ describe('rallar-bb-test control protocol', () => {
             kind: 'loop',
             commands: [{ kind: 'health' }],
             thresholds
-        } as never)).toEqual({ ok: false, error });
+        })).toEqual({ ok: false, error, messages: [error] });
+    });
+
+    it('accepts the rtc.stream backpressure threshold', () => {
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'rtc.stream',
+            send: {},
+            count: 2,
+            intervalMs: 50,
+            thresholds: { maxBackpressureCount: 0 }
+        })).toEqual({ ok: true });
+    });
+
+    it('rejects a ws.send that carries no data', () => {
+        expect(validateRallarBlackBoxTestCommand({ kind: 'ws.send', connection: 'control' })).toEqual({
+            ok: false,
+            error: 'ws.send.data is required.',
+            messages: ['ws.send.data is required.']
+        });
+    });
+
+    it('reports every issue in a command, prefixing nested issues with their path', () => {
+        expect(validateRallarBlackBoxTestCommand({
+            kind: 'recipe.load',
+            recipe: {
+                schemaVersion: 1,
+                recipeId: 'several-issues',
+                commands: [{
+                    kind: 'loop',
+                    count: 0,
+                    commands: [{ kind: 'health' }],
+                    thresholds: { maxJitterMs: -1, bogus: true }
+                }]
+            }
+        })).toEqual({
+            ok: false,
+            error: [
+                'recipe.load.recipe.commands[0]: loop.count must be >= 1.',
+                'recipe.load.recipe.commands[0]: loop.thresholds has unsupported field: bogus.',
+                'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
+            ].join('\n'),
+            messages: [
+                'recipe.load.recipe.commands[0]: loop.count must be >= 1.',
+                'recipe.load.recipe.commands[0]: loop.thresholds has unsupported field: bogus.',
+                'recipe.load.recipe.commands[0]: loop.thresholds.maxJitterMs must be >= 0.'
+            ]
+        });
+    });
+
+    it('decodes the identity a current agent registers with', () => {
+        const parsed = parseControlClientMessage(toRegisterMessage(REGISTERED_IDENTITY));
+
+        expect(parsed.ok ? parsed.envelope : parsed.error).toMatchObject({
+            kind: 'register',
+            identity: JSON.parse(JSON.stringify(REGISTERED_IDENTITY))
+        });
+    });
+
+    it.each([
+        {
+            name: 'an identity without a session label',
+            identity: { ...REGISTERED_IDENTITY, sessionLabel: undefined },
+            error: 'Control register identity is invalid: identity.sessionLabel must be a non-empty string.'
+        },
+        {
+            name: 'an identity without an update time',
+            identity: { ...REGISTERED_IDENTITY, updatedAtEpochMs: undefined },
+            error: 'Control register identity is invalid: identity.updatedAtEpochMs must be a finite number.'
+        },
+        {
+            name: 'a location without a precision',
+            identity: { ...REGISTERED_IDENTITY, location: { latitude: 60.39, longitude: 5.32 } },
+            error: 'Control register identity is invalid: identity.location must carry latitude, longitude and an exact or approximate precision.'
+        },
+        {
+            name: 'a capability block without assertions',
+            identity: {
+                ...REGISTERED_IDENTITY,
+                capabilities: { ...REGISTERED_IDENTITY.capabilities, assertions: undefined }
+            },
+            error: 'Control register identity is invalid: identity.capabilities.assertions must report absence, untilLoop and operators.'
+        }
+    ])('rejects a register envelope carrying $name', ({ identity, error }) => {
+        expect(parseControlClientMessage(toRegisterMessage(identity))).toEqual({ ok: false, error });
+    });
+
+    it.each([
+        { kind: 'register', error: 'Control register requires identity.' },
+        { kind: 'heartbeat', error: 'Control heartbeat requires identity.' }
+    ])('rejects a $kind envelope that carries no identity', ({ kind, error }) => {
+        expect(parseControlClientMessage(JSON.stringify({
+            kind,
+            protocolVersion: 1,
+            runId: 'run-1',
+            agentId: 'agent-1',
+            atEpochMs: 1_000,
+            status: 'running',
+            resume: { completedCommandIds: [] }
+        }))).toEqual({ ok: false, error });
+    });
+
+    it('admits the capability catalog fields and requires each of its required fields', () => {
+        const controlCapabilities = RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
+            .filter((capability) => !capability.kind.startsWith('crdt.'));
+        for (const capability of controlCapabilities) {
+            const example: RallarBlackBoxTestRecord = { ...capability.example };
+            expect(validateRallarBlackBoxTestCommand(example), capability.kind).toEqual({ ok: true });
+            expect(validateRallarBlackBoxTestCommand({ ...example, undeclared: true }), capability.kind).toMatchObject({
+                ok: false,
+                error: expect.stringContaining(`${capability.kind} has unsupported field: undeclared.`)
+            });
+            for (const field of [...capability.requiredFields, ...capability.optionalFields]) {
+                const withField = validateRallarBlackBoxTestCommand({ ...example, [field]: example[field] ?? null });
+                const error = withField.ok ? '' : withField.error;
+                expect(error, `${capability.kind}.${field}`).not.toContain('has unsupported field');
+            }
+            for (const field of capability.requiredFields) {
+                const withoutField = { ...example };
+                Reflect.deleteProperty(withoutField, field);
+                expect(validateRallarBlackBoxTestCommand(withoutField).ok, `${capability.kind} without ${field}`).toBe(false);
+            }
+        }
     });
 });

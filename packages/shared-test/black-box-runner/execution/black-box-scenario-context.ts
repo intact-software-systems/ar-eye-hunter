@@ -16,9 +16,12 @@ import {
     resolveBlackBoxVariables
 } from './black-box-run-secrets.ts';
 
+export type BlackBoxFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 export interface BlackBoxExecutionDependencies {
     readonly now: () => number;
     readonly createUuid: () => string;
+    readonly fetch: BlackBoxFetch;
 }
 
 export function createDefaultExecutionDependencies(): BlackBoxExecutionDependencies {
@@ -28,7 +31,8 @@ export function createDefaultExecutionDependencies(): BlackBoxExecutionDependenc
         now: Date.now,
         createUuid: cryptoApi?.randomUUID
             ? cryptoApi.randomUUID.bind(cryptoApi)
-            : () => randomUuid(random)
+            : () => randomUuid(random),
+        fetch: globalThis.fetch.bind(globalThis)
     };
 }
 
@@ -72,7 +76,7 @@ function createRtcProviders(dependencies: BlackBoxExecutionDependencies): Record
             state: createRallarInMemoryRuntimeState()
         }),
         'rallar-browser': createRallarBrowserRtcProvider(),
-        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider()
+        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider({ fetch: dependencies.fetch })
     };
 }
 

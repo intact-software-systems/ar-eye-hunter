@@ -19,6 +19,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         recipes: [{
             recipeId: 'candidate-recipe',
             recipe: {
+                schemaVersion: 1,
                 recipeId: 'candidate-recipe',
                 commands: [{
                     kind: 'loop',
@@ -32,18 +33,25 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     count: 10,
                     rateHz: 20
                 }]
-            }
-        }]
+            },
+            variables: {}
+        }],
+        variables: {},
+        roleAssignments: [],
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
 describe('distributed tuning candidate hardening', () => {
     it('materializes an explicitly undefined threshold parent once', () => {
-        const source = structuredClone(manifest()) as unknown as Record<string, any>;
-        source.recipes[0].recipe.commands[1].thresholds = undefined;
+        const source = manifest();
+        Reflect.set(source.recipes[0].recipe!.commands[1], 'thresholds', undefined);
 
         const result = createDistributedRunTuningCandidate({
-            manifest: source as RallarBlackBoxDistributedRunManifest,
+            manifest: source,
             changes: [
                 { pointer: `${STREAM}/thresholds/minSendSuccessRatio`, value: 0.98 },
                 { pointer: `${STREAM}/thresholds/maxDroppedFrames`, value: 2 }
@@ -65,7 +73,8 @@ describe('distributed tuning candidate hardening', () => {
         null,
         [null]
     ])('contains malformed recipe collections as typed validation errors %#', (recipes) => {
-        const source = { ...manifest(), recipes } as unknown as RallarBlackBoxDistributedRunManifest;
+        const source = manifest();
+        Reflect.set(source, 'recipes', recipes);
         let result: ReturnType<typeof createDistributedRunTuningCandidate> | undefined;
 
         expect(() => {
@@ -83,13 +92,13 @@ describe('distributed tuning candidate hardening', () => {
     });
 
     it('returns RFC 6901 schema paths and command-specific agent/preflight paths', () => {
-        const dynamicRole = structuredClone(manifest()) as unknown as Record<string, any>;
-        dynamicRole.targetPolicy = {
+        const dynamicRole = manifest();
+        Reflect.set(dynamicRole, 'targetPolicy', {
             mode: 'role-map',
             roles: { 'bad/key~x': 'agent-a' }
-        };
+        });
         const schemaResult = createDistributedRunTuningCandidate({
-            manifest: dynamicRole as RallarBlackBoxDistributedRunManifest,
+            manifest: dynamicRole,
             changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }]
         });
         expect(schemaResult).toMatchObject({
@@ -100,10 +109,10 @@ describe('distributed tuning candidate hardening', () => {
             })])
         });
 
-        const invalidRoute = structuredClone(manifest()) as unknown as Record<string, any>;
-        invalidRoute.recipes[0].recipe.commands[1].roomId = '';
+        const invalidRoute = manifest();
+        Reflect.set(invalidRoute.recipes[0].recipe!.commands[1], 'roomId', '');
         const agentResult = createDistributedRunTuningCandidate({
-            manifest: invalidRoute as RallarBlackBoxDistributedRunManifest,
+            manifest: invalidRoute,
             changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }]
         });
         expect(agentResult).toMatchObject({
@@ -114,10 +123,11 @@ describe('distributed tuning candidate hardening', () => {
             })])
         });
 
-        const embedded = structuredClone(manifest()) as unknown as Record<string, any>;
-        embedded.recipes[0].recipe.commands = [{
+        const embedded = manifest();
+        Reflect.set(embedded.recipes[0].recipe!, 'commands', [{
             kind: 'recipe.run',
             recipe: {
+                schemaVersion: 1,
                 recipeId: 'embedded',
                 commands: [{
                     kind: 'rtc.stream',
@@ -127,9 +137,9 @@ describe('distributed tuning candidate hardening', () => {
                     count: 2
                 }]
             }
-        }];
+        }]);
         const embeddedResult = createDistributedRunTuningCandidate({
-            manifest: embedded as RallarBlackBoxDistributedRunManifest,
+            manifest: embedded,
             changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }]
         });
         expect(embeddedResult).toMatchObject({
@@ -140,10 +150,10 @@ describe('distributed tuning candidate hardening', () => {
             })])
         });
 
-        const excessiveLoop = structuredClone(manifest()) as unknown as Record<string, any>;
-        excessiveLoop.recipes[0].recipe.commands[0].count = 20_001;
+        const excessiveLoop = manifest();
+        Reflect.set(excessiveLoop.recipes[0].recipe!.commands[0], 'count', 20_001);
         const preflightResult = createDistributedRunTuningCandidate({
-            manifest: excessiveLoop as RallarBlackBoxDistributedRunManifest,
+            manifest: excessiveLoop,
             changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }]
         });
         expect(preflightResult).toMatchObject({

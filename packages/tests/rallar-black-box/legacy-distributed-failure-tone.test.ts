@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { distributedFailureCategoryTone } from '../../../apps/rallar-black-box/src/legacy/runner/distributed/status-presentation.ts';
 import { RECIPE_CONSOLE_FAILURE_CATEGORIES } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES } from '../../shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES } from '../../shared-test/rallar-bb-test/distributed-run-analysis/distributed-failure-explanation-contracts.ts';
 
 describe('legacy distributed failure category tone', () => {
     it('marks group assertion failures as blocking', () => {

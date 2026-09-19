@@ -26,19 +26,25 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         recipes: [
             {
                 recipeId: 'health-recipe',
-                required: true,
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'health-recipe',
                     commands: [{ kind: 'health', commandId: 'health' }]
-                }
+                },
+                variables: {}
             }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
             expectedParticipantCount: 1
         },
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -60,6 +66,7 @@ function resolution(input: RallarBlackBoxDistributedRunManifest): RallarBlackBox
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -86,12 +93,10 @@ function snapshot(
             ok: state === 'passed',
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: state === 'ready' || state === 'running' || state === 'passed' ? 1 : 0,
                 passedParticipants: state === 'passed' ? 1 : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,

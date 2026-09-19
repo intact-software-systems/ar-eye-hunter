@@ -1,8 +1,8 @@
-import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
+import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
 import type { IconName } from '../ui/Icon.tsx';
 
 export type RecipeConsoleNavigationItem = Readonly<{
-    view: RecipeConsoleView;
+    view: DiagnosticBridgeSourceView;
     label: string;
     icon: IconName;
 }>;

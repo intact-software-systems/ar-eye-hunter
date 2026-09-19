@@ -12,9 +12,10 @@ describe('Recipe Console control scale fixture', () => {
     it('keeps the public builder and its focused retention helper bounded', () => {
         for (
             const [fileName, budget] of [
-                // Re-baselined after the dprint reformat: this file grew 275 -> 286 lines on
-                // formatting alone, with no change to what it does.
-                ['recipe-console-control-scale-fixture.ts', 300],
+                // Re-baselined after the dprint reformat (275 -> 286 lines), when manifests began writing every
+                // author setting explicitly (+15 lines), and when agent identities began writing their session
+                // label (+1 line); all of it data, no behaviour.
+                ['recipe-console-control-scale-fixture.ts', 302],
                 ['recipe-console-control-scale-retention.ts', 140]
             ] as const
         ) {
@@ -75,7 +76,7 @@ describe('Recipe Console control scale fixture', () => {
                 distributed.distributedRunId
             );
             expect(control.updatedAtEpochMs).toBe(distributed.updatedAtEpochMs);
-            expect(validateDistributedRunManifest(distributed.manifest).ok).toBe(true);
+            expect(validateDistributedRunManifest(distributed.manifest)).toEqual([]);
         }
     });
 

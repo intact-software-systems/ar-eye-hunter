@@ -1,15 +1,15 @@
+import type { DistributedRecipeCatalogItem } from '@shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
-    DistributedRecipeCatalogItem,
-    DistributedRecipeRolePattern,
-    DistributedRecipeTargetPolicyMode
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+    RallarBlackBoxDistributedRolePattern,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
 import {
-    distributedRecipeSchemaContextText,
     redactDistributedRecipePromptVariables,
-    renderDistributedRecipePromptTemplate,
-    renderDistributedRecipeValidationFeedback,
+    toDistributedRecipePromptText,
+    toDistributedRecipeSchemaContextText,
+    toDistributedRecipeValidationFeedbackText,
     type DistributedRecipePromptTemplateId
 } from '../../../../distributed-recipe-authoring-prompts.ts';
 import { validateSchemaAuthoringText } from '../../../../schema-authoring.ts';
@@ -29,8 +29,8 @@ type DistributedRecipeAuthoringSectionProps = Readonly<{
     token: string;
     selectedRunId: string;
     distributedRunId: string;
-    targetPolicyMode: DistributedRecipeTargetPolicyMode;
-    rolePattern: DistributedRecipeRolePattern;
+    targetPolicyMode: RallarBlackBoxDistributedTargetPolicyMode;
+    rolePattern: RallarBlackBoxDistributedRolePattern;
     ackTimeoutMs: number;
     barrierEnabled: boolean;
     barrierTimeoutMs: number;
@@ -66,7 +66,7 @@ export function DistributedRecipeAuthoringSection(
     );
     const [authoringDraftText, setAuthoringDraftText] = useState('');
     const authoringSchemaContextText = useMemo(
-        () => distributedRecipeSchemaContextText(),
+        () => toDistributedRecipeSchemaContextText(),
         []
     );
     const authoringDraftValidation = useMemo(
@@ -96,7 +96,7 @@ export function DistributedRecipeAuthoringSection(
     const authoringValidationFeedbackText = useMemo(
         () =>
             authoringValidationFeedback
-                ? renderDistributedRecipeValidationFeedback(
+                ? toDistributedRecipeValidationFeedbackText(
                     authoringValidationFeedback
                 )
                 : 'Paste generated JSON to get schema validation and distributed recipe preflight feedback.',
@@ -157,7 +157,7 @@ export function DistributedRecipeAuthoringSection(
     );
     const authoringPromptText = useMemo(
         () =>
-            renderDistributedRecipePromptTemplate(authoringTemplateId, {
+            toDistributedRecipePromptText(authoringTemplateId, {
                 variables: authoringPromptVariables,
                 validationFeedback: authoringValidationFeedback
             }),

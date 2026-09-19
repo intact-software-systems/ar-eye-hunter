@@ -1,3 +1,4 @@
+import { Either } from '@shared/resilience/Either.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 import { requestControlRetentionConfirmation, requestControlRetentionPreview } from './control-retention-request.ts';
 import {
@@ -9,11 +10,23 @@ import {
 
 type RetentionSignal = Readonly<{ signal?: AbortSignal; }>;
 
+/**
+ * A refusal this API decides on its own, without asking the control server: a preview raised while
+ * a confirmation still holds the plan, and a confirmation offered a preview this connection never
+ * issued.
+ */
+export type ControlRetentionRefusal = Readonly<{
+    code: 'confirmation-in-progress' | 'foreign-preview';
+    message: string;
+}>;
+
 export type RecipeConsoleControlRetentionApi = Readonly<{
-    preview(input?: RetentionSignal): Promise<ControlRetentionPreview>;
+    preview(
+        input?: RetentionSignal
+    ): Promise<Either<ControlRetentionRefusal, ControlRetentionPreview>>;
     confirm(
         input: RetentionSignal & Readonly<{ preview: ControlRetentionPreview; }>
-    ): Promise<ControlRetentionConfirmation>;
+    ): Promise<Either<ControlRetentionRefusal, ControlRetentionConfirmation>>;
 }>;
 
 export function createRecipeConsoleControlRetentionApi(
@@ -30,7 +43,10 @@ export function createRecipeConsoleControlRetentionApi(
     return {
         async preview(request = {}) {
             if (confirming) {
-                throw new Error('Retention confirmation is in progress.');
+                return Either.ofLeft({
+                    code: 'confirmation-in-progress',
+                    message: 'Retention confirmation is in progress.'
+                });
             }
             const generation = ++previewGeneration;
             currentPreview = undefined;
@@ -40,12 +56,10 @@ export function createRecipeConsoleControlRetentionApi(
                 async (signal) => {
                     const result = await input.endpoint.response(
                         async (fetchFn) =>
-                            parseControlRetentionPreview(
-                                await requestControlRetentionPreview({
-                                    baseUrl: input.baseUrl,
-                                    fetchFn
-                                })
-                            ),
+                            (await requestControlRetentionPreview({
+                                baseUrl: input.baseUrl,
+                                fetchFn
+                            })).mapRight(parseControlRetentionPreview),
                         signal
                     );
                     throwIfAborted(signal);
@@ -56,7 +70,7 @@ export function createRecipeConsoleControlRetentionApi(
                         );
                     }
                     currentPreview = result.value;
-                    return result.value;
+                    return Either.ofRight(result.value);
                 }
             );
         },
@@ -67,27 +81,25 @@ export function createRecipeConsoleControlRetentionApi(
                 request.signal,
                 async (signal) => {
                     if (request.preview !== currentPreview) {
-                        throw new Error(
-                            'The retention preview does not belong to the current control connection.'
-                        );
+                        return Either.ofLeft({
+                            code: 'foreign-preview',
+                            message: 'The retention preview does not belong to the current control connection.'
+                        });
                     }
                     currentPreview = undefined;
                     confirming = true;
                     try {
                         const result = await input.endpoint.response(
                             async (fetchFn) =>
-                                parseControlRetentionConfirmation(
-                                    await requestControlRetentionConfirmation({
-                                        baseUrl: input.baseUrl,
-                                        planToken: request.preview.planToken,
-                                        fetchFn
-                                    }),
-                                    request.preview
-                                ),
+                                (await requestControlRetentionConfirmation({
+                                    baseUrl: input.baseUrl,
+                                    planToken: request.preview.planToken,
+                                    fetchFn
+                                })).mapRight((reply) => parseControlRetentionConfirmation(reply, request.preview)),
                             signal
                         );
                         throwIfAborted(signal);
-                        return result.value;
+                        return Either.ofRight(result.value);
                     }
                     finally {
                         confirming = false;

@@ -43,6 +43,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
         Omit<DefaultALOutboundRuntimeResourceInput<TPrepared>, 'decodePrepared'>,
         Pick<
             ALOutboundMessageRuntime.Dependencies<TPrepared>,
+            | 'carrier'
             | 'toOutboxEntry'
             | 'readMessageFromEntry'
             | 'planOutgoingMessage'
@@ -56,6 +57,7 @@ export interface CreateDefaultALOutboundMessageRuntimeDependencies<TPrepared>
                 | 'afterDequeueAdmission'
                 | 'planRepairMessage'
                 | 'diagnostics'
+                | 'settlements'
             >
         > {
     readonly outbox: QueueBoxResourceEntryRepository;
@@ -77,7 +79,8 @@ export function createDefaultALOutboundMessageRuntime<TPrepared>(
         planDequeuedMessage: dependencies.planDequeuedMessage ?? dependencies.planOutgoingMessage,
         afterDequeueAdmission: dependencies.afterDequeueAdmission,
         planRepairMessage: dependencies.planRepairMessage,
-        diagnostics: dependencies.diagnostics
+        diagnostics: dependencies.diagnostics,
+        settlements: dependencies.settlements
     });
 }
 

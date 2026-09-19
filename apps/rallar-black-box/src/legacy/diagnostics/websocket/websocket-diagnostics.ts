@@ -1,8 +1,8 @@
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxEvents
-} from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxEvents
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import type { WebSocketDiagnostic } from './websocket-contracts.ts';
 
@@ -10,8 +10,8 @@ export function deriveWebSocketDiagnostics(
     state: RallarBlackBoxTestState,
     connection: string
 ): WebSocketDiagnostic {
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const events = selectRallarBlackBoxEvents(state)
+    const history = getRallarBlackBoxCommandHistory(state);
+    const events = getRallarBlackBoxEvents(state)
         .filter((event) => event.transport === 'ws')
         .filter(
             (event) =>

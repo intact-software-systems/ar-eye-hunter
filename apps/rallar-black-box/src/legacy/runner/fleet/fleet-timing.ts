@@ -1,9 +1,12 @@
+import type {
+    ControlFleetRunReport,
+    ControlFleetTimingDistribution
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     deriveFleetReportTimingDistribution,
     deriveFleetReportTimingGroupsByRecipe,
     deriveFleetReportTimingGroupsByRegion
 } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
-import type { ControlFleetRunReport, ControlFleetTimingDistribution } from '../../../control-run-manager.ts';
 import type { FleetTimingGroup } from './fleet-types.ts';
 
 export function fleetTimingGroupsByRegion(

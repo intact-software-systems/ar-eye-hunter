@@ -84,6 +84,7 @@ export class WsQueueBoxServerOutboundPlanning {
                 toNoRouteDispatchPlan(message, `Invalid WS server outbound message ${message.id.msgId}: ${error}`),
             (recipients) => ({
                 msg: message,
+                dropReasonCode: undefined,
                 persist,
                 preparedMessages: phase === 'dequeue' && clusterPublisherRegistered
                     ? [{ kind: 'cluster-local-complete', message: toALOutboundTransportMessage(message) }]
@@ -113,6 +114,7 @@ export class WsQueueBoxServerOutboundPlanning {
 
         return {
             msg: message,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: recipients.map((recipient) => ({
                 kind: 'recipient',
@@ -193,7 +195,7 @@ function toNoRouteDispatchPlan(
     message: ALMessage,
     dropReason: string
 ): ALOutboundDispatchPlan<WsQueueBoxServerPreparedMessage> {
-    return { msg: message, dropReason, persist: false, preparedMessages: [] };
+    return { msg: message, dropReason, dropReasonCode: 'no-route', persist: false, preparedMessages: [] };
 }
 
 function toAckTrackingPlan(

@@ -4,7 +4,7 @@ import type { BlackBoxRallarSendInput } from '../../../packages/shared-test/blac
 import type {
     RallarBlackBoxTestRtcSendCommand,
     RallarBlackBoxTestWsSendCommand
-} from '../../../packages/shared-test/rallar-bb-test/types.ts';
+} from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
     createGroupFormationLifecycleDriver,
     type GroupFormationLifecycleDriver,

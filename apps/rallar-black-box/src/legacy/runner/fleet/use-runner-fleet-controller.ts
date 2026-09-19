@@ -1,18 +1,27 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlFleetReportBundle,
+    ControlFleetReportsResponse,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    fetchControlServerSnapshot,
-    fetchFleetReportBundle,
-    fetchFleetReports,
-    rebuildFleetReports,
-    type ControlFleetReportBundle,
-    type ControlFleetReportsResponse,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
+} from '../../../control-agent-board.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
+import {
+    readFleetReportBundle,
+    readFleetReports,
+    rebuildFleetReports
+} from '../../../control-run-manager/control-fleet-report-endpoints.ts';
+import { readControlServerSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {
     deriveFleetWorldMapModel,
     routeEvidenceFromControlRun,
@@ -23,6 +32,7 @@ import {
 import { json } from '../../shared/json-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import { fleetAgentDetail, fleetHeatmapRows, fleetMissingLabelAgents, fleetRegionRows } from './fleet-derivations.ts';
 import {
@@ -51,11 +61,15 @@ export function useRunnerFleetController({
     globalValues
 }: UseRunnerFleetControllerInput) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+        toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
     );
+    const controlEndpoint = createDefaultControlEndpointRequest({
+        baseUrl: controlBaseUrl,
+        token: controlToken
+    });
     const [filters, setFilters] = useState<FleetFilterState>(
         readFleetFiltersFromUrl
     );
@@ -150,16 +164,21 @@ export function useRunnerFleetController({
     );
     const liveAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run: liveRun,
                 group: liveGroupRef,
                 distributedRuns: liveSnapshot?.distributedRuns ?? [],
-                nowEpochMs: Date.now()
+                requiredCommandKinds: [],
+                requiredRecipes: [],
+                selectedDistributedRun: undefined,
+                monitorAgentProgress: [],
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [liveGroupRef, liveRun, liveSnapshot?.distributedRuns]
     );
     const liveAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(liveAgentRows),
+        () => computeControlAgentBoardSummary(liveAgentRows),
         [liveAgentRows]
     );
     const routeEvidence = useMemo(
@@ -185,25 +204,30 @@ export function useRunnerFleetController({
         }
         setError(undefined);
         try {
-            const nextResponse = options.rebuild
-                ? await rebuildFleetReports({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken
-                })
-                : await fetchFleetReports({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken,
+            const responseOutcome = options.rebuild
+                ? await rebuildFleetReports(controlEndpoint)
+                : await readFleetReports({
+                    ...controlEndpoint,
                     filter: fleetReportFilterFromUi(filters)
                 });
             if (!request.isCurrent()) {
                 return;
             }
-            const nextSnapshot = await fetchControlServerSnapshot({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+            const nextResponse = responseOutcome.right;
+            if (nextResponse === undefined) {
+                setError(toRunnerFriendlyControlFailureMessage(responseOutcome.left));
+                return;
+            }
+            const snapshotOutcome = await readControlServerSnapshot({
+                ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const nextSnapshot = snapshotOutcome.right;
+            if (nextSnapshot === undefined) {
+                setError(toRunnerFriendlyControlFailureMessage(snapshotOutcome.left));
                 return;
             }
             setResponse(nextResponse);
@@ -304,11 +328,15 @@ export function useRunnerFleetController({
         setBusy('export');
         setError(undefined);
         try {
-            const bundle = await fetchFleetReportBundle({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+            const bundleOutcome = await readFleetReportBundle({
+                ...controlEndpoint,
                 distributedRunId: selectedReport.distributedRunId
             });
+            const bundle = bundleOutcome.right;
+            if (bundle === undefined) {
+                setError(toRunnerFriendlyControlFailureMessage(bundleOutcome.left));
+                return;
+            }
             setLastExport(bundle);
             await navigator.clipboard?.writeText(json(bundle.files));
         }

@@ -39,7 +39,8 @@ UI panel
   -> React selectors and panels
 ```
 
-Current implementation detail: the default provider is the local/fake executor in `src/runtime-store.ts`. It creates
+Current implementation detail: the default provider is the simulated in-page runtime in
+`src/run-simulated-provider-command.ts`, which `src/runtime-store.ts` installs. It creates
 real runtime state and realistic diagnostic/message events for offline UI work. When `provider=browser-rallar` is
 selected with real Rallar config, runner-owned command tabs use the browser adapter and call the browser Rallar facade
 for RTC, WebSocket, HTTP, health, close, and reset behavior.
@@ -116,7 +117,7 @@ The browser initiates the WebSocket connection. The server does not reach into t
 
 ## Provider Parity Helpers
 
-`packages/shared-test/rallar-bb-test/provider-parity.ts` provides the portable Iteration 18 parity path:
+`packages/shared-test/rallar-bb-test/provider-parity/` provides the portable Iteration 18 parity path:
 
 - `createRallarBlackBoxProviderParityRecipe(...)` builds a visible SPA recipe for configure, connect, direct send,
   multicast metadata, broadcast metadata, health, close, and reset.
@@ -152,10 +153,10 @@ recipe-matrix entry or JSON scenario
 
 The SPA `Shared Test` tab consumes only the stable handoff layer:
 
-- `RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG`
-- `RALLAR_BLACK_BOX_SHARED_TEST_ARTIFACT_CONTRACT`
-- `RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF`
-- `parseRallarBlackBoxSharedTestArtifactBundle(...)`
+- `BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG`
+- `BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT`
+- `BLACK_BOX_RUNNER_COVERAGE_HANDOFF`
+- `parseBlackBoxRunnerArtifactBundle(...)`
 
 The browser UI displays catalog entries, copies commands, and imports redacted artifacts through those contracts. It
 does not parse runner internals or silently execute shell commands.
@@ -286,7 +287,8 @@ RALLAR_BLACK_BOX_STORAGE_DIR=.artifacts/rallar-black-box-control \
 ```
 
 Persisted snapshots are restored as disconnected runs on startup. Agents need to reconnect before queued commands can be
-dispatched again.
+dispatched again. Restore decodes every run and distributed run strictly: a snapshot written before one of their fields
+became required is not loaded, the server logs why, and it starts empty.
 
 Limit retained local runs and apply cleanup explicitly:
 
@@ -465,10 +467,12 @@ HTTP request:
 
 ## Recipes
 
-A recipe is an ordered list of commands:
+A recipe is an ordered list of commands with explicit `schemaVersion: 1`.
+Nested and inline recipes require the same version; missing versions are rejected:
 
 ```json
 {
+  "schemaVersion": 1,
   "recipeId": "demo-recipe",
   "name": "Demo recipe",
   "continueOnFailure": false,

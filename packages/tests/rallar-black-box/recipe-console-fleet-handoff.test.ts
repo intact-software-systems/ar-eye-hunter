@@ -12,7 +12,7 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-url-patches.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { filterDistributedRuns } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { filterDistributedRuns } from '../../../packages/shared-test/rallar-bb-test/distributed-run-history/filter-distributed-runs.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
@@ -244,7 +244,14 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     mode: 'selected-agents',
                     agentIds: ['agent-a']
                 },
-                recipes: [{ recipeId: REPORT.recipeIds[0] }]
+                recipes: [{ recipeId: REPORT.recipeIds[0], variables: {} }],
+                variables: {},
+                roleAssignments: [],
+                ackTimeoutMs: 30_000,
+                barrier: { enabled: false },
+                startMode: 'manual',
+                groupAssertions: [],
+                metadata: {}
             },
             rollup: {
                 state: 'failed',
@@ -253,7 +260,6 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     kind: 'recipe',
                     key: REPORT.recipeIds[0]!,
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RAW_RUNTIME_FAILURE',
                         message: 'Raw runtime evidence, not the Fleet slug.'
@@ -261,12 +267,10 @@ describe('Recipe Console Fleet URL handoffs', () => {
                 }],
                 summary: {
                     participants: 1,
-                    requiredParticipants: 1,
                     readyParticipants: 1,
                     passedParticipants: 0,
                     failedParticipants: 1,
                     recipes: 1,
-                    requiredRecipes: 1,
                     passedRecipes: 0,
                     failedRecipes: 1,
                     groupAssertions: 0,

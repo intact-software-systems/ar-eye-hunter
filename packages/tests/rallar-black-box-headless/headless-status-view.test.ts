@@ -17,6 +17,8 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             controlUrl: 'wss://control.example.test/control',
             runId: 'run-1',
             agentId: 'agent-1',
+            heartbeatIntervalMs: 10_000,
+            statsIntervalMs: 5_000,
             environment: 'hetzner',
             apiBaseUrl: 'https://api.example.test',
             applicationId: 'rallar-server',
@@ -30,7 +32,9 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
             rallarRestoreSession: false,
             rallarLogoutOnClose: false,
             rallarLeaveRoomOnClose: false,
-            source: 'url'
+            runnerAgentCount: 1,
+            source: 'url',
+            issues: []
         },
         control: {
             state: 'registered',
@@ -51,7 +55,9 @@ function snapshot(): RallarBlackBoxBrowserControlAgentSnapshot {
                 region: 'eu-north',
                 provider: 'hetzner',
                 datacenter: 'fsn1',
-                hostId: 'host-1'
+                hostId: 'host-1',
+                sessionLabel: 'agent-1:agent-1',
+                updatedAtEpochMs: 1_000
             }
         },
         state: {

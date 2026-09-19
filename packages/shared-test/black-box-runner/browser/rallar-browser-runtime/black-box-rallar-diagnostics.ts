@@ -1,4 +1,6 @@
+import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { toError } from '@shared/resilience/to-error.ts';
+import type { BlackBoxBrowserDiagnosticsDependency } from './browser-rallar-runtime-composition.ts';
 
 import type {
     BlackBoxRallarConnectionConfig,
@@ -78,7 +80,7 @@ export class BlackBoxRallarRuntimeDiagnostics {
     };
 
     emitConsoleWarning = (config: BlackBoxRallarConnectionConfig, args: readonly unknown[]): void => {
-        const warning = classifyConsoleWarning(args);
+        const warning = toConsoleWarning(args);
         if (!warning) {
             return;
         }
@@ -104,7 +106,32 @@ export class BlackBoxRallarRuntimeDiagnostics {
     }
 }
 
-function consoleWarningPart(value: unknown): string {
+export function createBlackBoxRallarDiagnosticsPorts(
+    diagnostics: BlackBoxRallarRuntimeDiagnostics,
+    effects: BlackBoxBrowserDiagnosticsDependency
+): RallarDiagnosticsPorts {
+    return {
+        transportFaultPort: effects.faults,
+        submissionReadinessFaultPort: effects.faults,
+        indexedDbOperationObserver: effects.storage,
+        outboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                data: { ...event }
+            }),
+        inboundDiagnostics: (event) =>
+            diagnostics.emit({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                data: { ...event }
+            }),
+        onStorageReset: (event) =>
+            diagnostics.emit({ kind: 'diagnostic', topic: 'rallar.browser.alm.storage_reset', data: { ...event } })
+    };
+}
+
+function toConsoleWarningPart(value: unknown): string {
     if (typeof value === 'string') {
         return value;
     }
@@ -116,8 +143,8 @@ function consoleWarningPart(value: unknown): string {
     }
 }
 
-function classifyConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
-    const message = args.map(consoleWarningPart).join(' ');
+function toConsoleWarning(args: readonly unknown[]): ConsoleWarning | undefined {
+    const message = args.map(toConsoleWarningPart).join(' ');
     if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
         return { topic: 'rallar.browser.ws.unhandled_message', transport: 'ws', message };
     }
@@ -151,44 +178,54 @@ export interface BlackBoxRallarConsoleDiagnosticsOptions<TConfig> {
 export function createBlackBoxRallarConsoleDiagnostics<TConfig>(
     options: BlackBoxRallarConsoleDiagnosticsOptions<TConfig>
 ): BlackBoxRallarConsoleDiagnostics<TConfig> {
-    const configs = new Map<symbol, TConfig>();
-    let restore: (() => void) | undefined;
-    const restorePatch = (): void => {
-        restore?.();
-    };
-    const ensurePatch = (): void => {
-        if (restore) {
-            return;
-        }
-        options.restoreExisting?.();
-        const previousWarn = options.console.warn;
-        options.console.warn = (...args: unknown[]) => {
-            previousWarn(...args);
-            const active = options.activeConfig() ?? [...configs.values()].at(-1);
-            if (active !== undefined) {
-                options.onWarning(active, args);
+    return new ConsoleDiagnosticsPatch(options);
+}
+
+class ConsoleDiagnosticsPatch<TConfig> implements BlackBoxRallarConsoleDiagnostics<TConfig> {
+    private readonly configs = new Map<symbol, TConfig>();
+    private restore: (() => void) | undefined;
+
+    private readonly options: BlackBoxRallarConsoleDiagnosticsOptions<TConfig>;
+
+    constructor(options: BlackBoxRallarConsoleDiagnosticsOptions<TConfig>) {
+        this.options = options;
+    }
+
+    install(config: TConfig): () => void {
+        const token = Symbol('black-box-rallar-console-diagnostics');
+        this.configs.set(token, config);
+        this.ensurePatch();
+        return () => {
+            this.configs.delete(token);
+            if (this.configs.size === 0 && this.options.activeConfig() === undefined) {
+                this.close();
             }
         };
-        restore = () => {
-            options.console.warn = previousWarn;
-            restore = undefined;
-            configs.clear();
-            options.publishRestore?.(undefined);
+    }
+
+    close = (): void => {
+        this.restore?.();
+    };
+
+    private ensurePatch(): void {
+        if (this.restore) {
+            return;
+        }
+        this.options.restoreExisting?.();
+        const previousWarn = this.options.console.warn;
+        this.options.console.warn = (...args: unknown[]) => {
+            previousWarn(...args);
+            const active = this.options.activeConfig() ?? [...this.configs.values()].at(-1);
+            if (active !== undefined) {
+                this.options.onWarning(active, args);
+            }
         };
-        options.publishRestore?.(restorePatch);
-    };
-    return {
-        install: (config) => {
-            const token = Symbol('black-box-rallar-console-diagnostics');
-            configs.set(token, config);
-            ensurePatch();
-            return () => {
-                configs.delete(token);
-                if (configs.size === 0 && options.activeConfig() === undefined) {
-                    restorePatch();
-                }
-            };
-        },
-        close: restorePatch
-    };
+        this.restore = () => {
+            this.options.console.warn = previousWarn;
+            this.restore = undefined;
+            this.configs.clear();
+            this.options.publishRestore?.(undefined);
+        };
+        this.options.publishRestore?.(this.close);
+    }
 }

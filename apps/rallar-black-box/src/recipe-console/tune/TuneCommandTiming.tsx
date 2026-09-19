@@ -26,9 +26,13 @@ export function TuneCommandTiming({
                     <p className={styles.eyebrow}>Command latency</p>
                     <h2>Command timing</h2>
                 </div>
-                <span>{timing?.count ?? 0} samples</span>
+                <span>
+                    {timing?.count === undefined
+                        ? 'Samples unknown'
+                        : `${timing.count} samples`}
+                </span>
             </header>
-            {timing && timing.count > 0
+            {timing?.count !== undefined && timing.count > 0
                 ? (
                     <>
                         <ul className={styles.metricGrid}>
@@ -41,7 +45,7 @@ export function TuneCommandTiming({
                         <p className={styles.detailLine}>
                             Average {tuneMilliseconds(timing.averageMs)} · Spread {tuneNumber(timing.spreadRatio)}× ·
                             {' '}
-                            {timing.outlierCount} outliers
+                            {tuneNumber(timing.outlierCount)} outliers
                         </p>
                         {performance
                             ? (

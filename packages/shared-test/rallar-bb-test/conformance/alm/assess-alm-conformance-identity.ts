@@ -1,0 +1,139 @@
+import { isRallarBlackBoxTestResult } from '../../composite-results.ts';
+import type { ControlResultEnvelope } from '../../control-protocol.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
+} from '../../rallar-black-box-test-contracts.ts';
+import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
+import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
+import { decodePayloadPathValue, isSameJsonValue } from '../../wait/wait-event-match.ts';
+
+export interface AlmConformanceIdentityParticipant {
+    readonly role: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly recipe: RallarBlackBoxTestRecipe;
+    readonly result: ControlResultEnvelope | undefined;
+}
+
+export interface AlmConformanceIdentityInput {
+    readonly runId: string;
+    readonly participants: readonly AlmConformanceIdentityParticipant[];
+}
+
+interface RecordedParticipant {
+    readonly participant: AlmConformanceIdentityParticipant;
+    readonly results: ReadonlyMap<string, RallarBlackBoxTestResult>;
+}
+
+/** ALM's ordinary recipe assertions prove states; this boundary joins independently owned message identities. */
+export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput): readonly string[] {
+    const issues: string[] = [];
+    const senders = input.participants.filter((participant) => participant.role === 'sender');
+    const receivers = input.participants.filter((participant) => participant.role === 'receiver');
+    if (senders.length !== 1 || receivers.length !== 1 || senders[0].agentId === receivers[0].agentId) {
+        return ['ALM identity assessment requires one distinct sender and receiver.'];
+    }
+    const sender = readParticipant(input.runId, senders[0], issues);
+    const receiver = readParticipant(input.runId, receivers[0], issues);
+    if (!sender || !receiver) {
+        return issues;
+    }
+    const sends = sender.participant.recipe.commands.filter(isLifecycleSend);
+    if (sends.length === 0) {
+        return ['ALM lifecycle sender evidence is missing.'];
+    }
+    const ids = new Set<string>();
+    for (const send of sends) {
+        const value = sender.results.get(send.commandId!)?.value;
+        const msgId = isJsonRecordValue(value) ? value.msgId : undefined;
+        if (typeof msgId !== 'string' || msgId.length === 0 || ids.has(msgId)) {
+            issues.push(`${send.commandId}: generated message identity is missing or duplicated.`);
+            continue;
+        }
+        ids.add(msgId);
+        if (send.payload.specimen === 'submission' || send.payload.revision === 'replacement') {
+            assessReceivedIdentity({ send, msgId, receiver, issues });
+        }
+    }
+    return issues;
+}
+
+/** Full authored roots stay under the existing result bounds; compacted or partial evidence cannot pass. */
+function readParticipant(
+    runId: string,
+    participant: AlmConformanceIdentityParticipant,
+    issues: string[]
+): RecordedParticipant | undefined {
+    const envelope = participant.result;
+    const root = envelope?.result;
+    const value = root?.value;
+    if (
+        !envelope || envelope.runId !== runId || envelope.agentId !== participant.agentId ||
+        envelope.commandId !== participant.commandId || !envelope.ok || !root?.ok || root.status !== 'ok' ||
+        root.commandId !== participant.commandId || root.kind !== 'recipe.run' || !isJsonRecordValue(value) ||
+        value.recipeId !== participant.recipe.recipeId || !Array.isArray(value.results)
+    ) {
+        issues.push(`${participant.role}: missing, mismatched or failed recipe envelope.`);
+        return undefined;
+    }
+    const recorded = value.results.filter(isRallarBlackBoxTestResult);
+    const results = new Map(recorded.map((result) => [result.commandId, result]));
+    const commands = participant.recipe.commands;
+    if (
+        recorded.length !== value.results.length || results.size !== value.results.length ||
+        results.size !== commands.length ||
+        new Set(commands.map((command) => command.commandId)).size !== commands.length ||
+        commands.some((command) => {
+            const result = command.commandId ? results.get(command.commandId) : undefined;
+            return !result?.ok || result.status !== 'ok' || result.kind !== command.kind;
+        })
+    ) {
+        issues.push(`${participant.role}: malformed, missing, duplicated or failed authored command evidence.`);
+        return undefined;
+    }
+    return { participant, results };
+}
+
+interface ReceivedIdentityInput {
+    readonly send: Extract<RallarBlackBoxTestCommand, { kind: 'messages.send'; }>;
+    readonly msgId: string;
+    readonly receiver: RecordedParticipant;
+    readonly issues: string[];
+}
+
+function assessReceivedIdentity({ send, msgId, receiver, issues }: ReceivedIdentityInput): void {
+    const waits = receiver.participant.recipe.commands.filter((command) =>
+        command.kind === 'wait' && command.absent !== true && command.match.kind === 'message' &&
+        command.match.payloadPath === 'data.payload' &&
+        isSameJsonValue(command.match.equals, decodeJsonValue(send.payload))
+    );
+    if (waits.length !== 1) {
+        issues.push(`${send.commandId}: exactly one authored receiver wait is required.`);
+        return;
+    }
+    const wait = waits[0];
+    const value = receiver.results.get(wait.commandId!)?.value;
+    const receivedId = decodePayloadPathValue(value, 'event.payload.data.msgId');
+    const receivedType = decodePayloadPathValue(value, 'event.payload.data.typeId');
+    const transport = decodePayloadPathValue(value, 'event.payload.data.transport');
+    const payload = decodePayloadPathValue(value, 'event.payload.data.payload');
+    if (
+        !isJsonRecordValue(value) || value.matched !== true || !receivedId.exists || receivedId.value !== msgId ||
+        !transport.exists || transport.value !== (send.carrier === 'ws' ? 'ws' : 'rtc') ||
+        !receivedType.exists || receivedType.value !== send.typeId || !payload.exists ||
+        !isSameJsonValue(payload.value, decodeJsonValue(send.payload))
+    ) {
+        issues.push(`${send.commandId}: receiver envelope does not match the actual generated message.`);
+    }
+}
+
+function isLifecycleSend(
+    command: RallarBlackBoxTestCommand
+): command is Extract<RallarBlackBoxTestCommand, { kind: 'messages.send'; }> & {
+    readonly payload: Record<string, unknown>;
+} {
+    return command.kind === 'messages.send' && isJsonRecordValue(command.payload) &&
+        command.payload.marker === 'delivery-lifecycle';
+}

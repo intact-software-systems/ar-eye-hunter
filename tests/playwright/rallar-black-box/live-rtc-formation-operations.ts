@@ -6,7 +6,7 @@ import type {
     BlackBoxRallarFormationRoomStatus,
     BlackBoxRallarFormationSummary
 } from '../../../packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
-import type { RallarBlackBoxTestFormationCommandCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestFormationCommandCommand } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { GroupLifecycleState } from '../../../packages/shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupRef } from '../../../packages/shared/api/group-types.ts';
 

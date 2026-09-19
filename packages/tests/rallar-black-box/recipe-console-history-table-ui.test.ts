@@ -83,7 +83,14 @@ function historyModel(
             completeness: 'complete'
         },
         counts,
-        rows
+        rows,
+        work: {
+            projectedRows: rows.length,
+            labelProjections: rows.length,
+            catalogRunProjections: rows.length,
+            actionProjections: rows.length,
+            controlAgentVisits: 0
+        }
     };
 }
 

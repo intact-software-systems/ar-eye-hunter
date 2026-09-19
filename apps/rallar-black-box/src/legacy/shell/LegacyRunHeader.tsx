@@ -1,19 +1,21 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import {
-    selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCurrentConfig,
-    selectRallarBlackBoxFirstFailure,
-    selectRallarBlackBoxLatestStats
-} from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+    decodeRallarBlackBoxConfigProviderMode,
+    type RallarBlackBoxProviderMode
+} from '@shared-test/rallar-bb-test/client-defaults.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import {
+    getRallarBlackBoxActiveCommand,
+    getRallarBlackBoxCurrentConfig,
+    getRallarBlackBoxFirstFailure,
+    getRallarBlackBoxLatestStats
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { useState } from 'react';
 import type { AppModeId } from '../../app-tabs.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
-import {
-    rallarBlackBoxProviderModeFromConfig,
-    rallarBlackBoxRuntimeStore,
-    type RallarBlackBoxBootstrapConfig
-} from '../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import { statusTone } from '../shared/command-presentation.ts';
 import { Metric } from '../shared/Metric.tsx';
 import type { CommandCenterGlobalValues } from './global-context-model.ts';
@@ -45,13 +47,15 @@ export function Header({
     onLogout(): void;
 }) {
     const [detailsExpanded, setDetailsExpanded] = useState(false);
-    const config = selectRallarBlackBoxCurrentConfig(state);
-    const stats = selectRallarBlackBoxLatestStats(state);
-    const activeCommand = selectRallarBlackBoxActiveCommand(state);
-    const firstFailure = selectRallarBlackBoxFirstFailure(state);
-    const providerMode = config
-        ? rallarBlackBoxProviderModeFromConfig(config)
-        : bootstrap.providerMode;
+    const config = getRallarBlackBoxCurrentConfig(state);
+    const stats = getRallarBlackBoxLatestStats(state);
+    const activeCommand = getRallarBlackBoxActiveCommand(state);
+    const firstFailure = getRallarBlackBoxFirstFailure(state);
+    const configuredProviderMode = config === undefined
+        ? Either.ofRight<string, RallarBlackBoxProviderMode>(bootstrap.providerMode)
+        : decodeRallarBlackBoxConfigProviderMode(config);
+    const providerMode = configuredProviderMode.fold(() => 'unreadable', (mode) => mode);
+    const providerTone = configuredProviderMode.fold(() => 'bad', (mode) => mode === 'simulated' ? 'warn' : 'active');
     const rallarValue = providerMode === 'simulated'
         ? 'simulated'
         : browserStatus.rallarConnected || stats?.rallar?.connected
@@ -97,7 +101,7 @@ export function Header({
                 <Metric
                     label="Provider"
                     value={providerMode}
-                    tone={providerMode === 'simulated' ? 'warn' : 'active'}
+                    tone={providerTone}
                 />
                 <Metric
                     label="Control"

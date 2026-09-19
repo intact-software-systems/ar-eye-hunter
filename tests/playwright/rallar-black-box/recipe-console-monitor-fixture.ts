@@ -12,7 +12,7 @@ import type {
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunState } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export const MONITOR_CONTROL_RUN_ID = 'monitor-control-live';
 export const MONITOR_DISTRIBUTED_RUN_ID = 'monitor-distributed-live';
@@ -319,7 +319,11 @@ function createDistributedRun(
             controlRunId: MONITOR_CONTROL_RUN_ID,
             displayName: 'Monitor deterministic later failure',
             group: GROUP,
-            recipes: [{ recipeId: MONITOR_FAILURE_RECIPE_ID, recipe: RECIPE, required: true }],
+            recipes: [{
+                recipeId: MONITOR_FAILURE_RECIPE_ID,
+                recipe: RECIPE,
+                variables: {}
+            }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
@@ -329,8 +333,14 @@ function createDistributedRun(
                 agentId,
                 role: agentId === SENDER_ID ? 'sender' : 'receiver',
                 recipeIds: [MONITOR_FAILURE_RECIPE_ID],
-                required: true
-            }))
+                variables: {}
+            })),
+            variables: {},
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: commandLinks.map(([phase, agentId, offset]) => ({
             phase,
@@ -345,7 +355,6 @@ function createDistributedRun(
             ok: state === 'passed',
             summary: {
                 participants: participantCount,
-                requiredParticipants: participantCount,
                 readyParticipants: participantCount,
                 passedParticipants: state === 'passed'
                     ? participantCount
@@ -354,7 +363,6 @@ function createDistributedRun(
                     : 0,
                 failedParticipants: terminalFailure ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: terminalFailure ? 1 : 0,
                 blockingFailures: terminalFailure ? 1 : 0
@@ -406,7 +414,9 @@ function agent(
             providerMode: 'browser-rallar',
             browserName: 'chromium',
             region: 'eu-north',
-            tags: [role]
+            tags: [role],
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: BASE_EPOCH_MS + 900
         },
         connectionSequence: reconnectCount + 1,
         reconnectCount,

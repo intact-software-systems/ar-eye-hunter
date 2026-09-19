@@ -1,5 +1,5 @@
 import { safeAnalyzeArtifactIdentity } from './analyze-identity-policy.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import type { AnalyzeWorkspaceAction } from './analyze-workspace-state.ts';
 
 export function analyzeCompletionNavigationIdentity(
@@ -16,10 +16,14 @@ export function analyzeCompletionNavigationIdentity(
     if (!input.expectedDistributedRunId) {
         return undefined;
     }
-    const exact = {
+    const exact: AnalyzeArtifactProjection['identity'] = {
         distributedRunId: input.expectedDistributedRunId,
+        distributedRunIdExact: true,
         ...(input.expectedControlRunId
-            ? { controlRunId: input.expectedControlRunId }
+            ? {
+                controlRunId: input.expectedControlRunId,
+                controlRunIdExact: true
+            }
             : {})
     };
     const safe = safeAnalyzeArtifactIdentity(exact);

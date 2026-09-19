@@ -4,6 +4,7 @@ import {
     createHeadlessWorkerAgentUrl,
     readHeadlessWorkerConfig
 } from '../../../apps/rallar-black-box/src/headless-worker-config.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 describe('rallar-black-box headless worker config', () => {
     it('builds control-agent URLs for multiple browser agents', () => {
@@ -134,6 +135,34 @@ describe('rallar-black-box headless worker config', () => {
                 }
             })
         ).toThrow('RALLAR_AGENT_LATITUDE must be between -90 and 90');
+    });
+
+    it('launches agents whose bootstrap reads a location label or a lone coordinate without an issue', () => {
+        for (
+            const location of [
+                { RALLAR_AGENT_LOCATION_LABEL: 'fsn1 worker rack' },
+                { RALLAR_AGENT_LATITUDE: '52.5333' },
+                { RALLAR_AGENT_LONGITUDE: '13.3833', RALLAR_AGENT_LOCATION_LABEL: 'fsn1 worker rack' }
+            ]
+        ) {
+            const config = readHeadlessWorkerConfig({
+                env: {
+                    RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test/',
+                    RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+                    RALLAR_API_BASE_URL: 'https://api.example.test/',
+                    RALLAR_BLACK_BOX_RUN_ID: 'run-1',
+                    RALLAR_BLACK_BOX_ROOM_ID: 'room-1',
+                    RALLAR_BLACK_BOX_USERNAME: 'alice',
+                    RALLAR_BLACK_BOX_PASSWORD: 'secret',
+                    ...location
+                }
+            });
+            const agentUrl = new URL(config.agents[0]?.url ?? '');
+            const bootstrap = resolveRallarBlackBoxBootstrapConfig(agentUrl.search, {}, agentUrl.hash);
+
+            expect(bootstrap.issues, JSON.stringify(location)).toEqual([]);
+            expect(bootstrap.fleetLocation, JSON.stringify(location)).toBeUndefined();
+        }
     });
 
     it('targets the headless SPA when RALLAR_BLACK_BOX_HEADLESS_ENTRY=headless', () => {

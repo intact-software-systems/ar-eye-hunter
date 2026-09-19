@@ -11,8 +11,8 @@ import {
     projectOpaqueIdentifier,
     withinSerializedLimit
 } from './analyze-projection-bounds.ts';
-import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
 import { ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE } from './analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-projection-contract.ts';
 
 /**
  * Normal IDs remain compatible. Oversized IDs become deterministic opaque

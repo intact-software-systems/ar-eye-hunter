@@ -1,6 +1,6 @@
+import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
 import { useMemo, useState } from 'react';
 import { distributedRecipePreflight } from '../../../distributed-recipes.ts';
-import { RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS } from '../../../recipe-fixtures.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { runnerRecipeCatalog, runnerRecipeMatches, type RunnerRecipeSource } from './runner-recipe-catalog.ts';

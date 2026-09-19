@@ -4,22 +4,26 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { rememberControlResponseDocument } from '../../../apps/rallar-black-box/src/control-response-document.ts';
 import { createControlSnapshotRevisionSession } from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { createTuneCandidateKnobIndex } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-candidate-knob-index.ts';
 import { createTuneRunCatalogCache, tuneRunCatalogCacheWorkForTest } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog-cache.ts';
-import { buildTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
+import { computeTuneRunCatalog } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-catalog.ts';
 import { createTuneRunPickerModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-run-picker-model.ts';
-import { deriveTuneSelectionModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-selection-model.ts';
 import type { TuneSourceModel } from '../../../apps/rallar-black-box/src/recipe-console/tune/tune-source-model.ts';
 import { TuneKnobInventory } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobInventory.tsx';
 import { TuneKnobPicker } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneKnobPicker.tsx';
 import { TuneRunPicker } from '../../../apps/rallar-black-box/src/recipe-console/tune/TuneRunPicker.tsx';
+import { computeDistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { inventoryDistributedRunTuningKnobs } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import { createRecipeConsoleTuneScaleFixture } from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
+import {
+    createDefaultRecipeConsoleTuneScaleFixture,
+    createRecipeConsoleTuneScaleFixture
+} from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
+import { toTuneSelectionModelFromQuery } from './recipe-console-tune-selection-fixture.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,7 +42,7 @@ describe('Recipe Console Tune scale windowing', () => {
         );
         const performanceRunIds = ['run-000123', 'run-004999'];
 
-        const catalog = buildTuneRunCatalog({
+        const catalog = computeTuneRunCatalog({
             controlRuns,
             distributedRuns,
             performanceRunIds
@@ -81,7 +85,7 @@ describe('Recipe Console Tune scale windowing', () => {
             (_, index) => controlRun(index)
         );
 
-        const selection = deriveTuneSelectionModel({
+        const selection = toTuneSelectionModelFromQuery({
             urlState: {
                 v: 1,
                 experience: 'recipe-console',
@@ -258,7 +262,10 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('mounts at most 100 of 5,000 runs and reaches a late selected ID', async () => {
         const selection = scaleSelection('run-004999', 'run-000123');
-        const navigate = vi.fn();
+        const navigations: Partial<RecipeConsoleUrlState>[] = [];
+        const navigate = (patch: Partial<RecipeConsoleUrlState>) => {
+            navigations.push(patch);
+        };
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(TuneRunPicker, {
@@ -281,14 +288,17 @@ describe('Recipe Console Tune pressure UI', () => {
             .toBe('Showing 4,801–4,900 of 5,000 options.');
 
         await click(button('Previous'));
-        expect(navigate).not.toHaveBeenCalled();
+        expect(navigations).toEqual([]);
         expect(container.querySelectorAll('[role="option"]')).toHaveLength(100);
         await click(container.querySelector('[role="option"]'));
-        expect(navigate).toHaveBeenCalledTimes(1);
+        expect(navigations).toHaveLength(1);
     });
 
     it('keeps an open queried run page stable across a clone-equivalent poll', async () => {
-        const navigate = vi.fn();
+        const navigations: Partial<RecipeConsoleUrlState>[] = [];
+        const navigate = (patch: Partial<RecipeConsoleUrlState>) => {
+            navigations.push(patch);
+        };
         const render = (selection = scaleSelection(
             'run-004999',
             'run-000123'
@@ -325,18 +335,19 @@ describe('Recipe Console Tune pressure UI', () => {
         ).toBe(range);
         expect(container.querySelector('[data-searchable-listbox-popup]'))
             .not.toBeNull();
-        expect(navigate).not.toHaveBeenCalled();
+        expect(navigations).toEqual([]);
     });
 
     it('indexes and reaches a late long-bidi pointer among 24,002 editable knobs', async () => {
-        const fixture = createRecipeConsoleTuneScaleFixture();
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const fixture = createDefaultRecipeConsoleTuneScaleFixture();
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,
             decisions: undefined
         } as unknown as TuneSourceModel;
         const index = createTuneCandidateKnobIndex(source);
         const pointer = inventory.knobs.find((knob) =>
+            knob.scope !== 'manifest' &&
             knob.commandId === fixture.needles.commandIds.longBidi &&
             knob.name === 'maxInFlight'
         )?.pointer;
@@ -376,13 +387,14 @@ describe('Recipe Console Tune pressure UI', () => {
     });
 
     it('keeps an open queried knob page stable across equivalent re-inventory', async () => {
-        const fixture = createRecipeConsoleTuneScaleFixture();
-        const inventory = inventoryDistributedRunTuningKnobs(fixture.manifest);
+        const fixture = createDefaultRecipeConsoleTuneScaleFixture();
+        const inventory = computeDistributedRunTuningInventory(fixture.manifest);
         const source = {
             inventory,
             decisions: undefined
         } as unknown as TuneSourceModel;
         const selectedPointer = inventory.knobs.find((knob) =>
+            knob.scope !== 'manifest' &&
             knob.commandId === fixture.needles.commandIds.longBidi &&
             knob.name === 'maxInFlight'
         )?.pointer;
@@ -424,7 +436,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('fails the knob picker closed when duplicate pointer keys reach the UI', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture({ commandCount: 4 });
-        const original = inventoryDistributedRunTuningKnobs(
+        const original = computeDistributedRunTuningInventory(
             fixture.manifest
         ).knobs[0]!;
         const source = {
@@ -432,7 +444,10 @@ describe('Recipe Console Tune pressure UI', () => {
             decisions: undefined
         } as unknown as TuneSourceModel;
         const index = createTuneCandidateKnobIndex(source);
-        const onSelect = vi.fn();
+        const selectedPointers: string[] = [];
+        const onSelect = (pointer: string) => {
+            selectedPointers.push(pointer);
+        };
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(TuneKnobPicker, {
@@ -448,7 +463,7 @@ describe('Recipe Console Tune pressure UI', () => {
         expect(container.querySelector('[role="alert"]')?.textContent)
             .toContain('option keys must be unique');
         expect(container.querySelectorAll('[role="option"]')).toHaveLength(0);
-        expect(onSelect).not.toHaveBeenCalled();
+        expect(selectedPointers).toEqual([]);
         expect(index.work).toMatchObject({
             knobRowsVisited: 2,
             editableOptionsProjected: 2,
@@ -459,7 +474,7 @@ describe('Recipe Console Tune pressure UI', () => {
 
     it('keeps blocked evidence explicit and browseable within 100 mounted rows', async () => {
         const fixture = createRecipeConsoleTuneScaleFixture({ commandCount: 24 });
-        const knobs = inventoryDistributedRunTuningKnobs(fixture.manifest).knobs
+        const knobs = computeDistributedRunTuningInventory(fixture.manifest).knobs
             .slice(0, 240)
             .map((knob) => ({
                 ...knob,
@@ -546,7 +561,7 @@ function scaleSelection(left: string | undefined, right: string | undefined) {
         { length: RUN_COUNT },
         (_, index) => controlRun(index)
     );
-    return deriveTuneSelectionModel({
+    return toTuneSelectionModelFromQuery({
         urlState: {
             v: 1,
             experience: 'recipe-console',
@@ -595,8 +610,16 @@ function distributedRun(index: number): ControlDistributedRunSnapshot {
                     schemaVersion: 1,
                     recipeId: 'recipe-a',
                     commands: [{ kind: 'health', commandId }]
-                }
-            }]
+                },
+                variables: {}
+            }],
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'passed',
@@ -604,12 +627,10 @@ function distributedRun(index: number): ControlDistributedRunSnapshot {
             failures: [],
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 1,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 1,
                 failedRecipes: 0,
                 groupAssertions: 0,

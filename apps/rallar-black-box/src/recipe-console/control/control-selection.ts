@@ -1,18 +1,19 @@
 import type { ControlSnapshotSelectionIndex } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import {
-    isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedGroupRef
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../control-agent-board-contract.ts';
+import {
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
+} from '../../control-agent-board.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type { ControlQueryStatus } from './control-query.ts';
-import { deriveControlRunSelectionPatch } from './control-run-selection-patch.ts';
 import { deriveControlSelectionContexts } from './control-selection-context.ts';
 import type {
     RecipeConsoleControlSelection,
@@ -45,12 +46,18 @@ export function deriveRecipeConsoleControlSelection(
         bootstrapRunId?: string;
         bootstrapGroup: RallarBlackBoxDistributedGroupRef;
         queryStatus: ControlQueryStatus;
-        nowEpochMs?: number;
+        nowEpochMs: number;
+        /** Absent unless the caller has a prebuilt snapshot selection index to reuse. */
         selectionIndex?: ControlSnapshotSelectionIndex;
     }>
 ): RecipeConsoleControlSelection {
     const runs = input.snapshot?.runs ?? [];
-    const distributedRuns = input.snapshot?.distributedRuns ?? [];
+    // A poll that could not read the distributed-run collection leaves it absent rather than
+    // writing an empty one. The distinction is reported as its own issue below; every scan after
+    // that reads the absence as nothing to scan.
+    const distributedRunCollection = input.snapshot?.distributedRuns;
+    const hasDistributedRunCollection = distributedRunCollection !== undefined;
+    const distributedRuns = distributedRunCollection ?? [];
     const fallbackToLegacy = (): RecipeConsoleControlSelection => {
         const fallback = deriveRecipeConsoleControlSelection({
             ...input,
@@ -91,7 +98,6 @@ export function deriveRecipeConsoleControlSelection(
             : distributedRuns.find((run) => run.distributedRunId === distributedRunId);
     };
     const hasSnapshot = input.snapshot !== undefined;
-    const hasDistributedRunCollection = input.snapshot?.distributedRuns !== undefined;
     const snapshotEvidence = input.queryStatus === 'stale'
         ? 'last-known snapshot'
         : 'latest snapshot';
@@ -101,50 +107,19 @@ export function deriveRecipeConsoleControlSelection(
     const controlSnapshotEvidence = input.queryStatus === 'stale'
         ? 'last-known control snapshot'
         : 'control snapshot';
-    const issues: RecipeConsoleControlSelectionIssue[] = [];
-    const explicitControlRunId = input.urlState.controlRunId;
-    let controlRunId = explicitControlRunId;
-    let controlRun = explicitControlRunId
-        ? findControlRun(explicitControlRunId)
-        : undefined;
-    let controlRunSource: RecipeConsoleControlSelection['controlRunSource'];
-    let urlReplacePatch: Partial<RecipeConsoleUrlState> | undefined;
-
-    if (explicitControlRunId) {
-        controlRunSource = 'url';
-        if (hasSnapshot && !controlRun) {
-            issues.push(issue(
-                'controlRunId',
-                'unavailable',
-                `Control run ${explicitControlRunId} is not present in the ${snapshotEvidence}.`,
-                explicitControlRunId
-            ));
-        }
-    }
-    else {
-        const bootstrapRun = input.bootstrapRunId
-            ? findControlRun(input.bootstrapRunId)
-            : undefined;
-        if (bootstrapRun) {
-            controlRun = bootstrapRun;
-            controlRunId = bootstrapRun.runId;
-            controlRunSource = 'bootstrap';
-            urlReplacePatch = { controlRunId };
-        }
-        else if (runs.length === 1) {
-            controlRun = runs[0];
-            controlRunId = controlRun.runId;
-            controlRunSource = 'sole-run';
-            urlReplacePatch = { controlRunId };
-        }
-        else if (runs.length > 1) {
-            issues.push(issue(
-                'controlRunId',
-                'ambiguous',
-                'Multiple control runs are available; select one explicitly.'
-            ));
-        }
-    }
+    const controlSelection = resolveControlRunSelection({
+        explicitControlRunId: input.urlState.controlRunId,
+        bootstrapRunId: input.bootstrapRunId,
+        runs,
+        hasSnapshot,
+        snapshotEvidence,
+        findControlRun
+    });
+    const issues: RecipeConsoleControlSelectionIssue[] = [...controlSelection.issues];
+    const controlRunId = controlSelection.controlRunId;
+    const controlRun = controlSelection.controlRun;
+    const controlRunSource = controlSelection.controlRunSource;
+    const urlReplacePatch = controlSelection.urlReplacePatch;
     if (indexProjection && !indexProjection.valid()) {
         return fallbackToLegacy();
     }
@@ -167,27 +142,28 @@ export function deriveRecipeConsoleControlSelection(
         !distributedRun
     ) {
         issues.push(
-            distributedCandidate && controlRun
-                ? issue(
-                    'distributedRunId',
-                    'incompatible',
-                    `Distributed run ${distributedRunId} belongs to another control run in the ${snapshotEvidence}.`,
-                    distributedRunId
-                )
-                : issue(
-                    'distributedRunId',
-                    'unavailable',
-                    `Distributed run ${distributedRunId} is not available in the ${selectedContextEvidence}.`,
-                    distributedRunId
-                )
+            distributedCandidate
+                ? {
+                    field: 'distributedRunId',
+                    code: 'incompatible',
+                    message:
+                        `Distributed run ${distributedRunId} belongs to another control run in the ${snapshotEvidence}.`,
+                    value: distributedRunId
+                }
+                : {
+                    field: 'distributedRunId',
+                    code: 'unavailable',
+                    message: `Distributed run ${distributedRunId} is not available in the ${selectedContextEvidence}.`,
+                    value: distributedRunId
+                }
         );
     }
     if (hasSnapshot && !hasDistributedRunCollection) {
-        issues.push(issue(
-            'distributedRuns',
-            'unavailable',
-            `The ${controlSnapshotEvidence} does not include distributed-run context.`
-        ));
+        issues.push({
+            field: 'distributedRuns',
+            code: 'unavailable',
+            message: `The ${controlSnapshotEvidence} does not include distributed-run context.`
+        });
     }
 
     const agentId = input.urlState.agentId;
@@ -201,12 +177,12 @@ export function deriveRecipeConsoleControlSelection(
         return fallbackToLegacy();
     }
     if (agentId && controlRun && !agent) {
-        issues.push(issue(
-            'agentId',
-            'unavailable',
-            `Agent ${agentId} is not present in the selected control run in the ${snapshotEvidence}.`,
-            agentId
-        ));
+        issues.push({
+            field: 'agentId',
+            code: 'unavailable',
+            message: `Agent ${agentId} is not present in the selected control run in the ${snapshotEvidence}.`,
+            value: agentId
+        });
     }
 
     let activeRuns: readonly ControlDistributedRunSnapshot[] = [];
@@ -229,16 +205,20 @@ export function deriveRecipeConsoleControlSelection(
         distributedRun,
         bootstrapGroup: input.bootstrapGroup
     });
-    const boardRows = deriveControlAgentBoardRows({
+    const boardRows = computeControlAgentBoardRows({
         run: controlRun,
         group: groupContext.group,
         distributedRuns,
         selectedDistributedRun: distributedRun,
+        requiredCommandKinds: [],
+        requiredRecipes: [],
+        monitorAgentProgress: [],
         nowEpochMs: input.nowEpochMs,
+        staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS,
         snapshot: input.snapshot,
         selectionIndex
     });
-    const boardSummary = summarizeControlAgentBoardRows(boardRows);
+    const boardSummary = computeControlAgentBoardSummary(boardRows);
     const safe = input.queryStatus === 'live' || input.queryStatus === 'partial';
 
     const selection: RecipeConsoleControlSelection = {
@@ -273,21 +253,76 @@ export function recipeConsoleControlSelectionWorkForTest(
     return workBySelection.get(selection);
 }
 
-export function recipeConsoleControlRunSelectionPatch(
-    input: Readonly<{
-        state: RecipeConsoleUrlState;
-        controlRunId: string;
-        distributedRuns: readonly ControlDistributedRunSnapshot[];
-    }>
-): Partial<RecipeConsoleUrlState> {
-    return deriveControlRunSelectionPatch(input);
-}
+type ControlRunSelection = Readonly<{
+    /** Absent when no URL, bootstrap or sole control run names one. */
+    controlRunId?: string;
+    /** Absent when the named control run is not in this snapshot. */
+    controlRun?: ControlRunSnapshot;
+    /** Absent with `controlRunId`. */
+    controlRunSource?: RecipeConsoleControlSelection['controlRunSource'];
+    /** Absent unless the console resolved a run the URL does not yet name. */
+    urlReplacePatch?: Partial<RecipeConsoleUrlState>;
+    issues: readonly RecipeConsoleControlSelectionIssue[];
+}>;
 
-function issue(
-    field: RecipeConsoleControlSelectionIssue['field'],
-    code: RecipeConsoleControlSelectionIssue['code'],
-    message: string,
-    value?: string
-): RecipeConsoleControlSelectionIssue {
-    return { field, code, message, value };
+function resolveControlRunSelection(
+    input: Readonly<{
+        /** Absent when the URL names no control run. */
+        explicitControlRunId?: string;
+        /** Absent when the console was not bootstrapped with a run. */
+        bootstrapRunId?: string;
+        runs: readonly ControlRunSnapshot[];
+        hasSnapshot: boolean;
+        snapshotEvidence: string;
+        findControlRun(runId: string): ControlRunSnapshot | undefined;
+    }>
+): ControlRunSelection {
+    const explicitControlRunId = input.explicitControlRunId;
+    if (explicitControlRunId) {
+        const controlRun = input.findControlRun(explicitControlRunId);
+        return {
+            controlRunId: explicitControlRunId,
+            controlRun,
+            controlRunSource: 'url',
+            issues: input.hasSnapshot && !controlRun
+                ? [{
+                    field: 'controlRunId',
+                    code: 'unavailable',
+                    message: `Control run ${explicitControlRunId} is not present in the ${input.snapshotEvidence}.`,
+                    value: explicitControlRunId
+                }]
+                : []
+        };
+    }
+    const bootstrapRun = input.bootstrapRunId
+        ? input.findControlRun(input.bootstrapRunId)
+        : undefined;
+    if (bootstrapRun) {
+        return {
+            controlRunId: bootstrapRun.runId,
+            controlRun: bootstrapRun,
+            controlRunSource: 'bootstrap',
+            urlReplacePatch: { controlRunId: bootstrapRun.runId },
+            issues: []
+        };
+    }
+    if (input.runs.length === 1) {
+        const soleRun = input.runs[0];
+        return {
+            controlRunId: soleRun.runId,
+            controlRun: soleRun,
+            controlRunSource: 'sole-run',
+            urlReplacePatch: { controlRunId: soleRun.runId },
+            issues: []
+        };
+    }
+    return {
+        issues: input.runs.length > 1
+            ? [{
+                field: 'controlRunId',
+                code: 'ambiguous',
+                message: 'Multiple control runs are available; select one explicitly.'
+            }]
+            : []
+    };
 }

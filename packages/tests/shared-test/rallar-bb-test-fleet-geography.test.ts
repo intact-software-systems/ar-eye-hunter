@@ -133,7 +133,7 @@ describe('shared fleet geography', () => {
             source: 'region-lookup'
         });
         expect(resolveFleetGeographyDocumentedLocation({
-            location: { latitude: 91, longitude: 0 },
+            location: { latitude: 91, longitude: 0, precision: 'exact' },
             provider: 'private-lab'
         })).toBeUndefined();
     });
@@ -163,7 +163,8 @@ describe('shared fleet geography', () => {
                 location: {
                     latitude: 60.25,
                     longitude: 24.8,
-                    label: 'Historical explicit beats live lookup'
+                    label: 'Historical explicit beats live lookup',
+                    precision: 'exact'
                 }
             }),
             outcome('agent-d', {
@@ -177,14 +178,16 @@ describe('shared fleet geography', () => {
                 location: {
                     latitude: 40,
                     longitude: 10,
-                    label: 'Older historical coordinate'
+                    label: 'Older historical coordinate',
+                    precision: 'exact'
                 }
             }, 'passed'),
             outcome('agent-b', {
                 location: {
                     latitude: 30,
                     longitude: 20,
-                    label: 'Older explicit coordinate'
+                    label: 'Older explicit coordinate',
+                    precision: 'exact'
                 }
             })
         ]);
@@ -193,7 +196,8 @@ describe('shared fleet geography', () => {
                 location: {
                     latitude: 59.9139,
                     longitude: 10.7522,
-                    label: 'Live explicit coordinate'
+                    label: 'Live explicit coordinate',
+                    precision: 'exact'
                 },
                 region: 'eu-north',
                 provider: 'hetzner',
@@ -328,7 +332,7 @@ describe('shared fleet geography', () => {
                 'agent-a',
                 {
                     region: 'eu-north',
-                    location: { latitude: 60.1, longitude: 18.1 }
+                    location: { latitude: 60.1, longitude: 18.1, precision: 'exact' }
                 },
                 'failed',
                 guard(['sig-a'])
@@ -336,7 +340,7 @@ describe('shared fleet geography', () => {
             label: guard({
                 agentId: 'agent-a',
                 region: 'eu-north',
-                location: { latitude: 60.1, longitude: 18.1 }
+                location: { latitude: 60.1, longitude: 18.1, precision: 'exact' as const }
             })
         });
         const source = report('run-history', 4_000, guard([guardedOutcome]));
@@ -359,7 +363,7 @@ describe('shared fleet geography', () => {
             history,
             {
                 liveAgents: [live('agent-a', {
-                    location: { latitude: 40, longitude: -74 },
+                    location: { latitude: 40, longitude: -74, precision: 'exact' },
                     observedAtEpochMs: 7_000
                 })]
             }
@@ -511,28 +515,28 @@ describe('shared fleet geography', () => {
         const model = deriveFleetGeography({
             liveAgents: [
                 live('a->b', {
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 }),
                 live('c', {
-                    location: { latitude: 20, longitude: 20 }
+                    location: { latitude: 20, longitude: 20, precision: 'exact' }
                 }),
                 live('a', {
-                    location: { latitude: 30, longitude: 30 }
+                    location: { latitude: 30, longitude: 30, precision: 'exact' }
                 }),
                 live('b->c', {
-                    location: { latitude: 40, longitude: 40 }
+                    location: { latitude: 40, longitude: 40, precision: 'exact' }
                 })
             ],
             reports: [report('run-delimiters', 3_000, [
                 outcome('region-left', {
                     region: 'a / b',
                     provider: 'c',
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 }),
                 outcome('region-right', {
                     region: 'a',
                     provider: 'b / c',
-                    location: { latitude: 20, longitude: 20 }
+                    location: { latitude: 20, longitude: 20, precision: 'exact' }
                 })
             ])],
             routeEvidence: {
@@ -585,10 +589,10 @@ describe('shared fleet geography', () => {
             deriveFleetGeography({
                 liveAgents: [
                     live(sourceAgentId, {
-                        location: { latitude: 10, longitude: 10 }
+                        location: { latitude: 10, longitude: 10, precision: 'exact' }
                     }),
                     live(targetAgentId, {
-                        location: { latitude: 20, longitude: 20 }
+                        location: { latitude: 20, longitude: 20, precision: 'exact' }
                     })
                 ],
                 routeEvidence: {
@@ -609,10 +613,10 @@ describe('shared fleet geography', () => {
         const route = deriveFleetGeography({
             liveAgents: [
                 live(sourceAgentId, {
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 }),
                 live(targetAgentId, {
-                    location: { latitude: 20, longitude: 20 }
+                    location: { latitude: 20, longitude: 20, precision: 'exact' }
                 })
             ],
             routeEvidence: {
@@ -637,10 +641,10 @@ describe('shared fleet geography', () => {
         const model = deriveFleetGeography({
             liveAgents: [
                 live('source', {
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 }),
                 live('target', {
-                    location: { latitude: 20, longitude: 20 }
+                    location: { latitude: 20, longitude: 20, precision: 'exact' }
                 })
             ],
             routeEvidence: {
@@ -683,12 +687,12 @@ describe('shared fleet geography', () => {
             reports: [report('run-provider-sentinels', 3_000, [
                 outcome('agent-missing', {
                     region: 'eu-north',
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 }),
                 outcome('agent-literal', {
                     region: 'eu-north',
                     provider: 'unknown',
-                    location: { latitude: 20, longitude: 20 }
+                    location: { latitude: 20, longitude: 20, precision: 'exact' }
                 })
             ])]
         });
@@ -729,11 +733,11 @@ describe('shared fleet geography', () => {
     it('tie-breaks distinct empty and absent explicit location labels exactly', () => {
         const absent = live('agent-location-tie', {
             observedAtEpochMs: 8_000,
-            location: { latitude: 10, longitude: 10 }
+            location: { latitude: 10, longitude: 10, precision: 'exact' }
         });
         const empty = live('agent-location-tie', {
             observedAtEpochMs: 8_000,
-            location: { latitude: 10, longitude: 10, label: '' }
+            location: { latitude: 10, longitude: 10, label: '', precision: 'exact' }
         });
 
         const forward = deriveFleetGeography({ liveAgents: [absent, empty] });
@@ -749,7 +753,7 @@ describe('shared fleet geography', () => {
             report('run-lone-surrogate', 3_000, [
                 outcome('agent-lone-surrogate', {
                     region: loneSurrogate,
-                    location: { latitude: 10, longitude: 10 }
+                    location: { latitude: 10, longitude: 10, precision: 'exact' }
                 })
             ])
         ]);

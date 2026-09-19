@@ -1,5 +1,3 @@
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type WebRtcConnectionService } from '@shared/services/web-rtc-connection-service.ts';
@@ -362,7 +360,7 @@ describe('Rallar director relay', () => {
 
     it('can disable periodic director snapshots while keeping explicit sync snapshots', async () => {
         vi.useFakeTimers();
-        vi.setSystemTime(1_000);
+        vi.setSystemTime(Date.now());
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
@@ -370,7 +368,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
@@ -378,7 +376,7 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 enqueuedWsTypeIds.push(message.payload.typeId);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         const relay = createRallarFacade().director.createRelay<DirectorMove, DirectorAcknowledgement, DirectorSnapshot>({
@@ -410,7 +408,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         mockRtcNoRoute();
@@ -425,22 +423,14 @@ describe('Rallar director relay', () => {
         const result = await relay.sendOutput({ ok: true });
         relay.stop();
 
-        expect(result).toMatchObject({
-            status: 'sent',
-            rtc: {
-                transport: 'rtc',
-                status: 'no-route'
-            },
-            ws: {
-                transport: 'ws',
-                status: 'enqueued'
-            }
-        });
+        expect(result.status).toBe('sent');
+        expect(result.rtc && 'lifecycle' in result.rtc ? result.rtc.lifecycle().state : undefined).toBe('failed');
+        expect(result.ws?.lifecycle().state).toBe('queued');
     });
 
     it('stops director relay heartbeats when auth logs out', async () => {
         vi.useFakeTimers();
-        vi.setSystemTime(1_000);
+        vi.setSystemTime(Date.now());
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
@@ -448,7 +438,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
@@ -466,13 +456,13 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -492,7 +482,7 @@ describe('Rallar director relay', () => {
             sessionId: 'session-1',
             principalId: 'principal-1',
             epoch: 3,
-            appointedAtEpochMs: 1,
+            appointedAtEpochMs: Date.now(),
             heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
@@ -515,13 +505,13 @@ describe('Rallar director relay', () => {
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`ws:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => {
                 postLogoutEffects.push(`rtc:${message.payload.typeId}`);
-                return { status: 'enqueued', message, entries: [] };
+                return { status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] };
             }
         );
         mocks.initialiseApiMiddleware.mockImplementation(async () => {
@@ -601,7 +591,7 @@ function resetDirectorRtcDoubles(): void {
     mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.rtcRxStreamer
@@ -613,6 +603,7 @@ function mockRtcNoRoute(): void {
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
         async (message) => ({
             status: 'no-route',
+            verdict: { kind: 'unroutable' as const, reason: 'no-route' as const, detail: `No outbound transport route for message ${message.id.msgId}` },
             message,
             entries: [],
             reason: `No outbound transport route for message ${message.id.msgId}`
@@ -622,7 +613,7 @@ function mockRtcNoRoute(): void {
 
 function resetDirectorWsDoubles(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox

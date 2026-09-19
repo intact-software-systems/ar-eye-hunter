@@ -1,8 +1,8 @@
 import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import { controlSnapshotRevisionOf } from '../control/control-snapshot-revision.ts';
 import { createTuneRunCatalogWork, type TuneRunCatalogWork } from './tune-run-catalog-work.ts';
-import { buildTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
+import { computeTuneRunCatalog, type TuneRunCatalog } from './tune-run-catalog.ts';
 
 export type TuneRunCatalogCacheInput = Readonly<{
     snapshot?: ControlServerSnapshot;
@@ -70,7 +70,7 @@ export function createTuneRunCatalogCache(): TuneRunCatalogCache {
                 publish(cache, work);
                 return entry.catalog;
             }
-            const catalog = buildTuneRunCatalog({
+            const catalog = computeTuneRunCatalog({
                 controlRuns: input.snapshot?.runs ?? [],
                 distributedRuns: input.snapshot?.distributedRuns ?? [],
                 retainedFacade: input.retainedFacade,

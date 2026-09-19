@@ -1,4 +1,10 @@
-import { validateJsonSchema, type JsonSchema, type JsonSchemaValidationResult } from '../rallar-bb-test/schema.ts';
+import type { ApiJsonValue } from '../../shared/api/api-json-value.ts';
+
+import {
+    validateJsonSchema,
+    type JsonSchema,
+    type JsonSchemaValidationResult
+} from '../rallar-bb-test/schema/json-schema-validation.ts';
 
 export const BLACK_BOX_RUNNER_SCENARIO_SCHEMA_VERSION = 1;
 
@@ -179,6 +185,6 @@ export const BLACK_BOX_RUNNER_SCHEMA_CATALOG = {
     scenarioRecipe: BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA
 } as const;
 
-export function validateBlackBoxRunnerScenarioRecipe(value: unknown): JsonSchemaValidationResult {
-    return validateJsonSchema(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, value);
+export function validateBlackBoxRunnerScenarioRecipe(recipe: ApiJsonValue): JsonSchemaValidationResult {
+    return validateJsonSchema(BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA, recipe);
 }

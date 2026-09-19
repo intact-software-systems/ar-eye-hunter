@@ -9,6 +9,7 @@ import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-r
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     EnqueuedType,
@@ -45,10 +46,11 @@ export namespace WebRtcRxStreamerService {
     }
 
     export interface RoomAuthorityRefresh {
+        /** True permits one admission re-entry after authority refresh, subject to normal admission checks. */
         afterInboundAdmission(
             message: ALMessage,
             acceptance: ALInboundMessageRuntime.Acceptance
-        ): Promise<void>;
+        ): Promise<boolean>;
         dispose(): void;
     }
 
@@ -155,25 +157,39 @@ export class WebRtcRxStreamerService {
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
-                    onMessage: async (value) => {
-                        const message = decodeALMessageValue(value).right;
-                        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, {
-                            kind: 'rtc-peer',
-                            peerId: peerDto.peerId
-                        });
-                        if (acceptance.left) {
-                            console.warn('Rejected RTC message', acceptance.left.code);
-                            return;
-                        }
-                        if (acceptance.right && message) {
-                            await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
-                                message,
-                                acceptance.right
-                            );
-                        }
-                    }
+                    onMessage: async (value) => await this.admitPeerMessage(peerDto, value)
                 }
             );
+    }
+
+    private async admitPeerMessage(peer: QRtcPeerDto, value: unknown): Promise<void> {
+        if (this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+            return;
+        }
+        const message = decodeALMessageValue(value).right;
+        const source: ALInboundMessageRuntime.Source = {
+            kind: 'rtc-peer',
+            peerId: peer.peerId
+        };
+        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
+        if (acceptance.left) {
+            console.warn('Rejected RTC message', acceptance.left.code);
+            return;
+        }
+        if (!acceptance.right || !message) {
+            return;
+        }
+        const refreshed = await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
+            message,
+            acceptance.right
+        );
+        if (!refreshed || this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+            return;
+        }
+        const retry = await this.inboundRuntime.admitIncomingMessage(message, source);
+        if (retry.left) {
+            console.warn('Rejected RTC message after authority refresh', retry.left.code);
+        }
     }
 
     private registerPeerMedia(peerDto: QRtcPeerDto): void {
@@ -245,8 +261,8 @@ export class WebRtcRxStreamerService {
         }
 
         for (const peerId of peerIds) {
-            const dto = this.peerDtoByPeerId.get(peerId);
-            if (dto?.channel.isOpen()) {
+            const peer = this.peerDtoByPeerId.get(peerId);
+            if (peer?.channel.isOpen()) {
                 this.startRtcHeartbeats(peerId).catch((error) =>
                     console.error(`Failed to start RTT heartbeat for ${peerId}`, toError(error))
                 );
@@ -273,8 +289,8 @@ export class WebRtcRxStreamerService {
     }
 
     private startRtcHeartbeats(peerId: string): Promise<void> {
-        const dto = this.peerDtoByPeerId.get(peerId);
-        if (!dto) {
+        const peer = this.peerDtoByPeerId.get(peerId);
+        if (!peer) {
             return Promise.resolve();
         }
 
@@ -283,7 +299,7 @@ export class WebRtcRxStreamerService {
             heartbeat = new WebRtcHeartbeatService({
                 sessionId: this.sessionId,
                 peerSessionId: peerId,
-                channel: dto.channel,
+                channel: peer.channel,
                 maxMissedPings: this.dependencies.heartbeat.maxMissedPings,
                 pingFrequencyMsecs: this.dependencies.heartbeat.pingFrequencyMsecs
             });
@@ -354,7 +370,7 @@ export class WebRtcRxStreamerService {
         plan: ALMessageHandlingPlan
     ): Promise<void | 'retry'> {
         const message = decodePersistedALMessage(entry.resource);
-        if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+        if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.epochNow()) {
             throw new NonRetryableException('Inbound message expired before consumer delivery');
         }
         const selected = this.onInboxMessageCallbacks.get(message.payload.typeId) ??
@@ -367,7 +383,7 @@ export class WebRtcRxStreamerService {
             ? undefined
             : this.onInboxMessageCallbacks.get(WebRtcRxStreamerService.ALL_IN);
         if (wildcard !== undefined) {
-            if (entry.audit.expiryTs.epochMilliseconds <= Date.now()) {
+            if (entry.audit.expiryTs.epochMilliseconds <= this.dependencies.epochNow()) {
                 throw new NonRetryableException('Inbound message expired before wildcard delivery');
             }
             await wildcard.onMessage(message, entry);
@@ -400,9 +416,9 @@ export class WebRtcRxStreamerService {
 
     onRemoteStreamDo(
         id: string,
-        cb: (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
+        callback: (peerId: string, stream: MediaStream, event: RTCTrackEvent) => Promise<void>
     ): WebRtcRxStreamerService {
-        this.onRemoteStreamCallbacks.set(id, cb);
+        this.onRemoteStreamCallbacks.set(id, callback);
         return this;
     }
 
@@ -416,6 +432,10 @@ export class WebRtcRxStreamerService {
 
     removeRttMeasurementCallback(id: string): boolean {
         return this.onRttMeasurementCallbacks.delete(id);
+    }
+
+    cancelOutbox(msgId: string): ALOutboundCancelOutcome {
+        return this.multicast.cancel(msgId);
     }
 
     async enqueueOutboxIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {

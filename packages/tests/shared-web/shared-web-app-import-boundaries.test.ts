@@ -56,7 +56,7 @@ describe('shared-web app import boundaries', () => {
                 readSourceAnalysis('apps/rallar-black-box/src/direct-rallar-operations.ts')
             ),
             ...collectDynamicImports(
-                readSourceAnalysis('apps/rallar-black-box/src/App.tsx')
+                readSourceAnalysis('apps/rallar-black-box/src/app.tsx')
             )
         ];
 

@@ -2,7 +2,10 @@ import {
     rebindDistributedRunsFromSelectionIndex,
     type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import type { ControlDistributedRunSnapshot, ControlServerSnapshot } from './control-run-manager.ts';
+import type {
+    ControlDistributedRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 export type IndexedBoardRun = Readonly<{
     run: ControlDistributedRunSnapshot;

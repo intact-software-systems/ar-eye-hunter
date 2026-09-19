@@ -89,7 +89,9 @@ function liveExecuteSnapshot() {
             ...group,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north'
+            region: 'eu-north',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: evidenceAtEpochMs
         },
         connectionSequence: 1,
         reconnectCount: 0,

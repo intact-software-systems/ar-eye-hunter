@@ -2,7 +2,7 @@ import type {
     DistributedArtifactInventoryItem,
     DistributedArtifactWorkspaceIssue
 } from '@shared-test/rallar-bb-test/mod.ts';
-import { minimalAnalyzeAnalysis, projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
+import { projectAnalyzeAnalysis, projectMinimalAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
 import {
     boundedText,
@@ -15,7 +15,7 @@ import {
     projectOpaqueIdentifier,
     withinSerializedLimit
 } from './analyze-projection-bounds.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 
 export function projectAnalyzeArtifactModel(
     model: AnalyzeArtifactModel
@@ -31,7 +31,7 @@ export function projectAnalyzeArtifactModel(
         workspace: {
             source: model.workspace.source,
             support: model.workspace.support,
-            generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+            generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
             ...(model.workspace.artifactSchemaVersion !== undefined
                 ? { artifactSchemaVersion: finiteNumber(model.workspace.artifactSchemaVersion) }
                 : {}),
@@ -73,15 +73,11 @@ export function projectAnalyzeIdentity(
         : undefined;
     return {
         distributedRunId,
-        ...(distributedRunId === identity.distributedRunId
-            ? {}
-            : { distributedRunIdExact: false }),
+        distributedRunIdExact: distributedRunId === identity.distributedRunId,
         ...(controlRunId
             ? {
                 controlRunId,
-                ...(controlRunId === identity.controlRunId
-                    ? {}
-                    : { controlRunIdExact: false })
+                controlRunIdExact: controlRunId === identity.controlRunId
             }
             : {})
     };
@@ -149,7 +145,7 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
         workspace: {
             source: model.workspace.source,
             support: model.workspace.support,
-            generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+            generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
             ...(model.workspace.artifactSchemaVersion !== undefined
                 ? { artifactSchemaVersion: finiteNumber(model.workspace.artifactSchemaVersion) }
                 : {}),
@@ -160,7 +156,7 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
                 message: PROJECTION_OMISSION_MESSAGE
             }]
         },
-        analysis: minimalAnalyzeAnalysis(model.analysis),
+        analysis: projectMinimalAnalyzeAnalysis(model.analysis),
         issueMarkdown: PROJECTION_OMISSION_MESSAGE,
         provenance: projectProvenance(model, false),
         ...(model.firstActionableEvidenceId

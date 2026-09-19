@@ -35,7 +35,16 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 targetPolicy: {
                     mode: 'selected-agents',
                     agentIds: []
-                }
+                },
+                schemaVersion: 1,
+                controlRunId: 'dist-1',
+                variables: {},
+                roleAssignments: [],
+                ackTimeoutMs: 30_000,
+                barrier: { enabled: false },
+                startMode: 'manual',
+                groupAssertions: [],
+                metadata: {}
             },
             state: 'draft',
             createdAtEpochMs: 1,
@@ -47,12 +56,10 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 ok: false,
                 summary: {
                     participants: 0,
-                    requiredParticipants: 0,
                     readyParticipants: 0,
                     passedParticipants: 0,
                     failedParticipants: 0,
                     recipes: 0,
-                    requiredRecipes: 0,
                     passedRecipes: 0,
                     failedRecipes: 0,
                     groupAssertions: 0,

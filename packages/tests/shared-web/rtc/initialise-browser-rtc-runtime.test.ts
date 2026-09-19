@@ -1,3 +1,5 @@
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import {
     afterEach,
     beforeEach,
@@ -38,7 +40,7 @@ import {
     createDefaultWsQueueBoxClientService,
     WsQueueBoxClientService
 } from '@shared/services/ws-queue-box-client-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import { createPassThroughTransportFaultPort, createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
@@ -137,6 +139,82 @@ describe('browser RTC runtime composition', () => {
         }
     });
 
+    it('supersedes retained RTC work with the configured conformance policy before native submission', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const group = acceptedGroup(['self', 'receiver']);
+        groupStateSnapshotsRepository.setGroupStateSnapshot(group);
+        overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), overlay(group, 1, ['receiver']));
+        const nativeRuntime = installNativeRtcRuntime();
+        const faults = createScriptedTransportFaultPort();
+        const fault = {
+            faultId: 'hold-rtc',
+            carrier: 'rtc',
+            action: 'drop',
+            remaining: 100,
+            match: { typeId: 'alm.lifecycle', msgId: undefined, controlType: undefined }
+        } as const;
+        faults.inject(fault);
+        const fixture = createNativeRtcConnectionFixture({
+            sessionId: 'self',
+            token: 'fixture-token',
+            faultPort: faults,
+            iceCandidates: { iceServers: [], expiresAtEpochMs: 60_000 },
+            dataChannelName: 'test',
+            rtcSignalingTopicId: 'rtc'
+        }, nativeRuntime);
+        onTestFinished(() => {
+            fixture.dispose();
+            nativeRuntime.dispose();
+        });
+        fixture.service.ensurePeerConnectionStarted('receiver', true);
+        const nativePeer = fixture.nativePeer('receiver');
+        nativePeer.setConnected();
+        for (const channel of nativePeer.channels) {
+            channel.open();
+        }
+        const qboxEngine = new InboxOutboxEngine();
+        const drain = captureOutboundWorkRunnable(qboxEngine);
+        const registry = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} });
+        const manager = initialiseRtcOverlayMulticastManager({
+            qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+            outboundSettlements: (event) => registry.record(event),
+            webRtcConnectionService: fixture.service,
+            qboxEngine
+        });
+        onTestFinished(() => manager.dispose());
+        const oldMessage = newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' }, group.group, 'alm.lifecycle', {
+            marker: 'delivery-lifecycle',
+            specimen: 'supersedence'
+        }, { ack: 'receiver', reliability: 'at-least-once', seq: 1 });
+        const replacement = newALMulticastMessage(
+            'self',
+            { topicId: 'room.lifecycle', resourceId: 'new', contextId: 'group-1' },
+            group.group,
+            'alm.lifecycle',
+            { marker: 'delivery-lifecycle', specimen: 'supersedence' },
+            { ack: 'receiver', reliability: 'at-least-once', seq: 2 }
+        );
+        const handle = registry.open(oldMessage, 'rtc');
+        await manager.enqueueIfAbsent(oldMessage);
+        await drain();
+        expect(nativePeer.channels.flatMap((channel) => channel.sent)).toEqual([]);
+        registry.open(replacement, 'rtc');
+        await manager.enqueueIfAbsent(replacement);
+        vi.setSystemTime(Date.now() + 100);
+        await drain();
+        expect(handle.lifecycle().state).toBe('superseded');
+        faults.inject({ ...fault, remaining: 0 });
+        vi.setSystemTime(Date.now() + 100);
+        await drain();
+        const received = nativePeer.channels.flatMap((channel) => channel.sent);
+        expect(received).toHaveLength(1);
+        expect(typeof received[0]).toBe('string');
+        expect(decodePersistedALMessage(String(received[0])).id.msgId).toBe(replacement.id.msgId);
+    });
+
     it('routes multicast traffic through accepted rather than conflicting planned next hops', async () => {
         const group = acceptedGroup(['self', 'accepted-peer', 'planned-peer']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
@@ -173,6 +251,8 @@ describe('browser RTC runtime composition', () => {
         const qboxEngine = new InboxOutboxEngine();
         const drainOnce = captureOutboundWorkRunnable(qboxEngine);
         const manager = initialiseRtcOverlayMulticastManager({
+            qosProvider: undefined,
+            outboundSettlements: () => {},
             webRtcConnectionService: fixture.service,
             qboxEngine
         });

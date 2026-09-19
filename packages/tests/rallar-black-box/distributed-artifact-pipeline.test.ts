@@ -285,8 +285,10 @@ describe('distributed artifact parse pipeline', () => {
             source: 'bundle-envelope',
             envelopeFileName: 'bundle.json',
             outerIgnoredFiles: ['loose.json'],
-            fatalCode: 'ambiguous-envelope',
-            fatalMessage: 'Artifact envelope bundle.json cannot be combined with loose files in one import.'
+            fatal: {
+                code: 'ambiguous-envelope',
+                message: 'Artifact envelope bundle.json cannot be combined with loose files in one import.'
+            }
         });
 
         const multiple = parseDistributedArtifactPipeline({
@@ -297,8 +299,10 @@ describe('distributed artifact parse pipeline', () => {
             source: 'bundle-envelope',
             envelopeFileName: 'a-envelope.json',
             outerIgnoredFiles: ['z-envelope.json'],
-            fatalCode: 'ambiguous-envelope',
-            fatalMessage: 'Select exactly one artifact envelope; found a-envelope.json, z-envelope.json.'
+            fatal: {
+                code: 'ambiguous-envelope',
+                message: 'Select exactly one artifact envelope; found a-envelope.json, z-envelope.json.'
+            }
         });
 
         const invalidText = JSON.stringify({
@@ -315,8 +319,10 @@ describe('distributed artifact parse pipeline', () => {
         expect(invalid.projection).toMatchObject({
             source: 'bundle-envelope',
             envelopeFileName: 'invalid-envelope.json',
-            fatalCode: 'incompatible-file',
-            fatalMessage: 'invalid-envelope.json is not a compatible artifact envelope: files must be an object of artifact filename to text.'
+            fatal: {
+                code: 'incompatible-file',
+                message: 'invalid-envelope.json is not a compatible artifact envelope: files must be an object of artifact filename to text.'
+            }
         });
     });
 
@@ -388,7 +394,7 @@ describe('distributed artifact parse pipeline', () => {
         });
 
         expect(pipeline.source).toBe('loose-files');
-        expect(pipeline.projection.fatalMessage).toBeUndefined();
+        expect(pipeline.projection.fatal).toBeUndefined();
         expect(pipeline.files[responseFile]).toMatchObject({
             format: 'json',
             status: 'parsed'

@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestSeverity } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestSeverity } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarCrdtOperationBatch, RallarCrdtTransportStrategy } from '@shared/crdt/crdt-types.ts';
 import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
@@ -80,6 +80,7 @@ export function useCrdtEditorController({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: {
                     providerMode: bootstrap.providerMode,
@@ -94,8 +95,9 @@ export function useCrdtEditorController({
                     authSession,
                     timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
                 },
-                payload: optionalRecord(payload),
-                severity
+                transport: undefined,
+                severity,
+                payload: optionalRecord(payload)
             }),
             lastAction
         );

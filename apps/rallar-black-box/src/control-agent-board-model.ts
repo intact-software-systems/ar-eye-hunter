@@ -1,6 +1,7 @@
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { ControlAgentBoardRow, ControlAgentRunParticipation } from './control-agent-board-contract.ts';
-import type { ControlDistributedRunSnapshot, ControlRunAgentRow } from './control-run-manager.ts';
+import type { ControlRunAgentRow } from './control-run-manager/control-run-projections.ts';
 import type { DistributedRecipeTargetRow, DistributedRunAgentProgressRow } from './distributed-recipes.ts';
 
 export function controlAgentBoardRowFromParticipations(

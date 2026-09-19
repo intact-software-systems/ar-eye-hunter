@@ -7,6 +7,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
+import { writeDistributedRunArtifactAnalysis } from '../../../apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts';
+
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
 const distributedWorkflowPath = '.github/workflows/hetzner-distributed-recipe.yml';
@@ -2757,6 +2759,22 @@ describe('Hetzner distributed recipe workflow', () => {
         await expect(
             readFile(path.join(artifactDir, 'distributed-run.json'), 'utf8')
         ).rejects.toMatchObject({ code: 'ENOENT' });
+
+        const analyzed = await writeDistributedRunArtifactAnalysis({
+            artifactDir,
+            outDir: path.join(artifactDir, 'analysis'),
+            generatedAtEpochMs: 1_700_000_000_000
+        });
+        expect(analyzed.right?.variant).toBe('control-request-failure');
+        expect(analyzed.right?.variant === 'control-request-failure' ? analyzed.right.analysis.failure : undefined).toMatchObject({
+            category: 'control-api',
+            title: 'Control API create request failed.',
+            likelyCause: 'target policy rejected',
+            evidenceFile: 'control-post-create-error.json'
+        });
+        await expect(
+            readFile(path.join(artifactDir, 'analysis', 'fix-proposal.md'), 'utf8')
+        ).resolves.toContain('Evidence: control-post-create-error.json');
     });
 
     it('writes distributed-run POST snapshots through temp files before replacing evidence', async () => {

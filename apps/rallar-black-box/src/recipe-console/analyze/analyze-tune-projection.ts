@@ -1,4 +1,4 @@
-import { inventoryDistributedRunTuningKnobs } from '@shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedRunTuningInventory } from '@shared-test/rallar-bb-test/mod.ts';
 import { projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import { projectAnalyzeIdentity, projectWorkspaceIssue } from './analyze-artifact-display-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
@@ -21,7 +21,8 @@ import {
     receivedMessageDeltas,
     tuneArtifactRole
 } from './analyze-tune-projection-rows.ts';
-import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from './analyze-worker-projection-contract.ts';
 
 export function projectAnalyzeTuneArtifactFacade(
     model: AnalyzeArtifactModel,
@@ -36,7 +37,7 @@ export function projectAnalyzeTuneArtifactFacade(
         .filter(
             (recipeId): recipeId is string => recipeId !== undefined
         );
-    const inventory = inventoryDistributedRunTuningKnobs(manifest);
+    const inventory = computeDistributedRunTuningInventory(manifest);
     const candidateManifest = inventory.knobs.length <= MAX_TUNE_ROWS &&
             isExactCandidateManifestSafe(manifest)
         ? manifest
@@ -53,12 +54,10 @@ export function projectAnalyzeTuneArtifactFacade(
             total: model.workspace.issues.length,
             omitted: Math.max(0, model.workspace.issues.length - MAX_TUNE_ROWS)
         },
-        generatedAtEpochMs: finiteNumber(model.workspace.generatedAtEpochMs),
+        generatedAtEpochMs: finiteNumber(model.provenance.generatedAtEpochMs),
         manifestSummary: {
             distributedRunId: projectAuthorityIdentifier(manifest.distributedRunId),
-            ...(manifest.controlRunId
-                ? { controlRunId: projectAuthorityIdentifier(manifest.controlRunId) }
-                : {}),
+            controlRunId: projectAuthorityIdentifier(manifest.controlRunId),
             ...(manifest.displayName
                 ? { displayName: boundedText(manifest.displayName, MAX_SUMMARY_BYTES) }
                 : {}),
@@ -73,7 +72,7 @@ export function projectAnalyzeTuneArtifactFacade(
                 ),
                 groupId: boundedText(manifest.group.groupId, MAX_METADATA_BYTES)
             },
-            ...(manifest.startMode ? { startMode: manifest.startMode } : {}),
+            startMode: manifest.startMode,
             recipeIds: {
                 entries: recipeIds.map((value) => projectOpaqueIdentifier(value)),
                 total: manifest.recipes.length,
@@ -88,12 +87,14 @@ export function projectAnalyzeTuneArtifactFacade(
                         )
                     }
                     : {}),
-                configuredAgentCount: manifest.targetPolicy.agentIds?.length ?? 0,
-                configuredRoleCount: Object.keys(
-                    manifest.targetPolicy.roles ?? {}
-                ).length
+                configuredAgentCount: manifest.targetPolicy.mode === 'selected-agents'
+                    ? manifest.targetPolicy.agentIds.length
+                    : 0,
+                configuredRoleCount: manifest.targetPolicy.mode === 'role-map'
+                    ? Object.keys(manifest.targetPolicy.roles).length
+                    : 0
             },
-            roleAssignmentCount: manifest.roleAssignments?.length ?? 0
+            roleAssignmentCount: manifest.roleAssignments.length
         },
         tuningInventory: {
             totalKnobs: inventory.knobs.length,
@@ -107,13 +108,7 @@ export function projectAnalyzeTuneArtifactFacade(
                 inventory.limitations.length - MAX_TUNE_ROWS
             )
         },
-        ...(candidateManifest
-            ? { candidateManifest }
-            : {
-                candidateManifestOmittedReason: inventory.knobs.length > MAX_TUNE_ROWS
-                    ? 'inventory-windowed' as const
-                    : 'manifest-too-large' as const
-            }),
+        ...(candidateManifest ? { candidateManifest } : {}),
         selection: {
             ...(selection.focusRunId
                 ? { focusRunId: projectAuthorityIdentifier(selection.focusRunId) }

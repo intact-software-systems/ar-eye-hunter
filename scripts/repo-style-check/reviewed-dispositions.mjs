@@ -63,36 +63,6 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/tests/shared-test/black-box-execution-dependencies.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/fake-remote-browser-control-server.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/rallar-provider-parity.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'jsonResponse'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/rallar-provider-parity.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'expectedConnections'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/remote-browser-command-results.test.ts',
-        rule: 'boundary.unknown',
-        symbol: 'executeSnapshot'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/remote-browser-observation-lifecycle.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
         path: 'packages/tests/shared-test/rtc-client-provider/browser-diagnostics.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
@@ -161,11 +131,6 @@ export const reviewedDispositions = Object.freeze([
         path: 'packages/tests/shared-test/rtc/rtc-wait-expectations.test.ts',
         rule: 'boundary.unknown',
         symbol: 'createWaitInput'
-    }),
-    Object.freeze({
-        path: 'packages/tests/shared-test/ws-wait-expectations.test.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
     }),
     // API state files expose separate mutation, event-cursor, point-read and
     // paged-dissemination contracts. Their direct consumers and README recover

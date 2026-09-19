@@ -71,7 +71,7 @@ export function createTuneManifest(
                     }
                 }]
             },
-            required: true
+            variables: {}
         }],
         targetPolicy: {
             mode: 'selected-agents',
@@ -82,7 +82,11 @@ export function createTuneManifest(
         },
         ackTimeoutMs: right ? 12_000 : 8_000,
         barrier: { enabled: true, timeoutMs: right ? 16_000 : 10_000 },
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        roleAssignments: [],
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -125,6 +129,7 @@ export function createTuneDistributedRun(
                 staleAgents: 0,
                 offlineAgents: 0,
                 wrongGroupAgents: 0,
+                assertionCapabilityBlockedAgents: 0,
                 agentsWithoutIdentity: 0,
                 roleCounts: {},
                 regions: {},
@@ -143,14 +148,15 @@ export function createTuneDistributedRun(
             ok: !right,
             summary: {
                 participants: 2,
-                requiredParticipants: 2,
                 readyParticipants: 2,
                 passedParticipants: right ? 1 : 2,
                 failedParticipants: right ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: right ? 0 : 1,
                 failedRecipes: right ? 1 : 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: right ? 1 : 0
             },
             failures: right
@@ -158,7 +164,6 @@ export function createTuneDistributedRun(
                     kind: 'recipe',
                     key: `${TUNE_STREAM_RECIPE_ID}:${TUNE_SLOW_AGENT_ID}`,
                     state: 'failed',
-                    required: true,
                     error: {
                         code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                         message: 'RTC stream exceeded pacing and backlog thresholds.'

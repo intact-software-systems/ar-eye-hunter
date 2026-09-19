@@ -1,26 +1,32 @@
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import { useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    RallarBlackBoxDistributedRolePattern,
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetPolicyMode,
     RallarBlackBoxDistributedTargetResolution
-} from '../../../control-run-manager.ts';
-import {
-    buildDistributedRunManifest,
-    deriveDistributedWorldFleetTargetGate,
-    distributedRecipePreflight,
-    distributedRecipeTargetRows,
-    reconcileDistributedRecipeTargetIds,
-    type DistributedRecipeRolePattern,
-    type DistributedRecipeTargetPolicyMode,
-    type DistributedRunAgentProgressRow
-} from '../../../distributed-recipes.ts';
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
     RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
-} from '../../../recipe-fixtures.ts';
+} from '@shared-test/rallar-bb-test/fixtures/rtc-realtime-recipes.ts';
+import { useMemo, useState } from 'react';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
+import {
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
+} from '../../../control-agent-board.ts';
+import {
+    createDistributedRunManifest,
+    deriveDistributedWorldFleetTargetGate,
+    distributedRecipePreflight,
+    distributedRecipeTargetRows,
+    reconcileDistributedRecipeTargetIds,
+    type DistributedRunAgentProgressRow
+} from '../../../distributed-recipes.ts';
 import { validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
@@ -68,8 +74,10 @@ export function useDistributedRecipeBuilder({
     const [rtcRealtimeDurationSeconds, setRtcRealtimeDurationSeconds] = useState(
         RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS
     );
-    const [targetPolicyMode, setTargetPolicyMode] = useState<DistributedRecipeTargetPolicyMode>('selected-agents');
-    const [rolePattern, setRolePattern] = useState<DistributedRecipeRolePattern>('all-agents');
+    const [targetPolicyMode, setTargetPolicyMode] = useState<RallarBlackBoxDistributedTargetPolicyMode>(
+        'selected-agents'
+    );
+    const [rolePattern, setRolePattern] = useState<RallarBlackBoxDistributedRolePattern>('all-agents');
     const [expectedParticipantCount, setExpectedParticipantCount] = useState(50);
     const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
     const [barrierEnabled, setBarrierEnabled] = useState(false);
@@ -172,7 +180,7 @@ export function useDistributedRecipeBuilder({
         ) {
             return undefined;
         }
-        return buildDistributedRunManifest({
+        return createDistributedRunManifest({
             distributedRunId,
             controlRunId: selectedRunId,
             displayName: `Distributed ${selectedRecipes.map((item) => item.title).join(', ')}`,
@@ -187,16 +195,17 @@ export function useDistributedRecipeBuilder({
                     enabled: true,
                     timeoutMs: barrierTimeoutMs
                 }
-                : undefined,
-            startMode: startMode ?? 'manual',
-            startDeadlineEpochMs: startMode === 'scheduled'
-                ? Date.now() + Math.max(1, startDelayMs)
-                : undefined,
+                : { enabled: false },
+            ...(startMode === 'scheduled'
+                ? { startMode, startDeadlineEpochMs: Date.now() + Math.max(1, startDelayMs) }
+                : { startMode }),
             expectedParticipantCount: usesWorldFleetTargets
                 ? expectedParticipantCount
                 : effectiveSelectedAgentIds.length > 0
                 ? effectiveSelectedAgentIds.length
-                : undefined
+                : undefined,
+            groupAssertions: [],
+            createdBy: 'rallar-black-box-spa'
         });
     }, [
         ackTimeoutMs,
@@ -246,7 +255,7 @@ export function useDistributedRecipeBuilder({
     );
     const distributedTargetAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run,
                 group: groupRef,
                 requiredCommandKinds: selectedPreflightCommandKinds,
@@ -254,7 +263,8 @@ export function useDistributedRecipeBuilder({
                 distributedRuns,
                 selectedDistributedRun,
                 monitorAgentProgress: monitorAgentProgress ?? [],
-                nowEpochMs: Date.now()
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [
             distributedRuns,
@@ -267,7 +277,7 @@ export function useDistributedRecipeBuilder({
         ]
     );
     const distributedTargetAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(distributedTargetAgentRows),
+        () => computeControlAgentBoardSummary(distributedTargetAgentRows),
         [distributedTargetAgentRows]
     );
     const liveSelectedRecipeCount = selectedRecipes.filter(
