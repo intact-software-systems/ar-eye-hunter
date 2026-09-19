@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import postgres from 'postgres';
 import { describe, expect, it } from 'vitest';
 
 import { createAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
@@ -13,7 +14,10 @@ import {
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
-import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
+import type {
+    ApiV1StateWriteEvidenceSql,
+    ApiV1StateWriteEvidenceSqlParameter
+} from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import {
     collectApiV1StateWriteEvidence,
     readPGliteStateWriteEvidenceSnapshot,
@@ -47,6 +51,18 @@ async function waitForSnapshotRequest(root: string): Promise<string> {
     throw new Error('Expected PGlite snapshot request.');
 }
 
+interface SnapshotResponsePublication {
+    readonly path: string;
+    readonly contents: string;
+}
+
+/** Match the real publisher: readers must never see a response before its write completes. */
+async function publishSnapshotResponse(input: SnapshotResponsePublication): Promise<void> {
+    const temporary = `${input.path}.${crypto.randomUUID()}.part`;
+    await writeFile(temporary, input.contents, { mode: 0o600 });
+    await rename(temporary, input.path);
+}
+
 describe('API-v1 PGlite state-write evidence source', () => {
     it('selects an active PGlite owner-process snapshot publisher', () => {
         expect(
@@ -74,10 +90,9 @@ describe('API-v1 PGlite state-write evidence source', () => {
 
     it('closes an explicit PostgreSQL evidence client after its reader completes', async () => {
         const events: string[] = [];
-        const sql = Object.assign(() => Promise.resolve([]), {
-            end: async (input: { timeout: number; }) => {
-                events.push(`end:${input.timeout}`);
-            }
+        const sql = postgres('postgres://explicit.example/evidence', { max: 1 });
+        vi.spyOn(sql, 'end').mockImplementation(async (input) => {
+            events.push(`end:${input?.timeout}`);
         });
         const value = await readPostgresStateWriteEvidenceSource(
             { kind: 'postgres', databaseUrl: 'postgres://explicit.example/evidence' },
@@ -90,7 +105,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
                 expect(databaseUrl).toBe('postgres://explicit.example/evidence');
                 expect(options).toEqual({ max: 1 });
                 events.push('open');
-                return sql as never;
+                return sql;
             }
         );
         expect(value).toBe('evidence');
@@ -107,15 +122,17 @@ describe('API-v1 PGlite state-write evidence source', () => {
         const begin = vi.fn(
             async (write: (query: typeof transaction) => Promise<void>) => await write(transaction)
         );
+        // postgres is lazy: retain its real API surface while this fixture owns query and transaction effects.
         const postgresSql = Object.assign(
             vi.fn(async (strings: TemplateStringsArray) => {
                 rootQueries.push(strings.join('?'));
                 return [];
             }),
+            postgres('postgres://unused.example/evidence', { max: 1 }),
             { begin }
         );
 
-        const evidenceSql = toStateWriteEvidenceSql(postgresSql as never);
+        const evidenceSql = toStateWriteEvidenceSql(postgresSql);
         expect(evidenceSql).not.toBe(postgresSql);
         await evidenceSql.begin(async (query) => {
             expect(query).not.toBe(transaction);
@@ -128,13 +145,14 @@ describe('API-v1 PGlite state-write evidence source', () => {
     });
 
     it('keeps raw JSON evidence inputs untrusted until the SQL validator runs', async () => {
+        // SQL fixtures return authored rows; the generic query boundary is asserted explicitly below.
         const rawInput: unknown = JSON.parse('{"match":""}');
         const sql = Object.assign(vi.fn(), { begin: vi.fn() });
 
         const collectInput: Parameters<typeof collectApiV1StateWriteEvidence>[0] = rawInput;
         const snapshotInput: Parameters<typeof readPGliteStateWriteEvidenceSnapshot>[1] = rawInput;
 
-        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as never)).rejects.toThrow(
+        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
             'stateWriteEvidence.match must be a non-empty string.'
         );
         expect(sql).not.toHaveBeenCalled();
@@ -247,7 +265,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED'],
             expectedEffectsByCommandType: { ADMIN_PRUNE_EXPIRED: ['admin-prune-page'] }
-        }, sql as never);
+        }, sql as ApiV1StateWriteEvidenceSql);
 
         expect(evidence).toMatchObject({
             matchedAppInboxCount: 1,
@@ -268,7 +286,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             await expect(collectApiV1StateWriteEvidenceFromSql({
                 match: requestId,
                 commandTypes: ['ADMIN_PRUNE_EXPIRED']
-            }, sql as never)).resolves.toMatchObject({
+            }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
                 atomicCompletionFailures: 1,
                 statusResultFailures: 1,
                 appInbox: [{ durableResultValid: false }]
@@ -284,7 +302,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
         await expect(collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED']
-        }, sql as never)).resolves.toMatchObject({
+        }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]
@@ -311,7 +329,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
         await expect(collectApiV1StateWriteEvidenceFromSql({
             match: requestId,
             commandTypes: ['ADMIN_PRUNE_EXPIRED']
-        }, sql as never)).resolves.toMatchObject({
+        }, sql as ApiV1StateWriteEvidenceSql)).resolves.toMatchObject({
             atomicCompletionFailures: 1,
             statusResultFailures: 1,
             appInbox: [{ durableResultValid: false }]
@@ -341,7 +359,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             '{"match":"scope","minimumMatchedRows":"2","commandTypes":"GROUP_UPDATE"}'
         );
 
-        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as never)).rejects.toThrow(
+        await expect(collectApiV1StateWriteEvidenceFromSql(rawInput, sql as ApiV1StateWriteEvidenceSql)).rejects.toThrow(
             'Expected at least 2 matching AppInbox rows; found 1.'
         );
         expect(sql).toHaveBeenCalledOnce();
@@ -356,15 +374,14 @@ describe('API-v1 PGlite state-write evidence source', () => {
             );
             const requestName = await waitForSnapshotRequest(root);
             const request = JSON.parse(readFileSync(path.join(root, 'requests', requestName), 'utf8'));
-            await writeFile(
-                path.join(root, 'responses', `${request.nonce}.json`),
-                JSON.stringify({
+            await publishSnapshotResponse({
+                path: path.join(root, 'responses', `${request.nonce}.json`),
+                contents: JSON.stringify({
                     ...request,
                     publishedAtEpochMs: request.requestedAtEpochMs + 1,
                     failure: 'snapshot unavailable'
-                }),
-                { mode: 0o600 }
-            );
+                })
+            });
 
             await expect(pending).rejects.toThrow(
                 'PGlite snapshot publisher failed: snapshot unavailable'
@@ -383,15 +400,14 @@ describe('API-v1 PGlite state-write evidence source', () => {
             const request = JSON.parse(readFileSync(path.join(root, 'requests', requestName), 'utf8'));
             const unexpectedArchive = `${request.nonce}-wrong.tar`;
             await writeFile(path.join(root, 'snapshots', unexpectedArchive), 'snapshot', { mode: 0o600 });
-            await writeFile(
-                path.join(root, 'responses', `${request.nonce}.json`),
-                JSON.stringify({
+            await publishSnapshotResponse({
+                path: path.join(root, 'responses', `${request.nonce}.json`),
+                contents: JSON.stringify({
                     ...request,
                     publishedAtEpochMs: request.requestedAtEpochMs + 1,
                     snapshotFile: unexpectedArchive
-                }),
-                { mode: 0o600 }
-            );
+                })
+            });
 
             await expect(pending).rejects.toThrow(/exact nonce archive/i);
             await expect(readdir(path.join(root, 'requests'))).resolves.toEqual([]);
@@ -412,15 +428,14 @@ describe('API-v1 PGlite state-write evidence source', () => {
             expect((await stat(path.join(root, 'requests', requestName))).mode & 0o777).toBe(0o600);
             const snapshotName = `${request.nonce}.tar`;
             await writeFile(path.join(root, 'snapshots', snapshotName), 'snapshot', { mode: 0o600 });
-            await writeFile(
-                path.join(root, 'responses', `${request.nonce}.json`),
-                JSON.stringify({
+            await publishSnapshotResponse({
+                path: path.join(root, 'responses', `${request.nonce}.json`),
+                contents: JSON.stringify({
                     ...request,
                     publishedAtEpochMs: request.requestedAtEpochMs + 1,
                     snapshotFile: snapshotName
-                }),
-                { mode: 0o600 }
-            );
+                })
+            });
 
             const snapshot = await pending;
             await snapshot.cleanup();
