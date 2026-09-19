@@ -160,7 +160,12 @@ function createBrowserSessionMessaging(
     delivery: typeof browserDeliveryComposition
 ): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
     const { nowMs, deliveries, sessionDeliveries } = delivery;
-    const session = createBrowserSessionCoreComposition({ foundation, state, sessionDeliveries });
+    const session = createBrowserSessionCoreComposition({
+        foundation,
+        state,
+        sessionDeliveries,
+        qosProvider: undefined
+    });
     const sessionPort = session.session;
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,

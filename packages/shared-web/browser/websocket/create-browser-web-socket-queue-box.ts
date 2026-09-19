@@ -2,6 +2,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
@@ -13,10 +14,13 @@ import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
 } from '@shared/services/ws-queue-box-client-service.ts';
+import type { WebSocketSubmissionReadinessFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly outboundSettlements: ALDeliverySettlementSink;
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
@@ -47,7 +51,9 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
+        qosProvider: input.qosProvider,
         queueEngine: input.qboxEngine,
+        submissionReadinessFaultPort: input.submissionReadinessFaultPort,
         outbox: outboundStores.workQueue,
         socket,
         sessionId: clientData.sessionId,

@@ -275,8 +275,10 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             {
+                qosProvider: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
+                    submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
                     transportFaultPort: { decideSend: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),
@@ -315,7 +317,7 @@ describe('Rallar facade default scope behavior', () => {
         onTestFinished(() => facade.disconnect());
         facade.setDefaults({
             applicationId: 'default-app',
-            diagnosticsPorts: { transportFaultPort, indexedDbOperationObserver }
+            diagnosticsPorts: { transportFaultPort, submissionReadinessFaultPort: transportFaultPort, indexedDbOperationObserver }
         });
 
         await facade.connect();
@@ -324,8 +326,10 @@ describe('Rallar facade default scope behavior', () => {
             mocks.context.session,
             expect.any(String),
             expect.objectContaining({
+                qosProvider: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
+                    submissionReadinessFaultPort: transportFaultPort,
                     transportFaultPort,
                     indexedDbOperationObserver,
                     outboundDiagnostics: expect.any(Function),

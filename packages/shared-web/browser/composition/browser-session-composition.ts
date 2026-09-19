@@ -15,6 +15,7 @@ import {
     createRallarSessionIdentity,
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 
@@ -39,6 +40,7 @@ export interface BrowserCrdtComposition {
 }
 
 export interface CreateBrowserSessionCoreCompositionInput {
+    readonly qosProvider: ALQosInputProvider | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly foundation: BrowserRuntimeFoundation;
     readonly state: BrowserStateComposition;
@@ -65,6 +67,7 @@ export function createBrowserSessionCoreComposition(
         resolveScopeKey: identity.resolveDataScopeKey
     });
     const session = createRallarSessionController({
+        qosProvider: input.qosProvider,
         sessionDeliveries: input.sessionDeliveries,
         connectionRuntime: input.foundation.connectionRuntime,
         transportRuntime: input.foundation.transportRuntime,

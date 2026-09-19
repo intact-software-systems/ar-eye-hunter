@@ -59,6 +59,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -108,6 +109,7 @@ describe('Browser transport cleanup', () => {
             }
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -155,6 +157,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => effects.push('state-disconnected')
         });
         const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -204,6 +207,7 @@ describe('Browser transport cleanup', () => {
         onTestFinished(() => transportRuntime.shutdown());
         const runtime = new BrowserFacadeRuntimeState(transportRuntime);
         const connection = new BrowserSessionConnectionLifecycle({
+            qosProvider: undefined,
             sessionDeliveries: createDeliveryObservation(transportRuntime).sessionDeliveries,
             connectionRuntime: runtime,
             transportRuntime,
@@ -257,7 +261,11 @@ describe('Browser transport cleanup', () => {
         const transportRuntime = new BrowserTransportRuntime();
         onTestFinished(() => transportRuntime.shutdown());
 
-        const pending = transportRuntime.init({ diagnosticsPorts: toRallarDiagnosticsPorts(undefined), deliverySettlements: { ws: () => {}, rtc: () => {} } });
+        const pending = transportRuntime.init({
+            qosProvider: undefined,
+            diagnosticsPorts: toRallarDiagnosticsPorts(undefined),
+            deliverySettlements: { ws: () => {}, rtc: () => {} }
+        });
         transportRuntime.shutdown();
         resolveMiddleware?.(middleware.middleware);
 
@@ -329,6 +337,7 @@ describe('Browser transport cleanup', () => {
         });
 
         const sessionController = createRallarSessionController({
+            qosProvider: undefined,
             ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
@@ -383,6 +392,7 @@ describe('Browser transport cleanup', () => {
             disconnected: () => cleanupEffects.push('disconnected')
         });
         const sessionController = createRallarSessionController({
+            qosProvider: undefined,
             ...createDeliveryObservation(transportRuntime),
             connectionRuntime: runtime,
             transportRuntime,
@@ -437,7 +447,12 @@ function toConnectionInput(session: AuthSession): RallarSessionConnectionInput {
     };
 }
 
-function createDeliveryObservation(transport: BrowserTransportRuntime) {
+interface DeliveryObservationFixture {
+    readonly deliveries: BrowserRallarDeliveryRegistry;
+    readonly sessionDeliveries: BrowserSessionDeliveries;
+}
+
+function createDeliveryObservation(transport: BrowserTransportRuntime): DeliveryObservationFixture {
     const deliveries = new BrowserRallarDeliveryRegistry({ nowMs: Date.now, retainTerminalMs: 60_000, maxEntries: 512, cancel: () => {} });
     const sessionDeliveries = new BrowserSessionDeliveries(deliveries, transport);
     onTestFinished(() => {

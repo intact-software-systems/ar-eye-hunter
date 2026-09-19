@@ -56,6 +56,10 @@ import { NonRetryableException } from '../queuebox/resource-inbox/create-default
 import type { ResourceInboxResilience } from '../queuebox/resource-inbox/resource-inbox-resilience.ts';
 import type { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { Either } from '../resilience/Either.ts';
+import {
+    createPassThroughWebSocketSubmissionReadinessFaultPort,
+    type WebSocketSubmissionReadinessFaultPort
+} from '../transport-faults/transport-fault-port.ts';
 import type { JsonWebSocketClient } from '../websocket/json-web-socket-client.ts';
 import { WsClientReconnect } from '../websocket/ws-client-reconnect.ts';
 import type { InboxOutboxEngine } from './InboxOutboxEngine.ts';
@@ -112,6 +116,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Input {
+        readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
         readonly queueEngine?: InboxOutboxEngine;
         readonly outbox: QueueBoxResourceEntryRepository;
         readonly socket: JsonWebSocketClient;
@@ -128,6 +133,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
+        readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
         readonly qosProvider: ALQosInputProvider | undefined;
@@ -523,6 +529,9 @@ export class WsQueueBoxClientService {
         if (stopped) {
             return stopped;
         }
+        if (!this.socket.decideSubmissionReadiness(entry.resource, this.dependencies.submissionReadinessFaultPort)) {
+            return { status: 'not-ready', submissionAttempted: false };
+        }
         if (this.onOutboxMessageCallbacks.size === 0) {
             this.socket.sendAsJsonString(entry.resource);
             return { status: 'sent', submissionAttempted: true };
@@ -608,6 +617,8 @@ export class WsQueueBoxClientService {
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
     return new WsQueueBoxClientService({
+        submissionReadinessFaultPort: input.submissionReadinessFaultPort ??
+            createPassThroughWebSocketSubmissionReadinessFaultPort(),
         socket: input.socket,
         sessionId: input.sessionId,
         qosProvider: input.qosProvider,

@@ -1,4 +1,5 @@
 import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type {
     ApiConfig,
     AuthSession,
@@ -61,6 +62,7 @@ import {
 } from '../state-cache/browser-state-cache-lifecycle.ts';
 
 export interface MiddlewareInitOptions {
+    readonly qosProvider: ALQosInputProvider | undefined;
     readonly deliverySettlements: BrowserDeliverySettlements.Carriers;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
     readonly signal?: AbortSignal;
@@ -122,14 +124,13 @@ export function configureBrowserRtcPeerCreationPolicies(
     webRtcConnectionService: WebRtcConnectionService,
     webRtcGroupManager: WebRtcGroupManager
 ): void {
-    const peerIsInCurrentLayout = (peerId: string): boolean => webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId);
     webRtcConnectionService.setInboundPeerCreationPolicy(({ peerId }) =>
-        peerIsInCurrentLayout(peerId)
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
             : { decision: 'retry', reason: 'stage-layout-mismatch' }
     );
     webRtcConnectionService.setOutboundDialPolicy(({ peerId }) =>
-        peerIsInCurrentLayout(peerId)
+        webRtcGroupManager.isPeerDialAllowedByAnyGroup(peerId)
             ? { decision: 'allow' }
             : { decision: 'deny', reason: 'stage-layout-mismatch' }
     );
@@ -238,6 +239,8 @@ async function initialiseBrowserWebSocketTransport(
     const socket = createBrowserWebSocketClient(input, apiConfig);
     const qboxEngine = createBrowserQueueBoxEngine();
     const webSocketQueueBox = await createBrowserWebSocketQueueBox({
+        qosProvider: input.options.qosProvider,
+        submissionReadinessFaultPort: input.options.diagnosticsPorts.submissionReadinessFaultPort,
         qboxEngine,
         socket,
         clientData: input.clientData,
@@ -303,6 +306,7 @@ async function initialiseBrowserRtcTransport(
     const webRtcOverlayMulticastManager = rtcEngine.initialiseRtcOverlayMulticastManager(
         {
             webRtcConnectionService,
+            qosProvider: input.options.qosProvider,
             qboxEngine: input.webSocketTransport.qboxEngine,
             outboundDiagnostics: input.options.diagnosticsPorts.outboundDiagnostics,
             outboundSettlements: input.options.deliverySettlements.rtc

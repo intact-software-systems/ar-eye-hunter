@@ -10,10 +10,13 @@ import {
 } from '@shared/persistence/indexed-db-operation-observer.ts';
 import {
     createPassThroughTransportFaultPort,
-    type TransportFaultPort
+    createPassThroughWebSocketSubmissionReadinessFaultPort,
+    type TransportFaultPort,
+    type WebSocketSubmissionReadinessFaultPort
 } from '@shared/transport-faults/transport-fault-port.ts';
 
 export interface RallarDiagnosticsPortsInput {
+    readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
     readonly transportFaultPort?: TransportFaultPort;
     readonly indexedDbOperationObserver?: IndexedDbOperationObserver;
     readonly outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -22,6 +25,7 @@ export interface RallarDiagnosticsPortsInput {
 }
 
 export interface RallarDiagnosticsPorts {
+    readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
     readonly transportFaultPort: TransportFaultPort;
     readonly indexedDbOperationObserver: IndexedDbOperationObserver;
     readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsSink;
@@ -41,6 +45,8 @@ export function toRallarDiagnosticsPorts(
     input: RallarDiagnosticsPortsInput | undefined
 ): RallarDiagnosticsPorts {
     return {
+        submissionReadinessFaultPort: input?.submissionReadinessFaultPort ??
+            createPassThroughWebSocketSubmissionReadinessFaultPort(),
         transportFaultPort: input?.transportFaultPort ?? createPassThroughTransportFaultPort(),
         indexedDbOperationObserver: input?.indexedDbOperationObserver ??
             createPassThroughIndexedDbOperationObserver(),

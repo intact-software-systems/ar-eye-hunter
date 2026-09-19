@@ -54,6 +54,24 @@ describe('transport fault port', () => {
         expect(port.decideSend('ws', ackFrame)).toEqual({ kind: 'pass' });
     });
 
+    it.each(
+        [
+            { action: 'drop', decision: { kind: 'drop', faultId: 'frame' }, observed: 'drop' },
+            { action: { delayMs: 25 }, decision: { kind: 'delay', faultId: 'frame', delayMs: 25 }, observed: 'delay' }
+        ] as const
+    )('consumes readiness independently of a $observed frame fault', ({ action, decision, observed }) => {
+        const port = createScriptedTransportFaultPort();
+        const match = { controlType: undefined, typeId: 'chat', msgId: undefined };
+        port.inject({ faultId: 'frame', carrier: 'ws', match, action, remaining: 1 });
+        port.inject({ faultId: 'hold', carrier: 'ws', match, action: 'not-ready', remaining: 2 });
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('not-ready');
+        expect(port.decideSend('ws', dataFrame)).toEqual(decision);
+        expect(port.decideSend('ws', dataFrame)).toEqual({ kind: 'pass' });
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('not-ready');
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('ready');
+        expect(port.getObservations().map((event) => event.decision)).toEqual(['not-ready', observed, 'not-ready']);
+    });
+
     it('drops a matching ACK the configured number of times and records it', () => {
         const port = createScriptedTransportFaultPort();
         port.inject({

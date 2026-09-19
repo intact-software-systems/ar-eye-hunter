@@ -18,10 +18,12 @@ import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/ral
 import { BrowserSessionAuthLifecycle } from '@shared-web/browser/session/session-auth-lifecycle.ts';
 import { BrowserSessionConnectionLifecycle } from '@shared-web/browser/session/session-connection-lifecycle.ts';
 import { createRallarSessionConnectionOperations } from '@shared-web/browser/session/session-connection-operations.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 export interface CreateRallarSessionControllerOptions {
+    readonly qosProvider: ALQosInputProvider | undefined;
     readonly sessionDeliveries: BrowserSessionDeliveries;
     readonly connectionRuntime: RallarConnectionRuntimePort;
     readonly transportRuntime: BrowserTransportRuntimePort;
@@ -54,6 +56,7 @@ export function createRallarSessionController(
     options: CreateRallarSessionControllerOptions
 ): RallarSessionController {
     const connectionLifecycle = new BrowserSessionConnectionLifecycle({
+        qosProvider: options.qosProvider,
         sessionDeliveries: options.sessionDeliveries,
         connectionRuntime: options.connectionRuntime,
         transportRuntime: options.transportRuntime,

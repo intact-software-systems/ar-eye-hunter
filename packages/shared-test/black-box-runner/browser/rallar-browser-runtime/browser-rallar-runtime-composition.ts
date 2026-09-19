@@ -63,6 +63,7 @@ import type {
     BlackBoxRallarDirectorOutputRecord,
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
+import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
 import {
     refreshBlackBoxBrowserRoomState,
     type BlackBoxRoomStateRefreshOptions
@@ -308,6 +309,7 @@ function createBlackBoxBrowserTransportComposition(): BlackBoxBrowserTransportCo
         stateRuntime: foundation.stateRuntime
     });
     const session = createBrowserSessionCoreComposition({
+        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
         foundation,
         state,
         sessionDeliveries: browserDeliveryComposition.sessionDeliveries

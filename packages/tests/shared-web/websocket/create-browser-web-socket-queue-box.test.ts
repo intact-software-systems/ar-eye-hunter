@@ -49,6 +49,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
             qboxEngine,
@@ -95,6 +97,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         onTestFinished(() => controller.abort());
 
         const initialized = createBrowserWebSocketQueueBox({
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
             qboxEngine,
@@ -129,6 +133,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
             qboxEngine,
@@ -177,6 +183,8 @@ describe('createBrowserWebSocketQueueBox', () => {
         const controller = new AbortController();
         onTestFinished(() => controller.abort());
         const initialized = createBrowserWebSocketQueueBox({
+            qosProvider: undefined,
+            submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
             outboundSettlements: () => {},
             newConnectionRequestId: undefined,
             qboxEngine,

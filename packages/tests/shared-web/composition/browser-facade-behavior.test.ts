@@ -188,8 +188,10 @@ describe('browser facade restored-session setup', () => {
             runtime.middleware.session,
             expect.any(String),
             {
+                qosProvider: undefined,
                 deliverySettlements: { ws: expect.any(Function), rtc: expect.any(Function) },
                 diagnosticsPorts: {
+                    submissionReadinessFaultPort: { decideSubmissionReadiness: expect.any(Function) },
                     transportFaultPort: { decideSend: expect.any(Function) },
                     indexedDbOperationObserver: { observe: expect.any(Function) },
                     outboundDiagnostics: expect.any(Function),

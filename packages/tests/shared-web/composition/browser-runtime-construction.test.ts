@@ -1,5 +1,7 @@
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
 import { createBrowserRuntimeFoundation } from '@shared-web/browser/composition/browser-runtime-composition.ts';
+import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -62,6 +64,35 @@ describe('browser runtime construction', () => {
         const foundation = createBrowserRuntimeFoundation();
 
         expect(foundation.connectionRuntime.readMiddleware()).toBeUndefined();
+    });
+
+    it('selects the conformance policy at black-box construction while ordinary facade construction keeps defaults', async () => {
+        const { createBlackBoxBrowserRallarRuntimeDependency } = await import(
+            '@shared-test/black-box-runner/browser/rallar-browser-runtime/browser-rallar-runtime-composition.ts'
+        );
+        const { createRallarFacade } = await import('@shared-web/browser/composition/create-rallar-facade.ts');
+        const message = newALMulticastMessage(
+            'sender',
+            { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'one' },
+            { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            'alm.lifecycle',
+            { marker: 'delivery-lifecycle', specimen: 'supersedence' }
+        );
+        const selectedPolicies: string[] = [];
+        runtime.initialiseMiddleware.mockImplementation(async (_session, _topic, options) => {
+            selectedPolicies.push(
+                normalizeALQosPolicy(message, resolveALQosNormalizationInput(message, { direction: 'outbound' }, options.qosProvider)).effective.supersedence
+                    .algo
+            );
+            return runtime.middleware.middleware;
+        });
+        const blackBox = createBlackBoxBrowserRallarRuntimeDependency();
+        await blackBox.connect();
+        await blackBox.disconnect();
+        const ordinary = createRallarFacade();
+        await ordinary.connect();
+        await ordinary.disconnect();
+        expect(selectedPolicies).toEqual(['latest-wins', 'none']);
     });
 
     it('shares one bounded session observation owner across facades', async () => {

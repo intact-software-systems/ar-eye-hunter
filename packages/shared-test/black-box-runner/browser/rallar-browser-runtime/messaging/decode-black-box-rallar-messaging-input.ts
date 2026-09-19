@@ -201,12 +201,12 @@ function decodeMessageSendOptions(
 }
 
 function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['action']> {
-    if (value === 'drop') {
-        return Either.ofRight('drop');
+    if (value === 'drop' || value === 'not-ready') {
+        return Either.ofRight(value);
     }
     const delayMs = isBlackBoxCommandRecord(value) ? decodeBlackBoxCommandNumber(value.delayMs) : undefined;
     return delayMs === undefined
-        ? toInputIssue('fault.inject.action must be "drop" or an object naming delayMs.')
+        ? toInputIssue('fault.inject.action must be "drop", "not-ready" or an object naming delayMs.')
         : Either.ofRight({ delayMs });
 }
 

@@ -338,7 +338,7 @@ export type RallarBlackBoxTestFaultInjectCommand =
         faultId: string;
         carrier: 'ws' | 'rtc';
         match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
-        action: 'drop' | Readonly<{ delayMs: number; }>;
+        action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
         remaining: number;
     }>;
 

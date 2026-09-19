@@ -137,11 +137,14 @@ function validateFaultActionField(command: RallarBlackBoxTestRecord): readonly C
     if (action === undefined || action === 'drop') {
         return [];
     }
-    if (!isJsonRecordValue(action)) {
-        return [toControlCommandIssue(`${path} must be "drop" or an object with delayMs.`)];
-    }
     if (command.carrier === 'rtc') {
         return [toControlCommandIssue(`${path} must be "drop" on the rtc carrier.`)];
+    }
+    if (action === 'not-ready') {
+        return [];
+    }
+    if (!isJsonRecordValue(action)) {
+        return [toControlCommandIssue(`${path} must be "drop", "not-ready" or an object with delayMs.`)];
     }
     const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultDelayAction;
     return [
