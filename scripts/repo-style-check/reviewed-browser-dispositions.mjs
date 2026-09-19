@@ -244,17 +244,12 @@ export const reviewedBrowserDispositions = Object.freeze([
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
         rule: 'boundary.unknown',
-        symbol: 'consoleWarningPart'
+        symbol: 'toConsoleWarningPart'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
         rule: 'boundary.unknown',
-        symbol: 'classifyConsoleWarning'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
-        rule: 'boundary.unknown',
-        symbol: 'ensurePatch'
+        symbol: 'toConsoleWarning'
     }),
     Object.freeze({
         path:
