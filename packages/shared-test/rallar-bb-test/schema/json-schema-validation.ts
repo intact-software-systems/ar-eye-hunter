@@ -1,3 +1,4 @@
+// The readonly value type retains implicit record assignability for OpenAPI schema consumers.
 export type JsonSchema = Readonly<{
     readonly $schema?: string;
     readonly $ref?: string;
@@ -42,14 +43,17 @@ interface SchemaNodeInput {
     readonly path: string;
     readonly errors: JsonSchemaValidationIssue[];
 }
+
 export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSchemaValidationResult {
     const errors: JsonSchemaValidationIssue[] = [];
     validateNode({ schema, root: schema, value, path: '$', errors });
     return errors.length === 0 ? { ok: true, errors: [] } : { ok: false, errors };
 }
+
 export function formatJsonSchemaValidationErrors(errors: readonly JsonSchemaValidationIssue[]): string {
     return errors.map((error) => `${error.path}: ${error.message}`).join('\n');
 }
+
 function validateNode(input: SchemaNodeInput): void {
     const { schema, value, path, errors } = input;
     const current = schema.$id ? { ...input, root: schema } : input;
@@ -88,6 +92,7 @@ function validateNode(input: SchemaNodeInput): void {
         validateObjectProperties({ ...current, value });
     }
 }
+
 function validateReference(input: SchemaNodeInput): void {
     const reference = input.schema.$ref;
     const name = reference?.startsWith('#/$defs/')
@@ -100,18 +105,24 @@ function validateReference(input: SchemaNodeInput): void {
     }
     validateNode({ ...input, schema });
 }
+
 function validateAlternatives(input: SchemaNodeInput): void {
     const { schema, value, path, errors } = input;
     if (schema.oneOf) {
         const discriminated = toDiscriminatedSchema(schema.oneOf, value);
-        if (discriminated) {
-            validateNode({ ...input, schema: discriminated });
+        if (discriminated?.excludesOtherCandidates) {
+            validateNode({ ...input, schema: discriminated.schema });
             return;
         }
         const matches = schema.oneOf.filter((candidate) =>
             toValidationErrors({ ...input, schema: candidate }).length === 0
         ).length;
-        if (matches !== 1) {
+        if (matches === 0 && discriminated) {
+            // All branches failed: retain actionable errors from the uniquely named branch.
+            // This diagnostic selection must never decide whether the oneOf accepts a value.
+            errors.push(...toValidationErrors({ ...input, schema: discriminated.schema }));
+        }
+        else if (matches !== 1) {
             errors.push({ path, message: `Expected value to match exactly one schema, matched ${matches}.` });
         }
     }
@@ -122,6 +133,7 @@ function validateAlternatives(input: SchemaNodeInput): void {
         errors.push({ path, message: 'Expected value to match at least one schema.' });
     }
 }
+
 function validateBounds(input: SchemaNodeInput): void {
     const { schema, value, path, errors } = input;
     if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) {
@@ -137,9 +149,11 @@ function validateBounds(input: SchemaNodeInput): void {
         errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });
     }
 }
+
 interface SchemaObjectInput extends SchemaNodeInput {
     readonly value: Record<string, unknown>;
 }
+
 function validateObjectProperties(input: SchemaObjectInput): void {
     const { schema, value, path, errors } = input;
     for (const property of schema.required ?? []) {
@@ -175,23 +189,53 @@ function validateObjectProperties(input: SchemaObjectInput): void {
         }
     }
 }
+
 function toValidationErrors(input: SchemaNodeInput): JsonSchemaValidationIssue[] {
     const errors: JsonSchemaValidationIssue[] = [];
     validateNode({ ...input, errors });
     return errors;
 }
-function toDiscriminatedSchema(candidates: readonly JsonSchema[], value: unknown): JsonSchema | undefined {
+
+interface DiscriminatedSchemaSelection {
+    readonly schema: JsonSchema;
+    readonly excludesOtherCandidates: boolean;
+}
+
+function toDiscriminatedSchema(
+    candidates: readonly JsonSchema[],
+    value: unknown
+): DiscriminatedSchemaSelection | undefined {
     if (!isJsonRecordValue(value)) {
         return undefined;
     }
-    if (typeof value.kind === 'string') {
-        return candidates.find((candidate) => candidate.properties?.kind?.const === value.kind);
+    const discriminator = typeof value.kind === 'string'
+        ? 'kind'
+        : typeof value.aggregate === 'string'
+        ? 'aggregate'
+        : undefined;
+    if (discriminator === undefined) {
+        return undefined;
     }
-    if (typeof value.aggregate === 'string') {
-        return candidates.find((candidate) => candidate.properties?.aggregate?.const === value.aggregate);
+    let selected: JsonSchema | undefined;
+    let excludesOtherCandidates = true;
+    for (const candidate of candidates) {
+        const property = candidate.properties?.[discriminator];
+        // References and alternatives return before object properties are checked.
+        // Only directly enforced constants can exclude every other branch.
+        if (candidate.$ref || candidate.oneOf || candidate.anyOf || property?.$ref || property?.const === undefined) {
+            excludesOtherCandidates = false;
+        }
+        if (property?.const !== value[discriminator]) {
+            continue;
+        }
+        if (selected !== undefined) {
+            return undefined;
+        }
+        selected = candidate;
     }
-    return undefined;
+    return selected === undefined ? undefined : { schema: selected, excludesOtherCandidates };
 }
+
 function isExpectedType(value: unknown, expected: string | readonly string[]): boolean {
     if (Array.isArray(expected)) {
         return expected.some((type) => isExpectedType(value, type));

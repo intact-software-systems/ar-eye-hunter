@@ -12,6 +12,16 @@ describe('ALM WS readiness fault command', () => {
         expect(validateAlmControlCommand(command, 'fault.inject')).toEqual([]);
         expect(decodeBlackBoxRallarFaultInput(command).right).toMatchObject({ carrier: 'ws', action: 'not-ready' });
     });
+    it.each([
+        { carrier: 'ws', action: 'drop' },
+        { carrier: 'ws', action: { delayMs: 10 } },
+        { carrier: 'rtc', action: 'drop' }
+    ])('preserves the supported $carrier frame fault $action', ({ carrier, action }) => {
+        const frameFault = { ...command, carrier, action };
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, frameFault).ok).toBe(true);
+        expect(validateAlmControlCommand(frameFault, 'fault.inject')).toEqual([]);
+        expect(decodeBlackBoxRallarFaultInput(frameFault).right).toMatchObject({ carrier, action });
+    });
     it('rejects WS-only readiness and delay on RTC before runtime invocation', () => {
         for (const action of ['not-ready', { delayMs: 10 }]) {
             const rtcCommand = { ...command, carrier: 'rtc', action };

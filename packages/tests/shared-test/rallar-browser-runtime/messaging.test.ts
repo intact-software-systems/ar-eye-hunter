@@ -1,4 +1,8 @@
-import type { BlackBoxRallarConnectDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
+import type {
+    BlackBoxRallarConnectDiagnostics,
+    BlackBoxRallarMessageSendDiagnostics,
+    BlackBoxRallarWsSendDiagnostics
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import {
     decodeBlackBoxRallarSendCommand,
@@ -6,7 +10,7 @@ import {
     decodeBlackBoxRallarWsSendInput
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-send-input.ts';
 import type { RallarMessage } from '@shared-web/browser/messages/rallar-message-contracts.ts';
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     afterEach,
@@ -75,7 +79,8 @@ it('rejects incomplete room identity and unsupported acknowledgement modes at co
 it('applies scoped defaults and reports the connected room reference', async () => {
     const { connection } = await loadConnectedMessageRuntime('messages.rtc');
 
-    expect(facade.records.defaultWrites).toContainEqual({
+    const defaults = facade.records.defaultWrites.at(-1);
+    expect(defaults).toMatchObject({
         applicationId: 'app-1',
         workspaceId: 'workspace-a',
         room: {
@@ -85,15 +90,10 @@ it('applies scoped defaults and reports the connected room reference', async () 
         realtime: {
             laneId: 'realtime'
         },
-        rtc: {},
-        diagnosticsPorts: {
-            transportFaultPort: facade.rallar.diagnostics.faults,
-            indexedDbOperationObserver: facade.rallar.diagnostics.storage,
-            outboundDiagnostics: expect.any(Function),
-            inboundDiagnostics: expect.any(Function),
-            onStorageReset: expect.any(Function)
-        }
+        rtc: {}
     });
+    expect(defaults?.diagnosticsPorts?.submissionReadinessFaultPort).toBe(facade.rallar.diagnostics.faults);
+    expect(defaults?.diagnosticsPorts?.transportFaultPort).toBe(facade.rallar.diagnostics.faults);
     expect(facade.records.roomJoins).toContainEqual(['bb-group', {
         timeoutMs: undefined,
         scope: {
@@ -108,6 +108,24 @@ it('applies scoped defaults and reports the connected room reference', async () 
         },
         roomRef
     });
+});
+
+it('applies a command-injected hold through the configured readiness owner and releases the same fault', async () => {
+    const { runtime } = await loadConnectedMessageRuntime('messages.ws');
+    const ports = facade.records.defaultWrites.at(-1)?.diagnosticsPorts;
+    if (!ports?.submissionReadinessFaultPort || !ports.transportFaultPort) {
+        throw new Error('Scoped connection must install both fault capabilities.');
+    }
+    const message = newALUnicastMessage('sender', { topicId: 'topic', contextId: 'room', resourceId: 'one' }, 'receiver', 'held', {});
+    const serialized = JSON.stringify(message);
+    const fault = { faultId: 'hold', carrier: 'ws', action: 'not-ready', match: { msgId: message.id.msgId }, remaining: 2 };
+    await runtime.injectFault(fault);
+    expect(ports.submissionReadinessFaultPort.decideSubmissionReadiness(serialized)).toBe('not-ready');
+    expect(ports.transportFaultPort.decideSend('ws', serialized)).toEqual({ kind: 'pass' });
+    expect(facade.rallar.diagnostics.faults.getObservations()).toEqual([{ faultId: 'hold', carrier: 'ws', decision: 'not-ready' }]);
+    await runtime.injectFault({ ...fault, remaining: 0 });
+    expect(ports.submissionReadinessFaultPort.decideSubmissionReadiness(serialized)).toBe('ready');
+    await runtime.close();
 });
 
 it('passes the connected room reference through RTC message sends', async () => {
@@ -358,7 +376,7 @@ async function loadConnectedMessageRuntime(
     return { runtime, connection };
 }
 
-async function sendWebSocketMessage(runtime: BlackBoxRallarRuntime) {
+async function sendWebSocketMessage(runtime: BlackBoxRallarRuntime): Promise<BlackBoxRallarWsSendDiagnostics> {
     return await runtime.sendWs({
         applicationId: 'app-1',
         workspaceId: 'workspace-a',
@@ -372,7 +390,7 @@ async function sendWebSocketMessage(runtime: BlackBoxRallarRuntime) {
     });
 }
 
-async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string) {
+async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string): Promise<BlackBoxRallarMessageSendDiagnostics> {
     return await runtime.sendMessage({
         connection: 'aliceRtc',
         carrier: 'rtc-with-ws-fallback',
