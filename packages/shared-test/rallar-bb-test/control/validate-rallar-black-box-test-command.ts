@@ -9,6 +9,7 @@ import {
     type RallarBlackBoxTestCommandKind,
     type RallarBlackBoxTestRecord
 } from '../rallar-black-box-test-contracts.ts';
+import { validateRecipeFields } from '../recipe/validate-recipe-fields.ts';
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_BASE_FIELDS,
@@ -79,12 +80,6 @@ const REQUIRED_FIELDS_WITH_OWN_MESSAGE: {
     'fault.inject': ['match'],
     'director.intent': ['intent']
 };
-const RECIPE_FIELDS_WITH_OWN_MESSAGE:
-    readonly (typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS)['recipe']['required'][number][] = [
-        'schemaVersion',
-        'commands'
-    ];
-
 const UNSUPPORTED_COMMAND_ISSUE = toControlCommandIssue('Command must be an object with a supported kind.');
 
 export function validateRallarBlackBoxTestCommand(value: unknown): ControlCommandValidationResult {
@@ -234,12 +229,8 @@ function validateInlineRecipe(
     if (!isJsonRecordValue(recipe)) {
         return [toControlCommandIssue(`${path} must be an object.`)];
     }
-    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.recipe;
     return [
-        ...validateAllowedFields(recipe, fields, path),
-        ...(recipe.schemaVersion === 1 ? [] : [toControlCommandIssue(`${path}.schemaVersion must be 1.`)]),
-        ...validateRequiredFields({ record: recipe, fields, path, ownMessageFields: RECIPE_FIELDS_WITH_OWN_MESSAGE }),
-        ...validateStringField(recipe, 'recipeId', path),
+        ...validateRecipeFields(recipe, path),
         ...validateCommandList(recipe, `${path}.commands`, depth)
     ];
 }

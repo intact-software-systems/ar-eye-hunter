@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseControlServerMessage } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type { RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
@@ -55,5 +56,107 @@ describe('explicit browser recipe format', () => {
         const unsupported = { ...recipe, schemaVersion: 2 };
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, unsupported).ok).toBe(false);
         expect(unsupported.schemaVersion).toBe(2);
+    });
+});
+
+describe('recipe field admission', () => {
+    it.each(['recipe.load', 'recipe.run'] as const)('rejects malformed fields throughout %s before effects', async (kind) => {
+        const malformed: RallarBlackBoxTestRecipe = {
+            schemaVersion: 1,
+            recipeId: 'malformed',
+            commands: [{ kind: 'health' }]
+        };
+        Object.assign(malformed, { name: 1, description: false, continueOnFailure: 'true', metadata: [] });
+        for (
+            const recipe of [malformed, {
+                schemaVersion: 1 as const,
+                recipeId: 'outer',
+                commands: [{
+                    kind: 'loop' as const,
+                    count: 1,
+                    commands: [{
+                        kind: 'parallel' as const,
+                        groups: [{ commands: [{ kind, recipe: malformed }] }]
+                    }]
+                }]
+            }]
+        ) {
+            const command = { kind, recipe };
+            expect.soft(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(false);
+            const parsed = parseControlServerMessage(
+                JSON.stringify({
+                    kind: 'command',
+                    protocolVersion: 1,
+                    runId: 'run',
+                    agentId: 'agent',
+                    commandId: 'invalid',
+                    command
+                }),
+                { runId: 'run', agentId: 'agent' }
+            );
+            expect.soft(parsed.ok).toBe(false);
+            if (!parsed.ok) {
+                for (const field of ['name', 'description', 'continueOnFailure', 'metadata']) {
+                    expect.soft(parsed.error).toContain(`.${field} must be`);
+                }
+            }
+            const effects: string[] = [];
+            const runtime = createRallarBlackBoxTestRuntime({
+                commandExecutor: async (child) => {
+                    effects.push(child.kind);
+                    return undefined;
+                }
+            });
+            const result = await runtime.execute(command);
+            expect.soft(result.status).toBe('failed');
+            for (const field of ['name', 'description', 'continueOnFailure', 'metadata']) {
+                expect.soft(result.error?.message).toContain(`.${field} must be`);
+            }
+            expect.soft(runtime.state().loadedRecipe).toBeUndefined();
+            expect.soft(effects).toEqual([]);
+        }
+    });
+
+    it.each([false, true])('preserves boolean continuation %s and opaque payloads through the wire', async (continueOnFailure) => {
+        const payload = { recipe: { schemaVersion: 'opaque', continueOnFailure: 'payload' } };
+        const parsed = parseControlServerMessage(
+            JSON.stringify({
+                kind: 'command',
+                protocolVersion: 1,
+                runId: 'run',
+                agentId: 'agent',
+                commandId: 'valid',
+                command: {
+                    kind: 'recipe.run',
+                    recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'valid',
+                        name: '',
+                        description: '',
+                        continueOnFailure,
+                        metadata: { recipe: { schemaVersion: 'opaque' } },
+                        commands: [{ kind: 'rtc.send', send: 'fail' }, { kind: 'rtc.send', send: payload }]
+                    }
+                }
+            }),
+            { runId: 'run', agentId: 'agent' }
+        );
+        expect(parsed.ok).toBe(true);
+        if (!parsed.ok) {
+            return;
+        }
+        const effects: unknown[] = [];
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: async (command) => {
+                if (command.kind !== 'rtc.send') {
+                    return undefined;
+                }
+                effects.push(command.send);
+                return { status: command.send === 'fail' ? 'failed' : 'ok' };
+            }
+        });
+        const result = await runtime.execute(parsed.envelope.command);
+        expect(result.status).toBe(continueOnFailure ? 'ok' : 'failed');
+        expect(effects).toEqual(continueOnFailure ? ['fail', payload] : ['fail']);
     });
 });

@@ -60,7 +60,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private currentState: RallarBlackBoxTestState = createInitialRuntimeState();
     private currentConfig: RallarBlackBoxTestConfig | undefined;
     private loadedRecipe: RallarBlackBoxTestRecipe | undefined;
-    private cancelRequested = false;
+    private activeExecutionCount = 0;
     private cancellationController = new AbortController();
     private recipeExecutionDepth = 0;
 
@@ -93,14 +93,24 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         cachePolicy: ResultCachePolicy
     ): Promise<RallarBlackBoxTestResult> {
         const commandWithId = this.toCommandWithId(command);
-        if (commandWithId.kind !== 'recipe.cancel' && this.currentState.status !== 'running') {
-            this.clearAbortedCancellation();
-        }
         const cached = this.currentState.resultCache[commandWithId.commandId];
         if (cached && cachePolicy === 'replay') {
             return { ...cached, replayed: true };
         }
 
+        if (commandWithId.kind !== 'recipe.cancel') {
+            this.clearAbortedCancellation();
+        }
+        this.activeExecutionCount += 1;
+        try {
+            return await this.runUncachedCommand(commandWithId);
+        }
+        finally {
+            this.activeExecutionCount -= 1;
+        }
+    }
+
+    private async runUncachedCommand(commandWithId: CommandWithId): Promise<RallarBlackBoxTestResult> {
         const startedAtEpochMs = this.dependencies.now();
         this.setState({
             activeCommand: this.toRedacted(commandWithId),
@@ -167,8 +177,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (recipe === undefined || issues.length > 0) {
             return toInvalidRecipeOutcome(issues);
         }
-        this.cancelRequested = false;
-        this.clearAbortedCancellation();
         const deadlineEpochMs = computeCommandDeadlineEpochMs(command, this.dependencies.now());
         this.recipeExecutionDepth += 1;
         try {
@@ -195,7 +203,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private async cancelRecipe(command: CommandOfKind<'recipe.cancel'>): Promise<RallarBlackBoxTestCommandOutcome> {
-        this.cancelRequested = true;
         if (!this.cancellationController.signal.aborted) {
             this.cancellationController.abort(command.reason ?? 'Rallar black-box recipe cancellation requested.');
         }
@@ -225,8 +232,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         this.currentState = createInitialRuntimeState();
         this.currentConfig = undefined;
         this.loadedRecipe = undefined;
-        this.cancelRequested = false;
-        this.clearAbortedCancellation();
         this.notify();
         return outcome
             ? { ...outcome, nextStatus: 'idle' }
@@ -249,7 +254,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     now: this.dependencies.now,
                     sleep: this.dependencies.sleep,
                     cancellationSignal: this.cancellationController.signal,
-                    cancelRequested: () => this.cancelRequested,
+                    cancelRequested: () => this.cancellationController.signal.aborted,
                     currentStatus: () => this.currentState.status,
                     currentEvents: () => this.currentState.events,
                     subscribe: (listener) => this.subscribe(() => listener())
@@ -338,14 +343,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             now: this.dependencies.now,
             sleep: this.dependencies.sleep,
             runChildCommand: (command) => this.runCommand(command, 'bypass'),
-            cancelRequested: () => this.cancelRequested,
+            cancelRequested: () => this.cancellationController.signal.aborted,
             abortSignal: () => this.cancellationController.signal
         };
     }
 
     private clearAbortedCancellation(): void {
-        if (this.cancellationController.signal.aborted) {
-            this.cancelRequested = false;
+        if (this.activeExecutionCount === 0 && this.cancellationController.signal.aborted) {
             this.cancellationController = new AbortController();
         }
     }
