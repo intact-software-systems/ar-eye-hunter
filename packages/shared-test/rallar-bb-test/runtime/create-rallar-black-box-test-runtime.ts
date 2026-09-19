@@ -1,3 +1,5 @@
+import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
+
 import { computeAssertCommandOutcome } from '../assert/compute-assert-command-outcome.ts';
 import { toRallarBlackBoxRuntimeDiagnostic } from '../diagnostics.ts';
 import { LoopCommandExecution } from '../loop/loop-command-execution.ts';
@@ -74,7 +76,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     subscribe(listener: RallarBlackBoxTestStateListener): () => void {
         this.listeners.add(listener);
-        listener(this.currentState);
+        notifyListener(listener, this.currentState);
         return () => {
             this.listeners.delete(listener);
         };
@@ -424,12 +426,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
     private notify(): void {
         for (const listener of this.listeners) {
-            try {
-                void Promise.resolve(listener(this.currentState));
-            }
-            catch (_error) {
-                // State listeners are observational and should not break command execution.
-            }
+            notifyListener(listener, this.currentState);
         }
     }
 
