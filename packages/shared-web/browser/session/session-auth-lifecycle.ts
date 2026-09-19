@@ -1,7 +1,7 @@
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { toAuthSessionKey } from '@shared-web/browser/auth/auth-session-identity.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type {
     RallarAuthRuntimePort,
     RallarConnectionRuntimePort

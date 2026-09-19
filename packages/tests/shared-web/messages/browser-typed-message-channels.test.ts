@@ -1,12 +1,25 @@
+import {
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
+
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
-import { newALBroadcastMessage, newALMulticastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALMulticastMessage,
+    newALRoute
+} from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type * as AuthModule from '@shared/api/auth.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
-import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
@@ -18,7 +31,7 @@ interface GroupSnapshotFixtureScope {
 const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
     return {
-        ctx: createDefaultApiMiddlewareTestDouble(),
+        apiMiddleware: createDefaultApiMiddlewareTestDouble(),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(),
         findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(),
         getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>()
@@ -26,11 +39,11 @@ const mocks = await vi.hoisted(async () => {
 });
 vi.mock(import('@shared-web/browser/connection/initialise-browser-middleware.ts'), async (original): Promise<typeof MiddlewareModule> => ({
     ...await original(),
-    initialiseMiddleware: async () => mocks.ctx.middleware
+    initialiseMiddleware: async () => mocks.apiMiddleware.middleware
 }));
 vi.mock(import('@shared/api/auth.ts'), async (original): Promise<typeof AuthModule> => ({
     ...await original(),
-    readSession: () => mocks.ctx.session,
+    readSession: () => mocks.apiMiddleware.session,
     isLoggedIn: () => true
 }));
 vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async (original): Promise<typeof GroupStateSnapshotsRepositoryModule> => ({
@@ -39,8 +52,8 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async 
     findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
     getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
 }));
-let rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-let webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
 
 interface ChatMessage {
     readonly text: string;
@@ -51,9 +64,9 @@ describe('Rallar typed message channel', () => {
         vi.clearAllMocks();
         configureTestCacheRepositories();
         const { createDefaultApiMiddlewareTestDouble } = await import('../api-middleware-test-double.ts');
-        mocks.ctx = createDefaultApiMiddlewareTestDouble();
-        rtcRxStreamer = vi.mocked(mocks.ctx.middleware.rtcRxStreamer);
-        webSocketQueueBox = vi.mocked(mocks.ctx.middleware.webSocketQueueBox);
+        mocks.apiMiddleware = createDefaultApiMiddlewareTestDouble();
+        rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
+        webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
         mockGroupSnapshots([]);
     });
 
@@ -88,22 +101,24 @@ describe('Rallar typed message channel', () => {
             }
         );
 
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].route).toMatchObject({
+        const rtcMessage = rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0];
+        const wsMessage = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0];
+        expect(rtcMessage.route).toMatchObject({
             topicId: 'room.chat',
             contextId: 'match-1',
             resourceId: 'rtc-message-1'
         });
-        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].payload.typeId).toBe('chat.message.v1');
-        expect(JSON.parse(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].payload.resource)).toEqual({
+        expect(rtcMessage.payload.typeId).toBe('chat.message.v1');
+        expect(JSON.parse(rtcMessage.payload.resource)).toEqual({
             text: 'rtc'
         });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].route).toMatchObject({
+        expect(wsMessage.route).toMatchObject({
             topicId: 'room.chat',
             contextId: 'match-1',
             resourceId: 'ws-message-1'
         });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].payload.typeId).toBe('chat.message.v1');
-        expect(JSON.parse(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].payload.resource)).toEqual({
+        expect(wsMessage.payload.typeId).toBe('chat.message.v1');
+        expect(JSON.parse(wsMessage.payload.resource)).toEqual({
             text: 'ws'
         });
     });
@@ -179,8 +194,21 @@ describe('Rallar typed message channel', () => {
         );
 
         await result.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(result.lifecycle().state).toBe('queued');
+        expect(result.lifecycle()).toMatchObject({
+            state: 'queued',
+            evidence: {
+                admittedDurable: true,
+                attempts: expect.arrayContaining([expect.objectContaining({ carrier: 'rtc', unroutableReason: 'no-route' })])
+            }
+        });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+            id: expect.objectContaining({ msgId: result.msgId }),
+            route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'fallback-1' },
+            payload: expect.objectContaining({ typeId: 'chat.message.v1', resource: '{"text":"fallback"}' }),
+            targets: expect.objectContaining({
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            })
+        }));
     });
 
     it('applies room defaults to typed RTC and WS room message sends', async () => {
@@ -229,12 +257,21 @@ describe('Rallar typed message channel', () => {
         );
 
         await result.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls[0][0].route).toMatchObject({
-            topicId: 'room.chat',
-            contextId: 'room-1',
-            resourceId: 'room-fallback-1'
+        expect(result.lifecycle()).toMatchObject({
+            state: 'queued',
+            evidence: {
+                admittedDurable: true,
+                attempts: expect.arrayContaining([expect.objectContaining({ carrier: 'rtc', unroutableReason: 'no-route' })])
+            }
         });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+            id: expect.objectContaining({ msgId: result.msgId }),
+            route: { topicId: 'room.chat', contextId: 'room-1', resourceId: 'room-fallback-1' },
+            payload: expect.objectContaining({ typeId: 'chat.message.v1', resource: '{"text":"fallback"}' }),
+            targets: expect.objectContaining({
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+            })
+        }));
     });
 
     it('uses WS only for typed channel send when strategy is ws', async () => {
@@ -256,7 +293,14 @@ describe('Rallar typed message channel', () => {
         );
 
         await result.wait({ until: AL_DELIVERY_ADMITTED_STATES });
-        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledTimes(1);
+        expect(result.lifecycle()).toMatchObject({ state: 'queued', evidence: { admittedDurable: true } });
+        expect(webSocketQueueBox.enqueueOutboxIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
+            id: expect.objectContaining({ msgId: result.msgId }),
+            route: { topicId: 'room.chat', contextId: 'all', resourceId: 'ws-only-1' },
+            payload: expect.objectContaining({ typeId: 'chat.message.v1', resource: '{"text":"ws only"}' }),
+            targets: expect.objectContaining({ mode: 'broadcast', scope: 'all' })
+        }));
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
     it('delivers decoded payloads through typed message channel subscriptions', async () => {
@@ -273,10 +317,10 @@ describe('Rallar typed message channel', () => {
         await facade.connect();
 
         const rtcCallback = vi.mocked(
-            mocks.ctx.middleware.rtcRxStreamer.onInboxMessageDo
+            mocks.apiMiddleware.middleware.rtcRxStreamer.onInboxMessageDo
         ).mock.calls.find(([typeId]) => typeId === 'chat.message.v1')?.[1];
         const wsCallback = vi.mocked(
-            mocks.ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo
+            mocks.apiMiddleware.middleware.webSocketQueueBox.onAnyInboxMessageDo
         ).mock.calls.find(([callbackId]) => callbackId === 'rallar:ws:any-message')?.[1];
 
         await rtcCallback?.onMessage(
@@ -334,7 +378,7 @@ describe('Rallar typed message channel', () => {
 });
 
 function mockRtcNoRoute(): void {
-    vi.mocked(mocks.ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
+    vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent)
         .mockImplementation(async (message) => ({
             status: 'no-route',
             verdict: { kind: 'unroutable' as const, reason: 'no-route' as const, detail: `No outbound transport route for message ${message.id.msgId}` },

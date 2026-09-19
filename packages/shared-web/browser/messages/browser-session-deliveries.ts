@@ -1,9 +1,10 @@
-import { toAuthSessionKey } from '@shared-web/browser/auth/auth-session-identity.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type { BrowserDeliverySettlements } from '@shared-web/browser/connection/browser-delivery-settlements.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+
 import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
 
 /** Owns volatile delivery observation for the browser's shared authenticated session. */

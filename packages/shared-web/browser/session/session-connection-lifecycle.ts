@@ -1,4 +1,4 @@
-import { toAuthSessionKey } from '@shared-web/browser/auth/auth-session-identity.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';

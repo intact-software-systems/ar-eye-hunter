@@ -1,10 +1,22 @@
+import {
+    assert,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import { BrowserCallSignalRuntime } from '@shared-web/browser/calls/browser-call-signal-runtime.ts';
 import type { RallarMessage, RallarMessageHandler } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import type { RallarCallHandle, RallarCallSignalEvent, RallarCallSignalPayload, RallarIncomingCallInvite } from '@shared-web/browser/rallar-calls-facade.ts';
+import type {
+    RallarCallHandle,
+    RallarCallSignalEvent,
+    RallarCallSignalPayload,
+    RallarIncomingCallInvite
+} from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarTargetSelector } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { describe, expect, it } from 'vitest';
+
 import { createMessageDelivery } from '../messages/test-message-delivery.ts';
 
 interface CallSignalTestInput {
@@ -42,30 +54,33 @@ describe('BrowserCallSignalRuntime', () => {
         { reason: false },
         { occurredAtEpochMs: NaN }
     ])('rejects malformed known signal fields %j', async (fields) => {
-        let inbound: RallarMessageHandler<unknown> | undefined;
-        const events: RallarCallSignalEvent[] = [];
-        const runtime = createCallSignalRuntime({
-            onSubscribe: (handler) => {
-                inbound = handler;
+        for (const subscription of ['signal', 'invite'] as const) {
+            let inbound: RallarMessageHandler<unknown> | undefined;
+            const events: RallarCallSignalEvent[] = [];
+            const runtime = createDefaultCallSignalRuntime({
+                onSubscribe: (handler) => {
+                    inbound = handler;
+                }
+            }, unsupportedCallOperation);
+            const listener = (event: RallarCallSignalEvent): void => {
+                events.push(event);
+            };
+            if (subscription === 'signal') {
+                runtime.onSignal(listener);
             }
-        }, async () => {
-            throw new Error('Unexpected call start');
-        });
-        runtime.onSignal((event) => {
-            events.push(event);
-        });
-        await inbound?.(toMessage({ ...toInvitePayload(), ...fields }));
-        runtime.onInvite((event) => {
-            events.push(event);
-        });
-        await inbound?.(toMessage({ ...toInvitePayload(), ...fields }));
-        expect(events).toEqual([]);
+            else {
+                runtime.onInvite(listener);
+            }
+            assert(inbound, 'The signal transport must register its ingress callback');
+            await inbound(toMessage({ ...toInvitePayload(), ...fields }));
+            expect(events).toEqual([]);
+        }
     });
 
     it.each([{ toPeerIds: [] }, { toPeerIds: ['session-1'] }])('accepts valid optional absence for recipients %j', async ({ toPeerIds }) => {
         let inbound: RallarMessageHandler<unknown> | undefined;
         const events: RallarCallSignalEvent[] = [];
-        const runtime = createCallSignalRuntime({
+        const runtime = createDefaultCallSignalRuntime({
             onSubscribe: (handler) => {
                 inbound = handler;
             }
@@ -74,14 +89,15 @@ describe('BrowserCallSignalRuntime', () => {
             events.push(event);
         });
         const payload = { kind: 'invite', callId: 'call', fromPeerId: 'other', toPeerIds, occurredAtEpochMs: 1 };
-        await inbound?.(toMessage(payload));
+        assert(inbound, 'The signal transport must register its ingress callback');
+        await inbound(toMessage(payload));
         expect(events).toMatchObject([{ payload }]);
     });
 
     it.each(['session-1', 'unaddressed'])('ignores a self or unaddressed signal from %s', async (fromPeerId) => {
         let inbound: RallarMessageHandler<unknown> | undefined;
         const events: RallarCallSignalEvent[] = [];
-        const runtime = createCallSignalRuntime({
+        const runtime = createDefaultCallSignalRuntime({
             onSubscribe: (handler) => {
                 inbound = handler;
             }
@@ -89,13 +105,14 @@ describe('BrowserCallSignalRuntime', () => {
         runtime.onInvite((event) => {
             events.push(event);
         });
-        await inbound?.(toMessage({ ...toInvitePayload(), fromPeerId, toPeerIds: ['someone-else'] }));
+        assert(inbound, 'The signal transport must register its ingress callback');
+        await inbound(toMessage({ ...toInvitePayload(), fromPeerId, toPeerIds: ['someone-else'] }));
         expect(events).toEqual([]);
     });
 
     it('uses composition time and identity while excluding the sending session', async () => {
         const sent: BrowserCallSignalRuntime.SignalSendInput<unknown>[] = [];
-        const runtime = createCallSignalRuntime({
+        const runtime = createDefaultCallSignalRuntime({
             resolveTargetPeerIds: () => ['session-1', 'peer', 'peer'],
             onSend: (value) => {
                 sent.push(value);
@@ -117,7 +134,7 @@ describe('BrowserCallSignalRuntime', () => {
     it('preserves valid optional signal data and false media flags', async () => {
         let inbound: RallarMessageHandler<unknown> | undefined;
         const events: RallarCallSignalEvent[] = [];
-        const runtime = createCallSignalRuntime({
+        const runtime = createDefaultCallSignalRuntime({
             onSubscribe: (handler) => {
                 inbound = handler;
             }
@@ -126,7 +143,8 @@ describe('BrowserCallSignalRuntime', () => {
             events.push(event);
         });
         const payload = { ...toInvitePayload(), media: { audio: false, video: false, screen: true }, message: 'hello', reason: 'reason' };
-        await inbound?.(toMessage(payload));
+        assert(inbound, 'The signal transport must register its ingress callback');
+        await inbound(toMessage(payload));
         expect(events).toMatchObject([{ payload, media: payload.media, message: 'hello', reason: 'reason', dataLaneIds: ['reliable'] }]);
     });
 
@@ -134,7 +152,7 @@ describe('BrowserCallSignalRuntime', () => {
         let inbound: RallarMessageHandler<unknown> | undefined;
         const startInputs: RallarTargetSelector[] = [];
         const invites: RallarIncomingCallInvite[] = [];
-        const runtime = createCallSignalRuntime({
+        const runtime = createDefaultCallSignalRuntime({
             onSubscribe: (handler) => {
                 inbound = handler;
             }
@@ -146,8 +164,10 @@ describe('BrowserCallSignalRuntime', () => {
             invites.push(invite);
         });
 
-        await inbound?.(toMessage(toInvitePayload()));
-        await invites[0]?.accept();
+        assert(inbound, 'The signal transport must register its ingress callback');
+        await inbound(toMessage(toInvitePayload()));
+        assert(invites[0], 'The validated signal must deliver an invite');
+        await invites[0].accept();
 
         expect(startInputs).toEqual([{
             callId: 'call-1',
@@ -157,7 +177,7 @@ describe('BrowserCallSignalRuntime', () => {
     });
 });
 
-function createCallSignalRuntime(
+function createDefaultCallSignalRuntime(
     input: CallSignalTestInput,
     startCall: BrowserCallSignalRuntime.Input['startCall']
 ): BrowserCallSignalRuntime {

@@ -1,5 +1,66 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Call signals arrive as untrusted WS values. The signal decoder checks every
+    // known field before session/recipient filtering and typed listener delivery.
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toSignalEvent'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'normalizeRallarCallSignalPayload'
+    }),
+    // Serialization captures application-owned JSON before asynchronous connect.
+    // Re-parsing that immutable capture does not confer an application schema.
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/browser-rallar-message-sender.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/browser-rallar-message-sender.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseCapturedPayload'
+    }),
+    // Native RTC frames are decoded before admission and the typed refresh port.
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Test transport ports inject malformed signals and capture opaque outgoing
+    // application payloads; only the production decoder grants a signal type.
+    Object.freeze({
+        path: 'packages/tests/shared-web/calls/browser-call-signal-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-web/calls/browser-call-signal-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createMessages'
+    }),
+    // One concrete Hetzner catalog owns these deployment selections. The 16
+    // named entries compose canonical recipe builders with deployment profiles;
+    // splitting the declarative inventory would obscure its ordered catalog.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/hetzner/hetzner-rtc-manifest-entries.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 16
+    }),
     // Native WebSocket data and open expectations are validated at these
     // exact ingress owners. Completed scoped snapshots have named results;
     // unscoped application values remain opaque capture data.

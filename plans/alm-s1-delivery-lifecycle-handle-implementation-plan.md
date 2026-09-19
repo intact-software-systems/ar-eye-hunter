@@ -71,7 +71,7 @@ while F2c runs in its own slice.
   meaning, stated in the field's comment. At most three positional parameters.
 - One canonical name per type: the browser surface exposes the shared `ALDelivery*` names directly;
   no `RallarMessageDeliveryState = ALDeliveryState` alias.
-- Sizes: no new `file.cognitive-load` pin and no new disposition entry under `packages/shared/alm`
+- Sizes: no new `file.cognitive-load` pin and no new size/cognitive-load disposition entry under `packages/shared/alm`
   or `packages/shared-web/browser/messages`; `packages/shared/alm/outbound` already trips
   `layout.directory-density` (21 files) and `layout.feature-prefix-cluster`, so S1's new shared files
   go under `packages/shared/alm/delivery/`, not the outbound directory; `browser/rallar.ts` stays at

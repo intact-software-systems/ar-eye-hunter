@@ -2994,6 +2994,51 @@ moved or changed test.
         "requiredConstraint": "An authorization loss during the refresh leaves the URL untouched: zero replaces.",
         "failureRationale": "The reconciliation would rewrite the operator’s selection at the moment the console can no longer read the runs behind it, leaving an address bar that matches nothing the operator can see."
       }
+    },
+    {
+      "id": "browser-session-shared-transport-acquisition",
+      "domain": "Browser shared session transport",
+      "owner": "Rallar browser maintainers",
+      "summary": "Two public facades sharing an active auth session acquire one underlying transport while both message handles remain observable.",
+      "semanticCoverage": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts#shares one bounded session observation owner across facades",
+      "coverageRelation": "Both facades send through the production composition; the initializer captures the settlement port and acknowledgements independently settle each handle.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "initialiseMiddleware transport, queue and heartbeat acquisition",
+        "observableEffect": "Opening middleware acquires the browser session transport and starts its owned resources.",
+        "requiredConstraint": "One active browser session acquires the middleware once even when two facades send.",
+        "failureRationale": "Both handles could settle even if a second facade leaked duplicate transports, queues or heartbeats; handle state alone cannot prove shared resource acquisition."
+      }
+    },
+    {
+      "id": "browser-invalid-fallback-no-admission",
+      "domain": "Typed message audience validation",
+      "owner": "Rallar browser maintainers",
+      "summary": "An unsupported all-scope fallback with membership fencing rejects before either carrier can publish.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing",
+      "coverageRelation": "The public room channel rejects both independently specified validation issues and remains disconnected; both carrier admission ports are observed.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocketQueueBox and WebRtcRxStreamerService enqueueOutboxIfAbsent carrier admission ports",
+        "observableEffect": "Carrier admission can retain or publish a message to its resolved audience.",
+        "requiredConstraint": "Unsupported fallback scope or membership fencing must produce no WS or RTC admission.",
+        "failureRationale": "An error response can follow an illicit send; validation errors and disconnected facade state alone do not prove absence of publication."
+      }
+    },
+    {
+      "id": "browser-explicit-ws-strategy-excludes-rtc",
+      "domain": "Typed message carrier selection",
+      "owner": "Rallar browser maintainers",
+      "summary": "A typed channel send explicitly selecting WS publishes the requested WS envelope without RTC admission.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-typed-message-channels.test.ts#uses WS only for typed channel send when strategy is ws",
+      "coverageRelation": "The public channel selects WS; the test checks admitted lifecycle state and captured message identity, route, payload and broadcast scope, then observes the excluded RTC port.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebRtcRxStreamerService.enqueueOutboxIfAbsent",
+        "observableEffect": "An RTC admission creates an additional carrier publication attempt.",
+        "requiredConstraint": "An explicit WS-only send must never enter RTC admission.",
+        "failureRationale": "A correct WS envelope and queued handle can coexist with an erroneous extra RTC send; only exclusion of that carrier proves the selected strategy."
+      }
     }
   ],
   "entries": [
@@ -6802,6 +6847,50 @@ moved or changed test.
       "owner": "Rallar Black Box maintainers",
       "rationale": "The unmade replace is the only witness that the reconciliation stopped instead of rewriting the selection after authorization was lost.",
       "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts#aborts reconciliation when authorization is lost without API replacement"
+    },
+    {
+      "id": "test-structure-coupling-facde9adb0f18552",
+      "path": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-session-shared-transport-acquisition",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The count observes shared external-resource acquisition by two facade consumers, independently corroborated by settlement of both handles.",
+      "semanticCoverage": "packages/tests/shared-web/composition/browser-runtime-construction.test.ts#shares one bounded session observation owner across facades"
+    },
+    {
+      "id": "test-structure-coupling-15952e596b786253",
+      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-invalid-fallback-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The WS admission absence prevents fallback publication to an unsupported audience despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+    },
+    {
+      "id": "test-structure-coupling-63fb37f78610c2ea",
+      "path": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-invalid-fallback-no-admission",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "The RTC admission absence prevents the preferred carrier from publishing despite the public validation rejection.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-rallar-message-sender.test.ts#reports every unsupported fallback constraint before connecting or queueing"
+    },
+    {
+      "id": "test-structure-coupling-a11dc68fc52eaed6",
+      "path": "packages/tests/shared-web/messages/browser-typed-message-channels.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "browser-explicit-ws-strategy-excludes-rtc",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar browser maintainers",
+      "rationale": "Absence at the RTC admission port proves the explicit WS-only selection does not also publish over RTC.",
+      "semanticCoverage": "packages/tests/shared-web/messages/browser-typed-message-channels.test.ts#uses WS only for typed channel send when strategy is ws"
     }
   ]
 }

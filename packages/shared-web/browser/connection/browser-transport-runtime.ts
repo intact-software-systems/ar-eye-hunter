@@ -1,4 +1,4 @@
-import { toAuthSessionKey } from '@shared-web/browser/auth/auth-session-identity.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import {
     initialiseMiddleware,
     type MiddlewareInitOptions
@@ -6,6 +6,7 @@ import {
 import type { ApiMiddleware, RallarBrowserMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
+
 import { BrowserDeliverySettlements } from './browser-delivery-settlements.ts';
 
 export interface BrowserTransportRuntimePort {
