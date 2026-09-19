@@ -28,12 +28,18 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { toALOutboundWorkType } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { RallarValidationError } from '@shared/api/rallar-validation.ts';
 import { createCountingIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 
 import { createBrowserMessageSenderFixture } from '../../shared-web/messages/browser-message-sender-fixture.ts';
-import { createDefaultOutboundTestRuntime, runOutboundWorkTask } from '../../shared/alm/outbound-runtime-test-fixture.ts';
+import {
+    computeOutboundTestAdmission,
+    createDefaultOutboundTestRuntime,
+    holdOutboundClaims,
+    runOutboundWorkTask
+} from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload } from '../../shared/alm/outbound-test-payload.ts';
 import {
     events,
@@ -192,7 +198,7 @@ it('cancels owner attempts, preserves handles on reconnect and ends waits on an 
     }
 });
 
-it('bounds a production pending admission and observes it without additional storage reads', async () => {
+it('observes a retained pending admission without storage reads and wakes on the outbound replay settlement', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     const runtime = await loadRuntime();
     const fixture = createBrowserMessageSenderFixture(64, facade.deliveries);
@@ -215,30 +221,57 @@ it('bounds a production pending admission and observes it without additional sto
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
+    const stores = { admissionStore, workQueue: backend.workQueue };
+    const claims = holdOutboundClaims(stores);
     const outbound = createDefaultOutboundTestRuntime({
         queueEngine: new InboxOutboxEngine(),
-        stores: { admissionStore, workQueue: backend.workQueue },
+        stores,
+        carrier: 'ws',
+        settlements: (settlement) => fixture.registry.record(settlement),
         planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
-    const admissionStored = Promise.withResolvers<void>();
-    const releaseAdmission = Promise.withResolvers<void>();
+    const carrierAdmission = Promise.withResolvers<ALOutboundEnqueueResult>();
+    const commit = admissionStore.commitBundle.bind(admissionStore);
     vi.mocked(fixture.middleware.middleware.webSocketQueueBox.enqueueOutboxIfAbsent).mockImplementation(async (message) => {
-        const admitted = await outbound.enqueueIfAbsent(message);
-        await runOutboundWorkTask(outbound);
-        admissionStored.resolve();
-        await releaseAdmission.promise;
-        return admitted;
+        const competitor = await computeOutboundTestAdmission(admissionStore, {
+            ...message,
+            id: { ...message.id, msgId: 'competing-sender-version' },
+            route: { ...message.route, resourceId: 'competing-sender-version' }
+        });
+        vi.spyOn(admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
+            expect(await commit(competitor)).toBe('committed');
+            const outcome = await commit(bundle);
+            expect(outcome).toBe('conflict');
+            return outcome;
+        });
+        const result = await outbound.enqueueIfAbsent(message);
+        carrierAdmission.resolve(result);
+        return result;
     });
     facade.behavior.typedSend.mockImplementation(async (payload, options) =>
-        await fixture.sender.sendTyped({ ...options, typeId: 'alm.conformance', topicId: 'room.conformance', payload })
+        await fixture.sender.sendTyped({ ...options, ack: 'receiver', typeId: 'alm.conformance', topicId: 'room.conformance', payload })
     );
     await runtime.connect(connection);
     const sending = runtime.sendMessage({ ...send, timeoutMs: 37, ttlMs: 60_000 });
-    await admissionStored.promise;
+    const admission = await carrierAdmission.promise;
+    expect(admission.verdict).toEqual({ kind: 'pending' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'submitted', attempts: 0, enqueued: false });
+    expect(await admissionStore.readSentMessage(admission.message.id.msgId)).toBeUndefined();
+    const retained = await Promise.all((await backend.workQueue.getAllKeys()).map(async (key) => {
+        const entry = await backend.workQueue.getItem(key);
+        return entry?.typeId === toALOutboundWorkType('pending-observation')
+            ? (await admissionStore.readWorkSnapshot(entry)).payload
+            : undefined;
+    }));
+    expect(retained).toContainEqual(
+        expect.objectContaining({ kind: 'admit-message', message: expect.objectContaining({ msgId: admission.message.id.msgId }) })
+    );
     const storageBefore = observer.getCounts();
     expect(storageBefore.byKind.read).toBeGreaterThan(0);
     expect(storageBefore.byKind.write).toBeGreaterThan(0);
+    expect(storageBefore.byKind['work-read']).toBeGreaterThan(0);
     await vi.advanceTimersByTimeAsync(37);
     expect(await sending).toMatchObject({ status: 'submitted' });
     const observing = runtime.observeDelivery({ ...query, state: ['acknowledged'], timeoutMs: 100 });
@@ -246,11 +279,23 @@ it('bounds a production pending admission and observes it without additional sto
     await vi.advanceTimersByTimeAsync(100);
     await timedOut;
     expect(observer.getCounts()).toEqual(storageBefore);
-    releaseAdmission.resolve();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(await runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 100 })).toMatchObject({ state: 'queued', enqueued: true, attempts: 0 });
-    expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', enqueued: true, attempts: 0 });
+    const replayed = runtime.observeDelivery({ ...query, state: ['queued'], timeoutMs: 1_000 });
+    let settled = false;
+    void replayed.then(() => {
+        settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(settled).toBe(false);
     expect(observer.getCounts()).toEqual(storageBefore);
+    const releasing = claims.release();
+    await vi.advanceTimersByTimeAsync(1);
+    await releasing;
+    await runOutboundWorkTask(outbound);
+    expect(settled).toBe(true);
+    expect(await replayed).toMatchObject({ state: 'queued', enqueued: true });
+    expect(await admissionStore.readSentMessage(admission.message.id.msgId)).toBeDefined();
+    expect(observer.getCounts().total).toBeGreaterThan(storageBefore.total);
+    expect(await runtime.readReceipts(query)).toMatchObject({ enqueued: true });
 });
 
 it.each(AL_DELIVERY_STATES)('decodes the shared %s state and returns a lost observation', async (state) => {

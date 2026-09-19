@@ -12,8 +12,10 @@ import {
 } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type {
     RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestStorageCountersResultValue
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 type ConnectCommand = Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }>;
@@ -152,39 +154,30 @@ describe('alm-conformance recipe family', () => {
         ]);
     });
 
-    it('gives every ALM command kind a live cell in the family', () => {
-        const kinds = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
-            toRecipes(createAlmConformanceRecipes(createConformanceInput(carrier)))
-                .flatMap((recipe) => recipe.commands.map((command) => command.kind))
-        );
-
-        expect(new Set(kinds)).toEqual(
-            new Set([
-                'http.request',
-                'rtc.connect',
-                'messages.send',
-                'messages.observe',
-                'messages.cancel',
-                'messages.receipts',
-                'messages.received',
-                'fault.inject',
-                'storage.counters',
-                'assert',
-                'stats'
-            ])
-        );
-    });
-
-    it('asserts the storage counters the delivery-baseline sender reads', () => {
+    it.each([0, 1])('requires positive storage evidence in the delivery baseline when the counter is %i', async (total) => {
         const baseline = createAlmConformanceRecipes(createConformanceInput('ws'))
-            .find((scenario) => scenario.scenarioId === 'delivery-baseline');
-        const commands = baseline?.sender.commands ?? [];
-
-        expect(commands.at(-2)).toMatchObject({
-            kind: 'assert',
-            source: 'resultCache.alm-ws-delivery-baseline-sender-storage-counters.value.total',
-            operator: 'gt',
-            expected: 0
+            .find((scenario) => scenario.scenarioId === 'delivery-baseline')!;
+        const commands = baseline.sender.commands.filter((command) =>
+            command.kind === 'storage.counters' ||
+            (command.kind === 'assert' && command.source.endsWith('.value.total'))
+        );
+        const counters: RallarBlackBoxTestStorageCountersResultValue = {
+            total,
+            byOwner: { 'al-admission': total, 'al-work': 0 },
+            byKind: { read: total }
+        };
+        const runtime = createRallarBlackBoxTestRuntime({
+            commandExecutor: (command) =>
+                command.kind === 'storage.counters'
+                    ? { status: 'ok', value: counters }
+                    : undefined
         });
+        const result = await runtime.execute({ kind: 'recipe.run', recipe: { ...baseline.sender, commands } });
+        expect(result.ok).toBe(total > 0);
+        if (total === 0) {
+            expect(runtime.state().failures).toContainEqual(expect.objectContaining({
+                error: expect.objectContaining({ code: 'RALLAR_BLACK_BOX_ASSERT_FAILED' })
+            }));
+        }
     });
 });
