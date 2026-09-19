@@ -127,12 +127,14 @@ export function decodeBlackBoxRallarFaultInput(
             }
             return decodeFaultMatch(value.match).flatMap(
                 (issue) => Either.ofLeft(issue),
-                (match) => {
-                    const remaining = decodeBlackBoxCommandNumber(value.remaining);
-                    return remaining === undefined
-                        ? toInputIssue('fault.inject.remaining is required.')
-                        : Either.ofRight({ faultId, carrier, match, action, remaining });
-                }
+                (match) =>
+                    decodeFaultRemaining(value.remaining).mapRight((remaining) => ({
+                        faultId,
+                        carrier,
+                        match,
+                        action,
+                        remaining
+                    }))
             );
         }
     );
@@ -208,6 +210,17 @@ function decodeFaultAction(value: unknown): Either<BlackBoxRallarInputIssue, Scr
     return delayMs === undefined
         ? toInputIssue('fault.inject.action must be "drop", "not-ready" or an object naming delayMs.')
         : Either.ofRight({ delayMs });
+}
+
+function decodeFaultRemaining(value: unknown): Either<BlackBoxRallarInputIssue, ScriptedTransportFault['remaining']> {
+    if (value === 'until-cleared') {
+        return Either.ofRight(value);
+    }
+    const numericInput = typeof value === 'string' ? decodeBlackBoxCommandString(value) : value;
+    const remaining = decodeBlackBoxCommandNumber(numericInput);
+    return remaining === undefined
+        ? toInputIssue('fault.inject.remaining is required.')
+        : Either.ofRight(remaining);
 }
 
 function decodeFaultMatch(value: unknown): Either<BlackBoxRallarInputIssue, TransportFaultMatch> {

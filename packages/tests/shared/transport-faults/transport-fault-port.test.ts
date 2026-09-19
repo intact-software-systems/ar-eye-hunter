@@ -49,6 +49,36 @@ const dataFrame = JSON.stringify(newALUntargetedMessage(
 ));
 
 describe('transport fault port', () => {
+    it.each(['ws', 'rtc'] as const)('holds matching %s traffic until explicit replacement or clear', (carrier) => {
+        const port = createScriptedTransportFaultPort();
+        const fault = {
+            faultId: 'held',
+            carrier,
+            match: { controlType: undefined, typeId: 'chat', msgId: undefined },
+            action: carrier === 'ws' ? 'not-ready' as const : 'drop' as const,
+            remaining: 'until-cleared' as const
+        };
+        port.inject(fault);
+        for (let attempt = 0; attempt < 150; attempt += 1) {
+            if (carrier === 'ws') {
+                expect(port.decideSubmissionReadiness(dataFrame)).toBe('not-ready');
+                expect(port.decideSubmissionReadiness(ackFrame)).toBe('ready');
+            }
+            else {
+                expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'drop', faultId: 'held' });
+                expect(port.decideSend('rtc', ackFrame)).toEqual({ kind: 'pass' });
+                expect(port.decideSend('ws', dataFrame)).toEqual({ kind: 'pass' });
+            }
+        }
+        port.inject({ ...fault, remaining: 0 });
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('ready');
+        expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'pass' });
+        port.inject(fault);
+        port.clear();
+        expect(port.decideSubmissionReadiness(dataFrame)).toBe('ready');
+        expect(port.decideSend('rtc', dataFrame)).toEqual({ kind: 'pass' });
+    });
+
     it('passes everything through by default', () => {
         const port = createPassThroughTransportFaultPort();
         expect(port.decideSend('ws', ackFrame)).toEqual({ kind: 'pass' });

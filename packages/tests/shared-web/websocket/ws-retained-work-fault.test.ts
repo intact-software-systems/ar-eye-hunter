@@ -36,7 +36,7 @@ describe('WS retained-work faults', () => {
             faultId: 'hold',
             carrier: 'ws',
             action: 'not-ready',
-            remaining: 100,
+            remaining: 'until-cleared',
             match: { typeId: 'alm.lifecycle', msgId: undefined, controlType: undefined }
         } as const;
         faults.inject(fault);
@@ -94,7 +94,7 @@ describe('WS retained-work faults', () => {
             faultId: 'hold-original',
             carrier: 'ws',
             action: 'not-ready',
-            remaining: 100,
+            remaining: 'until-cleared',
             match: { typeId: 'held.message', msgId: undefined, controlType: undefined }
         } as const;
         faults.inject(fault);

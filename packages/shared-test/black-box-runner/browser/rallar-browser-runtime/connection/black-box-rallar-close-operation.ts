@@ -82,7 +82,7 @@ export class BlackBoxRallarCloseOperation {
                 authentication.clear();
                 throw error;
             }
-        }, activeCrdtOpens);
+        }, activeCrdtOpens).finally(() => this.#input.rallar.diagnostics.faults.clear());
     };
 
     #resolveCloseConfig(

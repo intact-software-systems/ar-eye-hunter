@@ -44,7 +44,7 @@ export function toBoundedTail<T>(values: readonly T[], limit: number | undefined
     return values.slice(Math.max(0, values.length - Math.floor(limit)));
 }
 
-function toProtectedRuntimeCommandIds(
+export function toProtectedRuntimeCommandIds(
     runId: string,
     distributedRuns: Iterable<ControlDistributedRunState>
 ): Set<string> {

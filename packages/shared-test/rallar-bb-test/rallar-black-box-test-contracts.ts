@@ -1,6 +1,7 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
     'recipe.load',
@@ -339,7 +340,7 @@ export type RallarBlackBoxTestFaultInjectCommand =
         carrier: 'ws' | 'rtc';
         match: Readonly<{ controlType?: 'ack' | 'nack' | 'repair'; typeId?: string; msgId?: string; }>;
         action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
-        remaining: number;
+        remaining: ScriptedTransportFault['remaining'];
     }>;
 
 export type RallarBlackBoxTestStorageCountersCommand =
@@ -931,6 +932,7 @@ export interface RallarBlackBoxTestMessagesObserveResultValue {
     readonly handleId: string;
     readonly state: ALDeliveryState;
     readonly submitted: boolean;
+    readonly enqueued: boolean;
     readonly confirmedHopPeerIds: readonly string[];
     readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;

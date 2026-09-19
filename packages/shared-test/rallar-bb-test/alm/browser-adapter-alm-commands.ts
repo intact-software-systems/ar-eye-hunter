@@ -521,6 +521,7 @@ function decodeAlmDeliveryResultValue(
         handleId: requireAlmStringField(record, path, 'handleId'),
         state: requireAlmDeliveryState(record, path, 'state'),
         submitted: requireAlmBooleanField(record, path, 'submitted'),
+        enqueued: requireAlmBooleanField(record, path, 'enqueued'),
         confirmedHopPeerIds: requireAlmStringListField(record, path, 'confirmedHopPeerIds'),
         unconfirmedHopPeerIds: requireAlmStringListField(record, path, 'unconfirmedHopPeerIds'),
         attempts: requireAlmNumberField(record, path, 'attempts'),

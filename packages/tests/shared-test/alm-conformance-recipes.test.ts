@@ -104,7 +104,7 @@ describe('alm-conformance recipe family', () => {
                     .flatMap((recipe) => recipe.commands.flatMap(toRoutedTypeIds));
 
                 expect(routed.length).toBeGreaterThan(0);
-                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${scenario.scenarioId}`]));
+                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${carrier}.${scenario.scenarioId}`]));
             }
         }
     });
@@ -143,10 +143,11 @@ describe('alm-conformance recipe family', () => {
             createAlmConformanceRecipes(createConformanceInput('ws'))
                 .filter((scenario) => scenario.tags.includes('smoke'))
                 .map((scenario) => scenario.scenarioId)
-        ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline']);
+        ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle']);
         expect(
             createAlmConformanceRecipes(createConformanceInput('rtc')).map((scenario) => scenario.tags)
         ).toEqual([
+            ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],
             ['smoke', 'full'],

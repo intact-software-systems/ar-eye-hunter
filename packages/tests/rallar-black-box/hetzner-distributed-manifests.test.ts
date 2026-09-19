@@ -711,20 +711,20 @@ describe('Hetzner distributed manifest catalog', () => {
                 resumeCompletedCommandIds: []
             })),
             commands: [
-                controlCommand(controlRunId, 'controller-01', 'stage-controller-01', 1_210, 40),
-                controlCommand(controlRunId, 'controller-02', 'stage-controller-02', 1_220, 60),
-                controlCommand(controlRunId, 'controller-01', 'start-controller-01', 2_010, 180),
-                controlCommand(controlRunId, 'controller-02', 'start-controller-02', 2_020, 420)
+                controlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
+                controlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
+                controlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
+                controlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
             ],
             results: [
-                controlResult(controlRunId, 'controller-01', 'stage-controller-01', 1_250, 40),
-                controlResult(controlRunId, 'controller-02', 'stage-controller-02', 1_280, 60),
-                controlResult(controlRunId, 'controller-01', 'start-controller-01', 2_190, 180),
-                controlResult(controlRunId, 'controller-02', 'start-controller-02', 2_440, 420)
+                controlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
+                controlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
+                controlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
+                controlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
             ],
             events: [
-                controlEvent(controlRunId, 'controller-01', 'start-controller-01', 'rtc.started', 2_050),
-                controlEvent(controlRunId, 'controller-02', 'start-controller-02', 'rtc.started', 2_060)
+                controlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
+                controlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
             ],
             stats: [],
             reports: [],
@@ -1036,12 +1036,13 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(entry?.manifest.metadata).toMatchObject({
             family: 'alm-conformance',
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+            scenarios: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
         });
 
         const rtcConnects = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        expect(rtcConnects.length).toBeGreaterThan(0);
+        expect(rtcConnects).toHaveLength(2);
+        expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
     });
 
@@ -1072,7 +1073,15 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 });
 
-function controlCommand(runId: string, agentId: string, commandId: string, queuedAtEpochMs: number, durationMs: number) {
+interface ControlCommandInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly queuedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+function controlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput) {
     return {
         envelope: {
             kind: 'command',
@@ -1093,7 +1102,15 @@ function controlCommand(runId: string, agentId: string, commandId: string, queue
     };
 }
 
-function controlResult(runId: string, agentId: string, commandId: string, endedAtEpochMs: number, durationMs: number) {
+interface ControlResultInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly endedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+function controlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput) {
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -1114,13 +1131,15 @@ function controlResult(runId: string, agentId: string, commandId: string, endedA
     };
 }
 
-function controlEvent(
-    runId: string,
-    agentId: string,
-    commandId: string,
-    topic: string,
-    atEpochMs: number
-) {
+interface ControlEventInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly topic: string;
+    readonly atEpochMs: number;
+}
+
+function controlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEventInput) {
     return {
         kind: 'event',
         protocolVersion: 1,

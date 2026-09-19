@@ -758,8 +758,9 @@ it.each(
         deadlineMs: 18_000
     }).find((entry) => entry.scenarioId === scenarioId)!;
     const commands = scenario.sender.commands.filter((command) =>
-        command.kind === 'messages.send' || command.kind === 'messages.observe' ||
-        (command.kind === 'assert' && !command.source.includes('storage-counters'))
+        command.kind === 'messages.send' ||
+        (command.kind === 'messages.observe' && command.commandId?.includes('observe-admitted')) ||
+        (command.kind === 'assert' && command.commandId?.includes('assert-admitted'))
     );
     const running = runtime.execute({ kind: 'recipe.run', commandId: 'conformance', recipe: { ...scenario.sender, commands } });
     await vi.advanceTimersByTimeAsync(3_000);

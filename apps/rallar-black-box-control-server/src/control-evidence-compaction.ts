@@ -1,13 +1,35 @@
 import type { ControlEventEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
+    RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
-type GroupAssertionEvidenceSource = Pick<ControlDistributedRunSnapshot, 'manifest' | 'commandLinks'>;
+type DistributedAssessmentEvidenceSource = Pick<ControlDistributedRunSnapshot, 'manifest' | 'commandLinks'>;
+
+export interface StoredControlResultInput {
+    readonly envelope: ControlResultEnvelope;
+    readonly command: RallarBlackBoxTestCommand | undefined;
+    readonly preserveReloadEvidence: boolean;
+    readonly distributedRuns: Iterable<
+        Pick<ControlDistributedRunSnapshot, 'manifest' | 'commandLinks' | 'controlRunId'>
+    >;
+}
+
+/** One compaction decision for ordinary results and completed reload roots; retention bounds remain separately owned. */
+export function toStoredControlResultEnvelope(input: StoredControlResultInput): ControlResultEnvelope {
+    const { envelope } = input;
+    const assessmentOwnsResult = Array.from(input.distributedRuns).some((distributedRun) =>
+        distributedRun.controlRunId === envelope.runId &&
+        toDistributedAssessmentEvidenceCommandIds(distributedRun).includes(envelope.commandId)
+    );
+    return input.preserveReloadEvidence || isAlmConformanceRecipeCommand(input.command) || assessmentOwnsResult
+        ? envelope
+        : toCompactedResultEnvelope(envelope);
+}
 
 const COMPACTED_CHILD_FAILURE_LIMIT = 20;
 
@@ -48,13 +70,23 @@ export function toCompactedResultEnvelope(envelope: ControlResultEnvelope): Cont
     };
 }
 
-export function toGroupAssertionEvidenceCommandIds(distributedRun: GroupAssertionEvidenceSource): readonly string[] {
-    if ((distributedRun.manifest.groupAssertions?.length ?? 0) === 0) {
+export function toDistributedAssessmentEvidenceCommandIds(
+    distributedRun: DistributedAssessmentEvidenceSource
+): readonly string[] {
+    if (
+        (distributedRun.manifest.groupAssertions?.length ?? 0) === 0 &&
+        distributedRun.manifest.metadata.family !== 'alm-conformance'
+    ) {
         return [];
     }
     return distributedRun.commandLinks
         .filter((link) => link.phase === 'start')
         .map((link) => link.commandId);
+}
+
+/** Keep local ALM roots intact within normal finite result limits; only distributed owners extend those limits. */
+export function isAlmConformanceRecipeCommand(command: RallarBlackBoxTestCommand | undefined): boolean {
+    return command?.kind === 'recipe.run' && command.recipe?.metadata?.profile === 'alm-conformance';
 }
 
 function toCompactedReportPayload(payload: ControlEventEnvelope['payload']): ControlEventEnvelope['payload'] {

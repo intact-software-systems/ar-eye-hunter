@@ -52,9 +52,8 @@ import {
 } from './control-command-queue-policy.ts';
 import {
     toCompactedControlReport,
-    toCompactedResultEnvelope,
     toControlReportDedupeKey,
-    toGroupAssertionEvidenceCommandIds
+    toStoredControlResultEnvelope
 } from './control-evidence-compaction.ts';
 import { trimControlReportDedupeKeys, trimControlRunEvidence } from './control-runtime-retention.ts';
 import {
@@ -502,7 +501,7 @@ export class RallarBlackBoxControlService {
             agent.commandEnqueueTimestamps = [];
         }
         this.touch(run);
-        return toControlRunSnapshot(run, {});
+        return toControlRunSnapshot(run, {}, this.distributedRuns.values());
     }
 
     deleteRun(runId: string): boolean {
@@ -524,7 +523,7 @@ export class RallarBlackBoxControlService {
     createRetentionPlan(maxRuns: number | undefined): ControlRetentionPlan {
         return planControlRunRetention({
             maxRuns,
-            runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, {})),
+            runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, {}, this.distributedRuns.values())),
             distributedRuns: Array.from(this.distributedRuns.values(), toPassiveDistributedRunSnapshot),
             fleetReports: Array.from(this.fleetReports.values()),
             runSafety: Array.from(this.runs.values(), toControlRetentionRunSafety)
@@ -557,7 +556,10 @@ export class RallarBlackBoxControlService {
 
     snapshot(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
-            runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, bounds)),
+            runs: Array.from(
+                this.runs.values(),
+                (run) => toControlRunSnapshot(run, bounds, this.distributedRuns.values())
+            ),
             distributedRuns: this.listDistributedRuns(),
             fleetReports: this.listFleetReports({}).reports
         };
@@ -565,7 +567,10 @@ export class RallarBlackBoxControlService {
 
     snapshotForPersistence(bounds: ControlRunSnapshotBounds = {}): ControlServerSnapshot {
         return {
-            runs: Array.from(this.runs.values(), (run) => toControlRunSnapshot(run, bounds)),
+            runs: Array.from(
+                this.runs.values(),
+                (run) => toControlRunSnapshot(run, bounds, this.distributedRuns.values())
+            ),
             distributedRuns: this.listDistributedRuns(),
             fleetReports: Array.from(this.fleetReports.values())
         };
@@ -576,7 +581,7 @@ export class RallarBlackBoxControlService {
         if (run) {
             this.advanceReloadRecipes(run);
         }
-        return run ? toControlRunSnapshot(run, bounds) : undefined;
+        return run ? toControlRunSnapshot(run, bounds, this.distributedRuns.values()) : undefined;
     }
 
     snapshotCommand(runId: string, commandId: string): ControlQueuedCommandSnapshot | undefined {
@@ -678,9 +683,12 @@ export class RallarBlackBoxControlService {
         agent.resumeCompletedCommandIds.delete(envelope.commandId);
         run.results.set(
             envelope.commandId,
-            owner || this.isGroupAssertionEvidenceCommand(envelope.runId, envelope.commandId)
-                ? envelope
-                : toCompactedResultEnvelope(envelope)
+            toStoredControlResultEnvelope({
+                envelope,
+                command: queued?.envelope.command,
+                preserveReloadEvidence: owner !== undefined,
+                distributedRuns: this.distributedRuns.values()
+            })
         );
 
         const command = run.commands.get(envelope.commandId);
@@ -727,9 +735,12 @@ export class RallarBlackBoxControlService {
     ): void {
         const completion = computeControlRecipeReloadCompletionWrite(
             { root, run, nowEpochMs: this.dependencies.now() },
-            this.isGroupAssertionEvidenceCommand(run.runId, envelope.commandId)
-                ? envelope
-                : toCompactedResultEnvelope(envelope)
+            toStoredControlResultEnvelope({
+                envelope,
+                command: root.envelope.command,
+                preserveReloadEvidence: false,
+                distributedRuns: this.distributedRuns.values()
+            })
         );
         for (const command of completion.commands) {
             run.commands.set(command.envelope.commandId, command);
@@ -774,16 +785,6 @@ export class RallarBlackBoxControlService {
         run.reportKeys.add(reportKey);
         trimControlReportDedupeKeys(run);
         return true;
-    }
-
-    // Group assertions read per-command evidence out of start-phase recipe
-    // results after completion, so those envelopes keep their full composite
-    // value instead of the compacted resultCount projection.
-    private isGroupAssertionEvidenceCommand(runId: string, commandId: string): boolean {
-        return Array.from(this.distributedRuns.values()).some((distributedRun) =>
-            distributedRun.controlRunId === runId &&
-            toGroupAssertionEvidenceCommandIds(distributedRun).includes(commandId)
-        );
     }
 
     private refreshDistributedTargetResolution(distributedRun: ControlDistributedRunState): void {

@@ -599,7 +599,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
                 carrier: { const: carrier },
                 match: faultMatchSchema,
                 action: carrier === 'ws' ? faultActionSchema : { const: 'drop' },
-                remaining: numberSchema
+                remaining: { oneOf: [numberSchema, { const: 'until-cleared' }] }
             })
         )
     },

@@ -33,7 +33,7 @@ export interface ScriptedTransportFault {
     readonly carrier: TransportFaultCarrier;
     readonly match: TransportFaultMatch;
     readonly action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
-    readonly remaining: number;
+    readonly remaining: number | 'until-cleared';
 }
 
 export interface TransportFaultObservation {
@@ -127,7 +127,7 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
         }
         for (const fault of this.faults.values()) {
             if (
-                fault.carrier === carrier && fault.remaining > 0 &&
+                fault.carrier === carrier && (fault.remaining === 'until-cleared' || fault.remaining > 0) &&
                 (fault.action === 'not-ready') === (stage === 'readiness') && matchesFault(fault.match, facts)
             ) {
                 return fault;
@@ -137,7 +137,9 @@ class ScriptedTransportFaults implements ScriptedTransportFaultPort {
     }
 
     private consumeFault(fault: ScriptedTransportFault, decision: TransportFaultObservation['decision']): void {
-        this.faults.set(fault.faultId, { ...fault, remaining: fault.remaining - 1 });
+        if (fault.remaining !== 'until-cleared') {
+            this.faults.set(fault.faultId, { ...fault, remaining: fault.remaining - 1 });
+        }
         this.observations.push({ faultId: fault.faultId, carrier: fault.carrier, decision });
     }
 }

@@ -1,6 +1,8 @@
 import { expect, test, type TestInfo } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
+import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 
 import {
     ALM_CONFORMANCE_CARRIERS,
@@ -124,6 +126,25 @@ async function runAlmConformanceScenarios(
             .toBe(true);
         expect.soft(outcome.sender.ok, `${scenario.scenarioId} sender: ${outcome.sender.summary}`)
             .toBe(true);
+        if (scenario.scenarioId === 'delivery-lifecycle') {
+            const snapshot = await run.readSnapshot();
+            const issues = assessAlmConformanceIdentity({
+                runId: run.runId,
+                participants: (['sender', 'receiver'] as const).map((role) => {
+                    const commandId = outcome[role].commandId;
+                    const recorded = snapshot.results?.find((result) => result.commandId === commandId);
+                    const decoded = parseControlClientMessage(recorded);
+                    return {
+                        role,
+                        agentId: run[role].agentId,
+                        recipe: scenario[role],
+                        commandId,
+                        result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
+                    };
+                })
+            });
+            expect.soft(issues, 'ALM actual sender/receiver identity evidence').toEqual([]);
+        }
     }
 }
 

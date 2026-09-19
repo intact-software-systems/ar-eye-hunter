@@ -36,7 +36,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (bounded rejection, deadline expiry, delivery ' +
-            'baseline, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
+            'baseline, lifecycle, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender'),
@@ -85,8 +85,34 @@ function toAlmConformanceCombinedRecipe(
         name: `ALM conformance ${role} across ws, rtc, and rtc-with-ws-fallback carriers`,
         continueOnFailure: false,
         metadata: { profile: 'alm-conformance', role },
-        commands: scenarios.flatMap((scenario) => scenario[role].commands)
+        commands: toAlmConformanceCombinedCommands(scenarios, role)
     };
+}
+
+/** One ready scoped connection observes early frames while independent roles finish their absence windows. */
+function toAlmConformanceCombinedCommands(
+    scenarios: readonly AlmConformanceScenario[],
+    role: 'sender' | 'receiver'
+): RallarBlackBoxTestRecipe['commands'] {
+    const rtc = scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!;
+    const prologue = rtc[role].commands.filter((command) =>
+        command.kind === 'http.request' || command.kind === 'rtc.connect'
+    ).map((command) =>
+        command.kind === 'rtc.connect'
+            ? {
+                ...command,
+                rallar: { ...command.rallar, messageSelector: { topicId: 'room.alm-conformance' } }
+            }
+            : command
+    );
+    return [
+        ...prologue,
+        ...scenarios.flatMap((scenario) =>
+            scenario[role].commands.filter((command) =>
+                command.kind !== 'http.request' && command.kind !== 'rtc.connect'
+            )
+        )
+    ];
 }
 
 function toAlmConformanceScenarioIds(

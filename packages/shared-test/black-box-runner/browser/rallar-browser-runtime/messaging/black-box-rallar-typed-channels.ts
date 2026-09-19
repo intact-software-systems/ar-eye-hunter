@@ -1,4 +1,5 @@
 import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
 import type { RallarMessage, RallarTypedMessageChannel } from '@shared-web/browser/rallar.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -50,6 +51,16 @@ export class BlackBoxRallarTypedChannels {
             roomId: config.roomId,
             roomRef: route.roomRef
         });
+        const selector = config.rallar.messageSelector
+            ? normalizeRallarMessageSelector(config.rallar.messageSelector)
+            : undefined;
+        if (
+            selector && (selector.typeId === undefined || selector.typeId === route.typeId) &&
+            (selector.topicId === undefined || selector.topicId === route.topicId)
+        ) {
+            this.#subscribeSelector(config);
+            return channel;
+        }
         const key = JSON.stringify({ kind: 'typed', typeId: route.typeId, topicId: route.topicId });
         this.#input.resources.ensureWsSubscription(key, () => {
             const unsubscribeWs = channel.onWs((_payload, message) => {
@@ -73,10 +84,37 @@ export class BlackBoxRallarTypedChannels {
 
     /** A receiver that only connects still needs the inbound topics a send would otherwise install. */
     subscribe(config: BlackBoxRallarConnectionConfig): void {
+        if (config.rallar.messageSelector) {
+            this.#subscribeSelector(config);
+            return;
+        }
         this.open(config, {
             typeId: resolveBlackBoxRallarTypeId(config),
             topicId: resolveBlackBoxRallarTopicId(config),
             roomRef: blackBoxRallarRoomRefOf(config)
+        });
+    }
+
+    /** A combined recipe keeps its authored topic selector across all generated message types. */
+    #subscribeSelector(config: BlackBoxRallarConnectionConfig): void {
+        const selector = config.rallar.messageSelector!;
+        const key = JSON.stringify({ kind: 'selector', selector });
+        this.#input.resources.ensureWsSubscription(key, () => {
+            const unsubscribeWs = this.#input.messages.ws.onMessage<RallarMessagePayload>(selector, (message) => {
+                this.#recordMessage({ config, topic: 'rallar.browser.ws.message', transport: 'ws', message });
+            });
+            const unsubscribeRtc = this.#input.messages.rtc.onMessage<RallarMessagePayload>(selector, (message) => {
+                this.#recordMessage({
+                    config,
+                    topic: 'rallar.browser.messages.rtc.message',
+                    transport: 'messages.rtc',
+                    message
+                });
+            });
+            return () => {
+                unsubscribeWs();
+                unsubscribeRtc();
+            };
         });
     }
 

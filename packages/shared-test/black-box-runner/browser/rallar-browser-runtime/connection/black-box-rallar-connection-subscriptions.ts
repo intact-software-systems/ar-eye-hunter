@@ -63,7 +63,8 @@ export class BlackBoxRallarConnectionSubscriptions {
     subscribeMessagesRtc(subscription: BlackBoxRallarConnectionSubscriptions.Subscription): (() => void) | undefined {
         const { config, session } = subscription;
         const transport = resolveBlackBoxRallarTransport(config);
-        if (transport !== 'messages.rtc') {
+        // Explicit selectors use the canonical typed envelope owner for both carriers.
+        if (transport !== 'messages.rtc' || config.rallar.messageSelector) {
             return undefined;
         }
         return this.#input.rallar.messages.rtc.onMessage(resolveBlackBoxRallarMessageSelector(config), (message) => {

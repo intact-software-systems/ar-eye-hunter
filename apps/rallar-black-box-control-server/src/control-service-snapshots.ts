@@ -13,12 +13,13 @@ import type { RallarBlackBoxTestRedactionOptions } from '@shared-test/rallar-bb-
 
 import { toControlCommandFingerprint } from './control-command-queue-policy.ts';
 import {
+    isAlmConformanceRecipeCommand,
     toCompactedControlReport,
     toCompactedResultEnvelope,
     toControlReportDedupeKey,
-    toGroupAssertionEvidenceCommandIds
+    toDistributedAssessmentEvidenceCommandIds
 } from './control-evidence-compaction.ts';
-import { toBoundedTail } from './control-runtime-retention.ts';
+import { toBoundedTail, toProtectedRuntimeCommandIds } from './control-runtime-retention.ts';
 import type {
     ControlAgentState,
     ControlCommandState,
@@ -52,14 +53,18 @@ export function toControlCommandSnapshot(command: ControlCommandState): ControlQ
 
 export function toControlRunSnapshot(
     run: ControlRunState,
-    bounds: ControlRunSnapshotBounds
+    bounds: ControlRunSnapshotBounds,
+    distributedRuns: Iterable<ControlDistributedRunState>
 ): ControlRunSnapshot {
     const commands = Array.from(
         run.commands.values(),
         (command) => toControlCommandSnapshot(command)
     );
     const results = Array.from(run.results.values());
-    const protectedIds = toPendingReloadEvidenceIds(run.commands.values());
+    const protectedIds = toProtectedRuntimeCommandIds(run.runId, distributedRuns);
+    for (const commandId of toPendingReloadEvidenceIds(run.commands.values())) {
+        protectedIds.add(commandId);
+    }
     return {
         runId: run.runId,
         createdAtEpochMs: run.createdAtEpochMs,
@@ -81,8 +86,8 @@ export function toControlRunSnapshot(
             completedCommandIds: Array.from(agent.completedCommandIds),
             resumeCompletedCommandIds: Array.from(agent.resumeCompletedCommandIds)
         })),
-        commands: toBoundedReloadCommands(commands, bounds.commands, protectedIds),
-        results: toBoundedReloadResults(results, bounds.results, protectedIds),
+        commands: toBoundedProtectedCommands(commands, bounds.commands, protectedIds),
+        results: toBoundedProtectedResults(results, bounds.results, protectedIds),
         events: toBoundedTail(run.events, bounds.events),
         stats: toBoundedTail(run.stats, bounds.stats),
         reports: toBoundedTail(run.reports, bounds.reports),
@@ -143,7 +148,7 @@ export function toRestoredControlSnapshot(
     snapshot: ControlServerSnapshot,
     redaction: RallarBlackBoxTestRedactionOptions | undefined
 ): RestoredControlSnapshot {
-    const evidenceCommandKeys = toGroupAssertionEvidenceKeys(snapshot);
+    const evidenceCommandKeys = toDistributedAssessmentEvidenceKeys(snapshot);
     return {
         runs: new Map(
             snapshot.runs.map(
@@ -156,10 +161,10 @@ export function toRestoredControlSnapshot(
     };
 }
 
-function toGroupAssertionEvidenceKeys(snapshot: ControlServerSnapshot): ReadonlySet<string> {
+function toDistributedAssessmentEvidenceKeys(snapshot: ControlServerSnapshot): ReadonlySet<string> {
     const evidenceCommandKeys = new Set<string>();
     for (const distributedRun of snapshot.distributedRuns ?? []) {
-        for (const commandId of toGroupAssertionEvidenceCommandIds(distributedRun)) {
+        for (const commandId of toDistributedAssessmentEvidenceCommandIds(distributedRun)) {
             evidenceCommandKeys.add(toResultCommandKey(distributedRun.controlRunId, commandId));
         }
     }
@@ -172,18 +177,22 @@ function toRestoredControlRun(
     const agents = new Map(runSnapshot.agents.map((agent) => [agent.agentId, toRestoredControlAgent(agent)]));
     const commands = runSnapshot.commands.map(toRestoredControlCommand);
     const protectedIds = toPendingReloadEvidenceIds(commands);
+    const restoredCommands = new Map(commands.map((command) => [
+        command.envelope.commandId,
+        toRestoredReloadDispatch(command, agents, protectedIds)
+    ]));
     return {
         runId: runSnapshot.runId,
         createdAtEpochMs: runSnapshot.createdAtEpochMs,
         updatedAtEpochMs: runSnapshot.updatedAtEpochMs,
         agents,
-        commands: new Map(commands.map((command) => [
-            command.envelope.commandId,
-            toRestoredReloadDispatch(command, agents, protectedIds)
-        ])),
+        commands: restoredCommands,
         results: new Map(runSnapshot.results.map((result) => [
             result.commandId,
             protectedIds.has(result.commandId) ||
+                isAlmConformanceRecipeCommand(
+                    commands.find((command) => command.envelope.commandId === result.commandId)?.envelope.command
+                ) ||
                 evidenceCommandKeys.has(toResultCommandKey(runSnapshot.runId, result.commandId))
                 ? result
                 : toCompactedResultEnvelope(result)
@@ -272,7 +281,7 @@ function toResultCommandKey(runId: string, commandId: string): string {
     return JSON.stringify([runId, commandId]);
 }
 
-function toBoundedReloadCommands(
+function toBoundedProtectedCommands(
     commands: readonly ControlQueuedCommandSnapshot[],
     limit: number | undefined,
     protectedIds: ReadonlySet<string>
@@ -281,7 +290,7 @@ function toBoundedReloadCommands(
     return commands.filter((command) => tail.has(command) || protectedIds.has(command.envelope.commandId));
 }
 
-function toBoundedReloadResults(
+function toBoundedProtectedResults(
     results: readonly ControlResultEnvelope[],
     limit: number | undefined,
     protectedIds: ReadonlySet<string>

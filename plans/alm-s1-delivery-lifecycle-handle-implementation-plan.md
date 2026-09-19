@@ -1140,6 +1140,25 @@ construction input and supplies pass-through; normalized dependencies and the br
 inputs require the capability. The browser path normalizes once. Existing frame-fault implementations
 remain valid.
 
+The existing scripted fault lifetime also accepts `remaining: 'until-cleared'`. The same fault map
+owns it without decrement; numeric counts retain their existing behavior. The existing same-ID
+numeric-zero replacement, clear, or document destruction releases the hold. Lifecycle specimens
+explicitly release on success, and the existing runtime failure/cancel/reset/close cleanup clears the
+owner. This expresses a causal native-write hold without a retry-count assumption or a new timeout.
+
+Local pairs and hosted completion use one pure ALM assessment to join actual generated message IDs
+from full command results with exact received envelopes. Ordinary state/payload assertions remain
+recipe-owned. Local roots obey normal finite retention and missing evidence fails closed; pending
+hosted distributed ownership protects roots through retention and snapshot/restore, then releases
+them after assessment. No new evidence registry or consumption protocol is introduced.
+
+The hosted combined recipe uses one RTC-ready connection per role with the existing topic-only
+`messageSelector` for `room.alm-conformance`. The canonical typed subscription owner honors this
+selector on both actual WS and RTC message ports, preserving raw message IDs. Explicit send carrier
+selection remains authoritative. Repeated per-scenario connects are removed only from the combined
+composition, preventing subscription replacement while the other role completes absence windows.
+Standalone scenario setup, room/auth identity, and all existing budgets remain unchanged.
+
 The existing `ALQosInputProvider` travels through explicit browser session construction into both
 carrier owners. Only the black-box root supplies the pure conformance policy; ordinary facade
 construction supplies no provider. The policy selects latest-wins only for a room-targeted outbound

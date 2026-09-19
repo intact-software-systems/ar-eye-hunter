@@ -93,8 +93,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
     {
         kind: 'fault.inject',
         title: 'Inject Transport Fault',
-        description:
-            'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults, bounded by a remaining-match count.',
+        description: 'Schedules a drop for matching WS/RTC traffic, or WS-only delay or not-ready submission faults. ' +
+            'remaining is a finite match count or until-cleared; replacing the same faultId with remaining:0 releases it.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],

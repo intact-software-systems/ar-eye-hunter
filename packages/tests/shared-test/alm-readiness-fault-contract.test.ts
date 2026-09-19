@@ -7,6 +7,18 @@ import { validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-sche
 
 describe('ALM WS readiness fault command', () => {
     const command = { kind: 'fault.inject', faultId: 'hold', carrier: 'ws', match: { typeId: 'held' }, action: 'not-ready', remaining: 10 };
+    it.each(['ws', 'rtc'])('preserves an explicit until-cleared %s lifetime through every command boundary', (carrier) => {
+        const held = { ...command, carrier, action: carrier === 'ws' ? 'not-ready' : 'drop', remaining: 'until-cleared' };
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, held).ok).toBe(true);
+        expect(validateAlmControlCommand(held, 'fault.inject')).toEqual([]);
+        expect(decodeBlackBoxRallarFaultInput(held).right).toMatchObject({ remaining: 'until-cleared' });
+    });
+    it.each(['forever', '', null, {}, true])('rejects invalid fault lifetime %j', (remaining) => {
+        const invalid = { ...command, remaining };
+        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, invalid).ok).toBe(false);
+        expect(validateAlmControlCommand(invalid, 'fault.inject').length).toBeGreaterThan(0);
+        expect(decodeBlackBoxRallarFaultInput(invalid).left).toBeDefined();
+    });
     it('admits the WS readiness action through schema, command validation and browser decoding', () => {
         expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, command).ok).toBe(true);
         expect(validateAlmControlCommand(command, 'fault.inject')).toEqual([]);

@@ -108,7 +108,7 @@ function validateFaultInjectCommand(command: RallarBlackBoxTestRecord): readonly
         }),
         ...validateFaultMatchField(command),
         ...validateFaultActionField(command),
-        ...validateNumberField(command, 'remaining', path)
+        ...(command.remaining === 'until-cleared' ? [] : validateNumberField(command, 'remaining', path))
     ];
 }
 

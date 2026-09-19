@@ -1,9 +1,13 @@
+import { assessAlmConformanceIdentity } from '@shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunCommandPhase
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { RallarBlackBoxDistributedParticipantResult } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedParticipantResult,
+    RallarBlackBoxDistributedRecipeResult
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     rollupDistributedRunResult,
     type RallarBlackBoxDistributedRunRollup
@@ -64,7 +68,7 @@ export function toDistributedRunRollup(
     const participants = distributedRun.targetAgentIds.map((agentId) =>
         toDistributedParticipantResult({ distributedRun, run, agentId, nowEpochMs })
     );
-    const recipes = distributedRun.commandLinks
+    const recordedRecipes = distributedRun.commandLinks
         .filter((link) => link.phase === 'start')
         .map((link) =>
             toDistributedRecipeResult({
@@ -73,6 +77,7 @@ export function toDistributedRunRollup(
                 result: run?.results.get(link.commandId)
             })
         );
+    const recipes = assessAlmRecipeResults({ distributedRun, run, redaction, nowEpochMs }, recordedRecipes);
     const groupAssertions = computeDistributedGroupAssertionResults({
         manifest: distributedRun.manifest,
         participants: toDistributedGroupAssertionParticipants(distributedRun.targetResolution),
@@ -85,11 +90,51 @@ export function toDistributedRunRollup(
     });
 
     return rollupDistributedRunResult({
-        stateHint: distributedRun.state,
+        stateHint: distributedRun.state === 'passed' && recipes.some((recipe) => recipe.ok === false)
+            ? 'failed'
+            : distributedRun.state,
         participants,
         recipes,
         groupAssertions
     });
+}
+
+function assessAlmRecipeResults(
+    input: DistributedRunEvaluationInput,
+    recipes: readonly RallarBlackBoxDistributedRecipeResult[]
+): readonly RallarBlackBoxDistributedRecipeResult[] {
+    const { distributedRun, run } = input;
+    if (
+        distributedRun.manifest.metadata.family === 'alm-conformance' && recipes.length > 0 &&
+        recipes.every((recipe) => recipe.state === 'passed')
+    ) {
+        const issues = assessAlmConformanceIdentity({
+            runId: distributedRun.controlRunId,
+            participants: distributedRun.commandLinks.filter((link) => link.phase === 'start').flatMap((link) => {
+                const recipe = distributedRun.manifest.recipes.find((selection) => selection.recipeId === link.recipeId)
+                    ?.recipe;
+                return recipe
+                    ? [{
+                        role: link.role ?? '',
+                        agentId: link.agentId,
+                        commandId: link.commandId,
+                        recipe,
+                        result: run?.results.get(link.commandId)
+                    }]
+                    : [];
+            })
+        });
+        if (issues.length > 0) {
+            return recipes.map((recipe) => ({
+                ...recipe,
+                state: 'failed',
+                ok: false,
+                failureCount: 1,
+                error: { code: 'RALLAR_BB_ALM_IDENTITY_FAILED', message: issues.join(' ') }
+            }));
+        }
+    }
+    return recipes;
 }
 
 export function isDistributedAckTimedOut(distributedRun: ControlDistributedRunState, nowEpochMs: number): boolean {

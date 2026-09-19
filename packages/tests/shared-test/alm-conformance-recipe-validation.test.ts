@@ -17,9 +17,9 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 
 /** `ordering-resync` is withheld from `ws`: its first hop must be RTC. */
 const CARRIER_SCENARIO_IDS = {
-    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline'],
-    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync'],
-    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle'],
+    rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync'],
+    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
 } as const;
 
 function conformanceInput(
