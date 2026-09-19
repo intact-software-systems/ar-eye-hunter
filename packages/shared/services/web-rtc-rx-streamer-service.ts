@@ -46,10 +46,11 @@ export namespace WebRtcRxStreamerService {
     }
 
     export interface RoomAuthorityRefresh {
+        /** True permits one admission re-entry after authority refresh, subject to normal admission checks. */
         afterInboundAdmission(
             message: ALMessage,
             acceptance: ALInboundMessageRuntime.Acceptance
-        ): Promise<void>;
+        ): Promise<boolean>;
         dispose(): void;
     }
 
@@ -156,26 +157,38 @@ export class WebRtcRxStreamerService {
                 this.toRtcChannelSubscriptionId(peerDto.peerId),
                 {
                     maxMessageBytes: AL_MESSAGE_RESOURCE_LIMITS.envelopeBytes,
-                    onMessage: async (value) => await this.admitPeerMessage(peerDto.peerId, value)
+                    onMessage: async (value) => await this.admitPeerMessage(peerDto, value)
                 }
             );
     }
 
-    private async admitPeerMessage(peerId: PeerId, value: unknown): Promise<void> {
+    private async admitPeerMessage(peer: QRtcPeerDto, value: unknown): Promise<void> {
+        if (this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+            return;
+        }
         const message = decodeALMessageValue(value).right;
-        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, {
+        const source: ALInboundMessageRuntime.Source = {
             kind: 'rtc-peer',
-            peerId
-        });
+            peerId: peer.peerId
+        };
+        const acceptance = await this.inboundRuntime.admitIncomingMessage(value, source);
         if (acceptance.left) {
             console.warn('Rejected RTC message', acceptance.left.code);
             return;
         }
-        if (acceptance.right && message) {
-            await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
-                message,
-                acceptance.right
-            );
+        if (!acceptance.right || !message) {
+            return;
+        }
+        const refreshed = await this.dependencies.roomAuthorityRefresh?.afterInboundAdmission(
+            message,
+            acceptance.right
+        );
+        if (!refreshed || this.disposed || this.peerDtoByPeerId.get(peer.peerId) !== peer) {
+            return;
+        }
+        const retry = await this.inboundRuntime.admitIncomingMessage(message, source);
+        if (retry.left) {
+            console.warn('Rejected RTC message after authority refresh', retry.left.code);
         }
     }
 
