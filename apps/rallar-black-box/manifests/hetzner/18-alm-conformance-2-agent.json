@@ -36,7 +36,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runId}-rtc-bounded-rejection-sender-group-{runtimeIdentity}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-sender-group",
               "body": {
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
@@ -68,7 +68,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runId}-rtc-bounded-rejection-sender-member-{runtimeIdentity}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-sender-member",
               "body": {
                 "status": "active"
               }
@@ -2264,7 +2264,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runId}-rtc-bounded-rejection-receiver-group-{runtimeIdentity}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-receiver-group",
               "body": {
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
@@ -2296,7 +2296,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runId}-rtc-bounded-rejection-receiver-member-{runtimeIdentity}",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-receiver-member",
               "body": {
                 "status": "active"
               }

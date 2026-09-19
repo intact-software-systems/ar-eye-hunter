@@ -897,8 +897,8 @@ function toEnsureRequestId(
     step: AlmConformanceStepInput,
     operation: 'group' | 'member'
 ): string {
-    return `alm-conformance-{runId}-${step.input.carrier}-${step.scenarioId}` +
-        `-${step.role}-${operation}-{runtimeIdentity}`;
+    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioId}` +
+        `-${step.role}-${operation}`;
 }
 
 function toConnectionName(step: AlmConformanceStepInput): string {

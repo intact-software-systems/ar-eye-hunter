@@ -4,6 +4,9 @@ import {
     it
 } from 'vitest';
 
+import { replaceCommandPlaceholders } from '@shared-test/rallar-bb-test/browser/browser-command-placeholders.ts';
+import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
+
 import { ALM_CONFORMANCE_CARRIERS } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import {
     createAlmConformanceRecipes,
@@ -56,6 +59,34 @@ describe('ALM conformance recipe validation', () => {
                 ).toBe(true);
             }
         }
+    });
+
+    it.each([
+        { name: 'actual fallback run', runId: 'alm-rtc-with-ws-fallback-1789846914072-83fc' },
+        { name: 'oversized runtime identities', runId: `oversized-run-${'r'.repeat(1_000)}` }
+    ])('keeps expanded mutation identities API-valid and distinct for $name', ({ runId }) => {
+        const requestIds = new Set<string>();
+        for (const carrier of ALM_CONFORMANCE_CARRIERS) {
+            for (const recipe of recipesOf(createAlmConformanceRecipes(conformanceInput(carrier)))) {
+                const values = {
+                    session: undefined,
+                    wsTicket: undefined,
+                    config: { runId, agentId: `${recipe.metadata?.role}-${'a'.repeat(1_000)}` }
+                };
+                for (const command of recipe.commands) {
+                    if (command.kind !== 'http.request') {
+                        continue;
+                    }
+                    const template = command.request.path!.split('/').at(-1)!;
+                    const requestId = replaceCommandPlaceholders(template, values);
+                    expect(assertApiMutationRequestId(requestId)).toBe(requestId);
+                    expect(replaceCommandPlaceholders(template, values)).toBe(requestId);
+                    expect(requestIds.has(requestId), command.commandId).toBe(false);
+                    requestIds.add(requestId);
+                }
+            }
+        }
+        expect(requestIds.size).toBe(56);
     });
 
     it('accepts every command over the control protocol', () => {
