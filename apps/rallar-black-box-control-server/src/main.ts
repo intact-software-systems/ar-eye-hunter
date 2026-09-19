@@ -23,7 +23,8 @@ const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
 const controlService = createRallarBlackBoxControlService({
     dependencies: {
         now: () => Date.now(),
-        createCommandId: () => crypto.randomUUID()
+        createCommandId: () => crypto.randomUUID(),
+        createRunToken: () => crypto.randomUUID()
     },
     config: {
         redaction: undefined,

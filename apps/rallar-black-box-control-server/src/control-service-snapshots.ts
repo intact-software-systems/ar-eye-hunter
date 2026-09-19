@@ -1,3 +1,4 @@
+import type { ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlRetentionRunSafety } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type {
     ControlAgentSnapshot,
@@ -24,6 +25,9 @@ import type {
     ControlDistributedRunState,
     ControlRunState
 } from './control-service-state.ts';
+import {
+    toPendingReloadEvidenceIds
+} from './recipe-reload/control-recipe-reload-commands.ts';
 
 export interface RestoredControlSnapshot {
     readonly runs: Map<string, ControlRunState>;
@@ -55,6 +59,7 @@ export function toControlRunSnapshot(
         (command) => toControlCommandSnapshot(command)
     );
     const results = Array.from(run.results.values());
+    const protectedIds = toPendingReloadEvidenceIds(run.commands.values());
     return {
         runId: run.runId,
         createdAtEpochMs: run.createdAtEpochMs,
@@ -76,8 +81,8 @@ export function toControlRunSnapshot(
             completedCommandIds: Array.from(agent.completedCommandIds),
             resumeCompletedCommandIds: Array.from(agent.resumeCompletedCommandIds)
         })),
-        commands: toBoundedTail(commands, bounds.commands),
-        results: toBoundedTail(results, bounds.results),
+        commands: toBoundedReloadCommands(commands, bounds.commands, protectedIds),
+        results: toBoundedReloadResults(results, bounds.results, protectedIds),
         events: toBoundedTail(run.events, bounds.events),
         stats: toBoundedTail(run.stats, bounds.stats),
         reports: toBoundedTail(run.reports, bounds.reports),
@@ -164,41 +169,49 @@ function toGroupAssertionEvidenceKeys(snapshot: ControlServerSnapshot): Readonly
 function toRestoredControlRun(
     { runSnapshot, evidenceCommandKeys, redaction }: RestoredControlRunInput
 ): ControlRunState {
-    const run: ControlRunState = {
+    const agents = new Map(runSnapshot.agents.map((agent) => [agent.agentId, toRestoredControlAgent(agent)]));
+    const commands = runSnapshot.commands.map(toRestoredControlCommand);
+    const protectedIds = toPendingReloadEvidenceIds(commands);
+    return {
         runId: runSnapshot.runId,
         createdAtEpochMs: runSnapshot.createdAtEpochMs,
         updatedAtEpochMs: runSnapshot.updatedAtEpochMs,
-        agents: new Map(),
-        commands: new Map(),
-        results: new Map(),
+        agents,
+        commands: new Map(commands.map((command) => [
+            command.envelope.commandId,
+            toRestoredReloadDispatch(command, agents, protectedIds)
+        ])),
+        results: new Map(runSnapshot.results.map((result) => [
+            result.commandId,
+            protectedIds.has(result.commandId) ||
+                evidenceCommandKeys.has(toResultCommandKey(runSnapshot.runId, result.commandId))
+                ? result
+                : toCompactedResultEnvelope(result)
+        ])),
         events: runSnapshot.events.map((event) =>
             event.kind === 'report' ? toCompactedControlReport(event, redaction) : event
         ),
         stats: [...runSnapshot.stats],
         reports: runSnapshot.reports.map((event) => toCompactedControlReport(event, redaction)),
-        reportKeys: new Set(
-            runSnapshot.reports.map((report) => toControlReportDedupeKey(report))
-        ),
+        reportKeys: new Set(runSnapshot.reports.map(toControlReportDedupeKey)),
         heartbeats: [...runSnapshot.heartbeats],
         tokens: new Map(),
         retentionRevision: 0,
         issuedRunTokenStateRevision: 0
     };
-    for (const agent of runSnapshot.agents) {
-        run.agents.set(agent.agentId, toRestoredControlAgent(agent));
-    }
-    for (const command of runSnapshot.commands) {
-        run.commands.set(command.envelope.commandId, toRestoredControlCommand(command));
-    }
-    for (const result of runSnapshot.results) {
-        run.results.set(
-            result.commandId,
-            evidenceCommandKeys.has(toResultCommandKey(run.runId, result.commandId))
-                ? result
-                : toCompactedResultEnvelope(result)
-        );
-    }
-    return run;
+}
+
+function toRestoredReloadDispatch(
+    command: ControlCommandState,
+    agents: ReadonlyMap<string, ControlAgentState>,
+    protectedIds: ReadonlySet<string>
+): ControlCommandState {
+    return command.dispatchCount > 0 && protectedIds.has(command.envelope.commandId)
+        ? {
+            ...command,
+            lastDispatchedConnectionSequence: agents.get(command.envelope.agentId ?? '')?.connectionSequence
+        }
+        : command;
 }
 
 function toRestoredControlAgent(agentSnapshot: ControlAgentSnapshot): ControlAgentState {
@@ -256,5 +269,23 @@ function toRestoredDistributedRun(distributedRunSnapshot: ControlDistributedRunS
 }
 
 function toResultCommandKey(runId: string, commandId: string): string {
-    return `${runId}\u0000${commandId}`;
+    return JSON.stringify([runId, commandId]);
+}
+
+function toBoundedReloadCommands(
+    commands: readonly ControlQueuedCommandSnapshot[],
+    limit: number | undefined,
+    protectedIds: ReadonlySet<string>
+): readonly ControlQueuedCommandSnapshot[] {
+    const tail = new Set(toBoundedTail(commands, limit));
+    return commands.filter((command) => tail.has(command) || protectedIds.has(command.envelope.commandId));
+}
+
+function toBoundedReloadResults(
+    results: readonly ControlResultEnvelope[],
+    limit: number | undefined,
+    protectedIds: ReadonlySet<string>
+): readonly ControlResultEnvelope[] {
+    const tail = new Set(toBoundedTail(results, limit));
+    return results.filter((result) => tail.has(result) || protectedIds.has(result.commandId));
 }

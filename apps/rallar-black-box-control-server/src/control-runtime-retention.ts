@@ -2,6 +2,7 @@ import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/contr
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from './control-service-state.ts';
+import { toPendingReloadEvidenceIds } from './recipe-reload/control-recipe-reload-commands.ts';
 
 const REPORT_DEDUPE_KEY_LIMIT = 1_000;
 
@@ -11,6 +12,9 @@ export function trimControlRunEvidence(
     bounds: ControlRunSnapshotBounds
 ): void {
     const protectedCommandIds = toProtectedRuntimeCommandIds(run.runId, distributedRuns);
+    for (const commandId of toPendingReloadEvidenceIds(run.commands.values())) {
+        protectedCommandIds.add(commandId);
+    }
     for (const command of run.commands.values()) {
         if (command.completedAtEpochMs === undefined) {
             protectedCommandIds.add(command.envelope.commandId);

@@ -11,7 +11,10 @@ import { decodeControlMessageText, type ControlRequestBodyReader } from '../http
 import { RUN_TOKEN_REJECTION } from './control-route-errors.ts';
 
 export interface ControlSocketRouteDependencies {
-    readonly controlService: Pick<RallarBlackBoxControlService, 'markAgentDisconnected' | 'receiveClientEnvelope'>;
+    readonly controlService: Pick<
+        RallarBlackBoxControlService,
+        'markAgentDisconnected' | 'receiveClientEnvelope' | 'snapshotCommand'
+    >;
     readonly security: Pick<ControlHttpSecurity, 'authorizeRunToken'>;
     readonly requestBody: Pick<ControlRequestBodyReader, 'maxRequestBytes'>;
     readonly agentSockets: ControlAgentSockets;
@@ -67,6 +70,13 @@ function receiveControlSocketMessage(
         return;
     }
     const envelope = parsed.envelope;
+    const validSocket = envelope.kind === 'register'
+        ? dependencies.agentSockets.isUnregisteredSocket(socket)
+        : dependencies.agentSockets.isCurrentAgentSocket(socket, envelope);
+    if (!validSocket) {
+        socket.close(POLICY_VIOLATION_CLOSE_CODE, 'Control envelope does not belong to the current registered socket.');
+        return;
+    }
     if (
         envelope.kind === 'register' &&
         !dependencies.security.authorizeRunToken({
@@ -86,12 +96,12 @@ function acceptControlClientEnvelope(
     envelope: ControlClientEnvelope,
     { agentSockets, artifactRecorder, controlService, persistence }: ControlSocketRouteDependencies
 ): void {
-    if (envelope.kind !== 'report') {
-        artifactRecorder.record(envelope);
-    }
+    const command = 'commandId' in envelope && typeof envelope.commandId === 'string'
+        ? controlService.snapshotCommand(envelope.runId, envelope.commandId)
+        : undefined;
     const received = controlService.receiveClientEnvelope(envelope);
-    if (envelope.kind === 'report' && received.accepted) {
-        artifactRecorder.record(envelope);
+    if (received.accepted) {
+        artifactRecorder.record(envelope, command);
     }
     if (received.kind === 'register') {
         agentSockets.register(socket, { runId: received.runId, agentId: received.agentId });

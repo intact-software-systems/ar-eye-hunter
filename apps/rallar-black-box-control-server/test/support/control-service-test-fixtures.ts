@@ -76,7 +76,8 @@ export function toControlServiceInput(
     return {
         dependencies: {
             now: overrides.now ?? (() => Date.now()),
-            createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID())
+            createCommandId: overrides.createCommandId ?? (() => crypto.randomUUID()),
+            createRunToken: () => crypto.randomUUID()
         },
         config: {
             redaction: overrides.redaction,

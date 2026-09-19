@@ -46,9 +46,10 @@ export class ControlArtifactRecorder {
         this.commandSnapshots = dependencies.commandSnapshots;
     }
 
-    record(envelope: ControlClientEnvelope): void {
+    record(envelope: ControlClientEnvelope, commandBeforeAcceptance?: ControlQueuedCommandSnapshot): void {
         const commandId = toArtifactCommandId(envelope);
-        const command = commandId ? this.commandSnapshots.snapshotCommand(envelope.runId, commandId) : undefined;
+        const command = commandBeforeAcceptance ??
+            (commandId ? this.commandSnapshots.snapshotCommand(envelope.runId, commandId) : undefined);
         const writes = toArtifactJsonlWrites(envelope, command);
         if (!this.storageDir || writes.length === 0) {
             return;

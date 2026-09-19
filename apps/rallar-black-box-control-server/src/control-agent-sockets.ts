@@ -22,40 +22,53 @@ const RUN_DELETED_CLOSE_CODE = 1000;
 
 export class ControlAgentSockets {
     private readonly controlService: ControlAgentSocketService;
-    private readonly socketByAgentKey = new Map<string, ControlAgentSocket>();
+    private readonly socketsByRun = new Map<string, Map<string, ControlAgentSocket>>();
     private readonly agentBySocket = new WeakMap<ControlAgentSocket, ControlAgentIdentity>();
 
     constructor(controlService: ControlAgentSocketService) {
         this.controlService = controlService;
     }
 
+    isUnregisteredSocket(socket: ControlAgentSocket): boolean {
+        return !this.agentBySocket.has(socket);
+    }
+
+    isCurrentAgentSocket(socket: ControlAgentSocket, agent: ControlAgentIdentity): boolean {
+        const registered = this.agentBySocket.get(socket);
+        return registered?.runId === agent.runId && registered.agentId === agent.agentId &&
+            this.socketsByRun.get(agent.runId)?.get(agent.agentId) === socket;
+    }
+
     register(socket: ControlAgentSocket, agent: ControlAgentIdentity): void {
-        const key = toAgentSocketKey(agent);
-        const existing = this.socketByAgentKey.get(key);
+        const sockets = this.socketsByRun.get(agent.runId) ?? new Map<string, ControlAgentSocket>();
+        const existing = sockets.get(agent.agentId);
         if (existing && existing !== socket) {
             this.controlService.recordDuplicateAgentSocketReplacement(agent.runId, agent.agentId);
             existing.close(DUPLICATE_AGENT_CLOSE_CODE, 'agent re-registered');
         }
 
         this.agentBySocket.set(socket, agent);
-        this.socketByAgentKey.set(key, socket);
+        sockets.set(agent.agentId, socket);
+        this.socketsByRun.set(agent.runId, sockets);
     }
 
     release(socket: ControlAgentSocket): ControlAgentIdentity | undefined {
         const agent = this.agentBySocket.get(socket);
-        if (!agent || this.socketByAgentKey.get(toAgentSocketKey(agent)) !== socket) {
+        if (!agent || this.socketsByRun.get(agent.runId)?.get(agent.agentId) !== socket) {
             return undefined;
         }
-        this.socketByAgentKey.delete(toAgentSocketKey(agent));
+        const sockets = this.socketsByRun.get(agent.runId)!;
+        sockets.delete(agent.agentId);
+        if (sockets.size === 0) {
+            this.socketsByRun.delete(agent.runId);
+        }
         return agent;
     }
 
     closeRun(runId: string): void {
-        for (const [key, socket] of this.socketByAgentKey.entries()) {
-            if (!key.startsWith(toRunSocketKeyPrefix(runId))) {
-                continue;
-            }
-            this.socketByAgentKey.delete(key);
+        const sockets = this.socketsByRun.get(runId);
+        this.socketsByRun.delete(runId);
+        for (const socket of sockets?.values() ?? []) {
             try {
                 socket.close(RUN_DELETED_CLOSE_CODE, 'run deleted');
             }
@@ -66,7 +79,7 @@ export class ControlAgentSockets {
     }
 
     sendDispatchableCommands(agent: ControlAgentIdentity): void {
-        const socket = this.socketByAgentKey.get(toAgentSocketKey(agent));
+        const socket = this.socketsByRun.get(agent.runId)?.get(agent.agentId);
         if (!socket || socket.readyState !== OPEN_SOCKET_STATE) {
             return;
         }
@@ -76,20 +89,8 @@ export class ControlAgentSockets {
     }
 
     sendDispatchableCommandsForRun(runId: string): void {
-        const prefix = toRunSocketKeyPrefix(runId);
-        const agentIds = Array.from(this.socketByAgentKey.keys())
-            .filter((key) => key.startsWith(prefix))
-            .map((key) => key.slice(prefix.length));
-        for (const agentId of agentIds) {
+        for (const agentId of this.socketsByRun.get(runId)?.keys() ?? []) {
             this.sendDispatchableCommands({ runId, agentId });
         }
     }
-}
-
-function toAgentSocketKey({ runId, agentId }: ControlAgentIdentity): string {
-    return `${toRunSocketKeyPrefix(runId)}${agentId}`;
-}
-
-function toRunSocketKeyPrefix(runId: string): string {
-    return `${runId}\u0000`;
 }
