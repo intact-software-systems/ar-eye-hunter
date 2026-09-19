@@ -55,6 +55,11 @@ vi.mock(import('@shared/repository/group-state-snapshots-repository.ts'), async 
 let rtcRxStreamer = vi.mocked(mocks.apiMiddleware.middleware.rtcRxStreamer);
 let webSocketQueueBox = vi.mocked(mocks.apiMiddleware.middleware.webSocketQueueBox);
 
+interface ReceivedChatMessage {
+    readonly payload: ChatMessage;
+    readonly transport: string;
+}
+
 interface ChatMessage {
     readonly text: string;
 }
@@ -303,77 +308,68 @@ describe('Rallar typed message channel', () => {
         expect(rtcRxStreamer.enqueueOutboxIfAbsent).not.toHaveBeenCalled();
     });
 
-    it('delivers decoded payloads through typed message channel subscriptions', async () => {
+    it('delivers decoded payloads only while typed message channel subscriptions are active', async () => {
+        const rtcCallbacks = new Map<string, Parameters<typeof rtcRxStreamer.onInboxMessageDo>[1]>();
+        const wsCallbacks = new Map<string, Parameters<typeof webSocketQueueBox.onAnyInboxMessageDo>[1]>();
+        rtcRxStreamer.onInboxMessageDo.mockImplementation((id, callback) => {
+            rtcCallbacks.set(id, callback);
+            return rtcRxStreamer;
+        });
+        rtcRxStreamer.removeInboxMessageCallback.mockImplementation((id) => rtcCallbacks.delete(id));
+        webSocketQueueBox.onAnyInboxMessageDo.mockImplementation((id, callback) => {
+            wsCallbacks.set(id, callback);
+            return webSocketQueueBox;
+        });
+        webSocketQueueBox.removeAnyInboxMessageCallback.mockImplementation((id) => wsCallbacks.delete(id));
         const facade = createFacade();
         const channel = facade.messages.channel<ChatMessage>({
             topicId: 'room.chat',
             typeId: 'chat.message.v1'
         });
-        const onRtc = vi.fn();
-        const onWs = vi.fn();
-
-        channel.onRtc(onRtc);
-        channel.onWs(onWs);
+        const received: ReceivedChatMessage[] = [];
+        const unsubscribeRtc = channel.onRtc((payload, event) => {
+            received.push({ payload, transport: event.transport });
+        });
+        const unsubscribeWs = channel.onWs((payload, event) => {
+            received.push({ payload, transport: event.transport });
+        });
         await facade.connect();
 
-        const rtcCallback = vi.mocked(
-            mocks.apiMiddleware.middleware.rtcRxStreamer.onInboxMessageDo
-        ).mock.calls.find(([typeId]) => typeId === 'chat.message.v1')?.[1];
-        const wsCallback = vi.mocked(
-            mocks.apiMiddleware.middleware.webSocketQueueBox.onAnyInboxMessageDo
-        ).mock.calls.find(([callbackId]) => callbackId === 'rallar:ws:any-message')?.[1];
-
-        await rtcCallback?.onMessage(
-            newALMulticastMessage(
+        const deliverFrames = async () => {
+            const rtcMessage = newALMulticastMessage(
                 'peer-1',
                 newALRoute('room.chat', 'match-1', 'rtc-message-1'),
-                {
-                    applicationId: 'game-app',
-                    workspaceId: 'arena-1',
-                    groupId: 'match-1'
-                },
+                { applicationId: 'game-app', workspaceId: 'arena-1', groupId: 'match-1' },
                 'chat.message.v1',
-                {
-                    text: 'rtc'
-                }
-            ),
-            toResourceEntry('chat.message.v1', { text: 'rtc' })
-        );
-        await wsCallback?.onMessage(
-            newALBroadcastMessage(
+                { text: 'rtc' }
+            );
+            for (const callback of rtcCallbacks.values()) {
+                await callback.onMessage(rtcMessage, toResourceEntry('chat.message.v1', { text: 'rtc' }));
+            }
+            const wsMessage = newALBroadcastMessage(
                 'peer-1',
                 newALRoute('room.chat', 'match-1', 'ws-message-1'),
                 'room',
                 'chat.message.v1',
-                {
-                    text: 'ws'
-                }
-            ),
-            toResourceEntry('chat.message.v1', { text: 'ws' })
-        );
+                { text: 'ws' }
+            );
+            for (const callback of wsCallbacks.values()) {
+                await callback.onMessage(wsMessage, toResourceEntry('chat.message.v1', { text: 'ws' }));
+            }
+        };
+        await deliverFrames();
+        expect(received).toEqual([
+            { payload: { text: 'rtc' }, transport: 'rtc' },
+            { payload: { text: 'ws' }, transport: 'ws' }
+        ]);
 
-        expect(onRtc).toHaveBeenCalledWith(
-            {
-                text: 'rtc'
-            },
-            expect.objectContaining({
-                payload: {
-                    text: 'rtc'
-                },
-                transport: 'rtc'
-            })
-        );
-        expect(onWs).toHaveBeenCalledWith(
-            {
-                text: 'ws'
-            },
-            expect.objectContaining({
-                payload: {
-                    text: 'ws'
-                },
-                transport: 'ws'
-            })
-        );
+        unsubscribeRtc();
+        unsubscribeWs();
+        await deliverFrames();
+        expect(received).toEqual([
+            { payload: { text: 'rtc' }, transport: 'rtc' },
+            { payload: { text: 'ws' }, transport: 'ws' }
+        ]);
     });
 });
 

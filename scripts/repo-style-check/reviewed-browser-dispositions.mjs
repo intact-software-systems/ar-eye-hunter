@@ -1,5 +1,29 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
+    // Process rejection reasons have no required shape. These tests capture them
+    // only to prove observer failures never escape into the process boundary.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-runtime/observers.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-runtime/observers.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'recordUnhandled'
+    }),
+    // Adapter send values belong to the caller. Capture them unchanged to prove
+    // cancellation and recipe continuation preserve the public opaque payload.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-cancellation-lifetime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-recipe-format.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Call signals arrive as untrusted WS values. The signal decoder checks every
     // known field before session/recipient filtering and typed listener delivery.
     Object.freeze({

@@ -9,7 +9,10 @@ import {
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import * as shared from '@shared/mod.ts';
+import { decodeWsQueueBoxServerPreparedMessage } from '@shared/services/ws-queue-box-server/decode-ws-queue-box-server-prepared-message.ts';
 import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import {
     ConnectionContext,
@@ -17,7 +20,7 @@ import {
 } from '@shared/websocket/json-web-socket-server.ts';
 import { drainEngine } from './alm/outbound-runtime-test-fixture.ts';
 import { waitForALInboundWork } from './wait-for-al-inbound-work.ts';
-import { settleCommittedOutboundBatch } from './wait-for-al-outbound-work.ts';
+import { waitForSettledOutboundWork } from './wait-for-al-outbound-work.ts';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it.each([
@@ -76,8 +79,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('sends volatile targeted unicast messages directly from the server outbox', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
+            outboundStores,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
@@ -98,7 +103,9 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
+        await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
+        await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -111,9 +118,11 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('broadcasts volatile targeted broadcast messages directly from the server outbox', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        const outboundStores = createObservedOutboundStores(outbox);
         let providerEvaluationCount = 0;
         const service = shared.createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
+            outboundStores,
             socket: socket,
             name: 'server-1',
             qosProvider: {
@@ -151,7 +160,9 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
+        await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-3']);
+        await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
         expect(result.status).toBe('accepted');
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
@@ -242,7 +253,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             { groupRef: groupRef('room-1') }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('no-route');
         expect(result.entries).toEqual([]);
@@ -254,8 +265,10 @@ describe('WsQueueBoxServerService QoS runtime', () => {
     it('routes targeted multicast messages to resolved group recipients', async () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
+        const outboundStores = createObservedOutboundStores(outbox);
         const service = shared.createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
+            outboundStores,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
@@ -283,7 +296,9 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await enqueueOutboxAndDrain(service, msg);
+        await service.enqueueOutboxIfAbsent(msg);
+        await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-2']);
+        await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -323,7 +338,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await enqueueOutboxAndDrain(service, msg);
+        await service.enqueueOutboxIfAbsent(msg);
 
         const [storedKey] = await outbox.getAllKeys();
         const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
@@ -348,7 +363,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await expect(enqueueOutboxAndDrain(service, invalidRoomMessage))
+        await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
             .rejects.toThrow(/room broadcast group ref/i);
         expect(await outbox.getAllKeys()).toEqual(keysBeforeInvalidMessage);
         expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
@@ -379,7 +394,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        const result = await enqueueOutboxAndDrain(service, msg);
+        const result = await service.enqueueOutboxIfAbsent(msg);
 
         expect(result.status).toBe('no-route');
         expect(result.reason).toContain('without explicit targets');
@@ -438,7 +453,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const socket = createRecordingWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = shared.createDefaultWsQueueBoxServerService({
-            outbox: outbox,
+            outbox,
             socket: socket,
             name: 'server-1',
             targetResolver: createTargetResolver()
@@ -468,8 +483,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await enqueueOutboxAndDrain(service, msg);
-        await settleCommittedOutboundBatch();
+        await service.enqueueOutboxIfAbsent(msg);
+        await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-2']);
         await socket.receive(
             shared.newALRepairControlMessage(
                 { v: 2, msgId: 'repair-control', ts: 1, senderId: 'peer-2' },
@@ -484,7 +499,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             'conn-2'
         );
 
-        await expect.poll(() => socket.sent.length).toBe(3);
+        await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-2', 'conn-2']);
         expect(socket.sent[2].connectionId).toBe('conn-2');
         expect(socket.sent[2].data.id.msgId).toBe(msg.id.msgId);
     });
@@ -759,6 +774,11 @@ class RecordingJsonWebSocketServer extends JsonWebSocketServer {
         }
     }
 
+    sentConnectionIds(msgId: string): string[] {
+        return this.sent.filter((entry) => entry.data.id.msgId === msgId)
+            .map((entry) => entry.connectionId).sort();
+    }
+
     async receive(message: ALMessage, connectionId: string): Promise<void> {
         const socket = this.sockets.get(connectionId);
         if (!socket) {
@@ -871,12 +891,10 @@ function groupRef(groupId: string) {
     };
 }
 
-/** Admits a message and waits for the one owner batch the admission committed, the way the worker does. */
-async function enqueueOutboxAndDrain(
-    service: shared.WsQueueBoxServerService,
-    msg: shared.ALMessage
-): Promise<shared.ALOutboundEnqueueResult> {
-    const result = await service.enqueueOutboxIfAbsent(msg);
-    await settleCommittedOutboundBatch();
-    return result;
+function createObservedOutboundStores(outbox: shared.InMemoryQueueBox) {
+    return createDefaultInMemoryALOutboundRuntimeStores({
+        namespace: 'ws-server-qos-test',
+        decodePrepared: decodeWsQueueBoxServerPreparedMessage,
+        outboundBackend: new InMemoryAdmissionBackend(createInMemoryALAdmissionState(outbox), Date.now)
+    });
 }
