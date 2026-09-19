@@ -58,6 +58,15 @@ export const reviewedBrowserDispositions = Object.freeze([
         rule: 'boundary.unknown',
         symbol: 'parseCapturedPayload'
     }),
+    // The conformance discriminator parses untrusted application JSON and narrows
+    // its marker/specimen fields locally. Only a boolean leaves this boundary;
+    // malformed or unrelated payloads retain the ordinary QoS policy.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSupersedenceSpecimen'
+    }),
     // Native RTC frames are decoded before admission and the typed refresh port.
     Object.freeze({
         path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
