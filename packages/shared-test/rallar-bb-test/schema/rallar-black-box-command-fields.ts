@@ -21,7 +21,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     configure: { required: ['config'], optional: [] },
     'recipe.load': { required: ['recipe'], optional: [] },
     'recipe.run': { required: [], optional: ['recipe'] },
-    'recipe.cancel': { required: [], optional: ['reason'] },
+    'recipe.cancel': { required: [], optional: ['reason', 'targetCommandId'] },
     loop: {
         required: ['commands'],
         optional: [
@@ -186,7 +186,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
     'formation.readiness': { required: [], optional: ['roomId', 'applicationId', 'workspaceId', 'scope', 'roomRef'] },
     health: { required: [], optional: ['includeRtcDiagnostics'] },
     stats: { required: [], optional: [] },
-    close: { required: [], optional: [] },
+    close: { required: [], optional: ['targetCommandId'] },
     reset: { required: [], optional: [] }
 } as const satisfies Readonly<Record<RallarBlackBoxTestCommandKind, RallarBlackBoxCommandFieldSet>>;
 

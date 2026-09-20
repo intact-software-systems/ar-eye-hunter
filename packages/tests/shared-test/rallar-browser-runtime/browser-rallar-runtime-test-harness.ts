@@ -4,6 +4,7 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+
 import {
     facadeBehavior,
     facadeRecords,
@@ -124,6 +125,7 @@ export async function loadRuntime(): Promise<BlackBoxRallarRuntime> {
         facade: facade.rallar,
         targetWindow: target,
         clock: { now: Date.now },
+        readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),
         delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     });
 }

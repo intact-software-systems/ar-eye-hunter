@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+    describe,
+    expect,
+    it
+} from 'vitest';
+
 import {
     createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
@@ -21,6 +26,66 @@ import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../sha
 import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
 import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
+interface ManifestCommand {
+    readonly kind?: string;
+    readonly commandId?: string;
+    readonly transport?: string;
+    readonly rallar?: Readonly<Record<string, unknown>>;
+    readonly commands?: readonly ManifestCommand[];
+    readonly groups?: readonly Readonly<{
+        commands?: readonly ManifestCommand[];
+    }>[];
+    readonly readiness?: Readonly<{
+        minReadyPeers?: number;
+        timeoutMs?: number;
+        intervalMs?: number;
+    }>;
+    readonly count?: number;
+    readonly durationMs?: number;
+    readonly intervalMs?: number;
+    readonly maxInFlight?: number;
+    readonly maxCommands?: number;
+    readonly continueOnSendFailure?: boolean;
+    readonly metadata?: Record<string, unknown>;
+    readonly thresholds?: Record<string, unknown>;
+}
+
+interface ControlCommandInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly queuedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+interface ControlResultInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly endedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+interface ControlEventInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly topic: string;
+    readonly atEpochMs: number;
+}
+
+interface ExpectedStream {
+    readonly rateHz: number;
+    readonly intervalMs: number;
+    readonly durationSeconds: number;
+    readonly frameCount: number;
+    readonly maxDroppedFrames: number;
+    readonly maxP95SendDurationMs?: number;
+    readonly maxP99SendDurationMs?: number;
+    readonly minSendSuccessRatio: number;
+    readonly maxInFlight: number;
+}
+
 /** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
 const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
@@ -30,17 +95,17 @@ const MATRIX_DURATION_SECONDS = [30, 300] as const;
 const MATRIX_RATE_HZ = [10, 20] as const;
 const MATRIX_PROFILES = ['principal', 'all-peer'] as const;
 
-function durationLabel(seconds: number): string {
+function toDurationLabel(seconds: number): string {
     return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
 }
 
-function expectedMatrixDiagnosticPaths(): readonly string[] {
+function toExpectedMatrixDiagnosticPaths(): readonly string[] {
     return MATRIX_AGENT_COUNTS.flatMap((agentCount) =>
         MATRIX_DURATION_SECONDS.flatMap((durationSeconds) =>
             MATRIX_RATE_HZ.flatMap((rateHz) =>
                 MATRIX_PROFILES.map((profile) =>
                     `apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-${profile}-${agentCount}-agent-${
-                        durationLabel(durationSeconds)
+                        toDurationLabel(durationSeconds)
                     }-${rateHz}hz-tree.json`
                 )
             )
@@ -48,42 +113,18 @@ function expectedMatrixDiagnosticPaths(): readonly string[] {
     );
 }
 
-function allValues(value: unknown): readonly string[] {
+function toNestedStringValues(value: unknown): readonly string[] {
     if (typeof value === 'string') {
         return [value];
     }
     if (Array.isArray(value)) {
-        return value.flatMap(allValues);
+        return value.flatMap(toNestedStringValues);
     }
     if (value && typeof value === 'object') {
-        return Object.values(value).flatMap(allValues);
+        return Object.values(value).flatMap(toNestedStringValues);
     }
     return [];
 }
-
-type ManifestCommand = Readonly<{
-    kind?: string;
-    commandId?: string;
-    transport?: string;
-    rallar?: Readonly<Record<string, unknown>>;
-    commands?: readonly ManifestCommand[];
-    groups?: readonly Readonly<{
-        commands?: readonly ManifestCommand[];
-    }>[];
-    readiness?: Readonly<{
-        minReadyPeers?: number;
-        timeoutMs?: number;
-        intervalMs?: number;
-    }>;
-    count?: number;
-    durationMs?: number;
-    intervalMs?: number;
-    maxInFlight?: number;
-    maxCommands?: number;
-    continueOnSendFailure?: boolean;
-    metadata?: Record<string, unknown>;
-    thresholds?: Record<string, unknown>;
-}>;
 
 // Every multi-agent Hetzner manifest must carry the standard barrier so agents start synchronized;
 // only these two are exempt, because neither drives RTC traffic between peers. A new manifest
@@ -93,7 +134,7 @@ const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json'
 ]);
 
-function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
+function toManifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
     const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
         commands.flatMap((command) => [
             command,
@@ -152,7 +193,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-10hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-20hz-tree.json',
-            ...expectedMatrixDiagnosticPaths()
+            ...toExpectedMatrixDiagnosticPaths()
         ]);
     });
 
@@ -249,7 +290,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(greenEntries.every((entry) => entry.manifest.metadata?.expectedFailure !== true)).toBe(true);
 
         for (const entry of catalog) {
-            const strings = allValues(entry.manifest);
+            const strings = toNestedStringValues(entry.manifest);
             expect(strings.some((value) => /bearer|password|secret|token/i.test(value)), entry.filePath).toBe(false);
         }
     });
@@ -269,7 +310,7 @@ describe('Hetzner distributed manifest catalog', () => {
             if (entry.manifest.metadata?.family === 'alm-conformance') {
                 continue;
             }
-            for (const command of manifestCommands(entry.manifest)) {
+            for (const command of toManifestCommands(entry.manifest)) {
                 if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
                     continue;
                 }
@@ -310,7 +351,7 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
 
         for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
-            const commands = manifestCommands(entry.manifest);
+            const commands = toManifestCommands(entry.manifest);
             const sendsRtc = commands.some((command) => command.kind === 'rtc.send' || command.kind === 'rtc.stream');
             if (!sendsRtc) {
                 expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
@@ -359,7 +400,7 @@ describe('Hetzner distributed manifest catalog', () => {
         for (const entry of createHetznerDistributedManifestCatalog()) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe;
-                if (!recipe || !manifestCommands(entry.manifest).some((command) => command.readiness)) {
+                if (!recipe || !toManifestCommands(entry.manifest).some((command) => command.readiness)) {
                     continue;
                 }
 
@@ -379,17 +420,6 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('uses lower-rate rtc.stream baselines for non-diagnostic realtime Hetzner manifests', () => {
-        type ExpectedStream = Readonly<{
-            rateHz: number;
-            intervalMs: number;
-            durationSeconds: number;
-            frameCount: number;
-            maxDroppedFrames: number;
-            maxP95SendDurationMs?: number;
-            maxP99SendDurationMs?: number;
-            minSendSuccessRatio: number;
-            maxInFlight: number;
-        }>;
         const expectedStreams = new Map<string, ExpectedStream>([
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
                 rateHz: 5,
@@ -470,7 +500,7 @@ describe('Hetzner distributed manifest catalog', () => {
                     !candidate.filePath.includes('alm-conformance')
                 )
         ) {
-            const commands = manifestCommands(entry.manifest);
+            const commands = toManifestCommands(entry.manifest);
             const stream = commands.find((command) => command.kind === 'rtc.stream');
             const highRateLoop = commands.find((command) =>
                 command.kind === 'loop' &&
@@ -530,7 +560,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expectedFailure: false
         });
 
-        const stream = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+        const stream = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .find((command) => command.kind === 'rtc.stream');
         expect(stream).toMatchObject({
             count: 100,
@@ -711,20 +741,20 @@ describe('Hetzner distributed manifest catalog', () => {
                 resumeCompletedCommandIds: []
             })),
             commands: [
-                controlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
-                controlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
-                controlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
-                controlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
+                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
             ],
             results: [
-                controlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
-                controlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
-                controlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
-                controlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
+                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
             ],
             events: [
-                controlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
-                controlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
+                toControlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
+                toControlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
             ],
             stats: [],
             reports: [],
@@ -746,8 +776,8 @@ describe('Hetzner distributed manifest catalog', () => {
             artifactBundle: snapshots.right.artifactBundle
         });
         const performance = computeRtcPerformanceView({
-            diagnostics: computeRtcDiagnostics(emptySpaState(), DIAGNOSTICS_NOW_EPOCH_MS),
-            state: emptySpaState(),
+            diagnostics: computeRtcDiagnostics(toEmptySpaState(), DIAGNOSTICS_NOW_EPOCH_MS),
+            state: toEmptySpaState(),
             distributedMonitor: monitor,
             histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
         });
@@ -945,7 +975,7 @@ describe('Hetzner distributed manifest catalog', () => {
         const matrix = catalog.filter((entry) => entry.filePath.includes('/diagnostic/matrix/rtc-messages-'));
         const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
 
-        expect(matrix.map((entry) => entry.filePath)).toEqual(expectedMatrixDiagnosticPaths());
+        expect(matrix.map((entry) => entry.filePath)).toEqual(toExpectedMatrixDiagnosticPaths());
         expect(matrix).toHaveLength(
             MATRIX_AGENT_COUNTS.length * MATRIX_DURATION_SECONDS.length * MATRIX_RATE_HZ.length * MATRIX_PROFILES.length
         );
@@ -954,7 +984,7 @@ describe('Hetzner distributed manifest catalog', () => {
             for (const durationSeconds of MATRIX_DURATION_SECONDS) {
                 for (const rateHz of MATRIX_RATE_HZ) {
                     const frameCount = durationSeconds * rateHz;
-                    const label = durationLabel(durationSeconds);
+                    const label = toDurationLabel(durationSeconds);
                     const principal = byId.get(
                         `hetzner-diagnostic-rtc-messages-principal-${agentCount}-agent-${label}-${rateHz}hz-tree`
                     );
@@ -1036,12 +1066,12 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(entry?.manifest.metadata).toMatchObject({
             family: 'alm-conformance',
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
+            scenarios: ['delivery-reload', 'bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
         });
 
-        const rtcConnects = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+        const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        expect(rtcConnects).toHaveLength(2);
+        expect(rtcConnects).toHaveLength(5);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
     });
@@ -1073,15 +1103,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 });
 
-interface ControlCommandInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly queuedAtEpochMs: number;
-    readonly durationMs: number;
-}
-
-function controlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput) {
+function toControlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput) {
     return {
         envelope: {
             kind: 'command',
@@ -1102,15 +1124,7 @@ function controlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs
     };
 }
 
-interface ControlResultInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly endedAtEpochMs: number;
-    readonly durationMs: number;
-}
-
-function controlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput) {
+function toControlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput) {
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -1131,15 +1145,7 @@ function controlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }
     };
 }
 
-interface ControlEventInput {
-    readonly runId: string;
-    readonly agentId: string;
-    readonly commandId: string;
-    readonly topic: string;
-    readonly atEpochMs: number;
-}
-
-function controlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEventInput) {
+function toControlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEventInput) {
     return {
         kind: 'event',
         protocolVersion: 1,
@@ -1155,7 +1161,7 @@ function controlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEv
     };
 }
 
-function emptySpaState(): RallarBlackBoxTestState {
+function toEmptySpaState(): RallarBlackBoxTestState {
     const events: readonly RallarBlackBoxTestEvent[] = [];
     return {
         status: 'completed',

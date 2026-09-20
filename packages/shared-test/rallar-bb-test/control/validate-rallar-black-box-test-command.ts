@@ -159,7 +159,10 @@ function validateCommandKindFields(
         case 'recipe.run':
             return command.recipe === undefined ? [] : validateInlineRecipe(command, `${kind}.recipe`, depth);
         case 'recipe.cancel':
-            return validateStringField(command, 'reason', kind);
+            return [
+                ...validateStringField(command, 'reason', kind),
+                ...validateStringField(command, 'targetCommandId', kind)
+            ];
         case 'loop':
             return [
                 ...validateCompositeCommandList(command, 'loop.commands', depth),
@@ -173,8 +176,9 @@ function validateCommandKindFields(
             return validateAssertControlCommand(command);
         case 'health':
             return validateBooleanField(command, 'includeRtcDiagnostics', kind);
-        case 'stats':
         case 'close':
+            return validateStringField(command, 'targetCommandId', kind);
+        case 'stats':
         case 'reset':
             return [];
         default:

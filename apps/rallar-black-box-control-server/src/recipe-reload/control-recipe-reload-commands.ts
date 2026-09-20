@@ -1,3 +1,10 @@
+import {
+    hasAlmReloadPair,
+    hasAuthoredAlmReloadCheckpoints,
+    resolveAlmReloadRole,
+    toAlmReloadPair,
+    validateAlmReloadRoot
+} from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
@@ -13,8 +20,10 @@ export interface ControlRecipeReloadRoot extends ControlCommandEnvelope {
 }
 
 export function isControlRecipeReloadRoot(envelope: ControlCommandEnvelope): envelope is ControlRecipeReloadRoot {
-    return envelope.command.kind === 'recipe.run' && envelope.command.recipe?.metadata?.profile === 'alm-conformance' &&
-        envelope.command.recipe.commands.some(containsReload);
+    return envelope.command.kind === 'recipe.run' && envelope.command.recipe !== undefined &&
+        (hasAlmReloadPair(envelope.command) || hasAuthoredAlmReloadCheckpoints(envelope.command) ||
+            (envelope.command.recipe.metadata?.profile === 'alm-conformance' &&
+                envelope.command.recipe.commands.some(containsReload)));
 }
 
 export function validateControlRecipeReloadRoot(envelope: ControlRecipeReloadRoot): readonly string[] {
@@ -36,6 +45,9 @@ export function validateControlRecipeReloadRoot(envelope: ControlRecipeReloadRoo
 }
 
 export function toControlRecipeReloadCommands(root: ControlRecipeReloadRoot): readonly ControlCommandEnvelope[] {
+    if (hasAlmReloadPair(root.command) || hasAuthoredAlmReloadCheckpoints(root.command)) {
+        return toPairedReloadCommands(root);
+    }
     const commands: ControlCommandEnvelope[] = [];
     let segment: RallarBlackBoxTestCommand[] = [];
     for (const command of root.command.recipe.commands) {
@@ -68,17 +80,6 @@ export function resolveControlRecipeReloadOwner(
         }
     }
     return undefined;
-}
-
-export function toPendingReloadEvidenceIds(commands: Iterable<ControlCommandState>): ReadonlySet<string> {
-    const protectedIds = new Set<string>();
-    for (const root of toPendingControlRecipeReloadRoots(commands)) {
-        protectedIds.add(root.envelope.commandId);
-        for (const child of toControlRecipeReloadCommands(root.envelope)) {
-            protectedIds.add(child.commandId);
-        }
-    }
-    return protectedIds;
 }
 
 export function isReloadChildEnvelope(expected: ControlCommandEnvelope, actual: ControlCommandEnvelope): boolean {
@@ -135,6 +136,21 @@ export function validateControlRecipeReloadEnqueue(
     run: ControlRunState,
     envelope: ControlCommandEnvelope
 ): readonly string[] {
+    if (hasAuthoredAlmReloadCheckpoints(envelope.command) && !hasAlmReloadPair(envelope.command)) {
+        return ['Authored ALM reload checkpoints require exact paired control binding.'];
+    }
+    if (hasAlmReloadPair(envelope.command)) {
+        const pairIssues = validateAlmReloadRoot(envelope);
+        if (pairIssues.length > 0) {
+            return pairIssues;
+        }
+        const pair = toAlmReloadPair(envelope.command)!;
+        const peerAddress = pair.sender.commandId === envelope.commandId ? pair.receiver : pair.sender;
+        const peer = run.commands.get(peerAddress.commandId);
+        if (peer && JSON.stringify(toAlmReloadPair(peer.envelope.command)) !== JSON.stringify(pair)) {
+            return ['ALM reload pair roots must contain reciprocal exact addresses and checkpoints.'];
+        }
+    }
     const owner = resolveControlRecipeReloadOwner(run, envelope.commandId);
     if (owner && owner.envelope.commandId !== envelope.commandId) {
         return ['Command ID belongs to an ALM reload recipe.'];
@@ -154,6 +170,36 @@ export function validateControlRecipeReloadEnqueue(
         }
     }
     return issues;
+}
+
+function toPairedReloadCommands(root: ControlRecipeReloadRoot): readonly ControlCommandEnvelope[] {
+    const pair = toAlmReloadPair(root.command);
+    const role = pair ? resolveAlmReloadRole(pair, root) : undefined;
+    if (!pair || !role || validateAlmReloadRoot(root).length > 0) {
+        return [];
+    }
+    const recipe = root.command.recipe;
+    const boundaries = pair.checkpoints.flatMap((checkpoint) =>
+        role === 'sender'
+            ? [checkpoint.senderPrefixEnd, checkpoint.senderReload, checkpoint.senderSuffixEnd]
+            : [checkpoint.receiverReadyEnd, checkpoint.receiverAbsenceEnd, checkpoint.receiverRecoveryEnd]
+    );
+    const commands: ControlCommandEnvelope[] = [];
+    let start = 0;
+    for (const boundary of boundaries) {
+        const end = recipe.commands.findIndex((command) => command.commandId === boundary);
+        const segment = recipe.commands.slice(start, end + 1);
+        commands.push(
+            segment.length === 1 && segment[0].kind === 'agent.reload'
+                ? toReloadChild(root, segment[0], commands.length)
+                : toReloadSegment(root, segment, commands.length)
+        );
+        start = end + 1;
+    }
+    if (start < recipe.commands.length) {
+        commands.push(toReloadSegment(root, recipe.commands.slice(start), commands.length));
+    }
+    return commands;
 }
 
 export interface ControlRecipeReloadState extends ControlCommandState {

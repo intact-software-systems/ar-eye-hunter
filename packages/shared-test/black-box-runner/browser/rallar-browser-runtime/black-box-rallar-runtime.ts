@@ -76,6 +76,10 @@ export function installBlackBoxRallarRuntime(
         facade: createBlackBoxBrowserRallarRuntimeDependency(),
         targetWindow,
         clock: { now: Date.now },
+        readDocument: () => ({
+            timeOrigin: globalThis.performance.timeOrigin,
+            origin: globalThis.location.origin
+        }),
         delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)))
     }).installation();
     targetWindow.__blackBoxRallar = installation.runtime;

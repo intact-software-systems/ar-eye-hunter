@@ -172,6 +172,8 @@ export type RallarBlackBoxTestRecipeCancelCommand =
     & RallarBlackBoxTestCommandBase<'recipe.cancel'>
     & Readonly<{
         reason?: string;
+        /** When present, abort only this still-active, unambiguous top-level invocation. */
+        targetCommandId?: string;
     }>;
 
 export type RallarBlackBoxTestLoopCommand =
@@ -634,10 +636,17 @@ export type RallarBlackBoxTestHealthCommand =
         includeRtcDiagnostics?: boolean;
     }>;
 
+export type RallarBlackBoxTestCloseCommand =
+    & RallarBlackBoxTestCommandBase<'close'>
+    & Readonly<{
+        /** Close retained resources only if this successful exclusive top-level invocation is still the idle owner. */
+        targetCommandId?: string;
+    }>;
+
 export type RallarBlackBoxTestSimpleCommand =
     | RallarBlackBoxTestHealthCommand
     | RallarBlackBoxTestCommandBase<'stats'>
-    | RallarBlackBoxTestCommandBase<'close'>
+    | RallarBlackBoxTestCloseCommand
     | RallarBlackBoxTestCommandBase<'reset'>;
 
 export type RallarBlackBoxTestCommand =

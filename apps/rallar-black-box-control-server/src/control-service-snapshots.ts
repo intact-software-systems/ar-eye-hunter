@@ -26,9 +26,7 @@ import type {
     ControlDistributedRunState,
     ControlRunState
 } from './control-service-state.ts';
-import {
-    toPendingReloadEvidenceIds
-} from './recipe-reload/control-recipe-reload-commands.ts';
+import { toPendingReloadEvidenceIds } from './recipe-reload/control-recipe-reload-evidence.ts';
 
 export interface RestoredControlSnapshot {
     readonly runs: Map<string, ControlRunState>;

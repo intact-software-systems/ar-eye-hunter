@@ -11,7 +11,6 @@ import type {
     RallarBlackBoxTestCommandExecutor,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestConfig,
-    RallarBlackBoxTestError,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult,
@@ -22,14 +21,20 @@ import type {
     RallarBlackBoxTestStateListener,
     RallarBlackBoxTestStatsSnapshot
 } from '../rallar-black-box-test-contracts.ts';
-import { RALLAR_BLACK_BOX_RECIPE_TIMEOUT, runRecipeCommands } from '../recipe/run-recipe-commands.ts';
+import { runRecipeCommands } from '../recipe/run-recipe-commands.ts';
 import { validateExecutableRecipe } from '../recipe/validate-executable-recipe.ts';
 import { redactRallarBlackBoxValue } from '../redaction.ts';
 import { waitForEvent } from '../wait/wait-for-event.ts';
-import { isAbortError, sleepWithAbort } from './sleep-with-abort.ts';
+import {
+    decodeRuntimeTestError,
+    decodeThrownCommandOutcome,
+    toInvalidRecipeOutcome,
+    toTerminalCleanupReason
+} from './runtime-command-outcomes.ts';
+import { sleepWithAbort } from './sleep-with-abort.ts';
 import { toMergedRuntimeConfig } from './to-merged-runtime-config.ts';
 import { computeCommandDeadlineEpochMs } from './to-runtime-command-values.ts';
-import { toRuntimeStats } from './to-runtime-stats.ts';
+import { toRuntimeHealth, toRuntimeStats } from './to-runtime-stats.ts';
 
 export interface CreateRallarBlackBoxTestRuntimeOptions {
     readonly now?: () => number;
@@ -47,6 +52,12 @@ type CommandOfKind<Kind extends RallarBlackBoxTestCommand['kind']> = Extract<Com
 type ResultCachePolicy = 'replay' | 'bypass';
 
 namespace InMemoryRallarBlackBoxTestRuntime {
+    export interface TargetedCleanup {
+        readonly targetCommandId: string;
+        targetSettled: boolean;
+        requestSettled: boolean;
+    }
+
     export interface Dependencies {
         readonly now: () => number;
         readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -63,6 +74,9 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     private currentConfig: RallarBlackBoxTestConfig | undefined;
     private loadedRecipe: RallarBlackBoxTestRecipe | undefined;
     private activeExecutionCount = 0;
+    private activeTopLevelCount = 0;
+    private exclusiveTopLevelCommandId: string | undefined;
+    private targetedCleanup: InMemoryRallarBlackBoxTestRuntime.TargetedCleanup | undefined;
     private cancellationController = new AbortController();
     private recipeExecutionDepth = 0;
 
@@ -100,15 +114,92 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             return { ...cached, replayed: true };
         }
 
-        if (commandWithId.kind !== 'recipe.cancel') {
+        const refusal = this.admitCommand(commandWithId, cachePolicy);
+        return refusal
+            ? this.commitResult(commandWithId, this.dependencies.now(), refusal)
+            : await this.runRegisteredCommand(commandWithId, cachePolicy);
+    }
+
+    /** Refusal leaves resource ownership unchanged; accepted idle close fences effects before any notification. */
+    private admitCommand(
+        command: CommandWithId,
+        cachePolicy: ResultCachePolicy
+    ): RallarBlackBoxTestCommandOutcome | undefined {
+        if (
+            cachePolicy === 'bypass' && (command.kind === 'close' || command.kind === 'recipe.cancel') &&
+            command.targetCommandId !== undefined
+        ) {
+            return {
+                status: 'ok',
+                nextStatus: this.currentState.status,
+                value: {
+                    ...(command.kind === 'close' ? { closed: false } : { cancelRequested: false }),
+                    targetCommandId: command.targetCommandId,
+                    reason: 'targeted-cleanup-requires-top-level'
+                }
+            };
+        }
+        if (cachePolicy === 'replay' && this.targetedCleanup) {
+            return {
+                status: 'failed',
+                nextStatus: this.currentState.status,
+                error: {
+                    code: 'RALLAR_BLACK_BOX_CLEANUP_IN_PROGRESS',
+                    message: 'Owned resource cleanup is still settling.'
+                }
+            };
+        }
+        if (command.kind === 'close' && command.targetCommandId !== undefined) {
+            const targetCommandId = command.targetCommandId;
+            if (this.activeTopLevelCount !== 0 || this.exclusiveTopLevelCommandId !== targetCommandId) {
+                return {
+                    status: 'ok',
+                    nextStatus: this.currentState.status,
+                    value: { closed: false, targetCommandId, reason: 'target-not-exclusive-idle-owner' }
+                };
+            }
+            this.exclusiveTopLevelCommandId = undefined;
+            this.targetedCleanup = { targetCommandId, targetSettled: true, requestSettled: false };
+        }
+        return undefined;
+    }
+
+    /** Owns actual invocation registration and final settlement, including nested execution accounting. */
+    private async runRegisteredCommand(
+        commandWithId: CommandWithId,
+        cachePolicy: ResultCachePolicy
+    ): Promise<RallarBlackBoxTestResult> {
+        const targetedClose = commandWithId.kind === 'close' && commandWithId.targetCommandId !== undefined;
+        const ownsExecution = cachePolicy === 'replay' && commandWithId.kind !== 'recipe.cancel' && !targetedClose;
+        if (ownsExecution) {
+            this.exclusiveTopLevelCommandId = this.activeTopLevelCount === 0 ? commandWithId.commandId : undefined;
+            this.activeTopLevelCount += 1;
+        }
+
+        if (commandWithId.kind !== 'recipe.cancel' && !targetedClose) {
             this.clearAbortedCancellation();
         }
         this.activeExecutionCount += 1;
+        let succeeded = false;
         try {
-            return await this.runUncachedCommand(commandWithId);
+            const result = await this.runUncachedCommand(commandWithId);
+            succeeded = result.ok;
+            return result;
         }
         finally {
             this.activeExecutionCount -= 1;
+            if (targetedClose) {
+                this.settleTargetedCleanup('request');
+            }
+            if (ownsExecution) {
+                this.activeTopLevelCount -= 1;
+                if (this.activeTopLevelCount === 0 && !succeeded) {
+                    this.exclusiveTopLevelCommandId = undefined;
+                }
+                if (this.targetedCleanup?.targetCommandId === commandWithId.commandId) {
+                    this.settleTargetedCleanup('target');
+                }
+            }
         }
     }
 
@@ -120,9 +211,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             status: commandWithId.kind === 'recipe.cancel' ? this.currentState.status : 'running'
         });
         const outcome = await this.runCommandOutcome(commandWithId).catch(decodeThrownCommandOutcome);
-        const result = this.toResult(commandWithId, startedAtEpochMs, outcome);
-        this.commitResult(result, outcome);
-        return result;
+        return this.commitResult(commandWithId, startedAtEpochMs, outcome);
     }
 
     private async runCommandOutcome(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
@@ -205,28 +294,72 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private async cancelRecipe(command: CommandOfKind<'recipe.cancel'>): Promise<RallarBlackBoxTestCommandOutcome> {
-        if (!this.cancellationController.signal.aborted) {
-            this.cancellationController.abort(command.reason ?? 'Rallar black-box recipe cancellation requested.');
+        const targetCommandId = command.targetCommandId;
+        if (
+            targetCommandId !== undefined &&
+            (this.targetedCleanup || this.activeTopLevelCount !== 1 ||
+                this.exclusiveTopLevelCommandId !== targetCommandId)
+        ) {
+            return {
+                status: 'ok',
+                value: { cancelRequested: false, targetCommandId, reason: 'target-not-exclusively-active' },
+                nextStatus: this.currentState.status
+            };
         }
-        this.appendEvent({
-            kind: 'diagnostic',
-            topic: 'rallar.bb.recipe.cancel_requested',
-            commandId: command.commandId,
-            severity: 'warning',
-            payload: { reason: command.reason }
-        });
-        if (this.recipeExecutionDepth === 0) {
-            await this.cleanupOwnedResources({
-                reason: 'cancelled',
+        if (targetCommandId !== undefined) {
+            // Abort listeners may reenter execute synchronously, so fence admission before aborting.
+            this.targetedCleanup = { targetCommandId, targetSettled: false, requestSettled: false };
+        }
+        this.exclusiveTopLevelCommandId = undefined;
+        try {
+            if (!this.cancellationController.signal.aborted) {
+                this.cancellationController.abort(command.reason ?? 'Rallar black-box recipe cancellation requested.');
+            }
+            this.appendEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.bb.recipe.cancel_requested',
                 commandId: command.commandId,
-                status: 'cancelled'
+                severity: 'warning',
+                payload: { reason: command.reason }
             });
+            if (this.recipeExecutionDepth === 0) {
+                await this.cleanupOwnedResources({
+                    reason: 'cancelled',
+                    commandId: command.commandId,
+                    status: 'cancelled'
+                });
+            }
+            return {
+                status: 'ok',
+                value: {
+                    cancelRequested: true,
+                    reason: command.reason,
+                    ...(targetCommandId === undefined ? {} : { targetCommandId })
+                },
+                nextStatus: this.currentState.status === 'running' ? 'cancelled' : this.currentState.status
+            };
         }
-        return {
-            status: 'ok',
-            value: { cancelRequested: true, reason: command.reason },
-            nextStatus: this.currentState.status === 'running' ? 'cancelled' : this.currentState.status
-        };
+        finally {
+            if (targetCommandId !== undefined) {
+                this.settleTargetedCleanup('request');
+            }
+        }
+    }
+
+    private settleTargetedCleanup(part: 'request' | 'target'): void {
+        const cleanup = this.targetedCleanup;
+        if (!cleanup) {
+            return;
+        }
+        if (part === 'request') {
+            cleanup.requestSettled = true;
+        }
+        else {
+            cleanup.targetSettled = true;
+        }
+        if (cleanup.targetSettled && cleanup.requestSettled) {
+            this.targetedCleanup = undefined;
+        }
     }
 
     private async reset(command: CommandWithId): Promise<RallarBlackBoxTestCommandOutcome> {
@@ -356,13 +489,13 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         }
     }
 
-    private toResult(
+    private commitResult(
         command: CommandWithId,
         startedAtEpochMs: number,
         outcome: RallarBlackBoxTestCommandOutcome
     ): RallarBlackBoxTestResult {
         const endedAtEpochMs = this.dependencies.now();
-        return {
+        const result: RallarBlackBoxTestResult = {
             commandId: command.commandId,
             kind: command.kind,
             status: outcome.status,
@@ -373,9 +506,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             value: this.toRedacted(outcome.value),
             error: this.toRedacted(outcome.error)
         };
-    }
-
-    private commitResult(result: RallarBlackBoxTestResult, outcome: RallarBlackBoxTestCommandOutcome): void {
         this.currentState = {
             ...this.currentState,
             status: outcome.nextStatus ?? (result.ok ? 'completed' : 'failed'),
@@ -393,6 +523,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             payload: result
         });
         this.notify();
+        return result;
     }
 
     private updateStats(commandId?: string): RallarBlackBoxTestStatsSnapshot {
@@ -464,61 +595,4 @@ function createInitialRuntimeState(): RallarBlackBoxTestState {
 function createSequentialIdFactory(): (prefix: string) => string {
     let sequence = 1;
     return (prefix: string) => `${prefix}-${sequence++}`;
-}
-
-function toRuntimeHealth(state: RallarBlackBoxTestState): RallarBlackBoxTestRuntimeHealth {
-    return {
-        status: state.status,
-        configured: state.currentConfig !== undefined,
-        loadedRecipeId: state.loadedRecipe?.recipeId,
-        activeCommandId: state.activeCommand?.commandId,
-        commandCount: state.commandHistory.length,
-        eventCount: state.events.length,
-        failureCount: state.failures.length
-    };
-}
-
-function toInvalidRecipeOutcome(issues: readonly string[]): RallarBlackBoxTestCommandOutcome {
-    return {
-        status: 'failed',
-        error: { code: 'RALLAR_BLACK_BOX_COMMAND_FAILED', message: issues.join('\n') },
-        nextStatus: 'failed'
-    };
-}
-
-function toTerminalCleanupReason(outcome: RallarBlackBoxTestCommandOutcome): RallarBlackBoxTestCleanupInput['reason'] {
-    if (outcome.status === 'cancelled') {
-        return 'cancelled';
-    }
-    return outcome.error?.code === RALLAR_BLACK_BOX_RECIPE_TIMEOUT ? 'timed-out' : 'failed';
-}
-
-function decodeThrownCommandOutcome(error: unknown): RallarBlackBoxTestCommandOutcome {
-    return isAbortError(error)
-        ? {
-            status: 'cancelled',
-            error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_COMMAND_CANCELLED'),
-            nextStatus: 'cancelled'
-        }
-        : {
-            status: 'failed',
-            error: decodeRuntimeTestError(error, 'RALLAR_BLACK_BOX_COMMAND_FAILED'),
-            nextStatus: 'failed'
-        };
-}
-
-function decodeRuntimeTestError(error: unknown, code: string): RallarBlackBoxTestError {
-    return error instanceof Error
-        ? { code, message: error.message, details: { name: error.name, stack: error.stack } }
-        : { code, message: String(error) };
-}
-
-interface RallarBlackBoxTestRuntimeHealth {
-    readonly status: RallarBlackBoxTestState['status'];
-    readonly configured: boolean;
-    readonly loadedRecipeId: string | undefined;
-    readonly activeCommandId: string | undefined;
-    readonly commandCount: number;
-    readonly eventCount: number;
-    readonly failureCount: number;
 }

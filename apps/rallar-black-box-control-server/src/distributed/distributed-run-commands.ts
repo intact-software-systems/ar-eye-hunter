@@ -1,9 +1,15 @@
+import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlCommandEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type { ControlDistributedRunCommandPhase } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedRunRecipeSelection } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRecord
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
 import { toCommandIdSegment } from '../control-command-queue-policy.ts';
 import type { ControlDistributedRunState, ControlRunState } from '../control-service-state.ts';
@@ -56,6 +62,49 @@ export function toDistributedStartCommands(
     return toRecipePhaseTargets(distributedRun, 'start').map((target) => ({
         ...toPhaseCommandTarget(target),
         command: toDistributedStartCommand(target)
+    }));
+}
+
+/** Bind authored checkpoints only after role selection has produced the actual command addresses. */
+export function bindDistributedAlmReloadCommands(
+    distributedRun: ControlDistributedRunState,
+    commands: readonly DistributedPhaseCommand[]
+): Either<readonly string[], readonly DistributedPhaseCommand[]> {
+    const reloads = commands.filter((entry) =>
+        entry.command.kind === 'recipe.run' &&
+        Object.hasOwn(entry.command.recipe?.metadata ?? {}, 'almReloadCheckpoints')
+    );
+    if (reloads.length === 0) {
+        return Either.ofRight(commands);
+    }
+    const sender = reloads.find((entry) => entry.selection?.role === 'sender');
+    const receiver = reloads.find((entry) => entry.selection?.role === 'receiver');
+    const terminalSeconds = distributedRun.manifest.metadata?.recommendedTerminalTimeoutSeconds;
+    if (
+        reloads.length !== 2 || !sender || !receiver ||
+        !sender.command.commandId || !receiver.command.commandId ||
+        typeof terminalSeconds !== 'number' || terminalSeconds <= 0 ||
+        !Number.isSafeInteger(terminalSeconds * 1_000)
+    ) {
+        return Either.ofLeft([
+            'Authored distributed ALM reload requires two exact sender/receiver roots and its finite terminal budget.'
+        ]);
+    }
+    const bound = bindAlmReloadPair({
+        sender: toDistributedReloadRoot(distributedRun, sender, terminalSeconds * 1_000),
+        receiver: toDistributedReloadRoot(distributedRun, receiver, terminalSeconds * 1_000)
+    });
+    if (bound.left) {
+        return Either.ofLeft(bound.left);
+    }
+    return Either.ofRight(commands.map((entry) => {
+        if (entry === sender) {
+            return { ...entry, command: bound.right!.sender.command };
+        }
+        if (entry === receiver) {
+            return { ...entry, command: bound.right!.receiver.command };
+        }
+        return entry;
     }));
 }
 
@@ -119,6 +168,21 @@ export function toRecoveredDistributedCommandLinks(
 export function toDistributedBarrierTimeoutMs(distributedRun: ControlDistributedRunState): number | undefined {
     const barrier = distributedRun.manifest.barrier;
     return barrier.enabled ? barrier.timeoutMs : undefined;
+}
+
+function toDistributedReloadRoot(
+    distributedRun: ControlDistributedRunState,
+    entry: DistributedPhaseCommand,
+    timeoutMs: number
+): ControlCommandEnvelope {
+    return {
+        kind: 'command',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: distributedRun.controlRunId,
+        agentId: entry.agentId,
+        commandId: entry.command.commandId!,
+        command: { ...entry.command, timeoutMs }
+    };
 }
 
 function toDistributedStageCommand(target: DistributedRecipeTarget): RallarBlackBoxTestCommand {

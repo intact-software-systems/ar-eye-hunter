@@ -1,3 +1,4 @@
+import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
     type ControlClientEnvelope,
@@ -42,6 +43,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRedactionOptions
 } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
 import { createControlDistributedRunArtifactBundle } from './control-artifacts.ts';
@@ -72,6 +74,7 @@ import type {
     ControlTokenState
 } from './control-service-state.ts';
 import {
+    bindDistributedAlmReloadCommands,
     toDistributedBarrierCommands,
     toDistributedCancelCommands,
     toDistributedStageCommands,
@@ -106,7 +109,9 @@ import { createControlFleetReportBundle } from './fleet/create-control-fleet-rep
 import { createControlFleetRunReport } from './fleet/create-control-fleet-run-report.ts';
 import {
     computeControlRecipeReloadStep,
+    computeReloadRootDeadline,
     toCancelledControlRecipeReload,
+    toControlRecipeReloadCancellationRoots,
     toControlRecipeReloadDispatch
 } from './recipe-reload/compute-control-recipe-reload-step.ts';
 import {
@@ -118,6 +123,13 @@ import {
     computeControlRecipeReloadCompletionWrite,
     isAdmissibleControlRecipeReloadResult
 } from './recipe-reload/control-recipe-reload-evidence.ts';
+import {
+    computeControlReloadCleanupRefusal,
+    hasControlReloadCleanup,
+    isAdmissibleControlReloadCleanupResult,
+    toControlReloadCleanup,
+    toControlReloadCleanupSuccessor
+} from './recipe-reload/control-reload-cleanup.ts';
 
 export type ControlServiceFailureCode =
     | 'command-kind-not-allowed'
@@ -216,12 +228,19 @@ export class RallarBlackBoxControlService {
             command: input.command,
             deadlineEpochMs: input.deadlineEpochMs
         };
+        if (hasControlReloadCleanup(envelope)) {
+            return toFailure('command-payload-conflict', 'Reload cleanup is owned by its paired control execution.');
+        }
         const issues = validateControlRecipeReloadEnqueue(run, envelope);
         if (issues.length > 0) {
             return toFailure('command-payload-conflict', issues.join(' '));
         }
         const queued = this.queueCommand(run, agent, envelope);
-        if (queued.right && (envelope.command.kind === 'recipe.cancel' || envelope.command.kind === 'reset')) {
+        if (
+            queued.right &&
+            ((envelope.command.kind === 'recipe.cancel' && envelope.command.targetCommandId === undefined) ||
+                envelope.command.kind === 'reset')
+        ) {
             this.cancelReloadRecipes(run, envelope.agentId!);
         }
         return queued;
@@ -667,6 +686,12 @@ export class RallarBlackBoxControlService {
         const owner = resolveControlRecipeReloadOwner(run, envelope.commandId);
         const queued = run.commands.get(envelope.commandId);
         if (
+            queued && hasControlReloadCleanup(queued.envelope) &&
+            !isAdmissibleControlReloadCleanupResult(queued, envelope)
+        ) {
+            return false;
+        }
+        if (
             !isAdmissibleControlRecipeReloadResult({
                 owner,
                 command: queued,
@@ -695,6 +720,9 @@ export class RallarBlackBoxControlService {
         if (command) {
             command.completedAtEpochMs = this.dependencies.now();
         }
+        if (queued) {
+            this.queueReloadCleanupSuccessor(run, queued, envelope);
+        }
         this.touch(run);
         this.advanceReloadRecipes(run);
         trimControlRunEvidence(run, this.distributedRuns.values(), this.config.runtimeRetentionBounds);
@@ -702,8 +730,29 @@ export class RallarBlackBoxControlService {
         return true;
     }
 
+    private queueReloadCleanupSuccessor(
+        run: ControlRunState,
+        command: ControlCommandState,
+        envelope: ControlResultEnvelope
+    ): void {
+        const successor = toControlReloadCleanupSuccessor(command, envelope);
+        if (successor) {
+            const failure = this.queueCommand(run, this.ensureAgent(run, successor.agentId!), successor).left;
+            if (failure && envelope.result && isJsonRecordValue(envelope.result.value)) {
+                run.results.set(envelope.commandId, {
+                    ...envelope,
+                    result: {
+                        ...envelope.result,
+                        value: { ...envelope.result.value, cleanupFailure: failure }
+                    }
+                });
+            }
+        }
+    }
+
     private advanceReloadRecipes(run: ControlRunState): void {
-        for (const root of toPendingControlRecipeReloadRoots(run.commands.values())) {
+        for (const pending of toPendingControlRecipeReloadRoots(run.commands.values())) {
+            const root = run.commands.get(pending.envelope.commandId)!;
             const step = computeControlRecipeReloadStep({ root, run, nowEpochMs: this.dependencies.now() });
             switch (step.kind) {
                 case 'queue':
@@ -714,11 +763,18 @@ export class RallarBlackBoxControlService {
                     break;
             }
         }
+        for (const command of run.commands.values()) {
+            const refusal = computeControlReloadCleanupRefusal(command, run, this.dependencies.now());
+            if (refusal) {
+                command.completedAtEpochMs = this.dependencies.now();
+                run.results.set(command.envelope.commandId, refusal);
+                this.touch(run);
+            }
+        }
     }
 
     private cancelReloadRecipes(run: ControlRunState, agentId: string): void {
-        const roots = toPendingControlRecipeReloadRoots(run.commands.values())
-            .filter((root) => root.envelope.agentId === agentId);
+        const roots = toControlRecipeReloadCancellationRoots(run.commands.values(), agentId);
         for (const root of roots) {
             this.completeReloadRecipe(
                 run,
@@ -733,10 +789,27 @@ export class RallarBlackBoxControlService {
         root: ControlCommandState,
         envelope: ControlResultEnvelope
     ): void {
+        const cleanup = !envelope.ok
+            ? toControlReloadCleanup({
+                root,
+                run,
+                deadlineEpochMs: computeReloadRootDeadline(root) ?? this.dependencies.now()
+            })
+            : undefined;
+        const cleanupResult = cleanup
+            ? this.queueCommand(run, this.ensureAgent(run, cleanup.agentId!), cleanup)
+            : undefined;
+        const cleanupFailure = cleanupResult?.left;
+        const actual = cleanupFailure && envelope.result
+            ? {
+                ...envelope,
+                result: { ...envelope.result, error: { ...envelope.result.error!, details: { cleanupFailure } } }
+            }
+            : envelope;
         const completion = computeControlRecipeReloadCompletionWrite(
             { root, run, nowEpochMs: this.dependencies.now() },
             toStoredControlResultEnvelope({
-                envelope,
+                envelope: actual,
                 command: root.envelope.command,
                 preserveReloadEvidence: false,
                 distributedRuns: this.distributedRuns.values()
@@ -837,7 +910,13 @@ export class RallarBlackBoxControlService {
         phase: ControlDistributedRunCommandPhase,
         commands: readonly DistributedPhaseCommand[]
     ): ControlServiceFailure | undefined {
-        for (const phaseCommand of commands) {
+        const bound = phase === 'start'
+            ? bindDistributedAlmReloadCommands(distributedRun, commands)
+            : Either.ofRight<readonly string[], readonly DistributedPhaseCommand[]>(commands);
+        if (bound.left) {
+            return { code: 'command-payload-conflict', message: bound.left.join(' ') };
+        }
+        for (const phaseCommand of bound.right!) {
             const failure = this.enqueueLinkedDistributedCommand(distributedRun, phaseCommand);
             if (failure) {
                 return failure;
@@ -908,7 +987,10 @@ export class RallarBlackBoxControlService {
             agentId,
             commandId: command.commandId,
             command,
-            deadlineEpochMs: phase === 'start' ? toScheduledStartEpochMs(distributedRun) : undefined
+            // Paired roots use the finite execution timeout bound above. The distributed lifecycle already gates scheduled start.
+            deadlineEpochMs: phase === 'start' && !toAlmReloadPair(command)
+                ? toScheduledStartEpochMs(distributedRun)
+                : undefined
         });
         if (enqueued.right === undefined) {
             return enqueued.left;

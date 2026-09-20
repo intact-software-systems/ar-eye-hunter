@@ -2,12 +2,14 @@ import { isRallarBlackBoxTestResult } from '../../composite-results.ts';
 import type { ControlResultEnvelope } from '../../control-protocol.ts';
 import type {
     RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestResult
 } from '../../rallar-black-box-test-contracts.ts';
 import { decodeJsonValue } from '../../runtime/decode-runtime-result-values.ts';
 import { isJsonRecordValue } from '../../schema/json-schema-validation.ts';
 import { decodePayloadPathValue, isSameJsonValue } from '../../wait/wait-event-match.ts';
+import { assessAlmReloadIdentity } from './assess-alm-reload-identity.ts';
 
 export interface AlmConformanceIdentityParticipant {
     readonly role: string;
@@ -22,7 +24,7 @@ export interface AlmConformanceIdentityInput {
     readonly participants: readonly AlmConformanceIdentityParticipant[];
 }
 
-interface RecordedParticipant {
+export interface RecordedAlmConformanceParticipant {
     readonly participant: AlmConformanceIdentityParticipant;
     readonly results: ReadonlyMap<string, RallarBlackBoxTestResult>;
 }
@@ -40,9 +42,9 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
     if (!sender || !receiver) {
         return issues;
     }
-    const sends = sender.participant.recipe.commands.filter(isLifecycleSend);
+    const sends = sender.participant.recipe.commands.filter(isIdentitySend);
     if (sends.length === 0) {
-        return ['ALM lifecycle sender evidence is missing.'];
+        return ['ALM lifecycle or reload sender evidence is missing.'];
     }
     const ids = new Set<string>();
     for (const send of sends) {
@@ -53,10 +55,18 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
             continue;
         }
         ids.add(msgId);
-        if (send.payload.specimen === 'submission' || send.payload.revision === 'replacement') {
+        if (
+            send.payload.marker === 'delivery-reload' || send.payload.specimen === 'submission' ||
+            send.payload.revision === 'replacement'
+        ) {
             assessReceivedIdentity({ send, msgId, receiver, issues });
         }
     }
+    issues.push(...assessAlmReloadIdentity(
+        sender,
+        receiver,
+        sends.filter((send) => send.payload.marker === 'delivery-reload')
+    ));
     return issues;
 }
 
@@ -65,7 +75,7 @@ function readParticipant(
     runId: string,
     participant: AlmConformanceIdentityParticipant,
     issues: string[]
-): RecordedParticipant | undefined {
+): RecordedAlmConformanceParticipant | undefined {
     const envelope = participant.result;
     const root = envelope?.result;
     const value = root?.value;
@@ -97,9 +107,9 @@ function readParticipant(
 }
 
 interface ReceivedIdentityInput {
-    readonly send: Extract<RallarBlackBoxTestCommand, { kind: 'messages.send'; }>;
+    readonly send: RallarBlackBoxTestMessagesSendCommand;
     readonly msgId: string;
-    readonly receiver: RecordedParticipant;
+    readonly receiver: RecordedAlmConformanceParticipant;
     readonly issues: string[];
 }
 
@@ -129,11 +139,11 @@ function assessReceivedIdentity({ send, msgId, receiver, issues }: ReceivedIdent
     }
 }
 
-function isLifecycleSend(
+function isIdentitySend(
     command: RallarBlackBoxTestCommand
-): command is Extract<RallarBlackBoxTestCommand, { kind: 'messages.send'; }> & {
+): command is RallarBlackBoxTestMessagesSendCommand & {
     readonly payload: Record<string, unknown>;
 } {
     return command.kind === 'messages.send' && isJsonRecordValue(command.payload) &&
-        command.payload.marker === 'delivery-lifecycle';
+        (command.payload.marker === 'delivery-lifecycle' || command.payload.marker === 'delivery-reload');
 }

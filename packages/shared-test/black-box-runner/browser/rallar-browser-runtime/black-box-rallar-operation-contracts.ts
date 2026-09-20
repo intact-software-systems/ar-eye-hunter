@@ -25,7 +25,11 @@ import type {
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import type {
     RallarCrdtDocumentHealth,
     RallarCrdtDocumentRef,
@@ -40,6 +44,7 @@ import type {
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
 export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc' | 'messages.ws';
@@ -165,7 +170,13 @@ export interface BlackBoxRallarEvent {
     readonly error?: BlackBoxRallarSerializedError;
 }
 
+export interface BlackBoxRallarDocumentFacts {
+    readonly timeOrigin: number;
+    readonly origin: string;
+}
+
 export interface BlackBoxRallarConnectDiagnostics {
+    readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';
     readonly connection: string;
     readonly actor?: string;
@@ -328,6 +339,7 @@ export interface BlackBoxRallarCloseDiagnostics {
 }
 
 export interface BlackBoxRallarHealthDiagnostics {
+    readonly document: BlackBoxRallarDocumentFacts;
     readonly connected: boolean;
     readonly status: RallarConnectStatus;
     readonly wsStatus: RallarWsStatus;

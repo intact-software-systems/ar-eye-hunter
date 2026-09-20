@@ -1,3 +1,4 @@
+import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
@@ -12,8 +13,13 @@ import {
     isControlRecipeReloadRoot,
     isReloadChildEnvelope,
     toControlRecipeReloadCommands,
+    toPendingControlRecipeReloadRoots,
     type ControlRecipeReloadRoot
 } from './control-recipe-reload-commands.ts';
+import {
+    toControlReloadCleanupId,
+    toControlReloadCleanupMetadata
+} from './control-reload-cleanup.ts';
 
 export interface ControlRecipeReloadRead {
     readonly root: ControlCommandState;
@@ -64,9 +70,17 @@ export function computeControlRecipeReloadCompletionWrite(
         : [];
     const commands = [read.root, ...children.flatMap((child) => read.run.commands.get(child.commandId) ?? [])]
         .map((command) => ({ ...command, completedAtEpochMs: command.completedAtEpochMs ?? read.nowEpochMs }));
-    const results = children.flatMap((child) => {
+    const pair = toAlmReloadPair(read.root.envelope.command);
+    const peerId = pair &&
+        (pair.sender.commandId === read.root.envelope.commandId ? pair.receiver.commandId : pair.sender.commandId);
+    const peer = peerId ? read.run.commands.get(peerId) : undefined;
+    const preserve = pair !== undefined && peer?.completedAtEpochMs === undefined;
+    const compactChildren = !preserve && peer && isControlRecipeReloadRoot(peer.envelope)
+        ? [...children, ...toControlRecipeReloadCommands(peer.envelope)]
+        : children;
+    const results = compactChildren.flatMap((child) => {
         const result = read.run.results.get(child.commandId);
-        return result ? [toCompactedResultEnvelope(result)] : [];
+        return result ? [preserve ? result : toCompactedResultEnvelope(result)] : [];
     });
     return { commands, results: [...results, envelope] };
 }
@@ -146,16 +160,30 @@ function toActualReloadResults(
     root: ControlRecipeReloadRoot,
     run: ControlRunState
 ): readonly RallarBlackBoxTestResult[] {
-    return toControlRecipeReloadCommands(root).flatMap((child) => {
+    const authoredReloads = root.command.recipe.commands.filter((command) => command.kind === 'agent.reload');
+    const results: RallarBlackBoxTestResult[] = [];
+    let reloadIndex = 0;
+    for (const child of toControlRecipeReloadCommands(root)) {
+        const authoredReload = child.command.kind === 'agent.reload' ? authoredReloads[reloadIndex++] : undefined;
         const command = run.commands.get(child.commandId);
         const envelope = run.results.get(child.commandId);
-        if (!command || !envelope || !isControlRecipeReloadResult(command, envelope) || !envelope.result) {
-            return [];
+        if (
+            !command || !envelope || !isReloadChildEnvelope(child, command.envelope) ||
+            !isControlRecipeReloadResult(command, envelope) || !envelope.result
+        ) {
+            continue;
         }
-        return child.command.kind === 'agent.reload'
-            ? [envelope.result]
-            : toReloadSegmentResults(envelope.result) ?? [];
-    });
+        if (child.command.kind === 'agent.reload') {
+            // Only the logical-root projection uses authored identity; retained transport evidence stays unchanged.
+            if (authoredReload?.commandId) {
+                results.push({ ...envelope.result, commandId: authoredReload.commandId });
+            }
+        }
+        else {
+            results.push(...toReloadSegmentResults(envelope.result) ?? []);
+        }
+    }
+    return results;
 }
 
 function toReloadSegmentResults(result: RallarBlackBoxTestResult): readonly RallarBlackBoxTestResult[] | undefined {
@@ -178,4 +206,35 @@ function isReloadChildResult(value: unknown): value is RallarBlackBoxTestResult 
         typeof value.endedAtEpochMs === 'number' && Number.isFinite(value.endedAtEpochMs) &&
         value.endedAtEpochMs >= value.startedAtEpochMs &&
         typeof value.durationMs === 'number' && Number.isFinite(value.durationMs) && value.durationMs >= 0;
+}
+
+export function toPendingReloadEvidenceIds(commands: Iterable<ControlCommandState>): ReadonlySet<string> {
+    const byId = new Map(Array.from(commands, (command) => [command.envelope.commandId, command]));
+    const protectedIds = new Set<string>();
+    for (const pending of toPendingControlRecipeReloadRoots(byId.values())) {
+        const pair = toAlmReloadPair(pending.envelope.command);
+        const roots = pair
+            ? [byId.get(pair.sender.commandId), byId.get(pair.receiver.commandId)]
+            : [pending];
+        for (const root of roots) {
+            if (!root || !isControlRecipeReloadRoot(root.envelope)) {
+                continue;
+            }
+            protectedIds.add(root.envelope.commandId);
+            for (const child of toControlRecipeReloadCommands(root.envelope)) {
+                protectedIds.add(child.commandId);
+            }
+        }
+    }
+    for (const command of byId.values()) {
+        const cleanup = toControlReloadCleanupMetadata(command.envelope);
+        if (cleanup && command.completedAtEpochMs === undefined) {
+            protectedIds.add(command.envelope.commandId);
+            protectedIds.add(cleanup.rootCommandId);
+            protectedIds.add(cleanup.targetCommandId);
+            protectedIds.add(toControlReloadCleanupId(cleanup, 'recipe.cancel'));
+            protectedIds.add(toControlReloadCleanupId(cleanup, 'close'));
+        }
+    }
+    return protectedIds;
 }

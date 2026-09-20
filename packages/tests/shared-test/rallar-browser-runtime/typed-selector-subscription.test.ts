@@ -1,8 +1,17 @@
-import { beforeEach, expect, it } from 'vitest';
+import {
+    beforeEach,
+    expect,
+    it
+} from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 
-import { events, facade, loadRuntime, resetFacade } from './browser-rallar-runtime-test-harness.ts';
+import {
+    events,
+    facade,
+    loadRuntime,
+    resetFacade
+} from './browser-rallar-runtime-test-harness.ts';
 
 beforeEach(resetFacade);
 
@@ -42,43 +51,51 @@ it('owns one canonical topic selector on both carriers until replacement or clos
     expect(facade.records.typedWsHandlers).toHaveLength(0);
     expect(facade.records.typedRtcHandlers).toHaveLength(0);
 
-    for (
-        const [transport, subscriptions] of [
-            ['rtc', facade.records.rtcMessageSubscriptions],
-            ['ws', facade.records.wsMessageSubscriptions]
-        ] as const
-    ) {
-        const [selector, receive] = subscriptions[0];
-        expect(selector).toEqual({ topicId: 'room.alm-conformance' });
-        const raw = newALUnicastMessage(
-            'sender',
-            {
-                topicId: 'room.alm-conformance',
+    for (const phase of ['before-health', 'after-health']) {
+        for (
+            const [transport, subscriptions] of [
+                ['rtc', facade.records.rtcMessageSubscriptions],
+                ['ws', facade.records.wsMessageSubscriptions]
+            ] as const
+        ) {
+            const [selector, receive] = subscriptions[0];
+            expect(selector).toEqual({ topicId: 'room.alm-conformance' });
+            const raw = newALUnicastMessage(
+                'sender',
+                {
+                    topicId: 'room.alm-conformance',
+                    contextId: 'room',
+                    resourceId: 'resource'
+                },
+                'receiver',
+                `scenario.${transport}.${phase}`,
+                { specimen: transport, phase }
+            );
+            await receive({
+                transport,
+                typeId: raw.payload.typeId,
+                topicId: raw.route.topicId,
                 contextId: 'room',
-                resourceId: 'resource'
-            },
-            'receiver',
-            `scenario.${transport}`,
-            { specimen: transport }
-        );
-        await receive({
-            transport,
-            typeId: raw.payload.typeId,
-            topicId: raw.route.topicId,
-            contextId: 'room',
-            resourceId: 'resource',
-            senderId: 'sender',
-            payload: { specimen: transport },
-            raw,
-            receivedAtEpochMs: 123
-        });
-        expect(events.filter((event) => event.kind === 'message').at(-1)?.data).toEqual({
-            msgId: raw.id.msgId,
-            typeId: `scenario.${transport}`,
-            topicId: 'room.alm-conformance',
-            transport,
-            payload: { specimen: transport }
-        });
+                resourceId: 'resource',
+                senderId: 'sender',
+                payload: { specimen: transport, phase },
+                raw,
+                receivedAtEpochMs: 123
+            });
+            expect(events.filter((event) => event.kind === 'message').at(-1)?.data).toEqual({
+                msgId: raw.id.msgId,
+                typeId: `scenario.${transport}.${phase}`,
+                topicId: 'room.alm-conformance',
+                transport,
+                payload: { specimen: transport, phase }
+            });
+        }
+        if (phase === 'before-health') {
+            expect(await runtime.health()).toMatchObject({
+                connection: 'combined',
+                document: { timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }
+            });
+        }
     }
     await runtime.connect(config);
     expect(facade.records.rtcMessageUnsubscribeCount).toBe(1);

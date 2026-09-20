@@ -2,7 +2,7 @@ import type { ControlRunSnapshotBounds } from '@shared-test/rallar-bb-test/contr
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 
 import type { ControlDistributedRunState, ControlRunState } from './control-service-state.ts';
-import { toPendingReloadEvidenceIds } from './recipe-reload/control-recipe-reload-commands.ts';
+import { toPendingReloadEvidenceIds } from './recipe-reload/control-recipe-reload-evidence.ts';
 
 const REPORT_DEDUPE_KEY_LIMIT = 1_000;
 

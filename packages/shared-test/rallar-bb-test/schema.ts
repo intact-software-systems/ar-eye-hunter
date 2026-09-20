@@ -442,7 +442,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         recipe: inlineRecipeSchema
     }),
     'recipe.cancel': strictCommandSchema('recipe.cancel', {
-        reason: stringSchema
+        reason: stringSchema,
+        targetCommandId: stringSchema
     }),
     loop: strictCommandSchema('loop', {
         commands: {
@@ -741,7 +742,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         includeRtcDiagnostics: booleanSchema
     }),
     stats: strictCommandSchema('stats', {}),
-    close: strictCommandSchema('close', {}),
+    close: strictCommandSchema('close', { targetCommandId: { type: 'string' } }),
     reset: strictCommandSchema('reset', {})
 };
 const commandSchema: JsonSchema = {

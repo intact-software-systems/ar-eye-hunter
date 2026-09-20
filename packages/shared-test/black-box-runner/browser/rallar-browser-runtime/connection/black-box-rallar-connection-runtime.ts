@@ -13,6 +13,7 @@ import {
 } from '../black-box-rallar-diagnostics.ts';
 import type {
     BlackBoxRallarConnectionConfig,
+    BlackBoxRallarDocumentFacts,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
     BlackBoxRallarStorageCountersInput
@@ -76,6 +77,7 @@ export namespace BlackBoxRallarConnectionRuntime {
             now(): number;
         };
         readonly delay: (ms: number) => Promise<void>;
+        readonly readDocument: () => BlackBoxRallarDocumentFacts;
     }
 
     export type MessagingMethod =
@@ -296,7 +298,7 @@ function createConnectionFoundation(
         rallar,
         diagnostics,
         diagnosticsPorts: createBlackBoxRallarDiagnosticsPorts(diagnostics, rallar.diagnostics),
-        health: new BlackBoxRallarHealthReader({ rallar, diagnostics }),
+        health: new BlackBoxRallarHealthReader({ rallar, diagnostics, readDocument: input.readDocument }),
         lifecycle,
         connectionState,
         authentication: new BlackBoxRallarAuthentication({

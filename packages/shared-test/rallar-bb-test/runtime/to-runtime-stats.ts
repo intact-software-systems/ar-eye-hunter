@@ -8,6 +8,28 @@ import type {
 } from '../rallar-black-box-test-contracts.ts';
 import { decodeRecord } from './decode-runtime-result-values.ts';
 
+export interface RallarBlackBoxTestRuntimeHealth {
+    readonly status: RallarBlackBoxTestState['status'];
+    readonly configured: boolean;
+    readonly loadedRecipeId: string | undefined;
+    readonly activeCommandId: string | undefined;
+    readonly commandCount: number;
+    readonly eventCount: number;
+    readonly failureCount: number;
+}
+
+export function toRuntimeHealth(state: RallarBlackBoxTestState): RallarBlackBoxTestRuntimeHealth {
+    return {
+        status: state.status,
+        configured: state.currentConfig !== undefined,
+        loadedRecipeId: state.loadedRecipe?.recipeId,
+        activeCommandId: state.activeCommand?.commandId,
+        commandCount: state.commandHistory.length,
+        eventCount: state.events.length,
+        failureCount: state.failures.length
+    };
+}
+
 export function toRuntimeStats(state: RallarBlackBoxTestState, atEpochMs: number): RallarBlackBoxTestStatsSnapshot {
     const events = state.events;
     const config = state.currentConfig;

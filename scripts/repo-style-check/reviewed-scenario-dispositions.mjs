@@ -1,5 +1,62 @@
 // Reviewed recipe, assertion and report boundaries. Exact keys and caps remain local to each owner.
 export const reviewedScenarioDispositions = Object.freeze([
+    // Reload command results retain opaque external evidence. These readers keep
+    // malformed leaves intact until the adjacent validators reject them; JSON
+    // normalization would erase NaN/Infinity and missing-value negative evidence.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
+        rule: 'boundary.unknown',
+        symbol: 'resultValue'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readPath'
+    }),
+    // Raw count maps and leaves are narrowed to finite nonnegative numbers before
+    // acceptance. Missing write means zero only alongside the complete valid-map
+    // check in assessReloadStorage; these boundaries return booleans, not raw state.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validStorageCounts'
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
+        rule: 'boundary.unknown',
+        symbol: 'positiveCounterDelta'
+    }),
+    // Arbitrary authored/bound command metadata is narrowed to nonempty checkpoint
+    // arrays with every required string before binder or checkpoint policy reads it.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts',
+        rule: 'boundary.unknown',
+        symbol: 'toAlmReloadCheckpoints'
+    }),
+    // Intentional malformed evidence stays raw while recordAt checks each traversed
+    // record. Sanitizing NaN, missing fields or wrong identities would weaken the
+    // assessor negatives; known transcript construction uses canonical typed values.
+    Object.freeze({
+        path: 'packages/tests/shared-test/alm-identity-assessment.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'recordAt'
+    }),
+    // The module-owned HTTP fixture captures Playwright options.data as unknown,
+    // checks its record/commandId, then calls parseControlServerMessage before use.
+    Object.freeze({
+        path: 'packages/tests/rallar-black-box/full-stack-reload-pair.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Module-owned stats/reports and nested result are opaque fetched HTTP artifacts.
+    // fetchControlRun does not validate their protocol: ALM consumers separately use
+    // parseControlClientMessage and decodeALMObservationSnapshot before policy.
+    // These exact owner reviews do not certify future unknown occurrences.
+    Object.freeze({
+        path: 'tests/playwright/rallar-black-box/full-stack-helpers.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
     // Assertion and report controls validate raw configuration before decisions;
     // arbitrary values remain opaque at these exact operand and artifact owners.
     Object.freeze({

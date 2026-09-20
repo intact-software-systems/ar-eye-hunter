@@ -1,11 +1,15 @@
 import type { ControlCommandEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
+import type {
+    ControlAgentState,
+    ControlCommandState,
+    ControlRunState
+} from './control-service-state.ts';
 import type { ControlServiceFailure } from './control-service.ts';
-
-import type { ControlAgentState, ControlCommandState, ControlRunState } from './control-service-state.ts';
 import { computeControlRecipeReloadStep } from './recipe-reload/compute-control-recipe-reload-step.ts';
 import { resolveControlRecipeReloadOwner } from './recipe-reload/control-recipe-reload-commands.ts';
+import { hasControlReloadCleanup, isDispatchableControlReloadCleanup } from './recipe-reload/control-reload-cleanup.ts';
 
 export interface ControlCommandRateWindowInput {
     readonly enqueueTimestamps: readonly number[];
@@ -49,6 +53,10 @@ export interface ControlCommandDispatchRead {
 }
 
 export function isDispatchableControlCommand({ command, agent, run, nowEpochMs }: ControlCommandDispatchRead): boolean {
+    if (hasControlReloadCleanup(command.envelope)) {
+        return command.envelope.agentId === agent.agentId &&
+            isDispatchableControlReloadCleanup(command, run, nowEpochMs);
+    }
     const owner = resolveControlRecipeReloadOwner(run, command.envelope.commandId);
     if (owner) {
         const step = computeControlRecipeReloadStep({ root: owner, run, nowEpochMs });

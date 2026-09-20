@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import {
@@ -52,6 +57,7 @@ async function withBrowserRuntimeTiming(
         facade: facade.rallar,
         targetWindow,
         clock: { now: timing.now },
+        readDocument: () => ({ timeOrigin: 1_700_000_000_000.5, origin: 'https://spa.example.test' }),
         delay: timing.delay
     });
     targetWindow.__blackBoxRallar = nativeRuntime;
@@ -230,7 +236,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         });
     });
 
-    it('maps shared connect and send commands to the browser Rallar runtime', async () => {
+    it('maps shared connect, health and send commands to the browser Rallar runtime', async () => {
         await withBrowserRuntime(async (nativeRuntime) => {
             const connect = vi.spyOn(nativeRuntime, 'connect');
             facade.behavior.realtimeSend.mockResolvedValue([
@@ -268,6 +274,10 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 commandId: 'connect-real-command-path',
                 connection: 'realRtc'
             });
+            const healthResult = await runtime.execute({
+                kind: 'health',
+                commandId: 'health-real-command-path'
+            });
             const sendResult = await runtime.execute({
                 kind: 'rtc.send',
                 commandId: 'send-real-command-path',
@@ -282,7 +292,14 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                 }
             });
 
-            expect(connectResult.ok).toBe(true);
+            expect(connectResult).toMatchObject({
+                ok: true,
+                value: { document: { timeOrigin: 1_700_000_000_000.5, origin: 'https://spa.example.test' } }
+            });
+            expect(healthResult).toMatchObject({
+                ok: true,
+                value: { rallar: { document: { timeOrigin: 1_700_000_000_000.5, origin: 'https://spa.example.test' } } }
+            });
             expect(sendResult.ok).toBe(true);
             expect(connect).toHaveBeenCalledWith({
                 connection: 'realRtc',

@@ -18,12 +18,41 @@
         "continueOnFailure": false,
         "metadata": {
           "profile": "alm-conformance",
-          "role": "sender"
+          "role": "sender",
+          "almReloadCheckpoints": [
+            {
+              "key": "alm-ws-delivery-reload",
+              "senderPrefixEnd": "alm-ws-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-ws-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-ws-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-ws-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-ws-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-ws-delivery-reload-receiver-health-after"
+            },
+            {
+              "key": "alm-rtc-delivery-reload",
+              "senderPrefixEnd": "alm-rtc-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-rtc-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-rtc-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-rtc-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-rtc-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-rtc-delivery-reload-receiver-health-after"
+            },
+            {
+              "key": "alm-rtc-with-ws-fallback-delivery-reload",
+              "senderPrefixEnd": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-rtc-with-ws-fallback-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-after"
+            }
+          ]
         },
         "commands": [
           {
             "kind": "http.request",
-            "commandId": "alm-rtc-bounded-rejection-sender-ensure-group",
+            "commandId": "alm-rtc-delivery-reload-sender-ensure-group",
             "timeoutMs": 5000,
             "metadata": {
               "purpose": "Ensure the backend group exists before the ALM carrier connects.",
@@ -36,7 +65,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-sender-group",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-delivery-reload-sender-group",
               "body": {
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
@@ -55,7 +84,7 @@
           },
           {
             "kind": "http.request",
-            "commandId": "alm-rtc-bounded-rejection-sender-ensure-member",
+            "commandId": "alm-rtc-delivery-reload-sender-ensure-member",
             "timeoutMs": 5000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before the ALM carrier connects.",
@@ -68,7 +97,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-sender-member",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-delivery-reload-sender-member",
               "body": {
                 "status": "active"
               }
@@ -83,7 +112,7 @@
           },
           {
             "kind": "rtc.connect",
-            "commandId": "alm-rtc-bounded-rejection-sender-connect",
+            "commandId": "alm-rtc-delivery-reload-sender-connect",
             "connection": "almConformanceSender",
             "actor": "{auth.clientId}",
             "roomId": "hetzner-headless-room",
@@ -96,7 +125,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
-              "typeId": "alm.conformance.rtc.bounded-rejection",
+              "typeId": "alm.conformance.rtc.delivery-reload",
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
@@ -108,6 +137,586 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-delivery-reload-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-ws-delivery-reload-sender-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-ws-delivery-reload-sender-reload-hold-ws",
+            "faultId": "hold-ws-alm.conformance.ws.delivery-reload",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.ws.delivery-reload"
+            },
+            "action": "not-ready",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-ws-delivery-reload-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.ws.delivery-reload",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "delivery-reload",
+              "carrier": "ws"
+            },
+            "handleId": "alm-ws-delivery-reload-send-1",
+            "timeoutMs": 10000,
+            "ack": "receiver"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-delivery-reload-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-reload-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-admitted-1",
+            "source": "resultCache.alm-ws-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-enqueued-1",
+            "source": "resultCache.alm-ws-delivery-reload-sender-observe-admitted-1.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-retained-1",
+            "source": "resultCache.alm-ws-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-unsubmitted-1",
+            "source": "resultCache.alm-ws-delivery-reload-sender-observe-admitted-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-delivery-reload-sender-storage-counters-held",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-storage-al-admission",
+            "source": "resultCache.alm-ws-delivery-reload-sender-storage-counters-held.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-storage-al-work",
+            "source": "resultCache.alm-ws-delivery-reload-sender-storage-counters-held.value.byOwner.al-work",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-storage-write",
+            "source": "resultCache.alm-ws-delivery-reload-sender-storage-counters-held.value.byKind.write",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "agent.reload",
+            "commandId": "alm-ws-delivery-reload-sender-reload",
+            "readyTimeoutMs": 30000,
+            "timeoutMs": 45000
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "alm-ws-delivery-reload-sender-reconnect",
+            "connection": "almConformanceSender",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "messages.rtc",
+            "rallar": {
+              "typeId": "alm.conformance.ws.delivery-reload",
+              "topicId": "room.alm-conformance",
+              "username": "",
+              "password": "",
+              "restoreSession": true,
+              "messageSelector": {
+                "topicId": "room.alm-conformance"
+              }
+            },
+            "timeoutMs": 45000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 30000,
+              "intervalMs": 100
+            }
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-delivery-reload-sender-observe-unobservable-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-reload-send-1",
+            "state": [
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-reload-sender-assert-old-handle-unobservable",
+            "source": "resultCache.alm-ws-delivery-reload-sender-observe-unobservable-1.value.state",
+            "operator": "equals",
+            "expected": "unobservable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-ws-delivery-reload-sender-storage-counters-recovered",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-delivery-reload-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-delivery-reload-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-delivery-reload-sender-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-delivery-reload-sender-reload-hold-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc.delivery-reload",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc.delivery-reload"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-delivery-reload-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc.delivery-reload",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "delivery-reload",
+              "carrier": "rtc"
+            },
+            "handleId": "alm-rtc-delivery-reload-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-delivery-reload-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-reload-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-enqueued-1",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-observe-admitted-1.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-retained-1",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-unsubmitted-1",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-observe-admitted-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-delivery-reload-sender-storage-counters-held",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-storage-al-admission",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-storage-counters-held.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-storage-al-work",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-storage-counters-held.value.byOwner.al-work",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-storage-write",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-storage-counters-held.value.byKind.write",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "agent.reload",
+            "commandId": "alm-rtc-delivery-reload-sender-reload",
+            "readyTimeoutMs": 30000,
+            "timeoutMs": 45000
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "alm-rtc-delivery-reload-sender-reconnect",
+            "connection": "almConformanceSender",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "messages.rtc",
+            "rallar": {
+              "typeId": "alm.conformance.rtc.delivery-reload",
+              "topicId": "room.alm-conformance",
+              "username": "",
+              "password": "",
+              "restoreSession": true,
+              "messageSelector": {
+                "topicId": "room.alm-conformance"
+              }
+            },
+            "timeoutMs": 45000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 30000,
+              "intervalMs": 100
+            }
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-delivery-reload-sender-observe-unobservable-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-reload-send-1",
+            "state": [
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-reload-sender-assert-old-handle-unobservable",
+            "source": "resultCache.alm-rtc-delivery-reload-sender-observe-unobservable-1.value.state",
+            "operator": "equals",
+            "expected": "unobservable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-delivery-reload-sender-storage-counters-recovered",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-delivery-reload-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-reload-hold-rtc",
+            "faultId": "hold-rtc-alm.conformance.rtc-with-ws-fallback.delivery-reload",
+            "carrier": "rtc",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.delivery-reload"
+            },
+            "action": "drop",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "fault.inject",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-reload-hold-ws",
+            "faultId": "hold-ws-alm.conformance.rtc-with-ws-fallback.delivery-reload",
+            "carrier": "ws",
+            "match": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.delivery-reload"
+            },
+            "action": "not-ready",
+            "remaining": "until-cleared",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc-with-ws-fallback",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "delivery-reload",
+              "carrier": "rtc-with-ws-fallback"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-delivery-reload-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver"
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-observe-admitted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-reload-send-1",
+            "state": [
+              "rejected",
+              "pending-authority",
+              "accepted",
+              "queued",
+              "transport-accepted",
+              "acknowledged",
+              "expired",
+              "superseded",
+              "failed",
+              "cancelled",
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-admitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued|transport-accepted|acknowledged)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-enqueued-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-observe-admitted-1.value.enqueued",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-retained-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-observe-admitted-1.value.state",
+            "operator": "matches",
+            "expected": "^(accepted|queued)$",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-unsubmitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-observe-admitted-1.value.submitted",
+            "operator": "equals",
+            "expected": false,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-held",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-storage-al-admission",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-held.value.byOwner.al-admission",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-storage-al-work",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-held.value.byOwner.al-work",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-storage-write",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-held.value.byKind.write",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "agent.reload",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-reload",
+            "readyTimeoutMs": 30000,
+            "timeoutMs": 45000
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-reconnect",
+            "connection": "almConformanceSender",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "messages.rtc",
+            "rallar": {
+              "typeId": "alm.conformance.rtc-with-ws-fallback.delivery-reload",
+              "topicId": "room.alm-conformance",
+              "username": "",
+              "password": "",
+              "restoreSession": true,
+              "messageSelector": {
+                "topicId": "room.alm-conformance"
+              }
+            },
+            "timeoutMs": 45000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 30000,
+              "intervalMs": 100
+            }
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-observe-unobservable-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-reload-send-1",
+            "state": [
+              "unobservable"
+            ],
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-old-handle-unobservable",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-reload-sender-observe-unobservable-1.value.state",
+            "operator": "equals",
+            "expected": "unobservable",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-recovered",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-sender-stats",
+            "timeoutMs": 3000
           },
           {
             "kind": "storage.counters",
@@ -2240,12 +2849,41 @@
         "continueOnFailure": false,
         "metadata": {
           "profile": "alm-conformance",
-          "role": "receiver"
+          "role": "receiver",
+          "almReloadCheckpoints": [
+            {
+              "key": "alm-ws-delivery-reload",
+              "senderPrefixEnd": "alm-ws-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-ws-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-ws-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-ws-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-ws-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-ws-delivery-reload-receiver-health-after"
+            },
+            {
+              "key": "alm-rtc-delivery-reload",
+              "senderPrefixEnd": "alm-rtc-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-rtc-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-rtc-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-rtc-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-rtc-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-rtc-delivery-reload-receiver-health-after"
+            },
+            {
+              "key": "alm-rtc-with-ws-fallback-delivery-reload",
+              "senderPrefixEnd": "alm-rtc-with-ws-fallback-delivery-reload-sender-assert-storage-write",
+              "senderReload": "alm-rtc-with-ws-fallback-delivery-reload-sender-reload",
+              "senderSuffixEnd": "alm-rtc-with-ws-fallback-delivery-reload-sender-storage-counters-recovered",
+              "receiverReadyEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-before",
+              "receiverAbsenceEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-absent-before-reload",
+              "receiverRecoveryEnd": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-after"
+            }
+          ]
         },
         "commands": [
           {
             "kind": "http.request",
-            "commandId": "alm-rtc-bounded-rejection-receiver-ensure-group",
+            "commandId": "alm-rtc-delivery-reload-receiver-ensure-group",
             "timeoutMs": 5000,
             "metadata": {
               "purpose": "Ensure the backend group exists before the ALM carrier connects.",
@@ -2258,7 +2896,7 @@
             },
             "request": {
               "method": "POST",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-receiver-group",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/requests/alm-conformance-{runtimeIdentity}-rtc-delivery-reload-receiver-group",
               "body": {
                 "groupId": "hetzner-headless-room",
                 "displayName": "hetzner-headless-room",
@@ -2277,7 +2915,7 @@
           },
           {
             "kind": "http.request",
-            "commandId": "alm-rtc-bounded-rejection-receiver-ensure-member",
+            "commandId": "alm-rtc-delivery-reload-receiver-ensure-member",
             "timeoutMs": 5000,
             "metadata": {
               "purpose": "Ensure the logged-in browser client is an active group member before the ALM carrier connects.",
@@ -2290,7 +2928,7 @@
             },
             "request": {
               "method": "PUT",
-              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-bounded-rejection-receiver-member",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}/requests/alm-conformance-{runtimeIdentity}-rtc-delivery-reload-receiver-member",
               "body": {
                 "status": "active"
               }
@@ -2305,7 +2943,7 @@
           },
           {
             "kind": "rtc.connect",
-            "commandId": "alm-rtc-bounded-rejection-receiver-connect",
+            "commandId": "alm-rtc-delivery-reload-receiver-connect",
             "connection": "almConformanceReceiver",
             "actor": "{auth.clientId}",
             "roomId": "hetzner-headless-room",
@@ -2318,7 +2956,7 @@
             },
             "transport": "messages.rtc",
             "rallar": {
-              "typeId": "alm.conformance.rtc.bounded-rejection",
+              "typeId": "alm.conformance.rtc.delivery-reload",
               "topicId": "room.alm-conformance",
               "messageSelector": {
                 "topicId": "room.alm-conformance"
@@ -2330,6 +2968,138 @@
               "timeoutMs": 30000,
               "intervalMs": 100
             }
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-ws-delivery-reload-receiver-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-reload-receiver-absent-before-reload",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "ws"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-ws-delivery-reload-receiver-receive-original",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "ws"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-ws-delivery-reload-receiver-health-after",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-ws-delivery-reload-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-delivery-reload-receiver-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-reload-receiver-absent-before-reload",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "rtc"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-delivery-reload-receiver-receive-original",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "rtc"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-delivery-reload-receiver-health-after",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-delivery-reload-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-before",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-absent-before-reload",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "rtc-with-ws-fallback"
+              }
+            },
+            "absent": true,
+            "timeoutMs": 17000
+          },
+          {
+            "kind": "wait",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-receive-original",
+            "match": {
+              "kind": "message",
+              "connection": "almConformanceReceiver",
+              "payloadPath": "data.payload",
+              "equals": {
+                "marker": "delivery-reload",
+                "carrier": "rtc-with-ws-fallback"
+              }
+            },
+            "timeoutMs": 27000
+          },
+          {
+            "kind": "health",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-health-after",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-reload-receiver-stats",
+            "timeoutMs": 3000
           },
           {
             "kind": "messages.received",
@@ -2771,12 +3541,14 @@
     "diagnostic": false,
     "expectedFailure": false,
     "family": "alm-conformance",
+    "recommendedTerminalTimeoutSeconds": 300,
     "carriers": [
       "ws",
       "rtc",
       "rtc-with-ws-fallback"
     ],
     "scenarios": [
+      "delivery-reload",
       "bounded-rejection",
       "deadline-expiry",
       "delivery-baseline",
@@ -2784,5 +3556,5 @@
       "ordering-resync"
     ]
   },
-  "description": "ALM conformance family (bounded rejection, deadline expiry, delivery baseline, lifecycle, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers."
+  "description": "ALM conformance family (bounded rejection, deadline expiry, delivery baseline, lifecycle, durable reload, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers."
 }

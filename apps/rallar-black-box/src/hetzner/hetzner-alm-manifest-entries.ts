@@ -1,6 +1,7 @@
 import {
     ALM_CONFORMANCE_CARRIERS
 } from '@shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import { toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
@@ -9,7 +10,11 @@ import {
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     type RallarBlackBoxRtcMessagesMulticastRecipeOptions
 } from '@shared-test/rallar-bb-test/fixtures/rtc-multicast-recipes.ts';
-import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRtcConnectCommand
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+
 import type { HetznerDistributedManifestEntry } from './hetzner-manifest-entry.ts';
 import {
     createManifestEntry,
@@ -36,7 +41,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (bounded rejection, deadline expiry, delivery ' +
-            'baseline, lifecycle, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
+            'baseline, lifecycle, durable reload, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender'),
@@ -56,6 +61,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         groupAssertions: [],
         metadata: {
             family: 'alm-conformance',
+            recommendedTerminalTimeoutSeconds: 300,
             carriers: [...ALM_CONFORMANCE_CARRIERS],
             scenarios: toAlmConformanceScenarioIds(scenarios)
         }
@@ -63,7 +69,7 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
 }
 
 function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScenario[] {
-    return ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
+    const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap((carrier) =>
         createAlmConformanceRecipes({
             group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
             carrier,
@@ -73,18 +79,32 @@ function toAlmConformanceScenariosForAllCarriers(): readonly AlmConformanceScena
             deadlineMs: ALM_CONFORMANCE_DEADLINE_MS
         })
     );
+    // Receiver absence windows in ordinary scenarios must not consume the later reload specimen's TTL.
+    return [
+        ...scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload'),
+        ...scenarios.filter((scenario) => scenario.scenarioId !== 'delivery-reload')
+    ];
 }
 
 function toAlmConformanceCombinedRecipe(
     scenarios: readonly AlmConformanceScenario[],
     role: 'sender' | 'receiver'
 ): RallarBlackBoxTestRecipe {
+    const checkpoints = scenarios.filter((scenario) => scenario.scenarioId === 'delivery-reload').flatMap(
+        (scenario) => {
+            const authored = toAlmReloadCheckpoints(scenario[role].metadata?.almReloadCheckpoints);
+            if (!authored) {
+                throw new Error('Generated ALM reload recipe is missing its authored checkpoints.');
+            }
+            return authored.map((checkpoint) => ({ ...checkpoint }));
+        }
+    );
     return {
         schemaVersion: 1,
         recipeId: `alm-conformance-${role}`,
         name: `ALM conformance ${role} across ws, rtc, and rtc-with-ws-fallback carriers`,
         continueOnFailure: false,
-        metadata: { profile: 'alm-conformance', role },
+        metadata: { profile: 'alm-conformance', role, almReloadCheckpoints: checkpoints },
         commands: toAlmConformanceCombinedCommands(scenarios, role)
     };
 }
@@ -95,24 +115,39 @@ function toAlmConformanceCombinedCommands(
     role: 'sender' | 'receiver'
 ): RallarBlackBoxTestRecipe['commands'] {
     const rtc = scenarios.find((scenario) => scenario.sender.metadata?.carrier === 'rtc')!;
-    const prologue = rtc[role].commands.filter((command) =>
+    const rtcConnect = rtc[role].commands.find((command) => command.kind === 'rtc.connect')!;
+    const prologueEnd = rtc[role].commands.indexOf(rtcConnect);
+    const prologue = rtc[role].commands.slice(0, prologueEnd + 1).filter((command) =>
         command.kind === 'http.request' || command.kind === 'rtc.connect'
     ).map((command) =>
         command.kind === 'rtc.connect'
-            ? {
-                ...command,
-                rallar: { ...command.rallar, messageSelector: { topicId: 'room.alm-conformance' } }
-            }
+            ? toCombinedAlmConnect(command, rtcConnect.readiness)
             : command
     );
     return [
         ...prologue,
-        ...scenarios.flatMap((scenario) =>
-            scenario[role].commands.filter((command) =>
-                command.kind !== 'http.request' && command.kind !== 'rtc.connect'
-            )
-        )
+        ...scenarios.flatMap((scenario) => {
+            const commands = scenario[role].commands;
+            const initialConnect = commands.find((command) => command.kind === 'rtc.connect');
+            return commands.filter((command) => command.kind !== 'http.request' && command !== initialConnect)
+                .map((command) =>
+                    command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command
+                );
+        })
     ];
+}
+
+/** A new sender document must recover the shared RTC-ready subscription before later mixed-carrier work. */
+function toCombinedAlmConnect(
+    command: RallarBlackBoxTestRtcConnectCommand,
+    readiness: RallarBlackBoxTestRtcConnectCommand['readiness']
+): RallarBlackBoxTestRtcConnectCommand {
+    return {
+        ...command,
+        transport: 'messages.rtc',
+        readiness,
+        rallar: { ...command.rallar, messageSelector: { topicId: 'room.alm-conformance' } }
+    };
 }
 
 function toAlmConformanceScenarioIds(

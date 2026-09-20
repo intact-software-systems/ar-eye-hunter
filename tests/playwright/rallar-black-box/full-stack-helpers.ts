@@ -8,6 +8,12 @@ import {
     type TestInfo
 } from '@playwright/test';
 
+import { bindAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
+import {
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    type ControlCommandEnvelope
+} from '@shared-test/rallar-bb-test/control-protocol.ts';
+
 import {
     readFullStackControlBaseUrl,
     toFullStackControlWebSocketUrl
@@ -23,32 +29,32 @@ export const FULL_STACK_SPA_ORIGIN = normalizeBaseUrl(
     envValue('VITE_RALLAR_SPA_BASE_URL') ?? 'http://localhost:5176'
 );
 
-export type FullStackUser = Readonly<{
-    username: string;
-    password: string;
-    clientId: string;
-    actor: string;
-}>;
+export interface FullStackUser {
+    readonly username: string;
+    readonly password: string;
+    readonly clientId: string;
+    readonly actor: string;
+}
 
-export type BrowserAuthSession = Readonly<{
-    clientId: string;
-    username: string;
-    sessionId: string;
-    accessToken: string;
-    expiresAtEpochMs: number;
-}>;
+export interface BrowserAuthSession {
+    readonly clientId: string;
+    readonly username: string;
+    readonly sessionId: string;
+    readonly accessToken: string;
+    readonly expiresAtEpochMs: number;
+}
 
-export type FullStackConfig = Readonly<{
-    enabled: boolean;
-    skipReason: string;
-    apiBaseUrl: string;
-    applicationId: string;
-    workspaceId: string;
-    roomId: string;
-    userA: FullStackUser;
-    userB: FullStackUser;
-    userC: FullStackUser;
-}>;
+export interface FullStackConfig {
+    readonly enabled: boolean;
+    readonly skipReason: string;
+    readonly apiBaseUrl: string;
+    readonly applicationId: string;
+    readonly workspaceId: string;
+    readonly roomId: string;
+    readonly userA: FullStackUser;
+    readonly userB: FullStackUser;
+    readonly userC: FullStackUser;
+}
 
 export type ExhaustivePostgresConfig =
     & FullStackConfig
@@ -85,79 +91,122 @@ export type ExhaustiveTabId =
 
 export type ExhaustiveWorkspace = 'rallar' | 'black-box-runner';
 
-export type DisposableBrowserContext = Readonly<{
-    context: BrowserContext;
-    page: Page;
-    groupId: string;
-    runId: string;
-    agentId: string;
-    session: BrowserAuthSession;
-}>;
+export interface DisposableBrowserContext {
+    readonly context: BrowserContext;
+    readonly page: Page;
+    readonly groupId: string;
+    readonly runId: string;
+    readonly agentId: string;
+    readonly session: BrowserAuthSession;
+}
 
-type ControlResult = Readonly<{
-    commandId?: string;
-    ok?: boolean;
-    result?: unknown;
-    error?: ControlResultError;
-}>;
-
-type ControlResultError = Readonly<{
-    code?: string;
-    message?: string;
-    /** The failing child command's own error when a recipe fails. */
-    details?: ControlResultError;
-}>;
-
-export type ControlRunEvent = Readonly<{
-    kind?: string;
-    agentId?: string;
-    commandId?: string;
-    payload?: Readonly<{
+export interface ControlRunEvent {
+    readonly kind?: string;
+    readonly agentId?: string;
+    readonly commandId?: string;
+    readonly payload?: Readonly<{
         topic?: string;
         payload?: Readonly<{ ok?: boolean; }>;
     }>;
-}>;
+}
 
-export type ControlRunSnapshot = Readonly<{
-    results?: readonly ControlResult[];
-    events?: readonly ControlRunEvent[];
-    stats?: readonly unknown[];
-    reports?: readonly unknown[];
-}>;
+export interface ControlRunSnapshot {
+    readonly results?: readonly ControlResult[];
+    readonly events?: readonly ControlRunEvent[];
+    readonly stats?: readonly unknown[];
+    readonly reports?: readonly unknown[];
+}
 
-export type TwoAgentRunParticipant = Readonly<{
-    agentId: string;
-    actor: string;
-    connection: string;
-    context: BrowserContext;
-    page: Page;
-}>;
+export interface TwoAgentRunParticipant {
+    readonly agentId: string;
+    readonly actor: string;
+    readonly connection: string;
+    readonly context: BrowserContext;
+    readonly page: Page;
+}
 
-export type TwoAgentRun = Readonly<{
-    request: APIRequestContext;
-    runId: string;
-    group: RallarBlackBoxDistributedGroupRef;
-    sender: TwoAgentRunParticipant;
-    receiver: TwoAgentRunParticipant;
+export interface TwoAgentRun {
+    readonly request: APIRequestContext;
+    readonly runId: string;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly sender: TwoAgentRunParticipant;
+    readonly receiver: TwoAgentRunParticipant;
     readSnapshot(): Promise<ControlRunSnapshot>;
     close(): Promise<void>;
-}>;
+}
 
-export type RecipeRunOutcome = Readonly<{
-    commandId: string;
-    ok: boolean;
-    summary: string;
-}>;
+export interface RecipeRunOutcome {
+    readonly commandId: string;
+    readonly ok: boolean;
+    readonly summary: string;
+}
 
-export type RecipePairOutcome = Readonly<{
-    sender: RecipeRunOutcome;
-    receiver: RecipeRunOutcome;
-}>;
+export interface RecipePairOutcome {
+    readonly sender: RecipeRunOutcome;
+    readonly receiver: RecipeRunOutcome;
+}
 
-export type RecipePair = Readonly<{
-    sender: RallarBlackBoxTestRecipe;
-    receiver: RallarBlackBoxTestRecipe;
-}>;
+export interface RecipePair {
+    readonly sender: RallarBlackBoxTestRecipe;
+    readonly receiver: RallarBlackBoxTestRecipe;
+}
+
+interface ControlResult {
+    readonly commandId?: string;
+    readonly ok?: boolean;
+    readonly result?: unknown;
+    readonly error?: ControlResultError;
+}
+
+interface ControlResultError {
+    readonly code?: string;
+    readonly message?: string;
+    /** The failing child command's own error when a recipe fails. */
+    readonly details?: ControlResultError;
+}
+
+const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
+    'quick-test': 'Quick Test',
+    auth: 'Auth',
+    'manual-rallar': 'Manual Rallar',
+    'rooms-clients': 'Groups/Clients',
+    websocket: 'WebSocket',
+    'rtc-realtime': 'RTC/Realtimes',
+    topology: 'Topology',
+    'rtc-diagnostics': 'RTC Diagnostics',
+    'rallar-data': 'Rallar Data',
+    'crdt-health': 'CRDT',
+    media: 'Media',
+    'local-workbench': 'Local Workbench',
+    'run-manager': 'Run Manager',
+    'distributed-recipes': 'Distributed Recipes',
+    'rallar-trace': 'Rallar Trace',
+    'event-stream': 'Event Stream',
+    'rallar-server': 'Rallar Server',
+    'flow-builder': 'Flow Builder',
+    'shared-test': 'Shared Test',
+    recipes: 'Recipes',
+    runs: 'Runs',
+    builder: 'Builder',
+    advanced: 'Advanced'
+};
+
+const RUNNER_PANEL_TARGETS: Partial<
+    Readonly<Record<ExhaustiveTabId, Readonly<{ tab: ExhaustiveTabId; surfaceLabel?: string; }>>>
+> = {
+    'manual-rallar': { tab: 'advanced', surfaceLabel: 'Manual Rallar' },
+    'local-workbench': { tab: 'advanced', surfaceLabel: 'Local Workbench' },
+    'run-manager': { tab: 'advanced', surfaceLabel: 'Run Manager' },
+    'distributed-recipes': { tab: 'advanced', surfaceLabel: 'Distributed Recipes' },
+    'shared-test': { tab: 'advanced', surfaceLabel: 'Shared Test' },
+    'flow-builder': { tab: 'builder' }
+};
+
+const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
+const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
+const RECIPE_RUN_TIMEOUT_MS = 180_000;
+const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
+const CONTROL_POLL_INTERVAL_MS = 250;
 
 export function readFullStackConfig(): FullStackConfig {
     const enabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
@@ -405,17 +454,17 @@ export async function openTab(
         await modeSwitch.getByRole('button', { name: modeName }).click();
     }
 
-    const legacyTarget = LEGACY_RUNNER_TAB_TARGETS[tab];
-    const visibleTab = legacyTarget?.tab ?? tab;
+    const panelTarget = RUNNER_PANEL_TARGETS[tab];
+    const visibleTab = panelTarget?.tab ?? tab;
     const label = TAB_LABELS[visibleTab];
     await page.getByRole('tab', { name: label, exact: true }).click();
     await expect(page.getByRole('tab', { name: label, exact: true })).toHaveAttribute(
         'aria-selected',
         'true'
     );
-    if (legacyTarget?.surfaceLabel) {
+    if (panelTarget?.surfaceLabel) {
         await page.locator('#panel-advanced')
-            .getByRole('button', { name: legacyTarget.surfaceLabel, exact: true })
+            .getByRole('button', { name: panelTarget.surfaceLabel, exact: true })
             .click();
     }
     await expect(page.locator(`#panel-${tab}`)).toBeVisible();
@@ -637,7 +686,8 @@ export async function runRecipeOnAgent(
 }
 
 /**
- * The receiver subscribes at connect, so its recipe starts first and the sender waits until the
+ * Authored paired reload roots are bound and enqueued together; control owns their causal checkpoints.
+ * For ordinary recipes, the receiver subscribes at connect, so its recipe starts first and the sender waits until the
  * receiver's connect command reports an ok result. A connect that must see a ready peer cannot
  * report one before the sender exists, so entering the readiness wait — which the runtime records
  * only after the connection is established and subscribed — releases the barrier too, as does a
@@ -647,6 +697,38 @@ export async function runRecipePairOnTwoAgents(
     run: TwoAgentRun,
     recipes: RecipePair
 ): Promise<RecipePairOutcome> {
+    if (
+        Object.hasOwn(recipes.sender.metadata ?? {}, 'almReloadCheckpoints') ||
+        Object.hasOwn(recipes.receiver.metadata ?? {}, 'almReloadCheckpoints')
+    ) {
+        const bound = bindAlmReloadPair({
+            sender: toReloadRecipeRoot(run, run.sender, recipes.sender),
+            receiver: toReloadRecipeRoot(run, run.receiver, recipes.receiver)
+        });
+        if (bound.left) {
+            throw new Error(`Cannot enqueue paired reload: ${bound.left.join(' ')}`);
+        }
+        const pair = bound.right!;
+        await enqueueControlCommand(
+            run.request,
+            run.runId,
+            run.sender.agentId,
+            pair.sender.commandId,
+            pair.sender.command
+        );
+        await enqueueControlCommand(
+            run.request,
+            run.runId,
+            run.receiver.agentId,
+            pair.receiver.commandId,
+            pair.receiver.command
+        );
+        const [sender, receiver] = await Promise.all([
+            readRecipeRunOutcome(run, pair.sender.commandId),
+            readRecipeRunOutcome(run, pair.receiver.commandId)
+        ]);
+        return { sender, receiver };
+    }
     const connectCommandId = requireConnectCommandId(recipes.receiver);
     const receiverRun = runRecipeOnAgent(run, run.receiver, recipes.receiver);
     await waitForReceiverConnectBarrier(run, {
@@ -741,49 +823,6 @@ export function uniqueAgentId(testInfo: TestInfo, prefix = 'agent'): string {
 export function uniqueSuffix(): string {
     return `${Date.now()}-${crypto.randomUUID()}`;
 }
-
-const TAB_LABELS: Readonly<Record<ExhaustiveTabId, string>> = {
-    'quick-test': 'Quick Test',
-    auth: 'Auth',
-    'manual-rallar': 'Manual Rallar',
-    'rooms-clients': 'Groups/Clients',
-    websocket: 'WebSocket',
-    'rtc-realtime': 'RTC/Realtimes',
-    topology: 'Topology',
-    'rtc-diagnostics': 'RTC Diagnostics',
-    'rallar-data': 'Rallar Data',
-    'crdt-health': 'CRDT',
-    media: 'Media',
-    'local-workbench': 'Local Workbench',
-    'run-manager': 'Run Manager',
-    'distributed-recipes': 'Distributed Recipes',
-    'rallar-trace': 'Rallar Trace',
-    'event-stream': 'Event Stream',
-    'rallar-server': 'Rallar Server',
-    'flow-builder': 'Flow Builder',
-    'shared-test': 'Shared Test',
-    recipes: 'Recipes',
-    runs: 'Runs',
-    builder: 'Builder',
-    advanced: 'Advanced'
-};
-
-const LEGACY_RUNNER_TAB_TARGETS: Partial<
-    Readonly<Record<ExhaustiveTabId, Readonly<{ tab: ExhaustiveTabId; surfaceLabel?: string; }>>>
-> = {
-    'manual-rallar': { tab: 'advanced', surfaceLabel: 'Manual Rallar' },
-    'local-workbench': { tab: 'advanced', surfaceLabel: 'Local Workbench' },
-    'run-manager': { tab: 'advanced', surfaceLabel: 'Run Manager' },
-    'distributed-recipes': { tab: 'advanced', surfaceLabel: 'Distributed Recipes' },
-    'shared-test': { tab: 'advanced', surfaceLabel: 'Shared Test' },
-    'flow-builder': { tab: 'builder' }
-};
-
-const COMMAND_RESULT_TOPIC = 'rallar.bb.command.result';
-const RTC_READINESS_WAIT_TOPIC = 'rallar.bb.rtc.readiness_wait_started';
-const RECIPE_RUN_TIMEOUT_MS = 180_000;
-const RECEIVER_CONNECT_TIMEOUT_MS = 60_000;
-const CONTROL_POLL_INTERVAL_MS = 250;
 
 async function openTwoAgentParticipant(
     input: Readonly<{
@@ -905,6 +944,21 @@ function toControlErrorSummary(error: ControlResultError | undefined): string {
     return cause?.code === undefined && cause?.message === undefined
         ? summary
         : `${summary} Cause: ${toControlErrorSummary(cause)}`;
+}
+
+function toReloadRecipeRoot(
+    run: TwoAgentRun,
+    agent: TwoAgentRunParticipant,
+    recipe: RallarBlackBoxTestRecipe
+): ControlCommandEnvelope {
+    return {
+        kind: 'command',
+        protocolVersion: RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+        runId: run.runId,
+        agentId: agent.agentId,
+        commandId: toRecipeRunCommandId(recipe),
+        command: { kind: 'recipe.run', recipe, timeoutMs: RECIPE_RUN_TIMEOUT_MS }
+    };
 }
 
 function toRecipeRunCommandId(recipe: RallarBlackBoxTestRecipe): string {

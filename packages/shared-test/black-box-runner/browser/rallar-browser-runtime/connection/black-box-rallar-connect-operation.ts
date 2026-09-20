@@ -297,6 +297,7 @@ export class BlackBoxRallarConnectOperation {
         const typedMessages = isBlackBoxRallarTypedMessagesTransport(transport);
         return {
             status: 'connected',
+            document: health.readDocument(),
             connection: config.connection,
             actor: config.actor,
             transport,
