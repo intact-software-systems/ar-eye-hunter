@@ -53,7 +53,10 @@ import { createBrowserQueueBoxEngine } from '@shared-web/browser/queuebox/create
 import * as rtcEngine from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import * as heartbeat from '@shared-web/browser/session/browser-session-heartbeat.ts';
 import { initialiseBrowserCacheRepositories } from '@shared-web/browser/state-cache/initialise-browser-cache-repositories.ts';
-import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
+import {
+    acceptAuthoritativeGroupSessionLeaseAdvance,
+    acceptAuthoritativeGroupStateSnapshot
+} from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import {
@@ -358,6 +361,7 @@ async function refreshBrowserRtcGroupSnapshot(
     const { roomRef, minSnapshotVersion, signal } = request;
     assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
     const scope = toStateScope(roomRef);
+    const observed = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef);
     const { snapshot } = await new Command(
         async (commandSignal) =>
             await readStateGroupSnapshot(
@@ -384,6 +388,14 @@ async function refreshBrowserRtcGroupSnapshot(
         }
     );
     assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
+    if (observed) {
+        acceptAuthoritativeGroupSessionLeaseAdvance({
+            expected: observed,
+            acquired: snapshot,
+            scope,
+            assertCanMutate: () => assertRtcGroupSnapshotRefreshIsCurrent(input, signal)
+        });
+    }
     await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
     assertRtcGroupSnapshotRefreshIsCurrent(input, signal);
     input.webSocketTransport.qboxEngine.wake();

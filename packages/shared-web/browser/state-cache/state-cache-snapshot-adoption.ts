@@ -3,6 +3,7 @@ import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import { isGroupSnapshotSessionLeaseAdvance } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
@@ -105,6 +106,28 @@ export async function acceptAuthoritativeGroupStateSnapshot(
             options
         );
     }
+}
+
+export interface AuthoritativeGroupSessionLeaseAcquisition {
+    readonly expected: GroupSnapshot;
+    readonly acquired: GroupSnapshot;
+    readonly scope: StateScope;
+    assertCanMutate(): void;
+}
+
+/** Only the current authenticated acquisition owner may adopt different same-tuple lease facts. */
+export function acceptAuthoritativeGroupSessionLeaseAdvance(input: AuthoritativeGroupSessionLeaseAcquisition): boolean {
+    if (
+        !isGroupSnapshotInScope(input.acquired, input.scope) ||
+        !isGroupSnapshotSessionLeaseAdvance(input.expected, input.acquired)
+    ) {
+        return false;
+    }
+    input.assertCanMutate();
+    if (groupStateSnapshotsRepository.findGroupStateSnapshotByRef(input.expected.group) !== input.expected) {
+        return false;
+    }
+    return groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(input.expected, input.acquired);
 }
 
 export function isSameStateScope(

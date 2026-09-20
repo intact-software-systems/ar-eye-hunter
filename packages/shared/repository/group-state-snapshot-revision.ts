@@ -45,6 +45,27 @@ export function decideGroupSnapshotCausalRevision(
     throw new StateSnapshotRevisionConflictError('Group', incoming.group.snapshotVersion);
 }
 
+/** A current authoritative acquisition may advance leases without inventing a causal revision. */
+export function isGroupSnapshotSessionLeaseAdvance(current: GroupSnapshot, acquired: GroupSnapshot): boolean {
+    if (!jsonEquals(toLeaseInsensitiveSnapshot(current), toLeaseInsensitiveSnapshot(acquired))) {
+        return false;
+    }
+    let advanced = false;
+    for (let index = 0; index < current.activeSessions.length; index += 1) {
+        const previous = current.activeSessions[index];
+        const next = acquired.activeSessions[index];
+        if (
+            next.lastHeartbeatAtEpochMs < previous.lastHeartbeatAtEpochMs ||
+            next.expiresAtEpochMs < previous.expiresAtEpochMs
+        ) {
+            return false;
+        }
+        advanced ||= next.lastHeartbeatAtEpochMs > previous.lastHeartbeatAtEpochMs ||
+            next.expiresAtEpochMs > previous.expiresAtEpochMs;
+    }
+    return advanced;
+}
+
 /**
  * Session lease fields are the liveness plane, not snapshot content: two
  * assemblies at one causal tuple may legitimately differ only in

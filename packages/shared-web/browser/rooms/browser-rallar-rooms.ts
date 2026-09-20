@@ -17,6 +17,7 @@ import type {
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
+import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import {
     hydrateGroupTopologyOverlays,
@@ -424,6 +425,16 @@ async function refreshRoom(
             }
             await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
             assertCurrent();
+            if (observed) {
+                acceptAuthoritativeGroupSessionLeaseAdvance({
+                    expected: observed,
+                    acquired: response.snapshot,
+                    scope,
+                    assertCanMutate: assertCurrent
+                });
+                await waitForGroupStateSnapshotChangesIdle();
+                assertCurrent();
+            }
             const [readThrough] = await hydrateGroupTopologyOverlays({
                 groupSnapshots: [response.snapshot],
                 sessionId: context.session.sessionId,

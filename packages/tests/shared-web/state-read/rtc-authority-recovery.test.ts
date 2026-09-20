@@ -6,6 +6,13 @@ import {
     vi
 } from 'vitest';
 
+import { assembleGroupStateSnapshot } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
+import * as browserMiddleware from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import * as auth from '@shared/api/auth.ts';
+import { configureClientStateSnapshotRepository } from '@shared/repository/client-state-snapshots-repository.ts';
+import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
+
 import { acceptAuthoritativeGroupStateSnapshot } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { readStateGroupSnapshot } from '@shared-web/browser/state-read/point-read.ts';
 import { RtcGroupSnapshotRefresh } from '@shared-web/browser/state-read/rtc-group-snapshot-refresh.ts';
@@ -43,6 +50,8 @@ import {
     type NativeRtcRuntime,
     type SimulatedNativeRtcDataChannel
 } from '../../shared/native-rtc-connection-fixture.ts';
+import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
+
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
@@ -257,7 +266,22 @@ describe('RTC room authority recovery', () => {
 });
 
 describe('authoritative room observation freshness', () => {
-    it.each(['authoritative-refresh', 'first-authoritative-read', 'expired-session', 'expired-original', 'no-refresh', 'untrusted-duplicate'] as const)(
+    it.each(
+        [
+            'authoritative-refresh',
+            'first-authoritative-read',
+            'expired-session',
+            'expired-original',
+            'no-refresh',
+            'untrusted-duplicate',
+            'normal-authoritative-equal',
+            'normal-authoritative-lease-advance',
+            'normal-authoritative-first-read',
+            'normal-authoritative-expired-previous-lease',
+            'normal-authoritative-expired-acquired-lease',
+            'normal-authoritative-expired-original'
+        ] as const
+    )(
         'preserves the original cache expiry unless a current authoritative read renews it: %s',
         async (scenario) => {
             vi.useFakeTimers();
@@ -268,16 +292,44 @@ describe('authoritative room observation freshness', () => {
             const initial = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
             const snapshot: GroupSnapshot = {
                 ...initial,
-                activeSessions: initial.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: scenario === 'expired-session' ? 60_000 : 300_000 }))
+                activeSessions: initial.activeSessions.map((session) => ({
+                    ...session,
+                    expiresAtEpochMs: scenario === 'normal-authoritative-expired-previous-lease'
+                        ? 30_000
+                        : scenario === 'expired-session' || scenario === 'normal-authoritative-expired-acquired-lease'
+                        ? 60_000
+                        : 300_000
+                }))
             };
-            if (scenario !== 'first-authoritative-read') {
+            if (scenario !== 'first-authoritative-read' && scenario !== 'normal-authoritative-first-read') {
                 setGroupStateSnapshot(snapshot);
             }
-            receiverGroups.set(toScopedOverlayId(room), snapshot);
+            const acquired = scenario.startsWith('normal-authoritative')
+                ? assembleLeaseObservation(
+                    snapshot,
+                    scenario === 'normal-authoritative-equal' ? 1 : 50_000,
+                    scenario === 'normal-authoritative-expired-acquired-lease' ? 61_000 : scenario === 'normal-authoritative-equal' ? 300_000 : 350_000
+                )
+                : snapshot;
+            expect(acquired.causalRevision).toEqual({ groupRevision: 1, presenceRevision: 2 });
+            receiverGroups.set(toScopedOverlayId(room), acquired);
             const reads: string[] = [];
             vi.stubGlobal('fetch', (url: string | URL | Request) => {
                 reads.push(String(url));
-                return Promise.resolve(snapshotResponse(snapshot, 'valid'));
+                if (String(url).endsWith('/topology')) {
+                    return Promise.resolve(
+                        new Response(
+                            JSON.stringify({
+                                groupRef: room,
+                                overlayId: toScopedOverlayId(room),
+                                snapshot: null,
+                                acceptedSnapshot: null
+                            }),
+                            { headers: { 'content-type': 'application/json' } }
+                        )
+                    );
+                }
+                return Promise.resolve(snapshotResponse(acquired, 'valid'));
             });
             onTestFinished(() => {
                 senderRepository.dispose();
@@ -288,7 +340,12 @@ describe('authoritative room observation freshness', () => {
             });
 
             vi.setSystemTime(51_000);
-            if (scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate') {
+            if (scenario.startsWith('normal-authoritative')) {
+                expect(acquired.activeSessions.map((session) => session.lastHeartbeatAtEpochMs))
+                    .toEqual(scenario === 'normal-authoritative-equal' ? [1, 1] : [50_000, 50_000]);
+                await refreshNormalRoom();
+            }
+            else if (scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate') {
                 const controller = new AbortController();
                 const response = await readStateGroupSnapshot(room.groupId, room, {
                     authSession: {
@@ -307,8 +364,8 @@ describe('authoritative room observation freshness', () => {
             else if (scenario === 'untrusted-duplicate') {
                 expect(setGroupStateSnapshot(snapshot)).toBe(false);
             }
-            expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
-            expect(reads).toHaveLength(scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate' ? 1 : 0);
+            expect(findGroupStateSnapshotByRef(room)).toEqual(scenario.startsWith('normal-authoritative') ? acquired : snapshot);
+            expect(reads.filter((url) => !url.endsWith('/topology'))).toHaveLength(scenario !== 'no-refresh' && scenario !== 'untrusted-duplicate' ? 1 : 0);
 
             vi.setSystemTime(62_000);
             const sender = new NativeAuthorityEndpoint({
@@ -339,18 +396,25 @@ describe('authoritative room observation freshness', () => {
                 { value: 1 },
                 { ttlMs: 30_000, reliability: 'at-least-once', ack: 'none' }
             );
-            if (scenario === 'expired-original') {
+            if (scenario === 'expired-original' || scenario === 'normal-authoritative-expired-original') {
                 vi.setSystemTime(92_000);
             }
             const admission = await sender.multicast.enqueueIfAbsent(message);
             await vi.advanceTimersByTimeAsync(0);
             await sender.transferTo(receiver);
 
-            if (scenario === 'authoritative-refresh' || scenario === 'first-authoritative-read') {
+            const permitsNativeSend = scenario === 'authoritative-refresh' || scenario === 'first-authoritative-read' ||
+                [
+                    'normal-authoritative-equal',
+                    'normal-authoritative-lease-advance',
+                    'normal-authoritative-first-read',
+                    'normal-authoritative-expired-previous-lease'
+                ].includes(scenario);
+            if (permitsNativeSend) {
                 expect(admission.verdict).toMatchObject({ kind: 'admitted' });
                 expect(sender.messages().map((sent) => sent.id.msgId)).toEqual([message.id.msgId]);
                 expect(receiver.delivered.map((received) => received.id.msgId)).toEqual([message.id.msgId]);
-                expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
+                expect(findGroupStateSnapshotByRef(room)).toEqual(acquired);
                 expect(receiver.delivered[0]).toMatchObject({
                     id: message.id,
                     targets: { mode: 'multicast', groupRef: room },
@@ -363,7 +427,7 @@ describe('authoritative room observation freshness', () => {
                     expect(findGroupStateSnapshotByRef(room)).toBeUndefined();
                 }
                 else {
-                    expect(findGroupStateSnapshotByRef(room)).toEqual(snapshot);
+                    expect(findGroupStateSnapshotByRef(room)).toEqual(scenario.startsWith('normal-authoritative') ? acquired : snapshot);
                 }
                 expect(sender.messages()).toEqual([]);
                 expect(receiver.delivered).toEqual([]);
@@ -371,6 +435,47 @@ describe('authoritative room observation freshness', () => {
         }
     );
 });
+
+function assembleLeaseObservation(snapshot: GroupSnapshot, lastHeartbeatAtEpochMs: number, expiresAtEpochMs: number): GroupSnapshot {
+    return assembleGroupStateSnapshot({
+        group: snapshot.group,
+        members: snapshot.members,
+        summary: {
+            ...room,
+            causalRevision: snapshot.causalRevision,
+            activePrincipalIds: ['sender', 'receiver'],
+            activeSessionIds: ['sender', 'receiver'],
+            activeSessions: snapshot.activeSessions,
+            activePrincipalCount: 2,
+            activeSessionCount: 2,
+            computedAtEpochMs: 1
+        },
+        authoritativeSessions: snapshot.activeSessions.map((session) => ({ ...session, lastHeartbeatAtEpochMs, expiresAtEpochMs })),
+        groupRevision: 1,
+        observedAtEpochMs: 51_000,
+        sessionLeaseFields: 'authoritative'
+    }, (key, message) => new Error(`${key}: ${message}`));
+}
+
+async function refreshNormalRoom(): Promise<void> {
+    const clients = configureClientStateSnapshotRepository({ ttlMs: 60_000 });
+    onTestFinished(() => clients.dispose());
+    configureOverlayRepositories({ plannedOverlays: { ttlMs: 60_000 }, acceptedOverlays: { ttlMs: 60_000 } });
+    const context = createDefaultApiMiddlewareTestDouble({
+        session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: 300_000 },
+        middleware: {
+            webRtcGroupManager: {
+                notifyOverlayTopologyChanged: async () => undefined,
+                ensureAllGroupsConnected: async () => undefined
+            }
+        }
+    });
+    vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
+    vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue(context.middleware);
+    const facade = createRallarFacade();
+    await facade.rooms.session(room).refresh();
+}
 
 function snapshotResponse(snapshot: GroupSnapshot, scenario: string): Response {
     const authority = scenario === 'wrong-scope'
