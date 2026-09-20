@@ -1,13 +1,4 @@
-import {
-    isOverlayForGroupRef,
-    isSameGroupRef,
-    toScopedOverlayId
-} from '@shared/api/api-type-utils.ts';
-import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
-import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
-import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
-
-import { ALMessage, readALTargetGroupRef } from '../al-contracts/al-contract.ts';
+import { readALTargetGroupRef, type ALMessage } from '../al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     ALMessageHandlingPlan,
@@ -28,6 +19,7 @@ import type {
 import { toALOutboundEnqueueStatus } from '../alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
+    ALOutboundCancelOutcome,
     ALOutboundEnqueueResult,
     ALOutboundPreparedSendResult,
     ALOutboundRuntimeDiagnosticsSink
@@ -48,12 +40,18 @@ import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
 } from '../alm/outbound/al-outbound-transport-message.ts';
+import { toALOutboundMessage } from '../alm/outbound/to-al-outbound-message.ts';
 import {
     EnqueuedType,
     OverlayId,
     OverlayInfo,
     PeerId
 } from '../api/api-config.ts';
+import {
+    isOverlayForGroupRef,
+    isSameGroupRef,
+    toScopedOverlayId
+} from '../api/api-type-utils.ts';
 import { readGroupMemberSessionIds } from '../api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
@@ -77,6 +75,7 @@ import {
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
+import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
 
 export namespace WebRtcOverlayMulticastManager {
@@ -90,7 +89,7 @@ export namespace WebRtcOverlayMulticastManager {
     }
 
     export interface Connection {
-        readonly input: Pick<WebRtcConnectionService['input'], 'sessionId'>;
+        readonly input: Pick<WebRtcConnectionService.InputDto, 'sessionId'>;
         readyPeerIdsForLane(): readonly PeerId[];
         readPeer(peerId: PeerId): Peer | undefined;
     }
@@ -118,7 +117,7 @@ export class WebRtcOverlayMulticastManager {
 
     private readonly multicasterByOverlayId = new Map<OverlayId, WebRtcOverlayMulticaster>();
     private readonly outboundRuntime: ALOutboundMessageRuntime<ALOutboundTransportMessage>;
-    private readonly qosProvider?: ALQosInputProvider;
+    private readonly qosProvider: ALQosInputProvider | undefined;
     private disposed = false;
 
     public readonly outbox: QueueBoxResourceEntryRepository;
@@ -673,7 +672,14 @@ export class WebRtcOverlayMulticastManager {
             ingressPeerId,
             msg.forwarding?.nextHopPeerIds?.[0]
         );
-        if (admission.kind === 'pending') {
+        // An admitted origin keeps its captured edge until its own deadline. Current topology
+        // still denies native submission; a later attempt must pass this same authority check.
+        if (
+            admission.kind === 'pending' ||
+            (admission.kind === 'unauthorized' && admission.cause === 'edge-unavailable' &&
+                ingressPeerId === null &&
+                lifecycle.canonicalMessage.id.senderId === this.connectionService.input.sessionId)
+        ) {
             return { status: 'not-ready', submissionAttempted: false, reason: admission.reason, retryAfterMs: 50 };
         }
         if (admission.kind === 'unauthorized') {

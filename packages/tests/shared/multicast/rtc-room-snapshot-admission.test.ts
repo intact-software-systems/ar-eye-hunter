@@ -74,7 +74,11 @@ describe('RTC room authority', () => {
             activeSessions: current.activeSessions.map((session) => session.sessionId === 'origin' ? { ...session, expiresAtEpochMs: nowMs } : session)
         };
         expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: expired }).kind).toBe('unauthorized');
-        const originPrincipal = current.activeSessions.find((session) => session.sessionId === 'origin')!.principalId;
+        const originSession = current.activeSessions.find((session) => session.sessionId === 'origin');
+        if (!originSession) {
+            throw new Error('The authority fixture must contain the original sender session');
+        }
+        const originPrincipal = originSession.principalId;
         const left = {
             ...current,
             members: current.members.map((member) =>
@@ -83,6 +87,41 @@ describe('RTC room authority', () => {
         };
         expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: left }).kind).toBe('unauthorized');
         expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: { ...current, members: [], activeSessions: [] } }).kind).toBe('pending');
+    });
+
+    it('identifies only a current missing server edge as unavailable while retaining unauthorized admission', () => {
+        const current = snapshot();
+        const input = {
+            message,
+            selfPeerId: 'origin',
+            fromPeerId: undefined,
+            recipientPeerId: 'receiver',
+            nowMs,
+            snapshot: current,
+            overlay: overlay()
+        };
+        expect(computeRtcRoomSnapshotAdmission(input)).toMatchObject({ kind: 'unauthorized', cause: 'edge-unavailable' });
+        for (
+            const rejectedOverlay of [
+                { ...overlay(), state: 'removed' as const },
+                { ...overlay(), groupRef: { ...roomRef, workspaceId: 'foreign' } }
+            ]
+        ) {
+            expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: rejectedOverlay })).toMatchObject({
+                kind: 'unauthorized',
+                cause: 'authority-rejected'
+            });
+        }
+        const expired = {
+            ...current,
+            activeSessions: current.activeSessions.map((session) => session.sessionId === 'origin' ? { ...session, expiresAtEpochMs: nowMs } : session)
+        };
+        expect(computeRtcRoomSnapshotAdmission({ ...input, snapshot: expired })).toMatchObject({
+            kind: 'unauthorized',
+            cause: 'authority-rejected'
+        });
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: undefined }).kind).toBe('pending');
+        expect(computeRtcRoomSnapshotAdmission({ ...input, overlay: { ...overlay(), provenance: 'bootstrap' } }).kind).toBe('pending');
     });
 
     it('plans a frozen authority observation without changing it', () => {

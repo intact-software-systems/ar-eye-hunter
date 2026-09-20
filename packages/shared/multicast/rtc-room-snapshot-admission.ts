@@ -32,10 +32,14 @@ export type RtcRoomSnapshotAdmission =
     }
     | RtcRoomAuthorityDenial;
 
-interface RtcRoomAuthorityDenial {
-    readonly kind: 'pending' | 'unauthorized';
-    readonly reason: string;
-}
+type RtcRoomAuthorityDenial =
+    | { readonly kind: 'pending'; readonly reason: string; }
+    | {
+        readonly kind: 'unauthorized';
+        readonly reason: string;
+        /** Current edge absence denies sending without declaring retained origin work permanently unroutable. */
+        readonly cause: 'authority-rejected' | 'edge-unavailable';
+    };
 
 export interface RtcRoomSnapshotHandlingInput extends RtcRoomSnapshotAdmissionInput {
     readonly plan: ALMessageHandlingPlan;
@@ -47,7 +51,11 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     }
     const roomRef = readALTargetGroupRef(input.message);
     if (!roomRef) {
-        return { kind: 'unauthorized', reason: 'Room messages require a scoped group reference' };
+        return {
+            kind: 'unauthorized',
+            cause: 'authority-rejected',
+            reason: 'Room messages require a scoped group reference'
+        };
     }
     const snapshot = input.snapshot;
     if (!snapshot) {
@@ -131,13 +139,13 @@ function resolveRoomObservationDenial(
     nowMs: number
 ): RtcRoomAuthorityDenial | undefined {
     if (!isSameGroupRef(snapshot.group, roomRef)) {
-        return { kind: 'unauthorized', reason: 'Room authority belongs to another scope' };
+        return { kind: 'unauthorized', cause: 'authority-rejected', reason: 'Room authority belongs to another scope' };
     }
     if (
         snapshot.group.status !== 'active' ||
         (snapshot.group.expiresAtEpochMs !== null && snapshot.group.expiresAtEpochMs <= nowMs)
     ) {
-        return { kind: 'unauthorized', reason: 'Room authority is inactive or expired' };
+        return { kind: 'unauthorized', cause: 'authority-rejected', reason: 'Room authority is inactive or expired' };
     }
     return undefined;
 }
@@ -161,14 +169,22 @@ function resolveRoomSessionDenial(
         !isSameGroupRef(session, input.roomRef) || session.status !== 'active' ||
         session.expiresAtEpochMs <= input.nowMs
     ) {
-        return { kind: 'unauthorized', reason: 'Room session authority is inactive, expired, or in another scope' };
+        return {
+            kind: 'unauthorized',
+            cause: 'authority-rejected',
+            reason: 'Room session authority is inactive, expired, or in another scope'
+        };
     }
     const member = input.members.get(session.principalId);
     if (!member) {
         return { kind: 'pending', reason: 'Awaiting room member authority' };
     }
     if (member.status !== 'active' || !isSameGroupRef(member, input.roomRef)) {
-        return { kind: 'unauthorized', reason: 'Room member authority is inactive or in another scope' };
+        return {
+            kind: 'unauthorized',
+            cause: 'authority-rejected',
+            reason: 'Room member authority is inactive or in another scope'
+        };
     }
     return undefined;
 }
@@ -182,13 +198,21 @@ function resolveRtcRoomEdgeDenial(
         input.fromPeerId !== undefined && nextHopPeerIds?.length &&
         (nextHopPeerIds.length !== 1 || nextHopPeerIds[0] !== input.selfPeerId)
     ) {
-        return { kind: 'unauthorized', reason: 'RTC transport copy targets another immediate recipient' };
+        return {
+            kind: 'unauthorized',
+            cause: 'authority-rejected',
+            reason: 'RTC transport copy targets another immediate recipient'
+        };
     }
     const edgePeerId = input.recipientPeerId ??
         (input.fromPeerId !== input.message.id.senderId ? input.fromPeerId : undefined);
     const overlay = input.overlay;
     if (overlay && (overlay.state === 'removed' || !isSameGroupRef(overlay.groupRef, roomRef))) {
-        return { kind: 'unauthorized', reason: 'RTC room topology is removed or belongs to another scope' };
+        return {
+            kind: 'unauthorized',
+            cause: 'authority-rejected',
+            reason: 'RTC room topology is removed or belongs to another scope'
+        };
     }
     if (edgePeerId === undefined) {
         return undefined;
@@ -196,11 +220,13 @@ function resolveRtcRoomEdgeDenial(
     if (!overlay || overlay.provenance !== 'server') {
         return { kind: 'pending', reason: 'Awaiting server room relay authority' };
     }
-    if (
-        overlay.state !== 'active' || !isSameGroupRef(overlay.groupRef, roomRef) ||
-        !overlay.nextHopSessionIds.includes(edgePeerId)
-    ) {
-        return { kind: 'unauthorized', reason: 'RTC relay edge is not permitted by current server room topology' };
+    // Removed/foreign overlays were rejected above; this is the current server layout's edge absence alone.
+    if (!overlay.nextHopSessionIds.includes(edgePeerId)) {
+        return {
+            kind: 'unauthorized',
+            cause: 'edge-unavailable',
+            reason: 'RTC relay edge is not permitted by current server room topology'
+        };
     }
     return undefined;
 }
