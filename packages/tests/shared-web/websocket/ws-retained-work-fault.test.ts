@@ -1,19 +1,30 @@
-import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
-import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
-import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import {
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    onTestFinished,
+    vi
+} from 'vitest';
 
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import * as auth from '@shared/api/auth.ts';
+import { configureGroupStateSnapshotRepository, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { createScriptedTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
 
 import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-test-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
+import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
 
 describe('WS retained-work faults', () => {
     beforeEach(() => {
@@ -55,7 +66,10 @@ describe('WS retained-work faults', () => {
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
-        const native = TestWebSocket.instances.at(-1)!;
+        const native = TestWebSocket.instances.at(-1);
+        if (!native) {
+            throw new Error('Connecting must create a native socket');
+        }
         native.open();
         const service = await connecting;
         onTestFinished(() => {
@@ -63,6 +77,20 @@ describe('WS retained-work faults', () => {
             engine.stop();
         });
         const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
+        // This fixture owns the auth-storage port; room authority is the real readable repository.
+        vi.spyOn(auth, 'readSession').mockReturnValue({
+            clientId: sessionId,
+            sessionId,
+            username: 'sender',
+            accessToken: 'test-only',
+            expiresAtEpochMs: Date.now() + 60_000
+        });
+        configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+        const snapshot = createGroupSnapshotFixture({ ...room, sessionIds: [sessionId] });
+        setGroupStateSnapshot({
+            ...snapshot,
+            activeSessions: snapshot.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: Date.now() + 60_000 }))
+        });
         const original = newALMulticastMessage(sessionId, { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' }, room, 'alm.lifecycle', {
             marker: 'delivery-lifecycle',
             specimen: 'supersedence'
@@ -113,7 +141,10 @@ describe('WS retained-work faults', () => {
             connectTimeoutMs: 0
         });
         await vi.advanceTimersByTimeAsync(0);
-        const native = TestWebSocket.instances.at(-1)!;
+        const native = TestWebSocket.instances.at(-1);
+        if (!native) {
+            throw new Error('Connecting must create a native socket');
+        }
         native.open();
         const service = await connecting;
         onTestFinished(() => {

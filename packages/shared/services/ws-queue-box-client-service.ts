@@ -116,6 +116,8 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Input {
+        /** Standalone transports may have no domain prerequisite; browser composition supplies room readiness. */
+        readonly readSubmissionIneligibility?: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort?: WebSocketSubmissionReadinessFaultPort;
         readonly queueEngine?: InboxOutboxEngine;
         readonly outbox: QueueBoxResourceEntryRepository;
@@ -133,6 +135,7 @@ export namespace WsQueueBoxClientService {
     }
 
     export interface Dependencies {
+        readonly readSubmissionIneligibility: (message: ALMessage) => string | undefined;
         readonly submissionReadinessFaultPort: WebSocketSubmissionReadinessFaultPort;
         readonly socket: JsonWebSocketClient;
         readonly sessionId: string;
@@ -529,6 +532,12 @@ export class WsQueueBoxClientService {
         if (stopped) {
             return stopped;
         }
+        // Evaluate before any callback can write. An awaited custom callback retains its own
+        // effect contract; rechecking here between callbacks could misreport an earlier write.
+        const reason = this.dependencies.readSubmissionIneligibility(lifecycle.canonicalMessage);
+        if (reason !== undefined) {
+            return { status: 'not-ready', submissionAttempted: false, reason };
+        }
         if (!this.socket.decideSubmissionReadiness(entry.resource, this.dependencies.submissionReadinessFaultPort)) {
             return { status: 'not-ready', submissionAttempted: false };
         }
@@ -617,6 +626,7 @@ export class WsQueueBoxClientService {
 
 export function createDefaultWsQueueBoxClientService(input: WsQueueBoxClientService.Input): WsQueueBoxClientService {
     return new WsQueueBoxClientService({
+        readSubmissionIneligibility: input.readSubmissionIneligibility ?? (() => undefined),
         submissionReadinessFaultPort: input.submissionReadinessFaultPort ??
             createPassThroughWebSocketSubmissionReadinessFaultPort(),
         socket: input.socket,

@@ -2,6 +2,7 @@ import {
     resolveBrowserWsClientALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -9,6 +10,7 @@ import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-o
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import { readSession } from '@shared/api/auth.ts';
 import { Command } from '@shared/cache/Command.ts';
+import { findGroupStateSnapshotByRef } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import WsQueueBoxClientService, {
     createDefaultWsQueueBoxClientService,
@@ -16,6 +18,11 @@ import WsQueueBoxClientService, {
 } from '@shared/services/ws-queue-box-client-service.ts';
 import type { WebSocketSubmissionReadinessFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
 import type { JsonWebSocketClient } from '@shared/websocket/json-web-socket-client.ts';
+
+import {
+    computeBrowserWsRoomSubmissionIneligibility,
+    requiresBrowserWsRoomPresence
+} from './compute-browser-ws-room-submission-ineligibility.ts';
 
 export namespace CreateBrowserWebSocketQueueBox {
     export interface Input {
@@ -51,6 +58,19 @@ function createBrowserWebSocketQueueBoxService(
     const { clientData, socket } = input;
     const outboundStores = resolveBrowserWsClientALOutboundRuntimeStores(clientData.sessionId);
     return createDefaultWsQueueBoxClientService({
+        readSubmissionIneligibility: (message) => {
+            if (!requiresBrowserWsRoomPresence(message)) {
+                return undefined;
+            }
+            const ref = readALTargetGroupRef(message);
+            return computeBrowserWsRoomSubmissionIneligibility({
+                message,
+                client: clientData,
+                currentSession: readSession(),
+                snapshot: ref ? findGroupStateSnapshotByRef(ref) : undefined,
+                nowMs: Date.now()
+            });
+        },
         qosProvider: input.qosProvider,
         queueEngine: input.qboxEngine,
         submissionReadinessFaultPort: input.submissionReadinessFaultPort,
