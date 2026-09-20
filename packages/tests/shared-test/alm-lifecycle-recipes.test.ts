@@ -16,6 +16,15 @@ describe('ALM lifecycle recipe evidence', () => {
                 deadlineMs: 18_000
             }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle');
             expect(scenario).toBeDefined();
+            const replaceable = scenario!.sender.commands
+                .filter((command) => command.kind === 'messages.send')
+                .filter((command) =>
+                    command.payload !== null && typeof command.payload === 'object' &&
+                    !Array.isArray(command.payload) && 'specimen' in command.payload && command.payload.specimen === 'supersedence'
+                );
+            expect(replaceable).toHaveLength(2);
+            expect(replaceable.map((command) => ({ ack: command.ack, seq: command.seq, orderingKey: command.orderingKey })))
+                .toEqual([{ ack: 'receiver', seq: undefined, orderingKey: undefined }, { ack: 'receiver', seq: undefined, orderingKey: undefined }]);
             const replacement = scenario!.receiver.commands.find((command) => command.commandId?.endsWith('receive-replacement'));
             const old = scenario!.receiver.commands.find((command) => command.commandId?.endsWith('absent-old'));
             expect(replacement?.kind).toBe('wait');

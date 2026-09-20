@@ -563,8 +563,7 @@
             },
             "handleId": "alm-ws-delivery-lifecycle-send-3",
             "timeoutMs": 10000,
-            "ack": "receiver",
-            "seq": 1
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -633,8 +632,7 @@
             },
             "handleId": "alm-ws-delivery-lifecycle-send-4",
             "timeoutMs": 10000,
-            "ack": "receiver",
-            "seq": 2
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1183,8 +1181,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "seq": 1
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1258,8 +1255,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "seq": 2
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -1967,8 +1963,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "seq": 1
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",
@@ -2042,8 +2037,7 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver",
-            "seq": 2
+            "ack": "receiver"
           },
           {
             "kind": "messages.observe",

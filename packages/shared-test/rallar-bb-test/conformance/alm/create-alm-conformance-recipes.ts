@@ -421,14 +421,14 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             ...sender,
             index: 3,
             payload: toLifecyclePayload(sender, 'supersedence', 'old'),
-            delivery: { ack: 'receiver', seq: 1 }
+            delivery: { ack: 'receiver' }
         }),
         ...toRetainedEvidenceCommands({ ...sender, index: 3 }),
         toSendCommand({
             ...sender,
             index: 4,
             payload: toLifecyclePayload(sender, 'supersedence', 'replacement'),
-            delivery: { ack: 'receiver', seq: 2 }
+            delivery: { ack: 'receiver' }
         }),
         ...toAdmissionCommands({ ...sender, index: 4 }),
         toObserveCommand({ ...sender, index: 3, state: 'superseded' }),

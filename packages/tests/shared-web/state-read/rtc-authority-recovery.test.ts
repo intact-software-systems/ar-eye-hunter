@@ -1,3 +1,16 @@
+import { BlackBoxRallarRuntimeDiagnostics } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
+import { blackBoxRallarScopeDiagnosticsOf } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-policy.ts';
+import {
+    resolveBlackBoxRallarLaneId,
+    resolveBlackBoxRallarTransport
+} from '@shared-test/black-box-runner/browser/rallar-browser-runtime/connection/black-box-rallar-connection-policy.ts';
+import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
+import { BlackBoxRallarDeliveryLedger } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-ledger.ts';
+import { BlackBoxRallarTypedChannels } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts';
+import { createBlackBoxRallarMessagingResourceController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/create-black-box-rallar-messaging-resource-controller.ts';
+import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
+import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { browserDeliveryComposition } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import {
     describe,
     expect,
@@ -7,8 +20,12 @@ import {
 } from 'vitest';
 
 import { assembleGroupStateSnapshot } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
+import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import * as browserMiddleware from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { ALDeliverySettlement, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundRuntimeDiagnosticsEvent } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import * as auth from '@shared/api/auth.ts';
 import { configureClientStateSnapshotRepository } from '@shared/repository/client-state-snapshots-repository.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
@@ -42,7 +59,11 @@ import {
 import { toCircuitBreaker } from '@shared/resilience/circuit-breaker.ts';
 import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { createDefaultWebRtcRxStreamerService, WebRtcRxStreamerService } from '@shared/services/web-rtc-rx-streamer-service.ts';
-import { createPassThroughTransportFaultPort } from '@shared/transport-faults/transport-fault-port.ts';
+import {
+    createPassThroughTransportFaultPort,
+    createScriptedTransportFaultPort,
+    type TransportFaultPort
+} from '@shared/transport-faults/transport-fault-port.ts';
 
 import {
     createNativeRtcConnectionFixture,
@@ -264,6 +285,278 @@ describe('RTC room authority recovery', () => {
         }
     });
 });
+
+describe('latest-wins receiver delivery and independent ordering', () => {
+    it.each(['ordered-latest', 'unsequenced-latest', 'ordinary-ordered'] as const)(
+        'preserves independent latest-wins and ordered delivery contracts: %s',
+        async (scenario) => {
+            vi.useFakeTimers();
+            vi.setSystemTime(1_000);
+            const nativeRuntime = installNativeRtcRuntime();
+            const groups = new LatestRepository<string, GroupSnapshot>();
+            groups.set(toScopedOverlayId(room), createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] }));
+            const faults = createScriptedTransportFaultPort();
+            const hold = {
+                faultId: 'latest-wins-hold',
+                carrier: 'rtc',
+                action: 'drop',
+                remaining: 'until-cleared',
+                match: { typeId: 'lifecycle.message', msgId: undefined, controlType: undefined }
+            } as const;
+            faults.inject(hold);
+            const sender = new NativeAuthorityEndpoint({
+                sessionId: 'sender',
+                peerId: 'receiver',
+                nativeRuntime,
+                groups,
+                refresh: undefined,
+                faultPort: faults,
+                qosProvider: scenario === 'ordinary-ordered' ? undefined : { defaultsForMessage: computeAlmConformanceQosDefaults }
+            });
+            const receiver = new NativeAuthorityEndpoint({
+                sessionId: 'receiver',
+                peerId: 'sender',
+                nativeRuntime,
+                groups,
+                refresh: undefined
+            });
+            onTestFinished(() => {
+                receiver.close();
+                sender.close();
+                groups.dispose();
+                nativeRuntime.dispose();
+                vi.useRealTimers();
+            });
+            await sender.native.open();
+            await receiver.native.open();
+            const old = newALMulticastMessage(
+                'sender',
+                { topicId: 'room.messages', contextId: 'room', resourceId: 'old' },
+                room,
+                'lifecycle.message',
+                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
+                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 1 }
+            );
+            expect(await sender.multicast.enqueueIfAbsent(old)).toMatchObject({ verdict: { kind: 'admitted' } });
+            await vi.advanceTimersByTimeAsync(100);
+            expect(sender.messages()).toEqual([]);
+            const replacement = newALMulticastMessage(
+                'sender',
+                { topicId: 'room.messages', contextId: 'room', resourceId: 'replacement' },
+                room,
+                'lifecycle.message',
+                { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
+                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 2 }
+            );
+            expect(await sender.multicast.enqueueIfAbsent(replacement)).toMatchObject({ verdict: { kind: 'admitted' } });
+            await vi.advanceTimersByTimeAsync(100);
+            expect(sender.messages()).toEqual([]);
+            if (scenario !== 'ordinary-ordered') {
+                expect(sender.settlements).toContainEqual(expect.objectContaining({
+                    kind: 'attempt-settled',
+                    msgId: old.id.msgId,
+                    outcome: 'superseded',
+                    submissionAttempted: false
+                }));
+            }
+            faults.inject({ ...hold, remaining: 0 });
+            await vi.advanceTimersByTimeAsync(100);
+            expect(sender.messages().map((message) => message.id.msgId))
+                .toEqual(scenario === 'ordinary-ordered' ? [old.id.msgId, replacement.id.msgId] : [replacement.id.msgId]);
+            await sender.transferTo(receiver);
+            const controls = receiver.messages().map(parseALControlMessage);
+            if (scenario === 'ordered-latest') {
+                expect(receiver.delivered).toEqual([]);
+                expect(controls).toContainEqual({
+                    type: 'nack',
+                    payload: expect.objectContaining({
+                        msgId: replacement.id.msgId,
+                        reason: 'gap',
+                        orderingKey: '["app","workspace","room"]:sender:0',
+                        expectedSeq: 1,
+                        missingSeqs: [1]
+                    })
+                });
+                expect(controls).toContainEqual({
+                    type: 'repair',
+                    payload: expect.objectContaining({
+                        msgId: replacement.id.msgId,
+                        orderingKey: '["app","workspace","room"]:sender:0',
+                        expectedSeq: 1,
+                        missingSeqs: [1]
+                    })
+                });
+            }
+            const settlementsBeforeRepair = sender.settlements.length;
+            await receiver.transferTo(sender);
+            await vi.advanceTimersByTimeAsync(100);
+            await sender.transferTo(receiver);
+            if (scenario === 'ordered-latest') {
+                expect(sender.outboundDiagnostics).toContainEqual(expect.objectContaining({
+                    kind: 'commit-phases',
+                    msgId: old.id.msgId,
+                    origin: 'repair',
+                    commitOutcome: 'committed'
+                }));
+                expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.id.msgId]);
+                expect(sender.settlements.slice(settlementsBeforeRepair)).toContainEqual(expect.objectContaining({
+                    kind: 'attempt-settled',
+                    msgId: old.id.msgId,
+                    outcome: 'superseded',
+                    submissionAttempted: false,
+                    willRetry: false
+                }));
+            }
+            if (scenario === 'ordered-latest') {
+                expect(receiver.delivered).toEqual([]);
+                return;
+            }
+            expect(receiver.delivered.map((message) => message.id.msgId))
+                .toEqual(scenario === 'ordinary-ordered' ? [old.id.msgId, replacement.id.msgId] : [replacement.id.msgId]);
+            expect(receiver.delivered.at(-1)).toMatchObject({
+                id: replacement.id,
+                payload: replacement.payload,
+                constraints: { expiresAtMs: 31_100 }
+            });
+        }
+    );
+});
+
+it('delivers the canonical generated supersedence specimen through the page decoder and native receiver', async () => {
+    vi.useFakeTimers();
+    const nativeRuntime = installNativeRtcRuntime();
+    const groups = configureGroupStateSnapshotRepository({ ttlMs: 60_000 });
+    const snapshot = createGroupSnapshotFixture({ ...room, sessionIds: ['sender', 'receiver'] });
+    setGroupStateSnapshot({
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: Date.now(),
+            expiresAtEpochMs: Date.now() + 60_000
+        }))
+    });
+    const faults = createScriptedTransportFaultPort();
+    const hold = {
+        faultId: 'generated-hold',
+        carrier: 'rtc',
+        action: 'drop',
+        remaining: 'until-cleared',
+        match: { typeId: 'generated.rtc.delivery-lifecycle', msgId: undefined, controlType: undefined }
+    } as const;
+    faults.inject(hold);
+    const sender = new NativeAuthorityEndpoint({
+        sessionId: 'sender',
+        peerId: 'receiver',
+        nativeRuntime,
+        groups: readableGroupStateSnapshotCache(),
+        refresh: undefined,
+        faultPort: faults,
+        qosProvider: { defaultsForMessage: computeAlmConformanceQosDefaults },
+        outboundSettlements: (event) => browserDeliveryComposition.deliveries.record(event)
+    });
+    const receiver = new NativeAuthorityEndpoint({
+        sessionId: 'receiver',
+        peerId: 'sender',
+        nativeRuntime,
+        groups: readableGroupStateSnapshotCache(),
+        refresh: undefined
+    });
+    onTestFinished(() => {
+        receiver.close();
+        sender.close();
+        groups.dispose();
+        nativeRuntime.dispose();
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+    });
+    await sender.native.open();
+    await receiver.native.open();
+    const ledger = createGeneratedSendLedger(sender);
+    const scenario = createAlmConformanceRecipes({
+        group: room,
+        carrier: 'rtc',
+        typeId: 'generated',
+        senderConnection: 'sender',
+        receiverConnection: 'receiver',
+        deadlineMs: 30_000
+    })
+        .find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
+    const sends = scenario.sender.commands.filter((command) => command.kind === 'messages.send').filter((command) =>
+        command.payload !== null && typeof command.payload === 'object' && !Array.isArray(command.payload) && 'specimen' in command.payload &&
+        command.payload.specimen === 'supersedence'
+    );
+    expect(sends).toHaveLength(2);
+    // The generated type is part of the selected fault; no sequence or delivery option is rewritten.
+    expect(sends.map((command) => command.typeId)).toEqual(['generated.rtc.delivery-lifecycle', 'generated.rtc.delivery-lifecycle']);
+    const old = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[0])));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sender.messages()).toEqual([]);
+    const replacement = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[1])));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await ledger.readReceipts({ connection: 'sender', handleId: old.handleId })).toMatchObject({ state: 'superseded', submitted: false });
+    expect(sender.messages()).toEqual([]);
+    faults.inject({ ...hold, remaining: 0 });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.msgId]);
+    await sender.transferTo(receiver);
+    await receiver.transferTo(sender);
+    await vi.advanceTimersByTimeAsync(100);
+    await sender.transferTo(receiver);
+    expect(sender.messages().map((message) => message.id.msgId)).toEqual([replacement.msgId]);
+    expect(receiver.delivered.map((message) => message.id.msgId)).toEqual([replacement.msgId]);
+    expect(receiver.delivered[0].payload.resource).toBe(JSON.stringify(sends[1].payload));
+});
+
+function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRallarDeliveryLedger {
+    const bootstrap = createDefaultApiMiddlewareTestDouble({
+        session: { clientId: 'sender', sessionId: 'sender', username: 'sender', expiresAtEpochMs: Date.now() + 300_000 }
+    });
+    const context = {
+        ...bootstrap,
+        middleware: {
+            ...bootstrap.middleware,
+            rtcRxStreamer: sender.streamer,
+            webRtcConnectionService: sender.connection.service,
+            webRtcOverlayMulticastManager: sender.multicast
+        }
+    };
+    vi.spyOn(auth, 'readSession').mockReturnValue(context.session);
+    vi.spyOn(auth, 'isLoggedIn').mockReturnValue(true);
+    vi.spyOn(browserMiddleware, 'initialiseMiddleware').mockResolvedValue(context.middleware);
+    const facade = createRallarFacade();
+    const resources = createBlackBoxRallarMessagingResourceController({ generation: () => 1, isCurrent: (generation) => generation === 1 });
+    onTestFinished(() => {
+        resources.cleanupWsSubscriptions();
+    });
+    const diagnostics = new BlackBoxRallarRuntimeDiagnostics({
+        now: Date.now,
+        publish: () => {},
+        onPublishError: (error) => {
+            throw error;
+        },
+        transportOf: resolveBlackBoxRallarTransport,
+        laneIdOf: resolveBlackBoxRallarLaneId,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf
+    });
+    return new BlackBoxRallarDeliveryLedger({
+        deliveries: browserDeliveryComposition.deliveries,
+        typedChannels: new BlackBoxRallarTypedChannels({ messages: facade.messages, resources, diagnostics }),
+        resources,
+        diagnostics,
+        requireConfig: () => ({
+            connection: 'sender',
+            roomId: room.groupId,
+            roomRef: room,
+            rallar: {
+                apiBaseUrl: 'http://fixture.invalid',
+                applicationId: room.applicationId,
+                workspaceId: room.workspaceId,
+                transport: 'messages.rtc',
+                typeId: 'generated.rtc.delivery-lifecycle'
+            }
+        })
+    });
+}
 
 describe('authoritative room observation freshness', () => {
     it.each(
@@ -508,6 +801,9 @@ namespace NativeAuthorityEndpoint {
         readonly nativeRuntime: NativeRtcRuntime;
         readonly groups: ReadableKeyedValues<string, GroupSnapshot>;
         readonly refresh: RtcGroupSnapshotRefresh | undefined;
+        readonly faultPort?: TransportFaultPort;
+        readonly qosProvider?: ALQosInputProvider;
+        readonly outboundSettlements?: ALDeliverySettlementSink;
     }
 }
 
@@ -518,7 +814,9 @@ class NativeAuthorityEndpoint {
     readonly native: SimulatedNativeRtcDataChannel;
     readonly delivered: ALMessage[] = [];
     readonly admissions: ALInboundRuntimeDiagnosticsEvent[] = [];
-    private readonly connection;
+    readonly settlements: ALDeliverySettlement[] = [];
+    readonly outboundDiagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+    readonly connection;
     private readonly overlays = new LatestRepository<string, OverlayInfo>();
     private transferredCount = 0;
     private readonly peerId: string;
@@ -528,7 +826,7 @@ class NativeAuthorityEndpoint {
         this.connection = createNativeRtcConnectionFixture({
             sessionId: input.sessionId,
             token: 'fixture-token',
-            faultPort: createPassThroughTransportFaultPort(),
+            faultPort: input.faultPort ?? createPassThroughTransportFaultPort(),
             rtcSignalingTopicId: 'rtc',
             dataChannelName: 'reliable',
             iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 }
@@ -541,9 +839,12 @@ class NativeAuthorityEndpoint {
             groupCache: input.groups,
             overlayCache: this.overlays,
             multicasterFactory: (id) => new WebRtcOverlayMulticastService(id, this.connection.service),
-            qosProvider: undefined,
-            outboundDiagnostics: undefined,
-            outboundSettlements: undefined,
+            qosProvider: input.qosProvider,
+            outboundDiagnostics: (event) => this.outboundDiagnostics.push(event),
+            outboundSettlements: (event) => {
+                this.settlements.push(event);
+                input.outboundSettlements?.(event);
+            },
             outboundRuntime: this.resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
