@@ -1,5 +1,47 @@
 // Reviewed recipe, assertion and report boundaries. Exact keys and caps remain local to each owner.
 export const reviewedScenarioDispositions = Object.freeze([
+    // Maintainer-approved bounded cohesion exceptions (2026-09-20). Prior review
+    // separated command derivation, retained evidence and cleanup; the service
+    // keeps actual mutations, while each reload policy remains a complete decision.
+    // These exact ceilings authorize no growth or other rule suppression.
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/control-service.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 125
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/recipe-reload/compute-control-recipe-reload-step.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 52
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/recipe-reload/control-recipe-reload-commands.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 59
+    }),
+    Object.freeze({
+        path: 'apps/rallar-black-box-control-server/src/recipe-reload/control-recipe-reload-evidence.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 64
+    }),
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 54
+    }),
+    // Outcome translation/reporting already have separate owners. Invocation,
+    // cancellation and cleanup fences stay together in the runtime lifecycle.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts',
+        rule: 'file.cognitive-load',
+        symbol: undefined,
+        maximumMagnitude: 68
+    }),
     // Reload command results retain opaque external evidence. These readers keep
     // malformed leaves intact until the adjacent validators reject them; JSON
     // normalization would erase NaN/Infinity and missing-value negative evidence.

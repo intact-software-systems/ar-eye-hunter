@@ -71,7 +71,25 @@ while F2c runs in its own slice.
   meaning, stated in the field's comment. At most three positional parameters.
 - One canonical name per type: the browser surface exposes the shared `ALDelivery*` names directly;
   no `RallarMessageDeliveryState = ALDeliveryState` alias.
-- Sizes: no new `file.cognitive-load` pin and no new size/cognitive-load disposition entry under `packages/shared/alm`
+- Sizes: no new `file.cognitive-load` pin except the six exact maintainer-approved caps below
+  (2026-09-20), following the completed cohesion/separation reviews. These are bounded exceptions,
+  not false-positive classifications; growth above a cap no longer matches its disposition and
+  remains subject to the unchanged base-comparison rules. No other rule or global threshold is waived.
+
+  | Exact owner                                                                                    | Maximum cognitive load |
+  | ---------------------------------------------------------------------------------------------- | ---------------------: |
+  | `apps/rallar-black-box-control-server/src/control-service.ts`                                  |                    125 |
+  | `apps/rallar-black-box-control-server/src/recipe-reload/compute-control-recipe-reload-step.ts` |                     52 |
+  | `apps/rallar-black-box-control-server/src/recipe-reload/control-recipe-reload-commands.ts`     |                     59 |
+  | `apps/rallar-black-box-control-server/src/recipe-reload/control-recipe-reload-evidence.ts`     |                     64 |
+  | `packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-reload-identity.ts`            |                     54 |
+  | `packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts`          |                     68 |
+
+  Retain the reviewed coherent owners rather than split synchronous lifecycle or complete reload
+  decisions merely to lower a score. Re-review the exact owner when its responsibilities change;
+  raising any listed cap requires fresh explicit maintainer approval. The existing disposition
+  mechanism records only these exact paths and `file.cognitive-load` with `symbol: undefined`.
+  No new size/cognitive-load disposition entry is permitted under `packages/shared/alm`
   or `packages/shared-web/browser/messages`; `packages/shared/alm/outbound` already trips
   `layout.directory-density` (21 files) and `layout.feature-prefix-cluster`, so S1's new shared files
   go under `packages/shared/alm/delivery/`, not the outbound directory; `browser/rallar.ts` stays at
