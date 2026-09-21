@@ -1301,17 +1301,24 @@ dequeue completes the row and does not publish it.
 (`:28`, `:39`), `packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts` (Task 0's pin),
 `packages/tests/shared/alm/al-storage-snapshot.test.ts`, the two bundle files if a budget moved.
 
-- [ ] **Step 1: The zero-new-operation proof.** Re-run Task 0's pin unchanged; re-run
+- [x] **Step 1: The zero-new-operation proof.** Re-run Task 0's pin unchanged; re-run
       `al-storage-snapshot.test.ts` and record the standard-workload snapshot is byte-identical to
       `main`'s. Command: `npx vitest run packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts packages/tests/shared/alm/al-storage-snapshot.test.ts`
+      Re-run on `3e3fa2dc` (2026-09-21): 13 tests passed. One default send still spends 10
+      `al-admission` and 15 `al-work` operations. The expected byte constants are unchanged from
+      `main`. Measured outbound bytes were 1,813,462 / 69,763 / 1,743,586 / 101,572 (total 3,728,383
+      against pin 3,728,380) and inbound 61,510 / 1,764,355 (total 1,825,865 against pin 1,825,867),
+      inside the test's identity-digit band. `AL_ADMISSION_SCHEMA_ID` is unchanged from `main`.
 - [ ] **Step 2: Docs.** The outbound README's settlement section says what the owner emits and
       where; `:223-226` no longer calls the handle roadmap work; the API reference's sample consumes the
       handle (`await roomChat.send(...)` then `wait`), the skill example's broken import is replaced by the
       handle, the example README follows. `npm run test:repo-governance` after the skill edit.
-- [ ] **Step 3: Bundle figures.** `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`;
+- [x] **Step 3: Bundle figures.** `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`;
       `npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`. A
       crossed ceiling is raised to the next whole KiB with the measured figure in both files and the PR
       body.
+      Re-run on `3e3fa2dc`: the headless boundary test passed under the 270 KiB ceiling. `browser/rallar.ts`
+      brotli was 211.9 KiB against a 212.0 KiB budget, and the shared-web budget check passed.
 - [ ] **Step 4: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       the three Deno checks; `npm run test:deno`; `npx dprint check`;
       `npm run check:repo-style:changed -- origin/main HEAD`; `node scripts/check-tests-typecheck.mjs`;
