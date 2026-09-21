@@ -16,6 +16,7 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -684,6 +685,55 @@ describe('WebRtc overlay services', () => {
         });
         expect(channel.sendCalls).toEqual([]);
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
+    });
+
+    it('counts a non-unauthorized refused enqueue result as a circuit breaker failure', async () => {
+        const channel = createOpenRtcChannel();
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': {
+                channel
+            }
+        });
+        const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService: connectionService,
+            groupCache: createReadableCache({}),
+            overlayCache: createReadableCache({}),
+            multicasterFactory: (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService
+                ),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            circuitBreaker,
+            rateLimiter: RateLimiter.init(1_000, 20),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        onTestFinished(() => manager.dispose());
+        const refusedDetail = 'Outbound candidate failed validation';
+        const enqueueSpy = vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueIfAbsent').mockImplementation(async (msg) => ({
+            verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
+            message: msg,
+            entries: [],
+            reason: refusedDetail
+        }));
+        onTestFinished(() => enqueueSpy.mockRestore());
+
+        // Two refused results accumulate past the single-failure policy threshold before this call
+        // sees the breaker open; that is the behaviour under test, not incidental setup.
+        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-1'));
+        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-2'));
+        const result = await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-3'));
+
+        expect(result).toMatchObject({
+            verdict: { kind: 'unroutable', reason: 'circuit-open' },
+            entries: [],
+            reason: 'RTC enqueue circuit breaker open'
+        });
+        expect(channel.sendCalls).toEqual([]);
     });
 
     it('does not transmit a malformed persisted AL envelope', async () => {

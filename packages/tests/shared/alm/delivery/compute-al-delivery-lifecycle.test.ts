@@ -3,6 +3,7 @@ import {
     AL_DELIVERY_ADMITTED_STATES,
     AL_DELIVERY_STATES,
     createInitialALDeliveryLifecycle,
+    hasALDeliveryDurableWork,
     isALDeliveryTerminal,
     isALDeliveryTerminalState,
     type ALDeliveryAdmissionVerdict,
@@ -645,6 +646,30 @@ describe('AL_DELIVERY_ADMITTED_STATES', () => {
     it('equals every delivery state except submitted', () => {
         expect(AL_DELIVERY_ADMITTED_STATES).toEqual(AL_DELIVERY_STATES.filter((state) => state !== 'submitted'));
         expect(AL_DELIVERY_ADMITTED_STATES).not.toContain('submitted');
+    });
+});
+
+describe('hasALDeliveryDurableWork', () => {
+    it.each<ALDeliveryAdmissionVerdict>([
+        { kind: 'admitted', durable: true, queuedAttempts: 0 },
+        { kind: 'duplicate' },
+        { kind: 'pending' }
+    ])('reports durable work for verdict kind $kind', (verdict) => {
+        expect(hasALDeliveryDurableWork(verdict)).toBe(true);
+    });
+
+    it.each<ALDeliveryAdmissionVerdict>([
+        { kind: 'admitted', durable: false, queuedAttempts: 0 },
+        { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'not yet in sync' },
+        { kind: 'refused', reason: 'unauthorized', detail: 'not authorized' },
+        { kind: 'refused', reason: 'malformed', detail: 'malformed' },
+        { kind: 'unroutable', reason: 'no-route', detail: 'no route' },
+        { kind: 'superseded', detail: 'superseded' },
+        { kind: 'expired', detail: 'expired' },
+        { kind: 'skipped', reason: 'disposed', detail: 'disposed' },
+        { kind: 'failed', detail: 'failed' }
+    ])('reports no durable work for verdict kind $kind', (verdict) => {
+        expect(hasALDeliveryDurableWork(verdict)).toBe(false);
     });
 });
 

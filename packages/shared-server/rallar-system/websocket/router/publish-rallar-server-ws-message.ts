@@ -1,5 +1,8 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    hasALDeliveryDurableWork,
+    type ALDeliveryAdmissionVerdict
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
@@ -35,11 +38,7 @@ export async function publishRallarServerWsMessage(
             };
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message);
-            const verdict = result.verdict;
-            if (
-                (verdict.kind === 'admitted' && verdict.durable) || verdict.kind === 'duplicate' ||
-                verdict.kind === 'pending'
-            ) {
+            if (hasALDeliveryDurableWork(result.verdict)) {
                 input.wakeOutbox?.();
             }
             return toOutboxPublishResult(input.message, input.fanout, result);
@@ -124,7 +123,6 @@ function toOutboxPublishResult(
     };
 }
 
-/** Mirrors the retired `ALOutboundEnqueueStatus` converter, except a `deferred` verdict now stays queued. */
 function toOutboxPublishStatus(
     verdict: ALDeliveryAdmissionVerdict
 ): RallarServerWsPublishStatus {

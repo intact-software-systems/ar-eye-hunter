@@ -228,9 +228,11 @@ export class WebRtcOverlayMulticastManager {
     private static isSuccessfulProtectedEnqueueResult(
         value: ALOutboundEnqueueResult
     ): boolean {
-        return value.verdict.kind !== 'failed' &&
-            !(value.verdict.kind === 'unroutable' &&
-                (value.verdict.reason === 'rate-limited' || value.verdict.reason === 'circuit-open'));
+        const verdict = value.verdict;
+        return verdict.kind !== 'failed' &&
+            !(verdict.kind === 'refused' && verdict.reason !== 'unauthorized') &&
+            !(verdict.kind === 'unroutable' &&
+                (verdict.reason === 'rate-limited' || verdict.reason === 'circuit-open'));
     }
 
     private static toCircuitBreakerResult(

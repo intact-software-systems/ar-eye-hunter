@@ -223,3 +223,13 @@ export function isALDeliveryAdmitted(lifecycle: ALDeliveryLifecycle): boolean {
     return lifecycle.state === 'accepted' || lifecycle.state === 'queued' ||
         lifecycle.state === 'transport-accepted' || lifecycle.state === 'acknowledged';
 }
+
+/**
+ * True when a durable outbound work row now exists for this message: a freshly admitted durable
+ * verdict, an already-stored duplicate, or a retained admission conflict awaiting replay. A
+ * non-durable `admitted` verdict does not qualify — it produced no queue row to wake a drain for.
+ */
+export function hasALDeliveryDurableWork(verdict: ALDeliveryAdmissionVerdict): boolean {
+    return (verdict.kind === 'admitted' && verdict.durable) || verdict.kind === 'duplicate' ||
+        verdict.kind === 'pending';
+}

@@ -1,5 +1,8 @@
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '../al-contracts/al-contract.ts';
-import type { ALDeliveryAdmissionVerdict } from '../alm/delivery/al-delivery-lifecycle.ts';
+import {
+    hasALDeliveryDurableWork,
+    type ALDeliveryAdmissionVerdict
+} from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { toError } from '../resilience/to-error.ts';
 import { WsQueueBoxClientService } from '../services/ws-queue-box-client-service.ts';
@@ -121,11 +124,7 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
 
     private async admitSignal(message: ALMessage): Promise<ALOutboundEnqueueResult> {
         const result = await this.qbox.enqueueOutboxIfAbsent(message);
-        const verdict = result.verdict;
-        if (
-            (verdict.kind === 'admitted' && verdict.durable) || verdict.kind === 'duplicate' ||
-            verdict.kind === 'pending'
-        ) {
+        if (hasALDeliveryDurableWork(result.verdict)) {
             this.wakeOutbox?.();
         }
         return result;
