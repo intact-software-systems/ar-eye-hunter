@@ -319,9 +319,7 @@ export class LiveRtcControlClient {
     }
 
     requireSentMessageId(result: LiveRtcControlClient.Result): string {
-        const sendResult = jsonRecord(this.resultValue(result).message);
-        const sentMessage = jsonRecord(sendResult?.message);
-        const messageId = stringValue(jsonRecord(sentMessage?.id)?.msgId);
+        const messageId = messageIdFromSendResult(result);
         if (!messageId) {
             throw new Error('RTC send result did not include a message ID.');
         }
@@ -1168,16 +1166,6 @@ function summarizeNackSendResult(
     };
 }
 
-function classifyNackReason(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['reason'] {
-    return value === undefined
-        ? 'missing'
-        : value === 'not-yet-in-sync'
-        ? value
-        : 'other';
-}
-
 /** Classifies a raw JSON string against the canonical `ALDeliveryState` union; never a hand-copied list. */
 function classifyDeliveryState(
     value: string | undefined
@@ -1216,7 +1204,7 @@ function summarizeLiveRtcSendResult(
     return {
         ok: result.ok,
         state: classifyDeliveryState(stringValue(observation.state)),
-        reason: classifyNackReason(stringValue(observation.reason)),
+        reason: stringValue(observation.reason) ?? null,
         messageIdPresent: messageIdFromSendResult(result) !== undefined,
         submitted: booleanOrNull(observation.submitted),
         enqueued: booleanOrNull(observation.enqueued),

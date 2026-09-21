@@ -151,7 +151,8 @@ export interface LiveRtcFailureAgentHealth {
 export interface LiveRtcSendResultSummary {
     readonly ok: boolean;
     readonly state: ALDeliveryState | 'other' | 'missing';
-    readonly reason: 'not-yet-in-sync' | 'other' | 'missing';
+    /** The raw settlement detail string; `null` when the lifecycle recorded none. */
+    readonly reason: string | null;
     /** Derived from `message.handleId`: the handle id is the message id. */
     readonly messageIdPresent: boolean;
     readonly submitted: boolean | null;

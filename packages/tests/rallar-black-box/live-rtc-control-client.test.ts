@@ -1,4 +1,5 @@
 import { request, type APIRequestContext } from '@playwright/test';
+import type { BlackBoxRallarDeliveryObservation } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -7,6 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
+
+/** Spreads a real delivery observation, then explicitly named contamination the producer never emits. */
+function toSendDiagnosticsFixture(
+    observation: BlackBoxRallarDeliveryObservation,
+    contamination: Record<string, unknown>
+) {
+    return normalizeJson({ ...observation, ...contamination });
+}
 
 describe('live RTC control client', () => {
     let server: Server;
@@ -180,18 +189,20 @@ describe('live RTC control client', () => {
             result: {
                 value: {
                     credential: 'must-not-be-retained',
-                    message: {
-                        handleId: 'message-broadcast',
-                        state: 'failed',
-                        reason: 'Skipping RTC outbound message without overlay context',
-                        submitted: false,
-                        confirmedHopPeerIds: [],
-                        unconfirmedHopPeerIds: [],
-                        attempts: 1,
-                        backpressured: false,
-                        enqueued: false,
-                        payload: { resource: 'must-not-be-retained' }
-                    }
+                    message: toSendDiagnosticsFixture(
+                        {
+                            handleId: 'message-broadcast',
+                            state: 'failed',
+                            reason: 'Skipping RTC outbound message without overlay context',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            attempts: 1,
+                            backpressured: false,
+                            enqueued: false
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    )
                 }
             }
         });
@@ -283,18 +294,20 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: {
-                        handleId: 'message-direct-timeout',
-                        state: 'submitted',
-                        reason: 'awaiting a durable admission retry',
-                        submitted: false,
-                        confirmedHopPeerIds: [],
-                        unconfirmedHopPeerIds: [],
-                        attempts: 1,
-                        backpressured: false,
-                        enqueued: true,
-                        payload: { resource: 'must-not-be-retained' }
-                    },
+                    message: toSendDiagnosticsFixture(
+                        {
+                            handleId: 'message-direct-timeout',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            attempts: 1,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
                     credential: 'must-not-be-retained'
                 }
             }
@@ -358,7 +371,7 @@ describe('live RTC control client', () => {
         expect(artifact.sendResult).toEqual({
             ok: true,
             state: 'submitted',
-            reason: 'other',
+            reason: 'awaiting a durable admission retry',
             messageIdPresent: true,
             submitted: false,
             enqueued: true,
@@ -386,18 +399,20 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: {
-                        handleId: 'message-direct-timeout',
-                        state: 'submitted',
-                        reason: 'awaiting a durable admission retry',
-                        submitted: false,
-                        confirmedHopPeerIds: [],
-                        unconfirmedHopPeerIds: [],
-                        attempts: 1,
-                        backpressured: false,
-                        enqueued: true,
-                        payload: { resource: 'must-not-be-retained' }
-                    },
+                    message: toSendDiagnosticsFixture(
+                        {
+                            handleId: 'message-direct-timeout',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            attempts: 1,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
                     credential: 'must-not-be-retained'
                 }
             }
@@ -454,7 +469,7 @@ describe('live RTC control client', () => {
                     },
                     sendResult: {
                         state: 'submitted',
-                        reason: 'other',
+                        reason: 'awaiting a durable admission retry',
                         messageIdPresent: true,
                         submitted: false,
                         enqueued: true,
@@ -566,18 +581,27 @@ describe('live RTC control client', () => {
         await Promise.all([waitForAgentB, waitForAgentC]);
     });
 
-    it('reads the sent message identity from the RTC send-result envelope, not the command ID', () => {
+    it('reads the sent message identity from the delivery observation, not the command ID', () => {
         expect(
             control.requireSentMessageId({
                 commandId: 'nack-probe-command',
                 ok: true,
                 result: {
                     value: {
-                        message: {
-                            transport: 'rtc',
-                            status: 'sent',
-                            message: { id: { msgId: 'wire-message' } }
-                        }
+                        message: toSendDiagnosticsFixture(
+                            {
+                                handleId: 'wire-message',
+                                state: 'submitted',
+                                reason: 'awaiting a durable admission retry',
+                                submitted: true,
+                                confirmedHopPeerIds: [],
+                                unconfirmedHopPeerIds: [],
+                                attempts: 1,
+                                backpressured: false,
+                                enqueued: true
+                            },
+                            {}
+                        )
                     }
                 }
             })
@@ -623,18 +647,20 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: {
-                        handleId: 'probe-message',
-                        state: 'submitted',
-                        reason: 'credential=must-not-be-retained',
-                        submitted: false,
-                        confirmedHopPeerIds: [],
-                        unconfirmedHopPeerIds: [],
-                        attempts: 1,
-                        backpressured: false,
-                        enqueued: true,
-                        payload: { resource: 'must-not-be-retained' }
-                    },
+                    message: toSendDiagnosticsFixture(
+                        {
+                            handleId: 'probe-message',
+                            state: 'submitted',
+                            reason: 'awaiting a durable admission retry',
+                            submitted: false,
+                            confirmedHopPeerIds: [],
+                            unconfirmedHopPeerIds: [],
+                            attempts: 1,
+                            backpressured: false,
+                            enqueued: true
+                        },
+                        { payload: { resource: 'must-not-be-retained' } }
+                    ),
                     credential: 'must-not-be-retained'
                 }
             }
@@ -697,7 +723,7 @@ describe('live RTC control client', () => {
             sendResult: {
                 ok: true,
                 state: 'submitted',
-                reason: 'other',
+                reason: 'awaiting a durable admission retry',
                 messageIdPresent: true,
                 submitted: false,
                 enqueued: true,
