@@ -143,6 +143,17 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
+    it('gives carrier acceptance the non-expiring send budget', () => {
+        const lifecycle = createAlmConformanceRecipes(toConformanceInput('ws'))
+            .find((scenario) => scenario.scenarioId === 'delivery-lifecycle');
+        const commands = lifecycle?.sender.commands ?? [];
+        const submitted = commands.find((command) => command.kind === 'messages.observe' && command.commandId.endsWith('observe-transport-accepted-4'));
+        const admitted = commands.find((command) => command.kind === 'messages.observe' && command.commandId.endsWith('observe-admitted-2'));
+
+        expect(submitted).toMatchObject({ timeoutMs: 10_000 });
+        expect(admitted).toMatchObject({ timeoutMs: 3_000 });
+    });
+
     it('keeps reload and ordering-resync full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))

@@ -145,7 +145,10 @@ export function blackBoxRallarAuthenticationIdentityOf(
 ): BlackBoxRallarAuthenticationIdentity {
     return {
         apiBaseUrl: normalizeBlackBoxRallarApiBaseUrl(config.apiBaseUrl),
-        username: config.username ?? restoredSession?.username ?? ''
+        // A restored connect stores no username. The blank is not a second identity.
+        username: config.username === undefined || config.username.length === 0
+            ? restoredSession?.username ?? ''
+            : config.username
     };
 }
 

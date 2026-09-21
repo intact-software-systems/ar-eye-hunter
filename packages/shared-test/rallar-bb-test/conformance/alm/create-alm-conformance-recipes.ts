@@ -886,13 +886,15 @@ function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTe
         connection: observe.input.senderConnection,
         handleId: toSendHandleId(observe),
         state: observe.state === 'admitted' ? AL_DELIVERY_ADMITTED_STATES : [observe.state],
-        timeoutMs: toBudgetMs(
-            observe.state === 'expired' || observe.state === 'acknowledged'
-                ? NON_EXPIRING_SEND_TIMEOUT_MS
-                : OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS,
-            observe.input.deadlineMs
-        )
+        timeoutMs: toBudgetMs(toObserveBudgetMs(observe.state), observe.input.deadlineMs)
     };
+}
+
+/** Expiry and carrier acceptance can outlast admission on a loaded runner. Other states are local. */
+function toObserveBudgetMs(state: AlmConformanceObserveInput['state']): number {
+    return state === 'expired' || state === 'acknowledged' || state === 'transport-accepted'
+        ? NON_EXPIRING_SEND_TIMEOUT_MS
+        : OBSERVE_TIMEOUT_BASE_MS + RESPONSE_MARGIN_MS;
 }
 
 /** A terminal wait also resolves for rejection or failure; the recipe must prove successful admission. */

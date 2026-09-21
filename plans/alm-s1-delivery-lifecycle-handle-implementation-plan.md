@@ -1351,6 +1351,14 @@ dequeue completes the row and does not publish it.
       row expired unsent. `RALLAR_BLACK_BOX_ALM_SCOPE=full` with every other scenario skipped passed
       all three carriers: WS `receive-original` 8301 ms, RTC 17888 ms, fallback 20621 ms. The full
       family was not re-run as one process, so this step stays open.
+      Full family on `0c66f5d9` exited 1: 0 passed, 3 failed, all normal. Reload passed on every
+      carrier. WS 15.11 ms/op over 17 commits failed `delivery-lifecycle`: `observe-transport-accepted-4`
+      aborted at 3255 ms and the sender runtime closed while the replacement was still retrying, so
+      `receive-replacement` waited out 27069 ms. RTC 18.22 ms/op over 9 commits and fallback 7.89 ms/op
+      over 7 commits passed lifecycle and reload, then failed `ordering-resync` at sender connect:
+      the restored reconnect stores `username: ''`, and the next connect reads that blank as a
+      different identity. Carrier acceptance now uses the 10s non-expiring send budget, and a blank
+      restored username is the live session. This step stays open until that tree is re-run.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
