@@ -8,6 +8,7 @@ import {
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import type { RtcBaselineJson } from '../../../packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
@@ -1145,7 +1146,6 @@ function summarizeMessageFailureEvent(
     };
 }
 
-const MAX_RETAINED_SEND_ENTRY_STATUSES = 20;
 const MAX_RETAINED_MESSAGE_FAILURES = 2;
 const MAX_RETAINED_MESSAGE_FAILURE_OBSERVATIONS = 100;
 
@@ -1168,12 +1168,6 @@ function summarizeNackSendResult(
     };
 }
 
-function classifyNackRuntimeStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['runtimeStatus'] {
-    return value === undefined ? 'missing' : value === 'sent' ? 'sent' : 'other';
-}
-
 function classifyNackReason(
     value: string | undefined
 ): LiveRtcNackSendResultSummary['reason'] {
@@ -1184,44 +1178,32 @@ function classifyNackReason(
         : 'other';
 }
 
-function classifyNackAdmissionStatus(
+/** Classifies a raw JSON string against the canonical `ALDeliveryState` union; never a hand-copied list. */
+function classifyDeliveryState(
     value: string | undefined
-): LiveRtcNackSendResultSummary['admissionStatus'] {
-    switch (value) {
-        case 'accepted':
-        case 'enqueued':
-        case 'skipped':
-        case 'duplicate':
-        case 'pending-admission':
-        case 'superseded':
-        case 'expired':
-        case 'no-route':
-        case 'rate-limited':
-        case 'circuit-open':
-        case 'failed':
-            return value;
-        default:
-            return value === undefined ? 'missing' : 'other';
+): ALDeliveryState | 'other' | 'missing' {
+    if (value === undefined) {
+        return 'missing';
     }
+    return AL_DELIVERY_STATES.find((candidate) => candidate === value) ?? 'other';
 }
 
-function classifyNackEntryStatus(
-    value: string | undefined
-): LiveRtcNackSendResultSummary['entryStatuses'][number] {
-    switch (value) {
-        case 'NEW':
-        case 'RETRY':
-        case 'RESERVED':
-        case 'COMPLETED':
-        case 'FAILED':
-        case 'ABORTED':
-        case 'NON_RETRYABLE':
-        case 'PARTITIONED':
-        case 'MERGED':
-            return value;
-        default:
-            return 'other';
-    }
+function booleanOrNull(value: RtcBaselineJson | undefined): boolean | null {
+    return typeof value === 'boolean' ? value : null;
+}
+
+function numberOrNull(value: RtcBaselineJson | undefined): number | null {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function hopCountOrNull(value: RtcBaselineJson | undefined): number | null {
+    return Array.isArray(value) ? value.length : null;
+}
+
+/** The `message` field of a `messages.rtc` send diagnostic: the delivery observation, or `{}` when absent. */
+function deliveryObservationOf(result: LiveRtcControlClient.Result | undefined): LiveRtcJsonRecord {
+    const diagnostics = jsonRecord(result?.result?.value) ?? {};
+    return jsonRecord(diagnostics.message) ?? {};
 }
 
 function summarizeLiveRtcSendResult(
@@ -1230,48 +1212,44 @@ function summarizeLiveRtcSendResult(
     if (!result) {
         return undefined;
     }
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
+    const observation = deliveryObservationOf(result);
     return {
         ok: result.ok,
-        runtimeStatus: classifyNackRuntimeStatus(stringValue(diagnostics.status)),
-        admissionStatus: classifyNackAdmissionStatus(stringValue(admission.status)),
-        reason: classifyNackReason(stringValue(admission.reason)),
+        state: classifyDeliveryState(stringValue(observation.state)),
+        reason: classifyNackReason(stringValue(observation.reason)),
         messageIdPresent: messageIdFromSendResult(result) !== undefined,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
-            .map((entry) => classifyNackEntryStatus(stringValue(jsonRecord(entry)?.status)))
+        submitted: booleanOrNull(observation.submitted),
+        enqueued: booleanOrNull(observation.enqueued),
+        backpressured: booleanOrNull(observation.backpressured),
+        attempts: numberOrNull(observation.attempts),
+        confirmedHopCount: hopCountOrNull(observation.confirmedHopPeerIds),
+        unconfirmedHopCount: hopCountOrNull(observation.unconfirmedHopPeerIds)
     };
 }
 
+/** The handle id IS the message id: see the producer call at `black-box-rallar-rtc-send-controller.ts`. */
 function messageIdFromSendResult(
     result: LiveRtcControlClient.Result
 ): string | undefined {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    return stringValue(jsonRecord(jsonRecord(admission.message)?.id)?.msgId);
+    return stringValue(deliveryObservationOf(result).handleId);
 }
 
 function toFailedControlResult(
     result: LiveRtcControlClient.Result & { ok: false; }
 ): LiveRtcFailedControlResult {
-    const diagnostics = jsonRecord(result.result?.value) ?? {};
-    const admission = jsonRecord(diagnostics.message) ?? {};
-    const entries = Array.isArray(admission.entries) ? admission.entries : [];
+    const observation = deliveryObservationOf(result);
     return {
         agentId: result.agentId ?? null,
         commandId: result.commandId,
         ok: false,
-        runtimeStatus: stringValue(diagnostics.status) ?? null,
-        admissionStatus: stringValue(admission.status) ?? null,
-        reason: stringValue(admission.reason) ?? null,
-        entryCount: entries.length,
-        entryStatuses: entries
-            .map((entry) => stringValue(jsonRecord(entry)?.status))
-            .filter((status): status is string => Boolean(status))
-            .slice(0, MAX_RETAINED_SEND_ENTRY_STATUSES)
+        state: stringValue(observation.state) ?? null,
+        reason: stringValue(observation.reason) ?? null,
+        submitted: booleanOrNull(observation.submitted),
+        enqueued: booleanOrNull(observation.enqueued),
+        backpressured: booleanOrNull(observation.backpressured),
+        attempts: numberOrNull(observation.attempts),
+        confirmedHopCount: hopCountOrNull(observation.confirmedHopPeerIds),
+        unconfirmedHopCount: hopCountOrNull(observation.unconfirmedHopPeerIds)
     };
 }
 
