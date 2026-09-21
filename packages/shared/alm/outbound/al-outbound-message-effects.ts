@@ -3,6 +3,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 import { toError } from '../../resilience/to-error.ts';
+import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkAttemptResult } from '../work/al-work-handler.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
@@ -136,10 +137,7 @@ export class ALOutboundMessageEffects<TPrepared> {
                 ])
             }
         });
-        if (
-            computed.verdict.kind === 'expired' || computed.verdict.kind === 'superseded' ||
-            computed.verdict.kind === 'skipped'
-        ) {
+        if (isDiscardedDequeuedAdmission(computed.verdict)) {
             return { status: 'completed' };
         }
         if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
@@ -301,6 +299,19 @@ interface ComputeALOutboundRetainedAdmissionSkipInput {
     readonly nowMs: number;
     readonly disposed: boolean;
     readonly authority: ALOutboundMessageRuntime.PendingAdmissionAuthority;
+}
+
+/**
+ * A dequeue that produced nothing to hand on completes the row and skips `afterDequeueAdmission`.
+ * Deferred and an unauthorized refusal are discards: publishing them would deliver a message the
+ * planner already dropped.
+ */
+function isDiscardedDequeuedAdmission(verdict: ALDeliveryAdmissionVerdict): boolean {
+    return verdict.kind === 'expired' ||
+        verdict.kind === 'superseded' ||
+        verdict.kind === 'skipped' ||
+        verdict.kind === 'deferred' ||
+        (verdict.kind === 'refused' && verdict.reason === 'unauthorized');
 }
 
 function computeALOutboundSendDisposition(

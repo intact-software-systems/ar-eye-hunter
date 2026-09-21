@@ -53,6 +53,7 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly nowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
+    readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
 
@@ -154,6 +155,7 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
             planRepairMessage: options.planRepairMessage,
+            afterDequeueAdmission: options.afterDequeueAdmission,
             sendPreparedMessage: options.sendPreparedMessage
         })
     );
