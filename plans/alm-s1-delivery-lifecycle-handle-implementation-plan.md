@@ -1135,6 +1135,17 @@ observable for the first time, because the page runtime's own status could only 
       Expected: green.
 - [ ] **Step 3: Commit.**
 
+Closure found during Task 11 (2026-09-21): the Playwright live-RTC evidence helper
+`tests/playwright/rallar-black-box/live-rtc-control-client.ts` and its summaries in
+`live-rtc-performance-evidence.ts` still parsed the pre-S1 serialized send result
+(`message.status`, `message.entries`, `message.message.id.msgId`) after this task made the
+`messages.rtc` send diagnostics a `BlackBoxRallarDeliveryObservation`; every live run recorded
+`missing`/`false` and the NACK probe threw at `message-identity`. The summaries now project the
+observation (`state`, `submitted`, `enqueued`, `backpressured`, `attempts`, hop counts, raw
+settlement `reason`, `messageIdPresent` from `handleId`); the retired classifiers and the coupled
+fixtures were removed in the same commits. Raw evidence stays opaque JSON to `shared-rtc-bench`,
+so no persisted artifact format changed.
+
 ### Task 10: The S1 conformance scenarios
 
 **Files:**
@@ -1257,11 +1268,11 @@ scenario/orchestration integration retains the following acceptance steps:
   `Extract<ALOutboundEnqueueStatus, …>` becomes its own `'rate-limited' | 'circuit-open' | 'failed'` union
   named where it is used; `RallarRtcSignalAdmission.status: string` becomes `verdict`.
 
-- [ ] **Step 1: Failing tests.** Re-type the listed suites onto verdicts; add a case per exhaustive
+- [x] **Step 1: Failing tests.** Re-type the listed suites onto verdicts; add a case per exhaustive
       switch that a `deferred` verdict is retryable for signaling and `queued-outbox` for the router.
       Command: the listed suites.
       Expected: FAIL until Step 2.
-- [ ] **Step 2: Delete the union** and every derivation; re-type the two switches and the three
+- [x] **Step 2: Delete the union** and every derivation; re-type the two switches and the three
       consumers; update the diagnostic-contract doc's admission shape.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit`; `npx tsc -p packages/shared-server/tsconfig.json --noEmit`;
       `npx tsc -p packages/shared-web/tsconfig.json --noEmit`; `cd apps/api-v1 && deno task check` and
@@ -1271,7 +1282,7 @@ scenario/orchestration integration retains the following acceptance steps:
       returns only the admission-store internals that name the retained-conflict row (the `pending`
       verdict's storage), never a public or consumer surface.
       Expected: green, grep as stated.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ### Task 12: Measurement, budgets, docs, final gates, and the PR
 
