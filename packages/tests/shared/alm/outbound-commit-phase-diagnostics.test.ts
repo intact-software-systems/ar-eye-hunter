@@ -160,8 +160,9 @@ it('names the origin a queued send waited behind', async () => {
         runtime.enqueueIfAbsent(createOutboundMessage('msg-queued-second'))
     ]);
 
-    expect([first, second].map((result) => ({ kind: result.verdict.kind, durable: result.verdict.kind === 'admitted' ? result.verdict.durable : undefined })))
-        .toEqual([{ kind: 'admitted', durable: false }, { kind: 'admitted', durable: false }]);
+    for (const result of [first, second]) {
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+    }
     expect(
         senderQueueWaitsOf(diagnostics).map((event) => ({
             origin: event.origin,
