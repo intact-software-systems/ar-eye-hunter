@@ -1213,7 +1213,8 @@ owned-boundary tests establish intermediate transitions; command success alone i
   assert the old handle `unobservable`, and receive the original message without another business
   send. Nested `agent.reload` in `recipe.run` does not establish this proof. Real top-level reload
   orchestration for both local pair execution and the hosted combined recipe remains the next
-  bounded dependency; the foundation does not implement or complete it.
+  bounded dependency; the foundation does not implement or complete it. The coordinator is now in
+  the lane. The full family on `7bf4842c` passed reload on all three carriers.
 
 Budgets: retain the existing `CONFORMANCE_DEADLINE_MS` evidence windows, per-command timeouts,
 18-second deadline evidence window, 2.5-second post-expiry absence proof, and carrier harness limits.
@@ -1366,7 +1367,15 @@ dequeue completes the row and does not publish it.
       until the sender closed. The 10s budget did not reach `transport-accepted`. Fallback connect
       succeeded, and `ordering-resync` then failed its absence proof: 3
       `alm.conformance.rtc-with-ws-fallback.ordering-resync` messages observed against count 2.
-      This step stays open. The WS retry reason is not in the observation.
+      The WS retry reason was not in the observation.
+      Full family on `7bf4842c` exited 0: 3 passed in 9.2 minutes. WS was 6.17 ms/op over 18 commits,
+      RTC 15.11 ms/op over 9 commits, and fallback 30.33 ms/op over 9 commits. Lifecycle, reload, and
+      ordering-resync passed on every carrier that runs them. The replacement had stayed not-ready
+      because a heartbeat that only extended session leases was stored as a duplicate, so the joined
+      room snapshot expired at its 60-second memory TTL and later sends did not refresh it. Those
+      lease advances now replace the stored snapshot. A separate WS-only full run on the same commit
+      also exited 0 (2.5 minutes, 11.89 ms/op over 17 commits). The rest of this step's local list
+      was not re-run on this commit, so the step stays open. No budget or assertion was changed.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
