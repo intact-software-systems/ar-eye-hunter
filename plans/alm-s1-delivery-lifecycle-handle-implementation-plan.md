@@ -1332,7 +1332,9 @@ dequeue completes the row and does not publish it.
       commands; `npm run test:deno` (api-v1 561, control server 174, relic 5 passed / 12 steps, shared-test RTC 146,
       0 failed). `npm run check:repo-style:changed -- origin/main HEAD` passed on `3e3fa2dc`; later commits are plan
       text. `npx dprint check` fails only on untouched `scripts/hetzner/controller/15-logs.sh`, which is not in the
-      pull request diff. Still open: `test:unit`, `build`, `test:ci`, and the full three-carrier ALM lane.
+      pull request diff. `npm run test:unit -- --testTimeout=120000` was 11,920 passed, 12 skipped, and 1 failed:
+      `distributed-recipe-workflow.test.ts` could not spawn `ruby`. After Ruby 3.2 was installed, that test passed.
+      Still open: `build`, `test:ci`, and the full three-carrier ALM lane.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
