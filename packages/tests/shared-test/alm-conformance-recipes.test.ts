@@ -147,8 +147,14 @@ describe('alm-conformance recipe family', () => {
         const lifecycle = createAlmConformanceRecipes(toConformanceInput('ws'))
             .find((scenario) => scenario.scenarioId === 'delivery-lifecycle');
         const commands = lifecycle?.sender.commands ?? [];
-        const submitted = commands.find((command) => command.kind === 'messages.observe' && command.commandId.endsWith('observe-transport-accepted-4'));
-        const admitted = commands.find((command) => command.kind === 'messages.observe' && command.commandId.endsWith('observe-admitted-2'));
+        const submitted = commands.find((command) =>
+            command.kind === 'messages.observe' &&
+            command.commandId?.endsWith('observe-transport-accepted-4') === true
+        );
+        const admitted = commands.find((command) =>
+            command.kind === 'messages.observe' &&
+            command.commandId?.endsWith('observe-admitted-2') === true
+        );
 
         expect(submitted).toMatchObject({ timeoutMs: 10_000 });
         expect(admitted).toMatchObject({ timeoutMs: 3_000 });
