@@ -170,10 +170,13 @@ Retain the scoped `roomRef` and derive traffic from the room session:
 import {
     rallar,
     type RallarMessage,
-    type RallarMessageSendResult,
-    type RallarMessageSendStatus,
     type RallarRoomRealtimeSendResult
 } from '@shared-web/browser/rallar.ts';
+import {
+    AL_DELIVERY_ADMITTED_STATES,
+    isALDeliveryAdmitted,
+    type ALDeliveryLifecycle
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -183,14 +186,6 @@ type PoseUpdate = Readonly<{
     seq: number;
     position: readonly [number, number, number];
 }>;
-
-const acceptedMessageStatuses: ReadonlySet<RallarMessageSendStatus> = new Set([
-    'enqueued',
-    'accepted',
-    'duplicate',
-    'superseded',
-    'skipped'
-]);
 
 function isMessageForRoom<T>(
     roomRef: GroupRef,
@@ -207,10 +202,10 @@ function isMessageForRoom<T>(
 
 function surfaceMessageDelivery(
     label: string,
-    result: RallarMessageSendResult
+    lifecycle: ALDeliveryLifecycle
 ): void {
-    if (!acceptedMessageStatuses.has(result.status)) {
-        console.warn(`${label} delivery degraded`, result.status, result.reason);
+    if (!isALDeliveryAdmitted(lifecycle)) {
+        console.warn(`${label} delivery degraded`, lifecycle.state, lifecycle.evidence.reason);
     }
 }
 
@@ -256,8 +251,12 @@ async function openArena(existingRoomRef?: GroupRef): Promise<() => void> {
             }
         }));
 
-        const readyResult = await ready.send({ ready: true });
-        surfaceMessageDelivery('ready', readyResult);
+        const readyHandle = await ready.send({ ready: true });
+        const readyOutcome = await readyHandle.wait({
+            until: AL_DELIVERY_ADMITTED_STATES,
+            timeoutMs: 5_000
+        });
+        surfaceMessageDelivery('ready', readyOutcome.lifecycle);
 
         const poseResult = await poses.send({
             roomRef,
@@ -296,11 +295,12 @@ Room binding scopes sends, peer selection, and readiness. Message callbacks
 still subscribe by topic/type, so validate their target from
 `message.raw.targets`; realtime callbacks still subscribe by lane, so include
 and validate the full `roomRef` in the typed payload (or use a room-unique
-lane). `accepted` and `enqueued` report outbound admission; neither establishes
-transport submission, receiver acknowledgement, or application completion.
-Treat message statuses other than `enqueued`, `accepted`,
-`duplicate`, `superseded`, or `skipped` as degraded. Treat every room realtime
-status other than `sent` as degraded, including `partial`.
+lane). `send(...)` returns a `RallarMessageHandle` with a stable `msgId`
+before admission resolves; `handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })`
+waits past that first verdict, and `isALDeliveryAdmitted(outcome.lifecycle)`
+reports whether it reached `accepted`, `queued`, `transport-accepted`, or
+`acknowledged`. Treat every other lifecycle state as degraded. Treat every
+room realtime status other than `sent` as degraded, including `partial`.
 
 ## Runtime Adapter
 

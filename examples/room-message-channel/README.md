@@ -5,9 +5,12 @@ default `send(...)` strategy is `rtc-with-ws-fallback`; explicit `sendRtc(...)`
 and `sendWs(...)` are still available. The handle scopes sends, but its receive
 callbacks remain topic/type listeners, so validate each inbound target.
 
-`accepted` and `enqueued` report admission into outbound processing. They do
-not establish transport submission, receiver acknowledgement, or application
-completion. Keep those stages separate when displaying delivery progress.
+`send(...)` returns a `RallarMessageHandle` with a stable `msgId` before
+admission resolves. `handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })`
+waits past that first verdict; `isALDeliveryAdmitted(outcome.lifecycle)`
+reports whether it reached `accepted`, `queued`, `transport-accepted`, or
+`acknowledged`. Keep those stages separate when displaying delivery
+progress.
 
 RTC/WS fallback captures one envelope and scoped room before the first
 attempt. A second carrier preserves its ID, ordering, exclusions, and original
@@ -24,9 +27,12 @@ work, so one outgoing ID does not yet establish one logical receiver delivery.
 ```ts
 import {
     rallar,
-    type RallarMessage,
-    type RallarMessageSendResult
+    type RallarMessage
 } from '@shared-web/browser/rallar.ts';
+import {
+    AL_DELIVERY_ADMITTED_STATES,
+    isALDeliveryAdmitted
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -35,12 +41,6 @@ interface ReadyMessage {
     readonly ready: boolean;
     readonly changedAtEpochMs: number;
 }
-
-const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
-    'enqueued',
-    'accepted',
-    'duplicate'
-]);
 
 function isMessageForRoom<T>(
     message: RallarMessage<T>,
@@ -71,26 +71,32 @@ const unsubscribeRtc = readyChannel.onRtc((payload, message) => {
     }
 });
 
-const sendResult = await readyChannel.send({
+const sendHandle = await readyChannel.send({
     playerId: localPlayerId,
     ready: true,
     changedAtEpochMs: Date.now()
 });
-if (!acceptedMessageStatuses.has(sendResult.status)) {
-    console.warn('Ready message was not admitted', sendResult.status, sendResult.reason);
+const sendOutcome = await sendHandle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 5_000 });
+if (!isALDeliveryAdmitted(sendOutcome.lifecycle)) {
+    console.warn(
+        'Ready message was not admitted',
+        sendOutcome.lifecycle.state,
+        sendOutcome.lifecycle.evidence.reason
+    );
 }
 
 // For server-routed coordination, force WS.
-const wsResult = await readyChannel.sendWs({
+const wsHandle = await readyChannel.sendWs({
     playerId: localPlayerId,
     ready: true,
     changedAtEpochMs: Date.now()
 });
-if (!acceptedMessageStatuses.has(wsResult.status)) {
+const wsOutcome = await wsHandle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 5_000 });
+if (!isALDeliveryAdmitted(wsOutcome.lifecycle)) {
     console.warn(
         'WS ready message was not admitted',
-        wsResult.status,
-        wsResult.reason
+        wsOutcome.lifecycle.state,
+        wsOutcome.lifecycle.evidence.reason
     );
 }
 

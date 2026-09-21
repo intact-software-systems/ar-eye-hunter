@@ -187,6 +187,17 @@ disposed may be drained by the next owner as an ordinary send. A durable cancel 
 -- one that survives disposal or reload -- is a named sink seam left to S3 or I2
 (D13), not part of this settlement path.
 
+Every settlement in this section is a per-message `ALDeliverySettlement` fact stated
+through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
+the runtime's private `emitSettlement` stamps the fact with its own `carrier` and the
+current `atMs` before calling the supplied sink, and guards that call so a throwing
+sink logs and returns rather than changing dispatch, retry, or claim behaviour. The
+browser's sink for these facts is the in-memory delivery registry,
+[`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
+(`packages/shared-web/browser/messages/`), which reduces each fact into the sending
+handle's lifecycle; no additional queue, pending-work registry, or timer sits between
+owner and registry.
+
 ## Atomic IndexedDB work storage
 
 [`openIndexedDbAdmissionDatabase`](../open-indexed-db-admission-database.ts) creates
@@ -233,7 +244,8 @@ storage is preserved, and only ALM-owned databases are reset.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical
-transport queues have been removed. The application-facing delivery handle and
+transport queues have been removed. The application-facing delivery handle
+(`packages/shared-web/browser/messages/`) observes these settlements directly;
 complete logical audience receipts remain roadmap work.
 [`al-storage-snapshot.test.ts`](../../../tests/shared/alm/al-storage-snapshot.test.ts)
 records what one standard supersession workload leaves in browser storage; existing

@@ -81,19 +81,19 @@ describe('Rallar skill app and example integrity', () => {
             });
         expect
             .soft({
-                readyResult: scaffolding.includes('const readyResult = await ready.send'),
+                readyHandle: scaffolding.includes('const readyHandle = await ready.send'),
                 poseResult: scaffolding.includes('const poseResult = await poses.send'),
-                acceptedMessageStatuses: scaffolding.includes('\'accepted\''),
+                admittedStatesHelper: scaffolding.includes('isALDeliveryAdmitted'),
                 degradedRealtimeResult: scaffolding.includes('poseResult.status !== \'sent\''),
-                messageExampleResult: messageExample.includes('sendResult.status'),
+                messageExampleOutcome: messageExample.includes('sendOutcome.lifecycle'),
                 realtimeExampleResult: realtimeExample.includes('sendResult.status !== \'sent\'')
             })
             .toEqual({
-                readyResult: true,
+                readyHandle: true,
                 poseResult: true,
-                acceptedMessageStatuses: true,
+                admittedStatesHelper: true,
                 degradedRealtimeResult: true,
-                messageExampleResult: true,
+                messageExampleOutcome: true,
                 realtimeExampleResult: true
             });
         expect
