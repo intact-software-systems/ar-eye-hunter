@@ -1284,6 +1284,15 @@ scenario/orchestration integration retains the following acceptance steps:
       Expected: green, grep as stated.
 - [x] **Step 3: Commit.**
 
+Closure found during Task 11 (2026-09-21): `readDequeuedAdmissionOutcome` short-circuited only
+`expired`, `superseded`, and `skipped`. The deleted status converter also mapped `deferred` and
+`refused`/`unauthorized` onto that skipped bucket, which completed the row without calling
+`afterDequeueAdmission`. Those two verdicts fell through and published. The server WS queue is the
+only caller that publishes from that callback; the browser RTC overlay and the client queue pass
+`undefined`. `isDiscardedDequeuedAdmission` restores the skip, and
+`al-outbound-dequeue-work.test.ts` pins that a `not-yet-in-sync`, `unauthorized`, or `planner-drop`
+dequeue completes the row and does not publish it.
+
 ### Task 12: Measurement, budgets, docs, final gates, and the PR
 
 **Files:** `packages/shared/alm/outbound/README.md` (`:153-176` settlement section, `:223-226`),
