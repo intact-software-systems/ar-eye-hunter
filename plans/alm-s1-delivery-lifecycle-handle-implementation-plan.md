@@ -1327,10 +1327,15 @@ dequeue completes the row and does not publish it.
       `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`; `npm run build`;
       `npm run test:ci`; `npm run test:rallar:full-stack:memory:alm`. Report which passed, failed, or
       were skipped, and why.
-- [ ] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
+- [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
       constants or assertions.
+      Docker was not available here. PostgreSQL 16.15 was installed locally with the compose
+      credentials (`app`/`app`/`appdb` on localhost:5432), and `db:migrate` applied all 24 migrations.
+      `npm run test:optional:postgres` then passed: 21 files / 69 tests, plus presence expiry 10 tests.
+      Medium-scale passed: `api-v1-state-medium-scale-churn` exit 0, 2757 success, 0 failure, 193126 ms.
+      No constant or assertion was changed.
 - [ ] **Step 6: The observation job and the PR.** Push; read the `alm-conformance-lane-<sha>` artifact
       under the regime rule (a red counts only against a same-regime green baseline; the F2b baseline is
       slow at 48–55 ms per operation with every cell red); record per cell the regime, the per-operation
