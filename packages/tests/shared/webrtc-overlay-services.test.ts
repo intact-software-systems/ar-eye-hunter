@@ -722,8 +722,7 @@ describe('WebRtc overlay services', () => {
         }));
         onTestFinished(() => enqueueSpy.mockRestore());
 
-        // Two refused results accumulate past the single-failure policy threshold before this call
-        // sees the breaker open; that is the behaviour under test, not incidental setup.
+        // Two refused results are needed to pass the single-failure policy threshold.
         await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-1'));
         await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-2'));
         const result = await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-3'));

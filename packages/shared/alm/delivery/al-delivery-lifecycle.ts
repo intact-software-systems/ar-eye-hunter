@@ -225,9 +225,9 @@ export function isALDeliveryAdmitted(lifecycle: ALDeliveryLifecycle): boolean {
 }
 
 /**
- * True when a durable outbound work row now exists for this message: a freshly admitted durable
- * verdict, an already-stored duplicate, or a retained admission conflict awaiting replay. A
- * non-durable `admitted` verdict does not qualify — it produced no queue row to wake a drain for.
+ * True when the outbox may now hold a row worth draining for this message: a freshly admitted
+ * durable verdict, a duplicate of an original presumed present, or a retained admission conflict
+ * awaiting replay. A non-durable `admitted` verdict does not qualify — it produced no queue row.
  */
 export function hasALDeliveryDurableWork(verdict: ALDeliveryAdmissionVerdict): boolean {
     return (verdict.kind === 'admitted' && verdict.durable) || verdict.kind === 'duplicate' ||
