@@ -1334,7 +1334,8 @@ dequeue completes the row and does not publish it.
       text. `npx dprint check` fails only on untouched `scripts/hetzner/controller/15-logs.sh`, which is not in the
       pull request diff. `npm run test:unit -- --testTimeout=120000` was 11,920 passed, 12 skipped, and 1 failed:
       `distributed-recipe-workflow.test.ts` could not spawn `ruby`. After Ruby 3.2 was installed, that test passed.
-      Still open: `build`, `test:ci`, and the full three-carrier ALM lane.
+      `npm run build` exited 0. Still open: `test:ci` (its e2e and in-memory full-stack legs) and the full
+      three-carrier ALM lane.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
