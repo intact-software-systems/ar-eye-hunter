@@ -6,14 +6,16 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
+
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 /** Spreads a real delivery observation, then explicitly named contamination the producer never emits. */
 function toSendDiagnosticsFixture(
     observation: BlackBoxRallarDeliveryObservation,
-    contamination: Record<string, unknown>
-) {
+    contamination: Readonly<Record<string, RtcBaselineJson>>
+): RtcBaselineJson {
     return normalizeJson({ ...observation, ...contamination });
 }
 
