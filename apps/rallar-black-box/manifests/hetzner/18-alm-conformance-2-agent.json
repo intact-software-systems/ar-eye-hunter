@@ -174,7 +174,8 @@
             },
             "handleId": "alm-ws-delivery-reload-send-1",
             "timeoutMs": 10000,
-            "ack": "receiver"
+            "ack": "receiver",
+            "ttlMs": 77000
           },
           {
             "kind": "messages.observe",
@@ -365,7 +366,8 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver"
+            "ack": "receiver",
+            "ttlMs": 77000
           },
           {
             "kind": "messages.observe",
@@ -568,7 +570,8 @@
               "workspaceId": "default",
               "groupId": "hetzner-headless-room"
             },
-            "ack": "receiver"
+            "ack": "receiver",
+            "ttlMs": 77000
           },
           {
             "kind": "messages.observe",
@@ -974,7 +977,7 @@
             "state": [
               "transport-accepted"
             ],
-            "timeoutMs": 3000
+            "timeoutMs": 10000
           },
           {
             "kind": "assert",
@@ -1300,6 +1303,24 @@
             "action": "not-ready",
             "remaining": 0,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-ws-delivery-lifecycle-sender-observe-transport-accepted-4",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-lifecycle-send-4",
+            "state": [
+              "transport-accepted"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-lifecycle-sender-assert-replacement-submitted-4",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-observe-transport-accepted-4.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -1923,6 +1944,24 @@
             "action": "drop",
             "remaining": 0,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-observe-acknowledged-4",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-lifecycle-send-4",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-replacement-submitted-4",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-acknowledged-4.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
@@ -2717,6 +2756,24 @@
             "action": "not-ready",
             "remaining": 0,
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-4",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-4",
+            "state": [
+              "acknowledged"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-replacement-submitted-4",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-4.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
           },
           {
             "kind": "stats",
