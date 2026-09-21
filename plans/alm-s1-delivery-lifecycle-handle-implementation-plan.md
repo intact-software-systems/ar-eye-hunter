@@ -1309,10 +1309,12 @@ dequeue completes the row and does not publish it.
       `main`. Measured outbound bytes were 1,813,462 / 69,763 / 1,743,586 / 101,572 (total 3,728,383
       against pin 3,728,380) and inbound 61,510 / 1,764,355 (total 1,825,865 against pin 1,825,867),
       inside the test's identity-digit band. `AL_ADMISSION_SCHEMA_ID` is unchanged from `main`.
-- [ ] **Step 2: Docs.** The outbound README's settlement section says what the owner emits and
+- [x] **Step 2: Docs.** The outbound README's settlement section says what the owner emits and
       where; `:223-226` no longer calls the handle roadmap work; the API reference's sample consumes the
       handle (`await roomChat.send(...)` then `wait`), the skill example's broken import is replaced by the
       handle, the example README follows. `npm run test:repo-governance` after the skill edit.
+      Re-run on `99901400`: `npm run test:repo-governance -- --testTimeout=120000` passed, 27 files and
+      428 tests. The default 5s timeout is too short for the git-fixture files in this environment.
 - [x] **Step 3: Bundle figures.** `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`;
       `npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`. A
       crossed ceiling is raised to the next whole KiB with the measured figure in both files and the PR
