@@ -1376,6 +1376,21 @@ dequeue completes the row and does not publish it.
       lease advances now replace the stored snapshot. A separate WS-only full run on the same commit
       also exited 0 (2.5 minutes, 11.89 ms/op over 17 commits). The rest of this step's local list
       was not re-run on this commit, so the step stays open. No budget or assertion was changed.
+      Local list on `56e51bf9`, after the lease fix, the observe-id narrowing, and the regenerated
+      two-agent Hetzner catalog. Passed: `npm run typecheck`; `npm run build`; the three `deno task check`
+      commands; `npm run test:deno` (api-v1 561, control server 174, relic 5 passed / 12 steps, shared-test
+      RTC 146, 0 failed); `npm run test:e2e` (199 passed in 6.4 minutes); `npm run test:full-stack:memory`
+      (7 passed in 24.4 seconds); `npm run check:repo-style:changed -- origin/main HEAD`;
+      `node scripts/check-tests-typecheck.mjs`; `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`
+      (exit 0, advisory candidates only). `npx dprint check` still fails only on untouched
+      `scripts/hetzner/controller/15-logs.sh`, which is not in the pull request diff.
+      `npm run test:ci` as one process exited 1 in the unit leg: 11,869 passed, 12 skipped, 55 failed.
+      Fifty-four were `Test timed out in 5000ms` in git-fixture files. One was real: the checked-in
+      `18-alm-conformance-2-agent.json` lagged the generator. After regenerating that file, those 14
+      files passed with `--testTimeout=120000` (237 tests). The three-carrier ALM lane result above
+      is from `7bf4842c`; later commits are the type narrowing, the manifest, and this note.
+      This step stays open because `test:ci` was not one green process at the default timeout and
+      `dprint check` still names the untouched shell script. No budget or assertion was changed.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
