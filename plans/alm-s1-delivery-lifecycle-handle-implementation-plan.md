@@ -1336,7 +1336,12 @@ dequeue completes the row and does not publish it.
       `distributed-recipe-workflow.test.ts` could not spawn `ruby`. After Ruby 3.2 was installed, that test passed.
       `npm run build` exited 0. `npm run test:e2e` exited 0: 199 passed, 12 skipped, 6.3 minutes.
       `npm run test:full-stack:memory` exited 0: 7 passed in 24.7s. The four `test:ci` legs therefore passed
-      separately; `npm run test:ci` was not re-issued as one process. Still open: the full three-carrier ALM lane.
+      separately; `npm run test:ci` was not re-issued as one process. The full three-carrier ALM lane
+      (`RALLAR_BLACK_BOX_ALM_SCOPE=full`) exited 1: 0 passed, 3 failed, all normal. WS 12.33 ms/op over 19
+      commits failed `delivery-lifecycle` at `receive-replacement` (wait timeout) and `delivery-reload`.
+      RTC 27.56 ms/op over 17 commits and fallback 22 ms/op over 9 commits failed `delivery-reload`.
+      `ordering-resync` did not fail. Reload acceptance stays the open Task 10 item, so this step stays open.
+      No budget or assertion was changed.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
