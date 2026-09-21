@@ -16,7 +16,6 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '../alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type {
     ALOutboundCancelOutcome,
@@ -229,9 +228,9 @@ export class WebRtcOverlayMulticastManager {
     private static isSuccessfulProtectedEnqueueResult(
         value: ALOutboundEnqueueResult
     ): boolean {
-        return value.status !== 'failed' &&
-            value.status !== 'rate-limited' &&
-            value.status !== 'circuit-open';
+        return value.verdict.kind !== 'failed' &&
+            !(value.verdict.kind === 'unroutable' &&
+                (value.verdict.reason === 'rate-limited' || value.verdict.reason === 'circuit-open'));
     }
 
     private static toCircuitBreakerResult(
@@ -256,13 +255,7 @@ export class WebRtcOverlayMulticastManager {
         msg: ALMessage,
         verdict: Extract<ALDeliveryAdmissionVerdict, { kind: 'unroutable' | 'failed'; }>
     ): ALOutboundEnqueueResult {
-        return {
-            status: toALOutboundEnqueueStatus(verdict),
-            verdict,
-            message: msg,
-            entries: [],
-            reason: verdict.detail
-        };
+        return { verdict, message: msg, entries: [], reason: verdict.detail };
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
@@ -271,13 +264,7 @@ export class WebRtcOverlayMulticastManager {
             reason: 'disposed',
             detail: 'RTC overlay multicast manager is disposed.'
         };
-        return {
-            status: toALOutboundEnqueueStatus(verdict),
-            verdict,
-            message: msg,
-            entries: [],
-            reason: verdict.detail
-        };
+        return { verdict, message: msg, entries: [], reason: verdict.detail };
     }
 
     async forwardIfRequired(

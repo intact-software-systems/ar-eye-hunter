@@ -327,7 +327,7 @@ describe('outbound message expiry', () => {
         });
         const before = JSON.stringify({ read, candidate });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
-        expect(candidate.status).toBe('accepted');
+        expect(candidate.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(candidate.bundle?.durableEffects.map((effect) => effect.expireAtTimestamp)).toEqual([2_000]);
         if (!candidate.bundle) {
             throw new Error('Accepted transport work requires an admission bundle');
@@ -368,7 +368,11 @@ describe('outbound message expiry', () => {
             phase: 'immediate',
             options: {}
         });
-        expect(candidate).toMatchObject({ status: 'expired', reason: 'Message expired or is too stale', entries: [] });
+        expect(candidate).toMatchObject({
+            verdict: { kind: 'expired' },
+            reason: 'Message expired or is too stale',
+            entries: []
+        });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
     });
 

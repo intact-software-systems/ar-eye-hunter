@@ -23,7 +23,6 @@ import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages
 import type { RallarMessageHandle } from '@shared-web/browser/rallar.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { AL_DELIVERY_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -506,7 +505,7 @@ function deferRtcAdmission(): PromiseWithResolvers<ALDeliveryAdmissionVerdict> {
     const admission = Promise.withResolvers<ALDeliveryAdmissionVerdict>();
     vi.mocked(fixture.middleware.middleware.rtcRxStreamer.enqueueOutboxIfAbsent).mockImplementation(async (message): Promise<ALOutboundEnqueueResult> => {
         const verdict = await admission.promise;
-        return { message, verdict, status: toALOutboundEnqueueStatus(verdict), entries: [] };
+        return { message, verdict, entries: [] };
     });
     facade.behavior.rtcMessageSend.mockImplementation(async (request) => await fixture.sender.sendRtc(request));
     return admission;
@@ -726,8 +725,7 @@ it.each(
             entries: [],
             verdict: state === 'rejected'
                 ? { kind: 'refused', reason: 'unsupported', detail: 'Admission refused.' }
-                : { kind: 'failed', detail: 'Admission failed.' },
-            status: 'failed'
+                : { kind: 'failed', detail: 'Admission failed.' }
         }));
     }
     facade.behavior.typedSend.mockImplementation(async (payload, options) => {

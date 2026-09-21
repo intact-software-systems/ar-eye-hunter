@@ -139,7 +139,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-dropped'));
 
-        expect(result.status).toBe('no-route');
         expect(result.verdict).toEqual({ kind: 'unroutable', reason: 'no-route', detail: 'No route for outbound enqueue' });
         expect(result.reason).toBe('No route for outbound enqueue');
         expect(result.entries).toEqual([]);
@@ -166,7 +165,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-route'));
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
         expect(result.entries).toHaveLength(1);
         expect(sent).toEqual([]);
         expect(await reserveOutbox(outbox)).toHaveLength(1);
@@ -194,7 +193,6 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('accepted');
         expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         expect(result.entries).toMatchObject([{ status: EntityStatus.COMPLETED }]);
         await expect.poll(() => sent).toEqual([
@@ -299,7 +297,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(msg);
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
             stores,
@@ -344,7 +342,7 @@ describe('ALOutboundMessageRuntime', () => {
         const result = await runtime.enqueueIfAbsent(createOutboundMessage('msg-no-targets'));
         await vi.advanceTimersByTimeAsync(0);
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
         runtime.dispose();
         const restarted = createDefaultOutboundTestRuntime({
@@ -436,7 +434,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         expect(events).toEqual(['lock-enter', 'lock-exit', 'send-start']);
         // Admission returns before the send it committed, so the lock is never held across transport.
-        expect((await enqueue).status).toBe('accepted');
+        expect((await enqueue).verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
 
         sendGate.resolve();
         await waitUntil(() => events.includes('send-end'));
@@ -479,7 +477,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const second = await runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-second'));
 
-        expect(second.status).toBe('accepted');
+        expect(second.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         await waitUntil(() => planned.includes('msg-drain-second'));
         // The second send waits for the batch that is holding the first, and is not lost by it.
         expect(started).toEqual(['msg-drain-first']);
@@ -563,7 +561,7 @@ describe('ALOutboundMessageRuntime', () => {
 
         const result = await runtime.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
         expect(result.entries).toHaveLength(1);
         expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
         const stored = await reserveOutbox(outbox);
@@ -593,8 +591,7 @@ describe('ALOutboundMessageRuntime', () => {
         const first = await runtime.enqueueIfAbsent(msg);
         const second = await runtime.enqueueIfAbsent(msg);
 
-        expect(first.status).toBe('enqueued');
-        expect(second.status).toBe('duplicate');
+        expect(first.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 0 });
         expect(second.verdict).toEqual({ kind: 'duplicate' });
         expect(second.entry?.key).toEqual(first.entry?.key);
         expect(second.entries).toHaveLength(1);
@@ -639,7 +636,6 @@ describe('ALOutboundMessageRuntime', () => {
         await enqueueOutboundOrThrow(runtime, newer);
         const superseded = await runtime.enqueueIfAbsent(older);
 
-        expect(superseded.status).toBe('superseded');
         expect(superseded.verdict).toEqual({
             kind: 'superseded',
             detail: `Skipping superseded outbound message ${older.id.msgId}`

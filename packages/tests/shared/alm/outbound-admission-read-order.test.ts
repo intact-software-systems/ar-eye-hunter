@@ -87,7 +87,7 @@ describe('outbound admission observation order', () => {
         const rejected = await pending;
         expect(won.committed).toBe(true);
         expect(rejected.committed).toBe(false);
-        expect(rejected.computed.status).toBe('pending-admission');
+        expect(rejected.computed.verdict).toEqual({ kind: 'pending' });
         expect(await store.readSentMessage(message.id.msgId)).toEqual(winningSnapshot);
         expect(winningSnapshot?.outboxKey).toBeDefined();
         const sent: string[] = [];

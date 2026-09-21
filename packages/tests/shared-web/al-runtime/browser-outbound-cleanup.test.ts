@@ -306,7 +306,7 @@ async function admitForSession(sessionId: string, ttlMs: number) {
         sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });
     const result = await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs }));
-    expect(result.status).toBe('enqueued');
+    expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
     runtime.dispose();
     const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
     expect(keys.size).toBe(3);

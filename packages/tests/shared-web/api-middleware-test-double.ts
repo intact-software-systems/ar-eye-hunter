@@ -89,7 +89,6 @@ function createWebSocketQueueBoxDouble(
 ): RallarBrowserMiddleware['webSocketQueueBox'] {
     const queueBox: RallarBrowserMiddleware['webSocketQueueBox'] = toServiceTestDouble<RallarBrowserMiddleware['webSocketQueueBox']>({
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
-            status: 'enqueued' as const,
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
@@ -166,7 +165,6 @@ function createRtcRxStreamerDouble(
 ): RallarBrowserMiddleware['rtcRxStreamer'] {
     const rtcRxStreamer: RallarBrowserMiddleware['rtcRxStreamer'] = toServiceTestDouble<RallarBrowserMiddleware['rtcRxStreamer']>({
         enqueueOutboxIfAbsent: vi.fn(async (message: ALMessage) => ({
-            status: 'enqueued' as const,
             verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []

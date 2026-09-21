@@ -43,7 +43,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const result = await enqueueOutboxAndDrain(service, msg);
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect(decodePersistedALMessage(socket.sentJsonStrings[0]).id.msgId).toBe(msg.id.msgId);
@@ -75,8 +75,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const first = await enqueueOutboxAndDrain(service, msg);
         const second = await enqueueOutboxAndDrain(service, msg);
 
-        expect(first.status).toBe('accepted');
-        expect(second.status).toBe('duplicate');
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(second.verdict).toEqual({ kind: 'duplicate' });
         expect(second.entry?.key).toEqual(first.entry?.key);
         expect(socket.sentJsonStrings).toHaveLength(1);
     });
@@ -119,7 +119,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         const result = await enqueueOutboxAndDrain(service, msg);
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(socket.sentJsonStrings).toHaveLength(1);
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
@@ -349,8 +349,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         const firstResult = await enqueueOutboxAndDrain(service, first);
         const secondResult = await enqueueOutboxAndDrain(service, second);
 
-        expect(firstResult.status).toBe('enqueued');
-        expect(secondResult.status).toBe('enqueued');
+        expect(firstResult.verdict).toMatchObject({ kind: 'admitted', durable: true });
+        expect(secondResult.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(2);
 
         expect(socket.sentJsonStrings).toEqual([]);

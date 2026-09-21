@@ -699,7 +699,11 @@ describe('Rallar RTC recovery', () => {
             {
                 peerSessionId: 'peer-1',
                 signalType: QRtcSignalingType.Offer,
-                admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-7' },
+                admission: {
+                    outcome: 'rejected',
+                    verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+                    messageId: 'msg-7'
+                },
                 error: new Error('Signaling admission returned expired')
             }
         );
@@ -709,7 +713,11 @@ describe('Rallar RTC recovery', () => {
             {
                 peerSessionId: 'peer-1',
                 signalType: QRtcSignalingType.Answer,
-                admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-8' },
+                admission: {
+                    outcome: 'rejected',
+                    verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+                    messageId: 'msg-8'
+                },
                 error: new Error('Signaling admission returned expired')
             }
         );
@@ -721,7 +729,11 @@ describe('Rallar RTC recovery', () => {
                 signaling: {
                     peerId: 'peer-1',
                     signalKind: 'offer',
-                    admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-7' },
+                    admission: {
+                        outcome: 'rejected',
+                        verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+                        messageId: 'msg-7'
+                    },
                     reason: 'Signaling admission returned expired'
                 }
             }),
@@ -731,7 +743,11 @@ describe('Rallar RTC recovery', () => {
                 signaling: {
                     peerId: 'peer-1',
                     signalKind: 'answer',
-                    admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-8' },
+                    admission: {
+                        outcome: 'rejected',
+                        verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+                        messageId: 'msg-8'
+                    },
                     reason: 'Signaling admission returned expired'
                 }
             })

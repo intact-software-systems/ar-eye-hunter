@@ -76,7 +76,7 @@ it.each(['memory', 'indexeddb'] as const)(
         const message = createOutboundMessage('msg-commit-phases');
         const enqueued = await runtime.enqueueIfAbsent(message);
 
-        expect(enqueued.status).toBe('enqueued');
+        expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
         const [phases] = commitPhasesOf(diagnostics);
         expect(phases).toMatchObject({
             kind: 'commit-phases',
@@ -129,7 +129,7 @@ it('charges the drain its own commit rather than leaving it on the next send', a
 
     const pending = await runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-origin', { ttlMs: 30_000 }));
 
-    expect(pending.status).toBe('pending-admission');
+    expect(pending.verdict).toEqual({ kind: 'pending' });
     await expect.poll(async () => {
         await engine.executeOnce();
         return commitPhasesOf(diagnostics).filter((event) => event.origin === 'drain').length;
@@ -160,7 +160,8 @@ it('names the origin a queued send waited behind', async () => {
         runtime.enqueueIfAbsent(createOutboundMessage('msg-queued-second'))
     ]);
 
-    expect([first.status, second.status]).toEqual(['accepted', 'accepted']);
+    expect([first, second].map((result) => ({ kind: result.verdict.kind, durable: result.verdict.kind === 'admitted' ? result.verdict.durable : undefined })))
+        .toEqual([{ kind: 'admitted', durable: false }, { kind: 'admitted', durable: false }]);
     expect(
         senderQueueWaitsOf(diagnostics).map((event) => ({
             origin: event.origin,

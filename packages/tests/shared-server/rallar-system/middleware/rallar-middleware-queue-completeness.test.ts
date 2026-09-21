@@ -71,7 +71,7 @@ describe('Rallar middleware queue registration completeness', () => {
             qos: { durability: { algo: 'local-outbox' } }
         });
         const result = await input.wsQBoxServerService.enqueueOutboxIfAbsent(message);
-        expect(result.status).toBe('pending-admission');
+        expect(result.verdict).toEqual({ kind: 'pending' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         await admission.runnable();
         expect(published).toEqual([]);
@@ -89,7 +89,7 @@ describe('Rallar middleware queue registration completeness', () => {
         // Restore the original pending observation to model lost completion after the admission commit.
         await stores.workQueue.enqueue(pending);
         await admission.runnable();
-        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).status).toBe('duplicate');
+        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).verdict).toEqual({ kind: 'duplicate' });
         expect((await stores.workQueue.getItem(result.entry!.key))?.status).toBe(EntityStatus.COMPLETED);
         await admission.runnable();
         expect(published).toEqual([message.id.msgId]);
@@ -132,7 +132,7 @@ describe('Rallar middleware queue registration completeness', () => {
         if (!admitted.entry) {
             throw new Error('Expected canonical admission');
         }
-        expect(admitted.status).toBe('enqueued');
+        expect(admitted.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(admitted.entry.typeId).toBe('WS_OUTBOX');
         expect(admitted.entry.status).toBe(EntityStatus.NEW);
         await task.runnable();
@@ -145,7 +145,7 @@ describe('Rallar middleware queue registration completeness', () => {
 
         expect((await queue.getItem(admitted.entry.key))?.resource).toBe(admitted.entry.resource);
         expect(await queue.getItem(toALOutboundIdentityKey(admitted.entry.key))).toBeDefined();
-        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).status).toBe('duplicate');
+        expect((await input.wsQBoxServerService.enqueueOutboxIfAbsent(message)).verdict).toEqual({ kind: 'duplicate' });
         expect(published).toHaveLength(1);
     });
 

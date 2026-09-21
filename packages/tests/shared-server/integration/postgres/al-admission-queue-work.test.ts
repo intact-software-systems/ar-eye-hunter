@@ -147,7 +147,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
         await restartedWork.port.release(action!.claim, { status: 'completed' });
-        expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
+        expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).verdict).toEqual({ kind: 'duplicate' });
         expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
         const conflicting = {
             ...identity!,
@@ -367,7 +367,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             pending.map(({ work }) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')
         ).toEqual([newer.id.msgId]);
         const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
-        expect(retried.status).toBe('superseded');
+        expect(retried.verdict.kind).toBe('superseded');
         expect(retried.bundle).toBeUndefined();
     });
 

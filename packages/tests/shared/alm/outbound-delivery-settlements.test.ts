@@ -295,7 +295,7 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
     const message = createOutboundMessage('msg-retained-admission');
 
     const pending = await runtime.enqueueIfAbsent(message);
-    expect(pending.status).toBe('pending-admission');
+    expect(pending.verdict).toEqual({ kind: 'pending' });
     await expect.poll(async () => {
         await runOutboundWorkTask(runtime);
         return settlements.filter((settlement) => settlement.kind === 'admission').length;

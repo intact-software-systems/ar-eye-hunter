@@ -1,6 +1,6 @@
 import type { ALMessage, ALTargets } from '@shared/al-contracts/al-contract.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type {
@@ -38,7 +38,8 @@ export interface RallarServerWsPublishResult {
     readonly failures?: readonly WsServerLiveSendFailure[];
     readonly entry?: ResourceEntry;
     readonly entries: readonly ResourceEntry[];
-    readonly enqueueStatus?: ALOutboundEnqueueStatus;
+    /** Undefined for a `live-only` or `none` fanout: only outbox admission ever produces a verdict. */
+    readonly verdict?: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
 }
 

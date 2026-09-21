@@ -113,7 +113,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
         });
         for (const msg of messages) {
-            expect((await runtime1.enqueueIfAbsent(msg)).status).toBe('accepted');
+            expect((await runtime1.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
             // The send holds its claim (it never settles), so the acknowledgements below race nothing.
             await runOutboundWorkTask(runtime1);
             const respondents = msg.route.resourceId === 'complete' ? ['peer-1', 'peer-2'] : ['peer-1'];
@@ -221,7 +221,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
         });
         const msg = createOutboundMessage('queue-owned-send');
-        expect((await runtime.enqueueIfAbsent(msg)).status).toBe('accepted');
+        expect((await runtime.enqueueIfAbsent(msg)).verdict).toMatchObject({ kind: 'admitted', durable: false });
         const database = await openIndexedDbAdmissionDatabase({
             dbName: dbName,
             storeName: 'admission',

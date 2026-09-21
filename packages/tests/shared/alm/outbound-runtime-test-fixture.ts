@@ -106,7 +106,8 @@ export async function enqueueOutboundOrThrow(
     msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
+    const { verdict } = enqueued;
+    if (verdict.kind === 'failed' || (verdict.kind === 'refused' && verdict.reason !== 'unauthorized')) {
         throw new Error(enqueued.reason);
     }
     await runOutboundWorkTask(runtime);
@@ -362,7 +363,7 @@ export async function computeOutboundTestAdmission<TPrepared>(
         options: {}
     });
     if (!computed.bundle) {
-        throw new Error(`Expected outbound admission, received ${computed.status}`);
+        throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);
     }
     return computed.bundle;
 }

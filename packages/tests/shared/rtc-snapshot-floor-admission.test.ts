@@ -34,7 +34,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         }
         const message = roomMessage(2);
         const result = await sender.multicast.enqueueIfAbsent(message);
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         await sender.waitForDeliveries();
         await receiver.waitForDeliveries();
         expect(sender.sent.find((sent) => sent.id.msgId === message.id.msgId)?.targets).toEqual(message.targets);
@@ -69,8 +69,10 @@ describe('RTC scoped snapshot-floor admission', () => {
             if (failure === 'removed-overlay') {
                 sender.overlays.set(key, { ...sender.overlays.read(key)!, state: 'removed' });
             }
-            expect((await sender.multicast.enqueueIfAbsent(roomMessage(2))).status).toBe(
-                failure === 'expired-session' ? 'skipped' : 'no-route'
+            expect((await sender.multicast.enqueueIfAbsent(roomMessage(2))).verdict).toMatchObject(
+                failure === 'expired-session'
+                    ? { kind: 'refused', reason: 'unauthorized' }
+                    : { kind: 'unroutable', reason: 'no-route' }
             );
             expect(sender.sent).toEqual([]);
         }
@@ -208,7 +210,7 @@ describe('RTC scoped snapshot-floor admission', () => {
         }
         const message = roomMessage(undefined);
         const accepted = await sender.multicast.enqueueIfAbsent(message);
-        expect(accepted.status).toBe('accepted');
+        expect(accepted.verdict).toMatchObject({ kind: 'admitted', durable: false });
         await sender.waitForDeliveries();
         await relay.waitForDeliveries();
         expect(relay.delivered.map((entry) => entry.id.msgId)).toEqual([message.id.msgId]);

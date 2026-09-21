@@ -173,7 +173,7 @@ describe('canonical outbound payload storage', () => {
         onTestFinished(() => runtime.dispose());
 
         const result = await runtime.enqueueIfAbsent(message);
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         const serializedRows = await readStoredRows(backend);
         expect(serializedRows.join('\n').split(marker)).toHaveLength(2);
         expect(serializedRows.filter((row) => row.includes(marker))).toHaveLength(1);
@@ -214,12 +214,12 @@ describe('canonical outbound payload storage', () => {
         const original = createOutboundMessage('shorter-admission', { ttlMs: 1_000 });
         const first = await runtime.enqueueIfAbsent(original);
         await waitForSettledOutboundWork(backend.workQueue, store.namespace);
-        expect(first.status).toBe('accepted');
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(first.message.constraints?.expiresAtMs).toBe(1_010);
         vi.setSystemTime(1_010);
         selectedDeadline = 1_050;
         const duplicate = await runtime.enqueueIfAbsent(original);
-        expect(duplicate.status).toBe('expired');
+        expect(duplicate.verdict.kind).toBe('expired');
         expect(sends).toEqual(['sent']);
         expect(await backend.workQueue.getItem(first.entry!.key)).toBeUndefined();
     });

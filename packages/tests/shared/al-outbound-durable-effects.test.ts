@@ -202,7 +202,7 @@ describe('AL outbound durable effect lifecycle', () => {
         });
 
         // Admission must not be drained here: its batch is the one this test holds at the claim.
-        expect((await runtime.enqueueIfAbsent(msg)).status).toBe('accepted');
+        expect((await runtime.enqueueIfAbsent(msg)).verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
         await claimStarted.promise;
         // The control commits while the batch that owes the send is still claiming.
         await runtime.acceptControlMessage(
@@ -488,7 +488,7 @@ describe('AL outbound durable effect lifecycle', () => {
             })
         });
 
-        expect((await runtime.enqueueIfAbsent(msg)).status).toBe('pending-admission');
+        expect((await runtime.enqueueIfAbsent(msg)).verdict).toEqual({ kind: 'pending' });
         await vi.advanceTimersByTimeAsync(200);
 
         expect(rejectedFirstCommit).toBe(true);
@@ -520,7 +520,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const result = await runtime.enqueueIfAbsent(msg);
 
         expect(result).toMatchObject({
-            status: 'skipped',
+            verdict: { kind: 'skipped', reason: 'disposed', detail: 'Outbound runtime is disposed.' },
             reason: 'Outbound runtime is disposed.',
             entries: []
         });

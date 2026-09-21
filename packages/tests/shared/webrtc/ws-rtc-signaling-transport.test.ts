@@ -15,7 +15,6 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import { isPendingALOutboundWork } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { createDefaultWsQueueBoxClientService, type WsQueueBoxClientService } from '@shared/services/ws-queue-box-client-service.ts';
@@ -130,7 +129,6 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             attempts.push(message);
             const verdict = verdicts[attempts.length - 1] ?? { kind: 'failed', detail: 'admission-under-test' };
             return {
-                status: toALOutboundEnqueueStatus(verdict),
                 verdict,
                 message,
                 entries: [],
@@ -162,6 +160,34 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
         expect(wakes).toBe(1);
     });
 
+    it('retries a deferred admission verdict like an unroutable one, and succeeds once it admits', async () => {
+        const service = createSignalingQueueBox();
+        const attempts: ALMessage[] = [];
+        const verdicts: readonly ALDeliveryAdmissionVerdict[] = [
+            { kind: 'deferred', reason: 'not-yet-in-sync', detail: 'admission-under-test' },
+            { kind: 'admitted', durable: true, queuedAttempts: 1 }
+        ];
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockImplementation(async (message) => {
+            attempts.push(message);
+            const verdict = verdicts[attempts.length - 1] ?? { kind: 'failed', detail: 'admission-under-test' };
+            return {
+                verdict,
+                message,
+                entries: [],
+                reason: 'admission-under-test'
+            };
+        });
+        let wakes = 0;
+        const transport = new WsRtcSignalingTransportUsingWsQBox(service, 'rtc', () => {
+            wakes += 1;
+        });
+
+        await transport.send(createSignalingPayload());
+
+        expect(attempts).toHaveLength(2);
+        expect(wakes).toBe(1);
+    });
+
     it('throws a signal the admission will never clear without spending a retry on it', async () => {
         const service = createSignalingQueueBox();
         const attempts: ALMessage[] = [];
@@ -169,7 +195,6 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             attempts.push(message);
             const verdict: ALDeliveryAdmissionVerdict = { kind: 'superseded', detail: 'newer-signal-won' };
             return {
-                status: toALOutboundEnqueueStatus(verdict),
                 verdict,
                 message,
                 entries: [],

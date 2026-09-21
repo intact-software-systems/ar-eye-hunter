@@ -428,7 +428,7 @@ async function readPendingAdmissionBundle(
         options: { pendingAdmission: input.pendingAdmission }
     });
     if (!computed.bundle) {
-        throw new Error(`Expected a pending admission bundle, received ${computed.status}`);
+        throw new Error(`Expected a pending admission bundle, received ${computed.verdict.kind}`);
     }
     return computed.bundle;
 }

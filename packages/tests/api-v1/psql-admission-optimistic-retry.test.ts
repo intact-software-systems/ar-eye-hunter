@@ -267,7 +267,7 @@ describe('PSql admission optimistic retry', () => {
 
         const result = await runtime.enqueueIfAbsent(message);
 
-        expect(result).toMatchObject({ status: 'pending-admission', message });
+        expect(result).toMatchObject({ verdict: { kind: 'pending' }, message });
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
         const canonical = await stores.workQueue.getItem(result.entries[0].key);
         expect(canonical?.status).toBe(EntityStatus.COMPLETED);
@@ -289,7 +289,7 @@ describe('PSql admission optimistic retry', () => {
         await expect.poll(() => restartedStores.admissionStore.readSentMessage(message.id.msgId)).toMatchObject({ msg: JSON.parse(JSON.stringify(message)) });
         const activated = await restartedStores.workQueue.getItem(canonical!.key);
         expect(activated?.status).toBe(EntityStatus.NEW);
-        expect((await restarted.enqueueIfAbsent(message)).status).toBe('duplicate');
+        expect((await restarted.enqueueIfAbsent(message)).verdict).toEqual({ kind: 'duplicate' });
         expect(await restartedStores.workQueue.getItem(canonical!.key)).toEqual(activated);
     });
 });

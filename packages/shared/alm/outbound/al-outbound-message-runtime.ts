@@ -12,7 +12,6 @@ import type {
     ALDeliverySettlement,
     ALDeliverySettlementSink
 } from '../delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import {
     AL_WORK_READINESS_MEMORY_MS,
     ALWorkHandler,
@@ -219,21 +218,7 @@ export type ALOutboundSettlementFact = ALOutboundUnstampedSettlement<ALDeliveryS
  */
 export type ALOutboundSettlementEmitter = (fact: ALOutboundSettlementFact) => void;
 
-export type ALOutboundEnqueueStatus =
-    | 'pending-admission'
-    | 'enqueued'
-    | 'accepted'
-    | 'skipped'
-    | 'duplicate'
-    | 'superseded'
-    | 'expired'
-    | 'no-route'
-    | 'rate-limited'
-    | 'circuit-open'
-    | 'failed';
-
 export interface ALOutboundEnqueueResult {
-    readonly status: ALOutboundEnqueueStatus;
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly message: ALMessage;
     readonly entry?: ResourceEntry;
@@ -466,7 +451,6 @@ export class ALOutboundMessageRuntime<TPrepared> {
             options: { explicitPlan: dispatchPlan !== undefined }
         });
         return {
-            status: computed.status,
             verdict: computed.verdict,
             message: computed.msg ?? msg,
             entry: computed.entries[0],
@@ -494,7 +478,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
 
-        if (result.committed || result.computed.status === 'pending-admission') {
+        if (result.committed || result.computed.verdict.kind === 'pending') {
             this.work.committed();
         }
 
@@ -502,14 +486,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {
-        const verdict: ALDeliveryAdmissionVerdict = {
-            kind: 'skipped',
-            reason: 'disposed',
-            detail: 'Outbound runtime is disposed.'
-        };
         return {
-            status: toALOutboundEnqueueStatus(verdict),
-            verdict,
+            verdict: { kind: 'skipped', reason: 'disposed', detail: 'Outbound runtime is disposed.' },
             message: msg,
             entries: [],
             reason: 'Outbound runtime is disposed.'

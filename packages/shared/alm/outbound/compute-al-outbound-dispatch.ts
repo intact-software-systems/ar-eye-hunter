@@ -4,7 +4,6 @@ import { toALOrderingTrackKey } from '../../al-contracts/al-runtime.ts';
 import { EntityStatus, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import type { ALOutboundSentMessageSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import type { ALOutboundAdmissionMutation } from './admission/al-outbound-admission-mutations.ts';
 import type {
     ALOutboundCommitBundle,
@@ -13,11 +12,7 @@ import type {
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
 import { toALOutboundMessageReference } from './al-outbound-canonical-message.ts';
-import type {
-    ALOutboundDispatchPhase,
-    ALOutboundDispatchPlan,
-    ALOutboundEnqueueStatus
-} from './al-outbound-message-runtime.ts';
+import type { ALOutboundDispatchPhase, ALOutboundDispatchPlan } from './al-outbound-message-runtime.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
@@ -38,7 +33,6 @@ export interface ALOutboundCommitDispatchOptions {
 export interface ALOutboundComputedDto<TPrepared> {
     readonly msg?: ALMessage;
     readonly bundle?: ALOutboundCommitBundle<TPrepared>;
-    readonly status: ALOutboundEnqueueStatus;
     readonly verdict: ALDeliveryAdmissionVerdict;
     readonly reason?: string;
     readonly entries: readonly ResourceEntry[];
@@ -107,7 +101,7 @@ function toALOutboundComputedResult<TPrepared>(
     reason: string | undefined,
     entries: readonly ResourceEntry[] = []
 ): ALOutboundComputedDto<TPrepared> {
-    return { status: toALOutboundEnqueueStatus(verdict), verdict, reason, entries };
+    return { verdict, reason, entries };
 }
 
 /** A fresh (non-early-exit) dispatch either admits the message or has nowhere to route it. */

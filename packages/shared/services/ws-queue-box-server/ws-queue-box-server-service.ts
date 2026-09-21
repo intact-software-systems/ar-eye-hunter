@@ -331,7 +331,7 @@ export class WsQueueBoxServerService {
             dispatchPlan
         );
         if (
-            result.status === 'no-route' &&
+            result.verdict.kind === 'unroutable' && result.verdict.reason === 'no-route' &&
             result.reason &&
             this.outboundPlanning.isBroadcastWithoutRecipients(
                 outgoingMessage,

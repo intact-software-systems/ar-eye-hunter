@@ -258,7 +258,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
 
@@ -307,7 +307,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toEqual([]);
@@ -351,7 +351,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toContain(
@@ -398,7 +398,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toEqual([]);
@@ -466,7 +466,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'accepted',
+            verdict: { kind: 'admitted', durable: false },
             entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -539,7 +539,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(channel.sendCalls).toEqual([]);
@@ -588,7 +588,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'accepted',
+            verdict: { kind: 'admitted', durable: false },
             entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -634,10 +634,10 @@ describe('WebRtc overlay services', () => {
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
-        expect(first.status).toBe('accepted');
-        expect(second.status).toBe('accepted');
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(second.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(third).toMatchObject({
-            status: 'rate-limited',
+            verdict: { kind: 'unroutable', reason: 'rate-limited' },
             entries: [],
             reason: 'RTC enqueue rate limit exceeded'
         });
@@ -678,7 +678,7 @@ describe('WebRtc overlay services', () => {
         );
 
         expect(result).toMatchObject({
-            status: 'circuit-open',
+            verdict: { kind: 'unroutable', reason: 'circuit-open' },
             entries: [],
             reason: 'RTC enqueue circuit breaker open'
         });
@@ -768,7 +768,7 @@ describe('WebRtc overlay services', () => {
 
         const result = await manager.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
@@ -820,9 +820,9 @@ describe('WebRtc overlay services', () => {
         const firstResult = await manager.enqueueIfAbsent(msg);
         const secondResult = await manager.enqueueIfAbsent(msg);
 
-        expect(firstResult.status).toBe('enqueued');
+        expect(firstResult.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(firstResult.entries).toHaveLength(1);
-        expect(secondResult.status).toBe('duplicate');
+        expect(secondResult.verdict).toEqual({ kind: 'duplicate' });
         expect(secondResult.entries).toHaveLength(1);
         expect(secondResult.entries[0]?.key).toEqual(firstResult.entry?.key);
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
@@ -869,7 +869,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'expired',
+            verdict: { kind: 'expired' },
             entries: []
         });
         expect(warnings).toEqual([]);

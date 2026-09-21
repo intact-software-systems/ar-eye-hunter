@@ -20,7 +20,6 @@ import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '../alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-runtime.ts';
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
@@ -455,7 +454,6 @@ export class WsQueueBoxClientService {
                 detail: 'WS queue-box client is closed.'
             };
             return {
-                status: toALOutboundEnqueueStatus(verdict),
                 verdict,
                 message,
                 entries: [],

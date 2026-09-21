@@ -303,7 +303,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -360,7 +360,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -638,7 +638,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -759,7 +759,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);

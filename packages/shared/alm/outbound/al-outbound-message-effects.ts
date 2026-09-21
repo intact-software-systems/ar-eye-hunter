@@ -136,10 +136,13 @@ export class ALOutboundMessageEffects<TPrepared> {
                 ])
             }
         });
-        if (computed.status === 'expired' || computed.status === 'superseded' || computed.status === 'skipped') {
+        if (
+            computed.verdict.kind === 'expired' || computed.verdict.kind === 'superseded' ||
+            computed.verdict.kind === 'skipped'
+        ) {
             return { status: 'completed' };
         }
-        if (computed.status === 'no-route') {
+        if (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route') {
             return { status: 'retry' };
         }
         await runtime.afterDequeueAdmission?.(msg, effect.entry);

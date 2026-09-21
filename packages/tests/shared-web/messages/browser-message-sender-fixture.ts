@@ -63,5 +63,5 @@ export function createBrowserMessageSenderFixture(
 }
 
 export function toQueuedMessageAdmission(message: ALMessage): ALOutboundEnqueueResult {
-    return { status: 'enqueued', verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }, message, entries: [] };
+    return { verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 }, message, entries: [] };
 }

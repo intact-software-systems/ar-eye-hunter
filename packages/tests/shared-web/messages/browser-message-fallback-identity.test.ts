@@ -20,7 +20,6 @@ import { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-s
 import { BrowserTypedMessageChannels } from '@shared-web/browser/messages/browser-typed-message-channels.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import type { ALOutboundDispatchPlan, ALOutboundEnqueueResult, ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createDefaultApiMiddlewareTestDouble } from '../api-middleware-test-double.ts';
@@ -305,6 +304,6 @@ class ChannelAdmission {
             constraints: { ...message.constraints, expiresAtMs: message.id.ts + this.input.selectedLifetimeMs }
         };
         const verdict = this.attempts.length === 1 ? this.input.firstVerdict : ADMITTED_VERDICT;
-        return { status: toALOutboundEnqueueStatus(verdict), verdict, message: admitted, entries: [] };
+        return { verdict, message: admitted, entries: [] };
     }
 }

@@ -32,7 +32,7 @@ describe('outbound planner validation boundary', () => {
             planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
-        expect(result).toMatchObject({ status: 'failed', message: original, entries: [] });
+        expect(result).toMatchObject({ verdict: { kind: 'failed' }, message: original, entries: [] });
         expect(await stores.admissionStore.readSentMessage(original.id.msgId)).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
         expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
@@ -93,7 +93,12 @@ describe('outbound planner validation boundary', () => {
             })
         });
         const result = await runtime.enqueueIfAbsent(original);
-        expect(result.status).toBe(change === 'unchanged' ? 'no-route' : 'failed');
+        if (change === 'unchanged') {
+            expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        }
+        else {
+            expect(result.verdict.kind).toBe('failed');
+        }
         expect(result.message).toEqual(original);
     });
 });

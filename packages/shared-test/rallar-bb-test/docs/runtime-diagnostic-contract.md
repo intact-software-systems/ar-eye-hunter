@@ -99,7 +99,7 @@ runtime does not turn arbitrary console output into test evidence.
 signal this browser could not hand to the transport:
 
 - `peerId` and `signalKind` (`offer`, `answer` or `candidate`) name the hop
-- `admission` is the transport's verdict: `{ "outcome": "rejected", "status",
+- `admission` is the transport's verdict: `{ "outcome": "rejected", "verdict",
   "messageId" }` for a signal admission refused, or
   `{ "outcome": "never-admitted" }` when the hop failed before admission saw it
 - `reason` is the failure text the hop carried

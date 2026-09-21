@@ -235,7 +235,7 @@ describe('WS client typed ingress and transport effects', () => {
 
         const result = await fixture.service.enqueueOutboxIfAbsent(message);
         await vi.advanceTimersByTimeAsync(0);
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(fixture.socket.sent).toEqual([]);
         const retryAtMs = await peekOutboundWorkReadyAt(
             fixture.outboundStores.workQueue,

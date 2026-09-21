@@ -10,10 +10,7 @@ import {
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
 
-import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '@shared/alm/delivery/to-al-outbound-enqueue-status.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -45,7 +42,6 @@ describe('outbound admission verdict', () => {
         });
 
         expect(computed.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 1 });
-        expect(computed.status).toBe('enqueued');
     });
 
     it('admits volatilely with the queued attempt count for a plan that does not persist', async () => {
@@ -73,7 +69,6 @@ describe('outbound admission verdict', () => {
         });
 
         expect(computed.verdict).toEqual({ kind: 'admitted', durable: false, queuedAttempts: 1 });
-        expect(computed.status).toBe('accepted');
     });
 
     // A dequeue attempt (unlike enqueue) has no later worker to await: no prepared recipient and no
@@ -102,7 +97,6 @@ describe('outbound admission verdict', () => {
             reason: 'no-route',
             detail: `No outbound transport route for message ${message.id.msgId}`
         });
-        expect(computed.status).toBe('no-route');
     });
 
     it('is expired when the message deadline has already elapsed', async () => {
@@ -125,7 +119,6 @@ describe('outbound admission verdict', () => {
         });
 
         expect(computed.verdict).toEqual({ kind: 'expired', detail: 'Message expired or is too stale' });
-        expect(computed.status).toBe('expired');
     });
 
     it('is refused as unauthorized when the planner drops the message with that code', async () => {
@@ -153,13 +146,11 @@ describe('outbound admission verdict', () => {
             options: {}
         });
 
-        // A defect the survey found: today this collapses to the same 'skipped' status as `deferred`.
         expect(computed.verdict).toEqual({
             kind: 'refused',
             reason: 'unauthorized',
             detail: 'Sender is not a room member'
         });
-        expect(computed.status).toBe('skipped');
     });
 
     it('is deferred as not-yet-in-sync when the planner drops the message with that code', async () => {
@@ -187,13 +178,11 @@ describe('outbound admission verdict', () => {
             options: {}
         });
 
-        // A defect the survey found: today this collapses to the same 'skipped' status as `refused`.
         expect(computed.verdict).toEqual({
             kind: 'deferred',
             reason: 'not-yet-in-sync',
             detail: 'Awaiting room snapshot authority'
         });
-        expect(computed.status).toBe('skipped');
     });
 
     it('is duplicate when a persistent message is committed a second time', async () => {
@@ -213,7 +202,6 @@ describe('outbound admission verdict', () => {
         const second = await admission.commit(commitInput);
 
         expect(second.computed.verdict).toEqual({ kind: 'duplicate' });
-        expect(second.computed.status).toBe('duplicate');
         admission.dispose();
     });
 
@@ -253,33 +241,8 @@ describe('outbound admission verdict', () => {
             kind: 'superseded',
             detail: `Skipping superseded outbound message ${older.id.msgId}`
         });
-        expect(second.computed.status).toBe('superseded');
         admission.dispose();
     });
-
-    it.each(
-        [
-            [{ kind: 'admitted', durable: true, queuedAttempts: 1 }, 'enqueued'],
-            [{ kind: 'admitted', durable: false, queuedAttempts: 1 }, 'accepted'],
-            [{ kind: 'duplicate' }, 'duplicate'],
-            [{ kind: 'pending' }, 'pending-admission'],
-            [{ kind: 'deferred', reason: 'not-yet-in-sync', detail: 'd' }, 'skipped'],
-            [{ kind: 'refused', reason: 'unauthorized', detail: 'd' }, 'skipped'],
-            [{ kind: 'refused', reason: 'malformed', detail: 'd' }, 'failed'],
-            [{ kind: 'unroutable', reason: 'no-route', detail: 'd' }, 'no-route'],
-            [{ kind: 'unroutable', reason: 'rate-limited', detail: 'd' }, 'rate-limited'],
-            [{ kind: 'unroutable', reason: 'circuit-open', detail: 'd' }, 'circuit-open'],
-            [{ kind: 'superseded', detail: 'd' }, 'superseded'],
-            [{ kind: 'expired', detail: 'd' }, 'expired'],
-            [{ kind: 'skipped', reason: 'planner-drop', detail: 'd' }, 'skipped'],
-            [{ kind: 'failed', detail: 'd' }, 'failed']
-        ] satisfies ReadonlyArray<readonly [ALDeliveryAdmissionVerdict, ALOutboundEnqueueStatus]>
-    )(
-        'derives status %j -> %s',
-        (verdict, status) => {
-            expect(toALOutboundEnqueueStatus(verdict)).toBe(status);
-        }
-    );
 });
 
 function createTestOutboundDispatchAdmission(

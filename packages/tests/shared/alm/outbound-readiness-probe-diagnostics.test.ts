@@ -90,7 +90,7 @@ it.each(['memory', 'indexeddb'] as const)(
         clockMs += AL_WORK_READINESS_MEMORY_MS;
         await runProbedRound(engine, diagnostics);
 
-        expect(enqueued.status).toBe('enqueued');
+        expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
         const probes = probesOf(diagnostics);
         expect(probes.map((probe) => probe.cause)).toEqual([
             'no-memory',

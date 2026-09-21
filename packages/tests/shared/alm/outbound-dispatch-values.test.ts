@@ -43,7 +43,7 @@ describe('outbound dispatch value ownership', () => {
             options: {}
         });
 
-        expect(result.computed.status).toBe('failed');
+        expect(result.computed.verdict.kind).toBe('failed');
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
@@ -79,7 +79,7 @@ describe('outbound dispatch value ownership', () => {
 
         const computed = freezeValues(computeALOutboundDispatch(input));
         expect(computed).toEqual(computeALOutboundDispatch(input));
-        expect(computed.status).toBe('enqueued');
+        expect(computed.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(computed.bundle?.canonicalEntry).toEqual(outboxEntry);
         expect(computed.bundle?.durableEffects).toEqual([]);
         if (!computed.bundle) {
@@ -132,7 +132,7 @@ describe('outbound dispatch value ownership', () => {
             options: { observedOutboxEntry }
         });
         expect(result.committed).toBe(true);
-        expect(result.computed.status).toBe('enqueued');
+        expect(result.computed.verdict).toMatchObject({ kind: 'admitted', durable: true });
         if (intent === 'enqueue') {
             expect(result.computed.entries).toEqual([{ ...observedOutboxEntry, status: 'COMPLETED' }]);
             expect(result.computed.entries[0].resource).toBe(observedOutboxEntry.resource);
@@ -170,7 +170,7 @@ describe('outbound dispatch value ownership', () => {
             options: { repairBudget: { priorAttempts: 1, maxAttempts: 3 } }
         });
 
-        expect(computed.status).toBe('skipped');
+        expect(computed.verdict.kind).toBe('skipped');
         expect(computed.bundle).toBeUndefined();
         expect(computed.entries).toEqual([]);
     });

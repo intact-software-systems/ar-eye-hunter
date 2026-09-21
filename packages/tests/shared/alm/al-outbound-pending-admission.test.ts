@@ -80,9 +80,9 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         }
     });
     const result = await initial.enqueueIfAbsent(original);
-    expect(result.status).toBe('pending-admission');
+    expect(result.verdict).toEqual({ kind: 'pending' });
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
-    expect((await initial.enqueueIfAbsent(original)).status).toBe('pending-admission');
+    expect((await initial.enqueueIfAbsent(original)).verdict).toEqual({ kind: 'pending' });
     expect(await store.readSentMessage(original.id.msgId)).toBeUndefined();
     initial.dispose();
     await claims.release();
@@ -120,7 +120,7 @@ it.each(['memory', 'indexeddb'] as const)('owns a real first-admission conflict 
         return sent;
     }).toEqual(['captured']);
     const duplicate = await restarted.enqueueIfAbsent(original);
-    expect(duplicate.status).toBe('duplicate');
+    expect(duplicate.verdict).toEqual({ kind: 'duplicate' });
     await engine.executeOnce();
     expect(sent).toEqual(['captured']);
     expect((await restartedStore.readSentMessage(original.id.msgId))?.msg.constraints?.expiresAtMs).toBe(1_800_000_001_000);

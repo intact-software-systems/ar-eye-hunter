@@ -221,7 +221,7 @@ describe('outbound default send IndexedDB volume', () => {
         });
 
         const enqueued = await runtime.enqueueIfAbsent(createOutboundMessage('msg-default-send'));
-        expect(enqueued.status).toBe('enqueued');
+        expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
         await runOutboundWorkTask(runtime);
 
         const counts = observer.getCounts();

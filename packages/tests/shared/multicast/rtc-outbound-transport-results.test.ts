@@ -95,7 +95,7 @@ describe('RTC outbound transport results', () => {
         });
         const original = createMessage('fallback', 'peer-1', 5_000);
         const first = await enqueueRtcAndDrain(manager, original);
-        expect(first.status, first.reason).toBe('accepted');
+        expect(first.verdict, first.reason).toMatchObject({ kind: 'admitted', durable: false });
         expect(first.message.constraints?.expiresAtMs).toBe(Date.now() + 500);
         expect(original.constraints?.expiresAtMs).toBe(Date.now() + 5_000);
         const fallback = await ws.enqueueOutboxIfAbsent(first.message);
@@ -308,7 +308,7 @@ describe('RTC outbound transport results', () => {
 
         const result = await enqueueRtcAndDrain(manager, createMessage('connecting'));
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
     });
 });

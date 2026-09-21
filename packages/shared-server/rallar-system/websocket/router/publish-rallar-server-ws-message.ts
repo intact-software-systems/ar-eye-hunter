@@ -1,8 +1,6 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type {
-    ALOutboundEnqueueResult,
-    ALOutboundEnqueueStatus
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { WsServerLiveSendResult } from '@shared/services/ws-queue-box-server/ws-queue-box-server-contracts.ts';
 import type { WsQueueBoxServerService } from '@shared/services/ws-queue-box-server/ws-queue-box-server-service.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
@@ -37,8 +35,10 @@ export async function publishRallarServerWsMessage(
             };
         case 'outbox': {
             const result = await input.service.enqueueOutboxIfAbsent(input.message);
+            const verdict = result.verdict;
             if (
-                result.status === 'enqueued' || result.status === 'duplicate' || result.status === 'pending-admission'
+                (verdict.kind === 'admitted' && verdict.durable) || verdict.kind === 'duplicate' ||
+                verdict.kind === 'pending'
             ) {
                 input.wakeOutbox?.();
             }
@@ -115,31 +115,34 @@ function toOutboxPublishResult(
 ): RallarServerWsPublishResult {
     return {
         fanout,
-        status: toOutboxPublishStatus(result.status),
+        status: toOutboxPublishStatus(result.verdict),
         message,
         entry: result.entry,
         entries: result.entries,
-        enqueueStatus: result.status,
+        verdict: result.verdict,
         reason: result.reason
     };
 }
 
+/** Mirrors the retired `ALOutboundEnqueueStatus` converter, except a `deferred` verdict now stays queued. */
 function toOutboxPublishStatus(
-    status: ALOutboundEnqueueStatus
+    verdict: ALDeliveryAdmissionVerdict
 ): RallarServerWsPublishStatus {
-    switch (status) {
-        case 'enqueued':
-        case 'pending-admission':
-        case 'accepted':
+    switch (verdict.kind) {
+        case 'admitted':
+        case 'pending':
+        case 'deferred':
             return 'queued-outbox';
-        case 'skipped':
         case 'duplicate':
+            return 'duplicate';
+        case 'refused':
+            return verdict.reason === 'unauthorized' ? 'skipped' : 'failed';
+        case 'unroutable':
+            return verdict.reason;
         case 'superseded':
         case 'expired':
-        case 'no-route':
-        case 'rate-limited':
-        case 'circuit-open':
+        case 'skipped':
         case 'failed':
-            return status;
+            return verdict.kind;
     }
 }

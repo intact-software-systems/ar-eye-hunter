@@ -4,7 +4,6 @@ import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
-import { toALOutboundEnqueueStatus } from '../delivery/to-al-outbound-enqueue-status.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
@@ -305,7 +304,10 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             }
             return;
         }
-        if (computed.status === 'superseded' || computed.status === 'no-route') {
+        if (
+            computed.verdict.kind === 'superseded' ||
+            (computed.verdict.kind === 'unroutable' && computed.verdict.reason === 'no-route')
+        ) {
             console.warn(computed.reason);
         }
     }
@@ -455,5 +457,5 @@ function toALOutboundVerdictComputed<TPrepared>(
     verdict: ALDeliveryAdmissionVerdict,
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
-    return { ...fields, status: toALOutboundEnqueueStatus(verdict), verdict };
+    return { ...fields, verdict };
 }

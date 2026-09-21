@@ -273,7 +273,7 @@ describe('browser RTC runtime composition', () => {
             )
         );
 
-        expect(result).toMatchObject({ status: 'accepted' });
+        expect(result).toMatchObject({ verdict: { kind: 'admitted', durable: false } });
         expect(result.entries).toHaveLength(1);
         expect(result.entry?.status).toBe('COMPLETED');
         // Admission returns before its own send batch; the transport attempt runs on that batch.

@@ -107,7 +107,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-2']);
         await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
@@ -164,7 +164,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await expect.poll(() => socket.sentConnectionIds(msg.id.msgId)).toEqual(['conn-1', 'conn-3']);
         await waitForSettledOutboundWork(outboundStores.workQueue, outboundStores.admissionStore.namespace);
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
@@ -255,7 +255,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('no-route');
+        expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
         expect(result.entries).toEqual([]);
         expect(result.reason).toContain('Cannot resolve WS server recipients');
         expect(socket.sent).toHaveLength(0);
@@ -396,7 +396,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         const result = await service.enqueueOutboxIfAbsent(msg);
 
-        expect(result.status).toBe('no-route');
+        expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
         expect(result.reason).toContain('without explicit targets');
         expect(socket.sent).toHaveLength(0);
         expect(await outbox.getAllKeys()).toEqual([]);
