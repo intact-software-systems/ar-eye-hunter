@@ -54,6 +54,8 @@ interface AlmConformanceMessageStepInput extends AlmConformanceStepInput {
 
 interface AlmConformanceSendDelivery {
     readonly ttlMs?: number;
+    /** Command budget when it must stay independent of `ttlMs`. */
+    readonly commandTimeoutMs?: number;
     readonly ack?: 'receiver';
     readonly reliability?: 'at-least-once';
     readonly orderingKey?: string;
@@ -133,6 +135,12 @@ const OBSERVE_TIMEOUT_BASE_MS = 2_000;
 // after expiry, so the absence proves the ttl expired rather than racing the deadline itself. The
 // expiring send's command budget is this ttl, so it also bounds how long admission may take.
 const EXPIRY_TTL_MS = 7_500;
+/**
+ * The browser fills an omitted TTL with 30 seconds. The absence proof, the
+ * document replacement, and one reserved-work lease consume that before the
+ * fresh runtime can submit, so the reload original states a longer lifetime.
+ */
+const RELOAD_RECOVERY_MARGIN_MS = 60_000;
 /** RTC-with-WS-fallback injects one fault per carrier before starting the expiring send. */
 const MAX_DEADLINE_EXPIRY_FAULT_BUDGET_MS = FAULT_TIMEOUT_MS * 2;
 const MINIMUM_POST_EXPIRY_OBSERVATION_MS = 2_500;
@@ -353,12 +361,7 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
     return [
         toReloadHealthCommand(sender, 'health-before'),
         ...toHeldFaultCommands(sender, 'reload-hold', 'until-cleared'),
-        toSendCommand({
-            ...sender,
-            index: 1,
-            payload: { marker: 'delivery-reload', carrier: sender.input.carrier },
-            delivery: { ack: 'receiver' }
-        }),
+        toReloadOriginalSend(sender),
         ...toRetainedEvidenceCommands({ ...sender, index: 1 }),
         toStorageCountersCommand(sender, 'storage-counters-held'),
         ...(['al-admission', 'al-work'] as const).map((owner) =>
@@ -401,6 +404,19 @@ function toDeliveryReloadSenderCommands(sender: AlmConformanceStepInput): readon
         }),
         toStorageCountersCommand(sender, 'storage-counters-recovered')
     ];
+}
+
+function toReloadOriginalSend(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    return toSendCommand({
+        ...sender,
+        index: 1,
+        payload: { marker: 'delivery-reload', carrier: sender.input.carrier },
+        delivery: {
+            ack: 'receiver',
+            ttlMs: toReloadSurvivalTtlMs(sender.input.deadlineMs),
+            commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS
+        }
+    });
 }
 
 function toDeliveryReloadReceiverCommands(receiver: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
@@ -839,6 +855,7 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestRtcC
 function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand {
     const input = send.input;
     const typeId = toScenarioTypeId(send);
+    const { commandTimeoutMs, ...delivery } = send.delivery;
     return {
         kind: 'messages.send',
         commandId: toCommandId(send, `send-${send.index}`),
@@ -849,12 +866,17 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand
         payload: send.payload,
         handleId: toSendHandleId(send),
         timeoutMs: toBudgetMs(
-            send.delivery.ttlMs ?? NON_EXPIRING_SEND_TIMEOUT_MS,
+            commandTimeoutMs ?? delivery.ttlMs ?? NON_EXPIRING_SEND_TIMEOUT_MS,
             input.deadlineMs
         ),
         ...(input.carrier === 'ws' ? {} : { roomRef: toRoomRef(input.group) }),
-        ...send.delivery
+        ...delivery
     };
+}
+
+/** The absence window plus the time a reloaded owner needs before it can submit. */
+function toReloadSurvivalTtlMs(deadlineMs: number): number {
+    return deadlineMs - RESPONSE_MARGIN_MS + RELOAD_RECOVERY_MARGIN_MS;
 }
 
 function toObserveCommand(observe: AlmConformanceObserveInput): RallarBlackBoxTestCommand {

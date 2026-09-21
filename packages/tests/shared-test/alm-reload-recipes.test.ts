@@ -58,7 +58,8 @@ describe('ALM durable reload specimens', () => {
             payload: { marker: 'delivery-reload', carrier },
             ack: 'receiver'
         });
-        expect(sends[0].ttlMs).toBeUndefined();
+        expect(sends[0].ttlMs).toBe(77_000);
+        expect(sends[0].timeoutMs).toBe(10_000);
         expect(prefix).toContain(sends[0]);
         const baselineIndex = prefix.findIndex((command) => command.commandId?.endsWith('storage-counters-connected'));
         const heldIndex = prefix.findIndex((command) => command.commandId?.endsWith('storage-counters-held'));

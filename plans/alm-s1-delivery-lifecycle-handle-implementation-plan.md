@@ -1345,6 +1345,12 @@ dequeue completes the row and does not publish it.
       1045 ms, `receive-replacement` 63 ms) and failed only `delivery-reload`. Reload acceptance stays the
       open Task 10 item, so this step stays open.
       No budget or assertion was changed.
+      Reload-only re-run after the original states an explicit survival TTL (absence window plus 60s;
+      77s at the 18s deadline). The send command timeout stays 10s. The browser's omitted TTL is 30s,
+      and the previous WS artifact showed the fresh runtime's next attempt landing after that, so the
+      row expired unsent. `RALLAR_BLACK_BOX_ALM_SCOPE=full` with every other scenario skipped passed
+      all three carriers: WS `receive-original` 8301 ms, RTC 17888 ms, fallback 20621 ms. The full
+      family was not re-run as one process, so this step stays open.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
