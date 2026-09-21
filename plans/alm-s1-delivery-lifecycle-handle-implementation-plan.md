@@ -1327,6 +1327,12 @@ dequeue completes the row and does not publish it.
       `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`; `npm run build`;
       `npm run test:ci`; `npm run test:rallar:full-stack:memory:alm`. Report which passed, failed, or
       were skipped, and why.
+      Partial on `efd94bbb`, so this step stays open. Passed: `npm run typecheck`; `node scripts/check-tests-typecheck.mjs`;
+      `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`; the three `deno task check`
+      commands; `npm run test:deno` (api-v1 561, control server 174, relic 5 passed / 12 steps, shared-test RTC 146,
+      0 failed). `npm run check:repo-style:changed -- origin/main HEAD` passed on `3e3fa2dc`; later commits are plan
+      text. `npx dprint check` fails only on untouched `scripts/hetzner/controller/15-logs.sh`, which is not in the
+      pull request diff. Still open: `test:unit`, `build`, `test:ci`, and the full three-carrier ALM lane.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
