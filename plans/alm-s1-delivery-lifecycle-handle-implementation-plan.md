@@ -1358,7 +1358,15 @@ dequeue completes the row and does not publish it.
       over 7 commits passed lifecycle and reload, then failed `ordering-resync` at sender connect:
       the restored reconnect stores `username: ''`, and the next connect reads that blank as a
       different identity. Carrier acceptance now uses the 10s non-expiring send budget, and a blank
-      restored username is the live session. This step stays open until that tree is re-run.
+      restored username is the live session.
+      Full family on `f6a07c5e` exited 1: 1 passed, 2 failed, 9.5 minutes, all normal. RTC passed
+      (16.67 ms/op over 6 commits), including lifecycle, reload, and ordering-resync. WS failed again
+      at `observe-transport-accepted-4` after the full 10111 ms. The release command stored
+      `remaining: 0` and reported injected, then one outbound row rescheduled about every 100 ms
+      until the sender closed. The 10s budget did not reach `transport-accepted`. Fallback connect
+      succeeded, and `ordering-resync` then failed its absence proof: 3
+      `alm.conformance.rtc-with-ws-fallback.ordering-resync` messages observed against count 2.
+      This step stays open. The WS retry reason is not in the observation.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
