@@ -297,7 +297,7 @@ still subscribe by topic/type, so validate their target from
 and validate the full `roomRef` in the typed payload (or use a room-unique
 lane). `send(...)` returns a `RallarMessageHandle` with a stable `msgId`
 before admission resolves; `handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })`
-waits past that first verdict, and `isALDeliveryAdmitted(outcome.lifecycle)`
+waits for that first verdict, and `isALDeliveryAdmitted(outcome.lifecycle)`
 reports whether it reached `accepted`, `queued`, `transport-accepted`, or
 `acknowledged`. Treat every other lifecycle state as degraded. Treat every
 room realtime status other than `sent` as degraded, including `partial`.

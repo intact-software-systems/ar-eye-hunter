@@ -666,8 +666,10 @@ if (!isALDeliveryAdmitted(outcome.lifecycle)) {
 `msgId`, before admission resolves. `handle.wait(options?)` resolves once the
 lifecycle reaches one of `options.until` or any terminal state (or times out
 or aborts per `options.timeoutMs`/`options.signal`). `AL_DELIVERY_ADMITTED_STATES`
-is the canonical "admitted" state set; `isALDeliveryAdmitted` checks a
-lifecycle against it directly. Surface every non-admitted outcome to the
+is every state past `submitted`, so a `wait(...)` using it resolves at the first
+admission verdict whatever that verdict is; `isALDeliveryAdmitted(outcome.lifecycle)`
+then reports whether the resolved state is `accepted`, `queued`,
+`transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
 
 ### RTC Status And Readiness

@@ -187,16 +187,15 @@ disposed may be drained by the next owner as an ordinary send. A durable cancel 
 -- one that survives disposal or reload -- is a named sink seam left to S3 or I2
 (D13), not part of this settlement path.
 
-Every settlement in this section is a per-message `ALDeliverySettlement` fact stated
+Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
 through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
 the runtime's private `emitSettlement` stamps the fact with its own `carrier` and the
-current `atMs` before calling the supplied sink, and guards that call so a throwing
-sink logs and returns rather than changing dispatch, retry, or claim behaviour. The
-browser's sink for these facts is the in-memory delivery registry,
+current `atMs` into the `ALDeliverySettlement` the sink receives, and guards that call
+so a throwing sink logs and returns rather than changing dispatch, retry, or claim
+behaviour. The browser's sink for these settlements is the in-memory delivery registry,
 [`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
-(`packages/shared-web/browser/messages/`), which reduces each fact into the sending
-handle's lifecycle; no additional queue, pending-work registry, or timer sits between
-owner and registry.
+(`packages/shared-web/browser/messages/`), which reduces each settlement into the
+sending handle's lifecycle.
 
 ## Atomic IndexedDB work storage
 

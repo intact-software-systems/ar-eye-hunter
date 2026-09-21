@@ -7,7 +7,7 @@ callbacks remain topic/type listeners, so validate each inbound target.
 
 `send(...)` returns a `RallarMessageHandle` with a stable `msgId` before
 admission resolves. `handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })`
-waits past that first verdict; `isALDeliveryAdmitted(outcome.lifecycle)`
+waits for that first verdict; `isALDeliveryAdmitted(outcome.lifecycle)`
 reports whether it reached `accepted`, `queued`, `transport-accepted`, or
 `acknowledged`. Keep those stages separate when displaying delivery
 progress.
