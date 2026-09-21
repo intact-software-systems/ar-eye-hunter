@@ -151,7 +151,11 @@ export interface LiveRtcFailureAgentHealth {
 export interface LiveRtcSendResultSummary {
     readonly ok: boolean;
     readonly state: ALDeliveryState | 'other' | 'missing';
-    /** The raw settlement detail string; `null` when the lifecycle recorded none. */
+    /**
+     * The settlement detail is producer-authored lifecycle text copied verbatim into evidence
+     * (never payload or credential content), so it is outside the evidence sanitization
+     * boundary; `null` when the observation carries none.
+     */
     readonly reason: string | null;
     /** Derived from `message.handleId`: the handle id is the message id. */
     readonly messageIdPresent: boolean;

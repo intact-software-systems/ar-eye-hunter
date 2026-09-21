@@ -9,12 +9,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RtcBaselineJson } from '../../shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts';
 
 import { LiveRtcControlClient } from '../../../tests/playwright/rallar-black-box/live-rtc-control-client.ts';
+import type { LiveRtcJsonRecord } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 import { normalizeJson } from '../../../tests/playwright/rallar-black-box/live-rtc-evidence-json.ts';
 
 /** Spreads a real delivery observation, then explicitly named contamination the producer never emits. */
-function toSendDiagnosticsFixture(
+function toDeliveryObservationFixture(
     observation: BlackBoxRallarDeliveryObservation,
-    contamination: Readonly<Record<string, RtcBaselineJson>>
+    contamination: Readonly<LiveRtcJsonRecord> = {}
 ): RtcBaselineJson {
     return normalizeJson({ ...observation, ...contamination });
 }
@@ -191,7 +192,7 @@ describe('live RTC control client', () => {
             result: {
                 value: {
                     credential: 'must-not-be-retained',
-                    message: toSendDiagnosticsFixture(
+                    message: toDeliveryObservationFixture(
                         {
                             handleId: 'message-broadcast',
                             state: 'failed',
@@ -296,7 +297,7 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: toSendDiagnosticsFixture(
+                    message: toDeliveryObservationFixture(
                         {
                             handleId: 'message-direct-timeout',
                             state: 'submitted',
@@ -394,6 +395,62 @@ describe('live RTC control client', () => {
         ]);
     });
 
+    it('passes the settlement reason through verbatim, and reports null when absent', async () => {
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast-with-reason',
+            ok: false,
+            result: {
+                value: {
+                    message: toDeliveryObservationFixture({
+                        handleId: 'message-with-reason',
+                        state: 'failed',
+                        reason: 'awaiting a durable admission retry',
+                        submitted: false,
+                        confirmedHopPeerIds: [],
+                        unconfirmedHopPeerIds: [],
+                        attempts: 1,
+                        backpressured: false,
+                        enqueued: false
+                    })
+                }
+            }
+        });
+        results.push({
+            agentId: 'agent-a',
+            commandId: 'send-broadcast-without-reason',
+            ok: false,
+            result: {
+                // No `reason` field, matching the wire shape when the producer recorded none.
+                value: {
+                    message: {
+                        handleId: 'message-without-reason',
+                        state: 'failed',
+                        submitted: false,
+                        confirmedHopPeerIds: [],
+                        unconfirmedHopPeerIds: [],
+                        attempts: 1,
+                        backpressured: false,
+                        enqueued: false
+                    }
+                }
+            }
+        });
+
+        const attemptFailure = await control.captureAttemptFailure({ runId: 'run-reason-passthrough' });
+
+        expect(attemptFailure.failedResults).toEqual([
+            expect.objectContaining({
+                commandId: 'send-broadcast-with-reason',
+                reason: 'awaiting a durable admission retry'
+            }),
+            expect.objectContaining({
+                commandId: 'send-broadcast-without-reason',
+                reason: null
+            })
+        ]);
+    });
+
     it('retains a sanitized message delivery failure without a diagnostics directory', async () => {
         results.push({
             agentId: 'agent-a',
@@ -401,7 +458,7 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: toSendDiagnosticsFixture(
+                    message: toDeliveryObservationFixture(
                         {
                             handleId: 'message-direct-timeout',
                             state: 'submitted',
@@ -590,7 +647,7 @@ describe('live RTC control client', () => {
                 ok: true,
                 result: {
                     value: {
-                        message: toSendDiagnosticsFixture(
+                        message: toDeliveryObservationFixture(
                             {
                                 handleId: 'wire-message',
                                 state: 'submitted',
@@ -601,8 +658,7 @@ describe('live RTC control client', () => {
                                 attempts: 1,
                                 backpressured: false,
                                 enqueued: true
-                            },
-                            {}
+                            }
                         )
                     }
                 }
@@ -649,7 +705,7 @@ describe('live RTC control client', () => {
             ok: true,
             result: {
                 value: {
-                    message: toSendDiagnosticsFixture(
+                    message: toDeliveryObservationFixture(
                         {
                             handleId: 'probe-message',
                             state: 'submitted',
