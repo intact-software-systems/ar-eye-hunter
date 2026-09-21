@@ -56,10 +56,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
 
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The S1 retained-work fault and conformance QoS composition measures 268.427734375 KiB
-        // with this exact harness. The preauthorized next whole-KiB ceiling is 269;
+        // The delivery handle and its browser-side registry measure 269.6328125 KiB with this
+        // exact harness. The preauthorized next whole-KiB ceiling is 270;
         // all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(269);
+        expect(result.brotliKiB).toBeLessThan(270);
     });
 });
 
