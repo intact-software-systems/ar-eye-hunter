@@ -4,6 +4,7 @@ import {
     refreshStateHeartbeat,
     type StateHeartbeatWorkflowValue
 } from '@shared-web/browser/session/refresh-state-heartbeat.ts';
+import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import { ClientInfo, type AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -128,7 +129,7 @@ async function refreshHeartbeat(
         refreshed.client
     );
 
-    groupStateSnapshotsRepository.setGroupStateSnapshots(refreshed.groups);
+    writeHeartbeatGroupSnapshots(joinedGroups, refreshed.groups, options.scope);
     for (const missingGroup of refreshed.missingGroups) {
         const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
             missingGroup.group,
@@ -151,6 +152,31 @@ async function refreshHeartbeat(
     console.log(
         `State heartbeat refreshed for client ${clientData.clientId} and ${joinedGroups.length} groups`
     );
+}
+
+/** Heartbeat session leases refresh the stored room snapshot and its memory TTL. */
+function writeHeartbeatGroupSnapshots(
+    joinedGroups: readonly GroupSnapshot[],
+    refreshedGroups: readonly GroupSnapshot[],
+    scope: StateScope | undefined
+): void {
+    groupStateSnapshotsRepository.setGroupStateSnapshots(refreshedGroups);
+    const joinedByGroupId = new Map(joinedGroups.map((snapshot) => [snapshot.group.groupId, snapshot]));
+    for (const acquired of refreshedGroups) {
+        const expected = joinedByGroupId.get(acquired.group.groupId);
+        if (expected === undefined) {
+            continue;
+        }
+        acceptAuthoritativeGroupSessionLeaseAdvance({
+            expected,
+            acquired,
+            scope: scope ?? {
+                applicationId: acquired.group.applicationId,
+                workspaceId: acquired.group.workspaceId
+            },
+            assertCanMutate() {}
+        });
+    }
 }
 
 function isGroupSnapshotInScope(

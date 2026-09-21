@@ -12,6 +12,7 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 import { configureTestCacheRepositories } from '../../configure-test-cache-repositories.ts';
@@ -186,6 +187,54 @@ describe('Browser session heartbeat', () => {
         expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBe(newer);
     });
 
+    it('keeps the joined room after the memory TTL when a heartbeat only advances session leases', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        vi.setSystemTime(1_000_000);
+        const joined = groupSnapshot({
+            groupId: 'live-room',
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            principalId: authSession.clientId,
+            sessionId: authSession.sessionId
+        });
+        groupStateSnapshotsRepository.setGroupStateSnapshots([joined]);
+        const renewed: GroupSnapshot = {
+            ...joined,
+            activeSessions: joined.activeSessions.map((session) => ({
+                ...session,
+                lastHeartbeatAtEpochMs: 1_040_000,
+                expiresAtEpochMs: 1_160_000
+            }))
+        };
+        vi.setSystemTime(1_040_000);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+            if (method === 'POST' && url.includes('/groups/live-room/')) {
+                return jsonResponse(renewed);
+            }
+            return textResponse('unexpected', 500);
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' }
+        });
+        await vi.waitFor(() => {
+            expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
+        });
+        handle.stop();
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+        vi.setSystemTime(1_090_000);
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(joined.group)?.activeSessions)
+            .toEqual(renewed.activeSessions);
+    });
+
     it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
         let authInvalidated = false;
         stubFetch(({ url, method }) => {
@@ -267,7 +316,7 @@ describe('Browser session heartbeat', () => {
     }
 });
 
-function jsonResponse(body: ClientSnapshot, status = 200): Response {
+function jsonResponse(body: ClientSnapshot | GroupSnapshot, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' }
