@@ -1340,7 +1340,10 @@ dequeue completes the row and does not publish it.
       (`RALLAR_BLACK_BOX_ALM_SCOPE=full`) exited 1: 0 passed, 3 failed, all normal. WS 12.33 ms/op over 19
       commits failed `delivery-lifecycle` at `receive-replacement` (wait timeout) and `delivery-reload`.
       RTC 27.56 ms/op over 17 commits and fallback 22 ms/op over 9 commits failed `delivery-reload`.
-      `ordering-resync` did not fail. Reload acceptance stays the open Task 10 item, so this step stays open.
+      `ordering-resync` did not fail. A later WS-only full run, after the sender waits for the replacement
+      to be submitted before the recipe ends, passed `delivery-lifecycle` (`observe-transport-accepted-4`
+      1045 ms, `receive-replacement` 63 ms) and failed only `delivery-reload`. Reload acceptance stays the
+      open Task 10 item, so this step stays open.
       No budget or assertion was changed.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish

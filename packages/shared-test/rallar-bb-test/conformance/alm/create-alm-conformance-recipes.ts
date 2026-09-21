@@ -550,7 +550,28 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
             operator: 'equals',
             expected: 'superseded'
         }),
-        ...toHeldFaultCommands(sender, 'supersede-release', 0)
+        ...toHeldFaultCommands(sender, 'supersede-release', 0),
+        ...toReplacementSubmittedCommands(sender)
+    ];
+}
+
+/**
+ * The receiver proves the replacement arrived. Hold release only makes that send possible, so the
+ * sender stays up until the replacement is actually submitted.
+ */
+function toReplacementSubmittedCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const state = sender.input.carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
+    const observation = `observe-${state}-4`;
+    return [
+        toObserveCommand({ ...sender, index: 4, state }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-replacement-submitted-4',
+            resultName: observation,
+            field: 'submitted',
+            operator: 'equals',
+            expected: true
+        })
     ];
 }
 
