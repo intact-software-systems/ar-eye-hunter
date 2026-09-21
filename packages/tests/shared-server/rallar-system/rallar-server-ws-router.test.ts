@@ -773,7 +773,7 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 
     it('maps a deferred admission verdict to queued-outbox status', async () => {
-        const { server, socket, service } = createPublicRouterFixture();
+        const { server, socket, service, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-deferred'),
@@ -802,6 +802,43 @@ describe('RallarServer.ws.publish current behavior', () => {
 
         expect(result).toMatchObject({ fanout: 'outbox', status: 'queued-outbox', verdict });
         expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wakeRequested).toBe(false);
+    });
+
+    it.each([
+        { reason: 'unauthorized' as const, expectedStatus: 'skipped' as const },
+        { reason: 'malformed' as const, expectedStatus: 'failed' as const }
+    ])('maps a refused admission verdict with reason $reason to status $expectedStatus', async ({ reason, expectedStatus }) => {
+        const { server, socket, service, qboxEngine } = createPublicRouterFixture();
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', `todo-refused-${reason}`),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'Refused fanout', done: false },
+            {
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            }
+        );
+        const verdict: ALDeliveryAdmissionVerdict = {
+            kind: 'refused',
+            reason,
+            detail: `Outbound candidate refused: ${reason}`
+        };
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockResolvedValue({
+            verdict,
+            message,
+            entries: [],
+            reason: verdict.detail
+        });
+
+        const result = await server.ws.publish(message, 'outbox');
+
+        expect(result).toMatchObject({ fanout: 'outbox', status: expectedStatus, verdict });
+        expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wakeRequested).toBe(false);
     });
 
     it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {
