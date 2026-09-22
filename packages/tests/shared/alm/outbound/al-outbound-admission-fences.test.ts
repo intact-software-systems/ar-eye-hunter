@@ -23,7 +23,6 @@ import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backe
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
-    AL_ADMISSION_REVISION_KEY,
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -236,7 +235,7 @@ async function createPGliteFenceBackend(namespace: string): Promise<Omit<FenceFi
     const { sql, repository } = await createPSqlAdmissionTestStorage();
     return {
         backend: new PSqlAdmissionWorkBackend(sql, namespace),
-        readAdmissionState: async () => toAdmissionStateFingerprint('per-row', await repository.findAllEntries(namespace))
+        readAdmissionState: async () => toAdmissionStateFingerprint(await repository.findAllEntries(namespace))
     };
 }
 
@@ -244,7 +243,7 @@ function createInMemoryFenceBackend(): Omit<FenceFixture, 'store'> {
     const state: ALAdmissionMemoryState = createInMemoryALAdmissionState();
     return {
         backend: new InMemoryAdmissionBackend(state, Date.now),
-        readAdmissionState: async () => toAdmissionStateFingerprint('none', [...state.data.values()])
+        readAdmissionState: async () => toAdmissionStateFingerprint([...state.data.values()])
     };
 }
 
@@ -274,8 +273,7 @@ async function readIndexedDbAdmissionState(dbName: string): Promise<string> {
         const rows: readonly AdmissionStateRow[] = await readIndexedDbRequest(
             db.transaction(ADMISSION_STORE_NAME, 'readonly').objectStore(ADMISSION_STORE_NAME).getAll()
         );
-        const revision = rows.find((row) => row.key === AL_ADMISSION_REVISION_KEY);
-        return toAdmissionStateFingerprint(JSON.stringify(revision), rows);
+        return toAdmissionStateFingerprint(rows);
     }
     finally {
         db.close();
@@ -286,11 +284,9 @@ interface AdmissionStateRow {
     readonly key: string;
 }
 
-function toAdmissionStateFingerprint(revision: string, rows: readonly AdmissionStateRow[]): string {
-    return JSON.stringify({
-        revision,
-        rows: rows.toSorted((left, right) => left.key.localeCompare(right.key))
-    });
+/** Every row carries its own revision, so the sorted rows are the whole wrote-nothing witness. */
+function toAdmissionStateFingerprint(rows: readonly AdmissionStateRow[]): string {
+    return JSON.stringify(rows.toSorted((left, right) => left.key.localeCompare(right.key)));
 }
 
 /** A committed message the receiver still owes an acknowledgement for: what a control admission needs. */

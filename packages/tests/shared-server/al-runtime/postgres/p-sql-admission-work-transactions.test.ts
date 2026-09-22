@@ -60,6 +60,25 @@ describe('AL admission persistence-ready queue work', () => {
         expect(entry.resource).toBe('computed message');
         expect(entry.db).toBeUndefined();
     });
+
+    it('commits two concurrent writes on disjoint keys, neither fencing the other', async () => {
+        const { sql } = await createPSqlAdmissionTestStorage();
+        const backend = new PSqlAdmissionWorkBackend(sql, 'admission');
+
+        await Promise.all([
+            backend.write(async (write) => {
+                await write.read('admitted:first', (value) => value);
+                await write.set('admitted:first', 'first');
+            }),
+            backend.write(async (write) => {
+                await write.read('admitted:second', (value) => value);
+                await write.set('admitted:second', 'second');
+            })
+        ]);
+
+        expect(await backend.read('admitted:first', (value) => value)).toBe('first');
+        expect(await backend.read('admitted:second', (value) => value)).toBe('second');
+    });
 });
 
 function createEntry(): ResourceEntry {

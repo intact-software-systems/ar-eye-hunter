@@ -5,8 +5,6 @@ import {
     type BrowserALRuntimeCleanupValidationIssue,
     type BrowserALRuntimeDeletionPolicy
 } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
-import { AL_ADMISSION_REVISION_KEY } from '@shared/alm/open-indexed-db-admission-database.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import {
     describe,
     expect,
@@ -14,7 +12,6 @@ import {
 } from 'vitest';
 
 const read: BrowserALRuntimeCleanupRead = {
-    revision: 4,
     workRows: [],
     rows: [
         {
@@ -41,12 +38,7 @@ const validComputed: BrowserALRuntimeCleanupComputed = {
         kind: 'remove-if-write-token',
         key: 'browser:expired',
         expectedWriteToken: 'expired-token'
-    }],
-    revisionWrite: {
-        key: AL_ADMISSION_REVISION_KEY,
-        value: 5,
-        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-    }
+    }]
 };
 
 describe('Browser AL runtime cleanup validation', () => {
@@ -106,17 +98,6 @@ describe('Browser AL runtime cleanup validation', () => {
                     }]
                 },
                 code: 'unexpected-mutation-kind'
-            },
-            {
-                label: 'a mismatched revision write',
-                computed: {
-                    ...validComputed,
-                    revisionWrite: {
-                        ...validComputed.revisionWrite,
-                        value: 6
-                    }
-                },
-                code: 'revision-write-mismatch'
             }
         ] satisfies ReadonlyArray<{
             label: string;

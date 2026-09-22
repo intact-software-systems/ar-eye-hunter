@@ -7,23 +7,16 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts
 import { toIndexedDbQueueStoreDefinition } from '../queuebox/indexed-db-queue-box-store.ts';
 import { decodeALAdmissionStoredValue } from './al-admission-backend.ts';
 import { decodeALAdmissionValue } from './al-admission-decoder.ts';
-import { decodeALAdmissionNumber, decodeALAdmissionString } from './al-admission-value-validation.ts';
+import { decodeALAdmissionString } from './al-admission-value-validation.ts';
 
 export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
 
-export const AL_ADMISSION_REVISION_KEY = '__rallar_al_admission_revision__';
 export const AL_ADMISSION_SCHEMA_KEY = '__rallar_al_schema__';
 /** Bump on any persisted row-shape or index change: the store-schema check only counts indexes. */
-export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-f2';
+export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-f2c';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
 const INDEXED_DB_DELETE_BLOCKED_TIMEOUT_MS = 5_000;
-
-const INITIAL_INDEXED_DB_ADMISSION_REVISION = {
-    key: AL_ADMISSION_REVISION_KEY,
-    value: 0,
-    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-} as const;
 
 /** Reported once the browser ALM database has been deleted and recreated because it no longer matched. */
 export interface ALStorageResetEvent {
@@ -76,18 +69,6 @@ export async function openIndexedDbAdmissionDatabase(
         return second.db;
     }
     throw new Error(`ALM storage ${input.dbName} still mismatches after reset`);
-}
-
-export function decodeIndexedDbAdmissionRevision(value: IDBRequest['result']): number {
-    if (value === undefined) {
-        throw new TypeError('IndexedDB admission revision row is required');
-    }
-    const stored = decodeALAdmissionValue(
-        value,
-        AL_ADMISSION_REVISION_KEY,
-        decodeALAdmissionStoredValue
-    );
-    return decodeALAdmissionValue(stored.value, AL_ADMISSION_REVISION_KEY, decodeALAdmissionNumber);
 }
 
 async function openOrReset(
@@ -160,7 +141,7 @@ function toAdmissionStoreDefinitions(
                 name: AL_ADMISSION_EXPIRY_INDEX_NAME,
                 keyPath: 'expireAtTimestamp'
             }],
-            initialRecords: [INITIAL_INDEXED_DB_ADMISSION_REVISION, toInitialSchemaRecord(schemaId)]
+            initialRecords: [toInitialSchemaRecord(schemaId)]
         },
         toIndexedDbQueueStoreDefinition(AL_ADMISSION_WORK_STORE_NAME)
     ];

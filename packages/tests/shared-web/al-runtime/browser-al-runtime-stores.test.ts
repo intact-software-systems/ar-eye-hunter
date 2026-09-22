@@ -180,7 +180,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
             key: nonBrowserKey,
             value: { value: 'keep' },
             expireAtTimestamp: Date.now() + 20,
-            writeToken: crypto.randomUUID()
+            writeToken: crypto.randomUUID(),
+            revision: 1
         });
 
         await vi.advanceTimersByTimeAsync(21);
@@ -380,7 +381,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
             key: targetRtcRxKey,
             value: { value: 'target-rx' },
             expireAtTimestamp: Date.now() + 60_000,
-            writeToken: crypto.randomUUID()
+            writeToken: crypto.randomUUID(),
+            revision: 1
         });
         await persistSentMessage(otherAdmissionStore, 'other-ws');
 
@@ -421,7 +423,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
             key,
             value: { value: 'expired' },
             expireAtTimestamp: 1,
-            writeToken: 'initial'
+            writeToken: 'initial',
+            revision: 1
         });
         const originalTransaction = IDBDatabase.prototype.transaction;
         let injectedRefresh = false;
@@ -439,7 +442,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
                         key,
                         value: { value: 'refreshed' },
                         expireAtTimestamp: Date.now() + 60_000,
-                        writeToken: 'concurrent-refresh'
+                        writeToken: 'concurrent-refresh',
+                        revision: 2
                     });
             }
             return originalTransaction.call(this, storeNames, mode, options);

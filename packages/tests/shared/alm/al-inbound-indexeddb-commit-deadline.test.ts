@@ -15,7 +15,6 @@ import { decodeALDeadlinedMessage } from '@shared/alm/inbound/al-inbound-message
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
-    AL_ADMISSION_REVISION_KEY,
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_SCHEMA_KEY,
     openIndexedDbAdmissionDatabase
@@ -125,7 +124,7 @@ it.each(['get', 'put'] as const)('rolls back admission when native %s completion
                         readIndexedDbRequest(transaction.objectStore('alm-work').getAll())
                     ]);
                     expect(
-                        metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY && row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
+                        metadata.filter((row) => row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
                     ).toBe(offset < 0);
                     expect(work.length > 0).toBe(offset < 0);
                 }

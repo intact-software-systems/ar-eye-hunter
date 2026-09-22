@@ -314,30 +314,54 @@ it('commits one bundle with one fence snapshot and one write, neither queued beh
     expect(recorded.liveWhenOpened()).toEqual([0, 0]);
 });
 
-it.fails('commits two disjoint admissions interleaved across one fence', async () => {
+it.each(['indexeddb', 'memory'] as const)(
+    'commits two disjoint admissions interleaved across one fence, over %s storage',
+    async (storage) => {
+        const { backend, stores } = createInboundTestBackendStores({
+            namespace: TRANSACTION_NAMESPACE,
+            storage,
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await stores.admissionStore.ready();
+        const fenced = await readInboundTestAdmission(
+            stores.admissionStore,
+            createInboundTestMessage({ msgId: 'fenced-admission' })
+        );
+        const admitTheOtherMessage = async (): Promise<void> =>
+            await admitIncomingMessage(
+                stores.admissionStore,
+                createInboundTestMessage({ msgId: 'interleaved-admission' })
+            );
+        // The memory backend serializes its writers, so a write phase there has no window to
+        // interleave into: the competing commit lands before the fenced one opens.
+        storage === 'memory'
+            ? await admitTheOtherMessage()
+            : setNextAdmissionWritePhaseInterleaved(backend, admitTheOtherMessage);
+
+        expect(
+            await stores.admissionStore.commitBundle(fenced),
+            'a commit whose read and write sets no other writer touched must not conflict'
+        ).toBe('committed');
+    }
+);
+
+it('conflicts when an interleaved commit moves a row the fenced attempt read', async () => {
     const { backend, stores } = createInboundTestBackendStores({
         namespace: TRANSACTION_NAMESPACE,
         storage: 'indexeddb',
         observer: createPassThroughIndexedDbOperationObserver()
     });
     await stores.admissionStore.ready();
-    const fenced = await readInboundTestAdmission(
-        stores.admissionStore,
-        createInboundTestMessage({ msgId: 'fenced-admission' })
-    );
+    const contended = createInboundTestMessage({ msgId: 'contended-admission' });
+    const fenced = await readInboundTestAdmission(stores.admissionStore, contended);
     setNextAdmissionWritePhaseInterleaved(backend, async () => {
-        await admitIncomingMessage(
-            stores.admissionStore,
-            createInboundTestMessage({ msgId: 'interleaved-admission' })
-        );
+        await admitIncomingMessage(stores.admissionStore, contended);
     });
 
-    // Today: the interleaved commit bumps AL_ADMISSION_REVISION_KEY, which the fenced write
-    // compares even though the two messages share no row. Task 1 flips this to `it`.
     expect(
         await stores.admissionStore.commitBundle(fenced),
-        'a commit whose read and write sets no other writer touched must not conflict'
-    ).toBe('committed');
+        'a commit whose own provenance row was taken in between must conflict'
+    ).toBe('conflict');
 });
 
 it('admits one message in 1 surface, 1 fence and 1 write', async () => {

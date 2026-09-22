@@ -9,38 +9,25 @@ import {
 } from './indexed-db-admission-row.ts';
 import {
     AL_ADMISSION_EXPIRY_INDEX_NAME,
-    AL_ADMISSION_REVISION_KEY,
-    AL_ADMISSION_SCHEMA_KEY,
-    decodeIndexedDbAdmissionRevision
+    AL_ADMISSION_SCHEMA_KEY
 } from './open-indexed-db-admission-database.ts';
-
-interface IndexedDbAdmissionSnapshot {
-    readonly revision: number;
-    readonly stored: readonly IndexedDbAdmissionStoredRow[];
-}
 
 export type IndexedDbAdmissionSelection =
     | Readonly<{ kind: 'key'; key: string; }>
     | Readonly<{ kind: 'prefixes'; prefixes: readonly string[]; }>
-    | Readonly<{ kind: 'expired'; maximumExpireAtTimestamp: number; }>
-    | Readonly<{ kind: 'revision'; }>;
+    | Readonly<{ kind: 'expired'; maximumExpireAtTimestamp: number; }>;
 
 export async function readIndexedDbAdmissionSnapshot(
     db: IDBDatabase,
     storeName: string,
     selection: IndexedDbAdmissionSelection
-): Promise<IndexedDbAdmissionSnapshot> {
+): Promise<readonly IndexedDbAdmissionStoredRow[]> {
     const transaction = db.transaction(storeName, 'readonly');
     const store = transaction.objectStore(storeName);
-    const [rows, revisionValue] = await readIndexedDbTransaction(
+    return await readIndexedDbTransaction(
         transaction,
-        async () =>
-            await Promise.all([
-                readIndexedDbAdmissionSelection(store, selection),
-                readIndexedDbRequest(store.get(AL_ADMISSION_REVISION_KEY))
-            ])
+        async () => await readIndexedDbAdmissionSelection(store, selection)
     );
-    return { stored: rows, revision: decodeIndexedDbAdmissionRevision(revisionValue) };
 }
 
 /** Issues one selection against a store the caller already opened, so a session read joins it. */
@@ -65,8 +52,6 @@ export async function readIndexedDbAdmissionSelection(
                 store.index(AL_ADMISSION_EXPIRY_INDEX_NAME),
                 IDBKeyRange.upperBound(selection.maximumExpireAtTimestamp)
             );
-        case 'revision':
-            return [];
     }
 }
 
@@ -149,7 +134,7 @@ function requireStringKey(key: IDBValidKey): string {
     return key;
 }
 
-/** The revision and schema-identity rows are storage bookkeeping, never admission data. */
-function isIndexedDbAdmissionBookkeepingKey(key: string): boolean {
-    return key === AL_ADMISSION_REVISION_KEY || key === AL_ADMISSION_SCHEMA_KEY;
+/** The schema-identity row is storage bookkeeping, never admission data. */
+export function isIndexedDbAdmissionBookkeepingKey(key: string): boolean {
+    return key === AL_ADMISSION_SCHEMA_KEY;
 }

@@ -11,14 +11,18 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 
 const STORE_NAME = 'entries';
+/** The schema identity F2c replaced: a store written at it carries no per-row revision. */
+const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-f2';
+/** The deleted store-global revision key, spelled out because its constant is gone. */
+const REMOVED_REVISION_KEY = '__rallar_al_admission_revision__';
 
 describe('browser ALM storage schema identity reset', () => {
-    it('resets the database when its stored schema id no longer matches', async () => {
+    it('resets the F2 database once and recreates it without the store-global revision row', async () => {
         const dbName = `al-storage-reset-schema-id-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
             storeName: STORE_NAME,
-            schemaId: 'old',
+            schemaId: PREVIOUS_SCHEMA_ID,
             onStorageReset: assertNoStorageReset
         });
         await putRow(oldDb, { key: 'version:old-row', value: '1', expireAtTimestamp: Number.MAX_SAFE_INTEGER });
@@ -34,11 +38,12 @@ describe('browser ALM storage schema identity reset', () => {
         try {
             expect(events).toEqual([{
                 dbName,
-                previousSchemaId: 'old',
+                previousSchemaId: PREVIOUS_SCHEMA_ID,
                 schemaId: AL_ADMISSION_SCHEMA_ID,
                 reason: 'schema-id-mismatch'
             }]);
             expect(await getRow(db, 'version:old-row')).toBeUndefined();
+            expect(await getRow(db, REMOVED_REVISION_KEY)).toBeUndefined();
             expect(await getRow(db, AL_ADMISSION_SCHEMA_KEY)).toMatchObject({
                 key: AL_ADMISSION_SCHEMA_KEY,
                 value: AL_ADMISSION_SCHEMA_ID
@@ -46,6 +51,19 @@ describe('browser ALM storage schema identity reset', () => {
         }
         finally {
             db.close();
+        }
+
+        const reopened = await openIndexedDbAdmissionDatabase({
+            dbName,
+            storeName: STORE_NAME,
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: assertNoStorageReset
+        });
+        try {
+            expect(events).toHaveLength(1);
+        }
+        finally {
+            reopened.close();
         }
     });
 

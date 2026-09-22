@@ -15,21 +15,16 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
-    AL_ADMISSION_EXPIRY_INDEX_NAME,
-    AL_ADMISSION_REVISION_KEY,
+    EMPTY_INDEXED_DB_ADMISSION_FENCE,
+    INDEXED_DB_ADMISSION_FIRST_REVISION
+} from '@shared/alm/indexed-db-admission-fence.ts';
+import type { IndexedDbAdmissionStoredRow } from '@shared/alm/indexed-db-admission-row.ts';
+import {
     AL_ADMISSION_SCHEMA_ID,
-    AL_ADMISSION_SCHEMA_KEY,
-    AL_ADMISSION_WORK_STORE_NAME,
     openIndexedDbAdmissionDatabase
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
-import {
-    computeIndexedDbAdmissionRevisionWrite,
-    writeIndexedDbAdmissionMutations
-} from '@shared/alm/write-indexed-db-admission-mutations.ts';
-import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
+import { writeIndexedDbAdmissionMutations } from '@shared/alm/write-indexed-db-admission-mutations.ts';
 
 import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
@@ -123,45 +118,6 @@ describe.each(backends)('$name admission reads', ({ create }) => {
 });
 
 describe('admission storage envelopes', () => {
-    it('rejects an existing store without the required revision metadata', async () => {
-        const databaseName = `admission-missing-revision-${crypto.randomUUID()}`;
-        // The schema record matches so this open reads the store as-is instead of resetting it -
-        // this test is exercising the revision-row read, not the schema-identity reset.
-        const existing = await openIndexedDbWithStores(databaseName, [{
-            name: 'entries',
-            keyPath: 'key',
-            indexes: [{
-                name: AL_ADMISSION_EXPIRY_INDEX_NAME,
-                keyPath: 'expireAtTimestamp'
-            }],
-            initialRecords: [{
-                key: AL_ADMISSION_SCHEMA_KEY,
-                value: AL_ADMISSION_SCHEMA_ID,
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-            }]
-        }, toIndexedDbQueueStoreDefinition(AL_ADMISSION_WORK_STORE_NAME)]);
-        existing.close();
-
-        const database = await openIndexedDbAdmissionDatabase({
-            dbName: databaseName,
-            storeName: 'entries',
-            schemaId: AL_ADMISSION_SCHEMA_ID,
-            onStorageReset: () => {
-                throw new Error('Unexpected AL storage reset');
-            }
-        });
-        try {
-            await expect(readIndexedDbAdmissionSnapshot(
-                database,
-                'entries',
-                { kind: 'revision' }
-            )).rejects.toThrow('IndexedDB admission revision row is required');
-        }
-        finally {
-            database.close();
-        }
-    });
-
     it('persists a write token on every IndexedDB admission data row', async () => {
         const databaseName = `admission-write-token-${crypto.randomUUID()}`;
         const backend = new IndexedDbAdmissionBackend({
@@ -181,13 +137,48 @@ describe('admission storage envelopes', () => {
             onStorageReset: () => {}
         });
         try {
-            const snapshot = await readIndexedDbAdmissionSnapshot(
+            const rows = await readIndexedDbAdmissionSnapshot(
                 database,
                 'entries',
                 { kind: 'key', key: 'version:peer-a' }
             );
-            expect(snapshot.stored[0]?.writeToken).toEqual(expect.any(String));
+            expect(rows[0]?.writeToken).toEqual(expect.any(String));
             expect(await backend.read('version:peer-a', decodeVersion)).toBe(7);
+        }
+        finally {
+            database.close();
+        }
+    });
+
+    it('persists a per-row revision that increments on every replace', async () => {
+        const databaseName = `admission-row-revision-${crypto.randomUUID()}`;
+        const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
+            dbName: databaseName,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await backend.write((transaction) => transaction.set('version:first', '7'));
+        const database = await openIndexedDbAdmissionDatabase({
+            dbName: databaseName,
+            storeName: 'entries',
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {}
+        });
+        try {
+            expect(await readStoredAdmissionRow(database, 'version:first')).toMatchObject({
+                revision: INDEXED_DB_ADMISSION_FIRST_REVISION
+            });
+
+            await backend.write((transaction) => transaction.set('version:first', '8'));
+
+            expect(await readStoredAdmissionRow(database, 'version:first')).toMatchObject({
+                value: '8',
+                revision: INDEXED_DB_ADMISSION_FIRST_REVISION + 1
+            });
         }
         finally {
             database.close();
@@ -365,7 +356,8 @@ describe('admission storage envelopes', () => {
                         key: 'version:refreshed',
                         value: '8',
                         expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                        writeToken: 'replacement'
+                        writeToken: 'replacement',
+                        revision: INDEXED_DB_ADMISSION_FIRST_REVISION + 1
                     });
                 }
                 return Reflect.apply(transactionImplementation, this, args);
@@ -386,16 +378,17 @@ describe('admission storage envelopes', () => {
                 onStorageReset: () => {}
             });
             try {
-                const snapshot = await readIndexedDbAdmissionSnapshot(
+                const rows = await readIndexedDbAdmissionSnapshot(
                     database,
                     'entries',
                     { kind: 'key', key: 'version:refreshed' }
                 );
-                expect(snapshot.stored).toEqual([{
+                expect(rows).toEqual([{
                     key: 'version:refreshed',
                     value: '8',
                     expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                    writeToken: 'replacement'
+                    writeToken: 'replacement',
+                    revision: INDEXED_DB_ADMISSION_FIRST_REVISION + 1
                 }]);
             }
             finally {
@@ -489,13 +482,12 @@ describe('admission storage envelopes', () => {
                 queueMutations: [],
                 db: database,
                 storeName: 'entries',
-                expectedRevision: 0,
+                fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
                 mutations: [{
                     kind: 'remove-if-write-token',
                     key: 'version:bad',
                     expectedWriteToken: 'write-token'
-                }],
-                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+                }]
             })).rejects.toMatchObject({ name: 'ALAdmissionCorruptionError', key: 'version:bad' });
         }
         finally {
@@ -503,7 +495,7 @@ describe('admission storage envelopes', () => {
         }
     });
 
-    it('rejects a revision row that does not match the current stored shape', async () => {
+    it('rejects a fenced row whose stored revision is not a number', async () => {
         const databaseName = `admission-invalid-revision-${crypto.randomUUID()}`;
         const database = await openIndexedDbAdmissionDatabase({
             dbName: databaseName,
@@ -513,21 +505,25 @@ describe('admission storage envelopes', () => {
         });
         try {
             await putIndexedDbRows(database, 'entries', [{
-                key: AL_ADMISSION_REVISION_KEY,
-                value: 0,
-                expireAtTimestamp: 'invalid-expiry'
+                key: 'version:bad',
+                value: '7',
+                expireAtTimestamp: Number.MAX_SAFE_INTEGER,
+                writeToken: 'write-token',
+                revision: 'not-a-number'
             }]);
 
             await expect(writeIndexedDbAdmissionMutations({
                 queueMutations: [],
                 db: database,
                 storeName: 'entries',
-                expectedRevision: 0,
-                mutations: [],
-                revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+                fence: {
+                    rows: new Map([['version:bad', INDEXED_DB_ADMISSION_FIRST_REVISION]]),
+                    prefixes: new Map()
+                },
+                mutations: []
             })).rejects.toMatchObject({
                 name: 'ALAdmissionCorruptionError',
-                key: AL_ADMISSION_REVISION_KEY
+                key: 'version:bad'
             });
         }
         finally {
@@ -573,19 +569,26 @@ describe('admission storage envelopes', () => {
             onStorageReset: () => {}
         });
         try {
-            const snapshot = await readIndexedDbAdmissionSnapshot(
+            const rows = await readIndexedDbAdmissionSnapshot(
                 database,
                 'entries',
                 { kind: 'prefixes', prefixes: ['version:', 'version:peer'] }
             );
-            expect(snapshot.stored).toHaveLength(1);
-            expect(snapshot.stored[0]?.key).toBe('version:peer-a');
+            expect(rows).toHaveLength(1);
+            expect(rows[0]?.key).toBe('version:peer-a');
         }
         finally {
             database.close();
         }
     });
 });
+
+async function readStoredAdmissionRow(
+    database: IDBDatabase,
+    key: string
+): Promise<IndexedDbAdmissionStoredRow | undefined> {
+    return (await readIndexedDbAdmissionSnapshot(database, 'entries', { kind: 'key', key }))[0];
+}
 
 async function putIndexedDbRows(
     database: IDBDatabase,

@@ -209,8 +209,10 @@ an explicit storage effect.
 accepts already computed admission and QueueBox mutations. The pure QueueBox
 validator returns an `Either` before transaction entry. The joint transaction uses
 QueueBox's existing revision-guarded writer and applies the supplied values without
-recomputing them. A stale admission revision, queue revision, or guarded removal
-rolls back the whole transaction. A native abort also preserves neither write.
+recomputing them. Admission rows carry a per-row revision, so a moved row the write
+phase observed, a moved key set behind a prefix it listed, a stale queue revision, or a
+guarded removal rolls back the whole transaction. A native abort also preserves neither
+write.
 Reopened QueueBox instances can reserve the committed work through the ordinary
 queue API.
 
@@ -222,9 +224,10 @@ bookkeeping may continue separately without permitting an expired payload to be 
 
 A write context that uses only `readWork` and `writeWork` uses QueueBox's existing
 atomic observed-row writer. Unrelated admission metadata cannot invalidate that
-queue-only ownership decision. Any metadata read, list, set, or removal retains
-the metadata revision check, including a metadata-dependent decision that writes
-only queue rows. Empty mutation output alone does not establish independence.
+queue-only ownership decision. Any metadata read, list, set, or removal is fenced on
+exactly what it observed -- the keys it read or wrote, and the keys every prefix it
+listed returned -- including a metadata-dependent decision that writes only queue rows.
+Empty mutation output alone does not establish independence.
 
 [`ALAdmissionWorkBackend`](../al-admission-work-backend.ts) connects admission to its
 QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and its

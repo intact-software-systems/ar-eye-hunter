@@ -4,6 +4,7 @@ import {
 } from './al-admission-backend.ts';
 import { decodeALAdmissionValue, type ALAdmissionDecoder } from './al-admission-decoder.ts';
 import {
+    decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from './al-admission-value-validation.ts';
@@ -13,6 +14,8 @@ export interface IndexedDbAdmissionStoredRow {
     readonly value: ALAdmissionStoredValue['value'];
     readonly expireAtTimestamp: number;
     readonly writeToken: string;
+    /** 1 on insert, +1 per replace: the per-row compare-and-set every commit fences on. */
+    readonly revision: number;
 }
 
 export function decodeIndexedDbAdmissionStoredRow(
@@ -22,7 +25,7 @@ export function decodeIndexedDbAdmissionStoredRow(
     return decodeALAdmissionValue(value, key, (candidate) => {
         const record = decodeALAdmissionRecord(
             candidate,
-            ['key', 'value', 'expireAtTimestamp', 'writeToken']
+            ['key', 'value', 'expireAtTimestamp', 'writeToken', 'revision']
         );
         const canonical = decodeALAdmissionStoredValue({
             key: record.key,
@@ -33,7 +36,8 @@ export function decodeIndexedDbAdmissionStoredRow(
             key: canonical.key,
             value: record.value,
             expireAtTimestamp: canonical.expireAtTimestamp,
-            writeToken: decodeALAdmissionString(record.writeToken)
+            writeToken: decodeALAdmissionString(record.writeToken),
+            revision: decodeALAdmissionNumber(record.revision)
         };
     });
 }
