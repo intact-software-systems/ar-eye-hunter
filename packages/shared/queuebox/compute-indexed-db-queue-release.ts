@@ -10,7 +10,7 @@ import {
 import {
     isIdempotentHandlerFinalizedRelease,
     ResourceInboxLostReservationError,
-    type ResourceInboxReleaseDisposition
+    type ResourceInboxRelease
 } from './queue-box-types.ts';
 import { hasSameResourceEntryValue } from './resource-entry-observations.ts';
 import {
@@ -22,9 +22,8 @@ import {
 
 interface ComputeIndexedDbQueueReleaseInput {
     readonly currentEntries: ReadonlyMap<string, ResourceEntry>;
-    readonly disposition: ResourceInboxReleaseDisposition;
     readonly releasedAt: Temporal.Instant;
-    readonly resources: readonly ResourceEntry[];
+    readonly releases: readonly ResourceInboxRelease[];
     readonly storedEntries: ReadonlyMap<string, StoredResourceEntry>;
 }
 
@@ -38,7 +37,8 @@ export function computeIndexedDbQueueRelease(
 ): Either<ResourceInboxLostReservationError, ComputedIndexedDbQueueRelease> {
     const result = new Map<Key, ResourceEntry>();
     const mutations: ComputedIndexedDbQueueMutation[] = [];
-    for (const resource of input.resources) {
+    for (const release of input.releases) {
+        const resource = release.entry;
         const stored = input.storedEntries.get(toKeyAsString(resource.key));
         const current = input.currentEntries.get(toKeyAsString(resource.key));
         if (
@@ -53,7 +53,7 @@ export function computeIndexedDbQueueRelease(
                 !isIdempotentHandlerFinalizedRelease({
                     current,
                     reserved: resource,
-                    disposition: input.disposition,
+                    disposition: release.disposition,
                     observedAt: input.releasedAt
                 })
             )
@@ -69,7 +69,7 @@ export function computeIndexedDbQueueRelease(
             result.set(current.key, current);
             continue;
         }
-        const updated = computeResourceInboxRelease(current, input.disposition, input.releasedAt);
+        const updated = computeResourceInboxRelease(current, release.disposition, input.releasedAt);
         result.set(updated.key, updated);
         mutations.push(computeIndexedDbQueuePut(stored, updated));
     }

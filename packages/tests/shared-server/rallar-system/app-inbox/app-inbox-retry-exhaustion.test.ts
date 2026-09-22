@@ -48,8 +48,8 @@ describe('AppInbox retry exhaustion', () => {
                 reserveTimeoutEntries: async () => new Map(),
                 reserveOverdueRetryEntries: async () => new Map(),
                 reserveRetryExhaustionFinalizations: async () => new Map(),
-                releaseEntries: async (resources) => {
-                    releasedEntryKeys.push(...resources.map((resource) => resource.key));
+                releaseEntries: async (releases) => {
+                    releasedEntryKeys.push(...releases.map((release) => release.entry.key));
                     return new Map();
                 }
             },

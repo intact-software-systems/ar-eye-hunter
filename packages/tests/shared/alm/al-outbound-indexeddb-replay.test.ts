@@ -265,11 +265,11 @@ describe('outbound IndexedDB durable queue replay', () => {
         const leaseAt = await peek();
         expect(leaseAt).toBeGreaterThanOrEqual(newClaim!.leaseUntilMs);
 
-        await port.release(oldClaim!, { status: 'completed' });
+        await port.releaseAll([{ claim: oldClaim!, outcome: { status: 'completed' } }]);
         expect(await peek()).toBe(leaseAt);
-        await port.release(oldClaim!, { status: 'not-ready', readyAtMs: nowMs + 50_000 });
+        await port.releaseAll([{ claim: oldClaim!, outcome: { status: 'not-ready', readyAtMs: nowMs + 50_000 } }]);
         expect(await peek()).toBe(leaseAt);
-        await port.release(newClaim!, { status: 'completed' });
+        await port.releaseAll([{ claim: newClaim!, outcome: { status: 'completed' } }]);
         expect(await peek()).toBeUndefined();
     });
 
@@ -300,7 +300,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         expect(claimed!.entry.audit.createdTs).toBeInstanceOf(Temporal.PlainDateTime);
         expect(claimed!.entry.audit.expiryTs).toBeInstanceOf(Temporal.Instant);
         expect(claimed!.entry.dequeueAudit.startTs).toBeInstanceOf(Temporal.Instant);
-        await port.release(claimed!, { status: 'not-ready', readyAtMs: Date.now() });
+        await port.releaseAll([{ claim: claimed!, outcome: { status: 'not-ready', readyAtMs: Date.now() } }]);
         const retryAt = await peek();
         expect(retryAt).toBeDefined();
         vi.setSystemTime(retryAt!);
@@ -341,7 +341,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         for (let attempt = 1; attempt <= DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts; attempt += 1) {
             const [claimed] = await claimOne(port);
             expect(claimed!.attempts).toBe(attempt);
-            await port.release(claimed!, { status: 'retry' });
+            await port.releaseAll([{ claim: claimed!, outcome: { status: 'retry' } }]);
             vi.setSystemTime(await readNextRetryAtMs(backend.workQueue, claimed!) ?? Date.now() + 1);
         }
 
@@ -370,7 +370,7 @@ describe('outbound IndexedDB durable queue replay', () => {
             const [claimed] = await claimOne(port);
             expect(claimed!.attempts).toBe(attempt);
             if (attempt < attemptLimit) {
-                await port.release(claimed!, { status: 'retry' });
+                await port.releaseAll([{ claim: claimed!, outcome: { status: 'retry' } }]);
                 vi.setSystemTime(await readNextRetryAtMs(backend.workQueue, claimed!) ?? Date.now() + 1);
             }
         }
@@ -379,7 +379,7 @@ describe('outbound IndexedDB durable queue replay', () => {
         // The last attempt died holding its reservation: only exhaustion finalization can end it.
         expect(await port.claim({ maxCount: 1, observedEntries: undefined })).toEqual([]);
         const [finalized] = await port.finalizeExhausted(1);
-        await port.release(finalized!, { status: 'non-retryable' });
+        await port.releaseAll([{ claim: finalized!, outcome: { status: 'non-retryable' } }]);
         const [key] = await backend.workQueue.getAllKeys();
         expect(await backend.workQueue.getItem(key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
         expect(await peek()).toBeUndefined();

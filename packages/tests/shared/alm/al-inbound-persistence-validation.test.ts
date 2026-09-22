@@ -144,7 +144,7 @@ async function claimWork(port: ALWorkQueuePort, namespace: string) {
             if (!(error instanceof ALAdmissionCorruptionError)) {
                 throw error;
             }
-            await port.release(claim, { status: 'non-retryable' });
+            await port.releaseAll([{ claim: claim, outcome: { status: 'non-retryable' } }]);
         }
     }
     return claimed;
@@ -482,7 +482,7 @@ describe('inbound admission persisted values', () => {
         await workQueue.enqueue(work.entry);
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'effect' } });
         const [reservation] = await claimWork(port, store.namespace);
-        await workQueue.releaseEntries([reservation!.entry], { status: EntityStatus.COMPLETED, delayMs: null });
+        await workQueue.releaseEntries([{ entry: reservation!.entry, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
         await workQueue.removeItem(work.entry.key);
         expect(await store.readOrderedDelivery(snapshot.trackKey, 3)).toEqual({ completedThrough: 1, predecessor: { kind: 'resync-required' } });
         await backend.write((transaction) =>

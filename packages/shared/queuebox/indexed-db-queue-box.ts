@@ -43,7 +43,7 @@ import {
     ResourceInboxFairnessSelection,
     ResourceInboxFinalizationReservationOptions,
     ResourceInboxFinalizationSelection,
-    ResourceInboxReleaseDisposition,
+    ResourceInboxRelease,
     ResourceInboxWorkAdvertisementOptions,
     ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
@@ -303,33 +303,32 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
     }
 
-    async releaseEntries(
-        resources: ResourceEntry[],
-        releaseInput: ResourceInboxReleaseDisposition
-    ): Promise<Map<Key, ResourceEntry>> {
+    async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
-        const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
-            (error) => {
-                throw error;
-            },
-            (value) => value
-        );
-        if (resources.length === 0) {
+        const validated = releases.map((release) => ({
+            entry: release.entry,
+            disposition: validateResourceInboxReleaseDisposition(release.disposition).fold(
+                (error) => {
+                    throw error;
+                },
+                (value) => value
+            )
+        }));
+        if (validated.length === 0) {
             return new Map<Key, ResourceEntry>();
         }
 
         const db = await this.#connection.open();
         const releasedAt = this.#now();
-        const keyStrings = resources.map((resource) => toKeyAsString(resource.key));
+        const keyStrings = validated.map((release) => toKeyAsString(release.entry.key));
         const storedEntries = await readStoredQueueEntries(db, this.#storeName, keyStrings);
         const currentEntries = new Map(
             [...storedEntries].map(([key, stored]) => [key, decodeStoredResourceEntry(stored)])
         );
         const computed = computeIndexedDbQueueRelease({
             currentEntries,
-            disposition,
             releasedAt,
-            resources,
+            releases: validated,
             storedEntries
         });
         if (computed.right === undefined) {

@@ -4,7 +4,10 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
+import {
+    createCountingIndexedDbOperationObserver,
+    createPassThroughIndexedDbOperationObserver
+} from '@shared/persistence/indexed-db-operation-observer.ts';
 import { openIndexedDbWithStores } from '@shared/persistence/open-indexed-db.ts';
 import { encodeStoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import { toIndexedDbQueueStoreDefinition } from '@shared/queuebox/indexed-db-queue-box-store.ts';
@@ -13,7 +16,8 @@ import {
     EntityStatus,
     NEVER_EXPIRE_TS,
     ResourceEntry,
-    toKeyAsString
+    toKeyAsString,
+    type Key
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -24,6 +28,7 @@ import {
     it,
     vi
 } from 'vitest';
+import { recordIndexedDbTransactions } from './alm/record-indexed-db-transactions.ts';
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -212,10 +217,13 @@ describe('IndexedDbQueueBox', () => {
         expect(reservedEntry.status).toBe(EntityStatus.RESERVED);
         expect(reservedEntry.dequeueAudit.attempts).toBe(1);
 
-        const released = await reader.releaseEntries([reservedEntry], {
-            status: EntityStatus.COMPLETED,
-            delayMs: null
-        });
+        const released = await reader.releaseEntries([{
+            entry: reservedEntry,
+            disposition: {
+                status: EntityStatus.COMPLETED,
+                delayMs: null
+            }
+        }]);
 
         expect(firstValue(released).status).toBe(EntityStatus.COMPLETED);
 
@@ -354,10 +362,7 @@ describe('IndexedDbQueueBox', () => {
 
         const reserved = await queue.reserveEntries({ typeIds: new Set([typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
 
-        const retrying = await queue.releaseEntries(
-            [firstValue(reserved)],
-            { status: EntityStatus.RETRY, delayMs: 1_000 }
-        );
+        const retrying = await queue.releaseEntries([{ entry: firstValue(reserved), disposition: { status: EntityStatus.RETRY, delayMs: 1_000 } }]);
 
         const retryEntry = firstValue(retrying);
         expect(retryEntry.dequeueAudit.nextTs).toBeDefined();
@@ -376,6 +381,53 @@ describe('IndexedDbQueueBox', () => {
         expect(immediatelyReservable.size).toBe(0);
     });
 
+    it('commits one batch whose three entries each carry their own disposition, in one read and one write', async () => {
+        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
+        const typeId = 'chat.private-text.v1';
+        const observer = createCountingIndexedDbOperationObserver();
+        const queue = new IndexedDbQueueBox({ dbName, observer });
+        for (const resourceId of ['mixed-completed', 'mixed-retry', 'mixed-not-ready']) {
+            await queue.enqueue(createEntry(typeId, resourceId));
+        }
+        const reserved = byResourceId(
+            await queue.reserveEntries({
+                typeIds: new Set([typeId]),
+                statusIds: new Set([EntityStatus.NEW]),
+                reservationInput: 3
+            })
+        );
+        const releasesBefore = observer.getCounts().byKind['work-release'] ?? 0;
+
+        const recorded = recordIndexedDbTransactions();
+        const released = byResourceId(
+            await queue.releaseEntries([
+                {
+                    entry: reserved.get('mixed-completed')!,
+                    disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+                },
+                { entry: reserved.get('mixed-retry')!, disposition: { status: EntityStatus.RETRY, delayMs: 37 } },
+                {
+                    entry: reserved.get('mixed-not-ready')!,
+                    disposition: { status: EntityStatus.RETRY, delayMs: 5_000, reason: 'not-ready' }
+                }
+            ])
+        );
+
+        expect(recorded.modes()).toEqual(['readonly', 'readwrite']);
+        expect((observer.getCounts().byKind['work-release'] ?? 0) - releasesBefore).toBe(1);
+        expect(released.get('mixed-completed')).toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(released.get('mixed-retry')).toMatchObject({ status: EntityStatus.RETRY });
+        expect(released.get('mixed-not-ready')).toMatchObject({ status: EntityStatus.RETRY });
+        expect(toReleaseDelayMs(released.get('mixed-retry')!)).toBe(37);
+        expect(toReleaseDelayMs(released.get('mixed-not-ready')!)).toBe(5_000);
+        // A terminal release leaves no next attempt at all, so the batch cannot have shared one disposition.
+        expect(released.get('mixed-completed')!.dequeueAudit.nextTs).toBeUndefined();
+        for (const [resourceId, entry] of released) {
+            expect((await queue.getItem(entry.key))?.dequeueAudit.nextTs?.toString())
+                .toBe(released.get(resourceId)!.dequeueAudit.nextTs?.toString());
+        }
+    });
+
     it('rejects a stale release without overwriting a newer IndexedDB reservation', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const typeId = 'chat.private-text.v1';
@@ -388,9 +440,12 @@ describe('IndexedDbQueueBox', () => {
         await queue.enqueue(current);
 
         await expect(queue.releaseEntries([{
-            ...current,
-            dequeueAudit: { ...current.dequeueAudit, attempts: 1 }
-        }], { status: EntityStatus.RETRY, delayMs: 1 })).rejects.toMatchObject({
+            entry: {
+                ...current,
+                dequeueAudit: { ...current.dequeueAudit, attempts: 1 }
+            },
+            disposition: { status: EntityStatus.RETRY, delayMs: 1 }
+        }])).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation'
         });
 
@@ -410,23 +465,21 @@ describe('IndexedDbQueueBox', () => {
         });
         await queue.enqueue({ ...reserved, status: EntityStatus.COMPLETED });
 
-        const released = await queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        );
+        const released = await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
 
         expect(firstValue(released)).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 7 }
         });
-        await expect(queue.releaseEntries(
-            [{ ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } }],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await expect(queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.FAILED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(
+            queue.releaseEntries([{
+                entry: { ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } },
+                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+            }])
+        ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.FAILED, delayMs: null } }])).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation'
+        });
     });
 
     it('rolls back the whole IndexedDB release transaction when one reservation is stale', async () => {
@@ -446,13 +499,13 @@ describe('IndexedDbQueueBox', () => {
         await queue.enqueue(first);
         await queue.enqueue(second);
 
-        await expect(queue.releaseEntries([
-            first,
-            {
+        await expect(queue.releaseEntries([{ entry: first, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
+            entry: {
                 ...second,
                 dequeueAudit: { ...second.dequeueAudit, attempts: 1 }
-            }
-        ], { status: EntityStatus.COMPLETED, delayMs: null })).rejects.toMatchObject({
+            },
+            disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+        }])).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation'
         });
 
@@ -488,7 +541,7 @@ describe('IndexedDbQueueBox', () => {
         await queue.enqueue(first);
         await queue.enqueue(second);
 
-        await expect(queue.releaseEntries([first, second], disposition as never))
+        await expect(queue.releaseEntries([{ entry: first, disposition: disposition as never }, { entry: second, disposition: disposition as never }]))
             .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
 
         expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
@@ -1050,6 +1103,14 @@ function createEntry(
         },
         db: undefined
     };
+}
+
+function byResourceId(released: Map<Key, ResourceEntry>): Map<string, ResourceEntry> {
+    return new Map([...released.values()].map((entry) => [entry.key.resourceId, entry]));
+}
+
+function toReleaseDelayMs(released: ResourceEntry): number {
+    return released.dequeueAudit.endTs!.until(released.dequeueAudit.nextTs!).total({ unit: 'milliseconds' });
 }
 
 function firstValue<K, V>(map: Map<K, V>): V {

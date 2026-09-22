@@ -399,12 +399,20 @@ describe('inbound durable effect worker lifecycle', () => {
         // redelivery must converge on the retained progress instead of dispatching twice.
         const releaseEntries = resources.workQueue.releaseEntries.bind(resources.workQueue);
         let crashedKey: Key | undefined;
-        vi.spyOn(resources.workQueue, 'releaseEntries').mockImplementation(async (entries, disposition) => {
-            if (crashedKey === undefined && disposition.status === EntityStatus.COMPLETED) {
-                crashedKey = entries[0]!.key;
-                return await releaseEntries(entries, { status: EntityStatus.RETRY, delayMs: 1 });
+        vi.spyOn(resources.workQueue, 'releaseEntries').mockImplementation(async (releases) => {
+            if (
+                crashedKey === undefined &&
+                releases.some((release) => release.disposition.status === EntityStatus.COMPLETED)
+            ) {
+                crashedKey = releases[0]!.entry.key;
+                return await releaseEntries(
+                    releases.map((release) => ({
+                        entry: release.entry,
+                        disposition: { status: EntityStatus.RETRY, delayMs: 1 }
+                    }))
+                );
             }
-            return await releaseEntries(entries, disposition);
+            return await releaseEntries(releases);
         });
         const delivered: string[] = [];
         const runtime = new ALInboundMessageRuntime({

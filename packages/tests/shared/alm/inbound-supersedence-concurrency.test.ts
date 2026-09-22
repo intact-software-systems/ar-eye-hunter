@@ -275,7 +275,7 @@ async function completeEffects(stores: ALInboundRuntimeStores): Promise<string[]
         if (effect.payload.kind === 'dispatch-local') {
             deliveries.push(effect.payload.message.msgId);
         }
-        await port.release(claim, { status: 'completed' });
+        await port.releaseAll([{ claim: claim, outcome: { status: 'completed' } }]);
     }
     return deliveries;
 }

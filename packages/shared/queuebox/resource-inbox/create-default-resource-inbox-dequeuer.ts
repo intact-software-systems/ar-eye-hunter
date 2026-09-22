@@ -295,11 +295,10 @@ async function releaseResourceInboxSuccesses<V>(
     successes: Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>
 ): Promise<Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>> {
     const released = await dependencies.repository.releaseEntries(
-        [...successes.values()].map((success) => success.value.entry),
-        {
-            status: EntityStatus.COMPLETED,
-            delayMs: null
-        }
+        [...successes.values()].map((success) => ({
+            entry: success.value.entry,
+            disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+        }))
     );
     const result = new Map<Resource.Key, DequeueController.Success<Resource.Key, ResourceInboxAttempt, V>>();
     for (const [key, entry] of released) {
@@ -360,7 +359,9 @@ async function releaseResourceInboxFailure(
     );
     const entry = decision.exhausted && dependencies.options.onRetryExhausted
         ? await finalizeResourceInboxFailure(dependencies, failure)
-        : [...(await dependencies.repository.releaseEntries([failure.value.entry], decision.disposition)).values()][0];
+        : [...(await dependencies.repository.releaseEntries([
+            { entry: failure.value.entry, disposition: decision.disposition }
+        ])).values()][0];
     if (entry === undefined) {
         return undefined;
     }

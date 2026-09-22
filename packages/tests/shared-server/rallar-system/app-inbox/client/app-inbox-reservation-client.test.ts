@@ -46,7 +46,7 @@ describe('AppInboxReservationClient authority persistence', () => {
         }
         expect(replacement).toEqual(persisted);
         expect(context.entry.resource).toBe(original);
-        await queue.releaseEntries([replacement], { status: EntityStatus.RETRY, delayMs: 1 });
+        await queue.releaseEntries([{ entry: replacement, disposition: { status: EntityStatus.RETRY, delayMs: 1 } }]);
         expect(await queue.getItem(context.entry.key)).toMatchObject({
             resource: persisted.resource,
             status: EntityStatus.RETRY

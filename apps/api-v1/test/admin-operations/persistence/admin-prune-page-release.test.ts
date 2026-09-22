@@ -72,7 +72,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
         assert.equal(committed?.status, EntityStatus.COMPLETED);
         assert.equal(committedAggregate?.status, EntityStatus.COMPLETED);
 
-        const released = await queue.releaseEntries([page], { status: EntityStatus.COMPLETED, delayMs: null });
+        const released = await queue.releaseEntries([{ entry: page, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
 
         assert.deepEqual([...released.values()], [committed]);
         assert.deepEqual(await repository.entries.findAnyByKey(page.key), committed);
@@ -84,7 +84,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
             select count(*)::text as count from runtime_state_store where store_namespace = 'prune-release'
         `;
         assert.equal(remaining[0]?.count, '0');
-        const repeated = await queue.releaseEntries([page], { status: EntityStatus.COMPLETED, delayMs: null });
+        const repeated = await queue.releaseEntries([{ entry: page, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
         assert.deepEqual([...repeated.values()], [committed]);
         const staleReservations: ResourceEntry[] = [
             { ...page, dequeueAudit: { ...page.dequeueAudit, attempts: 2 } },
@@ -95,7 +95,7 @@ Deno.test('PSQL queue release accepts the exact admin page completed in its dele
         ];
         for (const stale of staleReservations) {
             await assert.rejects(
-                () => queue.releaseEntries([stale], { status: EntityStatus.COMPLETED, delayMs: null }),
+                () => queue.releaseEntries([{ entry: stale, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]),
                 ResourceInboxLostReservationError
             );
             assert.deepEqual(await repository.entries.findAnyByKey(page.key), committed);

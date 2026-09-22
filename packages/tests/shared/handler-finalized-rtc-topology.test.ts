@@ -36,10 +36,13 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
             const queue = new InMemoryQueueBox();
             await queue.enqueue(current);
             return firstValue(
-                await queue.releaseEntries([reserved], {
-                    status: EntityStatus.COMPLETED,
-                    delayMs: null
-                })
+                await queue.releaseEntries([{
+                    entry: reserved,
+                    disposition: {
+                        status: EntityStatus.COMPLETED,
+                        delayMs: null
+                    }
+                }])
             );
         }
     },
@@ -52,10 +55,13 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
             });
             await queue.enqueue(current);
             return firstValue(
-                await queue.releaseEntries([reserved], {
-                    status: EntityStatus.COMPLETED,
-                    delayMs: null
-                })
+                await queue.releaseEntries([{
+                    entry: reserved,
+                    disposition: {
+                        status: EntityStatus.COMPLETED,
+                        delayMs: null
+                    }
+                }])
             );
         }
     },
@@ -79,10 +85,13 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
             };
             const queue = new PSqlQueueBox(repository as never);
             return firstValue(
-                await queue.releaseEntries([observedReservation], {
-                    status: EntityStatus.COMPLETED,
-                    delayMs: null
-                })
+                await queue.releaseEntries([{
+                    entry: observedReservation,
+                    disposition: {
+                        status: EntityStatus.COMPLETED,
+                        delayMs: null
+                    }
+                }])
             );
         }
     }

@@ -94,6 +94,12 @@ export type ResourceInboxReleaseDisposition =
         delayMs: null;
     }>;
 
+/** One reservation and the disposition that releases it; a batch commits every pair together. */
+export interface ResourceInboxRelease {
+    readonly entry: Resource.ResourceEntry;
+    readonly disposition: ResourceInboxReleaseDisposition;
+}
+
 export interface ResourceInboxFairnessSelection {
     readonly entry: ResourceEntry;
     readonly selectedDueTs: Temporal.Instant;
@@ -354,8 +360,7 @@ export interface DequeueResourceEntryRepository {
     ): Promise<Map<Resource.Key, ResourceInboxFinalizationSelection>>;
 
     releaseEntries(
-        resources: Resource.ResourceEntry[],
-        disposition: ResourceInboxReleaseDisposition
+        releases: readonly ResourceInboxRelease[]
     ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 }
 

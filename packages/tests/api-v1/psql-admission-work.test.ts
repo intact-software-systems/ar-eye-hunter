@@ -277,7 +277,7 @@ describe('PostgreSQL outbound admission', () => {
 
         expect(claimed).toHaveLength(1);
         expect((await store.readWorkSnapshot(claimed[0]!.entry)).effectId).toBe(effectId);
-        await port.release(claimed[0]!, { status: 'completed' });
+        await port.releaseAll([{ claim: claimed[0]!, outcome: { status: 'completed' } }]);
         expect(await backend.workQueue.getItem(workKey)).toMatchObject({ status: EntityStatus.COMPLETED });
         expect(await peekOutboundWorkReadyAt(backend.workQueue, namespace)).toBeUndefined();
     });

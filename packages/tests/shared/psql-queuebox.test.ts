@@ -28,10 +28,13 @@ describe('PSqlQueueBox', () => {
                 findAnyByKey: vi.fn(async () => current)
             }) as never);
 
-            const release = queue.releaseEntries([reserved], {
-                status: EntityStatus.COMPLETED,
-                delayMs: null
-            });
+            const release = queue.releaseEntries([{
+                entry: reserved,
+                disposition: {
+                    status: EntityStatus.COMPLETED,
+                    delayMs: null
+                }
+            }]);
 
             if (accepted) {
                 expect([...(await release).values()][0]).toEqual(current);
@@ -339,10 +342,13 @@ describe('PSqlQueueBox', () => {
         const repo = createRepo({ releaseReserved });
         const queue = new PSqlQueueBox(repo as never);
 
-        const released = await queue.releaseEntries([entry], {
-            status: EntityStatus.RETRY,
-            delayMs: 37
-        });
+        const released = await queue.releaseEntries([{
+            entry: entry,
+            disposition: {
+                status: EntityStatus.RETRY,
+                delayMs: 37
+            }
+        }]);
         const [updated] = released.values();
 
         expect(releaseReserved).toHaveBeenCalledWith(
@@ -385,7 +391,7 @@ describe('PSqlQueueBox', () => {
             return observedAt;
         });
 
-        const result = await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 37 });
+        const result = await queue.releaseEntries([{ entry: entry, disposition: { status: EntityStatus.RETRY, delayMs: 37 } }]);
 
         const released = [...result.values()][0];
         expect(released.dequeueAudit.endTs?.toString()).toBe('2025-01-01T00:00:00.123Z');
@@ -409,7 +415,7 @@ describe('PSqlQueueBox', () => {
         });
         const queue = new PSqlQueueBox(repo as never);
 
-        await expect(queue.releaseEntries([stale], { status: EntityStatus.RETRY, delayMs: 1 }))
+        await expect(queue.releaseEntries([{ entry: stale, disposition: { status: EntityStatus.RETRY, delayMs: 1 } }]))
             .rejects.toMatchObject({
                 code: 'resource-inbox-lost-reservation',
                 expectedAttempts: 1
@@ -433,21 +439,19 @@ describe('PSqlQueueBox', () => {
             findAnyByKey
         }) as never);
 
-        const released = await queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        );
+        const released = await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
 
         expect([...released.values()][0]).toBe(completed);
         expect(findAnyByKey).toHaveBeenCalledWith(reserved.key);
-        await expect(queue.releaseEntries(
-            [{ ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } }],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await expect(queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.FAILED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(
+            queue.releaseEntries([{
+                entry: { ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } },
+                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+            }])
+        ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.FAILED, delayMs: null } }])).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation'
+        });
     });
 
     it.each(
@@ -474,7 +478,7 @@ describe('PSqlQueueBox', () => {
         const repo = createRepo({ releaseReserved });
         const queue = new PSqlQueueBox(repo as never);
 
-        await expect(queue.releaseEntries([first, second], disposition as never))
+        await expect(queue.releaseEntries([{ entry: first, disposition: disposition as never }, { entry: second, disposition: disposition as never }]))
             .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
 
         expect(repo.transaction).not.toHaveBeenCalled();

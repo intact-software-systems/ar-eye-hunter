@@ -162,7 +162,7 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('%s QueueBox work page
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.RETRY })).entries).toEqual([]);
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.RESERVED })).entries)
             .toMatchObject([{ key: entry.key, dequeueAudit: { attempts: 2 } }]);
-        await queue.releaseEntries([...claimed.values()], { status: EntityStatus.NON_RETRYABLE, delayMs: null });
+        await queue.releaseEntries([...claimed.values()].map((entry) => ({ entry, disposition: { status: EntityStatus.NON_RETRYABLE, delayMs: null } })));
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.RESERVED })).entries).toEqual([]);
         expect((await queue.readWorkPage({ ...pending, status: EntityStatus.NON_RETRYABLE })).entries)
             .toMatchObject([{ key: entry.key, dequeueAudit: { attempts: 2 } }]);

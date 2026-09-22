@@ -698,12 +698,12 @@ async function settleOutboundWork(stores: OutboundTestStores): Promise<void> {
 function failFirstCompletedRelease(stores: OutboundTestStores): void {
     const releaseEntries = stores.workQueue.releaseEntries.bind(stores.workQueue);
     let shouldFail = true;
-    vi.spyOn(stores.workQueue, 'releaseEntries').mockImplementation(async (entries, disposition) => {
-        if (shouldFail && disposition.status === EntityStatus.COMPLETED) {
+    vi.spyOn(stores.workQueue, 'releaseEntries').mockImplementation(async (releases) => {
+        if (shouldFail && releases.some((release) => release.disposition.status === EntityStatus.COMPLETED)) {
             shouldFail = false;
             throw new Error('Completion storage unavailable');
         }
-        return await releaseEntries(entries, disposition);
+        return await releaseEntries(releases);
     });
 }
 

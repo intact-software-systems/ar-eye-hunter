@@ -146,7 +146,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             expect(row.key.resourceId.length).toBeLessThanOrEqual(128);
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
-        await restartedWork.port.release(action!.claim, { status: 'completed' });
+        await restartedWork.port.releaseAll([{ claim: action!.claim, outcome: { status: 'completed' } }]);
         expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).verdict).toEqual({ kind: 'duplicate' });
         expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
         const conflicting = {
@@ -409,9 +409,9 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             entry: { key: entry.key, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 21 } }
         }]);
         const [{ entry: reservation }] = [...finalized.values()];
-        await expect(backend.workQueue.releaseEntries([observed!], { status: EntityStatus.COMPLETED, delayMs: null }))
+        await expect(backend.workQueue.releaseEntries([{ entry: observed!, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await other.workQueue.releaseEntries([reservation], { status: EntityStatus.FAILED, delayMs: null });
+        await other.workQueue.releaseEntries([{ entry: reservation, disposition: { status: EntityStatus.FAILED, delayMs: null } }]);
         expect(await backend.workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.FAILED });
         expect(await backend.workQueue.getItem(unrelated.key)).toEqual(observedUnrelated);
     });
@@ -487,12 +487,12 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
         const [old] =
             (await backend.workQueue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 }))
                 .values();
-        await backend.workQueue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
+        await backend.workQueue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
         await other.workQueue.enqueue({ ...entry, resource: 'later-work' });
         const [current] =
             (await other.workQueue.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values();
         expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
-        await expect(backend.workQueue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
+        await expect(backend.workQueue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         expect(await other.workQueue.getItem(entry.key)).toEqual(current);
     });

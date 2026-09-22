@@ -82,10 +82,13 @@ describe('InMemoryQueueBox value ownership', () => {
         expect(observed?.dequeueAudit.attempts).toBe(1);
         expect(entry.dequeueAudit.attempts).toBe(1);
         expect(reclaimed.dequeueAudit.attempts).toBe(2);
-        await expect(queue.releaseEntries([observed!], {
-            status: EntityStatus.COMPLETED,
-            delayMs: null
-        })).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries([{
+            entry: observed!,
+            disposition: {
+                status: EntityStatus.COMPLETED,
+                delayMs: null
+            }
+        }])).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         expect(await queue.getItem(entry.key)).toEqual(reclaimed);
     });
 
@@ -239,16 +242,22 @@ describe('InMemoryQueueBox value ownership', () => {
         const queue = new InMemoryQueueBox();
         await queue.enqueue(entry);
         const completed = firstValue(
-            await queue.releaseEntries([entry], {
-                status: EntityStatus.COMPLETED,
-                delayMs: null
-            })
+            await queue.releaseEntries([{
+                entry: entry,
+                disposition: {
+                    status: EntityStatus.COMPLETED,
+                    delayMs: null
+                }
+            }])
         );
         const repeated = firstValue(
-            await queue.releaseEntries([entry], {
-                status: EntityStatus.COMPLETED,
-                delayMs: null
-            })
+            await queue.releaseEntries([{
+                entry: entry,
+                disposition: {
+                    status: EntityStatus.COMPLETED,
+                    delayMs: null
+                }
+            }])
         );
 
         completed.status = EntityStatus.FAILED;

@@ -1,7 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type { ALWorkClaim } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 import { newWorkEntry } from './al-work-test-entries.ts';
 
@@ -25,14 +26,14 @@ describe('ALWorkQueuePort', () => {
         expect(claim.attempts).toBe(1);
         expect(claim.leaseUntilMs).toBe(15_000);
 
-        await port.release(claim, { status: 'not-ready', readyAtMs: now + 2_000 });
+        await port.releaseAll([{ claim: claim, outcome: { status: 'not-ready', readyAtMs: now + 2_000 } }]);
         const notReady = await port.readEntry(claim.entry.key);
         expect(notReady?.status).toBe(EntityStatus.RETRY);
         expect(notReady?.dequeueAudit.attempts).toBe(0);
 
         now += 2_000;
         const [second] = await port.claim({ maxCount: 4, observedEntries: undefined });
-        await port.release(second, { status: 'retry' });
+        await port.releaseAll([{ claim: second, outcome: { status: 'retry' } }]);
         const retried = await port.readEntry(second.entry.key);
         expect(retried?.status).toBe(EntityStatus.RETRY);
         expect(retried?.dequeueAudit.attempts).toBe(1);
@@ -79,13 +80,73 @@ describe('ALWorkQueuePort', () => {
         await port.retainIfAbsent(newWorkEntry('AL_TEST', 'w-3'));
         const claims = await port.claim({ maxCount: 4, observedEntries: undefined });
 
-        await port.release(claims[0], { status: 'completed' });
-        await port.release(claims[1], { status: 'non-retryable' });
+        await port.releaseAll([{ claim: claims[0], outcome: { status: 'completed' } }]);
+        await port.releaseAll([{ claim: claims[1], outcome: { status: 'non-retryable' } }]);
         expect((await port.readEntry(claims[0].entry.key))?.status).toBe(EntityStatus.COMPLETED);
         expect((await port.readEntry(claims[1].entry.key))?.status).toBe(
             EntityStatus.NON_RETRYABLE
         );
-        await expect(port.release(claims[0], { status: 'completed' })).resolves.toBeUndefined();
+        await expect(port.releaseAll([{ claim: claims[0], outcome: { status: 'completed' } }])).resolves.toBeUndefined();
+    });
+
+    it('drops the one reservation another owner recovered and writes the rest of the batch', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(
+            undefined,
+            () => Temporal.Instant.fromEpochMilliseconds(now)
+        );
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => now,
+            random: () => 0.5
+        });
+        for (const effectId of ['batch-first', 'batch-lost', 'batch-last']) {
+            await port.retainIfAbsent(newWorkEntry('AL_TEST', effectId));
+        }
+        const claims = await port.claim({ maxCount: 3, observedEntries: undefined });
+        const lost = claims[1];
+        // Another owner recovers the middle reservation and finalizes it before this batch flushes.
+        await queue.releaseEntries([{ entry: lost.entry, disposition: { status: EntityStatus.FAILED, delayMs: null } }]);
+
+        await port.releaseAll(claims.map((claim) => ({ claim, outcome: { status: 'completed' } as const })));
+
+        expect((await port.readEntry(claims[0].entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect((await port.readEntry(claims[2].entry.key))?.status).toBe(EntityStatus.COMPLETED);
+        expect((await port.readEntry(lost.entry.key))?.status).toBe(EntityStatus.FAILED);
+    });
+
+    it('computes a batched retry delay per claim, exactly as a one-claim batch does', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(
+            undefined,
+            () => Temporal.Instant.fromEpochMilliseconds(now)
+        );
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => now,
+            random: () => 0.5
+        });
+        for (const effectId of ['solo', 'batched', 'filler']) {
+            const entry = newWorkEntry('AL_TEST', effectId);
+            await port.retainIfAbsent({ ...entry, dequeueAudit: { ...entry.dequeueAudit, attempts: 1 } });
+        }
+        const claims = byEffectId(await port.claim({ maxCount: 3, observedEntries: undefined }));
+        expect(claims.get('solo')!.attempts).toBe(2);
+
+        await port.releaseAll([{ claim: claims.get('solo')!, outcome: { status: 'retry' } }]);
+        await port.releaseAll([
+            { claim: claims.get('batched')!, outcome: { status: 'retry' } },
+            { claim: claims.get('filler')!, outcome: { status: 'completed' } }
+        ]);
+
+        const solo = await port.readEntry(claims.get('solo')!.entry.key);
+        const batched = await port.readEntry(claims.get('batched')!.entry.key);
+        expect(batched?.status).toBe(EntityStatus.RETRY);
+        expect(toRetryDelayMs(batched!)).toBe(toRetryDelayMs(solo!));
     });
 
     it('merges and caps readPage across every configured type, then resumes past a drained type', async () => {
@@ -155,3 +216,11 @@ describe('ALWorkQueuePort', () => {
         expect(page.nextCursor).toBeNull();
     });
 });
+
+function byEffectId(claims: readonly ALWorkClaim[]): Map<string, ALWorkClaim> {
+    return new Map(claims.map((claim) => [claim.entry.key.contextId, claim]));
+}
+
+function toRetryDelayMs(entry: ResourceEntry): number {
+    return entry.dequeueAudit.endTs!.until(entry.dequeueAudit.nextTs!).total({ unit: 'milliseconds' });
+}

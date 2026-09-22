@@ -71,10 +71,7 @@ Deno.test('PGlite retry release delay is honored under a skewed session time zon
         });
         assert.equal(reserved.size, 1);
 
-        await queueBox.releaseEntries(
-            [...reserved.values()],
-            { status: EntityStatus.RETRY, delayMs: 60_000 }
-        );
+        await queueBox.releaseEntries([...reserved.values()].map((entry) => ({ entry, disposition: { status: EntityStatus.RETRY, delayMs: 60_000 } })));
         const retryReserved = await queueBox.reserveEntries({
             typeIds: new Set(['TYPE_A']),
             statusIds: new Set([EntityStatus.RETRY]),

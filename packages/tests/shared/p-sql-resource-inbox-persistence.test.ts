@@ -765,7 +765,7 @@ describe('PostgreSQL resource inbox persistence', () => {
             text: 'invalid release',
             expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
         });
-        await expect(new PSqlQueueBox(repo).releaseEntries([entry], disposition as never)).rejects.toMatchObject({
+        await expect(new PSqlQueueBox(repo).releaseEntries([{ entry: entry, disposition: disposition as never }])).rejects.toMatchObject({
             code: 'resource-inbox-invalid-release-disposition'
         });
 

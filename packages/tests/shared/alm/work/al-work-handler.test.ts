@@ -8,7 +8,7 @@ import type {
 } from '@shared/alm/work/al-work-handler.ts';
 import { AL_WORK_READINESS_MEMORY_MS, ALWorkHandler } from '@shared/alm/work/al-work-handler.ts';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { toError } from '@shared/resilience/to-error.ts';
@@ -89,7 +89,10 @@ describe('ALWorkHandler', () => {
         await handler.ready();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        expect(released).toEqual(['c-1:non-retryable', 'c-2:retry', 'c-3:completed']);
+        // The retained claim releases on its own settlement, outside the batch's one flush, so only the
+        // two the flush wrote have an order relative to each other.
+        expect(released.filter((entry) => entry !== 'c-3:completed')).toEqual(['c-1:non-retryable', 'c-2:retry']);
+        expect(released).toContain('c-3:completed');
         handler.dispose();
     });
 
@@ -174,7 +177,7 @@ describe('ALWorkHandler', () => {
         let nowMs = PHASE_BATCH_START_MS;
         const port: ALWorkQueuePort = {
             ...fakePort({ claims: [], onRelease: () => {} }),
-            release: async () => {
+            releaseAll: async () => {
                 nowMs += PHASE_RELEASE_MS;
             }
         };
@@ -206,11 +209,12 @@ describe('ALWorkHandler', () => {
 
         await handler.ready();
 
-        // Two claims, so a per-claim phase cannot be mistaken for a per-batch one.
+        // Two claims run, so a per-claim phase is visibly doubled while the one flush that released
+        // them both is not.
         expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
             kind: 'work-batch',
             workerId: 'phase-worker',
-            durationMs: PHASE_SELECTION_MS + PHASE_CLAIM_MS + 2 * (PHASE_RUN_MS + PHASE_RELEASE_MS),
+            durationMs: PHASE_SELECTION_MS + PHASE_CLAIM_MS + 2 * PHASE_RUN_MS + PHASE_RELEASE_MS,
             claimedCount: 2,
             completedCount: 2,
             rescheduledCount: 0,
@@ -218,7 +222,7 @@ describe('ALWorkHandler', () => {
             selectionDurationMs: PHASE_SELECTION_MS,
             claimDurationMs: PHASE_CLAIM_MS,
             runDurationMs: 2 * PHASE_RUN_MS,
-            releaseDurationMs: 2 * PHASE_RELEASE_MS,
+            releaseDurationMs: PHASE_RELEASE_MS,
             queueWaitMs: PHASE_QUEUE_WAIT_MS
         }]);
 
@@ -230,7 +234,7 @@ describe('ALWorkHandler', () => {
         let nowMs = PHASE_BATCH_START_MS;
         const port: ALWorkQueuePort = {
             ...fakePort({ claims: [], finalizeExhausted: ['exhausted-phase'], onRelease: () => {} }),
-            release: async () => {
+            releaseAll: async () => {
                 nowMs += PHASE_RELEASE_MS;
             }
         };
@@ -279,8 +283,10 @@ describe('ALWorkHandler', () => {
             readPages: async (inputs) => inputs.map(() => ({ entries: [], hasMoreEntries: false })),
             claim: async ({ maxCount }) => pending.splice(0, maxCount),
             finalizeExhausted: async () => [],
-            release: async (claim, outcome) => {
-                released.push(`${claim.entry.key.contextId}:${outcome.status}`);
+            releaseAll: async (releases) => {
+                for (const release of releases) {
+                    released.push(`${release.claim.entry.key.contextId}:${release.outcome.status}`);
+                }
             },
             readEntry: async () => undefined
         };
@@ -400,8 +406,10 @@ describe('ALWorkHandler', () => {
                 return pending.splice(0, maxCount);
             },
             finalizeExhausted: async () => [],
-            release: async (claim, outcome) => {
-                released.push(`${claim.entry.key.contextId}:${outcome.status}`);
+            releaseAll: async (releases) => {
+                for (const release of releases) {
+                    released.push(`${release.claim.entry.key.contextId}:${release.outcome.status}`);
+                }
             },
             readEntry: async () => undefined
         };
@@ -447,6 +455,68 @@ describe('ALWorkHandler', () => {
         // batch that the finally block of runBatch() starts, not through the claim() call of the first batch.
         expect(claimCallCount).toBe(2);
         handler.dispose();
+    });
+
+    it('flushes one batch of mixed outcomes in a single releaseAll, in claim order', async () => {
+        const flushes: readonly ALWorkRelease[][] = [];
+        const port = recordingPort(['flush-1', 'flush-2', 'flush-3'], flushes);
+        const handler = new ALWorkHandler({
+            workerId: 'flush-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: true,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            runClaim: async (claim) => {
+                switch (claim.entry.key.contextId) {
+                    case 'flush-2':
+                        return { status: 'retry' };
+                    case 'flush-3':
+                        return { status: 'non-retryable' };
+                    default:
+                        return { status: 'completed' };
+                }
+            },
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+
+        expect(flushes).toHaveLength(1);
+        expect(flushes[0]!.map((release) => `${release.claim.entry.key.contextId}:${release.outcome.status}`))
+            .toEqual(['flush-1:completed', 'flush-2:retry', 'flush-3:non-retryable']);
+        handler.dispose();
+    });
+
+    it('flushes the claim a disposed batch already ran before it abandons the rest', async () => {
+        const flushes: readonly ALWorkRelease[][] = [];
+        const port = recordingPort(['abort-1', 'abort-2'], flushes);
+        let handler: ALWorkHandler | undefined;
+        handler = new ALWorkHandler({
+            workerId: 'abort-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async (p, size) => toTestALWorkReadySelection(await p.claim({ maxCount: size, observedEntries: undefined })),
+            runClaim: async () => {
+                handler?.dispose();
+                return { status: 'completed' };
+            },
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+
+        // The second claim is never run, and the first is not stranded reserved by the disposal.
+        expect(flushes).toHaveLength(1);
+        expect(flushes[0]!.map((release) => release.claim.entry.key.contextId)).toEqual(['abort-1']);
     });
 
     it('selects no work once dispose() lands while the exhausted-work finalization is in flight', async () => {
@@ -1056,10 +1126,24 @@ function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
             exhausted = [];
             return claims;
         },
-        release: async (claim, outcome) => {
-            input.onRelease(claim, outcome);
+        releaseAll: async (releases) => {
+            for (const release of releases) {
+                input.onRelease(release.claim, release.outcome);
+            }
         },
         readEntry: async () => undefined
+    };
+}
+
+/** A port whose every flush is kept whole, so a pin can count the batches and read their order. */
+function recordingPort(claims: readonly string[], flushes: readonly ALWorkRelease[][]): ALWorkQueuePort {
+    return {
+        ...fakePort({ claims, onRelease: () => {} }),
+        releaseAll: async (releases) => {
+            if (releases.length > 0) {
+                (flushes as ALWorkRelease[][]).push([...releases]);
+            }
+        }
     };
 }
 

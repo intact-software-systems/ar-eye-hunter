@@ -2,10 +2,17 @@ import { Temporal } from '@js-temporal/polyfill';
 import { ResourceInboxLostReservationError } from '../../queuebox/queue-box-types.ts';
 import type {
     QueueBoxResourceEntryRepository,
+    ResourceInboxRelease,
     ResourceInboxReleaseDisposition,
     ResourceInboxWorkPage
 } from '../../queuebox/queue-box-types.ts';
-import { EntityStatus, NEW_AND_RETRY_STATUSES, type Key, type ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isKeysEqual,
+    NEW_AND_RETRY_STATUSES,
+    type Key,
+    type ResourceEntry
+} from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
 
 export type ALWorkOutcome =
@@ -18,6 +25,11 @@ export interface ALWorkClaim {
     readonly entry: ResourceEntry;
     readonly attempts: number;
     readonly leaseUntilMs: number;
+}
+
+export interface ALWorkRelease {
+    readonly claim: ALWorkClaim;
+    readonly outcome: ALWorkOutcome;
 }
 
 export interface ALWorkPage {
@@ -51,8 +63,8 @@ export interface ClaimALWorkInput {
 }
 
 /**
- * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `release` all
- * change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end drops
+ * The queue half of a work owner. `retainIfAbsent`, `claim`, `finalizeExhausted` and `releaseAll`
+ * all change the rows a readiness probe reads: a handler runs them inside `runBatch`, whose end drops
  * the answer it remembers, so **any of them performed outside `runBatch` must invalidate that
  * memory** -- `ALWorkHandler.committed()` for this owner's own writes, the engine wake for anyone
  * else's.
@@ -68,7 +80,8 @@ export interface ALWorkQueuePort {
     readPages(inputs: readonly ReadALWorkPageScanInput[]): Promise<readonly ALWorkPageScan[]>;
     claim(input: ClaimALWorkInput): Promise<readonly ALWorkClaim[]>;
     finalizeExhausted(maxCount: number): Promise<readonly ALWorkClaim[]>;
-    release(claim: ALWorkClaim, outcome: ALWorkOutcome): Promise<void>;
+    /** Releases a whole batch in one queue write; a retained claim flushes a one-entry batch. */
+    releaseAll(releases: readonly ALWorkRelease[]): Promise<void>;
     readEntry(key: Key): Promise<ResourceEntry | undefined>;
 }
 
@@ -113,7 +126,14 @@ export function createALWorkQueuePort(input: CreateALWorkQueuePortInput): ALWork
             });
             return [...reserved.values()].map(({ entry }) => toALWorkClaim(entry, leaseMs));
         },
-        release: (claim, outcome) => releaseALWorkClaim(queue, claim, toReleaseDisposition(outcome, claim, input)),
+        releaseAll: (releases) =>
+            releaseALWorkClaims(
+                queue,
+                releases.map((release) => ({
+                    entry: release.claim.entry,
+                    disposition: toReleaseDisposition(release.outcome, release.claim, input)
+                }))
+            ),
         readEntry: (key) => queue.getItem(key)
     };
 }
@@ -147,17 +167,26 @@ function toALWorkClaim(entry: ResourceEntry, leaseMs: number): ALWorkClaim {
     };
 }
 
-async function releaseALWorkClaim(
+/**
+ * A batch whose one reservation was recovered elsewhere must not strand the releases beside it: the
+ * queue validates the whole batch before it writes, so the lost key leaves the batch and the rest is
+ * written. Each pass removes at least one release, so this terminates.
+ */
+async function releaseALWorkClaims(
     queue: QueueBoxResourceEntryRepository,
-    claim: ALWorkClaim,
-    disposition: ResourceInboxReleaseDisposition
+    releases: readonly ResourceInboxRelease[]
 ): Promise<void> {
-    try {
-        await queue.releaseEntries([claim.entry], disposition);
-    }
-    catch (error) {
-        if (!(error instanceof ResourceInboxLostReservationError)) {
-            throw error;
+    let remaining = releases;
+    while (remaining.length > 0) {
+        try {
+            await queue.releaseEntries(remaining);
+            return;
+        }
+        catch (error) {
+            if (!(error instanceof ResourceInboxLostReservationError)) {
+                throw error;
+            }
+            remaining = remaining.filter((release) => !isKeysEqual(release.entry.key, error.key));
         }
     }
 }

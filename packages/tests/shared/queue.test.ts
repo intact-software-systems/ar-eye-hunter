@@ -4,7 +4,8 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     toResourceInboxFairnessReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
-    type DequeueResourceEntryRepository
+    type DequeueResourceEntryRepository,
+    type ResourceInboxRelease
 } from '@shared/queuebox/queue-box-types.ts';
 import { createDefaultResourceInboxDequeuer } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { NotReadyException } from '@shared/queuebox/resource-inbox/not-ready-exception.ts';
@@ -427,11 +428,11 @@ describe('resource inbox retry and fairness lanes', () => {
                 }
                 return new Map();
             },
-            releaseEntries: async (entries, disposition) => {
-                releaseCalls.push(disposition);
-                return new Map(entries.map((released) => [released.key, {
-                    ...released,
-                    status: disposition.status
+            releaseEntries: async (releases) => {
+                releaseCalls.push(...releases.map((release) => release.disposition));
+                return new Map(releases.map((release) => [release.entry.key, {
+                    ...release.entry,
+                    status: release.disposition.status
                 }]));
             }
         });
@@ -628,13 +629,11 @@ function createDequeueRepository(
         reserveOverdueRetryEntries: async () => new Map(),
         reserveTimeoutEntries: async () => new Map(),
         reserveRetryExhaustionFinalizations: async () => new Map(),
-        releaseEntries: async (
-            entries: ResourceEntry[],
-            disposition: Readonly<{ status: EntityStatus; }>
-        ) => new Map(entries.map((entry) => [entry.key, {
-            ...entry,
-            status: disposition.status
-        }])),
+        releaseEntries: async (releases: readonly ResourceInboxRelease[]) =>
+            new Map(releases.map((release) => [release.entry.key, {
+                ...release.entry,
+                status: release.disposition.status
+            }])),
         ...overrides
     };
 }

@@ -282,12 +282,7 @@ describe('inbound work owner IndexedDB scan volume', () => {
 });
 
 describe('work batch release volume', () => {
-    it('releases four completed claims in four work-release operations today', async () => {
-        expect(await readCompletedBatchReleaseOperations(4)).toBe(4);
-    });
-
-    // Task 2 flips this to `it`: one batch, one release write.
-    it.fails('releases one batch of completed claims in 1 work-release operation', async () => {
+    it('releases one batch of completed claims in 1 work-release operation', async () => {
         expect(await readCompletedBatchReleaseOperations(4)).toBe(1);
     });
 });

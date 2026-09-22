@@ -170,12 +170,12 @@ describe('atomic admission and QueueBox work', () => {
         const entry = createEntry('reused');
         await queue.enqueue(entry);
         const [old] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values();
-        await queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
+        await queue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
         await queue.enqueue({ ...entry, resource: 'later-work' });
         const [current] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 }))
             .values();
         expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
-        await expect(queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
+        await expect(queue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         expect(await queue.getItem(entry.key)).toEqual(current);
     });

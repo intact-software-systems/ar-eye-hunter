@@ -288,7 +288,7 @@ describe('IndexedDbQueueBox indexed reads', () => {
             statusIds: new Set([EntityStatus.RETRY]),
             reservationInput: 1
         });
-        await queue.releaseEntries([firstValue(reserved)], { status: EntityStatus.COMPLETED, delayMs: null });
+        await queue.releaseEntries([{ entry: firstValue(reserved), disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
 
         await expect(
             queue.isAnyEntryToLock(new Set([typeId]), createWorkAdvertisementOptions())
