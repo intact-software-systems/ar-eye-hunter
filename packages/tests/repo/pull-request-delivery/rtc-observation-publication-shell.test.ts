@@ -15,7 +15,9 @@ afterEach(() => {
     }
 });
 
-describe('RTC observation Git publication shell', () => {
+// Every case drives a real Git fixture repository, which takes seconds on its own and
+// can exceed the default timeout under a fully parallel suite run.
+describe('RTC observation Git publication shell', { timeout: 60_000 }, () => {
     it.each(['rtc-b05', 'rtc-b06'] as const)(
         'pushes only the exact %s archive commit and its stream index',
         async (stream) => {
