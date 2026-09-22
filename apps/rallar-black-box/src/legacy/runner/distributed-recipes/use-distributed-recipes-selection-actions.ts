@@ -1,11 +1,15 @@
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import {
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRun,
-    fetchDistributedRuns
-} from '../../../control-run-manager.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+    readDistributedRun,
+    readDistributedRuns
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import { createDefaultControlEndpointRequest } from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
+import {
+    readControlRunSnapshot,
+    readControlServerSnapshot
+} from '../../../control-run-manager/control-run-endpoints.ts';
 import { deriveDistributedDiagnosticSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
@@ -44,6 +48,7 @@ export function useDistributedRecipesSelectionActions({
         diagnosticSelectionAuthority
     } = remote;
     const { distributedRunId, setDistributedRunId } = builder;
+    const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
 
     const refresh = async (
         preferredRunId = selectedRunId,
@@ -53,15 +58,22 @@ export function useDistributedRecipesSelectionActions({
         setBusyAction('refresh');
         setError(undefined);
         try {
-            const [serverSnapshot, distributedList] = await Promise.all([
-                fetchControlServerSnapshot({
-                    baseUrl,
-                    token,
+            const [snapshotOutcome, distributedOutcome] = await Promise.all([
+                readControlServerSnapshot({
+                    ...controlEndpoint,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 }),
-                fetchDistributedRuns({ baseUrl, token })
+                readDistributedRuns(controlEndpoint)
             ]);
             if (!request.isCurrent()) {
+                return;
+            }
+            const serverSnapshot = snapshotOutcome.right;
+            const distributedList = distributedOutcome.right;
+            if (serverSnapshot === undefined || distributedList === undefined) {
+                setError(
+                    toControlFailureMessage(snapshotOutcome.left ?? distributedOutcome.left)
+                );
                 return;
             }
 
@@ -101,10 +113,9 @@ export function useDistributedRecipesSelectionActions({
             const nextDistributedRunId = diagnosticSelection?.distributedRunId ??
                 preferredDistributedRunId;
             setSelectedRunId(nextRunId);
-            const nextRun = nextRunId
-                ? await fetchControlRunSnapshot({
-                    baseUrl,
-                    token,
+            const nextRunOutcome = nextRunId
+                ? await readControlRunSnapshot({
+                    ...controlEndpoint,
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 })
@@ -112,8 +123,12 @@ export function useDistributedRecipesSelectionActions({
             if (!request.isCurrent()) {
                 return;
             }
+            if (nextRunOutcome?.left !== undefined) {
+                setError(toControlFailureMessage(nextRunOutcome.left));
+                return;
+            }
 
-            setRun(nextRun);
+            setRun(nextRunOutcome?.right);
             setSelectedDistributedRun(distributedList.find((item) =>
                 item.distributedRunId === nextDistributedRunId &&
                 (!diagnosticSelection || item.controlRunId === nextRunId)
@@ -153,13 +168,19 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await fetchControlRunSnapshot({
-                baseUrl,
-                token,
+            const loadOutcome = await readControlRunSnapshot({
+                ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(loadOutcome.left));
+                }
                 return;
             }
             setRun(loaded);
@@ -188,21 +209,33 @@ export function useDistributedRecipesSelectionActions({
             setError(undefined);
         }
         try {
-            const loaded = await fetchDistributedRun({
-                baseUrl,
-                token,
+            const loadOutcome = await readDistributedRun({
+                ...controlEndpoint,
                 distributedRunId: id
             });
             if (!request.isCurrent()) {
                 return;
             }
-            const controlRun = await fetchControlRunSnapshot({
-                baseUrl,
-                token,
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(loadOutcome.left));
+                }
+                return;
+            }
+            const controlRunOutcome = await readControlRunSnapshot({
+                ...controlEndpoint,
                 runId: loaded.controlRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const controlRun = controlRunOutcome.right;
+            if (controlRun === undefined) {
+                if (!diagnosticSelectionAuthority.active) {
+                    setError(toControlFailureMessage(controlRunOutcome.left));
+                }
                 return;
             }
 

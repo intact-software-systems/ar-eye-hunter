@@ -1,4 +1,8 @@
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import {
+    createControlHttpFailure,
+    type ControlRequestFailure
+} from '../../control-run-manager/control-request-failure.ts';
 
 export type ControlRetentionRequestFetch = (
     input: RequestInfo | URL,
@@ -12,7 +16,7 @@ type ControlRetentionRequestInput = Readonly<{
 
 export function requestControlRetentionPreview(
     input: ControlRetentionRequestInput
-): Promise<unknown> {
+): Promise<Either<ControlRequestFailure, unknown>> {
     const url = retentionCleanupUrl(input.baseUrl);
     url.searchParams.set('dryRun', 'true');
     return requestRetention(input.fetchFn, url);
@@ -20,16 +24,10 @@ export function requestControlRetentionPreview(
 
 export function requestControlRetentionConfirmation(
     input: ControlRetentionRequestInput & Readonly<{ planToken: string; }>
-): Promise<unknown> {
+): Promise<Either<ControlRequestFailure, unknown>> {
     const url = retentionCleanupUrl(input.baseUrl);
     url.searchParams.set('planToken', input.planToken);
     return requestRetention(input.fetchFn, url);
-}
-
-export function requestLegacyControlRetentionCleanup(
-    input: ControlRetentionRequestInput
-): Promise<unknown> {
-    return requestRetention(input.fetchFn, retentionCleanupUrl(input.baseUrl));
 }
 
 function retentionCleanupUrl(baseUrl: string): URL {
@@ -39,35 +37,38 @@ function retentionCleanupUrl(baseUrl: string): URL {
 async function requestRetention(
     fetchFn: ControlRetentionRequestFetch,
     url: URL
-): Promise<unknown> {
+): Promise<Either<ControlRequestFailure, unknown>> {
     const response = await fetchFn(url, { method: 'POST' });
     return readJsonResponse(response);
 }
 
-async function readJsonResponse(response: Response): Promise<unknown> {
+async function readJsonResponse(
+    response: Response
+): Promise<Either<ControlRequestFailure, unknown>> {
     const text = await response.text();
-    let value: unknown = {};
-    let parseError: unknown;
-    if (text.length > 0) {
-        try {
-            value = JSON.parse(text);
-        }
-        catch (error) {
-            parseError = error;
-        }
-    }
     if (!response.ok) {
-        const message = value && typeof value === 'object' && 'error' in value
-            ? String((value as { error: unknown; }).error)
-            : `Control server request failed: ${response.status} ${response.statusText}`;
-        throw new ControlRunManagerHttpError(
-            message,
-            response.status,
-            response.statusText
+        return Either.ofLeft(
+            createControlHttpFailure(response, decodeFailureMessage(text, response))
         );
     }
-    if (parseError) {
-        throw parseError;
+    // A 2xx body the control server could not have meant throws here: the transport reads that as
+    // a reachable protocol error rather than as a retention outcome.
+    return Either.ofRight(text.length === 0 ? {} : JSON.parse(text));
+}
+
+function decodeFailureMessage(text: string, response: Response): string {
+    const requestFailed = `Control server request failed: ${response.status} ${response.statusText}`;
+    if (text.length === 0) {
+        return requestFailed;
     }
-    return value;
+    let body: unknown;
+    try {
+        body = JSON.parse(text);
+    }
+    catch {
+        return requestFailed;
+    }
+    return body && typeof body === 'object' && 'error' in body
+        ? String(body.error)
+        : requestFailed;
 }

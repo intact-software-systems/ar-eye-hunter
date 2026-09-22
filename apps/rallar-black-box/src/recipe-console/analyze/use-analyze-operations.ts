@@ -1,8 +1,14 @@
 import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 import { useCallback, useEffect, useRef } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { createAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import { resolveAnalyzeOperationContext } from './analyze-current-url-boundary.ts';
+import {
+    toAnalyzeFileIntakeMessage,
+    type AnalyzeFileIntakeFailure
+} from './analyze-file-contract.ts';
 import { createAnalyzeLocalOffer, type AnalyzeImportFile } from './analyze-local-offer.ts';
 import { boundedText, MAX_METADATA_BYTES } from './analyze-projection-bounds.ts';
 import { analyzeImportedIdentityPatch } from './analyze-selection.ts';
@@ -96,10 +102,12 @@ export function useAnalyzeOperations(
         });
     }, [input.connection.execution, input.context, workspace.setState]);
 
-    const perform = useCallback(async (
+    const runArtifactOperation = useCallback(async (
         action: AnalyzeWorkspaceAction,
         operationContext: AnalyzeWorkspaceContext | undefined,
-        loadOffer: (signal: AbortSignal) => Promise<AnalyzeWorkerArtifactOffer>
+        loadOffer: (
+            signal: AbortSignal
+        ) => Promise<Either<AnalyzeFileIntakeFailure, AnalyzeWorkerArtifactOffer>>
     ): Promise<boolean> => {
         if (pendingRef.current) {
             return false;
@@ -151,8 +159,23 @@ export function useAnalyzeOperations(
             ).state
         );
         activeWorkspace.setPendingPaintGeneration(undefined);
+        const reportFailure = (error: Error): void => {
+            if (pendingRef.current?.authority !== authority) {
+                return;
+            }
+            activeWorkspace.setState((previous) => failAnalyzeWorkspaceOperation(previous, authority, error));
+            pendingRef.current = undefined;
+            resolveCompletion(false);
+        };
         try {
-            const offer = await loadOffer(controller.signal);
+            const offered = await loadOffer(controller.signal);
+            const offer = offered.right;
+            if (offer === undefined) {
+                // The workspace state reducer reports a failed operation as an Error; a refused
+                // selection is a value until exactly here.
+                reportFailure(new Error(toAnalyzeFileIntakeMessage(offered.left)));
+                return completion;
+            }
             if (controller.signal.aborted || pendingRef.current?.authority !== authority) {
                 throw createAnalyzeInterruptedError('Artifact operation was interrupted.');
             }
@@ -163,17 +186,7 @@ export function useAnalyzeOperations(
             client.offer(offer, generation);
         }
         catch (error) {
-            if (pendingRef.current?.authority === authority) {
-                activeWorkspace.setState((previous) =>
-                    failAnalyzeWorkspaceOperation(
-                        previous,
-                        authority,
-                        error
-                    )
-                );
-                pendingRef.current = undefined;
-                resolveCompletion(false);
-            }
+            reportFailure(toError(error));
         }
         return completion;
     }, []);
@@ -184,14 +197,14 @@ export function useAnalyzeOperations(
         if (files.length === 0) {
             return false;
         }
-        return perform('import-local', undefined, async (signal) => {
+        return runArtifactOperation('import-local', undefined, async (signal) => {
             const offer = await createAnalyzeLocalOffer(files, Date.now());
             if (signal.aborted) {
                 throw createAnalyzeInterruptedError('Artifact import was interrupted.');
             }
             return offer;
         });
-    }, [perform]);
+    }, [runArtifactOperation]);
 
     const loadControlArtifact = useCallback(async (): Promise<boolean> => {
         const { connection } = inputRef.current;
@@ -204,7 +217,7 @@ export function useAnalyzeOperations(
             ...boundaryRef.current,
             contextKey: context.key
         };
-        return perform('load-control', context, async (signal) => {
+        return runArtifactOperation('load-control', context, async (signal) => {
             const [bundle, expectedControlIdentity] = await Promise.all([
                 execution.exportRunArtifactBytes({
                     distributedRunId: context.distributedRunId,
@@ -224,18 +237,17 @@ export function useAnalyzeOperations(
                     'Analyze control source changed while the artifact was loading.'
                 );
             }
-            return {
+            return Either.ofRight({
                 source: 'control',
                 label: boundedText(
                     `Control artifact ${context.distributedRunId}`,
                     MAX_METADATA_BYTES
                 ),
-                files: [],
                 controlEnvelope: bundle.bytes,
                 expectedControlIdentity
-            };
+            });
         });
-    }, [perform]);
+    }, [runArtifactOperation]);
 
     const search = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,

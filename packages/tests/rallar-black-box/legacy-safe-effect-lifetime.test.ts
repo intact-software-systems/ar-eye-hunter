@@ -10,7 +10,7 @@ import { RunnerRecipesPanel } from '../../../apps/rallar-black-box/src/legacy/ru
 import { RunManagerPanel } from '../../../apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx';
 import { RunnerRunsPanel } from '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx';
 import { resolveRallarBlackBoxBootstrapConfig, type RallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const sigmaLifecycle = vi.hoisted(() => ({
     constructed: 0,
@@ -538,11 +538,18 @@ function distributedRunSnapshot() {
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [],
+            recipes: [{ recipeId: 'recipe-a', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: []
-            }
+                agentIds: ['agent-a']
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'running',
         createdAtEpochMs: 1,
@@ -554,12 +561,10 @@ function distributedRunSnapshot() {
             ok: false,
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 0,
-                requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 blockingFailures: 0

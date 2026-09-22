@@ -8,7 +8,7 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-model.ts';
 import { deriveAnalyzePrimaryResultFailure } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-primary-result-failure.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import { deriveDistributedArtifactEvidenceIndex, type DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { computeDistributedArtifactEvidenceIndex, type DistributedRunArtifactFiles } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 const GENERATED_AT_EPOCH_MS = Date.parse('2026-07-12T14:00:00.000Z');
@@ -25,11 +25,16 @@ function coreFiles(
         schemaVersion: 1,
         distributedRunId: 'distributed-analyze',
         controlRunId: 'control-analyze',
-        group: { groupId: 'ci-analyze' },
-        recipes: [{ recipeId: 'rtc-stability', profile: 'browser' }],
-        targetPolicy: {},
+        group: { applicationId: 'rallar-server', workspaceId: 'default', groupId: 'ci-analyze' },
+        recipes: [{ recipeId: 'rtc-stability', profile: 'browser', variables: {} }],
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-eu'] },
+        variables: {},
         roleAssignments: [],
-        startMode: 'manual'
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
     return {
         'distributed-run.json': JSON.stringify({
@@ -52,8 +57,8 @@ function coreFiles(
                 state: 'failed',
                 ok: false,
                 failures: [{
-                    kind: 'command',
-                    key: 'command:send-rtc',
+                    kind: 'participant',
+                    key: 'agent-eu',
                     state: 'failed',
                     agentId: 'agent-eu',
                     recipeId: 'rtc-stability',
@@ -64,7 +69,19 @@ function coreFiles(
                     },
                     atEpochMs: 350
                 }],
-                summary: { blockingFailures: 1 }
+                summary: {
+                    participants: 1,
+                    readyParticipants: 1,
+                    passedParticipants: 0,
+                    failedParticipants: 1,
+                    recipes: 1,
+                    passedRecipes: 0,
+                    failedRecipes: 1,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
+                    blockingFailures: 1
+                }
             }
         }),
         'manifest.json': JSON.stringify(manifest),
@@ -104,6 +121,7 @@ function coreFiles(
                 atEpochMs: 320,
                 eventId: 'rtc-no-route',
                 payload: {
+                    diagnosticSchemaVersion: 1,
                     topic: 'rtc.route',
                     diagnosticTypeId: 'rallar.browser.rtc.no_route',
                     severity: 'error',
@@ -316,12 +334,8 @@ describe('Recipe Console Analyze artifact model', () => {
     });
 
     it('retains an incomplete core workspace and still creates a portable envelope', () => {
-        const files = coreFiles({
-            'manifest.json': undefined,
-            'control-run.json': undefined
-        });
         const model = createAnalyzeArtifactModel({
-            files,
+            files: coreFiles({ 'manifest.json': undefined }),
             source: 'local-files',
             label: 'Partial CI bundle',
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
@@ -340,7 +354,60 @@ describe('Recipe Console Analyze artifact model', () => {
             }
         });
         expect(Object.keys(model.portableEnvelope.files))
-            .toEqual(['distributed-run.json']);
+            .toEqual(['control-run.json', 'distributed-run.json']);
+    });
+
+    it('rejects a core bundle without control-run.json as unusable instead of inventing a control run', () => {
+        let rejection: AnalyzeArtifactModelError | undefined;
+        try {
+            createAnalyzeArtifactModel({
+                files: coreFiles({ 'manifest.json': undefined, 'control-run.json': undefined }),
+                source: 'local-files',
+                label: 'Partial CI bundle',
+                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+            });
+        }
+        catch (error) {
+            if (!(error instanceof AnalyzeArtifactModelError)) {
+                throw error;
+            }
+            rejection = error;
+        }
+
+        expect(rejection).toMatchObject({ code: 'unusable-distributed-artifact' });
+        expect(rejection?.workspace.issues).toContainEqual(expect.objectContaining({
+            code: 'missing-core',
+            fileName: 'control-run.json'
+        }));
+        expect(rejection?.workspace.snapshots).toBeUndefined();
+        expect(rejection?.workspace.analysis).not.toHaveProperty('performance');
+    });
+
+    it('rejects a control-run.json that is not a control run snapshot as unusable and names the file', () => {
+        let rejection: AnalyzeArtifactModelError | undefined;
+        try {
+            createAnalyzeArtifactModel({
+                files: coreFiles({ 'control-run.json': 'null' }),
+                source: 'local-files',
+                label: 'Evicted control run bundle',
+                generatedAtEpochMs: GENERATED_AT_EPOCH_MS
+            });
+        }
+        catch (error) {
+            if (!(error instanceof AnalyzeArtifactModelError)) {
+                throw error;
+            }
+            rejection = error;
+        }
+
+        expect(rejection).toMatchObject({ code: 'unusable-distributed-artifact' });
+        expect(rejection?.workspace.support).toBe('incompatible');
+        expect(rejection?.workspace.issues).toContainEqual({
+            code: 'incompatible-file',
+            severity: 'error',
+            fileName: 'control-run.json',
+            message: 'control-run.json is not a control run snapshot: the snapshot must be a JSON object.'
+        });
     });
 
     it('retains usable analysis when an optional evidence file is malformed', () => {
@@ -487,7 +554,7 @@ describe('Recipe Console Analyze artifact model', () => {
             }
         });
         expect(model.evidenceIndex.entries.find((entry) => entry.id === model.primaryResultFailure?.evidenceId)).toMatchObject({
-            commandId: model.analysis.failure?.commandId
+            commandId: model.analysis.ok ? undefined : model.analysis.failure.commandId
         });
     });
 
@@ -505,10 +572,10 @@ describe('Recipe Console Analyze artifact model', () => {
             label: 'Unmatched failure command',
             generatedAtEpochMs: GENERATED_AT_EPOCH_MS
         });
-        if (!prepared.analysis.failure) {
+        if (prepared.analysis.ok) {
             throw new Error('Expected failure.');
         }
-        const evidenceIndex = deriveDistributedArtifactEvidenceIndex(
+        const evidenceIndex = computeDistributedArtifactEvidenceIndex(
             prepared.evidenceInput
         );
         const primaryResultFailure = deriveAnalyzePrimaryResultFailure({
@@ -552,7 +619,7 @@ describe('Recipe Console Analyze artifact model', () => {
         expect(model.evidenceIndex.entries.find((entry) => entry.id === model.primaryResultFailure?.evidenceId)).toMatchObject({
             kind: 'result',
             status: 'failed',
-            commandId: model.analysis.failure?.commandId
+            commandId: model.analysis.ok ? undefined : model.analysis.failure.commandId
         });
     });
 

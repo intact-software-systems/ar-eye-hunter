@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-projection-contract.ts';
 
 type EvidenceRequest = Readonly<{
     fingerprint: string;

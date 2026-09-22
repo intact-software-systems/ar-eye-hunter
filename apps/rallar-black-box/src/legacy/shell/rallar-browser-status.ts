@@ -1,5 +1,5 @@
-import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { getRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { eventPayloadDetails, isRallarBrowserEvent } from '../diagnostics/events/event-presentation.ts';
 import { optionalNumber } from '../shared/finite-number.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
@@ -162,7 +162,7 @@ export function deriveRallarBrowserStatus(
     state: RallarBlackBoxTestState,
     globalValues?: CommandCenterGlobalValues
 ): RallarBrowserStatusSummary {
-    const events = selectRallarBlackBoxEvents(state).filter(isRallarBrowserEvent);
+    const events = getRallarBlackBoxEvents(state).filter(isRallarBrowserEvent);
     const latestEvent = events.at(-1);
     const latestDetails = latestEvent
         ? eventPayloadDetails(latestEvent)

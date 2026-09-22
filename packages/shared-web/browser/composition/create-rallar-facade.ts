@@ -1,4 +1,5 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
+import { browserDeliveryComposition } from './browser-delivery-composition.ts';
 
 import {
     createBrowserMediaComposition,
@@ -61,7 +62,8 @@ export function createRallarFacade(): RallarFacade {
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
-    const compositions = createBrowserFacadeCompositions(foundation, state);
+    const delivery = browserDeliveryComposition;
+    const compositions = createBrowserFacadeCompositions(foundation, state, delivery);
     registerBrowserFacadeLifecycle(foundation, state, compositions);
     return createBrowserFacadeAssembly({
         session: compositions.session,
@@ -79,19 +81,11 @@ export function createRallarFacade(): RallarFacade {
 
 function createBrowserFacadeCompositions(
     foundation: BrowserRuntimeFoundation,
-    state: BrowserStateComposition
+    state: BrowserStateComposition,
+    delivery: typeof browserDeliveryComposition
 ): BrowserFacadeCompositions {
-    const session = createBrowserSessionCoreComposition({ foundation, state });
+    const { session, stateEvents, messaging } = createBrowserSessionMessaging(foundation, state, delivery);
     const sessionPort = session.session;
-    const stateEvents = createBrowserStateEventComposition({
-        connectionRuntime: foundation.connectionRuntime,
-        session: sessionPort
-    });
-    const messaging = createBrowserMessagingComposition({
-        wsInbox: stateEvents.wsInbox,
-        state,
-        session: sessionPort
-    });
     const realtime = createBrowserRealtimeCoreComposition({ runtime: foundation.runtime, state, session: sessionPort });
     const media = createBrowserMediaComposition({ session: sessionPort });
     const rooms = createBrowserRoomsComposition({
@@ -120,9 +114,6 @@ function createBrowserFacadeCompositions(
         rooms,
         session: sessionPort
     });
-    const startup = createBrowserStartupComposition({ session, rooms, peopleStats });
-    const crdt = createBrowserCrdtComposition({ session, state, messaging });
-
     return {
         session,
         stateEvents,
@@ -133,8 +124,8 @@ function createBrowserFacadeCompositions(
         peopleStats,
         calls,
         director,
-        startup,
-        crdt
+        startup: createBrowserStartupComposition({ session, rooms, peopleStats }),
+        crdt: createBrowserCrdtComposition({ session, state, messaging })
     };
 }
 
@@ -161,4 +152,32 @@ function registerBrowserFacadeLifecycle(
         localMediaSources: compositions.media.localMediaSources,
         remoteMediaStreams: compositions.media.remoteMediaStreams
     });
+}
+
+function createBrowserSessionMessaging(
+    foundation: BrowserRuntimeFoundation,
+    state: BrowserStateComposition,
+    delivery: typeof browserDeliveryComposition
+): Pick<BrowserFacadeCompositions, 'session' | 'stateEvents' | 'messaging'> {
+    const { nowMs, deliveries, sessionDeliveries } = delivery;
+    const session = createBrowserSessionCoreComposition({
+        foundation,
+        state,
+        sessionDeliveries,
+        qosProvider: undefined
+    });
+    const sessionPort = session.session;
+    const stateEvents = createBrowserStateEventComposition({
+        connectionRuntime: foundation.connectionRuntime,
+        session: sessionPort
+    });
+    const messaging = createBrowserMessagingComposition({
+        wsInbox: stateEvents.wsInbox,
+        deliveries,
+        sessionDeliveries,
+        nowMs,
+        state,
+        session: sessionPort
+    });
+    return { session, stateEvents, messaging };
 }

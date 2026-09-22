@@ -9,7 +9,7 @@ import type {
     RallarTypedWsSendOptions
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
-import { normalizeRallarMessageSelector } from '@shared-web/browser/messages/rallar-message-selectors.ts';
+import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 
 export namespace BrowserTypedMessageChannels {
     export interface Input {
@@ -30,18 +30,18 @@ export class BrowserTypedMessageChannels {
     public channel<T>(
         definition: RallarTypedMessageChannelDefinition
     ): RallarTypedMessageChannel<T> {
-        const selector = normalizeRallarMessageSelector(definition);
-        if (!selector.typeId) {
-            throw new Error('Typed message channels require a typeId.');
+        const issues = this.input.inputValidator.validateTypedChannel(definition.topicId, definition.typeId);
+        if (issues.length > 0) {
+            throwRallarValidation(issues);
         }
-        const channelDefinition = {
-            topicId: selector.topicId,
-            typeId: selector.typeId
+        return this.createChannel<T>(definition);
+    }
+
+    private createChannel<T>(definition: RallarTypedMessageChannelDefinition): RallarTypedMessageChannel<T> {
+        const channelDefinition: RallarTypedMessageChannelDefinition = {
+            topicId: definition.topicId,
+            typeId: definition.typeId
         };
-        this.input.inputValidator.assertTypedChannel(
-            channelDefinition.topicId,
-            channelDefinition.typeId
-        );
 
         return {
             send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
@@ -62,8 +62,14 @@ export class BrowserTypedMessageChannels {
     }
 
     public room<T>(definition: RallarRoomMessageChannelDefinition): RallarTypedMessageChannel<T> {
-        this.input.inputValidator.assertRoomChannel(definition);
-        const channel = this.channel<T>(definition);
+        const issues = [
+            ...this.input.inputValidator.validateRoomChannel(definition),
+            ...this.input.inputValidator.validateTypedChannel(definition.topicId, definition.typeId)
+        ];
+        if (issues.length > 0) {
+            throwRallarValidation(issues);
+        }
+        const channel = this.createChannel<T>(definition);
         const roomDefaults = {
             roomId: definition.roomRef ? undefined : definition.roomId,
             roomRef: definition.roomRef

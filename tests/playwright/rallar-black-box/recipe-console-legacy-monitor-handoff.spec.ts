@@ -125,13 +125,18 @@ function distributedRun(
                     name: 'Legacy Monitor handoff health',
                     commands: [{ kind: 'health', commandId: 'legacy-monitor-health' }]
                 },
-                required: true
+                variables: {}
             }],
             targetPolicy: {
-                mode: 'selected-agents',
-                agentIds: [],
-                expectedParticipantCount: 0
-            }
+                mode: 'all-online-group-members'
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: {
@@ -139,14 +144,15 @@ function distributedRun(
             ok: false,
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
                 blockingFailures: 0
             },
             failures: []

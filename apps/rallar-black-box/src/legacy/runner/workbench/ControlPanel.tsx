@@ -1,7 +1,7 @@
-import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { getRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
@@ -13,7 +13,7 @@ export function ControlPanel({
     state: RallarBlackBoxTestState;
     control: RallarBlackBoxControlSnapshot;
 }) {
-    const config = selectRallarBlackBoxCurrentConfig(state);
+    const config = getRallarBlackBoxCurrentConfig(state);
     const [url, setUrl] = useState(control.url ?? '');
     const [runId, setRunId] = useState(control.runId ?? config?.runId ?? '');
     const [agentId, setAgentId] = useState(

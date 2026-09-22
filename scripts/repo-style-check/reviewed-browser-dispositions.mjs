@@ -1,32 +1,98 @@
 // Reviewed browser runtime and transport boundaries. Exact keys and caps remain local to each owner.
 export const reviewedBrowserDispositions = Object.freeze([
-    // Remote command translation validates scalar identity, scope and canonical
-    // command fields before enqueue. Transport payloads and error data stay opaque.
+    // Process rejection reasons have no required shape. These tests capture them
+    // only to prove observer failures never escape into the process boundary.
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 72
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
+        path: 'packages/tests/shared-test/rallar-bb-runtime/observers.test.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
+        path: 'packages/tests/shared-test/rallar-bb-runtime/observers.test.ts',
         rule: 'boundary.unknown',
-        symbol: 'toRallarScopeFields'
+        symbol: 'recordUnhandled'
+    }),
+    // Adapter send values belong to the caller. Capture them unchanged to prove
+    // cancellation and recipe continuation preserve the public opaque payload.
+    Object.freeze({
+        path: 'packages/tests/shared-test/rallar-bb-test-cancellation-lifetime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
+        path: 'packages/tests/shared-test/rallar-bb-test-recipe-format.test.ts',
         rule: 'boundary.unknown',
-        symbol: 'toConnectionName'
+        symbol: undefined
+    }),
+    // Call signals arrive as untrusted WS values. The signal decoder checks every
+    // known field before session/recipient filtering and typed listener delivery.
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/remote-browser-commands.ts',
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
         rule: 'boundary.unknown',
-        symbol: 'toValidatedCommand'
+        symbol: 'toSignalEvent'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isRecord'
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/calls/browser-call-signal-runtime.ts',
+        rule: 'boundary.unknown',
+        symbol: 'normalizeRallarCallSignalPayload'
+    }),
+    // Serialization captures application-owned JSON before asynchronous connect.
+    // Re-parsing that immutable capture does not confer an application schema.
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/browser-rallar-message-sender.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/shared-web/browser/messages/browser-rallar-message-sender.ts',
+        rule: 'boundary.unknown',
+        symbol: 'parseCapturedPayload'
+    }),
+    // The conformance discriminator parses untrusted application JSON and narrows
+    // its marker/specimen fields locally. Only a boolean leaves this boundary;
+    // malformed or unrelated payloads retain the ordinary QoS policy.
+    Object.freeze({
+        path:
+            'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts',
+        rule: 'boundary.unknown',
+        symbol: 'isSupersedenceSpecimen'
+    }),
+    // Native RTC frames are decoded before admission and the typed refresh port.
+    Object.freeze({
+        path: 'packages/shared/services/web-rtc-rx-streamer-service.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // Test transport ports inject malformed signals and capture opaque outgoing
+    // application payloads; only the production decoder grants a signal type.
+    Object.freeze({
+        path: 'packages/tests/shared-web/calls/browser-call-signal-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    Object.freeze({
+        path: 'packages/tests/shared-web/calls/browser-call-signal-runtime.test.ts',
+        rule: 'boundary.unknown',
+        symbol: 'createMessages'
+    }),
+    // One concrete Hetzner catalog owns these deployment selections. The 16
+    // named entries compose canonical recipe builders with deployment profiles;
+    // splitting the declarative inventory would obscure its ordered catalog.
+    Object.freeze({
+        path: 'apps/rallar-black-box/src/hetzner/hetzner-rtc-manifest-entries.ts',
+        rule: 'file.responsibility-count',
+        symbol: undefined,
+        maximumMagnitude: 16
     }),
     // Native WebSocket data and open expectations are validated at these
     // exact ingress owners. Completed scoped snapshots have named results;
@@ -80,87 +146,15 @@ export const reviewedBrowserDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 54
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteWsPayload'
-    }),
-    Object.freeze({
         path: 'packages/shared-test/black-box-runner/rallar-browser-rtc-provider.ts',
         rule: 'construction.forward-capture',
         symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'file.cognitive-load',
-        symbol: undefined,
-        maximumMagnitude: 86
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'firstString'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toNumber'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/rallar-remote-browser-provider.ts',
-        rule: 'boundary.unknown',
-        symbol: 'readControlHttpError'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/rallar-rtc-provider.ts',
         rule: 'file.responsibility-count',
         symbol: undefined,
         maximumMagnitude: 12
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/decode-remote-browser-observations.ts',
-        rule: 'boundary.unknown',
-        symbol: 'isRecord'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'parseRemoteWsData'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemotePayloadRecord'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteRtcMessageData'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/remote-browser/store-remote-browser-events.ts',
-        rule: 'boundary.unknown',
-        symbol: 'toRemoteRtcDiagnostic'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/rtc-provider.ts',
@@ -250,17 +244,12 @@ export const reviewedBrowserDispositions = Object.freeze([
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
         rule: 'boundary.unknown',
-        symbol: 'consoleWarningPart'
+        symbol: 'toConsoleWarningPart'
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
         rule: 'boundary.unknown',
-        symbol: 'classifyConsoleWarning'
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts',
-        rule: 'boundary.unknown',
-        symbol: 'ensurePatch'
+        symbol: 'toConsoleWarning'
     }),
     Object.freeze({
         path:
@@ -271,6 +260,13 @@ export const reviewedBrowserDispositions = Object.freeze([
     Object.freeze({
         path:
             'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined
+    }),
+    // The provider port of the browser adapter: page runtime results and forwarded page event data
+    // arrive untrusted, and each command owner decodes a result before reading or recording it.
+    Object.freeze({
+        path: 'packages/shared-test/rallar-bb-test/browser/browser-command-contracts.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
@@ -558,11 +554,6 @@ export const reviewedBrowserDispositions = Object.freeze([
     }),
     Object.freeze({
         path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts',
-        rule: 'boundary.unknown',
-        symbol: undefined
-    }),
-    Object.freeze({
-        path: 'packages/shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),

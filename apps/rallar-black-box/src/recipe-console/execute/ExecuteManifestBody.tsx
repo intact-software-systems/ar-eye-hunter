@@ -11,7 +11,7 @@ export function ExecuteManifestBody({ draft }: Readonly<{
         <div className={styles.body} data-execute-manifest-body>
             <dl className={styles.facts}>
                 <Fact label="Distributed run" value={draft.manifest.distributedRunId} />
-                <Fact label="Control run" value={draft.manifest.controlRunId ?? 'Unavailable'} />
+                <Fact label="Control run" value={draft.manifest.controlRunId} />
                 <Fact
                     label="Group"
                     value={[
@@ -22,28 +22,30 @@ export function ExecuteManifestBody({ draft }: Readonly<{
                 />
                 <Fact
                     label="Targets"
-                    value={`${draft.manifest.targetPolicy.agentIds?.length ?? 0} selected · exact count ${
-                        draft.manifest.targetPolicy.expectedParticipantCount ?? 'unset'
-                    }`}
+                    value={`${
+                        draft.manifest.targetPolicy.mode === 'selected-agents'
+                            ? draft.manifest.targetPolicy.agentIds.length
+                            : 0
+                    } selected · exact count ${draft.manifest.targetPolicy.expectedParticipantCount ?? 'unset'}`}
                 />
                 <Fact
                     label="Start"
-                    value={`${draft.manifest.startMode ?? 'manual'} · ACK ${draft.manifest.ackTimeoutMs ?? 'unset'} ms`}
+                    value={`${draft.manifest.startMode} · ACK ${draft.manifest.ackTimeoutMs} ms`}
                 />
             </dl>
-            {draft.validation.errors.length > 0
+            {draft.validationIssues.length > 0
                 ? (
                     <div className={styles.errors}>
                         <h3>Manifest validation errors</h3>
                         <p data-execute-manifest-live-summary role="alert">
-                            {draft.validation.errors.length.toLocaleString('en-US')} manifest validation errors.
+                            {draft.validationIssues.length.toLocaleString('en-US')} manifest validation errors.
                         </p>
                         <ExecuteWindowedList
                             contentId="execute-manifest-errors-window"
                             contextKey="execute-manifest-errors-v1"
                             itemKey={(_error, index) => String(index)}
                             itemLabel="errors"
-                            items={draft.validation.errors}
+                            items={draft.validationIssues}
                             label="Manifest validation errors"
                             renderItem={(error) => (
                                 <li data-execute-manifest-error>
@@ -51,7 +53,7 @@ export function ExecuteManifestBody({ draft }: Readonly<{
                                 </li>
                             )}
                             revisionKey={createExecuteWindowRevision(
-                                draft.validation.errors,
+                                draft.validationIssues,
                                 (error) => [error.source, error.path, error.message]
                             )}
                             section="manifestErrors"

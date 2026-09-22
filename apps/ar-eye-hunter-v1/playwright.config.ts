@@ -22,7 +22,16 @@ export default defineConfig({
     },
     projects: [
         {
+            name: 'desktop-delivery',
+            testMatch: '**/director-capability-delivery.spec.ts',
+            use: {
+                ...devices['Desktop Chrome'],
+                browserName: 'chromium'
+            }
+        },
+        {
             name: 'iphone-landscape',
+            testMatch: '**/mobile-controls.spec.ts',
             use: {
                 ...devices['iPhone 14 Pro landscape'],
                 browserName: 'chromium'
@@ -30,6 +39,7 @@ export default defineConfig({
         },
         {
             name: 'ipad-landscape',
+            testMatch: '**/mobile-controls.spec.ts',
             use: {
                 ...devices['iPad Pro 11 landscape'],
                 browserName: 'chromium'
@@ -37,6 +47,7 @@ export default defineConfig({
         },
         {
             name: 'iphone-portrait',
+            testMatch: '**/mobile-controls.spec.ts',
             use: {
                 ...devices['iPhone 14 Pro'],
                 browserName: 'chromium'

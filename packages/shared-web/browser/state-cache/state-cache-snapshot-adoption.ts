@@ -1,20 +1,21 @@
-import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
+import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+import { isGroupSnapshotSessionLeaseAdvance } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 export interface GroupStateSnapshotAdoptionOptions {
     readonly rereadGroupSnapshots?: (
         scope: StateScope
-    ) => Promise<readonly GroupStateSnapshot[]>;
+    ) => Promise<readonly GroupSnapshot[]>;
     readonly assertCanMutate?: () => void;
 }
 
 export function acceptClientStateSnapshots(
-    snapshots: readonly ClientStateSnapshot[],
+    snapshots: readonly ClientSnapshot[],
     scope: StateScope
 ): boolean {
     return clientStateSnapshotsRepository.setClientStateSnapshots(
@@ -23,7 +24,7 @@ export function acceptClientStateSnapshots(
 }
 
 export async function acceptGroupStateSnapshotsOrRecompute(
-    snapshots: readonly GroupStateSnapshot[],
+    snapshots: readonly GroupSnapshot[],
     scope: StateScope,
     options: GroupStateSnapshotAdoptionOptions = {}
 ): Promise<boolean> {
@@ -61,19 +62,21 @@ export async function acceptGroupStateSnapshotsOrRecompute(
 }
 
 export async function acceptAuthoritativeGroupStateSnapshot(
-    snapshot: GroupStateSnapshot,
+    snapshot: GroupSnapshot,
     scope: StateScope,
     options: GroupStateSnapshotAdoptionOptions = {}
 ): Promise<boolean> {
     if (!isGroupSnapshotInScope(snapshot, scope)) {
         return false;
     }
+    const observed = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(snapshot.group);
     try {
-        return await acceptGroupStateSnapshotsOrRecompute(
-            [snapshot],
-            scope,
-            options
-        );
+        const changed = await acceptGroupStateSnapshotsOrRecompute([snapshot], scope, options);
+        if (!changed && observed) {
+            options.assertCanMutate?.();
+            groupStateSnapshotsRepository.refreshGroupStateSnapshotIfUnchanged(observed, snapshot);
+        }
+        return changed;
     }
     catch (error) {
         if (!(error instanceof StateSnapshotRevisionConflictError)) {
@@ -105,6 +108,28 @@ export async function acceptAuthoritativeGroupStateSnapshot(
     }
 }
 
+export interface AuthoritativeGroupSessionLeaseAcquisition {
+    readonly expected: GroupSnapshot;
+    readonly acquired: GroupSnapshot;
+    readonly scope: StateScope;
+    assertCanMutate(): void;
+}
+
+/** Only the current authenticated acquisition owner may adopt different same-tuple lease facts. */
+export function acceptAuthoritativeGroupSessionLeaseAdvance(input: AuthoritativeGroupSessionLeaseAcquisition): boolean {
+    if (
+        !isGroupSnapshotInScope(input.acquired, input.scope) ||
+        !isGroupSnapshotSessionLeaseAdvance(input.expected, input.acquired)
+    ) {
+        return false;
+    }
+    input.assertCanMutate();
+    if (groupStateSnapshotsRepository.findGroupStateSnapshotByRef(input.expected.group) !== input.expected) {
+        return false;
+    }
+    return groupStateSnapshotsRepository.replaceGroupStateSnapshotIfUnchanged(input.expected, input.acquired);
+}
+
 export function isSameStateScope(
     left: Readonly<{ applicationId: string; workspaceId?: string; }>,
     right: Readonly<{ applicationId: string; workspaceId?: string; }>
@@ -114,7 +139,7 @@ export function isSameStateScope(
 }
 
 function acceptGroupStateSnapshots(
-    snapshots: readonly GroupStateSnapshot[],
+    snapshots: readonly GroupSnapshot[],
     scope: StateScope,
     assertCanMutate?: () => void
 ): boolean {
@@ -125,14 +150,14 @@ function acceptGroupStateSnapshots(
 }
 
 function isClientSnapshotInScope(
-    snapshot: ClientStateSnapshot,
+    snapshot: ClientSnapshot,
     scope: StateScope
 ): boolean {
     return isSameStateScope(snapshot.principal, scope);
 }
 
 function isGroupSnapshotInScope(
-    snapshot: GroupStateSnapshot,
+    snapshot: GroupSnapshot,
     scope: StateScope
 ): boolean {
     return isSameStateScope(snapshot.group, scope);

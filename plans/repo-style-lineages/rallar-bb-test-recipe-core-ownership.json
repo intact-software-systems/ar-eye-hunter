@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/control-protocol.ts",
+        "blob": "9129744c1666e3ce204dd2a189a62c1e8bcdde45"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/control/control-command-issue.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-assert-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-control-command-fields.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-control-command-room-fields.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-director-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-formation-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-http-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-loop-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-rtc-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-wait-control-command.ts",
+        "packages/shared-test/rallar-bb-test/control/validate-ws-control-command.ts",
+        "packages/shared-test/rallar-bb-test/distributed/decode-control-agent-identity.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/runtime.ts",
+        "blob": "21d7a0d62702360ed00827c4f49aa65269045bd4"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/assert/compute-assert-command-outcome.ts",
+        "packages/shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts",
+        "packages/shared-test/rallar-bb-test/loop/loop-command-execution.ts",
+        "packages/shared-test/rallar-bb-test/loop/loop-command-thresholds.ts",
+        "packages/shared-test/rallar-bb-test/loop/resolve-loop-plan.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-child-command.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-outcome.ts",
+        "packages/shared-test/rallar-bb-test/loop/to-loop-result-value.ts",
+        "packages/shared-test/rallar-bb-test/parallel/parallel-command-execution.ts",
+        "packages/shared-test/rallar-bb-test/recipe/run-recipe-commands.ts",
+        "packages/shared-test/rallar-bb-test/recipe/validate-executable-recipe.ts",
+        "packages/shared-test/rallar-bb-test/runtime/decode-runtime-result-values.ts",
+        "packages/shared-test/rallar-bb-test/runtime/sleep-with-abort.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-merged-runtime-config.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-runtime-command-values.ts",
+        "packages/shared-test/rallar-bb-test/runtime/to-runtime-stats.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/provider-parity.ts",
+        "blob": "248cc0f8f22e4aaa8772c53a37247e897ef40b7e"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/provider-parity/compare-rallar-black-box-provider-parity-reports.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/create-rallar-black-box-provider-parity-recipe.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/provider-parity-contracts.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/to-parity-command-metadata.ts",
+        "packages/shared-test/rallar-bb-test/provider-parity/to-rallar-black-box-runner-parity-interactions.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/conformance/composite-conformance-command-fixtures.ts",
+        "blob": "f685d58fe1d59dc038b335c4079c6bb7dab0f151"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/conformance/composite-conformance-recipe-values.ts"
+      ]
+    }
+  ]
+}

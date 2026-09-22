@@ -25,6 +25,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 
 import { createGroupSnapshotFixture } from '../../shared-web/authoritative-group-fixtures.ts';
 import {
+    facade,
     loadRuntime,
     resetFacade
 } from './browser-rallar-runtime-test-harness.ts';
@@ -442,6 +443,40 @@ it('installs the formation diagnostics for a room-scoped connection and tears th
     // The count is the observable proof that the stream installed: it reaches four only when the
     // room-scoped subscription was added to the three the runtime always holds.
     expect(closed).toMatchObject({ unsubscribed: 4 });
+});
+
+it('removes the formation diagnostics when the connection fails after installing them', async () => {
+    const runtime = await loadRuntime();
+    const activeSubscriptions = new Set<string>();
+    const track = (name: string): RallarUnsubscribe => {
+        activeSubscriptions.add(name);
+        return () => {
+            activeSubscriptions.delete(name);
+        };
+    };
+    const idleFormation = facade.rallar.rooms.formation(roomRef);
+    facade.behavior.roomFormation.mockReturnValue({
+        ...idleFormation,
+        onChange: () => track('formation.change'),
+        onLayout: () => track('formation.layout')
+    });
+    facade.behavior.rtcOnStatus.mockImplementation(() => track('rtc.status'));
+    facade.behavior.roomJoin.mockRejectedValue(new Error('Room join failed.'));
+
+    await expect(runtime.connect({
+        connection: 'aliceRtc',
+        actor: 'alice',
+        roomId: 'room-1',
+        rallar: {
+            apiBaseUrl: 'https://api.example.test',
+            username: 'alice',
+            password: 'secret',
+            applicationId: 'app-1',
+            workspaceId: 'workspace-1'
+        }
+    })).rejects.toThrow('Room join failed.');
+
+    expect([...activeSubscriptions]).toEqual([]);
 });
 
 it('installs no formation diagnostics when the connection resolves no room ref', async () => {

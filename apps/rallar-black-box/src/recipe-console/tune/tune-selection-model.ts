@@ -1,24 +1,19 @@
-import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     compareDistributedRuns,
     type DistributedRunCompareSummary
-} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '@shared-test/rallar-bb-test/distributed-run-history/compare-distributed-runs.ts';
 import {
     compareDistributedRunTuningPerformance,
     type DistributedRunTuningPerformanceComparison
 } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
-import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
-import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { validateTuneCatalogSelections } from './tune-catalog-selection-validation.ts';
 import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
-import {
-    buildTuneRunCatalog,
-    type TuneQuarantineCode,
-    type TuneQuarantinedRun,
-    type TuneRunCatalog,
-    type TuneRunOption
+import type {
+    TuneQuarantineCode,
+    TuneQuarantinedRun,
+    TuneRunCatalog,
+    TuneRunOption
 } from './tune-run-catalog.ts';
 
 export type TuneComparisonIssue = Readonly<{
@@ -34,6 +29,7 @@ export type TuneComparisonIssue = Readonly<{
         | 'missing-control'
         | 'ambiguous-control';
     message: string;
+    /** Absent when the issue is a missing selection, so there is no rejected run ID to show. */
     value?: string;
 }>;
 
@@ -46,62 +42,58 @@ export type TuneSelectionModel = Readonly<{
     options: readonly TuneRunOption[];
     optionsByDistributedRunId: ReadonlyMap<string, TuneRunOption>;
     quarantined: readonly TuneQuarantinedRun[];
+    /** Absent until the URL selects a candidate or distributed run to focus. */
     focusRunId?: string;
+    /** Absent when the focused run ID matches no catalog option. */
     focus?: TuneRunOption;
+    /** Absent until compareLeft selects an available baseline run. */
     left?: TuneRunOption;
+    /** Absent until compareRight selects an available candidate run. */
     right?: TuneRunOption;
     comparison: Readonly<{
         state: 'incomplete' | 'invalid' | 'same-run' | 'ready';
         issues: readonly TuneComparisonIssue[];
         compatibilityWarnings: readonly TuneCompatibilityWarning[];
+        /** Absent unless the comparison is ready, which is the only state that compares run structure. */
         structural?: DistributedRunCompareSummary;
+        /** Absent unless the comparison is ready, which is the only state that compares performance. */
         performance?: DistributedRunTuningPerformanceComparison;
     }>;
 }>;
 
-export function deriveTuneSelectionModel(
+export function computeTuneSelectionModel(
     input: Readonly<{
         urlState: RecipeConsoleUrlState;
-        query: ControlQuerySnapshot<ControlServerSnapshot>;
-        retainedArtifact?: AnalyzeArtifactModel;
-        retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
-        retainedFacade?: AnalyzeTuneArtifactFacade;
-        catalog?: TuneRunCatalog;
+        catalog: TuneRunCatalog;
     }>
 ): TuneSelectionModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
-    const unvalidatedCatalog = input.catalog ?? buildTuneRunCatalog({
-        distributedRuns: input.query.snapshot?.distributedRuns ?? [],
-        controlRuns: input.query.snapshot?.runs ?? [],
-        retainedArtifact: input.retainedArtifact,
-        retainedArtifactStatus: input.retainedArtifactStatus,
-        retainedArtifactFocusRunId: focusRunId,
-        retainedFacade: input.retainedFacade,
-        performanceRunIds: tunePerformanceRunIds(input.urlState)
-    });
     const catalog = validateTuneCatalogSelections(
-        unvalidatedCatalog,
+        input.catalog,
         tunePerformanceRunIds(input.urlState)
     );
     const issues: TuneComparisonIssue[] = [];
-    const left = resolveSelection(
-        'compareLeft',
-        input.urlState.compareLeft,
-        catalog.optionsByDistributedRunId,
-        catalog.quarantined,
+    const left = resolveSelection({
+        field: 'compareLeft',
+        distributedRunId: input.urlState.compareLeft,
+        catalog,
         issues
-    );
-    const right = resolveSelection(
-        'compareRight',
-        input.urlState.compareRight,
-        catalog.optionsByDistributedRunId,
-        catalog.quarantined,
+    });
+    const right = resolveSelection({
+        field: 'compareRight',
+        distributedRunId: input.urlState.compareRight,
+        catalog,
         issues
-    );
+    });
     const focus = focusRunId
         ? catalog.optionsByDistributedRunId.get(focusRunId)
         : undefined;
-    const comparison = comparisonModel(input.urlState, left, right, issues);
+    const comparison = computeTuneComparison({
+        urlState: input.urlState,
+        left,
+        right,
+        issues
+    });
     return {
         options: catalog.options,
         optionsByDistributedRunId: catalog.optionsByDistributedRunId,
@@ -115,43 +107,54 @@ export function deriveTuneSelectionModel(
 }
 
 function resolveSelection(
-    field: TuneComparisonIssue['field'],
-    value: string | undefined,
-    options: ReadonlyMap<string, TuneRunOption>,
-    quarantined: readonly TuneQuarantinedRun[],
-    issues: TuneComparisonIssue[]
+    input: Readonly<{
+        field: TuneComparisonIssue['field'];
+        /** Absent while the URL selects no run for this side of the comparison. */
+        distributedRunId?: string;
+        catalog: TuneRunCatalog;
+        issues: TuneComparisonIssue[];
+    }>
 ): TuneRunOption | undefined {
-    if (!value) {
-        issues.push({
+    const field = input.field;
+    const distributedRunId = input.distributedRunId;
+    if (!distributedRunId) {
+        input.issues.push({
             field,
             code: 'missing',
             message: `${field} must be selected explicitly.`
         });
         return undefined;
     }
-    const option = options.get(value);
+    const option = input.catalog.optionsByDistributedRunId.get(distributedRunId);
     if (option) {
         return option;
     }
-    const quarantinedRun = quarantined.find((candidate) => candidate.distributedRunId === value);
-    const quarantineCode = comparisonQuarantineCode(quarantinedRun?.codes);
-    issues.push({
+    const quarantinedRun = input.catalog.quarantined.find((candidate) =>
+        candidate.distributedRunId === distributedRunId
+    );
+    const quarantineCode = resolveComparisonQuarantineCode(quarantinedRun?.codes);
+    input.issues.push({
         field,
         code: quarantineCode ?? 'unavailable',
-        value,
+        value: distributedRunId,
         message: quarantinedRun
-            ? quarantineMessage(field, quarantineCode ?? 'unsafe')
+            ? toQuarantineMessage(field, quarantineCode ?? 'unsafe')
             : `${field} is not available in retained artifact or control evidence.`
     });
     return undefined;
 }
 
-function comparisonModel(
-    state: RecipeConsoleUrlState,
-    left: TuneRunOption | undefined,
-    right: TuneRunOption | undefined,
-    issues: readonly TuneComparisonIssue[]
+function computeTuneComparison(
+    input: Readonly<{
+        urlState: RecipeConsoleUrlState;
+        /** Absent when compareLeft selects no available baseline run. */
+        left?: TuneRunOption;
+        /** Absent when compareRight selects no available candidate run. */
+        right?: TuneRunOption;
+        issues: readonly TuneComparisonIssue[];
+    }>
 ): TuneSelectionModel['comparison'] {
+    const { left, right, issues } = input;
     if (!left || !right) {
         const invalid = issues.some((issue) => issue.code !== 'missing');
         return {
@@ -188,13 +191,13 @@ function comparisonModel(
         return {
             state: 'invalid',
             issues: [...issues, ...unpaired],
-            compatibilityWarnings: compatibilityWarnings(left, right)
+            compatibilityWarnings: computeCompatibilityWarnings(left, right)
         };
     }
     return {
         state: 'ready',
         issues,
-        compatibilityWarnings: compatibilityWarnings(left, right),
+        compatibilityWarnings: computeCompatibilityWarnings(left, right),
         structural: compareDistributedRuns({
             left: left.distributedRun,
             right: right.distributedRun,
@@ -202,14 +205,14 @@ function comparisonModel(
             rightControlRun: right.controlRun
         }),
         performance: compareDistributedRunTuningPerformance({
-            timingMetric: state.timingMetric ?? 'command-duration',
+            timingMetric: input.urlState.timingMetric ?? 'command-duration',
             left: left.performance,
             right: right.performance
         })
     };
 }
 
-function comparisonQuarantineCode(
+function resolveComparisonQuarantineCode(
     codes: readonly TuneQuarantineCode[] | undefined
 ):
     | Extract<TuneComparisonIssue['code'], 'invalid-manifest' | 'ambiguous-run' | 'identity-conflict' | 'unsafe'>
@@ -229,9 +232,9 @@ function comparisonQuarantineCode(
     return 'unsafe';
 }
 
-function quarantineMessage(
+function toQuarantineMessage(
     field: TuneComparisonIssue['field'],
-    code: ReturnType<typeof comparisonQuarantineCode> & string
+    code: ReturnType<typeof resolveComparisonQuarantineCode> & string
 ): string {
     if (code === 'invalid-manifest') {
         return `${field} has an invalid run manifest.`;
@@ -245,23 +248,23 @@ function quarantineMessage(
     return `${field} is quarantined because its run identity is unsafe.`;
 }
 
-function compatibilityWarnings(
+function computeCompatibilityWarnings(
     left: TuneRunOption,
     right: TuneRunOption
 ): TuneCompatibilityWarning[] {
     const warnings: TuneCompatibilityWarning[] = [];
-    if (groupKey(left) !== groupKey(right)) {
+    if (toGroupKey(left) !== toGroupKey(right)) {
         warnings.push({
             code: 'group-mismatch',
             message: 'The selected runs target different application/workspace/group scopes.'
         });
     }
-    const leftRecipes = new Set(recipeIds(left));
+    const leftRecipes = new Set(toRecipeIds(left));
     const recipeIdentitiesComplete = left.recipeIdentityComplete !== false &&
         right.recipeIdentityComplete !== false;
     if (
         recipeIdentitiesComplete &&
-        !recipeIds(right).some((recipeId) => leftRecipes.has(recipeId))
+        !toRecipeIds(right).some((recipeId) => leftRecipes.has(recipeId))
     ) {
         warnings.push({
             code: 'no-shared-recipe',
@@ -271,12 +274,12 @@ function compatibilityWarnings(
     return warnings;
 }
 
-function groupKey(option: TuneRunOption): string {
+function toGroupKey(option: TuneRunOption): string {
     const group = option.distributedRun.manifest.group;
     return `${group.applicationId}\u0000${group.workspaceId}\u0000${group.groupId}`;
 }
 
-function recipeIds(option: TuneRunOption): string[] {
+function toRecipeIds(option: TuneRunOption): string[] {
     return option.distributedRun.manifest.recipes
         .map((selection) => selection.recipe?.recipeId ?? selection.recipeId)
         .filter((value): value is string => Boolean(value));

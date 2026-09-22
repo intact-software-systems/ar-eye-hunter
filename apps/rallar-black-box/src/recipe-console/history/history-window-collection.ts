@@ -3,7 +3,10 @@ import type {
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { filterDistributedRuns } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    filterDistributedRuns,
+    type DistributedRunHistoryFilter
+} from '@shared-test/rallar-bb-test/distributed-run-history/filter-distributed-runs.ts';
 import type {
     RecipeConsoleControlDistributedRunsSource,
     RecipeConsoleControlQueryProvenance
@@ -16,6 +19,7 @@ export type RecipeConsoleHistoryProvenance = Readonly<{
     distributedRunsSource: RecipeConsoleControlDistributedRunsSource;
     freshness: 'current' | 'last-known' | 'unavailable';
     completeness: 'complete' | 'partial' | 'unavailable';
+    /** Absent until the control query has received a snapshot. */
     receivedAtEpochMs?: number;
 }>;
 
@@ -63,9 +67,9 @@ export function createRecipeConsoleHistoryCollection(
             sourceOrdinals.set(run, [sourceOrdinal]);
         }
     }
-    const controlsById = groupControls(controlRuns);
+    const controlsById = toControlRunsByRunId(controlRuns);
     const occurrenceByRun = new Map<ControlDistributedRunSnapshot, number>();
-    const entries = historyRuns(distributedRuns, input.urlState)
+    const entries = resolveHistoryRuns(distributedRuns, input.urlState)
         .map((run) => {
             const occurrence = occurrenceByRun.get(run) ?? 0;
             occurrenceByRun.set(run, occurrence + 1);
@@ -76,9 +80,9 @@ export function createRecipeConsoleHistoryCollection(
         });
     const source = input.query.provenance?.distributedRunsSource ?? 'unavailable';
     return {
-        provenance: historyProvenance(input.query),
+        provenance: toHistoryProvenance(input.query),
         counts: { available: distributedRuns.length, total: entries.length },
-        fingerprint: historyWindowFingerprint(source, input.urlState),
+        fingerprint: computeHistoryWindowFingerprint(source, input.urlState),
         work: {
             controlRunVisits: controlRuns.length,
             distributedRunVisits: distributedRuns.length
@@ -89,12 +93,12 @@ export function createRecipeConsoleHistoryCollection(
     };
 }
 
-function historyRuns(
+function resolveHistoryRuns(
     runs: readonly ControlDistributedRunSnapshot[],
     state: RecipeConsoleUrlState
 ): readonly ControlDistributedRunSnapshot[] {
     return hasCommittedHistoryFilter(state)
-        ? filterDistributedRuns(runs, historyFilter(state))
+        ? filterDistributedRuns(runs, toHistoryFilter(state))
         : [...runs].sort((left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs);
 }
 
@@ -110,7 +114,7 @@ function hasCommittedHistoryFilter(state: RecipeConsoleUrlState): boolean {
         state.from !== undefined || state.to !== undefined;
 }
 
-function historyFilter(state: RecipeConsoleUrlState) {
+function toHistoryFilter(state: RecipeConsoleUrlState): DistributedRunHistoryFilter {
     return {
         query: state.historyQuery,
         groupId: state.historyGroup,
@@ -123,30 +127,30 @@ function historyFilter(state: RecipeConsoleUrlState) {
     };
 }
 
-function historyWindowFingerprint(
+function computeHistoryWindowFingerprint(
     source: RecipeConsoleControlDistributedRunsSource,
     state: RecipeConsoleUrlState
 ): string {
     return JSON.stringify([
         'history-window-v1',
         source,
-        normalizedFingerprintText(state.historyQuery),
-        normalizedFingerprintText(state.historyGroup),
-        normalizedFingerprintText(state.historyRecipeId),
-        normalizedFingerprintText(state.historyProfile),
-        normalizedFingerprintText(state.status),
-        normalizedFingerprintText(state.failureCategory),
+        toNormalizedFingerprintText(state.historyQuery),
+        toNormalizedFingerprintText(state.historyGroup),
+        toNormalizedFingerprintText(state.historyRecipeId),
+        toNormalizedFingerprintText(state.historyProfile),
+        toNormalizedFingerprintText(state.status),
+        toNormalizedFingerprintText(state.failureCategory),
         state.from ?? null,
         state.to ?? null
     ]);
 }
 
-function normalizedFingerprintText(value: string | undefined): string | null {
+function toNormalizedFingerprintText(value: string | undefined): string | null {
     const normalized = value?.trim().toLocaleLowerCase('en-US');
     return normalized || null;
 }
 
-function historyProvenance(
+function toHistoryProvenance(
     query: ControlQuerySnapshot<ControlServerSnapshot, RecipeConsoleControlQueryProvenance>
 ): RecipeConsoleHistoryProvenance {
     const source = query.provenance?.distributedRunsSource ?? 'unavailable';
@@ -167,7 +171,7 @@ function historyProvenance(
     };
 }
 
-function groupControls(
+function toControlRunsByRunId(
     runs: readonly ControlRunSnapshot[]
 ): ReadonlyMap<string, readonly ControlRunSnapshot[]> {
     const groups = new Map<string, ControlRunSnapshot[]>();

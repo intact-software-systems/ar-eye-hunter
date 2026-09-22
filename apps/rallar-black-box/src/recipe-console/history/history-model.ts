@@ -1,6 +1,6 @@
 import type { ControlRetentionCandidate } from '@shared-test/rallar-bb-test/control-retention.ts';
 import { createRecipeConsoleHistoryCollection, type RecipeConsoleHistoryInput } from './history-window-collection.ts';
-import { deriveRecipeConsoleHistoryWindow, RECIPE_CONSOLE_HISTORY_WINDOW_SIZE } from './history-window-model.ts';
+import { computeRecipeConsoleHistoryWindow, RECIPE_CONSOLE_HISTORY_WINDOW_SIZE } from './history-window-model.ts';
 
 export {
     createRecipeConsoleHistoryCollection
@@ -11,7 +11,7 @@ export type {
     RecipeConsoleHistoryProvenance
 } from './history-window-collection.ts';
 export {
-    deriveRecipeConsoleHistoryWindow,
+    computeRecipeConsoleHistoryWindow,
     RECIPE_CONSOLE_HISTORY_WINDOW_SIZE
 } from './history-window-model.ts';
 export type {
@@ -31,7 +31,7 @@ export type HistoryRetentionCandidateRow =
 export function deriveRecipeConsoleHistoryModel(
     input: RecipeConsoleHistoryInput
 ) {
-    return deriveRecipeConsoleHistoryWindow(
+    return computeRecipeConsoleHistoryWindow(
         createRecipeConsoleHistoryCollection(input),
         0
     );

@@ -1,5 +1,5 @@
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { ControlDistributedRunSnapshot } from '../../control-run-manager.ts';
 import type { RecipeConsoleActiveRunContext, RecipeConsoleControlGroupContext } from './control-selection-contract.ts';
 
 export function deriveControlSelectionContexts(

@@ -1,4 +1,4 @@
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import { AnalyzeFailureDetails } from './AnalyzeFailureDetails.tsx';
 import styles from './AnalyzeVerdict.module.css';
 
@@ -12,7 +12,7 @@ export function AnalyzeVerdict({
     onInspectResult?(trigger: HTMLButtonElement): void;
 }>) {
     const { analysis } = model;
-    const failure = analysis.failure;
+    const failure = analysis.ok ? undefined : analysis.failure;
     return (
         <section
             className={styles.verdict}
@@ -83,7 +83,7 @@ export function AnalyzeVerdict({
                 : (
                     <dl className={styles.answers}>
                         <Answer label="Run" value={analysis.distributedRunId} />
-                        <Answer label="Agents" value={String(analysis.summary.agents)} />
+                        <Answer label="Agents" value={String(analysis.summary.agents ?? 'unknown')} />
                         <Answer label="Pass rate" value={`${Math.round(analysis.summary.passRate * 100)}%`} />
                         <Answer label="Warnings" value={String(model.workspace.issues.length)} />
                     </dl>

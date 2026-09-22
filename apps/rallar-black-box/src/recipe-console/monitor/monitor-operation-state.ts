@@ -1,9 +1,12 @@
 import type { ControlDistributedRunArtifactBundle } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import type { MonitorAction } from './monitor-action-policy.ts';
 
 export type MonitorArtifactState = Readonly<{
     status: 'idle' | 'pending' | 'ready' | 'error';
+    /** Absent until a bundle has been loaded for this context; a loaded one is retained while reloading. */
     bundle?: ControlDistributedRunArtifactBundle;
+    /** Absent unless `status` is `error`. */
     error?: string;
 }>;
 
@@ -14,11 +17,14 @@ export type MonitorOperationAuthority = Readonly<{
 }>;
 
 export type MonitorOperationState = Readonly<{
+    /** Absent until a control run and a distributed run are both selected. */
     contextKey?: string;
     artifact: MonitorArtifactState;
     operationGeneration: number;
+    /** Absent while no operation is in flight. */
     activeOperation?: MonitorOperationAuthority;
-    operationError?: unknown;
+    /** Absent while no operation has failed since the last successful one. */
+    operationError?: Error;
 }>;
 
 export function createInitialMonitorOperationState(): MonitorOperationState {
@@ -31,13 +37,18 @@ export function createInitialMonitorOperationState(): MonitorOperationState {
     };
 }
 
+export interface BeginMonitorOperationInput<State extends MonitorOperationState> {
+    readonly state: State;
+    readonly contextKey: string;
+    readonly action: MonitorAction;
+    readonly generation: number;
+}
+
 export function beginMonitorOperation<State extends MonitorOperationState>(
-    state: State,
-    contextKey: string,
-    action: MonitorAction,
-    generation = state.operationGeneration + 1
+    input: BeginMonitorOperationInput<State>
 ): Readonly<{ state: State; authority: MonitorOperationAuthority; }> {
-    const nextGeneration = Math.max(generation, state.operationGeneration + 1);
+    const { state, contextKey, action } = input;
+    const nextGeneration = Math.max(input.generation, state.operationGeneration + 1);
     const authority = { contextKey, generation: nextGeneration, action };
     if (state.contextKey !== contextKey) {
         return { state, authority };
@@ -67,7 +78,7 @@ export function completeMonitorArtifactOperation<State extends MonitorOperationS
         return state;
     }
     if (
-        bundle.distributedRunId !== distributedRunIdFromContext(
+        bundle.distributedRunId !== resolveDistributedRunIdFromContextKey(
             authority.contextKey
         )
     ) {
@@ -100,7 +111,7 @@ export function completeMonitorOperation<State extends MonitorOperationState>(
 export function failMonitorOperation<State extends MonitorOperationState>(
     state: State,
     authority: MonitorOperationAuthority,
-    error: unknown
+    error: Error
 ): State {
     if (!hasMonitorOperationAuthority(state, authority)) {
         return state;
@@ -128,32 +139,33 @@ export function hasMonitorOperationAuthority(
 
 function finishArtifactError<State extends MonitorOperationState>(
     state: State,
-    error: unknown
+    error: Error
 ): State {
     return {
         ...state,
         artifact: {
             status: 'error',
             bundle: state.artifact.bundle,
-            error: errorMessage(error)
+            error: error.message
         },
         activeOperation: undefined,
         operationError: error
     } as State;
 }
 
-function distributedRunIdFromContext(contextKey: string): string | undefined {
+function resolveDistributedRunIdFromContextKey(contextKey: string): string | undefined {
     try {
-        const value = JSON.parse(contextKey) as { distributedRunId?: unknown; };
-        return typeof value.distributedRunId === 'string'
-            ? value.distributedRunId
-            : undefined;
+        return decodeContextKeyDistributedRunId(JSON.parse(contextKey));
     }
     catch {
         return undefined;
     }
 }
 
-function errorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+function decodeContextKeyDistributedRunId(value: unknown): string | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const { distributedRunId } = value as ApiJsonObject;
+    return typeof distributedRunId === 'string' ? distributedRunId : undefined;
 }

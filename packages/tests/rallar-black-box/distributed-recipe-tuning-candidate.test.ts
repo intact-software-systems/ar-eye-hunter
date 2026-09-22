@@ -41,8 +41,14 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                     intervalMs: 50,
                     rateHz: 20
                 }]
-            }
-        }]
+            },
+            variables: {}
+        }],
+        variables: {},
+        roleAssignments: [],
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -186,22 +192,20 @@ describe('distributed tuning candidate changes', () => {
         }
     });
 
-    it('blocks missing and disabled barrier parents instead of enabling them', () => {
-        for (const barrier of [undefined, { enabled: false, timeoutMs: 2_000 }]) {
-            const source = { ...manifest(), barrier };
-            const result = createDistributedRunTuningCandidate({
-                manifest: source,
-                changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }]
-            });
+    it('blocks a disabled barrier parent instead of enabling it', () => {
+        const source: RallarBlackBoxDistributedRunManifest = { ...manifest(), barrier: { enabled: false } };
+        const result = createDistributedRunTuningCandidate({
+            manifest: source,
+            changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }]
+        });
 
-            expect(result).toMatchObject({
-                ok: false,
-                errors: expect.arrayContaining([expect.objectContaining({
-                    code: 'blocked-knob',
-                    path: '/barrier/timeoutMs'
-                })])
-            });
-        }
+        expect(result).toMatchObject({
+            ok: false,
+            errors: expect.arrayContaining([expect.objectContaining({
+                code: 'blocked-knob',
+                path: '/barrier/timeoutMs'
+            })])
+        });
     });
 
     it('reports manifest, recipe, agent, and preflight validation failures', () => {

@@ -8,7 +8,7 @@ import {
 import { BlackBoxRallarCrdtResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-crdt-resource-controller.ts';
 import { createBlackBoxRallarConsoleDiagnostics } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-diagnostics.ts';
 import { BlackBoxRallarDirectorResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/director-controller.ts';
-import { createBlackBoxRallarMessagingResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging-controller.ts';
+import { createBlackBoxRallarMessagingResourceController } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/create-black-box-rallar-messaging-resource-controller.ts';
 
 describe('browser Rallar resource controllers', () => {
     it('reserves CRDT handles before asynchronous creation', async () => {

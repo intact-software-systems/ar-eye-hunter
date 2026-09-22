@@ -229,59 +229,72 @@ export type FleetGeographyHistoricalCollection = Readonly<{
     [FLEET_GEOGRAPHY_HISTORY_SOURCE]: FleetGeographyHistoricalSource;
 }>;
 
-const DATACENTER_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLocation & { label: string; }>>> = {
+/** Datacenter and region centroids stand in for an agent that reports no coordinates of its own. */
+type ApproximateLabeledGeoLocation = Readonly<RallarBlackBoxGeoLocation & { label: string; precision: 'approximate'; }>;
+
+const DATACENTER_LOCATIONS: Readonly<Record<string, ApproximateLabeledGeoLocation>> = {
     'hetzner/fsn1': {
         latitude: 52.5333,
         longitude: 13.3833,
-        label: 'Hetzner FSN1, Germany'
+        label: 'Hetzner FSN1, Germany',
+        precision: 'approximate'
     },
     'hetzner/nbg1': {
         latitude: 49.4521,
         longitude: 11.0767,
-        label: 'Hetzner NBG1, Germany'
+        label: 'Hetzner NBG1, Germany',
+        precision: 'approximate'
     },
     'hetzner/hel1': {
         latitude: 60.1699,
         longitude: 24.9384,
-        label: 'Hetzner HEL1, Finland'
+        label: 'Hetzner HEL1, Finland',
+        precision: 'approximate'
     },
     'hetzner/ash': {
         latitude: 39.0438,
         longitude: -77.4874,
-        label: 'Hetzner ASH, US East'
+        label: 'Hetzner ASH, US East',
+        precision: 'approximate'
     },
     'hetzner/hil': {
         latitude: 45.5229,
         longitude: -122.9898,
-        label: 'Hetzner HIL, US West'
+        label: 'Hetzner HIL, US West',
+        precision: 'approximate'
     }
 };
 
-const REGION_LOCATIONS: Readonly<Record<string, Readonly<RallarBlackBoxGeoLocation & { label: string; }>>> = {
+const REGION_LOCATIONS: Readonly<Record<string, ApproximateLabeledGeoLocation>> = {
     'eu-north': {
         latitude: 60,
         longitude: 18,
-        label: 'Europe north'
+        label: 'Europe north',
+        precision: 'approximate'
     },
     'eu-central': {
         latitude: 50.8,
         longitude: 10.3,
-        label: 'Europe central'
+        label: 'Europe central',
+        precision: 'approximate'
     },
     'eu-west': {
         latitude: 53,
         longitude: -7.5,
-        label: 'Europe west'
+        label: 'Europe west',
+        precision: 'approximate'
     },
     'us-east': {
         latitude: 39.5,
         longitude: -77,
-        label: 'US east'
+        label: 'US east',
+        precision: 'approximate'
     },
     'us-west': {
         latitude: 45.5,
         longitude: -122.6,
-        label: 'US west'
+        label: 'US west',
+        precision: 'approximate'
     }
 };
 
@@ -879,7 +892,7 @@ function explicitLocation(
         latitude: location.latitude,
         longitude: location.longitude,
         label: location.label ?? 'Agent location',
-        precision: location.precision ?? 'exact'
+        precision: location.precision
     };
 }
 
@@ -892,12 +905,7 @@ function lookupLocation(
 ):
     | Readonly<{
         kind: 'datacenter' | 'region';
-        location: Readonly<
-            RallarBlackBoxGeoLocation & {
-                label: string;
-                precision: 'approximate';
-            }
-        >;
+        location: ApproximateLabeledGeoLocation;
     }>
     | undefined {
     const provider = normalizeKey(input.provider);
@@ -905,19 +913,13 @@ function lookupLocation(
     if (provider && datacenter) {
         const location = DATACENTER_LOCATIONS[`${provider}/${datacenter}`];
         if (location) {
-            return {
-                kind: 'datacenter',
-                location: { ...location, precision: 'approximate' }
-            };
+            return { kind: 'datacenter', location };
         }
     }
     const region = normalizeKey(input.region);
     const location = region ? REGION_LOCATIONS[region] : undefined;
     return location
-        ? {
-            kind: 'region',
-            location: { ...location, precision: 'approximate' }
-        }
+        ? { kind: 'region', location }
         : undefined;
 }
 

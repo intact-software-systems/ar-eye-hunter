@@ -69,14 +69,14 @@ it.each(['memory', 'indexeddb'] as const)(
         const runtime = createDefaultOutboundTestRuntime({
             stores: createStores(kind),
             diagnostics: (event) => diagnostics.push(event),
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
         const message = createOutboundMessage('msg-commit-phases');
         const enqueued = await runtime.enqueueIfAbsent(message);
 
-        expect(enqueued.status).toBe('enqueued');
+        expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
         const [phases] = commitPhasesOf(diagnostics);
         expect(phases).toMatchObject({
             kind: 'commit-phases',
@@ -123,13 +123,13 @@ it('charges the drain its own commit rather than leaving it on the next send', a
         stores,
         queueEngine: engine,
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     const pending = await runtime.enqueueIfAbsent(createOutboundMessage('msg-drain-origin', { ttlMs: 30_000 }));
 
-    expect(pending.status).toBe('pending-admission');
+    expect(pending.verdict).toEqual({ kind: 'pending' });
     await expect.poll(async () => {
         await engine.executeOnce();
         return commitPhasesOf(diagnostics).filter((event) => event.origin === 'drain').length;
@@ -151,8 +151,8 @@ it('names the origin a queued send waited behind', async () => {
     const runtime = createDefaultOutboundTestRuntime({
         stores: createStores('memory'),
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     const [first, second] = await Promise.all([
@@ -160,7 +160,9 @@ it('names the origin a queued send waited behind', async () => {
         runtime.enqueueIfAbsent(createOutboundMessage('msg-queued-second'))
     ]);
 
-    expect([first.status, second.status]).toEqual(['accepted', 'accepted']);
+    for (const result of [first, second]) {
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
+    }
     expect(
         senderQueueWaitsOf(diagnostics).map((event) => ({
             origin: event.origin,

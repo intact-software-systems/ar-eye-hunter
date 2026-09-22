@@ -6,6 +6,7 @@ import {
 
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import {
     waitForWsMessage,
     waitForWsMessageAbsence,
@@ -18,7 +19,7 @@ import {
 const connection = 'wsAlice';
 
 function toContext(payloads: readonly ApiJsonValue[]): WsWaitContext {
-    return { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
+    return { dependencies: createDefaultExecutionDependencies(), wsMessages: { [connection]: payloads.map((data) => ({ data })) } };
 }
 
 function toFrame(eventType: string): ApiJsonValue {

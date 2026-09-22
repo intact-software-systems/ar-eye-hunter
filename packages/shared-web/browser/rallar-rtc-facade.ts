@@ -8,6 +8,7 @@ import type {
     RallarRtcPeerStatus,
     RallarRtcStatus
 } from '@shared-web/browser/rtc-diagnostics/rallar-rtc-diagnostics-contracts.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -130,7 +131,7 @@ export type RallarRtcLifecycleKind =
 export type RallarRtcSignalAdmission =
     | Readonly<{
         outcome: 'rejected';
-        status: string;
+        verdict: ALDeliveryAdmissionVerdict;
         messageId: string;
     }>
     | Readonly<{ outcome: 'never-admitted'; }>;

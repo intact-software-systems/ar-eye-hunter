@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
+import type { DiagnosticBridgeSourceView } from '../../app/diagnostic-bridge-url-contract.ts';
 import { nextRovingNavigationIndex, type RovingNavigationKey } from '../app/navigation-keyboard.ts';
 import { RECIPE_CONSOLE_NAVIGATION } from '../app/recipe-console-navigation.ts';
 import { claimDiagnosticReturnFocus } from '../routing/diagnostic-return-focus.ts';
-import type { RecipeConsoleView } from '../routing/url-state-contract.ts';
 import { Icon } from '../ui/Icon.tsx';
 import styles from './RecipeConsoleShell.module.css';
 import type { RecipeConsolePresentation } from './responsive-presentation.ts';
 
-function navigationIndexForView(view: RecipeConsoleView): number {
+function navigationIndexForView(view: DiagnosticBridgeSourceView): number {
     const index = RECIPE_CONSOLE_NAVIGATION.findIndex((item) => item.view === view);
     return index < 0 ? 0 : index;
 }
@@ -27,9 +27,9 @@ export function PrimaryNavigation({
     presentation,
     onNavigate
 }: Readonly<{
-    currentView: RecipeConsoleView;
+    currentView: DiagnosticBridgeSourceView;
     presentation: RecipeConsolePresentation['navigation'];
-    onNavigate(view: RecipeConsoleView): void;
+    onNavigate(view: DiagnosticBridgeSourceView): void;
 }>) {
     const [activeIndex, setActiveIndex] = useState(
         () => navigationIndexForView(currentView)

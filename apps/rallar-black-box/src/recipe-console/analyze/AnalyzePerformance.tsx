@@ -1,10 +1,12 @@
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-projection-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 export function AnalyzePerformance({
     model
 }: Readonly<{ model: AnalyzeArtifactProjection; }>) {
-    const performance = model.analysis.performance;
+    const performance = model.analysis.detail === 'full'
+        ? model.analysis.performance
+        : undefined;
     const timing = performance?.commandTiming;
     const stream = performance?.streamTiming;
     return (
@@ -14,7 +16,11 @@ export function AnalyzePerformance({
                     <p className={styles.eyebrow}>Performance summary</p>
                     <h2>Command and stream health</h2>
                 </div>
-                <span>{timing?.count ?? 0} command samples</span>
+                <span>
+                    {timing?.count === undefined
+                        ? 'Command samples unknown'
+                        : `${timing.count} command samples`}
+                </span>
             </header>
             <dl className={styles.metrics}>
                 <Metric label="Run" value={formatMs(performance?.runDurationMs)} />

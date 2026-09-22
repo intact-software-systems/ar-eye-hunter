@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { CRDT_EDITOR_TRANSPORTS, crdtEditorOperationGroupId, type CrdtEditorTransport } from '../../../crdt-editor.ts';
 import { Metric } from '../../shared/Metric.tsx';

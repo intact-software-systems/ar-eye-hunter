@@ -3,15 +3,15 @@ import { resolveAppExperience } from '../../../apps/rallar-black-box/src/app/exp
 import { scrubRecipeConsoleHrefBeforeLoad } from '../../../apps/rallar-black-box/src/app/recipe-console-url-guard.ts';
 import { recipeConsoleExecuteRecipeSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 import {
+    RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
+    RECIPE_CONSOLE_URL_STRING_MAX_BYTES
+} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-key-policy.ts';
+import {
     createRecipeConsoleShareHref,
     parseRecipeConsoleUrl,
     serializeRecipeConsoleUrl
 } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-codec.ts';
-import {
-    RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
-    RECIPE_CONSOLE_URL_STRING_MAX_BYTES,
-    type RecipeConsoleUrlState
-} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import { createRunnerAgentLaunchUrl } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
 
 const BASE_STATE: RecipeConsoleUrlState = {
@@ -349,9 +349,10 @@ describe('Recipe Console URL state codec', () => {
         expect(advanced.state.legacySurface).toBe('rtc-diagnostics');
     });
 
-    it('preserves unknown parameters and removes old aliases only from Recipe Console output', () => {
+    it('rewrites only its own keys and preserves every parameter it does not own', () => {
         const baseSearch = '?provider=simulated&roomId=room-a&future=value&workspace=black-box-runner' +
-            '&appMode=runner&tab=fleet&advancedSurface=workbench&advanced=manual&mode=control';
+            '&appMode=runner&tab=fleet&advancedSurface=workbench&advanced=manual&mode=control' +
+            '&view=execute&controlRunId=stale-run';
         const serialized = serializeRecipeConsoleUrl({
             ...BASE_STATE,
             view: 'fleet'
@@ -364,19 +365,19 @@ describe('Recipe Console URL state codec', () => {
         expect(params.get('v')).toBe('1');
         expect(params.get('experience')).toBe('recipe-console');
         expect(params.get('view')).toBe('fleet');
+        expect(params.has('controlRunId')).toBe(false);
         for (
-            const key of [
-                'workspace',
-                'appMode',
-                'tab',
-                'advancedSurface',
-                'advanced',
-                'mode'
+            const [key, value] of [
+                ['workspace', 'black-box-runner'],
+                ['appMode', 'runner'],
+                ['tab', 'fleet'],
+                ['advancedSurface', 'workbench'],
+                ['advanced', 'manual'],
+                ['mode', 'control']
             ]
         ) {
-            expect(params.has(key), key).toBe(false);
+            expect(params.get(key), key).toBe(value);
         }
-        expect(baseSearch).toContain('workspace=black-box-runner');
     });
 
     it('removes every sensitive key case-insensitively during parse and serialization', () => {

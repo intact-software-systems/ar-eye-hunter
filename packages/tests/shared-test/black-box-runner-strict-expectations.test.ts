@@ -5,15 +5,20 @@ import {
 } from 'vitest';
 
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
-import { explainBlackBoxRunnerPlan } from '../../shared-test/black-box-runner/preflight/plan-preflight.ts';
+import { computeBlackBoxRunnerPlanPreflight } from '../../shared-test/black-box-runner/preflight/plan-preflight.ts';
+import { computeBlackBoxRunnerEnvRequirements } from '../../shared-test/black-box-runner/preflight/preflight-env-variables.ts';
 
-function strictIssueCodes(step: ApiJsonObject): readonly string[] {
-    const plan = explainBlackBoxRunnerPlan({
-        rawConfig: { steps: [step] },
+function computeStrictIssueCodes(step: ApiJsonObject): readonly string[] {
+    const recipe = { steps: [step] };
+    const plan = computeBlackBoxRunnerPlanPreflight({
+        rawConfig: recipe,
+        expandedConfig: recipe,
+        executableInteractions: [],
+        envRequirements: computeBlackBoxRunnerEnvRequirements(recipe, {}),
         profile: 'strict'
     });
 
-    return (plan.issues ?? []).map((issue: { code: string; }) => issue.code);
+    return plan.issues.map((issue) => issue.code);
 }
 
 const PARALLEL_GROUPS = [{ name: 'alpha', steps: [] }];
@@ -23,7 +28,7 @@ describe('strict preflight expectation checks', () => {
     // gate that rejects one would block the capability rather than report a
     // dropped assertion.
     it('accepts an expectation on a parallel step', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'race',
             type: 'parallel',
             request: { maxConcurrency: 2 },
@@ -33,7 +38,7 @@ describe('strict preflight expectation checks', () => {
     });
 
     it('accepts a body expectation on a parallel step', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'race',
             type: 'parallel',
             request: { maxConcurrency: 2 },
@@ -45,7 +50,7 @@ describe('strict preflight expectation checks', () => {
     // The keys a WebSocket send genuinely never reads still have to be caught,
     // or the lint stops doing the job it was added for.
     it('still reports an absence expectation on a websocket send', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'sendAndHope',
             type: 'ws.send',
             request: { action: 'send', connection: 'wsAlice', message: {} },
@@ -54,7 +59,7 @@ describe('strict preflight expectation checks', () => {
     });
 
     it('still reports an empty expected array under a compatible comparison', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'readGroup',
             type: 'http',
             request: { method: 'GET', path: '/api/state/groups/g' },
@@ -66,7 +71,7 @@ describe('strict preflight expectation checks', () => {
     // and a 2xx answer with no expected status passes, so an HTTP `anyOf` used
     // to assert nothing without ever failing.
     it('reports an anyOf on an HTTP step, which the HTTP evaluator never reads', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'raceOneCommand',
             type: 'http',
             request: { method: 'POST', path: '/api/thing/requests/http-any-of-probe-aaaa' },
@@ -75,7 +80,7 @@ describe('strict preflight expectation checks', () => {
     });
 
     it('accepts the statusCodes list that expresses the same thing', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'raceOneCommand',
             type: 'http',
             request: { method: 'POST', path: '/api/thing/requests/http-status-codes-probe-aaaa' },
@@ -84,7 +89,7 @@ describe('strict preflight expectation checks', () => {
     });
 
     it('leaves anyOf on an assert step alone', () => {
-        expect(strictIssueCodes({
+        expect(computeStrictIssueCodes({
             name: 'theCommandWasAnswered',
             type: 'assert',
             actual: { status: 200 },
@@ -96,38 +101,42 @@ describe('strict preflight expectation checks', () => {
     // exactly as a top-level one does; the collector read only the top level and
     // reported every such output as missing.
     it('sees an output produced inside a parallel group', () => {
-        const plan = explainBlackBoxRunnerPlan({
-            rawConfig: {
-                steps: [
-                    {
-                        name: 'raceTwoCommands',
-                        type: 'parallel',
-                        groups: [{
-                            name: 'first',
-                            steps: [{
-                                name: 'commandOne',
-                                type: 'http',
-                                request: {
-                                    method: 'POST',
-                                    path: '/api/thing/requests/parallel-output-probe-aaaa',
-                                    outputs: { firstStatus: 'statusCode' }
-                                },
-                                expect: { status: 200 }
-                            }]
+        const recipe: ApiJsonObject = {
+            steps: [
+                {
+                    name: 'raceTwoCommands',
+                    type: 'parallel',
+                    groups: [{
+                        name: 'first',
+                        steps: [{
+                            name: 'commandOne',
+                            type: 'http',
+                            request: {
+                                method: 'POST',
+                                path: '/api/thing/requests/parallel-output-probe-aaaa',
+                                outputs: { firstStatus: 'statusCode' }
+                            },
+                            expect: { status: 200 }
                         }]
-                    },
-                    {
-                        name: 'readTheCapturedStatus',
-                        type: 'assert',
-                        actual: { seen: '{firstStatus}' },
-                        expect: { body: { seen: 200 } }
-                    }
-                ]
-            },
+                    }]
+                },
+                {
+                    name: 'readTheCapturedStatus',
+                    type: 'assert',
+                    actual: { seen: '{firstStatus}' },
+                    expect: { body: { seen: 200 } }
+                }
+            ]
+        };
+        const plan = computeBlackBoxRunnerPlanPreflight({
+            rawConfig: recipe,
+            expandedConfig: recipe,
+            executableInteractions: [],
+            envRequirements: computeBlackBoxRunnerEnvRequirements(recipe, {}),
             profile: 'strict'
-        } as never);
+        });
 
-        expect((plan.issues ?? []).map((issue: { code: string; }) => issue.code))
+        expect(plan.issues.map((issue) => issue.code))
             .not.toContain('MISSING_OUTPUT_REFERENCE');
     });
 });

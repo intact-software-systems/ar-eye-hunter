@@ -1,17 +1,17 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxDistributedTargetResolution } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { useMemo, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import {
-    controlHttpBaseUrlFromWsUrl,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot,
-    type RallarBlackBoxDistributedTargetResolution
-} from '../../../control-run-manager.ts';
+import { toControlHttpBaseUrl } from '../../../control-run-manager/control-endpoint-request.ts';
 import { deriveDistributedRunMonitor } from '../../../distributed-recipes.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {
     useLegacyDiagnosticSelectionAuthority
 } from '../../diagnostics/context/use-legacy-diagnostic-selection-authority.ts';
@@ -32,7 +32,7 @@ export function useDistributedRecipesRemoteState({
     initialControlRunId,
     initialDistributedRunId
 }: UseDistributedRecipesRemoteStateInput) {
-    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
+    const [baseUrl, setBaseUrl] = useState(() => toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
         initialControlRunId ?? control.runId ?? bootstrap.runId ?? ''

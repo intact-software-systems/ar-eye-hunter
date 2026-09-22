@@ -3,21 +3,30 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import { deriveExecuteManifest, type ExecuteTargetResolutionEvidence } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
+import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/agent-launch/use-execute-agent-launch.ts';
+import {
+    createExecuteManifestDraft,
+    type ExecuteManifestDraft,
+    type ExecuteTargetResolutionEvidence
+} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
+import { ExecutePreflight } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-preflight.tsx';
+import { createExecuteTargetRowKeys } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-target-window.tsx';
+import { ExecuteTargets } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-targets.tsx';
 import { createExecuteWindowFingerprint, EXECUTE_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-window-contract.ts';
 import { ExecuteManifestDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteManifestDisclosure.tsx';
-import { ExecutePreflight } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecutePreflight.tsx';
 import { ExecuteRecipeInspector } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteRecipeInspector.tsx';
-import { ExecuteTargets } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargets.tsx';
-import { createExecuteTargetRowKeys } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteTargetWindow.tsx';
 import { ExecuteWindowedList } from '../../../apps/rallar-black-box/src/recipe-console/execute/ExecuteWindowedList.tsx';
-import type { ExecuteAgentLaunchModel } from '../../../apps/rallar-black-box/src/recipe-console/execute/use-execute-agent-launch.ts';
 import type { ControlRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { projectDistributedRecipeCatalog } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
-import type { DistributedRecipeTargetRow } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    projectDistributedRecipeCatalog,
+    type DistributedRecipeCatalogEntryProjection
+} from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
+import type { DistributedRecipeTargetRow } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-targeting/distributed-recipe-target-contracts.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
-    .IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as {
+    /** Absent until a test module declares React's act() environment for this run. */
+    IS_REACT_ACT_ENVIRONMENT?: boolean;
+}).IS_REACT_ACT_ENVIRONMENT = true;
 
 const catalogEntry = projectDistributedRecipeCatalog().entries[0]!;
 const executeTargetGroup = {
@@ -116,9 +125,7 @@ describe('Recipe Console Execute pressure windows', () => {
     }
 
     async function click(element: Element | null): Promise<void> {
-        if (!(element instanceof HTMLElement)) {
-            throw new Error('Missing click target.');
-        }
+        assertClickTarget(element);
         await act(async () =>
             element.dispatchEvent(
                 new MouseEvent('click', {
@@ -128,7 +135,7 @@ describe('Recipe Console Execute pressure windows', () => {
         );
     }
 
-    async function next(label: string, count = 1): Promise<void> {
+    async function clickNextWindowPage(label: string, count = 1): Promise<void> {
         for (let index = 0; index < count; index += 1) {
             const group = [...container.querySelectorAll('[role="group"]')]
                 .find((element) => element.getAttribute('aria-label') === `${label} window`);
@@ -139,14 +146,14 @@ describe('Recipe Console Execute pressure windows', () => {
         }
     }
 
-    function windowGroup(label: string): HTMLElement | undefined {
+    function getWindowGroup(label: string): HTMLElement | undefined {
         return [...container.querySelectorAll<HTMLElement>('[role="group"]')]
             .find((element) => element.getAttribute('aria-label') === `${label} window`);
     }
 
     it('keeps 250 control runs searchable, rejects ambiguous identities, and windows 240 target rows', async () => {
-        const runs = Array.from({ length: 250 }, (_, index) => controlRun(index));
-        const rows = Array.from({ length: 240 }, (_, index) => targetRow(index));
+        const runs = Array.from({ length: 250 }, (_, index) => createControlRun(index));
+        const rows = Array.from({ length: 240 }, (_, index) => createTargetRow(index));
         const onSelectControlRun = vi.fn();
         const onToggle = vi.fn();
         await render(createElement(ExecuteTargets, {
@@ -154,15 +161,17 @@ describe('Recipe Console Execute pressure windows', () => {
             connection: 'live',
             controlRunId: runs[249]!.runId,
             controlRuns: runs,
+            disabled: false,
             onSelectControlRun,
             onToggle,
             rows,
-            selectedAgentIds: [rows[239]!.agentId]
+            selectedAgentIds: [rows[239]!.agentId],
+            selectionLocked: false
         }));
 
         expect(container.querySelectorAll('[data-execute-target]')).toHaveLength(100);
         expect(container.textContent).toContain('Showing 1–100 of 240 targets.');
-        await next('Targets', 2);
+        await clickNextWindowPage('Targets', 2);
         expect(container.querySelectorAll('[data-execute-target]')).toHaveLength(40);
         expect(container.textContent).toContain(rows[239]!.agentId);
         await click(container.querySelector(`input[aria-label="Select ${rows[239]!.agentId}"]`));
@@ -179,11 +188,13 @@ describe('Recipe Console Execute pressure windows', () => {
             connection: 'live',
             controlRunId: 'duplicate-run',
             controlRunIssue: 'Control run identity is ambiguous.',
-            controlRuns: [controlRun(0, 'duplicate-run'), controlRun(1, 'duplicate-run')],
+            controlRuns: [createControlRun(0, 'duplicate-run'), createControlRun(1, 'duplicate-run')],
+            disabled: false,
             onSelectControlRun,
             onToggle,
             rows: [],
-            selectedAgentIds: []
+            selectedAgentIds: [],
+            selectionLocked: false
         }));
         expect(container.querySelector('[data-searchable-listbox-key-error]')?.textContent)
             .toContain('Duplicate key duplicate-run');
@@ -195,7 +206,7 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('recovers focused window content when an update drops below the control budget', async () => {
-        function list(items: readonly string[]) {
+        function createFocusWindowList(items: readonly string[]) {
             return createElement(ExecuteWindowedList<string>, {
                 contentId: 'execute-focus-window',
                 contextKey: 'stable-context',
@@ -209,16 +220,16 @@ describe('Recipe Console Execute pressure windows', () => {
                 section: 'preflightRows' as const
             });
         }
-        await render(list(Array.from({ length: 240 }, (_, index) => `row-${index}`)));
+        await render(createFocusWindowList(Array.from({ length: 240 }, (_, index) => `row-${index}`)));
         expect((container.querySelector('ol') as HTMLOListElement).start).toBe(1);
-        await next('Focus rows');
+        await clickNextWindowPage('Focus rows');
         expect((container.querySelector('ol') as HTMLOListElement).start).toBe(101);
         const focused = [...container.querySelectorAll('button')]
             .find((button) => button.textContent === 'row-100');
         focused?.focus();
         expect(document.activeElement).toBe(focused);
 
-        await render(list(Array.from({ length: 80 }, (_, index) => `row-${index}`)));
+        await render(createFocusWindowList(Array.from({ length: 80 }, (_, index) => `row-${index}`)));
         expect(container.querySelector('[aria-label="Focus rows window"]')).toBeNull();
         expect(document.activeElement).toBe(
             container.querySelector('[data-execute-window-focus-anchor="preflightRows"]')
@@ -226,7 +237,7 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('recovers focused targets after operational truth changes without a window revision', async () => {
-        const rows = Array.from({ length: 240 }, (_, index) => targetRow(index));
+        const rows = Array.from({ length: 240 }, (_, index) => createTargetRow(index));
         const props = {
             ...executeTargetDependencies,
             connection: 'live' as const,
@@ -239,42 +250,42 @@ describe('Recipe Console Execute pressure windows', () => {
             selectedAgentIds: rows.map((row) => row.agentId),
             selectionLocked: false
         };
-        const anchor = () =>
+        const getAnchor = () =>
             container.querySelector(
                 '[data-execute-window-focus-anchor="targets"]'
             );
-        const lateCheckbox = () =>
+        const getLateCheckbox = () =>
             container.querySelector<HTMLInputElement>(
                 `input[aria-label="Select ${rows[239]!.agentId}"]`
             );
         await render(createElement(ExecuteTargets, props));
-        await next('Targets', 2);
-        expect(anchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
+        await clickNextWindowPage('Targets', 2);
+        expect(getAnchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
 
-        lateCheckbox()?.focus();
+        getLateCheckbox()?.focus();
         await render(createElement(ExecuteTargets, {
             ...props,
             connection: 'stale'
         }));
-        expect(anchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
-        expect(lateCheckbox()).toBeNull();
-        expect(document.activeElement).toBe(anchor());
+        expect(getAnchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
+        expect(getLateCheckbox()).toBeNull();
+        expect(document.activeElement).toBe(getAnchor());
 
         await render(createElement(ExecuteTargets, props));
-        lateCheckbox()?.focus();
+        getLateCheckbox()?.focus();
         await render(createElement(ExecuteTargets, { ...props, disabled: true }));
-        expect(lateCheckbox()?.disabled).toBe(true);
-        expect(document.activeElement).toBe(anchor());
+        expect(getLateCheckbox()?.disabled).toBe(true);
+        expect(document.activeElement).toBe(getAnchor());
 
         await render(createElement(ExecuteTargets, props));
-        lateCheckbox()?.focus();
+        getLateCheckbox()?.focus();
         await render(createElement(ExecuteTargets, {
             ...props,
             selectionLocked: true
         }));
-        expect(lateCheckbox()?.disabled).toBe(true);
-        expect(document.activeElement).toBe(anchor());
-        expect(anchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
+        expect(getLateCheckbox()?.disabled).toBe(true);
+        expect(document.activeElement).toBe(getAnchor());
+        expect(getAnchor()?.textContent).toBe('Showing 201–240 of 240 targets.');
     });
 
     it('hands boundary focus to the remaining page control in both directions', async () => {
@@ -291,14 +302,13 @@ describe('Recipe Console Execute pressure windows', () => {
             revisionKey: JSON.stringify(items),
             section: 'preflightRows' as const
         }));
-        const group = windowGroup('Boundary rows');
+        const group = getWindowGroup('Boundary rows');
         const previous = [...group?.querySelectorAll('button') ?? []]
             .find((button) => button.textContent === 'Previous');
         const nextButton = [...group?.querySelectorAll('button') ?? []]
             .find((button) => button.textContent === 'Next');
-        if (!previous || !nextButton) {
-            throw new Error('Expected boundary controls.');
-        }
+        assertWindowControl(previous);
+        assertWindowControl(nextButton);
 
         nextButton.focus();
         await click(nextButton);
@@ -318,19 +328,21 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('preserves a browsed control-run page across semantically equal cloned polls', async () => {
-        const runs = Array.from({ length: 250 }, (_, index) => controlRun(index));
+        const runs = Array.from({ length: 250 }, (_, index) => createControlRun(index));
         const props = {
             ...executeTargetDependencies,
             connection: 'live' as const,
             controlRuns: runs,
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle: vi.fn(),
             rows: [],
-            selectedAgentIds: []
+            selectedAgentIds: [],
+            selectionLocked: false
         };
         await render(createElement(ExecuteTargets, props));
         await click(container.querySelector('[data-searchable-listbox-trigger]'));
-        await next('Control run options');
+        await clickNextWindowPage('Control run options');
         expect(container.querySelector('[data-searchable-listbox-range]')?.textContent)
             .toBe('Showing 101–200 of 250 options.');
 
@@ -346,17 +358,19 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('keeps focused target identity stable across same-context insertions and duplicate IDs collision-safe', async () => {
-        const rowA = targetRow(0);
-        const rowB = targetRow(1);
-        const rowC = targetRow(2);
+        const rowA = createTargetRow(0);
+        const rowB = createTargetRow(1);
+        const rowC = createTargetRow(2);
         const props = {
             ...executeTargetDependencies,
             connection: 'live' as const,
             controlRunId: 'stable-run',
             controlRuns: [],
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle: vi.fn(),
-            selectedAgentIds: [rowA.agentId, rowC.agentId]
+            selectedAgentIds: [rowA.agentId, rowC.agentId],
+            selectionLocked: false
         };
         await render(createElement(ExecuteTargets, { ...props, rows: [rowA, rowC] }));
         const focused = container.querySelector(
@@ -377,23 +391,25 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 
     it('keeps late resolution evidence browseable across equal-row refreshed resolutions', async () => {
-        const resolution = resolutionEvidence(240);
+        const resolution = createResolutionEvidence(240);
         const onToggle = vi.fn();
         const props = {
             ...executeTargetDependencies,
             connection: 'live',
             controlRunId: 'stable-control-run',
             controlRuns: [],
+            disabled: false,
             onSelectControlRun: vi.fn(),
             onToggle,
-            rows: [targetRow(0)],
-            selectedAgentIds: ['agent-0000']
+            rows: [createTargetRow(0)],
+            selectedAgentIds: ['agent-0000'],
+            selectionLocked: false
         } as const;
         await render(createElement(ExecuteTargets, { ...props, resolution }));
 
         expect(container.querySelectorAll('[data-execute-resolution-row]')).toHaveLength(100);
         expect(container.textContent).not.toContain('late resolution issue 239');
-        await next('Resolution evidence', 4);
+        await clickNextWindowPage('Resolution evidence', 4);
         expect(container.querySelectorAll('[data-execute-resolution-row]')).toHaveLength(80);
         expect(container.textContent).toContain('late resolution issue 239');
 
@@ -439,17 +455,17 @@ describe('Recipe Console Execute pressure windows', () => {
 
         expect(container.querySelectorAll('[data-execute-preflight-row]')).toHaveLength(100);
         expect(container.querySelectorAll('[data-execute-preflight-issue]')).toHaveLength(100);
-        await next('Preflight command rows', 2);
-        await next('Preflight warnings', 2);
+        await clickNextWindowPage('Preflight command rows', 2);
+        await clickNextWindowPage('Preflight warnings', 2);
         expect(container.textContent).toContain('late preflight row 239');
         expect(container.textContent).toContain('late preflight warning 239');
         expect(container.textContent).toContain('240 warnings total');
     });
 
     it('resets replaced preflight evidence at equal cardinality and preserves unrelated changes', async () => {
-        const entry = preflightEntry('old');
+        const entry = createPreflightEntry('old', 0);
         await render(createElement(ExecutePreflight, { entry }));
-        await next('Preflight command rows', 2);
+        await clickNextWindowPage('Preflight command rows', 2);
         expect(container.textContent).toContain('old late row 239');
 
         await render(createElement(ExecutePreflight, {
@@ -461,33 +477,27 @@ describe('Recipe Console Execute pressure windows', () => {
         expect(container.textContent).toContain('old late row 239');
 
         await render(createElement(ExecutePreflight, {
-            entry: preflightEntry('replacement')
+            entry: createPreflightEntry('replacement', 0)
         }));
         expect(container.textContent).toContain('replacement row 0');
         expect(container.textContent).not.toContain('replacement late row 239');
     });
 
     it('unmounts closed manifest detail and windows all late validation errors when opened', async () => {
-        const base = deriveExecuteManifest({
-            controlRunId: 'control-run',
-            distributedRunId: 'distributed-run',
-            group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
-            selectedAgentIds: ['agent'],
-            selectedRecipe: catalogEntry
-        });
+        const base = createManifestDraft('distributed-run');
         const errors = Array.from({ length: 240 }, (_, index) => ({
             source: 'contract' as const,
             path: `$.errors[${index}]`,
             message: index === 239 ? 'late manifest error 239' : `error ${index}`
         }));
-        const draft = { ...base, validation: { ...base.validation, ok: false as const, errors } };
+        const draft = { ...base, validationIssues: errors };
         await render(createElement(ExecuteManifestDisclosure, { draft }));
 
         expect(container.querySelector('[data-execute-manifest-body]')).toBeNull();
         expect(container.querySelector('pre')).toBeNull();
         await click(container.querySelector('[data-execute-manifest] summary'));
         expect(container.querySelectorAll('[data-execute-manifest-error]')).toHaveLength(100);
-        await next('Manifest validation errors', 2);
+        await clickNextWindowPage('Manifest validation errors', 2);
         expect(container.textContent).toContain('late manifest error 239');
         await click(container.querySelector('[data-execute-manifest] summary'));
         expect(container.querySelector('[data-execute-manifest-body]')).toBeNull();
@@ -516,37 +526,37 @@ describe('Recipe Console Execute pressure windows', () => {
 
         expect(container.querySelectorAll('[data-execute-inspector-command]')).toHaveLength(100);
         expect(container.querySelectorAll('[data-execute-inspector-prerequisite]')).toHaveLength(100);
-        await next('Inspector commands', 2);
-        await next('Inspector prerequisites', 2);
+        await clickNextWindowPage('Inspector commands', 2);
+        await clickNextWindowPage('Inspector prerequisites', 2);
         expect(container.textContent).toContain('late inspector command 239');
         expect(container.textContent).toContain('exact-command-0239');
         expect(container.textContent).toContain('late prerequisite 239');
     });
 
     it('keys inspector windows to their own evidence instead of unrelated manifest state', async () => {
-        const entry = inspectorEntry('old');
-        const firstManifest = manifestDraft('manifest-a');
+        const entry = createInspectorEntry('old');
+        const firstManifest = createManifestDraft('manifest-a');
         await render(createElement(ExecuteRecipeInspector, {
             entry,
             manifest: firstManifest,
             selectedTargetCount: 1
         }));
-        await next('Inspector commands', 2);
-        await next('Inspector prerequisites', 2);
+        await clickNextWindowPage('Inspector commands', 2);
+        await clickNextWindowPage('Inspector prerequisites', 2);
         expect(container.textContent).toContain('old late command 239');
         expect(container.textContent).toContain('old late prerequisite 239');
 
         await render(createElement(ExecuteRecipeInspector, {
             entry,
-            manifest: manifestDraft('manifest-b'),
+            manifest: createManifestDraft('manifest-b'),
             selectedTargetCount: 99
         }));
         expect(container.textContent).toContain('old late command 239');
         expect(container.textContent).toContain('old late prerequisite 239');
 
         await render(createElement(ExecuteRecipeInspector, {
-            entry: inspectorEntry('replacement'),
-            manifest: manifestDraft('manifest-b'),
+            entry: createInspectorEntry('replacement'),
+            manifest: createManifestDraft('manifest-b'),
             selectedTargetCount: 99
         }));
         expect(container.textContent).toContain('replacement command 0');
@@ -556,7 +566,7 @@ describe('Recipe Console Execute pressure windows', () => {
 
     it('keeps window controls and nested live regions outside alert/status summaries', async () => {
         await render(createElement(ExecutePreflight, {
-            entry: preflightEntry('live-region', { warnings: 240 })
+            entry: createPreflightEntry('live-region', 240)
         }));
         expect(container.querySelector('[role="alert"] [role="group"]')).toBeNull();
         expect(container.querySelector('[role="status"] [role="group"]')).toBeNull();
@@ -567,10 +577,24 @@ describe('Recipe Console Execute pressure windows', () => {
     });
 });
 
-function preflightEntry(
+function assertClickTarget(element: Element | null): asserts element is HTMLElement {
+    if (!(element instanceof HTMLElement)) {
+        throw new Error('Missing click target.');
+    }
+}
+
+function assertWindowControl(
+    control: HTMLButtonElement | undefined
+): asserts control is HTMLButtonElement {
+    if (!control) {
+        throw new Error('Expected boundary controls.');
+    }
+}
+
+function createPreflightEntry(
     prefix: string,
-    options: Readonly<{ warnings?: number; }> = {}
-) {
+    warningCount: number
+): DistributedRecipeCatalogEntryProjection {
     const tree = Array.from({ length: 240 }, (_, index) => ({
         path: `commands[${index}]`,
         depth: 0,
@@ -582,7 +606,7 @@ function preflightEntry(
         details: [],
         warnings: []
     }));
-    const warnings = Array.from({ length: options.warnings ?? 0 }, (_, index) => `${prefix} warning ${index}`);
+    const warnings = Array.from({ length: warningCount }, (_, index) => `${prefix} warning ${index}`);
     return {
         ...catalogEntry,
         preflight: {
@@ -595,7 +619,7 @@ function preflightEntry(
     };
 }
 
-function inspectorEntry(prefix: string) {
+function createInspectorEntry(prefix: string): DistributedRecipeCatalogEntryProjection {
     const base = catalogEntry.item.recipe.commands[0]!;
     return {
         ...catalogEntry,
@@ -619,17 +643,29 @@ function inspectorEntry(prefix: string) {
     };
 }
 
-function manifestDraft(distributedRunId: string) {
-    return deriveExecuteManifest({
+function createManifestDraft(distributedRunId: string): ExecuteManifestDraft {
+    const created = createExecuteManifestDraft({
         controlRunId: 'control-run',
         distributedRunId,
         group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
         selectedAgentIds: ['agent'],
         selectedRecipe: catalogEntry
     });
+    const draft = created.right;
+    assertWindowingManifestDraft(draft, created.left);
+    return draft;
 }
 
-function controlRun(index: number, runId = `control-run-${String(index).padStart(4, '0')}`): ControlRunSnapshot {
+function assertWindowingManifestDraft(
+    draft: ExecuteManifestDraft | undefined,
+    issue: string | undefined
+): asserts draft is ExecuteManifestDraft {
+    if (!draft) {
+        throw new Error(`The windowing fixture manifest must be creatable: ${issue}`);
+    }
+}
+
+function createControlRun(index: number, runId = `control-run-${String(index).padStart(4, '0')}`): ControlRunSnapshot {
     return {
         runId,
         createdAtEpochMs: index,
@@ -644,7 +680,7 @@ function controlRun(index: number, runId = `control-run-${String(index).padStart
     };
 }
 
-function targetRow(index: number): DistributedRecipeTargetRow {
+function createTargetRow(index: number): DistributedRecipeTargetRow {
     const agentId = `agent-${String(index).padStart(4, '0')}`;
     return {
         agentId,
@@ -661,11 +697,12 @@ function targetRow(index: number): DistributedRecipeTargetRow {
     };
 }
 
-function resolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
+function createResolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
     const blockers = Array.from({ length: count }, (_, index) => ({
         agentId: `blocked-${index}`,
         status: 'offline-agent' as const,
-        reason: `blocker ${index}`
+        reason: `blocker ${index}`,
+        identity: { principalId: `blocked-${index}`, sessionLabel: `blocked-${index}`, updatedAtEpochMs: 1_000 }
     }));
     const issues = Array.from({ length: count }, (_, index) => ({
         code: 'target-mismatch' as const,
@@ -690,6 +727,7 @@ function resolutionEvidence(count: number): ExecuteTargetResolutionEvidence {
                 staleAgents: 0,
                 offlineAgents: count,
                 wrongGroupAgents: 0,
+                assertionCapabilityBlockedAgents: 0,
                 agentsWithoutIdentity: 0,
                 roleCounts: {},
                 regions: {},

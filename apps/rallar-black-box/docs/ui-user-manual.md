@@ -45,7 +45,7 @@ Useful query parameters:
 - `v=1`: select the current Recipe Console URL schema
 - `experience=recipe-console` or `experience=legacy`: select the product or preserved diagnostic experience
 - `view=execute`, `monitor`, `analyze`, `tune`, `fleet`, or `advanced`: select a Recipe Console primary view
-- `mode=control` or `mode=control-agent`: start in remote control mode
+- `mode=control`: start in remote control mode
 - `autoConnect=1`: connect to the control server after bootstrap
 - `provider=simulated` or `provider=browser-rallar`: select simulated or real-provider execution mode
 - `controlUrl`: WebSocket URL, for example `ws://localhost:5180/control`
@@ -135,6 +135,12 @@ Stay on `experience=recipe-console&view=analyze`, then import a distributed-
 run bundle or load one from Control. Analyze keeps the synthesized first
 actionable failure as the main verdict and preserves **Inspect evidence** for
 that failure.
+
+Analyze needs `distributed-run.json` and `control-run.json` that match the
+control server's snapshot contracts. When either is missing or incomplete,
+Analyze rejects the import as unusable instead of showing an invented run;
+optional files may be missing. A Hetzner folder from a rejected create request
+holds no distributed run; read its `analysis/fix-proposal.md` instead.
 
 When the correlated failed command result contains structured error data, use
 this denser path:

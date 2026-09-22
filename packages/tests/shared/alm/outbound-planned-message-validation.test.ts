@@ -28,11 +28,11 @@ describe('outbound planner validation boundary', () => {
         const runtime = createDefaultOutboundTestRuntime({
             stores,
             outbox,
-            sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
         const result = await runtime.enqueueIfAbsent(original);
-        expect(result).toMatchObject({ status: 'failed', message: original, entries: [] });
+        expect(result).toMatchObject({ verdict: { kind: 'failed' }, message: original, entries: [] });
         expect(await stores.admissionStore.readSentMessage(original.id.msgId)).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, stores.admissionStore.namespace)).toBeUndefined();
         expect(await outbox.getItem(QueueBoxUtilities.toResourceEntryFromMsg(original, 'outbox').key)).toBeUndefined();
@@ -63,8 +63,8 @@ describe('outbound planner validation boundary', () => {
             outbox,
             stores,
             dequeue,
-            sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned as ALMessage, persist: true, preparedMessages: [] })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
+            planOutgoingMessage: () => ({ msg: planned as ALMessage, dropReasonCode: undefined, persist: true, preparedMessages: [] })
         });
 
         await runtime.ready();
@@ -83,11 +83,22 @@ describe('outbound planner validation boundary', () => {
             ? { ...original, targets: { mode: 'unicast', toPeerId: 'other' } }
             : original;
         const runtime = createDefaultOutboundTestRuntime({
-            sendPreparedMessage: async () => ({ status: 'sent' }),
-            planOutgoingMessage: () => ({ msg: planned, persist: false, preparedMessages: [], dropReason: 'No route' })
+            sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true }),
+            planOutgoingMessage: () => ({
+                msg: planned,
+                persist: false,
+                preparedMessages: [],
+                dropReason: 'No route',
+                dropReasonCode: 'no-route'
+            })
         });
         const result = await runtime.enqueueIfAbsent(original);
-        expect(result.status).toBe(change === 'unchanged' ? 'no-route' : 'failed');
+        if (change === 'unchanged') {
+            expect(result.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+        }
+        else {
+            expect(result.verdict.kind).toBe('failed');
+        }
         expect(result.message).toEqual(original);
     });
 });

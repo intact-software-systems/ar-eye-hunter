@@ -67,6 +67,7 @@ describe('multicast QoS integration', () => {
                 multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
                 qosProvider: undefined,
                 outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
                 outboundRuntime: resources,
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
@@ -137,6 +138,7 @@ describe('multicast QoS integration', () => {
             multicasterFactory: (id) => new shared.WebRtcOverlayMulticastService(id, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -265,6 +267,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -300,7 +303,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -324,6 +327,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -356,7 +360,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -380,6 +384,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -432,6 +437,7 @@ describe('multicast QoS integration', () => {
                     ),
                 qosProvider: undefined,
                 outboundDiagnostics: undefined,
+                outboundSettlements: undefined,
                 outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
                 circuitBreaker: toCircuitBreaker(),
                 rateLimiter: toRateLimiter(),
@@ -525,6 +531,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -602,6 +609,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -630,7 +638,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('accepted');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(result.entries).toMatchObject([{ status: shared.EntityStatus.COMPLETED }]);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);
@@ -652,6 +660,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -699,6 +708,7 @@ describe('multicast QoS integration', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -749,7 +759,7 @@ describe('multicast QoS integration', () => {
             reservationInput: 10
         });
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(connectionService.sendByPeerId.get('peer-1')).toHaveLength(1);
         expect(reserved.size).toBe(0);

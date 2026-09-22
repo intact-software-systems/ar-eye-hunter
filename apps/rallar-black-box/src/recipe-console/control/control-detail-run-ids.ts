@@ -1,5 +1,5 @@
 import type { ControlRunSnapshot, ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export function recipeConsoleDetailRunIds(

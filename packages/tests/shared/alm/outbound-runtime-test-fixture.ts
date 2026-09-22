@@ -4,6 +4,7 @@ import { expect, onTestFinished, vi } from 'vitest';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliveryCarrier, ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeDiagnosticsSink, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch, type ALOutboundComputeIntent } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { createDefaultALOutboundMessageRuntime } from '@shared/alm/outbound/create-default-al-outbound-message-runtime.ts';
@@ -46,9 +47,13 @@ interface OutboundTestRuntimeInput<TPrepared> {
     readonly stores?: ALOutboundRuntimeStores<TPrepared>;
     readonly dequeue?: ALOutboundMessageRuntime.DequeueSource;
     readonly diagnostics?: ALOutboundRuntimeDiagnosticsSink;
+    /** The carrier every settlement this runtime states is stamped with; `ws` unless a test says otherwise. */
+    readonly carrier?: ALDeliveryCarrier;
+    readonly settlements?: ALDeliverySettlementSink;
     readonly nowMs?: () => number;
     readonly planOutgoingMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['planOutgoingMessage'];
     readonly planRepairMessage?: ALOutboundMessageRuntime.Dependencies<TPrepared>['planRepairMessage'];
+    readonly afterDequeueAdmission?: ALOutboundMessageRuntime.Dependencies<TPrepared>['afterDequeueAdmission'];
     readonly sendPreparedMessage: ALOutboundMessageRuntime.Dependencies<TPrepared>['sendPreparedMessage'];
 }
 
@@ -102,7 +107,8 @@ export async function enqueueOutboundOrThrow(
     msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
-    if (enqueued.status === 'failed') {
+    const { verdict } = enqueued;
+    if (verdict.kind === 'failed' || (verdict.kind === 'refused' && verdict.reason !== 'unauthorized')) {
         throw new Error(enqueued.reason);
     }
     await runOutboundWorkTask(runtime);
@@ -142,11 +148,14 @@ export function createOutboundTestRuntimeFor<TPrepared>(
             stores: options.stores,
             dequeue: options.dequeue,
             diagnostics: options.diagnostics,
+            carrier: options.carrier ?? 'ws',
+            settlements: options.settlements,
             nowMs: options.nowMs ?? Date.now,
             toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
             readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
             planOutgoingMessage: options.planOutgoingMessage,
             planRepairMessage: options.planRepairMessage,
+            afterDequeueAdmission: options.afterDequeueAdmission,
             sendPreparedMessage: options.sendPreparedMessage
         })
     );
@@ -339,7 +348,7 @@ export function createOutboundCanonicalEntry<TPrepared>(
 export async function computeOutboundTestAdmission<TPrepared>(
     store: ALOutboundAdmissionStore<TPrepared>,
     message: ALMessage,
-    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, persist: true, preparedMessages: [] })
+    planner: ALOutboundPlanner<TPrepared> = (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [] })
 ) {
     const read = await store.readOutgoingMessage({
         msg: message,
@@ -356,7 +365,7 @@ export async function computeOutboundTestAdmission<TPrepared>(
         options: {}
     });
     if (!computed.bundle) {
-        throw new Error(`Expected outbound admission, received ${computed.status}`);
+        throw new Error(`Expected outbound admission, received ${computed.verdict.kind}`);
     }
     return computed.bundle;
 }

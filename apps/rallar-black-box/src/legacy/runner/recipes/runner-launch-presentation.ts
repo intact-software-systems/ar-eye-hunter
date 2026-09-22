@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestRuntimeStatus } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestRuntimeStatus } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RecipeLaunchState, RunnerReadinessCheck, RunnerServiceProbeStatus } from '../../../runner-readiness.ts';
 
 export type RunnerServiceProbe = Readonly<{

@@ -1,6 +1,6 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { ControlRunSnapshot } from '../../../control-run-manager.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 
 export function RunnerAgentSetupPanel({
     runId,

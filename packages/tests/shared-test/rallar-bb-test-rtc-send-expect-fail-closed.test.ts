@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
-import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
-import { formatJsonSchemaValidationErrors, RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/types.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 const rtcSendWithExpect = {
     kind: 'rtc.send',
@@ -34,7 +35,8 @@ describe('rtc.send expect fail-closed boundary', () => {
     it('rejects a control-dispatched rtc.send carrying expect', () => {
         expect(validateRallarBlackBoxTestCommand(rtcSendWithExpect)).toEqual({
             ok: false,
-            error: 'rtc.send has unsupported field: expect.'
+            error: 'rtc.send has unsupported field: expect.',
+            messages: ['rtc.send has unsupported field: expect.']
         });
     });
 
@@ -60,7 +62,7 @@ describe('rtc.send expect fail-closed boundary', () => {
             name: 'adapterRtc',
             roomId: 'bb-group',
             applicationId: 'rallar-server'
-        });
+        }, { commandIdPrefix: 'rallar-bb' });
 
         await client.send(
             { topic: 'room.adapter.parity', text: 'hello' },

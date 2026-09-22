@@ -1,6 +1,7 @@
 import { deleteBrowserALRuntimeEntriesForSession } from '@shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import * as authApi from '@shared-web/browser/auth/session-http-api.ts';
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type {
     RallarAuthRuntimePort,
     RallarConnectionRuntimePort
@@ -10,6 +11,7 @@ import {
     toRallarDiagnosticsPorts,
     type RallarDiagnosticsPorts
 } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import { notifyListener } from '@shared-web/browser/messages/rallar-listener-delivery.ts';
 import type { ApiMiddleware, RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarCommandOptions, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
@@ -47,7 +49,7 @@ export interface RallarSessionAuthLifecycle {
         reason: Exclude<RallarAuthChangeReason, 'current' | 'login'>,
         options: RallarAuthSessionEndOptions
     ): Promise<void>;
-    handleAuthInvalidError(error: Error): Promise<void>;
+    endUnauthorizedSession(error: Error, session: AuthSession | undefined): Promise<void>;
     runAuthAwareOperation<T>(operation: () => T | Promise<T>): Promise<T>;
     waitForAuthEnd(): Promise<void>;
     onAuthChange(
@@ -58,6 +60,7 @@ export interface RallarSessionAuthLifecycle {
 
 export namespace BrowserSessionAuthLifecycle {
     export interface Input {
+        readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly nowMs: () => number;
         readonly newRequestId: () => string;
         readonly connectionRuntime: RallarConnectionRuntimePort;
@@ -88,16 +91,20 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         if (!session) {
             throw new Error('Cannot init middleware: no auth session.');
         }
+        this.input.sessionDeliveries.beginSession(session);
         this.scheduleAuthExpiry(session);
 
         const middleware = await this.input.connectionLifecycle.connect({
-            sessionId: session.sessionId,
+            session,
             scope,
             operationOptions,
             diagnosticsPorts: this.readDiagnosticsPorts(),
             hasAuthEndInProgress: () => this.input.authRuntime.readAuthEndPromise() !== undefined,
-            isSessionCurrent: () => readSession()?.sessionId === session.sessionId,
-            onAuthInvalid: async (error) => await this.handleAuthInvalidError(error)
+            isSessionCurrent: () => {
+                const currentSession = readSession();
+                return currentSession !== undefined && toAuthSessionKey(currentSession) === toAuthSessionKey(session);
+            },
+            onAuthInvalid: async (error) => await this.endUnauthorizedSession(error, session)
         });
         this.scheduleAuthExpiry(middleware.session);
         return middleware;
@@ -125,8 +132,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         }
         const previousSession = readSession();
         if (previousSession) {
+            this.input.sessionDeliveries.endSession(previousSession);
             await this.input.closeDataScopes(previousSession);
         }
+        this.input.sessionDeliveries.beginSession(session);
         writeSession(session);
         this.input.authRuntime.endedAuthSessionKeys().delete(toAuthSessionKey(session));
         this.scheduleAuthExpiry(session);
@@ -145,6 +154,11 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     ): Promise<void> {
         const session = this.resolveSession(options.session);
         const sessionKey = session ? toAuthSessionKey(session) : undefined;
+        const currentSession = readSession();
+        if (session && currentSession && sessionKey !== toAuthSessionKey(currentSession)) {
+            this.input.sessionDeliveries.endSession(session);
+            return;
+        }
         const currentEnd = this.input.authRuntime.readAuthEndPromise();
         if (currentEnd) {
             return await currentEnd;
@@ -162,11 +176,10 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         return await authEnd;
     }
 
-    public async handleAuthInvalidError(error: Error): Promise<void> {
+    public async endUnauthorizedSession(error: Error, session: AuthSession | undefined): Promise<void> {
         if (!(error instanceof ApiHttpError) || error.status !== 401) {
             return;
         }
-        const session = this.resolveSession();
         if (session) {
             await this.endAuthSession('unauthorized', { revoke: false, session });
         }
@@ -175,6 +188,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     public async runAuthAwareOperation<T>(
         operation: () => T | Promise<T>
     ): Promise<T> {
+        const session = readSession();
         try {
             return await operation();
         }
@@ -182,7 +196,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
             const operationError = error instanceof Error
                 ? error
                 : new Error('Rallar session operation failed.');
-            await this.handleAuthInvalidError(operationError);
+            await this.endUnauthorizedSession(operationError, session);
             throw operationError;
         }
     }
@@ -218,8 +232,9 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
         else if (
             activeMiddleware &&
             session &&
-            activeMiddleware.session.sessionId !== session.sessionId
+            toAuthSessionKey(activeMiddleware.session) !== toAuthSessionKey(session)
         ) {
+            this.input.sessionDeliveries.endSession(activeMiddleware.session);
             await this.disconnect();
         }
     }
@@ -243,7 +258,7 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
 
     private async expireAuthSessionIfCurrent(expectedSession: AuthSession): Promise<void> {
         const currentSession = readSession();
-        if (currentSession && currentSession.sessionId !== expectedSession.sessionId) {
+        if (currentSession && toAuthSessionKey(currentSession) !== toAuthSessionKey(expectedSession)) {
             this.scheduleAuthExpiry(currentSession);
             return;
         }
@@ -263,6 +278,9 @@ export class BrowserSessionAuthLifecycle implements RallarSessionAuthLifecycle {
     ): Promise<void> {
         const session = options.session;
         this.input.authRuntime.clearAuthExpiryTimer();
+        if (session) {
+            this.input.sessionDeliveries.endSession(session);
+        }
         clearSession();
         const disconnectError = await captureError(() => this.disconnect());
         const revokeError = options.revoke && session
@@ -360,8 +378,4 @@ function toAuthState(
     session: AuthSession | undefined
 ): RallarAuthState {
     return { authenticated: session !== undefined, reason, session };
-}
-
-function toAuthSessionKey(session: AuthSession): string {
-    return `${session.clientId}:${session.sessionId}`;
 }

@@ -13,6 +13,7 @@ import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/rou
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type {
@@ -755,7 +756,7 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(result).toMatchObject({
             fanout: 'outbox',
             status: 'queued-outbox',
-            enqueueStatus: 'enqueued'
+            verdict: { kind: 'admitted', durable: true, queuedAttempts: 0 }
         });
         expect(result.entries).toHaveLength(1);
         expect((await outboundStores.admissionStore.readSentMessage(message.id.msgId))?.msg).toMatchObject({
@@ -769,6 +770,75 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(message.constraints).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(true);
+    });
+
+    it('maps a deferred admission verdict to skipped status', async () => {
+        const { server, socket, service, qboxEngine } = createPublicRouterFixture();
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', 'todo-deferred'),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'Deferred fanout', done: false },
+            {
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            }
+        );
+        const verdict: ALDeliveryAdmissionVerdict = {
+            kind: 'deferred',
+            reason: 'not-yet-in-sync',
+            detail: 'Group snapshot not yet applied'
+        };
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockResolvedValue({
+            verdict,
+            message,
+            entries: [],
+            reason: verdict.detail
+        });
+
+        const result = await server.ws.publish(message, 'outbox');
+
+        expect(result).toMatchObject({ fanout: 'outbox', status: 'skipped', verdict });
+        expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wakeRequested).toBe(false);
+    });
+
+    it.each([
+        { reason: 'unauthorized' as const, expectedStatus: 'skipped' as const },
+        { reason: 'malformed' as const, expectedStatus: 'failed' as const }
+    ])('maps a refused admission verdict with reason $reason to status $expectedStatus', async ({ reason, expectedStatus }) => {
+        const { server, socket, service, qboxEngine } = createPublicRouterFixture();
+        const message = newALBroadcastMessage(
+            'server-1',
+            newALRoute('app.todo', 'room-1', `todo-refused-${reason}`),
+            'room',
+            'todo.item.updated.v1',
+            { title: 'Refused fanout', done: false },
+            {
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                reliability: 'at-least-once',
+                ack: 'receiver'
+            }
+        );
+        const verdict: ALDeliveryAdmissionVerdict = {
+            kind: 'refused',
+            reason,
+            detail: `Outbound candidate refused: ${reason}`
+        };
+        vi.spyOn(service, 'enqueueOutboxIfAbsent').mockResolvedValue({
+            verdict,
+            message,
+            entries: [],
+            reason: verdict.detail
+        });
+
+        const result = await server.ws.publish(message, 'outbox');
+
+        expect(result).toMatchObject({ fanout: 'outbox', status: expectedStatus, verdict });
+        expect(socket.sent).toHaveLength(0);
+        expect(qboxEngine.wakeRequested).toBe(false);
     });
 
     it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {

@@ -52,7 +52,9 @@ function liveExecuteSnapshot() {
             ...EXECUTE_GROUP,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north'
+            region: 'eu-north',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: now - 500
         },
         connectionSequence: 1,
         reconnectCount: 0,
@@ -740,7 +742,7 @@ test('blank URL opens Recipe Console Execute after the final ready-state flip', 
             .getByText('Canonical', { exact: true })
     ).toBeVisible();
     await expect(page.locator('[data-url-issues]')).toHaveCount(0);
-    expect(requestedResources.some((url) => url.includes('LegacyExperience')))
+    expect(requestedResources.some((url) => url.includes('legacy-experience')))
         .toBe(false);
 });
 
@@ -782,9 +784,9 @@ test('keeps auth summary typography before either experience loads', async ({ pa
     );
     await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
         .toBeVisible();
-    expect(requestedScripts.some((url) => url.includes('LegacyExperience')))
+    expect(requestedScripts.some((url) => url.includes('legacy-experience')))
         .toBe(false);
-    expect(requestedScripts.some((url) => url.includes('RecipeConsoleApp')))
+    expect(requestedScripts.some((url) => url.includes('recipe-console-app')))
         .toBe(false);
 
     const termStyle = await page.locator('.auth-summary dt').first().evaluate(

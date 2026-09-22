@@ -72,8 +72,8 @@ it.each(['memory', 'indexeddb'] as const)(
             queueEngine: engine,
             nowMs: () => clockMs,
             diagnostics: (event) => diagnostics.push(event),
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
 
         await runtime.ready();
@@ -90,7 +90,7 @@ it.each(['memory', 'indexeddb'] as const)(
         clockMs += AL_WORK_READINESS_MEMORY_MS;
         await runProbedRound(engine, diagnostics);
 
-        expect(enqueued.status).toBe('enqueued');
+        expect(enqueued.verdict).toMatchObject({ kind: 'admitted', durable: true });
         const probes = probesOf(diagnostics);
         expect(probes.map((probe) => probe.cause)).toEqual([
             'no-memory',
@@ -119,8 +119,8 @@ it('reports the idle owner\'s probes even where its batch has nothing to report'
         queueEngine: engine,
         nowMs: () => clockMs,
         diagnostics: (event) => diagnostics.push(event),
-        planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send' }] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send' }] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
 
     await runtime.ready();

@@ -1,5 +1,5 @@
 import { useMemo, useRef, type ReactNode } from 'react';
-import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-projection-contract.ts';
 import { HistoryWorkspace, type HistoryWorkspaceProps } from '../history/HistoryWorkspace.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
@@ -8,7 +8,7 @@ import {
     tuneRunCatalogCacheWorkForTest,
     type TuneRunCatalogCache
 } from './tune-run-catalog-cache.ts';
-import { deriveTuneSelectionModel } from './tune-selection-model.ts';
+import { computeTuneSelectionModel } from './tune-selection-model.ts';
 import { deriveTuneWorkspaceSourceModel } from './tune-workspace-source-model.ts';
 import { TuneCandidate } from './TuneCandidate.tsx';
 import { TuneCommandTiming } from './TuneCommandTiming.tsx';
@@ -90,9 +90,8 @@ export default function TuneWorkspace({
             }
             : sourceTruth, [query.receivedAtEpochMs, sourceTruth]);
     const selection = useMemo(() =>
-        deriveTuneSelectionModel({
+        computeTuneSelectionModel({
             catalog,
-            query,
             urlState
         }), [catalog, urlState]);
     const inspect = useTuneInspectionHost({

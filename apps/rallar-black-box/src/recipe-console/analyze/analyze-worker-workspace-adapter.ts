@@ -3,12 +3,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import { analyzeOperationOwnsCurrentBoundary } from './analyze-operation-boundary.ts';
 import type { AnalyzeWorkerClient } from './analyze-worker-client.ts';
+import type { AnalyzeWorkerTelemetry } from './analyze-worker-contract.ts';
 import type {
     AnalyzeArtifactProjection,
     AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerTelemetry
-} from './analyze-worker-contract.ts';
+    AnalyzeTuneArtifactFacade
+} from './analyze-worker-projection-contract.ts';
 import {
     createAnalyzeWorkerWorkspaceCallbacks,
     type AnalyzePendingIdentityPatch

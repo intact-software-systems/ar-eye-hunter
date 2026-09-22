@@ -1,5 +1,5 @@
-import { selectRallarBlackBoxFirstFailure } from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { getRallarBlackBoxFirstFailure } from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
@@ -10,7 +10,7 @@ export function FailurePanel({
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
 }) {
-    const firstFailure = selectRallarBlackBoxFirstFailure(state);
+    const firstFailure = getRallarBlackBoxFirstFailure(state);
 
     return (
         <section className="panel failure-panel">

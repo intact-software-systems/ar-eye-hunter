@@ -1,6 +1,6 @@
 import {
-    schemaAuthoringSummary,
-    schemaAuthoringTone,
+    toSchemaAuthoringSummary,
+    toSchemaAuthoringTone,
     type SchemaAuthoringValidation
 } from '../../../schema-authoring.ts';
 
@@ -13,12 +13,12 @@ export function SchemaAuthoringPanel({
 }) {
     return (
         <section
-            className={`schema-authoring-panel ${compact ? 'compact' : ''} ${schemaAuthoringTone(validation)}`}
+            className={`schema-authoring-panel ${compact ? 'compact' : ''} ${toSchemaAuthoringTone(validation)}`}
         >
             <div className="schema-authoring-heading">
                 <strong>{validation.title}</strong>
-                <span className={`pill ${schemaAuthoringTone(validation)}`}>
-                    {schemaAuthoringSummary(validation)}
+                <span className={`pill ${toSchemaAuthoringTone(validation)}`}>
+                    {toSchemaAuthoringSummary(validation)}
                 </span>
             </div>
             {!validation.ok && (

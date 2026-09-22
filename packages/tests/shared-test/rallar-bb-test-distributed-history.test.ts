@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { projectDistributedRunHistoryLabels } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { projectDistributedRunHistoryLabels } from '../../../packages/shared-test/rallar-bb-test/distributed-run-history/project-distributed-run-history-labels.ts';
 
 function distributedRun(): ControlDistributedRunSnapshot {
     return {
@@ -22,19 +22,24 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 groupId: 'group-a'
             },
             targetPolicy: { mode: 'selected-agents', agentIds: [] },
-            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender' }]
+            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender', variables: {} }],
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         rollup: {
             state: 'failed',
             ok: false,
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: 0,
                 failedParticipants: 1,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
                 groupAssertions: 0,
@@ -46,7 +51,6 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 kind: 'recipe',
                 key: 'rtc-stream',
                 state: 'failed',
-                required: true,
                 error: {
                     code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                     message: 'RTC stream pacing exceeded its threshold.'

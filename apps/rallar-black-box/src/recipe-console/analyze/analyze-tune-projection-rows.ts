@@ -12,32 +12,35 @@ import {
     MAX_TUNE_ROWS,
     projectOpaqueIdentifier
 } from './analyze-projection-bounds.ts';
-import type { AnalyzeTuneArtifactFacade, AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeWorkerRequest } from './analyze-worker-contract.ts';
+import type { AnalyzeTuneArtifactFacade } from './analyze-worker-projection-contract.ts';
 
 export function projectTuningKnob(
     knob: DistributedRunTuningKnob
 ): DistributedRunTuningKnob {
-    return {
-        name: knob.name,
+    const fields = {
         pointer: boundedText(knob.pointer, MAX_METADATA_BYTES),
-        scope: knob.scope,
         ...(knob.currentValue !== undefined
             ? { currentValue: finiteNumber(knob.currentValue) }
             : {}),
         availability: knob.availability,
         effective: knob.effective,
         constraint: { ...knob.constraint },
-        ...(knob.recipeIndex !== undefined
-            ? { recipeIndex: finiteNumber(knob.recipeIndex) }
-            : {}),
-        ...(knob.recipeId
-            ? { recipeId: projectOpaqueIdentifier(knob.recipeId) }
-            : {}),
+        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {})
+    };
+    if (knob.scope === 'manifest') {
+        return { name: knob.name, scope: knob.scope, ...fields };
+    }
+    return {
+        name: knob.name,
+        scope: knob.scope,
+        ...fields,
+        recipeIndex: finiteNumber(knob.recipeIndex),
+        recipeId: projectOpaqueIdentifier(knob.recipeId),
         ...(knob.commandId
             ? { commandId: projectOpaqueIdentifier(knob.commandId) }
             : {}),
-        ...(knob.commandKind ? { commandKind: knob.commandKind } : {}),
-        ...(knob.reason ? { reason: boundedText(knob.reason, MAX_SUMMARY_BYTES) } : {})
+        commandKind: knob.commandKind
     };
 }
 
@@ -47,9 +50,7 @@ export function projectTuningLimitation(
     return {
         code: limitation.code,
         message: boundedText(limitation.message, MAX_SUMMARY_BYTES),
-        ...(limitation.recipeIndex !== undefined
-            ? { recipeIndex: finiteNumber(limitation.recipeIndex) }
-            : {}),
+        recipeIndex: finiteNumber(limitation.recipeIndex),
         ...(limitation.recipeId
             ? { recipeId: projectOpaqueIdentifier(limitation.recipeId) }
             : {})

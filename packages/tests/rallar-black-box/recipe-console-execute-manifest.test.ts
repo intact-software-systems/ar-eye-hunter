@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-    compareExecuteTargetResolution,
+    computeExecuteManifestFingerprint,
+    computeExecuteTargetResolutionComparison,
     createExecuteDistributedRunId,
+    createExecuteManifestDraft,
     createExecuteTargetResolutionEvidence,
-    currentExecuteTargetResolutionEvidence,
-    deriveExecuteManifest,
-    executeManifestFingerprint,
-    projectExecuteManifest
+    resolveExecuteTargetResolutionEvidence,
+    toExecuteManifestDraft
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import {
     projectDistributedRecipeCatalog,
@@ -39,20 +39,32 @@ function selectedRecipe(): DistributedRecipeCatalogEntryProjection {
 }
 
 function manifestDraft() {
-    return deriveExecuteManifest({
+    const draft = createExecuteManifestDraft({
         distributedRunId: 'distributed-explicit-a',
         controlRunId: 'control-a',
         group: GROUP,
         selectedRecipe: selectedRecipe(),
         selectedAgentIds: ['agent-b', 'agent-a', 'agent-b']
     });
+    if (draft.right === undefined) {
+        throw new Error(`The execute manifest draft must be creatable: ${draft.left}`);
+    }
+    return draft.right;
+}
+
+function fingerprintText(manifest: RallarBlackBoxDistributedRunManifest): string {
+    const fingerprint = computeExecuteManifestFingerprint(manifest);
+    if (fingerprint.right === undefined) {
+        throw new Error(`The manifest fingerprint must be computable: ${fingerprint.left}`);
+    }
+    return fingerprint.right;
 }
 
 function targetResolution(
     manifest: RallarBlackBoxDistributedRunManifest,
     overrides: Partial<RallarBlackBoxDistributedTargetResolution> = {}
 ): RallarBlackBoxDistributedTargetResolution {
-    const targetAgentIds = manifest.targetPolicy.agentIds ?? [];
+    const targetAgentIds = manifest.targetPolicy.mode === 'selected-agents' ? manifest.targetPolicy.agentIds : [];
     const expectedParticipantCount = manifest.targetPolicy.expectedParticipantCount;
     return {
         group: manifest.group,
@@ -71,6 +83,7 @@ function targetResolution(
             staleAgents: 0,
             offlineAgents: 0,
             wrongGroupAgents: 0,
+            assertionCapabilityBlockedAgents: 0,
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
@@ -92,18 +105,86 @@ describe('Recipe Console Execute manifest', () => {
         const first = createExecuteDistributedRunId(input);
         const second = createExecuteDistributedRunId({ ...input });
 
-        expect(first).toBe(second);
-        expect(first).toMatch(/^dist-group-a-rtc-stability-green-control-run-a-1725000000123$/);
-        expect(createExecuteDistributedRunId({
-            ...input,
-            requestedAtEpochMs: input.requestedAtEpochMs + 1
-        })).not.toBe(first);
-        expect(() =>
+        expect(first.right).toBe(second.right);
+        expect(first.right).toMatch(/^dist-group-a-rtc-stability-green-control-run-a-1725000000123$/);
+        expect(
             createExecuteDistributedRunId({
                 ...input,
-                requestedAtEpochMs: Number.NaN
-            })
-        ).toThrow('requestedAtEpochMs');
+                requestedAtEpochMs: input.requestedAtEpochMs + 1
+            }).right
+        ).not.toBe(first.right);
+    });
+
+    it('reports a non-integer request time as the operator sentence instead of throwing', () => {
+        const input = {
+            controlRunId: 'Control Run / A',
+            group: GROUP,
+            recipeId: 'RTC Stability / Green',
+            requestedAtEpochMs: 1_725_000_000_123
+        } as const;
+
+        for (const requestedAtEpochMs of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY]) {
+            const rejected = createExecuteDistributedRunId({ ...input, requestedAtEpochMs });
+            expect(rejected.right, String(requestedAtEpochMs)).toBeUndefined();
+            expect(rejected.left, String(requestedAtEpochMs)).toBe(
+                'Execute requestedAtEpochMs must be a non-negative safe integer.'
+            );
+        }
+    });
+
+    it('reports every unencodable fingerprint value as its own operator sentence', () => {
+        const cyclic: Record<string, object> = {};
+        cyclic.self = cyclic;
+        const symbolKeyedArray: string[] = [];
+        Object.defineProperty(symbolKeyedArray, Symbol('extra'), { value: 'value', enumerable: true });
+        const customPropertyArray: string[] = [];
+        Object.defineProperty(customPropertyArray, 'extra', { value: 'value', enumerable: true });
+        const cases: readonly [string, never, string][] = [
+            [
+                'function',
+                (() => undefined) as never,
+                'Execute manifest fingerprint cannot encode function.'
+            ],
+            [
+                'symbol',
+                Symbol('value') as never,
+                'Execute manifest fingerprint cannot encode symbol.'
+            ],
+            [
+                'cycle',
+                cyclic as never,
+                'Execute manifest fingerprint cannot encode cyclic values.'
+            ],
+            [
+                'array symbol key',
+                symbolKeyedArray as never,
+                'Execute manifest fingerprint cannot encode symbol keys.'
+            ],
+            [
+                'custom array property',
+                customPropertyArray as never,
+                'Execute manifest fingerprint cannot encode custom array properties.'
+            ],
+            [
+                'class instance',
+                new Date(0) as never,
+                'Execute manifest fingerprint requires plain JSON objects.'
+            ],
+            [
+                'object symbol key',
+                { [Symbol('extra')]: 'value' } as never,
+                'Execute manifest fingerprint cannot encode symbol keys.'
+            ]
+        ];
+
+        for (const [label, value, message] of cases) {
+            const rejected = computeExecuteManifestFingerprint(value);
+            expect(rejected.right, label).toBeUndefined();
+            expect(rejected.left, label).toBe(message);
+        }
+        expect(computeExecuteManifestFingerprint({ nested: [cyclic] } as never).left).toBe(
+            'Execute manifest fingerprint cannot encode cyclic values.'
+        );
     });
 
     it('uses the shared builder for one selected recipe and exact safe targets', () => {
@@ -129,10 +210,10 @@ describe('Recipe Console Execute manifest', () => {
         });
         expect(draft.manifest.recipes).toHaveLength(1);
         expect(draft.manifest.recipes[0]?.recipe).toEqual(selectedRecipe().item.recipe);
-        expect(draft.validation).toMatchObject({ ok: true, errors: [] });
+        expect(draft.validationIssues).toEqual([]);
         expect(JSON.parse(draft.rawJson)).toEqual(draft.manifest);
         expect(draft.rawJson).toContain('\n  "distributedRunId"');
-        expect(draft.fingerprint).toBe(executeManifestFingerprint(draft.manifest));
+        expect(draft.fingerprint).toBe(fingerprintText(draft.manifest));
     });
 
     it('projects an authoritative stored manifest without rebuilding its intent', () => {
@@ -141,18 +222,18 @@ describe('Recipe Console Execute manifest', () => {
             ...generated.manifest,
             displayName: 'Authoritative server draft',
             targetPolicy: {
-                ...generated.manifest.targetPolicy,
+                mode: 'selected-agents' as const,
                 agentIds: ['agent-b'],
                 expectedParticipantCount: 1
             }
         };
 
-        const projected = projectExecuteManifest(stored);
+        const projected = toExecuteManifestDraft(stored).right;
 
-        expect(projected.manifest).toBe(stored);
-        expect(JSON.parse(projected.rawJson)).toEqual(stored);
-        expect(projected.validation.ok).toBe(true);
-        expect(projected.fingerprint).toBe(executeManifestFingerprint(stored));
+        expect(projected?.manifest).toBe(stored);
+        expect(JSON.parse(projected?.rawJson ?? 'null')).toEqual(stored);
+        expect(projected?.validationIssues).toEqual([]);
+        expect(projected?.fingerprint).toBe(fingerprintText(stored));
     });
 
     it('fingerprints the complete recursive value without key-order or framing collisions', () => {
@@ -165,8 +246,8 @@ describe('Recipe Console Execute manifest', () => {
             string: '1'
         };
 
-        expect(executeManifestFingerprint(ordered as never))
-            .toBe(executeManifestFingerprint(reordered as never));
+        expect(fingerprintText(ordered as never))
+            .toBe(fingerprintText(reordered as never));
         for (
             const different of [
                 { string: 1, nested: ordered.nested },
@@ -177,18 +258,18 @@ describe('Recipe Console Execute manifest', () => {
                 { a: 'b', c: 'd:e' }
             ]
         ) {
-            expect(executeManifestFingerprint(different as never))
-                .not.toBe(executeManifestFingerprint(ordered as never));
+            expect(fingerprintText(different as never))
+                .not.toBe(fingerprintText(ordered as never));
         }
-        expect(executeManifestFingerprint({ a: 'b:c', d: 'e' } as never))
-            .not.toBe(executeManifestFingerprint({ a: 'b', c: 'd:e' } as never));
+        expect(fingerprintText({ a: 'b:c', d: 'e' } as never))
+            .not.toBe(fingerprintText({ a: 'b', c: 'd:e' } as never));
 
-        const leadingHole = new Array<unknown>(2);
+        const leadingHole = new Array<string>(2);
         leadingHole[1] = 'agent-a';
-        const trailingHole = new Array<unknown>(2);
+        const trailingHole = new Array<string>(2);
         trailingHole[0] = 'agent-a';
-        expect(executeManifestFingerprint(leadingHole as never))
-            .not.toBe(executeManifestFingerprint(trailingHole as never));
+        expect(fingerprintText(leadingHole as never))
+            .not.toBe(fingerprintText(trailingHole as never));
     });
 
     it('accepts only an exact duplicate-free selected-target resolution', () => {
@@ -196,13 +277,14 @@ describe('Recipe Console Execute manifest', () => {
         const unrelatedBlocker = {
             agentId: 'agent-unrelated',
             status: 'offline-agent' as const,
-            reason: 'An unrelated known agent is offline.'
+            reason: 'An unrelated known agent is offline.',
+            identity: { principalId: 'agent-unrelated', sessionLabel: 'agent-unrelated', updatedAtEpochMs: 1_000 }
         };
         const matching = targetResolution(manifest, {
             blockers: [unrelatedBlocker]
         });
 
-        expect(compareExecuteTargetResolution({ manifest, resolution: matching }))
+        expect(computeExecuteTargetResolutionComparison({ manifest, resolution: matching }))
             .toEqual({ ok: true, issues: [] });
 
         const cases: readonly [
@@ -232,8 +314,9 @@ describe('Recipe Console Execute manifest', () => {
                 {
                     ...manifest,
                     targetPolicy: {
-                        ...manifest.targetPolicy,
-                        agentIds: ['agent-a', 'agent-a']
+                        mode: 'selected-agents',
+                        agentIds: ['agent-a', 'agent-a'],
+                        expectedParticipantCount: manifest.targetPolicy.expectedParticipantCount
                     }
                 },
                 matching,
@@ -282,7 +365,8 @@ describe('Recipe Console Execute manifest', () => {
                     blockers: [{
                         agentId: 'agent-a',
                         status: 'stale-agent',
-                        reason: 'The selected agent became stale.'
+                        reason: 'The selected agent became stale.',
+                        identity: { principalId: 'agent-a', sessionLabel: 'agent-a', updatedAtEpochMs: 1_000 }
                     }]
                 }),
                 'selected-target-blocked'
@@ -290,7 +374,7 @@ describe('Recipe Console Execute manifest', () => {
         ];
 
         for (const [label, candidateManifest, resolution, issueCode] of cases) {
-            const comparison = compareExecuteTargetResolution({
+            const comparison = computeExecuteTargetResolutionComparison({
                 manifest: candidateManifest,
                 resolution
             });
@@ -305,17 +389,17 @@ describe('Recipe Console Execute manifest', () => {
         const resolution = targetResolution(manifest);
         const evidence = createExecuteTargetResolutionEvidence({
             manifest,
+            manifestFingerprint: fingerprintText(manifest),
             resolution
         });
 
-        expect(evidence.manifestFingerprint).toBe(
-            executeManifestFingerprint(manifest)
-        );
-        expect(currentExecuteTargetResolutionEvidence({ manifest, evidence }))
-            .toBe(evidence);
+        expect(evidence.manifestFingerprint).toBe(fingerprintText(manifest));
+        expect(resolveExecuteTargetResolutionEvidence({
+            manifestFingerprint: fingerprintText(manifest),
+            evidence
+        })).toBe(evidence);
 
         const changes: readonly RallarBlackBoxDistributedRunManifest[] = [
-            { ...manifest, schemaVersion: undefined },
             { ...manifest, distributedRunId: 'distributed-changed' },
             { ...manifest, controlRunId: 'control-changed' },
             { ...manifest, displayName: 'Changed display name' },
@@ -330,19 +414,19 @@ describe('Recipe Console Execute manifest', () => {
             {
                 ...manifest,
                 targetPolicy: {
-                    ...manifest.targetPolicy,
+                    mode: 'selected-agents',
                     agentIds: ['agent-a'],
                     expectedParticipantCount: 1
                 }
             },
             { ...manifest, variables: { changed: true } },
-            { ...manifest, secretRefs: ['changed-secret'] },
             {
                 ...manifest,
                 roleAssignments: [{
                     agentId: 'agent-a',
                     role: 'changed-role',
-                    required: true
+                    variables: {},
+                    recipeIds: []
                 }]
             },
             {
@@ -356,29 +440,18 @@ describe('Recipe Console Execute manifest', () => {
             { ...manifest, ackTimeoutMs: 15_001 },
             { ...manifest, barrier: { enabled: true, timeoutMs: 15_000 } },
             { ...manifest, startMode: 'auto-after-ready' },
-            { ...manifest, startDeadlineEpochMs: 123_456 },
-            {
-                ...manifest,
-                artifactPolicy: {
-                    ...manifest.artifactPolicy,
-                    retentionDays: 7
-                }
-            },
+            { ...manifest, startMode: 'scheduled', startDeadlineEpochMs: 123_456 },
             { ...manifest, metadata: { ...manifest.metadata, changed: true } }
         ];
 
         for (const changed of changes) {
             expect(
-                currentExecuteTargetResolutionEvidence({
-                    manifest: changed,
+                resolveExecuteTargetResolutionEvidence({
+                    manifestFingerprint: fingerprintText(changed),
                     evidence
                 }),
                 JSON.stringify(changed)
             ).toBeUndefined();
         }
-        expect(currentExecuteTargetResolutionEvidence({
-            manifest,
-            evidence: undefined
-        })).toBeUndefined();
     });
 });

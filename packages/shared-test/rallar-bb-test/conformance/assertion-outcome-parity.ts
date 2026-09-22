@@ -1,20 +1,23 @@
-// deno-lint-ignore-file no-explicit-any
+import type { BlackBoxExecutionDependencies } from '../../black-box-runner/execution/black-box-scenario-context.ts';
 import { validateAssertValueComparators } from '../../black-box-runner/expectations/assert-value-comparators.ts';
-import { executeHttpInteraction } from '../../black-box-runner/http/execute-http-interaction.ts';
+import { runHttpInteraction } from '../../black-box-runner/http/run-http-interaction.ts';
 import { waitForWsMessageAbsence } from '../../black-box-runner/ws/ws-wait-expectations.ts';
 import { CompareJson } from '../../json-compare/json-compare.ts';
 
-import { assertValueMatches } from '../assert/assert-value-operators.ts';
-import { createRallarBlackBoxTestRuntime } from '../runtime.ts';
+import { isAssertOperatorSatisfied } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRuntime
-} from '../types.ts';
+} from '../rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../runtime/create-rallar-black-box-test-runtime.ts';
+import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
+import { decodePayloadPathValue } from '../wait/wait-event-match.ts';
 import {
     ABSENCE_FIXTURES,
     COMPARATOR_FIXTURES,
     COMPLETE_ARRAY_FIXTURES,
     POLLING_FIXTURES,
+    type AbsenceParityFixture,
     type PollingParityFixture
 } from './assertion-outcome-parity-fixtures.ts';
 
@@ -36,8 +39,9 @@ export interface AssertionOutcomeParityRow {
     readonly matchesExpected: boolean;
 }
 
-export interface EvaluatePollingOutcomeParityInput {
+export interface RunPollingOutcomeParityInput {
     readonly fetch: (succeedOnAttempt: number | undefined) => typeof fetch;
+    readonly now: () => number;
 }
 
 interface ToRowInput {
@@ -48,177 +52,74 @@ interface ToRowInput {
     readonly runtimeVerdict: AssertionOutcomeVerdict;
 }
 
-// Each dialect evaluates the same evidence value: the runner through its
-// expect.comparators validator, the runtime through the extended assert
-// operators. Divergent verdicts fail the parity suite by contract.
-export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
+const RUNNER_SUCCESS_STATUSES = ['success', 'ok', 'passed'];
+
+export function computeComparatorOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
     return COMPARATOR_FIXTURES.map((fixture) => {
-        const runnerIssues = validateAssertValueComparators(fixture.value, [
-            fixture.runnerComparator
-        ]);
-        const runnerVerdict: AssertionOutcomeVerdict = runnerIssues.length === 0 ? 'pass' : 'fail';
-        const path = fixture.runnerComparator.path;
-        const record = fixture.value;
-        const lookup = {
-            exists: Object.prototype.hasOwnProperty.call(record, path),
-            value: record[path]
-        };
-        const runtimeVerdict: AssertionOutcomeVerdict = assertValueMatches(
-                lookup,
-                fixture.runtimeOperator,
-                fixture.runtimeExpected
-            )
-            ? 'pass'
-            : 'fail';
+        const runnerIssues = validateAssertValueComparators(fixture.value, [fixture.runnerComparator]);
+        const lookup = decodePayloadPathValue(fixture.value, fixture.runnerComparator.path);
         return toRow({
             fixtureId: fixture.fixtureId,
             family: 'comparators',
             expectedVerdict: fixture.expectedVerdict,
-            runnerVerdict,
-            runtimeVerdict
+            runnerVerdict: runnerIssues.length === 0 ? 'pass' : 'fail',
+            runtimeVerdict: toVerdict(
+                isAssertOperatorSatisfied(lookup, fixture.runtimeOperator, fixture.runtimeExpected)
+            )
         });
     });
 }
 
-export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
-    return COMPLETE_ARRAY_FIXTURES.map((fixture) => {
-        const runnerVerdict: AssertionOutcomeVerdict =
-            CompareJson.compatibleComplete(fixture.expected, fixture.actual).isEqual
-                ? 'pass'
-                : 'fail';
-        const runtimeVerdict: AssertionOutcomeVerdict = assertValueMatches(
-                { exists: true, value: fixture.actual },
-                'matchesShapeComplete',
-                fixture.expected
-            )
-            ? 'pass'
-            : 'fail';
-        return toRow({
+export function computeCompleteArrayOutcomeParityRows(): readonly AssertionOutcomeParityRow[] {
+    return COMPLETE_ARRAY_FIXTURES.map((fixture) =>
+        toRow({
             fixtureId: fixture.fixtureId,
             family: 'complete-array',
             expectedVerdict: fixture.expectedVerdict,
-            runnerVerdict,
-            runtimeVerdict
-        });
-    });
+            runnerVerdict: toVerdict(CompareJson.compatibleComplete(fixture.expected, fixture.actual).isEqual),
+            runtimeVerdict: toVerdict(
+                isAssertOperatorSatisfied(
+                    { exists: true, value: fixture.actual },
+                    'matchesShapeComplete',
+                    fixture.expected
+                )
+            )
+        })
+    );
 }
 
-// Both dialects hold the full window, then scan the whole buffer once, so a
-// frame buffered before the wait started violates the claim in both engines.
-export async function evaluateAbsenceOutcomeParityRows(): Promise<readonly AssertionOutcomeParityRow[]> {
-    const dependencies = { now: Date.now, createUuid: () => crypto.randomUUID() };
+export async function runAbsenceOutcomeParityRows(
+    dependencies: BlackBoxExecutionDependencies
+): Promise<readonly AssertionOutcomeParityRow[]> {
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of ABSENCE_FIXTURES) {
-        const runnerStatus = await waitForWsMessageAbsence({
-            interaction: {
-                request: { timeoutMs: 5 },
-                response: {
-                    connection: 'parityWs',
-                    absent: { topic: fixture.forbiddenTopic }
-                }
-            },
-            config: { interaction: { request: {} } },
-            context: {
-                dependencies,
-                wsMessages: {
-                    parityWs: fixture.bufferedTopics.map((topic) => ({ data: { topic } }))
-                }
-            }
-        });
-        const runnerVerdict: AssertionOutcomeVerdict = isRunnerSuccess(runnerStatus)
-            ? 'pass'
-            : 'fail';
-
-        const runtime = createDeterministicRuntime();
-        for (const topic of fixture.bufferedTopics) {
-            runtime.recordEvent({
-                kind: 'message',
-                topic,
-                payload: { data: { topic } }
-            });
-        }
-        const runtimeResult = await runtime.execute({
-            kind: 'wait',
-            commandId: `parity-${fixture.fixtureId}`,
-            absent: true,
-            timeoutMs: 5,
-            match: {
-                kind: 'message',
-                topic: fixture.forbiddenTopic
-            }
-        });
-        const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
         rows.push(toRow({
             fixtureId: fixture.fixtureId,
             family: 'absence',
             expectedVerdict: fixture.expectedVerdict,
-            runnerVerdict,
-            runtimeVerdict
+            runnerVerdict: await runAbsenceRunnerVerdict(fixture, dependencies),
+            runtimeVerdict: await runAbsenceRuntimeVerdict(fixture)
         }));
     }
     return rows;
 }
 
-// The runner polls a real fetch signature (injected here so no network is
-// needed); the runtime polls its own recorded evidence through an until loop.
-// Success is the attempt expectation passing; exhaustion is a failure.
-export async function evaluatePollingOutcomeParityRows(
-    input: EvaluatePollingOutcomeParityInput
+export async function runPollingOutcomeParityRows(
+    input: RunPollingOutcomeParityInput
 ): Promise<readonly AssertionOutcomeParityRow[]> {
-    const now = Date.now;
     const rows: AssertionOutcomeParityRow[] = [];
     for (const fixture of POLLING_FIXTURES) {
-        const runnerVerdict = await readPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), now);
-
-        const runtime = createDeterministicRuntime();
-        const runtimeResult = await runtime.execute(toRuntimePollingCommand(fixture));
-        const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
+        const runnerVerdict = await runPollingRunnerVerdict(fixture, input.fetch(fixture.succeedOnAttempt), input.now);
+        const runtimeResult = await createDeterministicRuntime().execute(toRuntimePollingCommand(fixture));
         rows.push(toRow({
             fixtureId: fixture.fixtureId,
             family: 'polling',
             expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
-            runtimeVerdict
+            runtimeVerdict: toVerdict(runtimeResult.ok)
         }));
     }
     return rows;
-}
-
-async function readPollingRunnerVerdict(
-    fixture: PollingParityFixture,
-    fetch: typeof globalThis.fetch,
-    now: () => number
-): Promise<AssertionOutcomeVerdict> {
-    const previousFetch = globalThis.fetch;
-    globalThis.fetch = fetch;
-    try {
-        const runnerStatus = await executeHttpInteraction({
-            now,
-            interaction: {
-                name: fixture.fixtureId,
-                connection: 'api',
-                request: {
-                    url: 'http://parity.invalid/status',
-                    method: 'GET',
-                    action: 'poll-until',
-                    poll: {
-                        maxAttempts: fixture.maxAttempts,
-                        maxDurationMs: 5_000,
-                        backoffMs: 1,
-                        backoffMultiplier: 1
-                    }
-                },
-                response: {
-                    status: 200
-                }
-            },
-            config: { interaction: { request: {} } }
-        });
-        return isRunnerSuccess(runnerStatus) ? 'pass' : 'fail';
-    }
-    finally {
-        globalThis.fetch = previousFetch;
-    }
 }
 
 function toRuntimePollingCommand(fixture: PollingParityFixture): RallarBlackBoxTestCommand {
@@ -255,9 +156,13 @@ function toRow(input: ToRowInput): AssertionOutcomeParityRow {
     };
 }
 
-function isRunnerSuccess(status: any): boolean {
-    const text = String(status?.status ?? '').toLowerCase();
-    return text === 'success' || text === 'ok' || text === 'passed';
+function toVerdict(passed: boolean): AssertionOutcomeVerdict {
+    return passed ? 'pass' : 'fail';
+}
+
+function decodeRunnerVerdict(result: unknown): AssertionOutcomeVerdict {
+    const status = isJsonRecordValue(result) && typeof result.status === 'string' ? result.status.toLowerCase() : '';
+    return toVerdict(RUNNER_SUCCESS_STATUSES.includes(status));
 }
 
 function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
@@ -270,4 +175,66 @@ function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
             now += ms;
         }
     });
+}
+
+async function runAbsenceRunnerVerdict(
+    fixture: AbsenceParityFixture,
+    dependencies: BlackBoxExecutionDependencies
+): Promise<AssertionOutcomeVerdict> {
+    const result = await waitForWsMessageAbsence({
+        interaction: {
+            request: { timeoutMs: 5 },
+            response: {
+                connection: 'parityWs',
+                absent: { topic: fixture.forbiddenTopic }
+            }
+        },
+        config: { interaction: { request: {} } },
+        context: {
+            dependencies,
+            wsMessages: {
+                parityWs: fixture.bufferedTopics.map((topic) => ({ data: { topic } }))
+            }
+        }
+    });
+    return decodeRunnerVerdict(result);
+}
+
+async function runAbsenceRuntimeVerdict(fixture: AbsenceParityFixture): Promise<AssertionOutcomeVerdict> {
+    const runtime = createDeterministicRuntime();
+    for (const topic of fixture.bufferedTopics) {
+        runtime.recordEvent({ kind: 'message', topic, payload: { data: { topic } } });
+    }
+    const result = await runtime.execute({
+        kind: 'wait',
+        commandId: `parity-${fixture.fixtureId}`,
+        absent: true,
+        timeoutMs: 5,
+        match: { kind: 'message', topic: fixture.forbiddenTopic }
+    });
+    return toVerdict(result.ok);
+}
+
+async function runPollingRunnerVerdict(
+    fixture: PollingParityFixture,
+    fetch: typeof globalThis.fetch,
+    now: () => number
+): Promise<AssertionOutcomeVerdict> {
+    const result = await runHttpInteraction({
+        now,
+        fetch,
+        interaction: {
+            name: fixture.fixtureId,
+            connection: 'api',
+            request: {
+                url: 'http://parity.invalid/status',
+                method: 'GET',
+                action: 'poll-until',
+                poll: { maxAttempts: fixture.maxAttempts, maxDurationMs: 5_000, backoffMs: 1, backoffMultiplier: 1 }
+            },
+            response: { status: 200 }
+        },
+        config: { interaction: { request: {} } }
+    });
+    return decodeRunnerVerdict(result);
 }

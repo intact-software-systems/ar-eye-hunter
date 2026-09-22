@@ -1,7 +1,9 @@
+import { toAuthSessionKey } from '@shared-web/browser/auth/to-auth-session-key.ts';
 import type { RallarConnectionRuntimePort } from '@shared-web/browser/composition/browser-facade-runtime-state.ts';
 import type { BrowserTransportRuntimePort } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type { MiddlewareInitOptions } from '@shared-web/browser/connection/initialise-browser-middleware.ts';
 import type { RallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     toRallarCommandOptions,
@@ -9,11 +11,13 @@ import {
     type RallarOperationOptions
 } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RallarLifecycleCoordinator } from '@shared-web/browser/session/rallar-lifecycle-coordinator.ts';
+import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Command } from '@shared/cache/Command.ts';
 
 export interface RallarSessionConnectionInput {
-    readonly sessionId: string;
+    readonly session: AuthSession;
     readonly scope: StateScope | undefined;
     readonly operationOptions: RallarOperationOptions;
     readonly diagnosticsPorts: RallarDiagnosticsPorts;
@@ -27,8 +31,15 @@ export interface RallarSessionConnectionLifecycle {
     disconnect(): Promise<void>;
 }
 
+interface PendingSessionConnection {
+    readonly middlewareOptions: MiddlewareInitOptions;
+    readonly generation: number;
+}
+
 export namespace BrowserSessionConnectionLifecycle {
     export interface Input {
+        readonly qosProvider: ALQosInputProvider | undefined;
+        readonly sessionDeliveries: BrowserSessionDeliveries;
         readonly connectionRuntime: RallarConnectionRuntimePort;
         readonly transportRuntime: BrowserTransportRuntimePort;
         readonly lifecycle: RallarLifecycleCoordinator;
@@ -71,31 +82,34 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
         if (cachedMiddleware) {
             return cachedMiddleware;
         }
-        const middlewareOptions = toMiddlewareOptions(input);
         if (this.connectionPromise) {
             return await waitForRallarOperation(this.connectionPromise, input.operationOptions);
         }
 
+        const middlewareOptions = {
+            ...toMiddlewareOptions(input),
+            qosProvider: this.input.qosProvider,
+            deliverySettlements: { ws: this.input.sessionDeliveries.settle, rtc: this.input.sessionDeliveries.settle }
+        };
         const generation = this.connectionGeneration;
         this.lifecycleIsDisconnected = false;
         this.input.connectionRuntime.setConnectState('connecting');
-        const pendingConnection = this.startConnection(input, middlewareOptions, generation);
+        const pendingConnection = this.startConnection(input, { middlewareOptions, generation });
         this.connectionPromise = pendingConnection;
         return await waitForRallarOperation(pendingConnection, input.operationOptions);
     }
 
     private startConnection(
         input: RallarSessionConnectionInput,
-        middlewareOptions: ReturnType<typeof toMiddlewareOptions>,
-        generation: number
+        connection: PendingSessionConnection
     ): Promise<ApiMiddleware> {
-        const pendingConnection = this.input.transportRuntime.init(middlewareOptions)
-            .then((middleware) => this.acceptConnectedMiddleware(input, middleware, generation))
+        const pendingConnection = this.input.transportRuntime.init(connection.middlewareOptions)
+            .then((middleware) => this.acceptConnectedMiddleware(input, middleware, connection.generation))
             .catch(async (error) => {
                 const connectionError = error instanceof Error
                     ? error
                     : new Error('Rallar connection failed.');
-                if (generation !== this.connectionGeneration) {
+                if (connection.generation !== this.connectionGeneration) {
                     throw new Error('Rallar connection was cancelled because auth ended.');
                 }
                 this.input.connectionRuntime.setConnectState('idle');
@@ -122,7 +136,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
             generation !== this.connectionGeneration ||
             input.hasAuthEndInProgress() ||
             !input.isSessionCurrent() ||
-            middleware.session.sessionId !== input.sessionId
+            toAuthSessionKey(middleware.session) !== toAuthSessionKey(input.session)
         ) {
             this.input.transportRuntime.shutdown();
             this.input.connectionRuntime.setConnectState('idle');
@@ -179,7 +193,7 @@ export class BrowserSessionConnectionLifecycle implements RallarSessionConnectio
 
 function toMiddlewareOptions(
     input: RallarSessionConnectionInput
-): MiddlewareInitOptions {
+): Omit<MiddlewareInitOptions, 'deliverySettlements' | 'qosProvider'> {
     return {
         ...toRallarOperationOptions(input.operationOptions),
         diagnosticsPorts: input.diagnosticsPorts,

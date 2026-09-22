@@ -1,10 +1,10 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { RallarRtcRoomTransportStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type {
     RallarConnectStatus,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessageSelectorInput,
-    RallarMessageSendResult,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
     RallarRtcDiagnostics,
@@ -13,6 +13,7 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -24,7 +25,11 @@ import type {
     GroupTransportState
 } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupDialLayoutRoles } from '@shared/api/group-lifecycle/resolve-dial-layout-roles.ts';
-import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import type {
+    GroupRef,
+    GroupSnapshot,
+    GroupStateCausalRevision
+} from '@shared/api/group-types.ts';
 import type {
     RallarCrdtDocumentHealth,
     RallarCrdtDocumentRef,
@@ -39,6 +44,7 @@ import type {
     RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/web-rtc-connection-service.ts';
+
 import type { BlackBoxRallarSerializedError } from './black-box-rallar-serialized-error.ts';
 
 export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc' | 'messages.ws';
@@ -108,8 +114,8 @@ export interface BlackBoxRallarConnectionConfig {
 }
 
 export interface BlackBoxRallarSendInput {
-    readonly data?: unknown;
-    readonly payload?: unknown;
+    readonly data?: RallarMessagePayload;
+    readonly payload?: RallarMessagePayload;
     readonly laneId?: string;
     readonly roomId?: string;
     readonly roomRef?: BlackBoxRallarRoomRef;
@@ -164,7 +170,13 @@ export interface BlackBoxRallarEvent {
     readonly error?: BlackBoxRallarSerializedError;
 }
 
+export interface BlackBoxRallarDocumentFacts {
+    readonly timeOrigin: number;
+    readonly origin: string;
+}
+
 export interface BlackBoxRallarConnectDiagnostics {
+    readonly document: BlackBoxRallarDocumentFacts;
     readonly status: 'connected';
     readonly connection: string;
     readonly actor?: string;
@@ -198,56 +210,71 @@ export interface BlackBoxRallarAuthenticateDiagnostics {
     readonly username: string;
 }
 
-export interface BlackBoxRallarSendDiagnostics {
-    readonly status: 'sent' | 'no-peers';
+/** Each optional field appears only when the connection or the send names that scope. */
+export interface BlackBoxRallarSendScopeDiagnostics {
     readonly connection: string;
-    readonly actor?: string;
-    readonly transport: BlackBoxRallarTransport;
-    readonly roomId?: string;
+    readonly actor: string | undefined;
+    readonly roomId: string | undefined;
     readonly roomRef?: BlackBoxRallarRoomRef;
     readonly scope?: BlackBoxRallarScope;
     readonly applicationId?: string;
     readonly workspaceId?: string;
-    readonly laneId?: string;
-    readonly peerIds?: readonly string[];
-    readonly nextHopPeerIds?: readonly string[];
-    readonly typeId?: string;
-    readonly topicId?: string;
-    readonly contextId?: string;
-    readonly resourceId?: string;
-    readonly minSnapshotVersion?: number;
-    readonly results?: readonly RallarRealtimeSendResult[];
-    readonly message?: RallarMessageSendResult;
+}
+
+export interface BlackBoxRallarRealtimeSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
+    readonly status: 'sent' | 'no-peers';
+    readonly transport: Exclude<BlackBoxRallarTransport, 'messages.rtc'>;
+    readonly laneId: string;
+    readonly peerIds: readonly string[];
+    readonly results: readonly RallarRealtimeSendResult[];
     readonly health: readonly RallarRealtimeLaneHealth[];
 }
 
+export interface BlackBoxRallarMessagesRtcSendDiagnostics extends BlackBoxRallarSendScopeDiagnostics {
+    readonly transport: 'messages.rtc';
+    readonly typeId: string;
+    readonly topicId: string | undefined;
+    readonly contextId: string | undefined;
+    readonly resourceId: string | undefined;
+    readonly minSnapshotVersion: number | undefined;
+    readonly nextHopPeerIds: readonly string[] | undefined;
+    readonly message: BlackBoxRallarDeliveryObservation;
+    readonly health: readonly RallarRealtimeLaneHealth[];
+}
+
+export type BlackBoxRallarSendDiagnostics =
+    | BlackBoxRallarRealtimeSendDiagnostics
+    | BlackBoxRallarMessagesRtcSendDiagnostics;
+
+/** The room fields appear only when the send names a room or an application. */
 export interface BlackBoxRallarWsSendDiagnostics {
     readonly status: 'sent';
     readonly connection: string;
-    readonly actor?: string;
+    readonly actor: string | undefined;
     readonly transport: 'ws';
-    readonly roomId?: string;
+    readonly roomId: string | undefined;
     readonly roomRef?: BlackBoxRallarRoomRef;
-    readonly scope?: 'room' | 'world' | 'all';
     readonly applicationId?: string;
     readonly workspaceId?: string;
+    readonly scope: 'room' | 'world' | 'all';
     readonly typeId: string;
-    readonly topicId?: string;
-    readonly contextId?: string;
-    readonly resourceId?: string;
-    readonly minSnapshotVersion?: number;
-    readonly message?: unknown;
-    readonly result: RallarMessageSendResult;
+    readonly topicId: string | undefined;
+    readonly contextId: string | undefined;
+    readonly resourceId: string | undefined;
+    readonly minSnapshotVersion: number | undefined;
+    readonly message: RallarMessagePayload;
+    readonly result: BlackBoxRallarDeliveryObservation;
     readonly wsStatus: RallarWsStatus;
     readonly rtcStatus: RallarRtcStatus;
 }
 
 export interface BlackBoxRallarMessageSendInput {
+    readonly timeoutMs: number;
     readonly connection: string;
     readonly carrier: 'ws' | 'rtc' | 'rtc-with-ws-fallback';
     readonly typeId: string;
     readonly topicId: string | undefined;
-    readonly payload: unknown;
+    readonly payload: RallarMessagePayload;
     readonly roomRef: BlackBoxRallarRoomRef | undefined;
     readonly scope: 'room' | 'world' | 'all' | undefined;
     readonly reliability: 'best-effort' | 'at-least-once' | undefined;
@@ -260,29 +287,24 @@ export interface BlackBoxRallarMessageSendInput {
 
 export interface BlackBoxRallarMessageSendDiagnostics {
     readonly handleId: string;
-    readonly msgId: string | undefined;
+    readonly msgId: string;
     readonly carrier: BlackBoxRallarMessageSendInput['carrier'];
-    readonly status: string;
+    readonly status: ALDeliveryState;
     readonly reason: string | undefined;
-    readonly message: RallarMessageSendResult | undefined;
 }
 
 export interface BlackBoxRallarDeliveryObservation {
     readonly handleId: string;
-    readonly state:
-        | 'rejected'
-        | 'accepted'
-        | 'queued'
-        | 'transport-accepted'
-        | 'acknowledged'
-        | 'expired'
-        | 'superseded'
-        | 'failed'
-        | 'cancelled';
+    readonly state: ALDeliveryState;
     readonly submitted: boolean;
-    readonly confirmedPeerIds: readonly string[];
-    readonly unconfirmedPeerIds: readonly string[];
+    readonly confirmedHopPeerIds: readonly string[];
+    readonly unconfirmedHopPeerIds: readonly string[];
     readonly attempts: number;
+    readonly reason: string | undefined;
+    /** A carrier refused admission because of its own rate limit or open circuit, not for want of a route. */
+    readonly backpressured: boolean;
+    /** The message reached a durable carrier queue, which is what a persistent admission promises. */
+    readonly enqueued: boolean;
 }
 
 export interface BlackBoxRallarDeliveryHandleInput {
@@ -291,7 +313,7 @@ export interface BlackBoxRallarDeliveryHandleInput {
 }
 
 export interface BlackBoxRallarDeliveryObserveInput extends BlackBoxRallarDeliveryHandleInput {
-    readonly state: readonly string[];
+    readonly state: readonly ALDeliveryState[];
     readonly timeoutMs: number;
 }
 
@@ -317,6 +339,7 @@ export interface BlackBoxRallarCloseDiagnostics {
 }
 
 export interface BlackBoxRallarHealthDiagnostics {
+    readonly document: BlackBoxRallarDocumentFacts;
     readonly connected: boolean;
     readonly status: RallarConnectStatus;
     readonly wsStatus: RallarWsStatus;

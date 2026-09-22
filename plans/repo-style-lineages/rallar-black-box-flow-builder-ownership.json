@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/flow-builder.ts",
+        "blob": "79382cc182b40ef898ea153781f3cc48e1656547"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/flow-builder/decode-flow-builder-definition-text.ts",
+        "apps/rallar-black-box/src/flow-builder/flow-builder-contracts.ts",
+        "apps/rallar-black-box/src/flow-builder/flow-builder-steps.ts",
+        "apps/rallar-black-box/src/flow-builder/flow-builder-templates.ts",
+        "apps/rallar-black-box/src/flow-builder/flow-builder-variables.ts",
+        "apps/rallar-black-box/src/flow-builder/to-flow-builder-recipe.ts",
+        "apps/rallar-black-box/src/flow-builder/to-flow-builder-runner-scenario.ts",
+        "apps/rallar-black-box/src/flow-builder/to-flow-builder-text.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/runner/builder/flow-builder-support.ts",
+        "blob": "0df0caf32e60a3525a908672529a962a1ef94344"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/runner/builder/decode-flow-builder-variables-text.ts",
+        "apps/rallar-black-box/src/legacy/runner/builder/to-flow-builder-variables-text.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/runner/builder/use-flow-builder-controller.ts",
+        "blob": "a4f5aeedf834b6a47c46892df093b8d51e224a9b"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/runner/builder/flow-builder-actions.ts"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderEditor.tsx",
+        "blob": "037be61f26bd03f90eebb586d365a06755c8f2cc"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/runner/builder/flow-builder-editor.tsx"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx",
+        "blob": "58620af0b27814a6b7f36e321b9dab474bff5226"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/runner/builder/flow-builder-panel.tsx"
+      ]
+    },
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPreviews.tsx",
+        "blob": "cf771f9b2d3c90d8c6b2b1dec3428cb381ad5304"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/legacy/runner/builder/flow-builder-previews.tsx"
+      ]
+    }
+  ]
+}

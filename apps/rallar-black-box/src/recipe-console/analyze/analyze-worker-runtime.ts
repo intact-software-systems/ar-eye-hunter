@@ -1,5 +1,5 @@
 import {
-    deriveDistributedArtifactEvidenceCollections,
+    computeDistributedArtifactEvidenceCollections,
     searchDistributedArtifactEvidenceWindow
 } from '@shared-test/rallar-bb-test/mod.ts';
 import { finalizeAnalyzeArtifactModel, prepareAnalyzeArtifactModel } from './analyze-artifact-model.ts';
@@ -183,18 +183,19 @@ export function createAnalyzeWorkerRuntime(
         startedOperationGeneration = operationGeneration;
         const startedAt = now();
         try {
+            const offer = candidate.artifact;
             const parseStartedAt = now();
-            const decoded = decodeAnalyzeWorkerArtifactOffer(candidate.artifact);
+            const decoded = decodeAnalyzeWorkerArtifactOffer(offer);
             const prepared = prepareAnalyzeArtifactModel({
                 files: decoded.files,
-                source: candidate.artifact.source,
-                label: candidate.artifact.label,
+                source: offer.source,
+                label: offer.label,
                 generatedAtEpochMs: decoded.generatedAtEpochMs,
                 artifactSchemaVersion: decoded.artifactSchemaVersion,
-                ignoredFiles: candidate.artifact.ignoredFiles
+                ignoredFiles: offer.source === 'local-files' ? offer.ignoredFiles : []
             });
             const parseDurationMs = analyzeWorkerDuration(now(), parseStartedAt);
-            const collections = await deriveDistributedArtifactEvidenceCollections(
+            const collections = await computeDistributedArtifactEvidenceCollections(
                 prepared.evidenceInput
             );
             const model = finalizeAnalyzeArtifactModel(
@@ -208,13 +209,12 @@ export function createAnalyzeWorkerRuntime(
             ) {
                 throw new AnalyzeControlEnvelopeIdentityError();
             }
-            let controlIdentityValidated: true | undefined;
-            if (candidate.artifact.source === 'control') {
-                const expected = candidate.artifact.expectedControlIdentity;
+            let controlIdentityValidated = false;
+            if (offer.source === 'control') {
                 if (
-                    !expected || !await analyzeControlIdentityMatchesDigest(
+                    !await analyzeControlIdentityMatchesDigest(
                         model.identity,
-                        expected
+                        offer.expectedControlIdentity
                     )
                 ) {
                     throw new AnalyzeControlEnvelopeIdentityError();
@@ -265,9 +265,7 @@ export function createAnalyzeWorkerRuntime(
                         : {}),
                     exportBytes,
                     telemetry,
-                    ...(controlIdentityValidated
-                        ? { controlIdentityValidated }
-                        : {})
+                    controlIdentityValidated
                 },
                 transfer: [exportBytes]
             });

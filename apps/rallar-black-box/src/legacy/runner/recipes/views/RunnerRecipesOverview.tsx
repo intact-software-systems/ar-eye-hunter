@@ -1,12 +1,12 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { Dispatch, SetStateAction } from 'react';
 import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
 import type { BlackBoxControlTokenSession } from '../../../../control-operator-token.ts';
-import type { ControlRunSnapshot } from '../../../../control-run-manager.ts';
 import type { DistributedRecipeTargetRow } from '../../../../distributed-recipes.ts';
 import type { RecipeLaunchState, RunnerReadinessStatus } from '../../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../../runtime-store.ts';
 import { Metric } from '../../../shared/Metric.tsx';
 import { formatTime } from '../../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../../shell/global-context-model.ts';

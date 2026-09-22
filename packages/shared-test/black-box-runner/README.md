@@ -75,9 +75,11 @@ and baseline interpretation lives in `playground/rtc-design/baselines/`.
   owns Playwright setup, browser events, runtime calls, and resource cleanup;
   [browser request translation](./browser/browser-rtc-requests.ts) computes
   send values from explicit payload, scope, and observed target sessions.
-- [RallarRemoteBrowserRtcProvider](./rallar-remote-browser-provider.ts#RallarRemoteBrowserRtcProvider)
-  owns control-server commands and observation polling. Results must match run,
-  agent, and command identity. Polling failures reach the active wait, and wait
+- [createRallarRemoteBrowserRtcProvider](./rallar-remote-browser-provider.ts#createRallarRemoteBrowserRtcProvider)
+  runs RTC steps through the
+  [control client](./remote-browser/rallar-remote-browser-control-client.ts#runRallarRemoteBrowserCommand),
+  which returns HTTP, decode and timeout failures as values. Results must match run,
+  agent, and command identity. A polling failure fails the active wait, and wait
   cleanup settles outstanding reads. The command and observation translations
   live under [remote-browser](./remote-browser/).
 

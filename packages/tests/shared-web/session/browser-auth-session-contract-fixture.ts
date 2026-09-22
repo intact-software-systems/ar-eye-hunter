@@ -233,7 +233,7 @@ function resetRtcTransportMocks(): void {
     );
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
         async (message) => ({
-            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         })
@@ -247,7 +247,7 @@ function resetRtcTransportMocks(): void {
 function resetWebSocketTransportMocks(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
         async (message) => ({
-            status: 'enqueued',
+            verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 },
             message,
             entries: []
         })

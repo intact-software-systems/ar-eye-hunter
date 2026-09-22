@@ -1,29 +1,42 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxFailures,
-    selectRallarBlackBoxFirstFailure
-} from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxFailures,
+    getRallarBlackBoxFirstFailure
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useState } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
+import {
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
+} from '../../../control-agent-board.ts';
 import { resolveBlackBoxControlToken, type BlackBoxControlTokenSession } from '../../../control-operator-token.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
     createDistributedRun,
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    fetchDistributedRun,
+    readDistributedRun,
     stageDistributedRun,
-    startDistributedRun,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
+    startDistributedRun
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
 import {
-    buildDistributedRunManifest,
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
+import type { ControlRequestFailure } from '../../../control-run-manager/control-request-failure.ts';
+import {
+    readControlRunSnapshot,
+    readControlServerSnapshot
+} from '../../../control-run-manager/control-run-endpoints.ts';
+import {
+    createDistributedRunManifest,
     defaultDistributedRecipeTargetIds,
     distributedRecipePreflight,
     distributedRecipeTargetRows
@@ -35,13 +48,14 @@ import {
     type RecipeLaunchState,
     type RunnerTurnProbeStatus
 } from '../../../runner-readiness.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { validateDistributedRecipeManifest } from '../distributed-recipes/distributed-manifest-validation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import { createRunnerAgentLaunchActions } from './runner-agent-launch-actions.ts';
 import { runnerApiEndpointUrl, runnerApiProbeUrl } from './runner-endpoints.ts';
@@ -73,11 +87,15 @@ export function useRunnerRecipesController({
     onDistributedRunStarted
 }: UseRunnerRecipesControllerInput) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
-        controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+        toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         bootstrap.controlToken ?? ''
     );
+    const controlEndpoint = createDefaultControlEndpointRequest({
+        baseUrl: controlBaseUrl,
+        token: controlToken
+    });
     const [brokeredControlToken, setBrokeredControlToken] = useState<BlackBoxControlTokenSession | undefined>();
     const [brokeredControlTokenError, setBrokeredControlTokenError] = useState<string | undefined>();
     const [controlRunId, setControlRunId] = useState(
@@ -154,13 +172,14 @@ export function useRunnerRecipesController({
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
                 requiredRecipes: selectedRecipe?.recipe ? [selectedRecipe.recipe] : [],
-                nowEpochMs: Date.now()
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [controlRun, groupRef, recipePreflight, selectedRecipe?.recipe]
     );
     const recipeAgentRows = useMemo(
         () =>
-            deriveControlAgentBoardRows({
+            computeControlAgentBoardRows({
                 run: controlRun,
                 group: groupRef,
                 requiredCommandKinds: recipePreflight?.commandKinds ?? [],
@@ -169,7 +188,10 @@ export function useRunnerRecipesController({
                     ...(controlSnapshot?.distributedRuns ?? []),
                     ...(distributedRun ? [distributedRun] : [])
                 ],
-                nowEpochMs: Date.now()
+                selectedDistributedRun: undefined,
+                monitorAgentProgress: [],
+                nowEpochMs: Date.now(),
+                staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
             }),
         [
             controlRun,
@@ -181,7 +203,7 @@ export function useRunnerRecipesController({
         ]
     );
     const recipeAgentSummary = useMemo(
-        () => summarizeControlAgentBoardRows(recipeAgentRows),
+        () => computeControlAgentBoardSummary(recipeAgentRows),
         [recipeAgentRows]
     );
     const targetableRows = targetRows.filter((row) => row.targetable);
@@ -211,9 +233,9 @@ export function useRunnerRecipesController({
         ? 'This shared-test catalog entry is CLI-only from the SPA. Use Copy command or Advanced artifact import.'
         : runnerDisabledReason(readiness, 'connected-agents');
     const localRunning = busy || launchState === 'preparing' || launchState === 'running';
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const failures = selectRallarBlackBoxFailures(state);
-    const firstFailure = selectRallarBlackBoxFirstFailure(state) ?? failures[0];
+    const history = getRallarBlackBoxCommandHistory(state);
+    const failures = getRallarBlackBoxFailures(state);
+    const firstFailure = getRallarBlackBoxFirstFailure(state) ?? failures[0];
     const latestResult = history.at(-1);
 
     useEffect(() => {
@@ -343,13 +365,22 @@ export function useRunnerRecipesController({
                     });
                 })
             : Promise.resolve();
-        const controlPromise = fetchControlServerSnapshot({
-            baseUrl: controlBaseUrl,
-            token: controlToken,
+        const controlPromise = readControlServerSnapshot({
+            ...controlEndpoint,
             bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
         })
-            .then(async (serverSnapshot) => {
+            .then(async (snapshotOutcome) => {
                 if (!request.isCurrent()) {
+                    return;
+                }
+                const serverSnapshot = snapshotOutcome.right;
+                if (serverSnapshot === undefined) {
+                    setControlSnapshot(undefined);
+                    setControlRun(undefined);
+                    setControlProbe({
+                        status: 'offline',
+                        detail: toRunnerFriendlyControlFailureMessage(snapshotOutcome.left)
+                    });
                     return;
                 }
                 setControlSnapshot(serverSnapshot);
@@ -373,13 +404,22 @@ export function useRunnerRecipesController({
                 setControlRunId(nextRunId);
                 if (knownPreferredRunId) {
                     setAgentRunId(knownPreferredRunId);
-                    const nextControlRun = await fetchControlRunSnapshot({
-                        baseUrl: controlBaseUrl,
-                        token: controlToken,
+                    const controlRunOutcome = await readControlRunSnapshot({
+                        ...controlEndpoint,
                         runId: knownPreferredRunId,
                         bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                     });
                     if (!request.isCurrent()) {
+                        return;
+                    }
+                    const nextControlRun = controlRunOutcome.right;
+                    if (nextControlRun === undefined) {
+                        setControlSnapshot(undefined);
+                        setControlRun(undefined);
+                        setControlProbe({
+                            status: 'offline',
+                            detail: toRunnerFriendlyControlFailureMessage(controlRunOutcome.left)
+                        });
                         return;
                     }
                     setControlRun(nextControlRun);
@@ -445,10 +485,16 @@ export function useRunnerRecipesController({
         setLaunchError(undefined);
         setLaunchMessage(`Loading ${selectedRecipe.title}.`);
         try {
-            await rallarBlackBoxRuntimeStore.loadRecipeFromJson(
+            const loaded = await rallarBlackBoxRuntimeStore.loadRecipeFromJson(
                 json(selectedRecipe.recipe),
                 selectedRecipe.id
             );
+            if (loaded.left !== undefined) {
+                setLaunchState('failed');
+                setLaunchError(runnerFriendlyErrorMessage(loaded.left));
+                setLaunchMessage('Local recipe failed.');
+                return;
+            }
             setLaunchState('running');
             setLaunchMessage(`Running ${selectedRecipe.title} in this browser.`);
             await rallarBlackBoxRuntimeStore.runLoadedRecipe();
@@ -479,6 +525,14 @@ export function useRunnerRecipesController({
         }
     };
 
+    const reportDistributedLaunchFailure = (
+        failure: ControlRequestFailure | undefined
+    ): void => {
+        setLaunchState('failed');
+        setLaunchError(toRunnerFriendlyControlFailureMessage(failure));
+        setLaunchMessage('Distributed recipe failed to start.');
+    };
+
     const runDistributedRecipe = async (): Promise<void> => {
         if (!selectedRecipe?.distributedItem) {
             setLaunchError(distributedDisabledReason);
@@ -489,13 +543,15 @@ export function useRunnerRecipesController({
         setLaunchError(undefined);
         setArtifactBundle(undefined);
         try {
-            const [serverSnapshot] = await Promise.all([
-                fetchControlServerSnapshot({
-                    baseUrl: controlBaseUrl,
-                    token: controlToken,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
-                })
-            ]);
+            const snapshotOutcome = await readControlServerSnapshot({
+                ...controlEndpoint,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
+            });
+            const serverSnapshot = snapshotOutcome.right;
+            if (serverSnapshot === undefined) {
+                reportDistributedLaunchFailure(snapshotOutcome.left);
+                return;
+            }
             setControlSnapshot(serverSnapshot);
             const knownRunIds = new Set(
                 serverSnapshot.runs.map((run) => run.runId)
@@ -512,12 +568,16 @@ export function useRunnerRecipesController({
             if (!nextRunId) {
                 throw new Error('Control run missing.');
             }
-            const latestControlRun = await fetchControlRunSnapshot({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+            const controlRunOutcome = await readControlRunSnapshot({
+                ...controlEndpoint,
                 runId: nextRunId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
+            const latestControlRun = controlRunOutcome.right;
+            if (latestControlRun === undefined) {
+                reportDistributedLaunchFailure(controlRunOutcome.left);
+                return;
+            }
             setControlRunId(nextRunId);
             setControlRun(latestControlRun);
             const preflight = distributedRecipePreflight(
@@ -537,7 +597,7 @@ export function useRunnerRecipesController({
                 throw new Error('No agents connected for this group.');
             }
             const distributedRunId = `dist-${safeIdSegment(groupRef.groupId || 'group')}-${Date.now()}`;
-            const manifest = buildDistributedRunManifest({
+            const manifest = createDistributedRunManifest({
                 distributedRunId,
                 controlRunId: nextRunId,
                 displayName: selectedRecipe.title,
@@ -547,8 +607,11 @@ export function useRunnerRecipesController({
                 targetPolicyMode: 'selected-agents',
                 rolePattern: 'all-agents',
                 ackTimeoutMs: 15_000,
+                barrier: { enabled: false },
                 startMode: 'manual',
-                expectedParticipantCount: agentIds.length
+                expectedParticipantCount: agentIds.length,
+                groupAssertions: [],
+                createdBy: 'rallar-black-box-spa'
             });
             const manifestError = validateDistributedRecipeManifest(manifest);
             if (manifestError) {
@@ -556,26 +619,42 @@ export function useRunnerRecipesController({
             }
 
             const distributedControlToken = await resolveDistributedControlToken();
+            const distributedControlEndpoint = createDefaultControlEndpointRequest({
+                baseUrl: controlBaseUrl,
+                token: distributedControlToken
+            });
             setLaunchMessage(
                 `Creating ${distributedRunId} for ${agentIds.length} agent(s).`
             );
-            const created = await createDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+            const createdOutcome = await createDistributedRun({
+                ...distributedControlEndpoint,
                 manifest
             });
+            const created = createdOutcome.right;
+            if (created === undefined) {
+                reportDistributedLaunchFailure(createdOutcome.left);
+                return;
+            }
             setLaunchMessage(`Staging ${created.distributedRunId}.`);
-            const staged = await stageDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+            const stagedOutcome = await stageDistributedRun({
+                ...distributedControlEndpoint,
                 distributedRunId: created.distributedRunId
             });
+            const staged = stagedOutcome.right;
+            if (staged === undefined) {
+                reportDistributedLaunchFailure(stagedOutcome.left);
+                return;
+            }
             setLaunchMessage(`Starting ${staged.distributedRunId}.`);
-            const started = await startDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: distributedControlToken,
+            const startedOutcome = await startDistributedRun({
+                ...distributedControlEndpoint,
                 distributedRunId: staged.distributedRunId
             });
+            const started = startedOutcome.right;
+            if (started === undefined) {
+                reportDistributedLaunchFailure(startedOutcome.left);
+                return;
+            }
             setDistributedRun(started);
             setLaunchState(
                 started.state === 'passed'
@@ -593,13 +672,15 @@ export function useRunnerRecipesController({
                 controlBaseUrl,
                 controlToken
             });
-            void fetchDistributedRun({
-                baseUrl: controlBaseUrl,
-                token: controlToken,
+            void readDistributedRun({
+                ...controlEndpoint,
                 distributedRunId: started.distributedRunId
             })
-                .then((nextDistributedRun) => {
-                    setDistributedRun(nextDistributedRun);
+                .then((outcome) => {
+                    const nextDistributedRun = outcome.right;
+                    if (nextDistributedRun !== undefined) {
+                        setDistributedRun(nextDistributedRun);
+                    }
                 })
                 .catch(() => undefined);
         }

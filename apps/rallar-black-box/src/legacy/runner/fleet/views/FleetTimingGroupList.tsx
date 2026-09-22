@@ -1,4 +1,4 @@
-import type { ControlFleetTimingDistribution } from '../../../../control-run-manager.ts';
+import type { ControlFleetTimingDistribution } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { formatFleetDuration } from '../../shared/performance-format.ts';
 import type { FleetTimingGroup } from '../fleet-types.ts';
 

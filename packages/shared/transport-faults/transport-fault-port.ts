@@ -17,6 +17,11 @@ export interface TransportFaultPort {
     decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision;
 }
 
+/** Decides eligibility before submission; scripted decisions consume their matching fault count. */
+export interface WebSocketSubmissionReadinessFaultPort {
+    decideSubmissionReadiness(serialized: string): 'ready' | 'not-ready';
+}
+
 export interface TransportFaultMatch {
     readonly controlType: 'ack' | 'nack' | 'repair' | undefined;
     readonly typeId: string | undefined;
@@ -27,17 +32,17 @@ export interface ScriptedTransportFault {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
     readonly match: TransportFaultMatch;
-    readonly action: 'drop' | Readonly<{ delayMs: number; }>;
-    readonly remaining: number;
+    readonly action: 'drop' | 'not-ready' | Readonly<{ delayMs: number; }>;
+    readonly remaining: number | 'until-cleared';
 }
 
 export interface TransportFaultObservation {
     readonly faultId: string;
     readonly carrier: TransportFaultCarrier;
-    readonly decision: 'drop' | 'delay';
+    readonly decision: 'drop' | 'delay' | 'not-ready';
 }
 
-export interface ScriptedTransportFaultPort extends TransportFaultPort {
+export interface ScriptedTransportFaultPort extends TransportFaultPort, WebSocketSubmissionReadinessFaultPort {
     inject(fault: ScriptedTransportFault): void;
     clear(): void;
     getObservations(): readonly TransportFaultObservation[];
@@ -64,43 +69,79 @@ export function createPassThroughTransportFaultPort(): TransportFaultPort {
     return { decideSend: () => ({ kind: 'pass' }) };
 }
 
+export function createPassThroughWebSocketSubmissionReadinessFaultPort(): WebSocketSubmissionReadinessFaultPort {
+    return { decideSubmissionReadiness: () => 'ready' };
+}
+
 export function createScriptedTransportFaultPort(): ScriptedTransportFaultPort {
-    const faults = new Map<string, ScriptedTransportFault>();
-    const observations: TransportFaultObservation[] = [];
-    return {
-        inject(fault) {
-            faults.set(fault.faultId, fault);
-        },
-        clear() {
-            faults.clear();
-            observations.length = 0;
-        },
-        getObservations() {
-            return [...observations];
-        },
-        decideSend(carrier, serialized) {
-            const facts = toSerializedFrameFacts(serialized);
-            if (facts === undefined) {
-                return { kind: 'pass' };
-            }
-            for (const fault of faults.values()) {
-                if (
-                    fault.carrier !== carrier || fault.remaining <= 0 ||
-                    !matchesFault(fault.match, facts)
-                ) {
-                    continue;
-                }
-                faults.set(fault.faultId, { ...fault, remaining: fault.remaining - 1 });
-                if (fault.action === 'drop') {
-                    observations.push({ faultId: fault.faultId, carrier, decision: 'drop' });
-                    return { kind: 'drop', faultId: fault.faultId };
-                }
-                observations.push({ faultId: fault.faultId, carrier, decision: 'delay' });
-                return { kind: 'delay', faultId: fault.faultId, delayMs: fault.action.delayMs };
-            }
+    return new ScriptedTransportFaults();
+}
+
+class ScriptedTransportFaults implements ScriptedTransportFaultPort {
+    private readonly faults = new Map<string, ScriptedTransportFault>();
+    private readonly observations: TransportFaultObservation[] = [];
+
+    inject(fault: ScriptedTransportFault): void {
+        this.faults.set(fault.faultId, fault);
+    }
+
+    clear(): void {
+        this.faults.clear();
+        this.observations.length = 0;
+    }
+
+    getObservations(): readonly TransportFaultObservation[] {
+        return [...this.observations];
+    }
+
+    decideSubmissionReadiness(serialized: string): 'ready' | 'not-ready' {
+        const fault = this.findMatchingFault('ws', serialized, 'readiness');
+        if (fault === undefined) {
+            return 'ready';
+        }
+        this.consumeFault(fault, 'not-ready');
+        return 'not-ready';
+    }
+
+    decideSend(carrier: TransportFaultCarrier, serialized: string): TransportFaultDecision {
+        const fault = this.findMatchingFault(carrier, serialized, 'frame');
+        if (fault === undefined || fault.action === 'not-ready') {
             return { kind: 'pass' };
         }
-    };
+        if (fault.action === 'drop') {
+            this.consumeFault(fault, 'drop');
+            return { kind: 'drop', faultId: fault.faultId };
+        }
+        this.consumeFault(fault, 'delay');
+        return { kind: 'delay', faultId: fault.faultId, delayMs: fault.action.delayMs };
+    }
+
+    private findMatchingFault(
+        carrier: TransportFaultCarrier,
+        serialized: string,
+        stage: 'readiness' | 'frame'
+    ): ScriptedTransportFault | undefined {
+        const facts = toSerializedFrameFacts(serialized);
+        if (facts === undefined) {
+            return undefined;
+        }
+        for (const fault of this.faults.values()) {
+            if (
+                fault.carrier === carrier && (fault.remaining === 'until-cleared' || fault.remaining > 0) &&
+                (fault.action === 'not-ready') === (stage === 'readiness') && matchesFault(fault.match, facts)
+            ) {
+                return fault;
+            }
+        }
+        return undefined;
+    }
+
+    private consumeFault(fault: ScriptedTransportFault, decision: TransportFaultObservation['decision']): void {
+        if (fault.remaining !== 'until-cleared') {
+            this.faults.set(fault.faultId, { ...fault, remaining: fault.remaining - 1 });
+        }
+        this.observations.push({ faultId: fault.faultId, carrier: fault.carrier, decision });
+    }
 }
 
 function matchesFault(match: TransportFaultMatch, facts: SerializedFrameFacts): boolean {

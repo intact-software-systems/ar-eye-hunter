@@ -501,6 +501,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const sessionId = `observer-${crypto.randomUUID()}`;
         configureBrowserALRuntimeStores(sessionId, {
             diagnosticsPorts: {
+                submissionReadinessFaultPort: diagnosticsPorts.submissionReadinessFaultPort,
                 transportFaultPort: createPassThroughTransportFaultPort(),
                 indexedDbOperationObserver: observer,
                 outboundDiagnostics: createPassThroughALOutboundRuntimeDiagnosticsSink(),

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { createDefaultExecutionDependencies } from '../../shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import { FakeRemoteBrowserControlServer, toJsonResponse } from './fake-remote-browser-control-server.ts';
 
@@ -362,6 +363,116 @@ describe('rallar remote browser RTC provider', () => {
         expect(report.rtcCloseEvents.aliceRtc[0].autoCloseRequested).toBe(true);
     });
 
+    it('reads runner remote-browser options only under rallarRemoteBrowser', async () => {
+        const server = new FakeRemoteBrowserControlServer();
+        const unreadOptionRequests: string[] = [];
+
+        const report = await executeBlackBox(
+            [
+                {
+                    HTTP: {
+                        request: { provider: 'rallar-remote-browser', path: 'https://api.example.test/widgets', method: 'GET' },
+                        response: {}
+                    },
+                    unreadOptionHttp: {}
+                }
+            ],
+            0,
+            {
+                remoteBrowser: {
+                    runId: 'unread-run',
+                    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+                        unreadOptionRequests.push(String(input));
+                        return server.fetch(input, init);
+                    }
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
+            }
+        );
+
+        expect(unreadOptionRequests).toEqual([]);
+        expect(server.commands.map((command) => command.kind)).toEqual(['http.request']);
+        expect(report.resultsByName.unreadOptionHttp[0].actual.remote.runId).toBe('remote-browser-run');
+    });
+
+    it('sends remote HTTP, WebSocket and RTC steps through the fetch dependency, not a fetch in the runner options', async () => {
+        const server = new FakeRemoteBrowserControlServer();
+        const unreadFetchRequests: string[] = [];
+
+        const report = await executeBlackBox(
+            [
+                {
+                    HTTP: {
+                        request: { provider: 'rallar-remote-browser', path: 'https://api.example.test/widgets', method: 'GET' },
+                        response: {}
+                    },
+                    remoteHttp: {}
+                },
+                {
+                    WS: {
+                        request: {
+                            action: 'connect',
+                            connection: 'remoteWs',
+                            provider: 'rallar-remote-browser',
+                            path: 'wss://ws.example.test/control'
+                        },
+                        response: {}
+                    },
+                    remoteWs: {}
+                },
+                {
+                    RTC: {
+                        request: { action: 'connect', connection: 'remoteRtc', provider: 'rallar-remote-browser' },
+                        response: {}
+                    },
+                    remoteRtc: {}
+                }
+            ],
+            0,
+            {
+                rallarRemoteBrowser: {
+                    pollIntervalMs: 1,
+                    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+                        unreadFetchRequests.push(String(input));
+                        return server.fetch(input, init);
+                    }
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
+            }
+        );
+
+        expect(unreadFetchRequests).toEqual([]);
+        expect(report.summary.failure).toBe(0);
+        expect(server.commands.map((command) => command.kind)).toEqual(['http.request', 'ws.open', 'rtc.connect', 'ws.close', 'close']);
+    });
+
+    it('takes control-server settings from the step and runner options, not from the provider input', async () => {
+        const server = new FakeRemoteBrowserControlServer();
+        const providerInput = { fetch: server.fetch, runId: 'unread-provider-run', agentId: 'unread-provider-agent' };
+
+        const report = await executeBlackBox(
+            [
+                {
+                    RTC: {
+                        request: { action: 'connect', connection: 'remoteRtc', provider: 'rallar-remote-browser' },
+                        response: {}
+                    },
+                    remoteRtc: {}
+                }
+            ],
+            0,
+            {
+                rallarRemoteBrowser: { runId: 'runner-run', pollIntervalMs: 1 },
+                rtcProviders: { 'rallar-remote-browser': createRallarRemoteBrowserRtcProvider(providerInput) }
+            }
+        );
+
+        expect(report.resultsByName.remoteRtc[0].actual.remote).toMatchObject({
+            runId: 'runner-run',
+            agentId: 'visible-agent-local'
+        });
+    });
+
     it('routes remote HTTP interactions through the control server', async () => {
         const server = new FakeRemoteBrowserControlServer();
 
@@ -400,9 +511,9 @@ describe('rallar remote browser RTC provider', () => {
                     runId: 'run-remote-http',
                     agentId: 'agent-remote',
                     timeoutMs: 500,
-                    pollIntervalMs: 1,
-                    fetch: server.fetch
-                }
+                    pollIntervalMs: 1
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
             }
         );
 
@@ -455,9 +566,9 @@ describe('rallar remote browser RTC provider', () => {
                     agentId: 'agent-remote',
                     timeoutMs: 500,
                     pollIntervalMs: 1,
-                    fetch: server.fetch,
                     allowedHosts: ['api.example.test']
-                }
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
             }
         );
 
@@ -507,9 +618,9 @@ describe('rallar remote browser RTC provider', () => {
                     agentId: 'agent-remote',
                     timeoutMs: 500,
                     pollIntervalMs: 1,
-                    fetch: server.fetch,
                     maxPayloadBytes: 4
-                }
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
             }
         );
 
@@ -589,9 +700,9 @@ describe('rallar remote browser RTC provider', () => {
                     runId: 'run-remote-ws',
                     agentId: 'agent-remote',
                     timeoutMs: 500,
-                    pollIntervalMs: 1,
-                    fetch: server.fetch
-                }
+                    pollIntervalMs: 1
+                },
+                dependencies: { ...createDefaultExecutionDependencies(), fetch: server.fetch }
             }
         );
 
@@ -657,8 +768,7 @@ describe('rallar remote browser RTC provider', () => {
                     runId: 'run-remote-crdt-wait',
                     agentId: 'agent-remote',
                     timeoutMs: 500,
-                    pollIntervalMs: 1,
-                    fetch: server.fetch
+                    pollIntervalMs: 1
                 },
                 rtcProviders: {
                     'rallar-remote-browser': createRallarRemoteBrowserRtcProvider({

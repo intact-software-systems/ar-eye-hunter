@@ -15,10 +15,12 @@ import {
     type RallarGroupDirectorAppointment
 } from '@shared/api/group-director.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import { readConfiguredValue } from '@shared/cache/RepositoryManager.ts';
 
 export namespace BrowserDirectorStatusRuntime {
     export interface Input {
         readonly roomStateStore: RallarRoomStateStorePort;
+        readonly nowMs: () => number;
         readSession(): AuthSession | undefined;
         resolveDefaultRoom(): string | GroupRef | undefined;
     }
@@ -44,12 +46,12 @@ export class BrowserDirectorStatusRuntime {
         options: RallarDirectorStatusOptions = {}
     ): RallarDirectorStatus {
         const target = room ?? this.input.resolveDefaultRoom() ??
-            this.input.roomStateStore.resolveCurrentRoomRef();
+            readConfiguredValue(() => this.input.roomStateStore.resolveCurrentRoomRef());
         const snapshot = this.findSnapshot(target);
         const roomRef = this.resolveRoomRef(target, snapshot);
         const appointment = readRallarGroupDirectorFromSnapshot(snapshot);
         const heartbeat = this.readMatchingHeartbeat(roomRef, appointment);
-        const now = options.now ?? Date.now();
+        const now = options.now ?? this.input.nowMs();
         const active = isRallarGroupDirectorSessionActive(snapshot, appointment);
         const freshness = active
             ? readRallarGroupDirectorFreshness(appointment, heartbeat?.atEpochMs, now)
@@ -76,9 +78,7 @@ export class BrowserDirectorStatusRuntime {
     }
 
     public findSnapshot(room?: string | GroupRef): GroupSnapshot | undefined {
-        return room
-            ? this.input.roomStateStore.findGroupSnapshot(room)
-            : this.input.roomStateStore.state().currentRoom;
+        return readConfiguredValue(() => this.input.roomStateStore.findGroupSnapshot(room));
     }
 
     public resolveRoomRef(
@@ -93,7 +93,7 @@ export class BrowserDirectorStatusRuntime {
     public recordHeartbeat(
         roomRef: GroupRef,
         appointment: RallarGroupDirectorAppointment,
-        atEpochMs = Date.now()
+        atEpochMs = this.input.nowMs()
     ): void {
         this.heartbeatByRoom.set(toRoomKey(roomRef), {
             sessionId: appointment.sessionId,
@@ -117,8 +117,9 @@ export class BrowserDirectorStatusRuntime {
     }
 
     public onStatus(listener: RallarDirectorStatusListener): RallarUnsubscribe {
+        const current = this.read();
         this.listeners.add(listener);
-        notifyListener(listener, this.read());
+        notifyListener(listener, current);
         return () => this.listeners.delete(listener);
     }
 

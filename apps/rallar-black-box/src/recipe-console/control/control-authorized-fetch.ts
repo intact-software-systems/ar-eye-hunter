@@ -1,4 +1,4 @@
-import type { ControlRunManagerFetch } from '../../control-run-manager.ts';
+import type { ControlRunManagerFetch } from '../../control-run-manager/control-endpoint-request.ts';
 
 export function controlFetchWithSignal(
     fetchFn: ControlRunManagerFetch | undefined,

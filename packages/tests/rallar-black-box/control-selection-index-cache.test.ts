@@ -201,7 +201,15 @@ function distributedRun(
                 groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] }
+            targetPolicy: { mode: 'selected-agents', agentIds: [] },
+            schemaVersion: 1,
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         state: 'running',
         createdAtEpochMs: updatedAtEpochMs,
@@ -213,12 +221,10 @@ function distributedRun(
             ok: false,
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 0,
-                requiredRecipes: 0,
                 passedRecipes: 0,
                 failedRecipes: 0,
                 groupAssertions: 0,

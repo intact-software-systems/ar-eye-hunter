@@ -1,8 +1,8 @@
-import { distributedRecipeStateTone } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot
-} from '../../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { distributedRecipeStateTone } from '@shared-test/rallar-bb-test/distributed-run-observation/distributed-recipe-state-tone.ts';
 import { Metric } from '../../../shared/Metric.tsx';
 import { formatTime } from '../../../shared/time-format.ts';
 import { DistributedRunSummary } from '../../distributed/DistributedRunSummary.tsx';

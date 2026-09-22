@@ -1,9 +1,9 @@
-import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
 import type {
     ControlFleetRunReport,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlAgentBoardRow, ControlAgentBoardSummary } from '../../../../control-agent-board.ts';
 import { FleetWorldMap } from '../../../../fleet-world-map.tsx';
 import type {
     FleetWorldMapLayerId,

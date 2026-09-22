@@ -1,5 +1,9 @@
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '../al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '../alm/outbound/al-outbound-message-runtime.ts';
+import {
+    hasALDeliveryDurableWork,
+    type ALDeliveryAdmissionVerdict
+} from '../alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundEnqueueResult } from '../alm/outbound/al-outbound-message-runtime.ts';
 import { toError } from '../resilience/to-error.ts';
 import { WsQueueBoxClientService } from '../services/ws-queue-box-client-service.ts';
 import { QRtcSignalingAdmissionError } from './qrtc-signaling-admission.ts';
@@ -105,42 +109,41 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
             payload
         );
         const admitted = await this.admitSignal(message);
-        if (toSignalAdmissionOutcome(admitted.status) === 'accepted') {
+        if (toSignalAdmissionOutcome(admitted.verdict) === 'accepted') {
             return;
         }
-        if (toSignalAdmissionOutcome(admitted.status) === 'terminal') {
+        if (toSignalAdmissionOutcome(admitted.verdict) === 'terminal') {
             throw toSignalAdmissionError(admitted);
         }
         await pauseFor(SIGNAL_ADMISSION_RETRY_DELAY_MS);
         const readmitted = await this.admitSignal(message);
-        if (toSignalAdmissionOutcome(readmitted.status) !== 'accepted') {
+        if (toSignalAdmissionOutcome(readmitted.verdict) !== 'accepted') {
             throw toSignalAdmissionError(readmitted);
         }
     }
 
     private async admitSignal(message: ALMessage): Promise<ALOutboundEnqueueResult> {
         const result = await this.qbox.enqueueOutboxIfAbsent(message);
-        if (result.status === 'enqueued' || result.status === 'duplicate' || result.status === 'pending-admission') {
+        if (hasALDeliveryDurableWork(result.verdict)) {
             this.wakeOutbox?.();
         }
         return result;
     }
 }
 
-function toSignalAdmissionOutcome(status: ALOutboundEnqueueStatus): SignalAdmissionOutcome {
-    switch (status) {
-        case 'enqueued':
+function toSignalAdmissionOutcome(verdict: ALDeliveryAdmissionVerdict): SignalAdmissionOutcome {
+    switch (verdict.kind) {
+        case 'admitted':
         case 'duplicate':
-        case 'pending-admission':
-        case 'accepted':
+        case 'pending':
             return 'accepted';
-        case 'no-route':
-        case 'rate-limited':
-        case 'circuit-open':
+        case 'unroutable':
+        case 'deferred':
             return 'retryable';
-        case 'skipped':
+        case 'refused':
         case 'superseded':
         case 'expired':
+        case 'skipped':
         case 'failed':
             return 'terminal';
     }
@@ -148,9 +151,9 @@ function toSignalAdmissionOutcome(status: ALOutboundEnqueueStatus): SignalAdmiss
 
 function toSignalAdmissionError(result: ALOutboundEnqueueResult): Error {
     return new QRtcSignalingAdmissionError(
-        result.status,
+        result.verdict,
         result.message.id.msgId,
-        result.reason ?? `Signaling admission returned ${result.status}`
+        result.reason ?? `Signaling admission returned ${result.verdict.kind}`
     );
 }
 

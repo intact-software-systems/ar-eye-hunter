@@ -147,7 +147,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             expect(row.key.contextId.length).toBeLessThanOrEqual(128);
         }
         await restartedWork.port.release(action!.claim, { status: 'completed' });
-        expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).status).toBe('duplicate');
+        expect((await readSupersedenceDecision({ store: restarted, message: message, nowMs: Date.now })).verdict).toEqual({ kind: 'duplicate' });
         expect(await createOutboundWork({ admissionStore: first, workQueue: backend.workQueue }).claim(10)).toEqual([]);
         const conflicting = {
             ...identity!,
@@ -367,7 +367,7 @@ describe('Postgres atomic AL admission and QueueBox work', () => {
             pending.map(({ work }) => work.payload.kind === 'send-prepared' ? work.payload.message.msgId : '')
         ).toEqual([newer.id.msgId]);
         const retried = await readSupersedenceDecision({ store: first, message: older, nowMs: Date.now });
-        expect(retried.status).toBe('superseded');
+        expect(retried.verdict.kind).toBe('superseded');
         expect(retried.bundle).toBeUndefined();
     });
 
@@ -567,13 +567,14 @@ async function runOutboundWorkBatch(
     stores: ALOutboundRuntimeStores<ALOutboundTransportMessage>
 ): Promise<void> {
     const runtime = createDefaultALOutboundMessageRuntime({
+        carrier: 'ws',
         stores,
         outbox: new InMemoryQueueBox(new Map()),
         decodePreparedMessage: decodeALOutboundTransportMessage,
         toOutboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'outbox'),
         readMessageFromEntry: (entry) => decodePersistedALMessage(entry.resource),
-        planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
-        sendPreparedMessage: async () => ({ status: 'sent' as const })
+        planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
     try {
         await runtime.ready();
@@ -653,6 +654,7 @@ async function readSupersedenceDecision(
         msg: message,
         planner: () => ({
             msg: message,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [toALOutboundTransportMessage(message)],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }

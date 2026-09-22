@@ -45,8 +45,8 @@ describe('outbound shared supersedence decisions', () => {
         const newer = createMessage('sender-b', 2);
         const oldDecision = await readDecision(store, older);
         const newDecision = await readDecision(store, newer);
-        expect(oldDecision.status).toBe('accepted');
-        expect(newDecision.status).toBe('accepted');
+        expect(oldDecision.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(newDecision.verdict).toMatchObject({ kind: 'admitted', durable: false });
 
         expect(await store.commitBundle(newDecision.bundle!)).toBe('committed');
         expect(await store.commitBundle(oldDecision.bundle!)).toBe('conflict');
@@ -55,7 +55,7 @@ describe('outbound shared supersedence decisions', () => {
         expect(effects.map((effect) => effect.payload.kind === 'send-prepared' ? effect.payload.message.msgId : '')).toEqual([newer.id.msgId]);
 
         const refreshed = await readDecision(store, older);
-        expect(refreshed.status).toBe('superseded');
+        expect(refreshed.verdict.kind).toBe('superseded');
         expect(refreshed.bundle).toBeUndefined();
         expect(JSON.stringify((await store.readSentMessage(newer.id.msgId))?.msg)).toBe(JSON.stringify(newer));
     });
@@ -79,6 +79,7 @@ describe('outbound shared supersedence decisions', () => {
             msg: createMessage('observer', 4),
             planner: (message) => ({
                 msg: message,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-topic' }
@@ -131,6 +132,7 @@ async function readDecision(
         msg: message,
         planner: () => ({
             msg: message,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [{ text: message.id.msgId }],
             supersedenceTracking: { enabled: true, algo: 'latest-wins', key: supersedenceKey }

@@ -1,13 +1,16 @@
-export * from '@shared-web/browser/rallar-core.ts';
+export type * from '@shared-web/browser/rallar-core.ts';
 
 export type {
     RallarMessage,
+    RallarMessageDeliveryListener,
+    RallarMessageDeliveryOutcome,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessagePayload,
     RallarMessageSendBase,
-    RallarMessageSendResult,
     RallarMessageTransport,
+    RallarMessageWaitOptions,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
     RallarTypedMessageChannel,
@@ -25,3 +28,10 @@ export type {
     RallarRtcMessageLane,
     RallarWsMessageLane
 } from '@shared-web/browser/messages/rallar-message-operations.ts';
+
+export type {
+    ALDeliveryAttempt,
+    ALDeliveryEvidence,
+    ALDeliveryLifecycle,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';

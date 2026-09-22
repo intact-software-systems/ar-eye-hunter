@@ -1,4 +1,9 @@
-import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/mod.ts';
+import type {
+    DistributedRunAnalysis,
+    DistributedRunAnalysisGroup,
+    DistributedRunFailureAnalysis,
+    DistributedRunTargetResolutionAnalysis
+} from '@shared-test/rallar-bb-test/mod.ts';
 import { projectAnalyzePerformance } from './analyze-performance-projection.ts';
 import {
     boundedText,
@@ -7,30 +12,60 @@ import {
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
     projectAuthorityIdentifier,
-    PROJECTION_OMISSION_MESSAGE,
     projectOpaqueIdentifier,
     projectOpaqueKey
 } from './analyze-projection-bounds.ts';
 import { projectAnalyzeVerdict } from './analyze-verdict-projection.ts';
-import type { AnalyzeWorkerAnalysisProjection } from './analyze-worker-contract.ts';
+import type {
+    AnalyzeWorkerAnalysisProjection,
+    AnalyzeWorkerAnalysisProjectionSections,
+    AnalyzeWorkerBoundedAnalysisProjection,
+    AnalyzeWorkerFullAnalysisProjection
+} from './analyze-worker-projection-contract.ts';
+
+/** The identity every projected analysis repeats, whatever its display detail. */
+type AnalyzeAnalysisProjectionIdentity = Pick<
+    AnalyzeWorkerAnalysisProjectionSections,
+    'generatedAtEpochMs' | 'artifactSchemaVersion' | 'distributedRunId' | 'controlRunId' | 'status'
+>;
 
 export function projectAnalyzeAnalysis(
     analysis: DistributedRunAnalysis
 ): AnalyzeWorkerAnalysisProjection {
+    const sections = projectAnalysisSections(analysis);
+    return analysis.ok
+        ? { ...sections, ok: true }
+        : {
+            ...sections,
+            ok: false,
+            failure: projectFailure(analysis.failure),
+            fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown)
+        };
+}
+
+export function projectMinimalAnalyzeAnalysis(
+    analysis: DistributedRunAnalysis
+): AnalyzeWorkerAnalysisProjection {
+    const sections = projectMinimalAnalysisSections(analysis);
+    return analysis.ok
+        ? { ...sections, ok: true }
+        : {
+            ...sections,
+            ok: false,
+            failure: projectFailure(analysis.failure),
+            fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown)
+        };
+}
+
+function projectAnalysisSections(
+    analysis: DistributedRunAnalysis
+): AnalyzeWorkerFullAnalysisProjection {
     return {
-        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        ...(analysis.artifactSchemaVersion !== undefined
-            ? { artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion) }
-            : {}),
-        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        ...(analysis.controlRunId
-            ? { controlRunId: projectAuthorityIdentifier(analysis.controlRunId) }
-            : {}),
-        status: boundedText(analysis.status, MAX_METADATA_BYTES),
-        ok: analysis.ok,
+        detail: 'full',
+        ...projectAnalysisIdentity(analysis),
         ...(analysis.group ? { group: projectGroup(analysis.group) } : {}),
         summary: {
-            agents: finiteNumber(analysis.summary.agents),
+            ...(analysis.summary.agents === undefined ? {} : { agents: finiteNumber(analysis.summary.agents) }),
             passRate: finiteNumber(analysis.summary.passRate),
             failureGroups: finiteNumber(analysis.summary.failureGroups),
             blockingFailures: finiteNumber(analysis.summary.blockingFailures)
@@ -44,44 +79,31 @@ export function projectAnalyzeAnalysis(
                     : {})
             })
         ),
-        ...(analysis.failure ? { failure: projectFailure(analysis.failure) } : {}),
-        ...(analysis.performance
-            ? { performance: projectAnalyzePerformance(analysis.performance) }
-            : {}),
+        ...(analysis.performance === undefined
+            ? {}
+            : { performance: projectAnalyzePerformance(analysis.performance) }),
         ...(analysis.targetResolution
             ? { targetResolution: projectTargetResolution(analysis.targetResolution) }
             : {}),
-        ...(analysis.spa
-            ? { spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) } }
-            : {}),
+        ...(analysis.spa === undefined ? {} : { spa: { verdict: projectAnalyzeVerdict(analysis.spa.verdict) } }),
         summaryMarkdown: boundedText(analysis.summaryMarkdown),
-        ...(analysis.fixProposalMarkdown
-            ? { fixProposalMarkdown: boundedText(analysis.fixProposalMarkdown) }
-            : {}),
-        ...(analysis.performanceMarkdown
-            ? { performanceMarkdown: boundedText(analysis.performanceMarkdown) }
-            : {})
+        ...(analysis.performanceMarkdown === undefined
+            ? {}
+            : { performanceMarkdown: boundedText(analysis.performanceMarkdown) })
     };
 }
 
-export function minimalAnalyzeAnalysis(
+function projectMinimalAnalysisSections(
     analysis: DistributedRunAnalysis
-): AnalyzeWorkerAnalysisProjection {
+): AnalyzeWorkerBoundedAnalysisProjection {
     return {
-        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
-        ...(analysis.artifactSchemaVersion !== undefined
-            ? { artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion) }
-            : {}),
-        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
-        ...(analysis.controlRunId
-            ? { controlRunId: projectAuthorityIdentifier(analysis.controlRunId) }
-            : {}),
-        status: boundedText(analysis.status, MAX_METADATA_BYTES),
-        ok: analysis.ok,
+        detail: 'bounded',
+        ...projectAnalysisIdentity(analysis),
         summary: { ...analysis.summary },
         parseWarnings: [],
-        ...(analysis.spa
-            ? {
+        ...(analysis.spa === undefined
+            ? {}
+            : {
                 spa: {
                     verdict: {
                         ...projectAnalyzeVerdict(analysis.spa.verdict),
@@ -91,13 +113,23 @@ export function minimalAnalyzeAnalysis(
                         causalTrail: []
                     }
                 }
-            }
-            : {}),
-        summaryMarkdown: PROJECTION_OMISSION_MESSAGE
+            })
     };
 }
 
-function projectGroup(group: NonNullable<DistributedRunAnalysis['group']>) {
+function projectAnalysisIdentity(
+    analysis: DistributedRunAnalysis
+): AnalyzeAnalysisProjectionIdentity {
+    return {
+        generatedAtEpochMs: finiteNumber(analysis.generatedAtEpochMs),
+        artifactSchemaVersion: finiteNumber(analysis.artifactSchemaVersion),
+        distributedRunId: projectAuthorityIdentifier(analysis.distributedRunId),
+        controlRunId: projectAuthorityIdentifier(analysis.controlRunId),
+        status: boundedText(analysis.status, MAX_METADATA_BYTES)
+    };
+}
+
+function projectGroup(group: DistributedRunAnalysisGroup) {
     return {
         ...(group.applicationId
             ? { applicationId: boundedText(group.applicationId, MAX_METADATA_BYTES) }
@@ -111,9 +143,7 @@ function projectGroup(group: NonNullable<DistributedRunAnalysis['group']>) {
     };
 }
 
-function projectFailure(
-    failure: NonNullable<DistributedRunAnalysis['failure']>
-): NonNullable<AnalyzeWorkerAnalysisProjection['failure']> {
+function projectFailure(failure: DistributedRunFailureAnalysis): DistributedRunFailureAnalysis {
     return {
         category: boundedText(failure.category, MAX_METADATA_BYTES),
         title: boundedText(failure.title, MAX_SUMMARY_BYTES),
@@ -136,8 +166,8 @@ function projectFailure(
 }
 
 function projectTargetResolution(
-    target: NonNullable<DistributedRunAnalysis['targetResolution']>
-): NonNullable<AnalyzeWorkerAnalysisProjection['targetResolution']> {
+    target: DistributedRunTargetResolutionAnalysis
+): DistributedRunTargetResolutionAnalysis {
     return {
         selected: finiteNumber(target.selected),
         ...(target.expectedParticipantCount !== undefined

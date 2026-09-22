@@ -1,3 +1,4 @@
+import { createDefaultExecutionDependencies } from '@shared-test/black-box-runner/execution/black-box-scenario-context.ts';
 import type { LocalWsMessage } from '@shared-test/black-box-runner/execution/local-websocket-frame.ts';
 import {
     closeWs,
@@ -100,7 +101,7 @@ function readCompletedSnapshots(): LocalWsMessage['data'][] {
 beforeEach(() => {
     TestWebSocket.instances.length = 0;
     vi.stubGlobal('WebSocket', TestWebSocket);
-    context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
+    context = { dependencies: createDefaultExecutionDependencies(), wsConnections: {}, wsMessages: {}, wsCloseEvents: {} };
 });
 afterEach(async () => {
     await closeWs(interaction, config, context);
@@ -437,7 +438,7 @@ it('detects an incomplete foreign principal page without exposing partial snapsh
 });
 
 it('observes generation-specific unicast hydration even after the same revision was broadcast', async () => {
-    context = { ...context, dependencies: { now: () => 1000, createUuid: () => crypto.randomUUID() } };
+    context = { ...context, dependencies: { ...createDefaultExecutionDependencies(), now: () => 1000 } };
     vi.spyOn(Date, 'now').mockReturnValue(1000);
     const socket = await openSession();
     const publication = topologyPages({ targets: { mode: 'broadcast', scope: 'room', groupRef } });

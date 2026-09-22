@@ -1,213 +1,55 @@
+import { Either } from '@shared/resilience/Either.ts';
+
+import type { DistributedRunArtifactRejection } from './distributed-artifact-analysis.ts';
 import {
-    deriveDistributedRunArtifactPipelineAnalysis,
-    distributedArtifactSnapshotsFromPipeline,
-    parseDistributedRunArtifactPipeline
-} from './distributed-artifact-analysis.ts';
-import {
-    DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
-    DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
-    DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
-    MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
-    MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT,
-    type DeriveDistributedArtifactEvidenceIndexInput,
-    type DeriveDistributedArtifactEvidenceInput,
-    type DistributedArtifactEvidenceEntry,
-    type DistributedArtifactEvidenceIndex
+    computeDistributedRunArtifactPipelineAnalysis,
+    resolveArtifactSchemaVersion
+} from './distributed-artifact-analysis/compute-distributed-run-artifact-pipeline-analysis.ts';
+import { toDistributedRunBundleContent } from './distributed-artifact-analysis/to-distributed-run-artifact-content.ts';
+import type {
+    ComputeDistributedArtifactEvidenceIndexInput,
+    ComputeDistributedArtifactEvidenceInput,
+    DistributedArtifactEvidenceIndex
 } from './distributed-artifact-evidence-contracts.ts';
-import { distributedArtifactEvidenceRows } from './distributed-artifact-evidence-rows.ts';
 import {
-    boundedEvidenceLimit,
-    boundedEvidenceTextLimit,
-    compareEvidenceEntries,
-    deduplicateArtifactEvidenceEntries,
-    selectPrimaryDistributedArtifactResultFailure
-} from './distributed-artifact-evidence-utils.ts';
-import {
-    distributedArtifactPipelineJsonRecord,
-    parseDistributedArtifactPipeline
-} from './distributed-artifact-pipeline.ts';
-import { deriveDistributedRunMonitor } from './distributed-run-monitor.ts';
+    computeDistributedArtifactEvidenceIndexFromSource,
+    computeDistributedArtifactEvidenceSource
+} from './distributed-artifact-evidence/compute-distributed-artifact-evidence-source.ts';
+import { parseDistributedArtifactPipeline } from './distributed-artifact-pipeline.ts';
 
-export function deriveDistributedArtifactEvidence(
-    input: DeriveDistributedArtifactEvidenceInput
+/** The pipeline analysis runs once; its snapshots, artifact bundle and monitor feed the index. */
+export function computeDistributedArtifactEvidence(
+    input: ComputeDistributedArtifactEvidenceInput
+): Either<DistributedRunArtifactRejection, DistributedArtifactEvidenceIndex> {
+    const parsed = parseDistributedArtifactPipeline(input.files, { projection: 'literal-loose-files' });
+    return toDistributedRunBundleContent(parsed).flatMap(
+        (rejection) => Either.ofLeft(rejection),
+        (content) => {
+            const pipelineAnalysis = computeDistributedRunArtifactPipelineAnalysis({
+                parsed,
+                content,
+                generatedAtEpochMs: input.generatedAtEpochMs,
+                artifactSchemaVersion: resolveArtifactSchemaVersion(parsed)
+            });
+            if (pipelineAnalysis.controlRunStatus === 'unavailable') {
+                return Either.ofLeft(pipelineAnalysis.reason);
+            }
+            return Either.ofRight(computeDistributedArtifactEvidenceIndex({
+                analysis: pipelineAnalysis.analysis,
+                snapshots: pipelineAnalysis.snapshots,
+                monitor: pipelineAnalysis.monitor,
+                parsed,
+                sourceFileNames: Object.keys(parsed.projectedFiles).filter(
+                    (fileName) => parsed.projectedFiles[fileName] !== undefined
+                ),
+                limits: input.limits
+            }));
+        }
+    );
+}
+
+export function computeDistributedArtifactEvidenceIndex(
+    input: ComputeDistributedArtifactEvidenceIndexInput
 ): DistributedArtifactEvidenceIndex {
-    const generatedAtEpochMs = input.generatedAtEpochMs ?? Date.now();
-    const parsed = parseDistributedArtifactPipeline(input.files, {
-        projection: 'literal-loose-files'
-    });
-    const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
-    const snapshots = distributedArtifactSnapshotsFromPipeline(
-        parsed,
-        generatedAtEpochMs,
-        undefined,
-        parsedFiles
-    );
-    const analysisResult = deriveDistributedRunArtifactPipelineAnalysis({
-        parsed,
-        parsedFiles,
-        snapshots,
-        generatedAtEpochMs
-    });
-    return deriveDistributedArtifactEvidenceIndex({
-        analysis: analysisResult.analysis,
-        snapshots,
-        monitor: analysisResult.monitor,
-        parsedControlRun: distributedArtifactPipelineJsonRecord(
-            parsed,
-            'control-run.json'
-        ),
-        sourceFileNames: Object.keys(parsed.projectedFiles).filter(
-            (fileName) => parsed.projectedFiles[fileName] !== undefined
-        ),
-        sourceFiles: parsed.projectedFiles,
-        indexLimit: input.indexLimit,
-        summaryLimit: input.summaryLimit,
-        payloadSummaryLimit: input.payloadSummaryLimit
-    });
-}
-
-export function deriveDistributedArtifactEvidenceIndex(
-    input: DeriveDistributedArtifactEvidenceIndexInput
-): DistributedArtifactEvidenceIndex {
-    const source = deriveDistributedArtifactEvidenceSource(input);
-    return projectDistributedArtifactEvidenceIndex(input, source);
-}
-
-export type DistributedArtifactEvidenceSource = Readonly<{
-    monitor: DistributedArtifactEvidenceIndex['monitor'];
-    entries: readonly DistributedArtifactEvidenceEntry[];
-    rawEntries: readonly DistributedArtifactEvidenceEntry[];
-}>;
-
-export function deriveDistributedArtifactEvidenceSource(
-    input: DeriveDistributedArtifactEvidenceIndexInput
-): DistributedArtifactEvidenceSource {
-    const monitor = input.monitor ?? deriveDistributedRunMonitor({
-        distributedRun: input.snapshots.distributedRun,
-        controlRun: input.snapshots.controlRun,
-        artifactBundle: input.snapshots.artifactBundle
-    });
-    const rowInput = {
-        analysis: input.analysis,
-        snapshots: input.snapshots,
-        monitor,
-        sourceFileNames: new Set(input.sourceFileNames ?? []),
-        sourceFiles: input.sourceFiles,
-        parsedControlRun: input.parsedControlRun,
-        summaryLimit: boundedEvidenceTextLimit(
-            input.summaryLimit,
-            DEFAULT_DISTRIBUTED_ARTIFACT_SUMMARY_LIMIT,
-            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
-        ),
-        payloadSummaryLimit: boundedEvidenceTextLimit(
-            input.payloadSummaryLimit,
-            DEFAULT_DISTRIBUTED_ARTIFACT_PAYLOAD_SUMMARY_LIMIT,
-            MAX_DISTRIBUTED_ARTIFACT_TEXT_LIMIT
-        )
-    };
-    const rawEntries = distributedArtifactEvidenceRows({
-        ...rowInput,
-        deduplicate: false
-    });
-    const entries = deduplicateArtifactEvidenceEntries(rawEntries)
-        .sort(compareEvidenceEntries);
-    return { monitor, entries, rawEntries };
-}
-
-export function projectDistributedArtifactEvidenceIndex(
-    input: DeriveDistributedArtifactEvidenceIndexInput,
-    source: DistributedArtifactEvidenceSource
-): DistributedArtifactEvidenceIndex {
-    const limit = boundedEvidenceLimit(
-        input.indexLimit,
-        DEFAULT_DISTRIBUTED_ARTIFACT_INDEX_LIMIT,
-        MAX_DISTRIBUTED_ARTIFACT_INDEX_LIMIT
-    );
-    const primaryResultFailure = selectPrimaryDistributedArtifactResultFailure(
-        source.entries,
-        input.analysis.failure?.commandId
-    );
-    const bounded = retainActionableEvidence(
-        source.entries,
-        limit,
-        primaryResultFailure
-    )
-        .sort(compareEvidenceEntries);
-    return {
-        analysis: input.analysis,
-        monitor: source.monitor,
-        entries: bounded,
-        totalEntries: source.entries.length,
-        omittedEntryCount: source.entries.length - bounded.length,
-        limit
-    };
-}
-
-function retainActionableEvidence<Entry extends DistributedArtifactEvidenceIndex['entries'][number]>(
-    entries: readonly Entry[],
-    limit: number,
-    primaryResultFailure: Entry | undefined
-): Entry[] {
-    if (entries.length <= limit) {
-        return [...entries];
-    }
-    if (limit === 0) {
-        return [];
-    }
-    const retained: Entry[] = [];
-    const primaryFailure = entries.find((entry) => entry.id.startsWith('failure:analysis:')) ??
-        latest(entries.filter((entry) => entry.kind === 'failure'));
-    if (primaryFailure) {
-        retained.push(primaryFailure);
-    }
-    const latestDiagnostic = latest(
-        entries.filter((entry) => entry.kind === 'diagnostic')
-    );
-    if (latestDiagnostic && retained.length < limit) {
-        retained.push(latestDiagnostic);
-    }
-    if (primaryResultFailure && retained.length < limit) {
-        retained.push(primaryResultFailure);
-    }
-    const retainedIds = new Set(retained.map((entry) => entry.id));
-    retained.push(
-        ...[...entries]
-            .filter((entry) => !retainedIds.has(entry.id))
-            .sort((left, right) =>
-                retentionRank(left) - retentionRank(right) ||
-                (right.atEpochMs ?? Number.MIN_SAFE_INTEGER) -
-                    (left.atEpochMs ?? Number.MIN_SAFE_INTEGER) ||
-                left.id.localeCompare(right.id)
-            )
-            .slice(0, Math.max(0, limit - retained.length))
-    );
-    return retained;
-}
-
-function latest<Entry extends DistributedArtifactEvidenceIndex['entries'][number]>(
-    entries: readonly Entry[]
-): Entry | undefined {
-    return [...entries].sort((left, right) =>
-        (right.atEpochMs ?? Number.MIN_SAFE_INTEGER) -
-            (left.atEpochMs ?? Number.MIN_SAFE_INTEGER) ||
-        left.id.localeCompare(right.id)
-    )[0];
-}
-
-function retentionRank(
-    entry: DistributedArtifactEvidenceIndex['entries'][number]
-): number {
-    if (entry.id.startsWith('failure:analysis:')) {
-        return 0;
-    }
-    if (entry.kind === 'failure') {
-        return 1;
-    }
-    if (entry.kind === 'diagnostic') {
-        return 2;
-    }
-    if (entry.kind === 'result') {
-        return 3;
-    }
-    return 4;
+    return computeDistributedArtifactEvidenceIndexFromSource(input, computeDistributedArtifactEvidenceSource(input));
 }

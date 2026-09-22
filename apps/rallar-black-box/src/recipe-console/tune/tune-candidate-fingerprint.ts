@@ -40,8 +40,8 @@ function tuneKnobRevisionKey(source: TuneSourceModel): string {
             knob.currentValue,
             knob.availability,
             knob.effective,
-            knob.commandId,
-            knob.recipeId,
+            knob.scope === 'manifest' ? undefined : knob.commandId,
+            knob.scope === 'manifest' ? undefined : knob.recipeId,
             knob.reason,
             knob.constraint
         ]);

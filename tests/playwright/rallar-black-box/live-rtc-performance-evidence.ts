@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import {
     lstat,
@@ -146,38 +147,24 @@ export interface LiveRtcFailureAgentHealth {
     readonly relayPeerCount: number | null;
 }
 
+/** Read from the delivery observation `toDeliveryObservation` produces; see `black-box-rallar-delivery-ledger.ts`. */
 export interface LiveRtcSendResultSummary {
     readonly ok: boolean;
-    readonly runtimeStatus: 'sent' | 'other' | 'missing';
-    readonly admissionStatus:
-        | 'accepted'
-        | 'enqueued'
-        | 'skipped'
-        | 'duplicate'
-        | 'pending-admission'
-        | 'superseded'
-        | 'expired'
-        | 'no-route'
-        | 'rate-limited'
-        | 'circuit-open'
-        | 'failed'
-        | 'other'
-        | 'missing';
-    readonly reason: 'not-yet-in-sync' | 'other' | 'missing';
+    readonly state: ALDeliveryState | 'other' | 'missing';
+    /**
+     * The settlement detail is producer-authored lifecycle text copied verbatim into evidence
+     * (never payload or credential content), so it is outside the evidence sanitization
+     * boundary; `null` when the observation carries none.
+     */
+    readonly reason: string | null;
+    /** Derived from `message.handleId`: the handle id is the message id. */
     readonly messageIdPresent: boolean;
-    readonly entryCount: number;
-    readonly entryStatuses: readonly (
-        | 'NEW'
-        | 'RETRY'
-        | 'RESERVED'
-        | 'COMPLETED'
-        | 'FAILED'
-        | 'ABORTED'
-        | 'NON_RETRYABLE'
-        | 'PARTITIONED'
-        | 'MERGED'
-        | 'other'
-    )[];
+    readonly submitted: boolean | null;
+    readonly enqueued: boolean | null;
+    readonly backpressured: boolean | null;
+    readonly attempts: number | null;
+    readonly confirmedHopCount: number | null;
+    readonly unconfirmedHopCount: number | null;
 }
 
 export interface LiveRtcNackSendResultSummary extends LiveRtcSendResultSummary {
@@ -283,11 +270,14 @@ export interface LiveRtcFailedControlResult {
     readonly agentId: string | null;
     readonly commandId: string;
     readonly ok: false;
-    readonly runtimeStatus: string | null;
-    readonly admissionStatus: string | null;
+    readonly state: string | null;
     readonly reason: string | null;
-    readonly entryCount: number;
-    readonly entryStatuses: readonly string[];
+    readonly submitted: boolean | null;
+    readonly enqueued: boolean | null;
+    readonly backpressured: boolean | null;
+    readonly attempts: number | null;
+    readonly confirmedHopCount: number | null;
+    readonly unconfirmedHopCount: number | null;
 }
 
 export interface BuildLiveRtcExternalAttemptInput {

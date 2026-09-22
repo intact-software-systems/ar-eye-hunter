@@ -1,30 +1,25 @@
 import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
-    RallarMessageSendResult,
-    RallarMessageTransport,
+    RallarMessageHandle,
     RallarRtcSendInput,
     RallarTypedMessageSendStrategy,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
-    newALBroadcastMessage,
-    newALMulticastMessage,
     newALRoute,
-    newALUnicastMessage,
     toALGroupTargetKey,
-    type ALMessage
+    type ALMessage,
+    type newALBroadcastMessage,
+    type newALMulticastMessage,
+    type newALUnicastMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type {
-    ALOutboundEnqueueResult,
-    ALOutboundEnqueueStatus
-} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { throwRallarValidation, type RallarValidationIssue } from '@shared/api/rallar-validation.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import type { BrowserRallarDeliveryRegistry } from './browser-rallar-delivery-registry.ts';
+import type { BrowserRallarMessageDispatch } from './browser-rallar-message-dispatch.ts';
 
 interface ResolvedRtcMessageTarget {
     readonly room: string | GroupRef | undefined;
@@ -32,16 +27,35 @@ interface ResolvedRtcMessageTarget {
     readonly roomRef: GroupRef;
 }
 
-interface WakeableQueueBoxEngine {
-    wake(): void;
+interface CapturedMessagePayload {
+    readonly serialized: string;
+    readonly issues: readonly RallarValidationIssue[];
+}
+
+interface CreateRtcMessageInput<T> {
+    readonly input: RallarRtcSendInput<T>;
+    readonly payloadValidation: CapturedMessagePayload;
+    readonly target: ResolvedRtcMessageTarget;
+    readonly session: AuthSession;
 }
 
 export namespace BrowserRallarMessageSender {
+    /** Canonical AL constructors own message ID, clock, serialization and deadline policy. */
+    export interface Creation {
+        readonly createUnicast: typeof newALUnicastMessage;
+        readonly createMulticast: typeof newALMulticastMessage;
+        readonly createBroadcast: typeof newALBroadcastMessage;
+        newResourceId(): string;
+    }
+
     export interface TypedInput<T> extends RallarRtcSendInput<T>, RallarWsSendInput<T> {
         readonly strategy?: RallarTypedMessageSendStrategy;
     }
 
     export interface Input {
+        readonly creation: Creation;
+        readonly deliveries: BrowserRallarDeliveryRegistry;
+        readonly dispatch: BrowserRallarMessageDispatch;
         readonly inputValidator: BrowserMessageInputValidator;
         connect(): Promise<ApiMiddleware>;
         requireSession(): AuthSession;
@@ -70,7 +84,7 @@ export namespace BrowserRallarMessageSender {
 }
 
 export class BrowserRallarMessageSender {
-    private static readonly DEFAULT_MESSAGE_TTL_MS = 30_000;
+    public static readonly DEFAULT_MESSAGE_TTL_MS = 30_000;
     private readonly input: BrowserRallarMessageSender.Input;
 
     public constructor(input: BrowserRallarMessageSender.Input) {
@@ -79,32 +93,51 @@ export class BrowserRallarMessageSender {
 
     public async sendWsUnicast<T>(
         input: BrowserRallarMessageSender.WsUnicastInput<T>
-    ): Promise<RallarMessageSendResult> {
+    ): Promise<RallarMessageHandle> {
+        const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const session = this.input.requireSession();
-        const message = newALUnicastMessage(
+        const message = this.input.creation.createUnicast(
             session.sessionId,
             newALRoute(
                 input.route.topicId,
                 input.route.contextId,
-                input.route.resourceId ?? crypto.randomUUID()
+                input.route.resourceId ?? this.input.creation.newResourceId()
             ),
             input.peerId,
             input.typeId,
-            input.payload,
+            parseCapturedPayload(payloadValidation),
             { ttlMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS }
         );
-        return await this.sendCapturedMessage(context, 'ws', message);
+        return this.startDelivery({
+            context,
+            carrier: 'ws',
+            message,
+            canFallback: false,
+            payloadIssues: payloadValidation.issues
+        });
     }
 
-    public async sendRtc<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageSendResult> {
-        const target = this.resolveRtcMessageTarget(input);
+    public async sendRtc<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageHandle> {
+        const target = this.resolveRtcMessageTarget(input, []);
+        const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
-        const message = this.toRtcMessage(input, target, this.input.requireSession());
-        return await this.sendCapturedMessage(context, 'rtc', message);
+        const message = this.createRtcMessage({
+            input,
+            payloadValidation,
+            target,
+            session: this.input.requireSession()
+        });
+        return this.startDelivery({
+            context,
+            carrier: 'rtc',
+            message,
+            canFallback: false,
+            payloadIssues: payloadValidation.issues
+        });
     }
 
-    public async sendWs<T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult> {
+    public async sendWs<T>(input: RallarWsSendInput<T>): Promise<RallarMessageHandle> {
         const room = input.roomRef ??
             input.roomId ??
             (input.scope === undefined ? this.input.resolveDefaultRoom() : undefined);
@@ -112,24 +145,25 @@ export class BrowserRallarMessageSender {
         const scope = input.scope ?? (roomId ? 'room' : 'all');
         const roomRef = scope === 'room' ? this.input.resolveRoomRef(room) : undefined;
 
-        this.input.inputValidator.assertWs({ input, scope, roomId, roomRef });
+        throwIfMessageIssues(this.input.inputValidator.validateWs({ input, scope, roomId, roomRef }));
 
+        const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const session = this.input.requireSession();
         const contextId = input.contextId ?? roomId ?? input.scope ?? 'all';
         const minSnapshotVersion = room
             ? this.input.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
             : input.minSnapshotVersion;
-        const message = newALBroadcastMessage(
+        const message = this.input.creation.createBroadcast(
             session.sessionId,
             newALRoute(
                 input.topicId ?? input.typeId,
                 contextId,
-                input.resourceId ?? crypto.randomUUID()
+                input.resourceId ?? this.input.creation.newResourceId()
             ),
             scope,
             input.typeId,
-            input.payload,
+            parseCapturedPayload(payloadValidation),
             {
                 groupRef: roomRef,
                 exceptPeerIds: input.exceptPeerIds,
@@ -142,10 +176,16 @@ export class BrowserRallarMessageSender {
             }
         );
 
-        return await this.sendCapturedMessage(context, 'ws', message);
+        return this.startDelivery({
+            context,
+            carrier: 'ws',
+            message,
+            canFallback: false,
+            payloadIssues: payloadValidation.issues
+        });
     }
 
-    public async sendTyped<T>(input: BrowserRallarMessageSender.TypedInput<T>): Promise<RallarMessageSendResult> {
+    public async sendTyped<T>(input: BrowserRallarMessageSender.TypedInput<T>): Promise<RallarMessageHandle> {
         switch (input.strategy ?? 'rtc-with-ws-fallback') {
             case 'ws':
                 return await this.sendWs(input);
@@ -168,97 +208,92 @@ export class BrowserRallarMessageSender {
     private async sendRoomWithFallback<T>(
         input: BrowserRallarMessageSender.TypedInput<T>,
         firstCarrier: 'rtc' | 'ws'
-    ): Promise<RallarMessageSendResult> {
-        const validated = validateRoomFallbackInput(input);
-        if (validated.left) {
-            throwRallarValidation([validated.left]);
-        }
-        const target = this.resolveRtcMessageTarget(input);
-        this.input.inputValidator.assertWs({ input, scope: 'room', roomId: target.roomId, roomRef: target.roomRef });
+    ): Promise<RallarMessageHandle> {
+        const target = this.resolveRtcMessageTarget(input, validateRoomFallbackInput(input));
+        throwIfMessageIssues(
+            this.input.inputValidator.validateWs({
+                input,
+                scope: 'room',
+                roomId: target.roomId,
+                roomRef: target.roomRef
+            })
+        );
+        const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
         const message = toRoomFallbackMessage(
-            this.toRtcMessage(input, target, this.input.requireSession()),
+            this.createRtcMessage({ input, payloadValidation, target, session: this.input.requireSession() }),
             input.exceptPeerIds
         );
-        const result = await this.sendCapturedMessage(context, firstCarrier, message);
-        const fallback = computeFallbackDisposition(result.status, result.message.constraints?.expiresAtMs, Date.now());
-        if (fallback === 'expired') {
-            return { ...result, status: 'expired', reason: 'Message deadline elapsed before fallback.' };
-        }
-        if (fallback === 'stop') {
-            return result;
-        }
-        return await this.sendCapturedMessage(context, firstCarrier === 'rtc' ? 'ws' : 'rtc', result.message);
+        return this.startDelivery({
+            context,
+            carrier: firstCarrier,
+            message,
+            canFallback: true,
+            payloadIssues: payloadValidation.issues
+        });
     }
 
-    private async sendCapturedMessage(
-        context: ApiMiddleware,
-        carrier: 'rtc' | 'ws',
-        message: ALMessage
-    ): Promise<RallarMessageSendResult> {
-        const validated = decodeALMessageValue(message);
-        if (validated.left) {
-            throwMessageValidationIssue('$', validated.left.code, validated.left.message);
+    private capturePayload(payload: unknown): CapturedMessagePayload {
+        const validation = this.input.inputValidator.readPayloadValidation(payload);
+        throwIfMessageIssues(validation.issues.filter((issue) => issue.code !== 'payload-too-large'));
+        if (validation.serialized === undefined) {
+            throw new Error('Validated message payload is missing its serialized representation.');
         }
-        if (message.constraints?.expiresAtMs !== undefined && message.constraints.expiresAtMs <= Date.now()) {
-            return {
-                transport: carrier,
-                status: 'expired',
-                message,
-                entries: [],
-                reason: 'Message deadline elapsed before carrier admission.'
-            };
-        }
-        const enqueueResult = carrier === 'rtc'
-            ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message)
-            : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
-        wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, enqueueResult);
-        return toRallarMessageSendResult(carrier, enqueueResult);
+        return { serialized: validation.serialized, issues: validation.issues };
     }
 
-    private resolveRtcMessageTarget<T>(input: RallarRtcSendInput<T>): ResolvedRtcMessageTarget {
+    private startDelivery(delivery: BrowserRallarMessageDispatch.Delivery): RallarMessageHandle {
+        const handle = this.input.deliveries.open(delivery.message, delivery.carrier);
+        this.input.dispatch.send(delivery);
+        return handle;
+    }
+
+    private resolveRtcMessageTarget<T>(
+        input: RallarRtcSendInput<T>,
+        initialIssues: readonly RallarValidationIssue[]
+    ): ResolvedRtcMessageTarget {
         const room = input.roomRef ??
             input.roomId ??
             this.input.resolveDefaultRoom() ??
             this.input.resolveCurrentRoomRef();
         const roomId = this.input.toRoomId(room);
 
-        this.input.inputValidator.assertRtc(input, roomId);
         const roomRef = this.input.resolveRoomRef(room);
-
+        const issues = [...initialIssues, ...this.input.inputValidator.validateRtc(input, roomId)];
         if (!roomId) {
-            throwMessageValidationIssue(
-                '$.roomId',
-                'missing-room',
-                'Cannot send RTC message: no current room.'
-            );
+            issues.push({
+                path: '$.roomId',
+                code: 'missing-room',
+                message: 'Cannot send RTC message: no current room.'
+            });
         }
         if (!roomRef) {
-            throwMessageValidationIssue(
-                '$.roomRef',
-                'missing-room-ref',
-                'Cannot send RTC message: no scoped room reference.'
-            );
+            issues.push({
+                path: '$.roomRef',
+                code: 'missing-room-ref',
+                message: 'Cannot send RTC message: no scoped room reference.'
+            });
         }
-        this.input.inputValidator.assertResolvedRoomRef(roomRef, '$.roomRef');
+        else {
+            issues.push(...this.input.inputValidator.validateResolvedRoomRef(roomRef, '$.roomRef'));
+        }
+        if (!roomId || !roomRef || issues.length > 0) {
+            throwRallarValidation(issues);
+        }
         return { room, roomId, roomRef };
     }
 
-    private toRtcMessage<T>(
-        input: RallarRtcSendInput<T>,
-        target: ResolvedRtcMessageTarget,
-        session: AuthSession
-    ): ALMessage {
-        return newALMulticastMessage(
+    private createRtcMessage<T>({ input, payloadValidation, target, session }: CreateRtcMessageInput<T>): ALMessage {
+        return this.input.creation.createMulticast(
             session.sessionId,
             newALRoute(
                 input.topicId ?? input.typeId,
                 input.contextId ?? target.roomId,
-                input.resourceId ?? crypto.randomUUID()
+                input.resourceId ?? this.input.creation.newResourceId()
             ),
             target.roomRef,
             input.typeId,
-            input.payload,
+            parseCapturedPayload(payloadValidation),
             {
                 membershipEpoch: input.membershipEpoch,
                 minSnapshotVersion: this.input.resolveRoomMinSnapshotVersion(
@@ -282,22 +317,34 @@ export class BrowserRallarMessageSender {
 
 function validateRoomFallbackInput<T>(
     input: BrowserRallarMessageSender.TypedInput<T>
-): Either<RallarValidationIssue, BrowserRallarMessageSender.TypedInput<T>> {
+): readonly RallarValidationIssue[] {
+    const issues: RallarValidationIssue[] = [];
     if (input.scope !== undefined && input.scope !== 'room') {
-        return Either.ofLeft({
+        issues.push({
             path: '$.scope',
             code: 'unsupported',
             message: 'RTC/WS fallback requires the same scoped room audience on both carriers.'
         });
     }
     if (input.membershipEpoch !== undefined) {
-        return Either.ofLeft({
+        issues.push({
             path: '$.membershipEpoch',
             code: 'unsupported',
             message: 'Authoritative membership fencing is not supported.'
         });
     }
-    return Either.ofRight(input);
+    return issues;
+}
+
+/** The parser sees only the immutable JSON already accepted by the configured validator. */
+function parseCapturedPayload(payload: CapturedMessagePayload): unknown {
+    return JSON.parse(payload.serialized);
+}
+
+function throwIfMessageIssues(issues: readonly RallarValidationIssue[]): void {
+    if (issues.length > 0) {
+        throwRallarValidation(issues);
+    }
 }
 
 function toRoomFallbackMessage(message: ALMessage, exceptPeerIds: readonly string[] | undefined): ALMessage {
@@ -316,40 +363,6 @@ function toRoomFallbackMessage(message: ALMessage, exceptPeerIds: readonly strin
     };
 }
 
-function computeFallbackDisposition(
-    status: ALOutboundEnqueueStatus,
-    expiresAtMs: number | undefined,
-    nowMs: number
-): 'retry' | 'stop' | 'expired' {
-    if (status !== 'no-route' && status !== 'circuit-open') {
-        return 'stop';
-    }
-    return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
-}
-
-function toRallarMessageSendResult(
-    transport: RallarMessageTransport,
-    result: ALOutboundEnqueueResult
-): RallarMessageSendResult {
-    return {
-        transport,
-        status: result.status,
-        message: result.message,
-        entry: result.entry,
-        entries: result.entries,
-        reason: result.reason
-    };
-}
-
 function throwMessageValidationIssue(path: string, code: string, message: string): never {
     throwRallarValidation([{ path, code, message }]);
-}
-
-function wakeQueueBoxEngineIfQueued(
-    engine: WakeableQueueBoxEngine,
-    result: ALOutboundEnqueueResult
-): void {
-    if (result.status === 'enqueued' || result.status === 'duplicate') {
-        engine.wake();
-    }
 }

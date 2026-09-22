@@ -1,9 +1,9 @@
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '@shared-test/rallar-bb-test/schema.ts';
 import {
     formatJsonSchemaValidationErrors,
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     validateJsonSchema
-} from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 export function parseRunManagerCommandText(text: string): RallarBlackBoxTestCommand {
     const value = JSON.parse(text) as unknown;

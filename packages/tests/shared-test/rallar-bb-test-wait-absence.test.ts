@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
-import { formatJsonSchemaValidationErrors, RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestWaitResultValue } from '../../shared-test/rallar-bb-test/types.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestWaitResultValue } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 function sleepMs(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -274,7 +275,8 @@ describe('rallar-bb-test wait absence', () => {
             }
         } as never)).toEqual({
             ok: false,
-            error: 'wait.absent must be true when present.'
+            error: 'wait.absent must be true when present.',
+            messages: ['wait.absent must be true when present.']
         });
 
         expect(

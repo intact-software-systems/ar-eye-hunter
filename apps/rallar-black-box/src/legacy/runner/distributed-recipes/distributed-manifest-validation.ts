@@ -1,5 +1,5 @@
 import {
-    formatDistributedRunManifestValidationErrors,
+    toDistributedRunManifestValidationText,
     validateDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run-validation.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -7,8 +7,8 @@ import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-b
 export function validateDistributedRecipeManifest(
     manifest: RallarBlackBoxDistributedRunManifest
 ): string | undefined {
-    const validation = validateDistributedRunManifest(manifest);
-    return validation.ok
+    const issues = validateDistributedRunManifest(manifest);
+    return issues.length === 0
         ? undefined
-        : formatDistributedRunManifestValidationErrors(validation.errors);
+        : toDistributedRunManifestValidationText(issues);
 }

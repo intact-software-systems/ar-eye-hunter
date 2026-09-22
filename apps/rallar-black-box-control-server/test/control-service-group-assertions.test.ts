@@ -2,24 +2,17 @@ import { RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION } from '@shared-test/rallar-b
 import type { ControlClientEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
-    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedRunManifest
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type {
+    RallarBlackBoxDistributedGroupAssertion
+} from '@shared-test/rallar-bb-test/distributed/group-assertions.ts';
+import type { RallarBlackBoxTestRecord } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+import { assert } from '@std/assert';
+
 import { createRallarBlackBoxControlService } from '../src/control-service.ts';
-
-function assert(condition: unknown, message = 'Assertion failed.'): asserts condition {
-    if (!condition) {
-        throw new Error(message);
-    }
-}
-
-function assertEquals<T>(actual: T, expected: T): void {
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(
-            `Expected ${JSON.stringify(expected, null, 2)}, got ${JSON.stringify(actual, null, 2)}`
-        );
-    }
-}
+import { assertJsonEquals, toControlServiceInput } from './support/control-service-test-fixtures.ts';
 
 function identity(agentId: string): RallarBlackBoxControlAgentIdentity {
     return {
@@ -28,7 +21,9 @@ function identity(agentId: string): RallarBlackBoxControlAgentIdentity {
         sessionId: `${agentId}-session`,
         applicationId: 'rallar-server',
         workspaceId: 'default',
-        groupId: 'bb-group'
+        groupId: 'bb-group',
+        sessionLabel: `${agentId}:${agentId}-session`,
+        updatedAtEpochMs: 1_000
     };
 }
 
@@ -47,7 +42,7 @@ function registerEnvelope(agentId: string): ControlClientEnvelope {
 function recipeResultEnvelope(
     agentId: string,
     commandId: string,
-    probeValue: unknown
+    probeValue: RallarBlackBoxTestRecord | undefined
 ): ControlClientEnvelope {
     return {
         kind: 'result',
@@ -120,6 +115,7 @@ function groupAssertionManifest(
             {
                 recipeId: 'probe-recipe',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'probe-recipe',
                     commands: [
                         {
@@ -128,7 +124,8 @@ function groupAssertionManifest(
                             request: { method: 'GET', path: '/api/health' }
                         }
                     ]
-                }
+                },
+                variables: {}
             }
         ],
         targetPolicy: {
@@ -136,15 +133,20 @@ function groupAssertionManifest(
             agentIds: ['agent-1', 'agent-2']
         },
         startMode: 'manual',
-        groupAssertions
+        groupAssertions,
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        metadata: {}
     };
 }
 
 function runGroupAssertionDistributedRun(
     groupAssertions: readonly RallarBlackBoxDistributedGroupAssertion[],
-    probeValueByAgentId: Readonly<Record<string, unknown>>
+    probeValueByAgentId: Readonly<Record<string, RallarBlackBoxTestRecord | undefined>>
 ) {
-    const service = createRallarBlackBoxControlService();
+    const service = createRallarBlackBoxControlService(toControlServiceInput());
     const agentIds = Object.keys(probeValueByAgentId);
     agentIds.forEach((agentId) => service.receiveClientEnvelope(registerEnvelope(agentId)));
 
@@ -179,10 +181,10 @@ Deno.test('group assertions pass a run when every agent contributed the same val
         'agent-2': { body: { memberCount: 2 } }
     });
 
-    assertEquals(snapshot.state, 'passed');
-    assertEquals(snapshot.rollup.summary.groupAssertions, 1);
-    assertEquals(snapshot.rollup.summary.passedGroupAssertions, 1);
-    assertEquals(snapshot.rollup.summary.failedGroupAssertions, 0);
+    assertJsonEquals(snapshot.state, 'passed');
+    assertJsonEquals(snapshot.rollup.summary.groupAssertions, 1);
+    assertJsonEquals(snapshot.rollup.summary.passedGroupAssertions, 1);
+    assertJsonEquals(snapshot.rollup.summary.failedGroupAssertions, 0);
 });
 
 Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
@@ -191,16 +193,16 @@ Deno.test('a single disagreeing agent fails allEqual naming that agent', () => {
         'agent-2': { body: { memberCount: 3 } }
     });
 
-    assertEquals(snapshot.state, 'failed');
+    assertJsonEquals(snapshot.state, 'failed');
     const failure = snapshot.rollup.failures.find((entry) => entry.kind === 'group-assertion');
     assert(failure, 'Expected a group-assertion rollup failure.');
-    assertEquals(failure.key, 'members-converge');
-    assertEquals(failure.error?.code, 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED');
+    assertJsonEquals(failure.key, 'members-converge');
+    assertJsonEquals(failure.error?.code, 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED');
     const result = snapshot.rollup.groupAssertions?.[0];
     assert(result);
-    assertEquals(result.violatingAgentIds, ['agent-2']);
+    assertJsonEquals(result.violatingAgentIds, ['agent-2']);
     const violatingRow = result.perAgent.find((row) => row.agentId === 'agent-2');
-    assertEquals(violatingRow?.verdict, 'violating');
+    assertJsonEquals(violatingRow?.evidence === 'resolved' ? violatingRow.verdict : undefined, 'violating');
 });
 
 Deno.test('missing evidence at the source address fails the assertion by default', () => {
@@ -209,12 +211,12 @@ Deno.test('missing evidence at the source address fails the assertion by default
         'agent-2': undefined
     });
 
-    assertEquals(snapshot.state, 'failed');
+    assertJsonEquals(snapshot.state, 'failed');
     const result = snapshot.rollup.groupAssertions?.[0];
     assert(result);
-    assertEquals(result.ok, false);
-    assertEquals(result.missingAgentIds, ['agent-2']);
-    assertEquals(
+    assertJsonEquals(result.ok, false);
+    assertJsonEquals(result.missingAgentIds, ['agent-2']);
+    assertJsonEquals(
         result.error?.code,
         'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING'
     );
@@ -229,8 +231,8 @@ Deno.test('group-assertion evidence commands keep full recipe results uncompacte
     const run = service.snapshotRun('run-1');
     assert(run);
     const startResult = run.results.find((result) => result.commandId.includes('-start-agent-1-'));
-    const value = startResult?.result?.value as { results?: unknown[]; };
-    assert(Array.isArray(value.results), 'Expected uncompacted recipe results.');
+    const value = startResult?.result?.value;
+    assert(isJsonRecordValue(value) && Array.isArray(value.results), 'Expected uncompacted recipe results.');
 });
 
 Deno.test('redacted per-agent value tables hide sensitive evidence values', () => {
@@ -244,8 +246,63 @@ Deno.test('redacted per-agent value tables hide sensitive evidence values', () =
         'agent-2': { body: { accessToken: 'secret-token-b', memberCount: 2 } }
     });
 
-    assertEquals(snapshot.state, 'failed');
+    assertJsonEquals(snapshot.state, 'failed');
     const serialized = JSON.stringify(snapshot.rollup.groupAssertions);
     assert(!serialized.includes('secret-token-a'), 'Expected token values to be redacted.');
     assert(!serialized.includes('secret-token-b'), 'Expected token values to be redacted.');
+});
+
+Deno.test('persistence snapshots preserve group evidence through JSON restore without materializing fleet reports', () => {
+    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+        'agent-1': { body: { memberCount: 2 } },
+        'agent-2': { body: { memberCount: 2 } }
+    });
+    service.receiveClientEnvelope(recipeResultEnvelope('agent-1', 'ordinary-result', { body: { memberCount: 99 } }));
+    const persisted = service.snapshotForPersistence();
+    assertJsonEquals(persisted.fleetReports, []);
+    const restored = createRallarBlackBoxControlService(toControlServiceInput());
+    const decoded = JSON.parse(JSON.stringify(persisted)) as typeof persisted;
+    restored.restoreSnapshot({ ...decoded, distributedRuns: decoded.distributedRuns?.map((run) => ({ ...run, state: 'running' })) });
+    const run = restored.snapshotRun('run-1');
+    assert(run);
+    const evidence = run.results.find((result) => result.commandId.includes('-start-agent-1-'))?.result?.value;
+    assert(evidence && typeof evidence === 'object' && 'results' in evidence);
+    assert(Array.isArray(evidence.results));
+    assertJsonEquals(evidence.results.length, 1);
+    const ordinary = run.results.find((result) => result.commandId === 'ordinary-result')?.result?.value;
+    assert(ordinary && typeof ordinary === 'object' && 'resultsOmitted' in ordinary);
+    assertJsonEquals(ordinary.resultsOmitted, true);
+    assert(!('results' in ordinary));
+    const evaluated = restored.snapshotDistributedRun('dist-ga-1');
+    assertJsonEquals(evaluated?.rollup.summary.passedGroupAssertions, 1);
+    assertJsonEquals(restored.snapshotForPersistence().fleetReports, []);
+    assertJsonEquals(restored.snapshot().fleetReports?.length, 1);
+});
+
+Deno.test('restore keeps group evidence isolated from concatenation-ambiguous run and command identities', () => {
+    const { service } = runGroupAssertionDistributedRun([ALL_EQUAL_ASSERTION], {
+        'agent-1': { body: { memberCount: 2 } },
+        'agent-2': { body: { memberCount: 2 } }
+    });
+    const original = service.snapshotForPersistence();
+    const run = original.runs[0];
+    const group = original.distributedRuns?.[0];
+    assert(group);
+    const result = run.results.find((item) => item.commandId.includes('-start-agent-1-'));
+    assert(result);
+    const restored = createRallarBlackBoxControlService(toControlServiceInput());
+    restored.restoreSnapshot({
+        runs: [
+            { ...run, runId: 'a', results: [{ ...result, runId: 'a', commandId: 'bc' }] },
+            { ...run, runId: 'ab', results: [{ ...result, runId: 'ab', commandId: 'c' }] }
+        ],
+        distributedRuns: [{ ...group, controlRunId: 'a', commandLinks: [{ phase: 'start', agentId: 'agent-1', commandId: 'bc', queuedAtEpochMs: 2000 }] }],
+        fleetReports: []
+    });
+    const groupValue = restored.snapshotRun('a')?.results[0].result?.value;
+    const ordinaryValue = restored.snapshotRun('ab')?.results[0].result?.value;
+    assert(groupValue && typeof groupValue === 'object' && 'results' in groupValue);
+    assert(Array.isArray(groupValue.results));
+    assert(ordinaryValue && typeof ordinaryValue === 'object' && 'resultsOmitted' in ordinaryValue);
+    assertJsonEquals(ordinaryValue.resultsOmitted, true);
 });

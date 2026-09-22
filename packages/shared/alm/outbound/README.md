@@ -175,6 +175,28 @@ registers the callback. Native completion invokes it after queue mutation. This 
 a language-level event bridge, not a forward dependency between services. No
 additional queue, pending-work registry, or timer is introduced by settlement.
 
+`ALOutboundMessageRuntime.cancel(msgId)` aborts one message's own live transport
+signal and states one `cancelled` settlement; disposal aborts every live signal but
+states none of its own. Either way, an attempt that already stated `attempt-started`
+still terminates with its own `attempt-settled` (`outcome: 'cancelled'`, `willRetry:
+false`) -- stated directly when the abort lands before the carrier runs (inside the
+admission-store reads `writeAttemptedSend` makes first), or by the carrier's own
+settlement when it lands during or after the send. Cancellation is held only for the
+owner's lifetime, in memory, never persisted: a row still pending when the owner is
+disposed may be drained by the next owner as an ordinary send. A durable cancel fact
+-- one that survives disposal or reload -- is a named sink seam left to S3 or I2
+(D13), not part of this settlement path.
+
+Every settlement in this section is a per-message `ALOutboundSettlementFact` stated
+through this owner's [`ALOutboundSettlementEmitter`](./al-outbound-message-runtime.ts):
+the runtime's private `emitSettlement` stamps the fact with its own `carrier` and the
+current `atMs` into the `ALDeliverySettlement` the sink receives, and guards that call
+so a throwing sink logs and returns rather than changing dispatch, retry, or claim
+behaviour. The browser's sink for these settlements is the in-memory delivery registry,
+[`BrowserRallarDeliveryRegistry`](../../../shared-web/browser/messages/browser-rallar-delivery-registry.ts)
+(`packages/shared-web/browser/messages/`), which reduces each settlement into the
+sending handle's lifecycle.
+
 ## Atomic IndexedDB work storage
 
 [`openIndexedDbAdmissionDatabase`](../open-indexed-db-admission-database.ts) creates
@@ -221,7 +243,8 @@ storage is preserved, and only ALM-owned databases are reset.
 
 Inbound and outbound execution use their direct ALM owners with QueueBox and
 InboxOutboxEngine. The separate outbound effect scheduler and browser physical
-transport queues have been removed. The application-facing delivery handle and
+transport queues have been removed. The application-facing delivery handle
+(`packages/shared-web/browser/messages/`) observes these settlements directly;
 complete logical audience receipts remain roadmap work.
 [`al-storage-snapshot.test.ts`](../../../tests/shared/alm/al-storage-snapshot.test.ts)
 records what one standard supersession workload leaves in browser storage; existing

@@ -1,28 +1,43 @@
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { load as loadYaml } from 'js-yaml';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-    applyRallarServerEndpointPreset,
-    assertRallarServerRestResponse,
-    buildRallarServerCollectionStepRequestInput,
-    buildRallarServerRestRequest,
-    defaultRallarServerWorkbenchVariables,
-    executeRallarServerMutationRequest,
-    executeRallarServerRestRequest,
-    extractRallarServerOpenApiEndpoints,
-    extractRallarServerRestVariables,
-    RALLAR_SERVER_ENDPOINT_PRESETS,
-    readRallarServerJsonPath,
-    resolveRallarServerCollectionValue,
-    toRallarServerBlackBoxCommand,
-    toRallarServerCurl,
-    toRallarServerRestCollectionRecipe
-} from '../../../apps/rallar-black-box/src/rallar-server-workbench.ts';
+import { computeRallarServerRestAssertions } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/compute-rallar-server-rest-assertions.ts';
 import {
     createRallarServerRestCollectionTemplates
-} from '../../../apps/rallar-black-box/src/rallar-server-workbench/create-rallar-server-rest-collection-templates.ts';
+} from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/create-rallar-server-rest-collection-templates.ts';
+import { resolveRallarServerCollectionValue } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-collection-value.ts';
+import { resolveRallarServerJsonPath } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/resolve-rallar-server-json-path.ts';
+import { toRallarServerCollectionStepRequestInput } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-collection-step-request-input.ts';
+import { toRallarServerExtractedVariables } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-extracted-variables.ts';
+import { toRallarServerRestCollectionRecipe } from '../../../apps/rallar-black-box/src/rallar-server-workbench/collections/to-rallar-server-rest-collection-recipe.ts';
+import { decodeRallarServerOpenApiEndpoints } from '../../../apps/rallar-black-box/src/rallar-server-workbench/decode-rallar-server-open-api-endpoints.ts';
+import { RALLAR_SERVER_ENDPOINT_PRESETS } from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-endpoint-presets.ts';
+import type {
+    RallarServerWorkbenchVariables
+} from '../../../apps/rallar-black-box/src/rallar-server-workbench/rallar-server-workbench-contracts.ts';
+import {
+    sendRallarServerMutationRequest,
+    sendRallarServerRestRequest
+} from '../../../apps/rallar-black-box/src/rallar-server-workbench/send-rallar-server-rest-request.ts';
+import { toRallarServerBlackBoxCommand } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-black-box-command.ts';
+import { toRallarServerCurl } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-curl.ts';
+import { toRallarServerEndpointDraft } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-endpoint-draft.ts';
+import { toRallarServerRestRequest } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-rest-request.ts';
+import { toRallarServerWorkbenchVariables } from '../../../apps/rallar-black-box/src/rallar-server-workbench/to-rallar-server-workbench-variables.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
+import type { Either } from '../../../packages/shared/resilience/Either.ts';
+
+function workbenchVariables(hints: Partial<RallarServerWorkbenchVariables>): RallarServerWorkbenchVariables {
+    return toRallarServerWorkbenchVariables({ hints, createOpaqueId: () => crypto.randomUUID() });
+}
+
+function toRight<T>(result: Either<string, T>): T {
+    return result.fold((error) => {
+        throw new Error(error);
+    }, (value) => value);
+}
 
 const authSession: AuthSession = {
     clientId: 'alice-client',
@@ -34,7 +49,7 @@ const authSession: AuthSession = {
 
 describe('rallar-black-box Rallar Server workbench helpers', () => {
     it('applies endpoint presets with encoded path variables and body defaults', () => {
-        const draft = applyRallarServerEndpointPreset(
+        const draft = toRallarServerEndpointDraft(
             {
                 presetId: 'group-create',
                 tag: 'Group State',
@@ -47,7 +62,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                     createdByPrincipalId: '{principalId}'
                 }
             },
-            defaultRallarServerWorkbenchVariables({
+            workbenchVariables({
                 applicationId: 'rallar app',
                 workspaceId: 'default',
                 principalId: 'alice/client',
@@ -67,7 +82,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('builds authenticated requests and redacts the bearer token', () => {
-        const request = buildRallarServerRestRequest({
+        const request = toRight(toRallarServerRestRequest({
             apiBaseUrl: 'http://localhost:8080',
             method: 'GET',
             path: '/api/webrtc/ice',
@@ -77,8 +92,9 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             responseBodyMode: 'auto',
             attachAuth: true,
             authSession,
-            timeoutMs: 5000
-        });
+            timeoutMs: 5000,
+            forbidPlaceholderBaseUrl: false
+        }));
 
         expect(request.url).toBe('http://localhost:8080/api/webrtc/ice?fresh=true');
         expect(request.headers).toMatchObject({
@@ -91,8 +107,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('rejects placeholder API base URLs for real-provider calls', () => {
-        expect(() =>
-            buildRallarServerRestRequest({
+        expect(
+            toRallarServerRestRequest({
                 apiBaseUrl: 'https://api.example.invalid',
                 method: 'GET',
                 path: '/api/config',
@@ -101,30 +117,35 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 bodyText: '',
                 responseBodyMode: 'auto',
                 attachAuth: false,
+                authSession: undefined,
                 forbidPlaceholderBaseUrl: true,
                 timeoutMs: 5000
-            })
-        ).toThrow(/placeholder API base URL/);
+            }).foldLeft((error) => error)
+        ).toMatch(/placeholder API base URL/);
     });
 
     it('executes a request and parses JSON responses', async () => {
-        const response = await executeRallarServerRestRequest(
-            {
-                apiBaseUrl: 'http://localhost:8080',
-                method: 'GET',
-                path: '/api/config',
-                headersText: '{}',
-                queryText: '{}',
-                bodyText: '',
-                responseBodyMode: 'auto',
-                attachAuth: false,
-                timeoutMs: 5000
-            },
-            async () =>
-                new Response(JSON.stringify({ apiBaseUrl: 'http://localhost:8080' }), {
-                    status: 200,
-                    headers: { 'content-type': 'application/json' }
-                })
+        const response = toRight(
+            await sendRallarServerRestRequest({
+                request: {
+                    apiBaseUrl: 'http://localhost:8080',
+                    method: 'GET',
+                    path: '/api/config',
+                    headersText: '{}',
+                    queryText: '{}',
+                    bodyText: '',
+                    responseBodyMode: 'auto',
+                    attachAuth: false,
+                    authSession: undefined,
+                    timeoutMs: 5000,
+                    forbidPlaceholderBaseUrl: false
+                },
+                fetch: async () =>
+                    new Response(JSON.stringify({ apiBaseUrl: 'http://localhost:8080' }), {
+                        status: 200,
+                        headers: { 'content-type': 'application/json' }
+                    })
+            })
         );
 
         expect(response).toMatchObject({
@@ -140,8 +161,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     it('executes operator mutations with path-only request identity', async () => {
         const calls: Array<Readonly<{ url: string; body: string | undefined; }>> = [];
 
-        await executeRallarServerMutationRequest(
-            {
+        await sendRallarServerMutationRequest({
+            request: {
                 apiBaseUrl: 'http://localhost:8080',
                 method: 'POST',
                 path: '/api/auth/ws-ticket',
@@ -150,10 +171,12 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 bodyText: '{"requestId":"legacy-body-id"}',
                 responseBodyMode: 'json',
                 attachAuth: false,
-                timeoutMs: 5000
+                authSession: undefined,
+                timeoutMs: 5000,
+                forbidPlaceholderBaseUrl: false
             },
-            'opaque-operator-request-id',
-            async (input, init) => {
+            requestId: 'opaque-operator-request-id',
+            fetch: async (input, init) => {
                 calls.push({
                     url: String(input),
                     body: init?.body === undefined ? undefined : String(init.body)
@@ -163,7 +186,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                     headers: { 'content-type': 'application/json' }
                 });
             }
-        );
+        });
 
         expect(calls).toEqual([
             {
@@ -174,25 +197,28 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('classifies unauthenticated responses and invalid JSON bodies', async () => {
-        const response = await executeRallarServerRestRequest(
-            {
-                apiBaseUrl: 'http://localhost:8080',
-                method: 'GET',
-                path: '/api/webrtc/ice',
-                headersText: '{}',
-                queryText: '{}',
-                bodyText: '',
-                responseBodyMode: 'json',
-                attachAuth: true,
-                authSession,
-                timeoutMs: 5000
-            },
-            async () =>
-                new Response('not-json', {
-                    status: 401,
-                    statusText: 'Unauthorized',
-                    headers: { 'content-type': 'application/json' }
-                })
+        const response = toRight(
+            await sendRallarServerRestRequest({
+                request: {
+                    apiBaseUrl: 'http://localhost:8080',
+                    method: 'GET',
+                    path: '/api/webrtc/ice',
+                    headersText: '{}',
+                    queryText: '{}',
+                    bodyText: '',
+                    responseBodyMode: 'json',
+                    attachAuth: true,
+                    authSession,
+                    timeoutMs: 5000,
+                    forbidPlaceholderBaseUrl: false
+                },
+                fetch: async () =>
+                    new Response('not-json', {
+                        status: 401,
+                        statusText: 'Unauthorized',
+                        headers: { 'content-type': 'application/json' }
+                    })
+            })
         );
 
         expect(response.ok).toBe(false);
@@ -201,8 +227,8 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('creates black-box http.request commands without embedding auth headers', () => {
-        const command = toRallarServerBlackBoxCommand(
-            {
+        const command = toRight(toRallarServerBlackBoxCommand({
+            request: {
                 apiBaseUrl: 'http://localhost:8080',
                 method: 'POST',
                 path: '/api/auth/ws-ticket',
@@ -212,10 +238,11 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 responseBodyMode: 'json',
                 attachAuth: true,
                 authSession,
-                timeoutMs: 5000
+                timeoutMs: 5000,
+                forbidPlaceholderBaseUrl: false
             },
-            'rest-ws-ticket'
-        );
+            commandId: 'rest-ws-ticket'
+        }));
 
         expect(command).toEqual({
             kind: 'http.request',
@@ -235,7 +262,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('extracts endpoint picker rows from OpenAPI JSON', () => {
-        const endpoints = extractRallarServerOpenApiEndpoints({
+        const endpoints = decodeRallarServerOpenApiEndpoints({
             paths: {
                 '/api/config': {
                     get: {
@@ -337,7 +364,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         }
 
         const collectionMutationSteps = createRallarServerRestCollectionTemplates(
-            defaultRallarServerWorkbenchVariables({})
+            workbenchVariables({})
         ).flatMap((collection) => collection.steps.filter((step) => step.request.method !== 'GET'));
         expect(collectionMutationSteps).toHaveLength(15);
         for (const step of collectionMutationSteps) {
@@ -347,7 +374,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('threads one generation through client session lifecycle presets and collections', () => {
-        const variables = defaultRallarServerWorkbenchVariables({
+        const variables = workbenchVariables({
             generationId: 'generation-1'
         });
         const presets = new Map(
@@ -361,7 +388,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
                 'client-session-disconnect'
             ]
         ) {
-            const draft = applyRallarServerEndpointPreset(presets.get(presetId)!, variables);
+            const draft = toRallarServerEndpointDraft(presets.get(presetId)!, variables);
             expect(JSON.parse(draft.bodyText)).toMatchObject({
                 generationId: 'generation-1'
             });
@@ -378,12 +405,13 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             'disconnect-client-session'
         ]);
         for (const step of lifecycleSteps) {
-            const input = buildRallarServerCollectionStepRequestInput({
+            const input = toRallarServerCollectionStepRequestInput({
                 step,
                 apiBaseUrl: 'http://localhost:8080',
                 variables: collection!.variables ?? {},
                 authSession,
-                defaultTimeoutMs: 5000
+                defaultTimeoutMs: 5000,
+                forbidPlaceholderBaseUrl: false
             });
             expect(JSON.parse(input.bodyText)).toMatchObject({
                 generationId: 'generation-1'
@@ -392,7 +420,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     });
 
     it('redacts authorization, query secrets, and body secrets in cURL output', () => {
-        const curl = toRallarServerCurl({
+        const curl = toRight(toRallarServerCurl({
             apiBaseUrl: 'http://localhost:8080',
             method: 'POST',
             path: '/api/webrtc/ice',
@@ -402,8 +430,9 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             responseBodyMode: 'auto',
             attachAuth: true,
             authSession,
-            timeoutMs: 5000
-        });
+            timeoutMs: 5000,
+            forbidPlaceholderBaseUrl: false
+        }));
 
         expect(curl).toContain('authorization: <redacted>');
         expect(curl).not.toContain('secret-token');
@@ -413,7 +442,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
 
     it('resolves REST collection variables into requests', () => {
         const templates = createRallarServerRestCollectionTemplates(
-            defaultRallarServerWorkbenchVariables({
+            workbenchVariables({
                 applicationId: 'app',
                 workspaceId: 'workspace',
                 groupId: 'bb-group',
@@ -426,12 +455,13 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         );
         expect(collection).toBeDefined();
 
-        const input = buildRallarServerCollectionStepRequestInput({
+        const input = toRallarServerCollectionStepRequestInput({
             step: collection!.steps[0],
             apiBaseUrl: 'http://localhost:8080',
             variables: collection!.variables ?? {},
             authSession,
-            defaultTimeoutMs: 5000
+            defaultTimeoutMs: 5000,
+            forbidPlaceholderBaseUrl: false
         });
 
         expect(input.path).toBe(
@@ -463,7 +493,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             bodyKind: 'json' as const
         };
 
-        expect(readRallarServerJsonPath(response.bodyJson, '$.members[0].principalId')).toBe(
+        expect(resolveRallarServerJsonPath(response.bodyJson, '$.members[0].principalId')).toBe(
             'alice-client'
         );
         expect(
@@ -473,19 +503,19 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             })
         ).toBe('/groups/bb-group/alice-client');
 
-        const assertions = assertRallarServerRestResponse(
+        const assertions = computeRallarServerRestAssertions({
             response,
-            {
+            expectation: {
                 status: [200, 201],
                 body: [{ path: '$.group.groupId', equals: '{{groupId}}' }],
                 headers: [{ name: 'x-snapshot-version', exists: true }]
             },
-            { groupId: 'bb-group' }
-        );
+            variables: { groupId: 'bb-group' }
+        });
 
         expect(assertions.every((assertion) => assertion.ok)).toBe(true);
         expect(
-            extractRallarServerRestVariables(response, [
+            toRallarServerExtractedVariables(response, [
                 { name: 'observedGroupId', path: '$.group.groupId' },
                 { name: 'snapshotVersion', from: 'headers', header: 'x-snapshot-version' },
                 { name: 'statusCode', from: 'status' }
@@ -497,9 +527,35 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         });
     });
 
+    it('exports every REST collection template as a strict version-1 recipe', () => {
+        const collections = createRallarServerRestCollectionTemplates(
+            workbenchVariables({
+                applicationId: 'app',
+                workspaceId: 'workspace',
+                groupId: 'bb-group',
+                principalId: 'alice-client'
+            })
+        );
+
+        expect(collections.length).toBeGreaterThan(0);
+        for (const collection of collections) {
+            const recipe = toRight(toRallarServerRestCollectionRecipe({
+                collection,
+                apiBaseUrl: 'http://localhost:8080',
+                variables: collection.variables ?? {},
+                authSession,
+                defaultTimeoutMs: 5000,
+                forbidPlaceholderBaseUrl: false
+            }));
+
+            expect(recipe, collection.collectionId).toMatchObject({ schemaVersion: 1 });
+            expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe }), collection.collectionId).toEqual({ ok: true });
+        }
+    });
+
     it('exports REST collections as black-box recipes with assertion metadata', () => {
         const collection = createRallarServerRestCollectionTemplates(
-            defaultRallarServerWorkbenchVariables({
+            workbenchVariables({
                 applicationId: 'app',
                 workspaceId: 'workspace',
                 groupId: 'bb-group',
@@ -507,20 +563,21 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
             })
         )[0];
 
-        const recipe = toRallarServerRestCollectionRecipe({
-            collection,
-            apiBaseUrl: 'http://localhost:8080',
-            variables: collection.variables ?? {},
-            authSession,
-            defaultTimeoutMs: 5000
-        }) as {
+        const recipe: {
             recipeId: string;
             commands: Array<{
                 kind: string;
                 commandId: string;
                 metadata?: { restCollection?: { expect?: unknown; attachAuth?: boolean; }; };
             }>;
-        };
+        } = JSON.parse(JSON.stringify(toRight(toRallarServerRestCollectionRecipe({
+            collection,
+            apiBaseUrl: 'http://localhost:8080',
+            variables: collection.variables ?? {},
+            authSession,
+            defaultTimeoutMs: 5000,
+            forbidPlaceholderBaseUrl: false
+        }))));
 
         expect(recipe.recipeId).toBe('group-membership-evidence');
         expect(recipe.commands[0]).toMatchObject({
@@ -534,7 +591,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
     // live-RTC specs exist.
     it('drives every lifecycle boundary manually in the stage collection', () => {
         const collection = createRallarServerRestCollectionTemplates(
-            defaultRallarServerWorkbenchVariables({})
+            workbenchVariables({})
         ).find((entry) => entry.collectionId === 'group-lifecycle-stages');
 
         expect(collection).toBeDefined();
@@ -584,7 +641,7 @@ describe('rallar-black-box Rallar Server workbench helpers', () => {
         const served = new Set(Object.keys(openApi.paths));
 
         const steps = createRallarServerRestCollectionTemplates(
-            defaultRallarServerWorkbenchVariables({})
+            workbenchVariables({})
         ).flatMap((collection) => collection.steps);
 
         for (const step of steps) {

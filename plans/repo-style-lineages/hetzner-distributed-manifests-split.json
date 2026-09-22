@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a336ad41c430dd2b7f760fbaee7a9ecb9516542a",
+      "source": {
+        "path": "apps/rallar-black-box/src/hetzner-distributed-manifests.ts",
+        "blob": "95b3723000343abeb56b8e670a9e8a4ba403a4ab"
+      },
+      "targets": [
+        "apps/rallar-black-box/src/hetzner/hetzner-manifest-entry.ts"
+      ]
+    }
+  ]
+}

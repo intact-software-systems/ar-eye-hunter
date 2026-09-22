@@ -50,7 +50,7 @@ describe('outbound message expiry', () => {
         const store = stores.admissionStore;
         const read = await store.readOutgoingMessage({
             msg: original,
-            planner: () => ({ msg, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
+            planner: () => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [{ message: JSON.stringify(msg) }] }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -104,7 +104,12 @@ describe('outbound message expiry', () => {
         const msg = createOutboundMessage('commit-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
-            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
+            }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -146,7 +151,12 @@ describe('outbound message expiry', () => {
         const msg = createOutboundMessage('held-expiry', { ttlMs: 1_000 });
         const read = await store.readOutgoingMessage({
             msg: msg,
-            planner: () => ({ msg, persist: true, preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' })) }),
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: Array.from({ length: preparedCount }, () => ({ peer: 'captured' }))
+            }),
             observedCanonicalEntry: undefined,
             intent: 'enqueue'
         });
@@ -210,8 +220,8 @@ describe('outbound message expiry', () => {
         const repair = new ALOutboundRepairAdmission({
             admissionStore: store,
             clock,
-            controlAdmission: store.createControlAdmission(workPort, clock),
-            planOutgoingMessage: (msg) => ({ msg, persist: false, preparedMessages: [] }),
+            controlAdmission: store.createControlAdmission(workPort, clock, () => {}),
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
             planRepairMessage: undefined
         });
         vi.setSystemTime(1_050);
@@ -302,6 +312,7 @@ describe('outbound message expiry', () => {
         });
         const plan: ALOutboundDispatchPlan<OutboundTestPayload> = {
             msg: msg,
+            dropReasonCode: undefined,
             persist: false,
             preparedMessages: [{ message: JSON.stringify(msg) }]
         };
@@ -316,7 +327,7 @@ describe('outbound message expiry', () => {
         });
         const before = JSON.stringify({ read, candidate });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
-        expect(candidate.status).toBe('accepted');
+        expect(candidate.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(candidate.bundle?.durableEffects.map((effect) => effect.expireAtTimestamp)).toEqual([2_000]);
         if (!candidate.bundle) {
             throw new Error('Accepted transport work requires an admission bundle');
@@ -342,6 +353,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),
@@ -356,7 +368,11 @@ describe('outbound message expiry', () => {
             phase: 'immediate',
             options: {}
         });
-        expect(candidate).toMatchObject({ status: 'expired', reason: 'Message expired or is too stale', entries: [] });
+        expect(candidate).toMatchObject({
+            verdict: { kind: 'expired' },
+            reason: 'Message expired or is too stale',
+            entries: []
+        });
         expect(validateALOutboundDispatch(read, candidate).left).toBeUndefined();
     });
 
@@ -373,6 +389,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: []
             }),
@@ -404,6 +421,7 @@ describe('outbound message expiry', () => {
             msg: msg,
             planner: () => ({
                 msg: msg,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ message: JSON.stringify(msg) }]
             }),

@@ -331,7 +331,7 @@ Server/room/signaling/topology:
 
 Apps and browser test surfaces:
 
-- `apps/rallar-black-box/src/App.tsx`
+- `apps/rallar-black-box/src/app.tsx`
 - `apps/rallar-black-box/src/rtc-diagnostics.ts`
 - `apps/rallar-black-box/src/live-rtc-three-browser-coverage.ts`
 - `apps/rallar-black-box/manifests/hetzner/*.json`

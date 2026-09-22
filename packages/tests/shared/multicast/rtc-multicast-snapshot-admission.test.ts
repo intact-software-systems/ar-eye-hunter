@@ -237,6 +237,7 @@ function createDefaultSnapshotAdmissionManager(
         },
         qosProvider: undefined,
         outboundDiagnostics: undefined,
+        outboundSettlements: undefined,
         outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, nowMs: () => 1_000 }),
         circuitBreaker: toCircuitBreaker(),
         rateLimiter: toRateLimiter(),

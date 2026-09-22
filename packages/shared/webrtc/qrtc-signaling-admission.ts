@@ -1,4 +1,4 @@
-import type { ALOutboundEnqueueStatus } from '../alm/outbound/al-outbound-message-runtime.ts';
+import type { ALDeliveryAdmissionVerdict } from '../alm/delivery/al-delivery-lifecycle.ts';
 
 /**
  * Where an outbound signal was lost: the transport's own terminal verdict on the message, or a hop
@@ -7,7 +7,7 @@ import type { ALOutboundEnqueueStatus } from '../alm/outbound/al-outbound-messag
 export type QRtcSignalingAdmission =
     | Readonly<{
         outcome: 'rejected';
-        status: ALOutboundEnqueueStatus;
+        verdict: ALDeliveryAdmissionVerdict;
         messageId: string;
     }>
     | Readonly<{ outcome: 'never-admitted'; }>;
@@ -15,15 +15,15 @@ export type QRtcSignalingAdmission =
 /**
  * A signal admission refused. The awaiting hop still unwinds -- an offer that never left leaves the
  * peer in `have-local-offer` -- but the verdict travels with the throw instead of being reduced to a
- * message, so the peer can name the status and the message it lost.
+ * message, so the peer can name the verdict and the message it lost.
  */
 export class QRtcSignalingAdmissionError extends Error {
     public readonly admission: QRtcSignalingAdmission;
 
-    constructor(status: ALOutboundEnqueueStatus, messageId: string, reason: string) {
+    constructor(verdict: ALDeliveryAdmissionVerdict, messageId: string, reason: string) {
         super(reason);
         this.name = 'QRtcSignalingAdmissionError';
-        this.admission = { outcome: 'rejected', status, messageId };
+        this.admission = { outcome: 'rejected', verdict, messageId };
     }
 }
 

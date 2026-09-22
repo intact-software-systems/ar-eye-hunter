@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestLoopResultValue, RallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/types.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
+import type { RallarBlackBoxTestLoopResultValue, RallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 function createPollingRuntime(): Readonly<{
     runtime: RallarBlackBoxTestRuntime;
@@ -184,7 +185,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.continueOnFailure contradicts until mode.'
+            error: 'loop.continueOnFailure contradicts until mode.',
+            messages: ['loop.continueOnFailure contradicts until mode.']
         });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -194,7 +196,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier requires until mode.'
+            error: 'loop.backoffMultiplier requires until mode.',
+            messages: ['loop.backoffMultiplier requires until mode.']
         });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -205,7 +208,8 @@ describe('rallar-bb-test loop until first-success', () => {
             commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier must be >= 1.'
+            error: 'loop.backoffMultiplier must be >= 1.',
+            messages: ['loop.backoffMultiplier must be >= 1.']
         });
 
         expect(

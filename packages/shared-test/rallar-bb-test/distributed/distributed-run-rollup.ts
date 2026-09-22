@@ -1,10 +1,10 @@
 import type {
     RallarBlackBoxDistributedParticipantResult,
     RallarBlackBoxDistributedRecipeResult,
-    RallarBlackBoxDistributedRunError,
     RallarBlackBoxDistributedRunItemState,
     RallarBlackBoxDistributedRunState
 } from '../distributed-run.ts';
+import type { RallarBlackBoxTestError } from '../rallar-black-box-test-contracts.ts';
 import type { RallarBlackBoxDistributedGroupAssertionResult } from './group-assertions.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES = [
@@ -27,8 +27,7 @@ export type RallarBlackBoxDistributedRunRollupFailure = Readonly<{
     kind: 'participant' | 'recipe' | 'group-assertion';
     key: string;
     state: RallarBlackBoxDistributedRunItemState;
-    required: boolean;
-    error?: RallarBlackBoxDistributedRunError;
+    error?: RallarBlackBoxTestError;
 }>;
 
 export type RallarBlackBoxDistributedRunRollup = Readonly<{
@@ -36,12 +35,10 @@ export type RallarBlackBoxDistributedRunRollup = Readonly<{
     ok: boolean;
     summary: Readonly<{
         participants: number;
-        requiredParticipants: number;
         readyParticipants: number;
         passedParticipants: number;
         failedParticipants: number;
         recipes: number;
-        requiredRecipes: number;
         passedRecipes: number;
         failedRecipes: number;
         groupAssertions: number;
@@ -67,24 +64,21 @@ export function rollupDistributedRunResult(
     const participants = input.participants ?? [];
     const recipes = input.recipes ?? [];
     const groupAssertions = input.groupAssertions ?? [];
-    const requiredParticipants = participants.filter((item) => item.required !== false);
-    const requiredRecipes = recipes.filter((item) => item.required !== false);
-    const requiredItems = [
-        ...requiredParticipants.map((item) => ({
+    const items = [
+        ...participants.map((item) => ({
             kind: 'participant' as const,
             key: item.agentId,
             item
         })),
-        ...requiredRecipes.map((item) => ({ kind: 'recipe' as const, key: itemKey(item), item }))
+        ...recipes.map((item) => ({ kind: 'recipe' as const, key: itemKey(item), item }))
     ];
     const failures: RallarBlackBoxDistributedRunRollupFailure[] = [
-        ...requiredItems
+        ...items
             .filter(({ item }) => isBlockingItemFailure(item))
             .map(({ kind, key, item }) => ({
                 kind,
                 key,
                 state: item.state,
-                required: item.required !== false,
                 error: item.error
             })),
         ...groupAssertions
@@ -93,15 +87,14 @@ export function rollupDistributedRunResult(
                 kind: 'group-assertion' as const,
                 key: result.groupAssertionId,
                 state: 'failed' as const,
-                required: true,
                 error: result.error
             }))
     ];
 
     const state = deriveRollupState({
         stateHint: input.stateHint,
-        participants: requiredParticipants,
-        recipes: requiredRecipes,
+        participants,
+        recipes,
         failures
     });
 
@@ -110,17 +103,15 @@ export function rollupDistributedRunResult(
         ok: state === 'passed',
         summary: {
             participants: participants.length,
-            requiredParticipants: requiredParticipants.length,
             readyParticipants:
-                requiredParticipants.filter((item) =>
+                participants.filter((item) =>
                     item.state === 'ready' || item.state === 'running' || item.state === 'passed'
                 ).length,
-            passedParticipants: requiredParticipants.filter((item) => item.state === 'passed').length,
-            failedParticipants: requiredParticipants.filter(isBlockingItemFailure).length,
+            passedParticipants: participants.filter((item) => item.state === 'passed').length,
+            failedParticipants: participants.filter(isBlockingItemFailure).length,
             recipes: recipes.length,
-            requiredRecipes: requiredRecipes.length,
-            passedRecipes: requiredRecipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
-            failedRecipes: requiredRecipes.filter(isBlockingItemFailure).length,
+            passedRecipes: recipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
+            failedRecipes: recipes.filter(isBlockingItemFailure).length,
             groupAssertions: groupAssertions.length,
             passedGroupAssertions: groupAssertions.filter((result) => result.ok).length,
             failedGroupAssertions: groupAssertions.filter((result) => !result.ok).length,

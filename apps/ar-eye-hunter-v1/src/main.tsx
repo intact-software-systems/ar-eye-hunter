@@ -4,11 +4,10 @@ import { createRoot } from 'react-dom/client';
 
 import { rallar } from '@shared-web/browser/rallar.ts';
 import { configureAuthSessionStorage } from '@shared/api/auth.ts';
-import App from './App.tsx';
+
+import App from './app.tsx';
 import { GAME_COMBAT_LANE_ID } from './game/types.ts';
 import './styles.css';
-
-(globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
 
 (globalThis as { Temporal?: typeof Temporal; }).Temporal ??= Temporal;
 

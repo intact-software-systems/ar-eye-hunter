@@ -1,10 +1,10 @@
 import type { ControlServerSnapshot, ControlSnapshotBounds } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    ControlRunManagerHttpError,
+    toControlHttpBaseUrl,
     type ControlRunManagerFetch
-} from '../../control-run-manager.ts';
+} from '../../control-run-manager/control-endpoint-request.ts';
 import {
     createRecipeConsoleControlAgentLaunchApi,
     type RecipeConsoleControlAgentLaunchApi
@@ -168,7 +168,7 @@ function controlProtocolError(error: unknown): RecipeConsoleControlProtocolError
 }
 
 function isProtocolCandidate(error: unknown): boolean {
-    return !(error instanceof ControlRunManagerHttpError) &&
+    return !(error instanceof ControlHttpError) &&
         !(
             error && typeof error === 'object' &&
             'authorizationRequired' in error && error.authorizationRequired === true
@@ -193,7 +193,7 @@ function recipeConsoleControlBaseUrl(controlUrl: string | undefined): string {
             throw new Error('The configured control URL must not contain credentials.');
         }
     }
-    return controlHttpBaseUrlFromWsUrl(configured);
+    return toControlHttpBaseUrl(configured);
 }
 
 export type {

@@ -3,19 +3,20 @@ import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-mes
 import { toScopedGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
+interface ActiveGroupSnapshotRefresh {
+    readonly controller: AbortController;
+    readonly task: Promise<boolean>;
+}
+
 export namespace RtcGroupSnapshotRefresh {
     export interface Input {
+        /** Resolves after a validated scoped read and authority adoption; rejects on failure or stale session. */
         readonly refreshGroupSnapshot: (
             roomRef: GroupRef,
             minSnapshotVersion: number,
             signal: AbortSignal
         ) => Promise<void>;
     }
-}
-
-interface ActiveGroupSnapshotRefresh {
-    readonly controller: AbortController;
-    readonly task: Promise<void>;
 }
 
 export class RtcGroupSnapshotRefresh {
@@ -30,23 +31,22 @@ export class RtcGroupSnapshotRefresh {
     async afterInboundAdmission(
         message: ALMessage,
         acceptance: ALInboundMessageRuntime.Acceptance
-    ): Promise<void> {
+    ): Promise<boolean> {
         if (
             this.#disposed || acceptance.kind !== 'not-admitted' ||
             !isNotYetInSyncReason(acceptance.reason)
         ) {
-            return;
+            return false;
         }
         const targets = message.targets;
         const roomRef = readALTargetGroupRef(message);
         if (roomRef === undefined || (targets?.mode !== 'multicast' && targets?.mode !== 'broadcast')) {
-            return;
+            return false;
         }
         const groupKey = toScopedGroupKey(roomRef);
         const active = this.#activeByGroup.get(groupKey);
         if (active !== undefined) {
-            await active.task;
-            return;
+            return await active.task && !this.#disposed && !active.controller.signal.aborted;
         }
 
         const controller = new AbortController();
@@ -54,15 +54,13 @@ export class RtcGroupSnapshotRefresh {
             roomRef,
             targets.minSnapshotVersion ?? 0,
             controller.signal
-        ).catch(() => {
-            // The point-read diagnostic and retained QueueBox retry own recovery evidence.
-        }).finally(() => {
+        ).then(() => !this.#disposed && !controller.signal.aborted, () => false).finally(() => {
             if (this.#activeByGroup.get(groupKey)?.task === task) {
                 this.#activeByGroup.delete(groupKey);
             }
         });
         this.#activeByGroup.set(groupKey, { controller, task });
-        await task;
+        return await task && !this.#disposed && !controller.signal.aborted;
     }
 
     dispose(): void {

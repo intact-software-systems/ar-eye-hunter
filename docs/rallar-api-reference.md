@@ -626,20 +626,15 @@ Room channels add room defaults and default `send(...)` to the existing
 `isSameGroupRef` before accepting an inbound payload:
 
 ```ts
-import type { RallarMessageSendResult } from '@shared-web/browser/rallar.ts';
+import {
+    AL_DELIVERY_ADMITTED_STATES,
+    isALDeliveryAdmitted
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 
 interface RoomChatMessage {
     readonly text: string;
 }
-
-const acceptedMessageStatuses: ReadonlySet<RallarMessageSendResult['status']> = new Set([
-    'enqueued',
-    'sent-immediate',
-    'duplicate',
-    'superseded',
-    'skipped'
-]);
 
 const roomSession = await rallar.rooms.enter('lobby');
 const roomChat = roomSession.message<RoomChatMessage>('chat');
@@ -656,14 +651,25 @@ roomChat.onWs((payload, message) => {
     }
 });
 
-const sendResult = await roomChat.send({ text: 'hello' });
-if (!acceptedMessageStatuses.has(sendResult.status)) {
-    console.warn('Chat delivery degraded', sendResult.status, sendResult.reason);
+const handle = await roomChat.send({ text: 'hello' });
+const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: 5_000 });
+if (!isALDeliveryAdmitted(outcome.lifecycle)) {
+    console.warn(
+        'Chat delivery degraded',
+        outcome.lifecycle.state,
+        outcome.lifecycle.evidence.reason
+    );
 }
 ```
 
-The accepted message send statuses are `enqueued`, `sent-immediate`,
-`duplicate`, `superseded`, and `skipped`. Surface every other status to the
+`send(...)` returns a `RallarMessageHandle` immediately, with a stable
+`msgId`, before admission resolves. `handle.wait(options?)` resolves once the
+lifecycle reaches one of `options.until` or any terminal state (or times out
+or aborts per `options.timeoutMs`/`options.signal`). `AL_DELIVERY_ADMITTED_STATES`
+is every state past `submitted`, so a `wait(...)` using it resolves at the first
+admission verdict whatever that verdict is; `isALDeliveryAdmitted(outcome.lifecycle)`
+then reports whether the resolved state is `accepted`, `queued`,
+`transport-accepted`, or `acknowledged`. Surface every other outcome to the
 product as degraded or failed delivery.
 
 ### RTC Status And Readiness

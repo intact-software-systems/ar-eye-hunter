@@ -1,7 +1,7 @@
+import type { ControlRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ControlAgentBoardRow } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
-import type { ControlRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
 import { resolveFleetWorldMapLocation, type FleetWorldMapLocationInput } from '../../../apps/rallar-black-box/src/world-map-geo-fixtures.ts';
 import { deriveFleetWorldMapModel, routeEvidenceFromControlRun } from '../../../apps/rallar-black-box/src/world-map-model.ts';
 import {
@@ -198,10 +198,14 @@ describe('fleet world map model', () => {
                         longitude: 10.7522,
                         label: 'Oslo operator rack',
                         precision: 'exact'
-                    }
+                    },
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 }),
                 liveAgent('agent-3', {
-                    provider: 'private-lab'
+                    provider: 'private-lab',
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 })
             ],
             reports: [report([
@@ -252,7 +256,9 @@ describe('fleet world map model', () => {
                 liveAgent('live-agent', {
                     region: 'eu-north',
                     provider: 'hetzner',
-                    datacenter: 'fsn1'
+                    datacenter: 'fsn1',
+                    sessionLabel: 'agent-session',
+                    updatedAtEpochMs: 1_000
                 })
             ],
             reports: [report([
@@ -383,7 +389,7 @@ describe('fleet world map model', () => {
             agentId,
             region,
             provider,
-            location: { latitude, longitude: latitude }
+            location: { latitude, longitude: latitude, precision: 'exact' }
         }, 'passed');
         const model = deriveFleetWorldMapModel({
             reports: [report([

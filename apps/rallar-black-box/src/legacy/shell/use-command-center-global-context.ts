@@ -1,7 +1,8 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
 import type { LegacyDiagnosticContext } from '../diagnostics/context/legacy-diagnostic-context.ts';
 import {
     bootstrapPatchFromGlobalValues,

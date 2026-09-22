@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
-import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestAssertResultValue,
     RallarBlackBoxTestRuntime
-} from '../../shared-test/rallar-bb-test/types.ts';
+} from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
     let now = 1_000;
@@ -32,6 +33,43 @@ async function evaluateAssert(
 }
 
 describe('rallar-bb-test extended assert operators', () => {
+    it('reads recorded evidence in the JSON form a control connection carries', async () => {
+        const runtime = createDeterministicRuntime();
+        runtime.recordEvent({
+            kind: 'message',
+            topic: 'room.assert.json-form',
+            payload: {
+                data: {
+                    peers: ['bob-session', undefined],
+                    unset: undefined,
+                    retry: () => 'not evidence'
+                }
+            }
+        });
+
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.unset',
+                operator: 'exists',
+                expected: false
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.retry',
+                operator: 'exists',
+                expected: false
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.peers.1',
+                operator: 'equals',
+                expected: null
+            })).ok
+        ).toBe(true);
+    });
+
     it('evaluates numeric bounds, length, and regex operators on recorded evidence', async () => {
         const runtime = createDeterministicRuntime();
         runtime.recordEvent({

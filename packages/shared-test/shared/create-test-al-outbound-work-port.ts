@@ -1,4 +1,7 @@
-import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import type {
+    ALOutboundRuntimeStores,
+    ALOutboundSettlementEmitter
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_LEASE_MS,
     toALOutboundWorkType
@@ -10,6 +13,8 @@ export interface TestALOutboundWorkPortInput<TPrepared> extends ALOutboundRuntim
     readonly nowMs: () => number;
     /** Foreign queue types the owner also claims; empty for a scope that only runs its own work. */
     readonly dequeueTypes?: ReadonlySet<string>;
+    /** The already-guarded settlement sink the runtime hands its control admission; a test may drop it. */
+    readonly settlements?: ALOutboundSettlementEmitter;
 }
 
 /**
@@ -38,6 +43,7 @@ export function createTestALOutboundControlAdmission<TPrepared>(
 ): ALOutboundControlAdmission<TPrepared> {
     return input.admissionStore.createControlAdmission(
         createTestALOutboundWorkPort(input),
-        { nowMs: input.nowMs }
+        { nowMs: input.nowMs },
+        input.settlements ?? (() => {})
     );
 }

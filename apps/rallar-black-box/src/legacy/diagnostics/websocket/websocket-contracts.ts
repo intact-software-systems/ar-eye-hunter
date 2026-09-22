@@ -1,11 +1,28 @@
-import type { RallarBlackBoxTestEventKind } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type {
+    RallarBlackBoxTestEventKind,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
+import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
+
+export interface UseWebSocketCommandCenterControllerInput {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    /** Absent while the browser is signed out; the actions that need a session then report a sign-in failure. */
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
+}
 
 export type WebSocketPayloadPreset = Readonly<{
     presetId: string;
     label: string;
     description: string;
-    payload: unknown;
-    values?: Partial<Pick<WebSocketCommandCenterValues, 'wsScope' | 'typeId' | 'topicId' | 'contextId'>>;
+    payload: RallarMessagePayload;
+    values: Partial<Pick<WebSocketCommandCenterValues, 'wsScope' | 'typeId' | 'topicId' | 'contextId'>>;
 }>;
 
 export type WebSocketRoutePreview = Readonly<{

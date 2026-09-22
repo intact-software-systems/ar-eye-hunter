@@ -299,13 +299,14 @@ async function admitForSession(sessionId: string, ttlMs: number) {
         decodePreparedMessage: decodeALOutboundTransportMessage,
         planOutgoingMessage: (msg) => ({
             msg,
+            dropReasonCode: undefined,
             persist: true,
             preparedMessages: [toALOutboundTransportMessage(msg)]
         }),
-        sendPreparedMessage: async () => ({ status: 'not-ready', retryAfterMs: 60_000 })
+        sendPreparedMessage: async () => ({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 })
     });
     const result = await runtime.enqueueIfAbsent(createOutboundMessage(sessionId, { ttlMs }));
-    expect(result.status).toBe('enqueued');
+    expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
     runtime.dispose();
     const keys = new Set((await readRawWorkRows()).map((row) => row.keyString).filter((key) => !before.has(key)));
     expect(keys.size).toBe(3);

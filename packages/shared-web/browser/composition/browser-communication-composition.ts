@@ -1,6 +1,8 @@
 import { BrowserLocalMediaSourceRuntime } from '@shared-web/browser/media/browser-local-media-source-runtime.ts';
 import { BrowserRemoteMediaStreamRuntime } from '@shared-web/browser/media/browser-remote-media-stream-runtime.ts';
+import type { BrowserRallarDeliveryRegistry } from '@shared-web/browser/messages/browser-rallar-delivery-registry.ts';
 import { BrowserRallarMessagesController } from '@shared-web/browser/messages/browser-rallar-messages-controller.ts';
+import type { BrowserSessionDeliveries } from '@shared-web/browser/messages/browser-session-deliveries.ts';
 import type { RallarMessagesOperations } from '@shared-web/browser/messages/rallar-message-operations.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
@@ -17,6 +19,7 @@ import {
     type RallarWsController
 } from '@shared-web/browser/websocket/browser-rallar-ws-controller.ts';
 import type { BrowserWebSocketInbox } from '@shared-web/browser/websocket/browser-websocket-inbox.ts';
+import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { readSession } from '@shared/api/auth.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES } from '@shared/api/rallar-validation.ts';
@@ -48,6 +51,9 @@ export interface BrowserMediaComposition {
 }
 
 export interface CreateBrowserMessagingCompositionInput {
+    readonly deliveries: BrowserRallarDeliveryRegistry;
+    readonly sessionDeliveries: BrowserSessionDeliveries;
+    readonly nowMs: () => number;
     readonly wsInbox: BrowserWebSocketInbox;
     readonly state: BrowserStateComposition;
     readonly session: RallarSessionController;
@@ -67,7 +73,16 @@ export function createBrowserMessagingComposition(
     input: CreateBrowserMessagingCompositionInput
 ): BrowserMessagingComposition {
     const messagesController = new BrowserRallarMessagesController({
+        creation: {
+            createUnicast: newALUnicastMessage,
+            createMulticast: newALMulticastMessage,
+            createBroadcast: newALBroadcastMessage,
+            newResourceId: crypto.randomUUID.bind(crypto)
+        },
         wsInbox: input.wsInbox,
+        deliveries: input.deliveries,
+        sessionDeliveries: input.sessionDeliveries,
+        nowMs: input.nowMs,
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
         requireSession: input.session.requireSession,

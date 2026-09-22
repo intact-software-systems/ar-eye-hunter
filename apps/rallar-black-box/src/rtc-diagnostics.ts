@@ -1,8 +1,10 @@
 import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/types.ts';
+    RallarBlackBoxTestState,
+    RallarBlackBoxTestTransport
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { ApiJsonObject, ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { DistributedRunMonitor } from './distributed-recipes.ts';
 
 export type RtcConnectStageId =
@@ -16,21 +18,28 @@ export type RtcConnectStageId =
 
 export type RtcConnectStageStatus = 'observed' | 'pending' | 'warning' | 'failed';
 
+/** One connect stage as the RTC timeline shows it. */
 export type RtcConnectStage = Readonly<{
     stageId: RtcConnectStageId;
     label: string;
     status: RtcConnectStageStatus;
+    /** Absent while no observed event has reached the stage. */
     atEpochMs?: number;
+    /** Absent while no observed event has reached the stage. */
     durationFromStartMs?: number;
+    /** Absent while no observed event has reached the stage. */
     eventId?: string;
+    /** Absent while no observed event has reached the stage. */
     topic?: string;
-    details?: unknown;
+    /** The reaching event's payload; absent when that event carried none. */
+    details?: ApiJsonValue;
 }>;
 
 export type RtcMembershipDiagnostics = Readonly<{
     connection: string;
     actor: string;
     roomId: string;
+    /** Absent when neither the latest RTC event nor the runtime config names a session. */
     sessionId?: string;
     expectedClients: readonly string[];
     observedClients: readonly string[];
@@ -40,29 +49,45 @@ export type RtcMembershipDiagnostics = Readonly<{
     extraClients: readonly string[];
     staleClients: readonly string[];
     nackCodes: readonly string[];
+    /** Absent until an RTC event or a stats snapshot reports a peer count. */
     peerCount?: number;
-    laneHealth?: unknown;
+    /** Absent until an RTC event or a stats snapshot reports lane health. */
+    laneHealth?: ApiJsonValue;
+    /** Absent when no RTC-related event has arrived. */
     sourceTopic?: string;
 }>;
 
 export type RtcLatencyDiagnostics = Readonly<{
+    /** Absent until an `rtc.connect` command has completed. */
     connectMs?: number;
+    /** Absent until a message or an `rtc.send` command has completed. */
     firstPayloadMs?: number;
+    /** Absent until both a connect and a first message have completed. */
     firstPayloadFromConnectMs?: number;
+    /** Absent until one command the runtime can time has completed. */
     lastCommandMs?: number;
+    /** Absent until the runtime has published command-latency stats. */
     averageCommandMs?: number;
+    /** Absent until the runtime has published command-latency stats. */
     maxCommandMs?: number;
 }>;
 
+/** The first failing RTC event. */
 export type RtcFailureDiagnostics = Readonly<{
+    /** Absent when the failing event maps to no connect stage. */
     stageId?: RtcConnectStageId;
     source: 'control' | 'provider-config' | 'rallar-auth' | 'rallar-permission' | 'rallar-cleanup' | 'rallar-runtime';
+    /** Absent when the failing event carried no id. */
     eventId?: string;
+    /** Absent when the failing event carried no topic. */
     topic?: string;
+    /** Absent when the failing event carried no time. */
     atEpochMs?: number;
     message: string;
+    /** Absent when the failing event stated no severity. */
     severity?: string;
-    details?: unknown;
+    /** The failing event's payload; absent when it carried none. */
+    details?: ApiJsonValue;
 }>;
 
 export type RtcDiagnosticsTimeseriesSeriesId =
@@ -87,20 +112,76 @@ export type RtcDiagnosticsTimeseriesSeries = Readonly<{
 }>;
 
 export type RtcDiagnosticsTimeseriesOptions = Readonly<{
-    bucketCount?: number;
-    bucketMs?: number;
-    endAtEpochMs?: number;
+    bucketCount: number;
+    /** `undefined` sizes each bucket from the span of the related events. */
+    bucketMs: number | undefined;
+    /** `undefined` ends the series at the latest related event, or at `nowEpochMs` without one. */
+    endAtEpochMs: number | undefined;
+    /** The clock the caller read; used only when neither an explicit end nor an event supplies one. */
+    nowEpochMs: number;
+}>;
+
+type RtcDiagnosticsBundleAuth = Readonly<{
+    hasUsername: boolean;
+    hasPassword: boolean;
+    hasToken: boolean;
+    restoreSession: boolean;
+    /** The configured registration setting verbatim; absent when the runtime config carries none. */
+    register?: ApiJsonValue;
+    logoutOnClose: boolean;
+    /** The configured leave-on-close setting verbatim; absent when the config carries none. */
+    leaveRoomOnClose?: ApiJsonValue;
+}>;
+
+type RtcDiagnosticsBundleConfig = Readonly<{
+    /** Absent when neither the control block nor the defaults name a provider mode. */
+    providerMode?: ApiJsonValue;
+    /** Absent when the runtime config names no environment. */
+    environment?: string;
+    /** Absent when the runtime config names no API base URL. */
+    apiBaseUrl?: string;
+    /** Absent when the runtime config names no actor. */
+    actor?: string;
+    /** Absent when the runtime config names no session. */
+    sessionId?: string;
+    /** Absent when the runtime config names no room. */
+    roomId?: string;
+    /** Absent when the runtime config names no transport. */
+    transport?: RallarBlackBoxTestTransport;
+    auth: RtcDiagnosticsBundleAuth;
+}>;
+
+/** The copyable RTC diagnostics document the operator exports. */
+export type RtcDiagnosticsBundle = Readonly<{
+    generatedAtEpochMs: number;
+    /** Absent when the runtime holds no configured run. */
+    runId?: string;
+    /** Absent when the runtime holds no configured agent. */
+    agentId?: string;
+    status: RallarBlackBoxTestState['status'];
+    config: RtcDiagnosticsBundleConfig;
+    commandIds: readonly string[];
+    stages: readonly RtcConnectStage[];
+    membership: RtcMembershipDiagnostics;
+    latency: RtcLatencyDiagnostics;
+    /** Absent while no RTC-related event has failed. */
+    failure?: RtcFailureDiagnostics;
+    timeseries: readonly RtcDiagnosticsTimeseriesSeries[];
+    latestStats: RallarBlackBoxTestState['latestStats'];
+    recentResults: readonly RallarBlackBoxTestResult[];
+    recentEvents: readonly RallarBlackBoxTestEvent[];
 }>;
 
 export type RtcDiagnosticsSnapshot = Readonly<{
     stages: readonly RtcConnectStage[];
     membership: RtcMembershipDiagnostics;
     latency: RtcLatencyDiagnostics;
+    /** Absent while no RTC-related event has failed. */
     failure?: RtcFailureDiagnostics;
     timeseries: readonly RtcDiagnosticsTimeseriesSeries[];
     recentEvents: readonly RallarBlackBoxTestEvent[];
     recentResults: readonly RallarBlackBoxTestResult[];
-    bundle: unknown;
+    bundle: RtcDiagnosticsBundle;
 }>;
 
 export type RtcPerformanceTone = 'good' | 'warn' | 'bad' | 'active' | 'muted';
@@ -113,10 +194,13 @@ export type RtcPerformanceScatterPoint = Readonly<{
     transport: 'rtc' | 'ws' | 'runtime';
     status: RallarBlackBoxTestResult['status'];
     ok: boolean;
+    /** Absent for a distributed-agent point, which carries only an average latency. */
     startedAtEpochMs?: number;
+    /** Absent for a distributed-agent point, which carries only an average latency. */
     endedAtEpochMs?: number;
-    durationMs: number;
+    /** Absent when the runtime holds no configured agent. */
     agentId?: string;
+    durationMs: number;
 }>;
 
 export type RtcPerformanceHistogramBucket = Readonly<{
@@ -136,6 +220,7 @@ export type RtcPerformancePhaseSpan = Readonly<{
     timingKind: 'duration' | 'observed-delta';
     valueLabel: string;
     tone: RtcPerformanceTone;
+    /** Absent when the event that reached the stage carried no id. */
     eventId?: string;
 }>;
 
@@ -146,24 +231,40 @@ export type RtcPerformanceAgentLaneCell = Readonly<{
     status: RtcPerformanceTone;
 }>;
 
+export type RtcPerformanceSummary = Readonly<{
+    commandCount: number;
+    /** Absent while no timed command has completed. */
+    p50Ms?: number;
+    /** Absent while no timed command has completed. */
+    p95Ms?: number;
+    /** Absent while no timed command has completed. */
+    p99Ms?: number;
+    /** Absent while no timed command has completed. */
+    maxMs?: number;
+    /** Absent until an `rtc.connect` command has completed. */
+    connectMs?: number;
+    /** Absent until a message or an `rtc.send` command has completed. */
+    firstPayloadMs?: number;
+    failureCount: number;
+    messageCount: number;
+}>;
+
 export type RtcPerformanceView = Readonly<{
-    summary: Readonly<{
-        commandCount: number;
-        p50Ms?: number;
-        p95Ms?: number;
-        p99Ms?: number;
-        maxMs?: number;
-        connectMs?: number;
-        firstPayloadMs?: number;
-        failureCount: number;
-        messageCount: number;
-    }>;
+    summary: RtcPerformanceSummary;
     emptyReasons: readonly string[];
     timeseries: readonly RtcDiagnosticsTimeseriesSeries[];
     scatter: readonly RtcPerformanceScatterPoint[];
     histogram: readonly RtcPerformanceHistogramBucket[];
     phaseSpans: readonly RtcPerformancePhaseSpan[];
     agentMatrix: readonly RtcPerformanceAgentLaneCell[];
+}>;
+
+export type ComputeRtcPerformanceViewInput = Readonly<{
+    diagnostics: RtcDiagnosticsSnapshot;
+    state: RallarBlackBoxTestState;
+    /** `undefined` when the view describes local commands only. */
+    distributedMonitor: DistributedRunMonitor | undefined;
+    histogramBucketCount: number;
 }>;
 
 const RTC_STAGE_DEFINITIONS: readonly Readonly<{
@@ -179,48 +280,70 @@ const RTC_STAGE_DEFINITIONS: readonly Readonly<{
     { stageId: 'first-payload', label: 'First Payload' }
 ];
 
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : {};
+/** The default number of timeseries buckets the RTC tabs read. */
+export const DEFAULT_RTC_TIMESERIES_BUCKET_COUNT = 12;
+
+/** The default number of latency histogram buckets the RTC performance view reads. */
+export const DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT = 6;
+
+const MIN_TIMESERIES_BUCKET_MS = 1_000;
+const MAX_TIMESERIES_BUCKET_MS = 60_000;
+
+function decodeJsonValue(value: unknown): ApiJsonValue | undefined {
+    if (value === null) {
+        return null;
+    }
+    const kind = typeof value;
+    return kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'object'
+        ? value as ApiJsonValue
+        : undefined;
 }
 
-function asArray(value: unknown): readonly unknown[] {
+function isJsonObject(value: unknown): value is ApiJsonObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toJsonObject(value: ApiJsonValue | undefined): ApiJsonObject {
+    return isJsonObject(value) ? value : {};
+}
+
+function toJsonArray(value: ApiJsonValue | undefined): readonly ApiJsonValue[] {
     return Array.isArray(value) ? value : [];
 }
 
-function stringValue(value: unknown): string | undefined {
+/** The non-blank text a payload field carries, or `undefined` when it carries none. */
+function decodeText(value: ApiJsonValue | undefined): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value
         : undefined;
 }
 
-function numberValue(value: unknown): number | undefined {
+function decodeNumber(value: ApiJsonValue | undefined): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function unique(values: readonly (string | undefined)[]): readonly string[] {
+function toSortedDistinctTexts(values: readonly (string | undefined)[]): readonly string[] {
     return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 }
 
-function latestDefined<T>(values: readonly (T | undefined)[]): T | undefined {
+function decodeTexts(value: ApiJsonValue | undefined): readonly string[] {
+    return toSortedDistinctTexts(toJsonArray(value).map((entry) => decodeText(entry)));
+}
+
+function resolveLatestDefined<T>(values: readonly (T | undefined)[]): T | undefined {
     return values.findLast((value) => value !== undefined);
 }
 
-function stringArray(value: unknown): readonly string[] {
-    return unique(asArray(value).map((entry) => stringValue(entry)));
-}
-
-function lowerTopic(event: RallarBlackBoxTestEvent): string {
+function toLowerCaseTopic(event: RallarBlackBoxTestEvent): string {
     return event.topic.toLowerCase();
 }
 
-function payloadOf(event: RallarBlackBoxTestEvent): Record<string, unknown> {
-    return asRecord(event.payload);
+function toEventPayload(event: RallarBlackBoxTestEvent): ApiJsonObject {
+    return isJsonObject(event.payload) ? event.payload : {};
 }
 
-function eventLooksRtcRelated(event: RallarBlackBoxTestEvent): boolean {
-    const topic = lowerTopic(event);
+function isRtcRelatedEvent(event: RallarBlackBoxTestEvent): boolean {
+    const topic = toLowerCaseTopic(event);
     return event.transport === 'realtime' ||
         event.transport === 'messages.rtc' ||
         event.kind === 'message' ||
@@ -234,8 +357,8 @@ function eventLooksRtcRelated(event: RallarBlackBoxTestEvent): boolean {
         topic.includes('data-channel');
 }
 
-function eventLooksRtcTimeseriesRelated(event: RallarBlackBoxTestEvent): boolean {
-    const topic = lowerTopic(event);
+function isRtcTimeseriesEvent(event: RallarBlackBoxTestEvent): boolean {
+    const topic = toLowerCaseTopic(event);
     return event.transport === 'realtime' ||
         event.transport === 'messages.rtc' ||
         topic.includes('rtc') ||
@@ -255,7 +378,7 @@ function eventLooksRtcTimeseriesRelated(event: RallarBlackBoxTestEvent): boolean
 }
 
 function isFailureEvent(event: RallarBlackBoxTestEvent): boolean {
-    const topic = lowerTopic(event);
+    const topic = toLowerCaseTopic(event);
     return event.severity === 'error' ||
         topic.includes('failed') ||
         topic.includes('failure') ||
@@ -271,8 +394,8 @@ function isFailureEvent(event: RallarBlackBoxTestEvent): boolean {
         topic.includes('nack');
 }
 
-function stageFromPhase(value: unknown): RtcConnectStageId | undefined {
-    const phase = stringValue(value)?.toLowerCase().replaceAll('_', '-');
+function resolveStageIdFromPhase(value: ApiJsonValue | undefined): RtcConnectStageId | undefined {
+    const phase = decodeText(value)?.toLowerCase().replaceAll('_', '-');
     if (!phase) {
         return undefined;
     }
@@ -301,11 +424,11 @@ function stageFromPhase(value: unknown): RtcConnectStageId | undefined {
     return undefined;
 }
 
-export function rtcConnectStageIdForEvent(
+export function resolveRtcConnectStageId(
     event: RallarBlackBoxTestEvent
 ): RtcConnectStageId | undefined {
-    const payload = payloadOf(event);
-    const fromPhase = stageFromPhase(payload.phase ?? payload.stage ?? payload.connectStage);
+    const payload = toEventPayload(event);
+    const fromPhase = resolveStageIdFromPhase(payload.phase ?? payload.stage ?? payload.connectStage);
     if (fromPhase) {
         return fromPhase;
     }
@@ -314,7 +437,7 @@ export function rtcConnectStageIdForEvent(
         return 'first-payload';
     }
 
-    const topic = lowerTopic(event);
+    const topic = toLowerCaseTopic(event);
     if (topic.includes('auth') || topic.includes('login')) {
         return 'auth';
     }
@@ -342,7 +465,7 @@ export function rtcConnectStageIdForEvent(
     return undefined;
 }
 
-function stageStatusForEvent(event: RallarBlackBoxTestEvent): RtcConnectStageStatus {
+function toStageStatus(event: RallarBlackBoxTestEvent): RtcConnectStageStatus {
     if (isFailureEvent(event)) {
         return 'failed';
     }
@@ -350,12 +473,12 @@ function stageStatusForEvent(event: RallarBlackBoxTestEvent): RtcConnectStageSta
     return event.severity === 'warning' ? 'warning' : 'observed';
 }
 
-function deriveStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcConnectStage[] {
-    const relatedEvents = events.filter(eventLooksRtcRelated);
+function computeRtcConnectStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcConnectStage[] {
+    const relatedEvents = events.filter(isRtcRelatedEvent);
     const startedAt = relatedEvents[0]?.atEpochMs;
     return RTC_STAGE_DEFINITIONS.map((definition) => {
         const matching = relatedEvents
-            .filter((event) => rtcConnectStageIdForEvent(event) === definition.stageId)
+            .filter((event) => resolveRtcConnectStageId(event) === definition.stageId)
             .sort((left, right) => {
                 const leftFailed = isFailureEvent(left) ? 0 : 1;
                 const rightFailed = isFailureEvent(right) ? 0 : 1;
@@ -364,105 +487,107 @@ function deriveStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcC
 
         return {
             ...definition,
-            status: matching ? stageStatusForEvent(matching) : 'pending',
+            status: matching ? toStageStatus(matching) : 'pending',
             atEpochMs: matching?.atEpochMs,
             durationFromStartMs: matching && startedAt !== undefined
                 ? Math.max(0, matching.atEpochMs - startedAt)
                 : undefined,
             eventId: matching?.eventId,
             topic: matching?.topic,
-            details: matching?.payload
+            details: decodeJsonValue(matching?.payload)
         };
     });
 }
 
-function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<{
+type PayloadClientIds = Readonly<{
     expected: readonly string[];
     observed: readonly string[];
     ready: readonly string[];
     active: readonly string[];
     stale: readonly string[];
     nackCodes: readonly string[];
-}> {
-    const nestedData = asRecord(payload.data);
-    const nack = asRecord(payload.nack);
-    const results = asArray(payload.results)
-        .map((result) => stringValue(asRecord(result).peerId));
-    const ready = unique([
-        ...stringArray(payload.readyPeerIds),
-        ...stringArray(payload.readyPeers),
-        ...stringArray(payload.readyClients),
-        ...stringArray(nestedData.readyPeerIds)
+}>;
+
+function toPayloadClientIds(payload: ApiJsonObject): PayloadClientIds {
+    const nested = toJsonObject(payload.data);
+    const nack = toJsonObject(payload.nack);
+    const results = toJsonArray(payload.results)
+        .map((result) => decodeText(toJsonObject(result).peerId));
+    const ready = toSortedDistinctTexts([
+        ...decodeTexts(payload.readyPeerIds),
+        ...decodeTexts(payload.readyPeers),
+        ...decodeTexts(payload.readyClients),
+        ...decodeTexts(nested.readyPeerIds)
     ]);
-    const active = unique([
-        ...stringArray(payload.activePeerIds),
-        ...stringArray(payload.activePeers),
-        ...stringArray(payload.activeClients),
-        ...stringArray(payload.connectedPeerIds),
-        ...stringArray(nestedData.activePeerIds)
+    const active = toSortedDistinctTexts([
+        ...decodeTexts(payload.activePeerIds),
+        ...decodeTexts(payload.activePeers),
+        ...decodeTexts(payload.activeClients),
+        ...decodeTexts(payload.connectedPeerIds),
+        ...decodeTexts(nested.activePeerIds)
     ]);
     return {
-        expected: unique([
-            ...stringArray(payload.expectedClients),
-            ...stringArray(payload.expectedClientIds),
-            ...stringArray(payload.peerIds),
-            ...stringArray(payload.nextHopPeerIds),
-            ...stringArray(nestedData.expectedClients),
-            ...stringArray(nestedData.targets)
+        expected: toSortedDistinctTexts([
+            ...decodeTexts(payload.expectedClients),
+            ...decodeTexts(payload.expectedClientIds),
+            ...decodeTexts(payload.peerIds),
+            ...decodeTexts(payload.nextHopPeerIds),
+            ...decodeTexts(nested.expectedClients),
+            ...decodeTexts(nested.targets)
         ]),
-        observed: unique([
-            stringValue(payload.sessionId),
-            stringValue(payload.peerId),
-            stringValue(payload.remotePeerId),
-            stringValue(payload.senderId),
+        observed: toSortedDistinctTexts([
+            decodeText(payload.sessionId),
+            decodeText(payload.peerId),
+            decodeText(payload.remotePeerId),
+            decodeText(payload.senderId),
             ...results,
-            ...stringArray(payload.observedClients),
-            ...stringArray(payload.observedClientIds),
-            ...stringArray(payload.connectedClients),
-            ...stringArray(payload.peerIds),
+            ...decodeTexts(payload.observedClients),
+            ...decodeTexts(payload.observedClientIds),
+            ...decodeTexts(payload.connectedClients),
+            ...decodeTexts(payload.peerIds),
             ...ready,
             ...active,
-            ...stringArray(nestedData.senderId)
+            ...decodeTexts(nested.senderId)
         ]),
         ready,
         active,
-        stale: unique([
-            stringValue(payload.staleClient),
-            stringValue(payload.staleClientId),
-            stringValue(payload.staleSessionId),
-            ...stringArray(payload.staleClients),
-            ...stringArray(payload.staleClientIds)
+        stale: toSortedDistinctTexts([
+            decodeText(payload.staleClient),
+            decodeText(payload.staleClientId),
+            decodeText(payload.staleSessionId),
+            ...decodeTexts(payload.staleClients),
+            ...decodeTexts(payload.staleClientIds)
         ]),
-        nackCodes: unique([
-            stringValue(payload.nackCode),
-            stringValue(payload.negativeCase),
-            stringValue(nack.code),
-            ...stringArray(payload.nackCodes)
+        nackCodes: toSortedDistinctTexts([
+            decodeText(payload.nackCode),
+            decodeText(payload.negativeCase),
+            decodeText(nack.code),
+            ...decodeTexts(payload.nackCodes)
         ])
     };
 }
 
-function deriveMembership(
+function computeRtcMembership(
     state: RallarBlackBoxTestState,
     events: readonly RallarBlackBoxTestEvent[]
 ): RtcMembershipDiagnostics {
     const config = state.currentConfig;
-    const related = events.filter(eventLooksRtcRelated);
+    const related = events.filter(isRtcRelatedEvent);
     const latest = related.at(-1);
-    const latestPayload = latest ? payloadOf(latest) : {};
-    const observedSets = related.map((event) => gatherClientIdsFromPayload(payloadOf(event)));
-    const relatedPayloads = related.map(payloadOf);
-    const expectedClients = unique(observedSets.flatMap((set) => set.expected));
-    const observedClients = unique(observedSets.flatMap((set) => set.observed));
-    const readyPeerIds = unique(observedSets.flatMap((set) => set.ready));
-    const activePeerIds = unique(observedSets.flatMap((set) => set.active));
-    const staleClients = unique([
+    const latestPayload = latest ? toEventPayload(latest) : {};
+    const observedSets = related.map((event) => toPayloadClientIds(toEventPayload(event)));
+    const relatedPayloads = related.map(toEventPayload);
+    const expectedClients = toSortedDistinctTexts(observedSets.flatMap((set) => set.expected));
+    const observedClients = toSortedDistinctTexts(observedSets.flatMap((set) => set.observed));
+    const readyPeerIds = toSortedDistinctTexts(observedSets.flatMap((set) => set.ready));
+    const activePeerIds = toSortedDistinctTexts(observedSets.flatMap((set) => set.active));
+    const staleClients = toSortedDistinctTexts([
         ...observedSets.flatMap((set) => set.stale),
         ...related
-            .filter((event) => lowerTopic(event).includes('stale'))
-            .map((event) => stringValue(payloadOf(event).sessionId))
+            .filter((event) => toLowerCaseTopic(event).includes('stale'))
+            .map((event) => decodeText(toEventPayload(event).sessionId))
     ]);
-    const nackCodes = unique(observedSets.flatMap((set) => set.nackCodes));
+    const nackCodes = toSortedDistinctTexts(observedSets.flatMap((set) => set.nackCodes));
     const missingClients = expectedClients.filter((client) => !observedClients.includes(client));
     const extraClients = expectedClients.length === 0
         ? []
@@ -472,8 +597,8 @@ function deriveMembership(
         connection: latest?.connection ??
             String(config?.defaults?.connection ?? 'default'),
         actor: latest?.actor ?? config?.actor ?? '-',
-        roomId: stringValue(latestPayload.roomId) ?? config?.roomId ?? '-',
-        sessionId: stringValue(latestPayload.sessionId) ?? config?.sessionId,
+        roomId: decodeText(latestPayload.roomId) ?? config?.roomId ?? '-',
+        sessionId: decodeText(latestPayload.sessionId) ?? config?.sessionId,
         expectedClients,
         observedClients,
         readyPeerIds,
@@ -482,27 +607,27 @@ function deriveMembership(
         extraClients,
         staleClients,
         nackCodes,
-        peerCount: latestDefined(relatedPayloads.map((payload) => numberValue(payload.peerCount))) ??
-            state.latestStats?.rallar?.peerCount,
-        laneHealth: latestDefined(relatedPayloads.map((payload) => payload.laneHealth)) ??
-            state.latestStats?.rallar?.laneHealth,
+        peerCount: resolveLatestDefined(relatedPayloads.map((payload) => decodeNumber(payload.peerCount))) ??
+            decodeNumber(decodeJsonValue(state.latestStats?.rallar?.peerCount)),
+        laneHealth: resolveLatestDefined(relatedPayloads.map((payload) => payload.laneHealth)) ??
+            decodeJsonValue(state.latestStats?.rallar?.laneHealth),
         sourceTopic: latest?.topic
     };
 }
 
-function latestResult(
+function resolveLatestResult(
     results: readonly RallarBlackBoxTestResult[],
     kind: string
 ): RallarBlackBoxTestResult | undefined {
     return results.filter((result) => result.kind === kind).at(-1);
 }
 
-function deriveLatency(
+function computeRtcLatency(
     state: RallarBlackBoxTestState,
     events: readonly RallarBlackBoxTestEvent[]
 ): RtcLatencyDiagnostics {
-    const connectResult = latestResult(state.commandHistory, 'rtc.connect');
-    const sendResult = latestResult(state.commandHistory, 'rtc.send');
+    const connectResult = resolveLatestResult(state.commandHistory, 'rtc.connect');
+    const sendResult = resolveLatestResult(state.commandHistory, 'rtc.send');
     const firstPayload = events
         .filter((event) => event.kind === 'message')
         .filter((event) => connectResult ? event.atEpochMs >= connectResult.startedAtEpochMs : true)[0];
@@ -525,20 +650,20 @@ function deriveLatency(
     };
 }
 
-function failureMessage(event: RallarBlackBoxTestEvent): string {
-    const payload = payloadOf(event);
-    const error = asRecord(payload.error);
-    const nack = asRecord(payload.nack);
-    return stringValue(error.message) ??
-        stringValue(nack.message) ??
-        stringValue(payload.message) ??
-        stringValue(payload.reason) ??
+function toFailureMessage(event: RallarBlackBoxTestEvent): string {
+    const payload = toEventPayload(event);
+    const error = toJsonObject(payload.error);
+    const nack = toJsonObject(payload.nack);
+    return decodeText(error.message) ??
+        decodeText(nack.message) ??
+        decodeText(payload.message) ??
+        decodeText(payload.reason) ??
         event.topic;
 }
 
-function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['source'] {
-    const topic = lowerTopic(event);
-    const phase = String(payloadOf(event).phase ?? '').toLowerCase();
+function resolveFailureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['source'] {
+    const topic = toLowerCaseTopic(event);
+    const phase = String(toEventPayload(event).phase ?? '').toLowerCase();
     if (topic.includes('rallar.bb.control')) {
         return 'control';
     }
@@ -551,7 +676,7 @@ function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['s
     if (
         topic.includes('not-yet-in-sync') ||
         topic.includes('nack') ||
-        stringValue(payloadOf(event).negativeCase) === 'not-yet-in-sync'
+        decodeText(toEventPayload(event).negativeCase) === 'not-yet-in-sync'
     ) {
         return 'rallar-runtime';
     }
@@ -572,31 +697,27 @@ function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['s
     return 'rallar-runtime';
 }
 
-function deriveFailure(
+function computeRtcFailure(
     events: readonly RallarBlackBoxTestEvent[]
 ): RtcFailureDiagnostics | undefined {
-    const failure = events.filter(eventLooksRtcRelated).find(isFailureEvent);
+    const failure = events.filter(isRtcRelatedEvent).find(isFailureEvent);
     if (!failure) {
         return undefined;
     }
 
     return {
-        stageId: rtcConnectStageIdForEvent(failure),
-        source: failureSource(failure),
+        stageId: resolveRtcConnectStageId(failure),
+        source: resolveFailureSource(failure),
         eventId: failure.eventId,
         topic: failure.topic,
         atEpochMs: failure.atEpochMs,
-        message: failureMessage(failure),
+        message: toFailureMessage(failure),
         severity: failure.severity,
-        details: failure.payload
+        details: decodeJsonValue(failure.payload)
     };
 }
 
-const DEFAULT_TIMESERIES_BUCKET_COUNT = 12;
-const MIN_TIMESERIES_BUCKET_MS = 1_000;
-const MAX_TIMESERIES_BUCKET_MS = 60_000;
-
-function bucketMsForEvents(
+function computeBucketMs(
     events: readonly RallarBlackBoxTestEvent[],
     bucketCount: number
 ): number {
@@ -609,19 +730,21 @@ function bucketMsForEvents(
     return Math.min(MAX_TIMESERIES_BUCKET_MS, Math.max(MIN_TIMESERIES_BUCKET_MS, rawBucketMs));
 }
 
-function makeBucketPoints(
-    startAtEpochMs: number,
-    bucketMs: number,
-    bucketCount: number,
-    values: readonly number[]
+function toBucketPoints(
+    input: Readonly<{
+        startAtEpochMs: number;
+        bucketMs: number;
+        bucketCount: number;
+        values: readonly number[];
+    }>
 ): readonly RtcDiagnosticsTimeseriesPoint[] {
-    return Array.from({ length: bucketCount }, (_, index) => ({
-        atEpochMs: startAtEpochMs + (index * bucketMs),
-        value: Math.round((values[index] ?? 0) * 100) / 100
+    return Array.from({ length: input.bucketCount }, (_, index) => ({
+        atEpochMs: input.startAtEpochMs + (index * input.bucketMs),
+        value: Math.round((input.values[index] ?? 0) * 100) / 100
     }));
 }
 
-function makeSeries(
+function toTimeseriesSeries(
     input: Readonly<{
         seriesId: RtcDiagnosticsTimeseriesSeriesId;
         label: string;
@@ -638,18 +761,18 @@ function makeSeries(
     };
 }
 
-export function deriveRtcDiagnosticsTimeseries(
+export function computeRtcDiagnosticsTimeseries(
     state: RallarBlackBoxTestState,
-    options: RtcDiagnosticsTimeseriesOptions = {}
+    options: RtcDiagnosticsTimeseriesOptions
 ): readonly RtcDiagnosticsTimeseriesSeries[] {
     const relatedEvents = state.events
-        .filter(eventLooksRtcTimeseriesRelated)
+        .filter(isRtcTimeseriesEvent)
         .slice()
         .sort((left, right) => left.atEpochMs - right.atEpochMs);
-    const bucketCount = Math.max(2, options.bucketCount ?? DEFAULT_TIMESERIES_BUCKET_COUNT);
-    const bucketMs = Math.max(1, options.bucketMs ?? bucketMsForEvents(relatedEvents, bucketCount));
+    const bucketCount = Math.max(2, options.bucketCount);
+    const bucketMs = Math.max(1, options.bucketMs ?? computeBucketMs(relatedEvents, bucketCount));
     const latestEventAt = relatedEvents.at(-1)?.atEpochMs;
-    const endAtEpochMs = options.endAtEpochMs ?? latestEventAt ?? Date.now();
+    const endAtEpochMs = options.endAtEpochMs ?? latestEventAt ?? options.nowEpochMs;
     const alignedEnd = Math.ceil(endAtEpochMs / bucketMs) * bucketMs;
     const startAtEpochMs = alignedEnd - ((bucketCount - 1) * bucketMs);
     const eventCounts = Array(bucketCount).fill(0) as number[];
@@ -672,7 +795,7 @@ export function deriveRtcDiagnosticsTimeseries(
             failureCounts[index] += 1;
         }
 
-        const durationMs = numberValue(payloadOf(event).durationMs);
+        const durationMs = decodeNumber(toEventPayload(event).durationMs);
         if (durationMs !== undefined) {
             phaseDurationSums[index] += durationMs;
             phaseDurationCounts[index] += 1;
@@ -684,33 +807,33 @@ export function deriveRtcDiagnosticsTimeseries(
     );
 
     return [
-        makeSeries({
+        toTimeseriesSeries({
             seriesId: 'events',
             label: 'RTC events',
             unit: 'events',
             tone: 'active',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, eventCounts)
+            points: toBucketPoints({ startAtEpochMs, bucketMs, bucketCount, values: eventCounts })
         }),
-        makeSeries({
+        toTimeseriesSeries({
             seriesId: 'messages',
             label: 'Messages',
             unit: 'messages',
             tone: 'good',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, messageCounts)
+            points: toBucketPoints({ startAtEpochMs, bucketMs, bucketCount, values: messageCounts })
         }),
-        makeSeries({
+        toTimeseriesSeries({
             seriesId: 'failures',
             label: 'Failures',
             unit: 'failures',
             tone: failureCounts.some((count) => count > 0) ? 'bad' : 'muted',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, failureCounts)
+            points: toBucketPoints({ startAtEpochMs, bucketMs, bucketCount, values: failureCounts })
         }),
-        makeSeries({
+        toTimeseriesSeries({
             seriesId: 'phase-duration',
             label: 'Phase duration',
             unit: 'ms',
             tone: 'warn',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, phaseDurations)
+            points: toBucketPoints({ startAtEpochMs, bucketMs, bucketCount, values: phaseDurations })
         })
     ];
 }
@@ -725,7 +848,7 @@ function isRelevantResult(result: RallarBlackBoxTestResult): boolean {
         result.kind === 'health';
 }
 
-function resultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScatterPoint['transport'] {
+function toResultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScatterPoint['transport'] {
     if (result.kind.startsWith('rtc.')) {
         return 'rtc';
     }
@@ -735,13 +858,7 @@ function resultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScatte
     return 'runtime';
 }
 
-function finiteDurations(results: readonly RallarBlackBoxTestResult[]): readonly number[] {
-    return results
-        .map((result) => result.durationMs)
-        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-}
-
-function percentile(values: readonly number[], percentileValue: number): number | undefined {
+function computePercentile(values: readonly number[], percentileValue: number): number | undefined {
     if (values.length === 0) {
         return undefined;
     }
@@ -753,7 +870,7 @@ function percentile(values: readonly number[], percentileValue: number): number 
     return sorted[index];
 }
 
-function histogramBuckets(
+function computeHistogramBuckets(
     durations: readonly number[],
     bucketCount: number
 ): readonly RtcPerformanceHistogramBucket[] {
@@ -793,7 +910,7 @@ function histogramBuckets(
     return buckets;
 }
 
-function performanceStageTone(status: RtcConnectStageStatus): RtcPerformanceTone {
+function toPerformanceStageTone(status: RtcConnectStageStatus): RtcPerformanceTone {
     if (status === 'observed') {
         return 'good';
     }
@@ -806,7 +923,7 @@ function performanceStageTone(status: RtcConnectStageStatus): RtcPerformanceTone
     return 'muted';
 }
 
-function phaseSpans(
+function computePhaseSpans(
     diagnostics: RtcDiagnosticsSnapshot,
     results: readonly RallarBlackBoxTestResult[]
 ): readonly RtcPerformancePhaseSpan[] {
@@ -823,7 +940,7 @@ function phaseSpans(
     let previousEnd = 0;
     return observedStages.map((stage) => {
         const endMs = Math.max(0, (stage.atEpochMs ?? baseline) - baseline);
-        const payloadDurationMs = stagePayloadDurationMs(stage);
+        const payloadDurationMs = resolveStagePayloadDurationMs(stage);
         const startMs = payloadDurationMs === undefined
             ? Math.min(previousEnd, endMs)
             : Math.max(0, endMs - payloadDurationMs);
@@ -841,18 +958,15 @@ function phaseSpans(
             valueLabel: timingKind === 'duration'
                 ? `${Math.round(durationMs)} ms duration`
                 : `${Math.round(endMs)} ms observed delta`,
-            tone: performanceStageTone(stage.status),
+            tone: toPerformanceStageTone(stage.status),
             eventId: stage.eventId
         };
     });
 }
 
-function stagePayloadDurationMs(stage: RtcConnectStage): number | undefined {
-    if (!stage.details || typeof stage.details !== 'object') {
-        return undefined;
-    }
-    const details = stage.details as Record<string, unknown>;
-    return numberValue(
+function resolveStagePayloadDurationMs(stage: RtcConnectStage): number | undefined {
+    const details = toJsonObject(stage.details);
+    return decodeNumber(
         details.durationMs ??
             details.elapsedMs ??
             details.phaseDurationMs ??
@@ -860,10 +974,10 @@ function stagePayloadDurationMs(stage: RtcConnectStage): number | undefined {
     );
 }
 
-function laneCellsForMembership(
+function toMembershipLaneCells(
     membership: RtcMembershipDiagnostics
 ): readonly RtcPerformanceAgentLaneCell[] {
-    const laneIds = unique([
+    const laneIds = toSortedDistinctTexts([
         ...membership.expectedClients,
         ...membership.observedClients,
         ...membership.readyPeerIds,
@@ -916,7 +1030,7 @@ function laneCellsForMembership(
     );
 }
 
-function distributedAgentScatterPoints(
+function toDistributedAgentScatterPoints(
     monitor: DistributedRunMonitor | undefined,
     startSequence: number
 ): readonly RtcPerformanceScatterPoint[] {
@@ -941,22 +1055,13 @@ function distributedAgentScatterPoints(
         });
 }
 
-function distributedAgentMetricCell(
-    laneId: string,
-    metric: RtcPerformanceAgentLaneCell['metric'],
-    value: string,
-    status: RtcPerformanceTone
-): RtcPerformanceAgentLaneCell {
-    return { laneId, metric, value, status };
-}
-
-function laneCellsForDistributedMonitor(
+function toDistributedMonitorLaneCells(
     monitor: DistributedRunMonitor | undefined
 ): readonly RtcPerformanceAgentLaneCell[] | undefined {
     if (!monitor || monitor.agentProgress.length === 0) {
         return undefined;
     }
-    return monitor.agentProgress.flatMap((row) => {
+    return monitor.agentProgress.flatMap((row): readonly RtcPerformanceAgentLaneCell[] => {
         const observed = row.resultCount > 0 || row.eventCount > 0 || row.completedCommandCount > 0;
         const ready = row.readiness === 'ready' || row.readiness === 'passed';
         const readinessFailed = row.readiness === 'failed' || row.readiness === 'cancelled' ||
@@ -966,33 +1071,38 @@ function laneCellsForDistributedMonitor(
             row.execution === 'missing';
         const missing = row.readiness === 'missing' || row.execution === 'missing';
         return [
-            distributedAgentMetricCell(row.agentId, 'expected', 'yes', 'good'),
-            distributedAgentMetricCell(row.agentId, 'observed', observed ? 'yes' : 'no', observed ? 'good' : 'warn'),
-            distributedAgentMetricCell(
-                row.agentId,
-                'ready',
-                ready ? 'yes' : 'no',
-                ready ? 'good' : readinessFailed ? 'bad' : 'warn'
-            ),
-            distributedAgentMetricCell(
-                row.agentId,
-                'active',
-                active ? 'yes' : 'no',
-                active ? 'good' : executionBlocked ? 'warn' : 'muted'
-            ),
-            distributedAgentMetricCell(row.agentId, 'stale', 'no', 'good'),
-            distributedAgentMetricCell(row.agentId, 'missing', missing ? 'yes' : 'no', missing ? 'bad' : 'good')
+            { laneId: row.agentId, metric: 'expected', value: 'yes', status: 'good' },
+            {
+                laneId: row.agentId,
+                metric: 'observed',
+                value: observed ? 'yes' : 'no',
+                status: observed ? 'good' : 'warn'
+            },
+            {
+                laneId: row.agentId,
+                metric: 'ready',
+                value: ready ? 'yes' : 'no',
+                status: ready ? 'good' : readinessFailed ? 'bad' : 'warn'
+            },
+            {
+                laneId: row.agentId,
+                metric: 'active',
+                value: active ? 'yes' : 'no',
+                status: active ? 'good' : executionBlocked ? 'warn' : 'muted'
+            },
+            { laneId: row.agentId, metric: 'stale', value: 'no', status: 'good' },
+            {
+                laneId: row.agentId,
+                metric: 'missing',
+                value: missing ? 'yes' : 'no',
+                status: missing ? 'bad' : 'good'
+            }
         ];
     });
 }
 
-export function deriveRtcPerformanceView(
-    input: Readonly<{
-        diagnostics: RtcDiagnosticsSnapshot;
-        state: RallarBlackBoxTestState;
-        distributedMonitor?: DistributedRunMonitor;
-        histogramBucketCount?: number;
-    }>
+export function computeRtcPerformanceView(
+    input: ComputeRtcPerformanceViewInput
 ): RtcPerformanceView {
     const relevantResults = input.diagnostics.recentResults
         .filter((result) => typeof result.durationMs === 'number' && Number.isFinite(result.durationMs));
@@ -1001,7 +1111,7 @@ export function deriveRtcPerformanceView(
         commandId: result.commandId,
         kind: result.kind,
         source: 'local-result' as const,
-        transport: resultTransport(result),
+        transport: toResultTransport(result),
         status: result.status,
         ok: result.ok,
         startedAtEpochMs: result.startedAtEpochMs,
@@ -1011,7 +1121,7 @@ export function deriveRtcPerformanceView(
     }));
     const scatter = [
         ...localScatter,
-        ...distributedAgentScatterPoints(input.distributedMonitor, localScatter.length + 1)
+        ...toDistributedAgentScatterPoints(input.distributedMonitor, localScatter.length + 1)
     ];
     const durations = scatter.map((point) => point.durationMs);
     const failureCount = input.diagnostics.recentEvents.filter(isFailureEvent).length +
@@ -1029,9 +1139,9 @@ export function deriveRtcPerformanceView(
     return {
         summary: {
             commandCount: scatter.length,
-            p50Ms: percentile(durations, 0.5),
-            p95Ms: percentile(durations, 0.95),
-            p99Ms: percentile(durations, 0.99),
+            p50Ms: computePercentile(durations, 0.5),
+            p95Ms: computePercentile(durations, 0.95),
+            p99Ms: computePercentile(durations, 0.99),
             maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
             connectMs: input.diagnostics.latency.connectMs,
             firstPayloadMs: input.diagnostics.latency.firstPayloadMs,
@@ -1041,47 +1151,60 @@ export function deriveRtcPerformanceView(
         emptyReasons,
         timeseries: input.diagnostics.timeseries,
         scatter,
-        histogram: histogramBuckets(durations, input.histogramBucketCount ?? 6),
-        phaseSpans: phaseSpans(input.diagnostics, relevantResults),
-        agentMatrix: laneCellsForDistributedMonitor(input.distributedMonitor) ??
-            laneCellsForMembership(input.diagnostics.membership)
+        histogram: computeHistogramBuckets(durations, input.histogramBucketCount),
+        phaseSpans: computePhaseSpans(input.diagnostics, relevantResults),
+        agentMatrix: toDistributedMonitorLaneCells(input.distributedMonitor) ??
+            toMembershipLaneCells(input.diagnostics.membership)
     };
 }
 
-export function deriveRtcDiagnostics(
+function toRtcDiagnosticsBundleConfig(
     state: RallarBlackBoxTestState
+): RtcDiagnosticsBundleConfig {
+    const config = state.currentConfig;
+    return {
+        providerMode: decodeJsonValue(config?.control?.providerMode) ??
+            decodeJsonValue(config?.defaults?.providerMode),
+        environment: config?.environment,
+        apiBaseUrl: config?.apiBaseUrl,
+        actor: config?.actor,
+        sessionId: config?.sessionId,
+        roomId: config?.roomId,
+        transport: config?.transport,
+        auth: {
+            hasUsername: Boolean(config?.rallar?.username),
+            hasPassword: Boolean(config?.rallar?.password),
+            hasToken: Boolean(config?.rallar?.token),
+            restoreSession: config?.rallar?.restoreSession === true,
+            register: decodeJsonValue(config?.rallar?.register),
+            logoutOnClose: config?.rallar?.logoutOnClose === true,
+            leaveRoomOnClose: decodeJsonValue(config?.rallar?.leaveRoomOnClose)
+        }
+    };
+}
+
+export function computeRtcDiagnostics(
+    state: RallarBlackBoxTestState,
+    nowEpochMs: number
 ): RtcDiagnosticsSnapshot {
-    const recentEvents = state.events.filter(eventLooksRtcRelated).slice(-40);
+    const recentEvents = state.events.filter(isRtcRelatedEvent).slice(-40);
     const recentResults = state.commandHistory.filter(isRelevantResult).slice(-20);
-    const stages = deriveStages(state.events);
-    const membership = deriveMembership(state, state.events);
-    const latency = deriveLatency(state, state.events);
-    const failure = deriveFailure(state.events);
-    const timeseries = deriveRtcDiagnosticsTimeseries(state);
-    const bundle = {
-        generatedAtEpochMs: Date.now(),
+    const stages = computeRtcConnectStages(state.events);
+    const membership = computeRtcMembership(state, state.events);
+    const latency = computeRtcLatency(state, state.events);
+    const failure = computeRtcFailure(state.events);
+    const timeseries = computeRtcDiagnosticsTimeseries(state, {
+        bucketCount: DEFAULT_RTC_TIMESERIES_BUCKET_COUNT,
+        bucketMs: undefined,
+        endAtEpochMs: undefined,
+        nowEpochMs
+    });
+    const bundle: RtcDiagnosticsBundle = {
+        generatedAtEpochMs: nowEpochMs,
         runId: state.currentConfig?.runId,
         agentId: state.currentConfig?.agentId,
         status: state.status,
-        config: {
-            providerMode: state.currentConfig?.control?.providerMode ??
-                state.currentConfig?.defaults?.providerMode,
-            environment: state.currentConfig?.environment,
-            apiBaseUrl: state.currentConfig?.apiBaseUrl,
-            actor: state.currentConfig?.actor,
-            sessionId: state.currentConfig?.sessionId,
-            roomId: state.currentConfig?.roomId,
-            transport: state.currentConfig?.transport,
-            auth: {
-                hasUsername: Boolean(state.currentConfig?.rallar?.username),
-                hasPassword: Boolean(state.currentConfig?.rallar?.password),
-                hasToken: Boolean(state.currentConfig?.rallar?.token),
-                restoreSession: state.currentConfig?.rallar?.restoreSession === true,
-                register: state.currentConfig?.rallar?.register,
-                logoutOnClose: state.currentConfig?.rallar?.logoutOnClose === true,
-                leaveRoomOnClose: state.currentConfig?.rallar?.leaveRoomOnClose
-            }
-        },
+        config: toRtcDiagnosticsBundleConfig(state),
         commandIds: recentResults.map((result) => result.commandId),
         stages,
         membership,

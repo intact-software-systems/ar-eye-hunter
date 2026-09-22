@@ -309,7 +309,11 @@ describe('QRtcPeerConnection', () => {
     it('reports the hop a terminal signaling failure lost, instead of logging and dropping it', async () => {
         const runtime = installNativeRtcRuntime();
         onTestFinished(() => runtime.dispose());
-        const terminal = new QRtcSignalingAdmissionError('expired', 'msg-7', 'Signaling admission returned expired');
+        const terminal = new QRtcSignalingAdmissionError(
+            { kind: 'expired', detail: 'Signaling admission returned expired' },
+            'msg-7',
+            'Signaling admission returned expired'
+        );
         const signaler: QRtcSignalingSender = {
             send: async () => {
                 throw terminal;
@@ -330,8 +334,12 @@ describe('QRtcPeerConnection', () => {
         await native.onnegotiationneeded?.call(native, new Event('negotiationneeded'));
         await native.onicecandidate?.call(native, new NativeIceCandidateEvent('ice-1'));
 
-        // Each hop names the status admission gave it and the message that carried it.
-        const rejected = { outcome: 'rejected', status: 'expired', messageId: 'msg-7' };
+        // Each hop names the verdict admission gave it and the message that carried it.
+        const rejected = {
+            outcome: 'rejected',
+            verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+            messageId: 'msg-7'
+        };
         expect(failures).toEqual([
             { peerSessionId: 'peer-1', signalType: QRtcSignalingType.Offer, admission: rejected, error: terminal },
             { peerSessionId: 'peer-1', signalType: QRtcSignalingType.IceCandidate, admission: rejected, error: terminal }
@@ -344,7 +352,11 @@ describe('QRtcPeerConnection', () => {
     it('reports the answer hop a terminal admission lost, not only the inbound chain log', async () => {
         const runtime = installNativeRtcRuntime();
         onTestFinished(() => runtime.dispose());
-        const terminal = new QRtcSignalingAdmissionError('expired', 'msg-9', 'Signaling admission returned expired');
+        const terminal = new QRtcSignalingAdmissionError(
+            { kind: 'expired', detail: 'Signaling admission returned expired' },
+            'msg-9',
+            'Signaling admission returned expired'
+        );
         const signaler: QRtcSignalingSender = {
             send: async () => {
                 throw terminal;
@@ -367,7 +379,11 @@ describe('QRtcPeerConnection', () => {
         expect(failures).toEqual([{
             peerSessionId: 'peer-1',
             signalType: QRtcSignalingType.Answer,
-            admission: { outcome: 'rejected', status: 'expired', messageId: 'msg-9' },
+            admission: {
+                outcome: 'rejected',
+                verdict: { kind: 'expired', detail: 'Signaling admission returned expired' },
+                messageId: 'msg-9'
+            },
             error: terminal
         }]);
         // The inbound chain still owns its own log and counter for the hop it could not complete.

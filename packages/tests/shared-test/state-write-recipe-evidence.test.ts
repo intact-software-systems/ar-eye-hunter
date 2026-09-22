@@ -12,9 +12,12 @@ import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-opera
 import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import { deriveApiV1StateWriteEvidence } from '@shared-test/black-box-runner/api-v1-state-write-evidence.ts';
 import { executeBlackBox } from '@shared-test/black-box-runner/execute-black-box.ts';
-import { explainBlackBoxRunnerPlan } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
+import { computeBlackBoxRunnerPlanPreflight } from '@shared-test/black-box-runner/preflight/plan-preflight.ts';
+import { computeBlackBoxRunnerEnvRequirements } from '@shared-test/black-box-runner/preflight/preflight-env-variables.ts';
+import type { OutboxRow } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import type { PersistedCommandEvidence } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts';
 import { toExactPersistedEvidenceMatches } from '@shared-test/black-box-runner/state-write-evidence/to-exact-persisted-evidence-matches.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
@@ -86,7 +89,7 @@ describe('API-v1 state-write recipe evidence', () => {
         // A delayed summary may project both events onto the same newer
         // resulting snapshot. The event retains the revision produced by its
         // own mutation and is therefore the exact concurrency evidence.
-        const envelope = (eventRevision: number, presenceRevision: number) => ({
+        const toEnvelope = (eventRevision: number, presenceRevision: number) => ({
             event: { causalRevision: { groupRevision: eventRevision, presenceRevision } },
             resultingCausalRevision: { groupRevision: 4, presenceRevision: 8 },
             group
@@ -97,10 +100,10 @@ describe('API-v1 state-write recipe evidence', () => {
             groupId: 'group',
             roleMutationRevision: 3,
             groupMutationRevision: 4,
-            primaryFirstEnvelope: envelope(3, 7),
-            primarySecondEnvelope: envelope(4, 8),
-            tertiaryFirstEnvelope: envelope(4, 8),
-            tertiarySecondEnvelope: envelope(3, 7)
+            primaryFirstEnvelope: toEnvelope(3, 7),
+            primarySecondEnvelope: toEnvelope(4, 8),
+            tertiaryFirstEnvelope: toEnvelope(4, 8),
+            tertiarySecondEnvelope: toEnvelope(3, 7)
         };
         const interactions = [
             ...assertionSteps.map((step, index) => ({
@@ -153,9 +156,9 @@ describe('API-v1 state-write recipe evidence', () => {
                 ]
             ] as const
         ) {
-            const recipe = JSON.parse(
+            const recipe: Readonly<{ steps: readonly ApiJsonObject[]; }> = JSON.parse(
                 readFileSync(path.join(recipeRoot, name), 'utf8')
-            ) as { steps: Array<Record<string, unknown>>; };
+            );
             const terminalIndex = recipe.steps.findIndex((step) => step.name === terminalStep);
             for (const connection of socketConnections) {
                 const readyIndex = recipe.steps.findIndex((step) => step.name === `${connection}AuthorizationReady`);
@@ -216,9 +219,9 @@ describe('API-v1 state-write recipe evidence', () => {
 
     it('forbids literal SET values from claiming durable state-write evidence', () => {
         for (const name of taskRecipes) {
-            const recipe = JSON.parse(
+            const recipe: Readonly<{ steps: readonly ApiJsonObject[]; }> = JSON.parse(
                 readFileSync(path.join(recipeRoot, name), 'utf8')
-            ) as { steps: Array<Record<string, unknown>>; };
+            );
             const evidence = recipe.steps.find((step) => step.output === 'stateWriteEvidence');
 
             expect(evidence, name).toMatchObject({
@@ -237,7 +240,7 @@ describe('API-v1 state-write recipe evidence', () => {
             ),
             'utf8'
         )) as {
-            variables: Record<string, unknown>;
+            variables: ApiJsonObject;
             steps: Array<Record<string, any>>;
         };
         const boundedPrune = recipe.steps.find((step) => step.name === 'runBoundedPruneToCompletion');
@@ -266,9 +269,11 @@ describe('API-v1 state-write recipe evidence', () => {
                 value: { atomicCompletionFailures: 0 }
             }]
         };
-        const preflight = explainBlackBoxRunnerPlan({
+        const preflight = computeBlackBoxRunnerPlanPreflight({
             rawConfig: config,
             expandedConfig: config,
+            executableInteractions: [],
+            envRequirements: computeBlackBoxRunnerEnvRequirements(config, {}),
             profile: 'strict'
         });
 
@@ -544,10 +549,10 @@ describe('API-v1 state-write recipe evidence', () => {
                 }
             })
         }];
-        const page = (
+        const toPageOutbox = (
             category: AdminPruneCommand['categories'][number],
             overrides: Partial<AdminPrunePageWork> = {}
-        ) => {
+        ): OutboxRow => {
             const entry = toAdminPruneOutbox({
                 kind: 'page',
                 jobId: adminCommand.jobId,
@@ -587,8 +592,8 @@ describe('API-v1 state-write recipe evidence', () => {
                 ADMIN_PRUNE_EXPIRED: ['admin-prune-page', 'admin-prune-page']
             }
         };
-        const runtimeStatePage = page('runtime-state');
-        const resourceInboxPage = page('resource-inbox');
+        const runtimeStatePage = toPageOutbox('runtime-state');
+        const resourceInboxPage = toPageOutbox('resource-inbox');
 
         expect(deriveApiV1StateWriteEvidence(
             spec,
@@ -646,12 +651,12 @@ describe('API-v1 state-write recipe evidence', () => {
         }
 
         const canonicalPagesFromAnotherCommand = [
-            page('resource-inbox-results'),
-            page('resource-inbox', { requestedBy: 'another-admin' }),
-            page('resource-inbox', { requestedSessionId: 'another-session' }),
-            page('resource-inbox', { capturedAtEpochMs: adminCommand.capturedAtEpochMs + 1 }),
-            page('resource-inbox', { pageSize: adminCommand.pageSize + 1 }),
-            page('app-data', { appData: { namespace: 'another-namespace', storeName: null } })
+            toPageOutbox('resource-inbox-results'),
+            toPageOutbox('resource-inbox', { requestedBy: 'another-admin' }),
+            toPageOutbox('resource-inbox', { requestedSessionId: 'another-session' }),
+            toPageOutbox('resource-inbox', { capturedAtEpochMs: adminCommand.capturedAtEpochMs + 1 }),
+            toPageOutbox('resource-inbox', { pageSize: adminCommand.pageSize + 1 }),
+            toPageOutbox('app-data', { appData: { namespace: 'another-namespace', storeName: null } })
         ];
         for (const canonicalPage of canonicalPagesFromAnotherCommand) {
             expect(deriveApiV1StateWriteEvidence(

@@ -83,7 +83,7 @@ export function ExecuteRunStatus({
                             <Fact label="Targets" value={String(run.targetAgentIds.length)} />
                             <Fact
                                 label="Ready participants"
-                                value={`${run.rollup.summary.readyParticipants}/${run.rollup.summary.requiredParticipants}`}
+                                value={`${run.rollup.summary.readyParticipants}/${run.rollup.summary.participants}`}
                             />
                             <Fact
                                 label="Blocking failures"

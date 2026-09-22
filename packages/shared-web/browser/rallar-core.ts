@@ -53,11 +53,14 @@ export type {
     RallarListRoomEventsInput,
     RallarListRoomEventsOptions,
     RallarMessage,
+    RallarMessageDeliveryListener,
+    RallarMessageDeliveryOutcome,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageLane,
     RallarMessageSendBase,
-    RallarMessageSendResult,
     RallarMessageTransport,
+    RallarMessageWaitOptions,
     RallarOnChangeOptions,
     RallarPeopleEventOptions,
     RallarPeopleState,
@@ -109,3 +112,11 @@ export type {
     RallarUnsubscribe,
     RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
+
+export type {
+    ALDeliveryAttempt,
+    ALDeliveryEvidence,
+    ALDeliveryLifecycle,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+export { AL_DELIVERY_ADMITTED_STATES, AL_DELIVERY_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';

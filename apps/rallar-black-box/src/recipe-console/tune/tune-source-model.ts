@@ -1,23 +1,19 @@
+import { computeDistributedRunTuningInventory } from '@shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
-    DistributedRunAnalysis,
     DistributedRunPerformanceAnalysis
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type {
     DistributedRunTuningDecisionResult
 } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
 import { deriveDistributedRunTuningDecisions } from '@shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
-import {
-    inventoryDistributedRunTuningKnobs,
-    type DistributedRunTuningInventory
-} from '@shared-test/rallar-bb-test/distributed-run-tuning.ts';
+import type { DistributedRunTuningInventory } from '@shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { AnalyzeArtifactModel } from '../analyze/analyze-artifact-model.ts';
-import type { AnalyzeArtifactProjection } from '../analyze/analyze-worker-contract.ts';
 import type { ControlQuerySnapshot } from '../control/control-query.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import { retainedTuneArtifactIdentityMatches } from './tune-artifact-identity.ts';
@@ -25,7 +21,12 @@ import { validateTuneCatalogSelections } from './tune-catalog-selection-validati
 import { projectTuneIdentitySurfaces, type TuneIdentitySurfaces } from './tune-identity.ts';
 import { hasTunePerformanceEvidence } from './tune-performance-evidence.ts';
 import { tunePerformanceRunIds } from './tune-performance-run-ids.ts';
-import { buildTuneRunCatalog, type TuneQuarantineCode, type TuneRunCatalog } from './tune-run-catalog.ts';
+import {
+    computeTuneRunCatalog,
+    type TuneQuarantineCode,
+    type TuneRunAnalysisEvidence,
+    type TuneRunCatalog
+} from './tune-run-catalog.ts';
 
 export { deriveTuneSourceModelFromFacade } from './tune-facade-source-model.ts';
 
@@ -60,15 +61,15 @@ export type TuneSourceModel = Readonly<{
     }>;
     retained: Readonly<{
         relation: 'none' | 'matching' | 'mismatched' | 'context-error';
+        /** Absent when no artifact is retained, so there is nothing to describe support for. */
         support?: AnalyzeArtifactModel['workspace']['support'];
-        inspection?:
-            | AnalyzeArtifactModel['analysis']
-            | AnalyzeArtifactProjection['analysis'];
+        /** Absent when no artifact is retained. */
+        inspection?: TuneRunAnalysisEvidence;
     }>;
     distributedRun?: ControlDistributedRunSnapshot;
     controlRun?: ControlRunSnapshot;
     manifest?: RallarBlackBoxDistributedRunManifest;
-    analysis?: DistributedRunAnalysis | AnalyzeArtifactProjection['analysis'];
+    analysis?: TuneRunAnalysisEvidence;
     performance?: DistributedRunPerformanceAnalysis;
     inventory?: DistributedRunTuningInventory;
     decisions?: DistributedRunTuningDecisionResult;
@@ -93,7 +94,7 @@ export function deriveTuneSourceModel(
 ): TuneSourceModel {
     const focusRunId = input.urlState.compareRight ?? input.urlState.distributedRunId;
     const retainedModel = input.retained?.model;
-    const unvalidatedCatalog = input.catalog ?? buildTuneRunCatalog({
+    const unvalidatedCatalog = input.catalog ?? computeTuneRunCatalog({
         distributedRuns: input.query.snapshot?.distributedRuns ?? [],
         controlRuns: input.query.snapshot?.runs ?? [],
         retainedArtifact: retainedModel,
@@ -137,7 +138,7 @@ export function deriveTuneSourceModel(
     const analysis = artifactCurrent ? option?.artifactEvidence?.analysis : undefined;
     const performance = evidence?.performance;
     const inventory = manifest
-        ? inventoryDistributedRunTuningKnobs(manifest)
+        ? computeDistributedRunTuningInventory(manifest)
         : undefined;
     const decisions = inventory
         ? deriveDistributedRunTuningDecisions({

@@ -2,26 +2,26 @@
 import { act, createElement, Fragment } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MonitorAgentPhaseMatrix } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-agent-phase-matrix.tsx';
+import { MonitorDiagnostics } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-diagnostics.tsx';
+import { MonitorFailureLedger } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-failure-ledger.tsx';
+import { MonitorProgressEvidence } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-progress-evidence.tsx';
 import { createMonitorWindowFingerprint, MONITOR_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-window-contract.ts';
 import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import { MonitorAgentPhaseMatrix } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorAgentPhaseMatrix.tsx';
-import { MonitorDiagnostics } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnostics.tsx';
 import { MonitorEvidenceDisclosure } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorEvidenceDisclosure.tsx';
-import { MonitorFailureLedger } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorFailureLedger.tsx';
-import { MonitorProgressEvidence } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorProgressEvidence.tsx';
 import { MonitorWindowTruth } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorWindowTruth.tsx';
 import { useMonitorWindow } from '../../../apps/rallar-black-box/src/recipe-console/monitor/use-monitor-window.ts';
 import { ExplicitWindowControls } from '../../../apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.tsx';
+import type { DistributedRunMonitor } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import type {
     DistributedRunAgentProgressRow,
     DistributedRunCompositeDrilldown,
     DistributedRunEventRow,
-    DistributedRunMonitor,
     DistributedRunReadinessRow,
     DistributedRunRecipeProgressRow,
     DistributedRunRuntimeDiagnosticRow,
     DistributedRunTimelineItem
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run-observation/distributed-run-row-contracts.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
@@ -282,9 +282,6 @@ describe('Recipe Console Monitor explicit windows', () => {
             commandId: `command-${index}`
         }));
         const onInspect = vi.fn();
-        const onNavigate = vi.fn();
-        const onRefresh = vi.fn();
-        const onDestructiveAction = vi.fn();
         root = createRoot(container);
         await act(async () =>
             root?.render(createElement(MonitorFailureLedger, {
@@ -307,9 +304,7 @@ describe('Recipe Console Monitor explicit windows', () => {
         expect(selected?.textContent).toContain(exactLateId);
         expect(selected?.querySelector('bdi[data-exact-identifier]')?.getAttribute('dir'))
             .toBe('ltr');
-        expect([onInspect, onNavigate, onRefresh, onDestructiveAction].map(
-            (callback) => callback.mock.calls.length
-        )).toEqual([0, 0, 0, 0]);
+        expect(onInspect).not.toHaveBeenCalled();
         expect(failures.map((row) => row.message)).toEqual(
             Array.from({ length: 121 }, (_, index) => `Failure ${index}`)
         );
@@ -592,7 +587,6 @@ function recipeRow(index: number, recipeId = `recipe-${index}`): DistributedRunR
     return {
         recipeId,
         role: `role-${index % 2}`,
-        required: true,
         targetCount: 1,
         queuedCount: 0,
         runningCount: 0,
@@ -670,6 +664,7 @@ function compositeRow(index: number): DistributedRunCompositeDrilldown {
             leaf: 1
         },
         groupSummaries: [],
+        childDecodeIssues: [],
         rows: []
     };
 }

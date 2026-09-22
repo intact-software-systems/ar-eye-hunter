@@ -16,6 +16,7 @@ import {
     newALUntargetedMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     createDefaultALOutboundDequeueResilience,
     createDefaultALOutboundRuntimeResources
@@ -68,6 +69,7 @@ describe('WebRtc overlay services', () => {
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -132,6 +134,7 @@ describe('WebRtc overlay services', () => {
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connection),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: resources,
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -233,6 +236,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -255,7 +259,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
 
@@ -283,6 +287,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -303,7 +308,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toEqual([]);
@@ -325,6 +330,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -346,7 +352,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toContain(
@@ -371,6 +377,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -392,7 +399,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(warnings).toEqual([]);
@@ -438,6 +445,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -459,7 +467,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'accepted',
+            verdict: { kind: 'admitted', durable: false },
             entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -510,6 +518,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -531,7 +540,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'no-route',
+            verdict: { kind: 'unroutable', reason: 'no-route' },
             entries: []
         });
         expect(channel.sendCalls).toEqual([]);
@@ -558,6 +567,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -579,7 +589,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'accepted',
+            verdict: { kind: 'admitted', durable: false },
             entries: [{ status: EntityStatus.COMPLETED }]
         });
         expect(channel.sendCalls).toHaveLength(1);
@@ -604,6 +614,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: CircuitBreaker.create(createCircuitBreakerPolicy()),
             rateLimiter: RateLimiter.init(1_000, 2),
@@ -624,10 +635,10 @@ describe('WebRtc overlay services', () => {
             createUnicastRtcMessage('sender-rate-limit', 'msg-rate-limit-3')
         );
 
-        expect(first.status).toBe('accepted');
-        expect(second.status).toBe('accepted');
+        expect(first.verdict).toMatchObject({ kind: 'admitted', durable: false });
+        expect(second.verdict).toMatchObject({ kind: 'admitted', durable: false });
         expect(third).toMatchObject({
-            status: 'rate-limited',
+            verdict: { kind: 'unroutable', reason: 'rate-limited' },
             entries: [],
             reason: 'RTC enqueue rate limit exceeded'
         });
@@ -655,6 +666,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: circuitBreaker,
             rateLimiter: RateLimiter.init(1_000, 20),
@@ -667,12 +679,60 @@ describe('WebRtc overlay services', () => {
         );
 
         expect(result).toMatchObject({
-            status: 'circuit-open',
+            verdict: { kind: 'unroutable', reason: 'circuit-open' },
             entries: [],
             reason: 'RTC enqueue circuit breaker open'
         });
         expect(channel.sendCalls).toEqual([]);
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
+    });
+
+    it('counts a non-unauthorized refused enqueue result as a circuit breaker failure', async () => {
+        const channel = createOpenRtcChannel();
+        const connectionService = createConnectionService(['peer-1'], {
+            'peer-1': {
+                channel
+            }
+        });
+        const circuitBreaker = CircuitBreaker.create(createCircuitBreakerPolicy(1));
+        const manager = new WebRtcOverlayMulticastManager({
+            connectionService: connectionService,
+            groupCache: createReadableCache({}),
+            overlayCache: createReadableCache({}),
+            multicasterFactory: (overlayId) =>
+                new WebRtcOverlayMulticastService(
+                    overlayId,
+                    connectionService
+                ),
+            qosProvider: undefined,
+            outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
+            outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
+            circuitBreaker,
+            rateLimiter: RateLimiter.init(1_000, 20),
+            dequeueResilience: createDefaultALOutboundDequeueResilience()
+        });
+        onTestFinished(() => manager.dispose());
+        const refusedDetail = 'Outbound candidate failed validation';
+        const enqueueSpy = vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueIfAbsent').mockImplementation(async (msg) => ({
+            verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
+            message: msg,
+            entries: [],
+            reason: refusedDetail
+        }));
+        onTestFinished(() => enqueueSpy.mockRestore());
+
+        // Two refused results are needed to pass the single-failure policy threshold.
+        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-1'));
+        await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-2'));
+        const result = await manager.enqueueIfAbsent(createUnicastRtcMessage('sender-refused', 'msg-refused-3'));
+
+        expect(result).toMatchObject({
+            verdict: { kind: 'unroutable', reason: 'circuit-open' },
+            entries: [],
+            reason: 'RTC enqueue circuit breaker open'
+        });
+        expect(channel.sendCalls).toEqual([]);
     });
 
     it('does not transmit a malformed persisted AL envelope', async () => {
@@ -686,6 +746,7 @@ describe('WebRtc overlay services', () => {
             multicasterFactory: (overlayId) => new WebRtcOverlayMulticastService(overlayId, connectionService),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage, queueEngine: engine }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -726,6 +787,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -755,7 +817,7 @@ describe('WebRtc overlay services', () => {
 
         const result = await manager.enqueueIfAbsent(msg);
 
-        expect(result.status).toBe('enqueued');
+        expect(result.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(result.entries).toHaveLength(1);
         expect(result.entries[0]?.key.topicId).toBe('AL_OUTBOUND_MESSAGE');
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
@@ -776,6 +838,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -806,9 +869,9 @@ describe('WebRtc overlay services', () => {
         const firstResult = await manager.enqueueIfAbsent(msg);
         const secondResult = await manager.enqueueIfAbsent(msg);
 
-        expect(firstResult.status).toBe('enqueued');
+        expect(firstResult.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(firstResult.entries).toHaveLength(1);
-        expect(secondResult.status).toBe('duplicate');
+        expect(secondResult.verdict).toEqual({ kind: 'duplicate' });
         expect(secondResult.entries).toHaveLength(1);
         expect(secondResult.entries[0]?.key).toEqual(firstResult.entry?.key);
         expect(await reserveRtcOutbox(manager.outbox)).toHaveLength(0);
@@ -830,6 +893,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),
@@ -854,7 +918,7 @@ describe('WebRtc overlay services', () => {
         );
 
         await expect(enqueueRtcAndDrain(manager, msg)).resolves.toMatchObject({
-            status: 'expired',
+            verdict: { kind: 'expired' },
             entries: []
         });
         expect(warnings).toEqual([]);
@@ -879,6 +943,7 @@ describe('WebRtc overlay services', () => {
                 ),
             qosProvider: undefined,
             outboundDiagnostics: undefined,
+            outboundSettlements: undefined,
             outboundRuntime: createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage }),
             circuitBreaker: toCircuitBreaker(),
             rateLimiter: toRateLimiter(),

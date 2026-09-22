@@ -2,14 +2,13 @@ import type { Dispatch, SetStateAction } from 'react';
 import { flushSync } from 'react-dom';
 import { analyzeCompletionNavigationIdentity } from './analyze-completion-navigation.ts';
 import type { AnalyzeWorkerClientCallbacks } from './analyze-worker-client.ts';
+import type { AnalyzeWorkerErrorProjection, AnalyzeWorkerTelemetry } from './analyze-worker-contract.ts';
+import { analyzeWorkerError } from './analyze-worker-error.ts';
 import type {
     AnalyzeArtifactProjection,
     AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerErrorProjection,
-    AnalyzeWorkerTelemetry
-} from './analyze-worker-contract.ts';
-import { analyzeWorkerError } from './analyze-worker-error.ts';
+    AnalyzeTuneArtifactFacade
+} from './analyze-worker-projection-contract.ts';
 import type { AnalyzeMutableRef, AnalyzePendingOperation } from './analyze-worker-workspace-adapter.ts';
 import {
     completeAnalyzeWorkspaceOperation,

@@ -1,4 +1,7 @@
-import type { ControlFleetAgentRunOutcome, ControlFleetFailureSignature } from '../../../control-run-manager.ts';
+import type {
+    ControlFleetAgentRunOutcome,
+    ControlFleetFailureSignature
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
 export function fleetRegionKey(
     label: ControlFleetAgentRunOutcome['label']

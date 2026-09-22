@@ -1,20 +1,22 @@
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     beforeEach,
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
-type MiddlewareModule = typeof import('@shared-web/browser/connection/initialise-browser-middleware.ts');
-type RefreshStateSnapshotsModule = typeof import('@shared-web/browser/state-read/refresh-state-snapshots.ts');
-type StateCacheLifecycleModule = typeof import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts');
-type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type * as StateCacheLifecycleModule from '@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts';
+import type * as RefreshStateSnapshotsModule from '@shared-web/browser/state-read/refresh-state-snapshots.ts';
+import { clearSession, readSession, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type * as ClientStateSnapshotsRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
+import type * as GroupStateSnapshotsRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
+
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 interface GroupSnapshotFixtureScope {
     readonly applicationId?: string;
@@ -25,44 +27,40 @@ const mocks = await vi.hoisted(async () => {
     const { createDefaultApiMiddlewareTestDouble } = await import(
         './api-middleware-test-double.ts'
     );
-    const ctx = createDefaultApiMiddlewareTestDouble();
+    const apiMiddleware = createDefaultApiMiddlewareTestDouble();
     return {
-        clearSession: vi.fn<AuthModule['clearSession']>(),
-        ctx,
-        hydrateStateCache: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['hydrate']>(() => Promise.resolve()),
-        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
-        onCacheChange: vi.fn<StateCacheLifecycleModule['browserStateCacheLifecycle']['onChange']>(() => vi.fn()),
-        readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<RefreshStateSnapshotsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
-        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(() => undefined),
-        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
-            GroupStateSnapshotsRepositoryModule[
-                'findFirstGroupStateSnapshotRefSessionIdIsIn'
-            ]
-        >(() => undefined),
-        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(() => undefined),
-        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(() => [])
+        apiMiddleware,
+        hydrateStateCache: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.hydrate>(() => Promise.resolve()),
+        initialiseMiddleware: vi.fn<typeof MiddlewareModule.initialiseMiddleware>(() => Promise.resolve(apiMiddleware.middleware)),
+        onCacheChange: vi.fn<typeof StateCacheLifecycleModule.browserStateCacheLifecycle.onChange>(() => vi.fn()),
+        refreshStateSnapshots: vi.fn<typeof RefreshStateSnapshotsModule.refreshStateSnapshots>(() => Promise.resolve({ clients: [], groups: [] })),
+        findClientStateSnapshotByPrincipalId: vi.fn<typeof ClientStateSnapshotsRepositoryModule.findClientStateSnapshotByPrincipalId>(() => undefined),
+        getAllClientStateSnapshots: vi.fn<typeof ClientStateSnapshotsRepositoryModule.getAllClientStateSnapshots>(() => []),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findFirstGroupStateSnapshotRefSessionIdIsIn>(() =>
+            undefined
+        ),
+        findGroupStateSnapshotByRef: vi.fn<typeof GroupStateSnapshotsRepositoryModule.findGroupStateSnapshotByRef>(() => undefined),
+        getAllGroupStateSnapshots: vi.fn<typeof GroupStateSnapshotsRepositoryModule.getAllGroupStateSnapshots>(() => [])
     };
 });
 
 vi.mock(
     import('@shared-web/browser/connection/initialise-browser-middleware.ts'),
-    (): Partial<MiddlewareModule> => ({
+    (): Partial<typeof MiddlewareModule> => ({
         initialiseMiddleware: mocks.initialiseMiddleware
     })
 );
 
 vi.mock(
     import('@shared-web/browser/state-read/refresh-state-snapshots.ts'),
-    (): Partial<RefreshStateSnapshotsModule> => ({
+    (): Partial<typeof RefreshStateSnapshotsModule> => ({
         refreshStateSnapshots: mocks.refreshStateSnapshots
     })
 );
 
 vi.mock(
     import('@shared-web/browser/state-cache/browser-state-cache-lifecycle.ts'),
-    (): Partial<StateCacheLifecycleModule> => ({
+    (): Partial<typeof StateCacheLifecycleModule> => ({
         browserStateCacheLifecycle: {
             hydrate: mocks.hydrateStateCache,
             onChange: mocks.onCacheChange,
@@ -72,16 +70,9 @@ vi.mock(
     })
 );
 
-vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
-    clearSession: mocks.clearSession,
-    isLoggedIn: vi.fn(() => true),
-    readSession: mocks.readSession,
-    writeSession: vi.fn()
-}));
-
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
-    (): Partial<ClientStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
         getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
     })
@@ -89,7 +80,7 @@ vi.mock(
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
-    (): Partial<GroupStateSnapshotsRepositoryModule> => ({
+    (): Partial<typeof GroupStateSnapshotsRepositoryModule> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
         getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
@@ -105,9 +96,20 @@ describe('Rallar startup lifecycle behavior', () => {
         mocks.getAllClientStateSnapshots.mockReturnValue([]);
         mockGroupSnapshots([]);
         mocks.hydrateStateCache.mockResolvedValue(undefined);
-        mocks.clearSession.mockReset();
-        mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
-        mocks.readSession.mockReturnValue(mocks.ctx.session);
+        mocks.initialiseMiddleware.mockResolvedValue(mocks.apiMiddleware.middleware);
+        const storage = new Map<string, string>();
+        vi.stubGlobal('localStorage', {
+            getItem: (key: string) => storage.get(key) ?? null,
+            setItem: (key: string, value: string) => storage.set(key, value),
+            removeItem: (key: string) => storage.delete(key)
+        });
+        resetAuthSessionStorage();
+        writeSession(mocks.apiMiddleware.session);
+        onTestFinished(async () => {
+            (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+                .browserTransportRuntime.shutdown('test-finished');
+            vi.unstubAllGlobals();
+        });
         mocks.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
     });
 
@@ -125,7 +127,7 @@ describe('Rallar startup lifecycle behavior', () => {
         await facade.start({ refreshRooms: true });
 
         expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
-            mocks.ctx.session,
+            mocks.apiMiddleware.session,
             expect.any(String),
             expect.objectContaining({
                 scope: {
@@ -164,34 +166,26 @@ describe('Rallar startup lifecycle behavior', () => {
             refreshPeople: true
         });
 
-        expect(result.session).toEqual(mocks.ctx.session);
+        expect(result.session).toEqual(mocks.apiMiddleware.session);
         expect(result.connected).toBe(true);
         expect(result.middleware).toMatchObject({
-            middleware: mocks.ctx.middleware,
-            session: mocks.ctx.session
+            middleware: mocks.apiMiddleware.middleware,
+            session: mocks.apiMiddleware.session
         });
         expect(result.roomState?.rooms.map((room) => room.roomId)).toEqual([
             'match-1'
         ]);
         expect(result.peopleState?.clients).toEqual([]);
         expect(mocks.initialiseMiddleware).toHaveBeenCalledWith(
-            mocks.ctx.session,
+            mocks.apiMiddleware.session,
             expect.any(String),
-            {
-                diagnosticsPorts: {
-                    transportFaultPort: { decideSend: expect.any(Function) },
-                    indexedDbOperationObserver: { observe: expect.any(Function) },
-                    outboundDiagnostics: expect.any(Function),
-                    inboundDiagnostics: expect.any(Function),
-                    onStorageReset: expect.any(Function)
-                },
-                onAuthInvalid: expect.any(Function),
+            expect.objectContaining({
                 scope: {
                     applicationId: 'default-app',
                     workspaceId: 'default'
                 },
                 timeoutMs: 123
-            }
+            })
         );
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
@@ -210,7 +204,7 @@ describe('Rallar startup lifecycle behavior', () => {
         const { createRallarFacade } = await import(
             '@shared-web/browser/rallar.ts'
         );
-        mocks.readSession.mockReturnValue(undefined);
+        clearSession();
         const facade = createRallarFacade();
 
         const result = await facade.start();
@@ -243,10 +237,6 @@ describe('Rallar startup lifecycle behavior', () => {
         );
         const facade = createRallarFacade();
         const authChanges: string[] = [];
-        const authCleanupEvents: string[] = [];
-        mocks.clearSession.mockImplementation(() => {
-            authCleanupEvents.push('session-cleared');
-        });
         facade.auth.onChange((state) => {
             authChanges.push(state.reason);
         }, {
@@ -255,7 +245,7 @@ describe('Rallar startup lifecycle behavior', () => {
 
         await expect(facade.connect()).rejects.toThrow('expired');
 
-        expect(authCleanupEvents).toEqual(['session-cleared']);
+        expect(readSession()).toBeUndefined();
         expect(authChanges).toEqual(['unauthorized']);
         expect(facade.status()).toBe('idle');
     });

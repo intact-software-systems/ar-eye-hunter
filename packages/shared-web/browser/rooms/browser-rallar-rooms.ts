@@ -17,6 +17,7 @@ import type {
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import { throwRallarValidationIssue } from '@shared-web/browser/rooms/rallar-room-validation.ts';
 import type { RallarStateSnapshotAcceptanceInput } from '@shared-web/browser/state-cache/rallar-state-store.ts';
+import { acceptAuthoritativeGroupSessionLeaseAdvance } from '@shared-web/browser/state-cache/state-cache-snapshot-adoption.ts';
 import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 import {
     hydrateGroupTopologyOverlays,
@@ -28,9 +29,10 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
 import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { Command } from '@shared/cache/Command.ts';
+import { Command, CommandCancelledError } from '@shared/cache/Command.ts';
 import {
     findGroupStateSnapshotByRef,
+    refreshGroupStateSnapshotIfUnchanged,
     removeGroupStateSnapshotIfUnchanged,
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -395,16 +397,44 @@ async function refreshRoom(
         });
         const context = await input.connect(operationOptions);
         const observed = findGroupStateSnapshotByRef(roomRef);
+        const session = input.requireSession();
+        const assertCurrent = () => {
+            if (operationOptions.signal?.aborted) {
+                throw new CommandCancelledError();
+            }
+            if (
+                input.requireSession().sessionId !== session.sessionId ||
+                context.session.sessionId !== session.sessionId
+            ) {
+                throw new DOMException('Room refresh belongs to an obsolete session', 'AbortError');
+            }
+        };
+        assertCurrent();
         try {
             const response = await new Command<StateGroupSnapshotRead>(
                 (signal) =>
                     readStateGroupSnapshot(roomRef.groupId, scope, {
                         signal,
-                        authSession: input.requireSession()
+                        authSession: session
                     }),
                 toRallarCommandOptions(operationOptions)
             ).run();
+            assertCurrent();
+            if (observed) {
+                refreshGroupStateSnapshotIfUnchanged(observed, response.snapshot);
+            }
             await input.acceptSnapshots({ context, clients: [], groups: [response.snapshot], scope });
+            assertCurrent();
+            if (observed) {
+                acceptAuthoritativeGroupSessionLeaseAdvance({
+                    expected: observed,
+                    acquired: response.snapshot,
+                    scope,
+                    assertCanMutate: assertCurrent
+                });
+                await waitForGroupStateSnapshotChangesIdle();
+                assertCurrent();
+            }
             const [readThrough] = await hydrateGroupTopologyOverlays({
                 groupSnapshots: [response.snapshot],
                 sessionId: context.session.sessionId,

@@ -12,7 +12,12 @@ import {
     type AppTabId,
     type RunnerAdvancedSurfaceId
 } from '../../app-tabs.ts';
-import { readStoredAppMode, readStoredAppTab, writeStoredAppMode, writeStoredAppTab } from '../../ui-persistence.ts';
+import {
+    readStoredAppMode,
+    readStoredAppTab,
+    writeStoredAppMode,
+    writeStoredAppTab
+} from '../../ui-cache/app-shell-preferences.ts';
 import { browserUiStorage } from './browser-ui-storage.ts';
 
 export type AppNavigationState = Readonly<{

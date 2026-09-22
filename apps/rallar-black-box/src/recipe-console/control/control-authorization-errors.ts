@@ -1,4 +1,4 @@
-import { ControlRunManagerHttpError } from '../../control-http-error.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 
 export class RecipeConsoleControlAuthorizationError extends Error {
     readonly reachable = true;
@@ -10,7 +10,7 @@ export class RecipeConsoleControlAuthorizationError extends Error {
     readonly brokerError: unknown;
 
     constructor(
-        controlError: ControlRunManagerHttpError,
+        controlError: ControlHttpError,
         brokerError: unknown
     ) {
         super(controlAuthorizationErrorMessage(brokerError));
@@ -23,13 +23,13 @@ export class RecipeConsoleControlAuthorizationError extends Error {
     }
 }
 
-export class RecipeConsoleControlCredentialTrustError extends ControlRunManagerHttpError {
+export class RecipeConsoleControlCredentialTrustError extends ControlHttpError {
     readonly reachable = true;
     readonly authorizationRequired = true;
     readonly credentialTrustRequired = true;
 
     constructor(
-        controlError: ControlRunManagerHttpError,
+        controlError: ControlHttpError,
         message: string
     ) {
         super(message, controlError.status, controlError.statusText);

@@ -1,6 +1,6 @@
-import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { BrowserRallarMessageSender } from '@shared-web/browser/messages/browser-rallar-message-sender.ts';
 import type { RallarRoomState } from '@shared-web/browser/rallar.ts';
-import type { ALOutboundEnqueueStatus } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
+import { AL_DELIVERY_ADMITTED_STATES, isALDeliveryAdmitted } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarGameHostCapability } from '../director/election.ts';
 import type { RallarGameEnvelope } from '../envelopes.ts';
@@ -67,15 +67,12 @@ export async function publishRallarGameHostCapability<TInput, TIntent, TSnapshot
         reliability: 'best-effort',
         ack: 'none'
     });
-    const sent = isSuccessfulMessageStatus(ws.status);
+    const outcome = await ws.wait({
+        until: AL_DELIVERY_ADMITTED_STATES,
+        timeoutMs: BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS
+    });
+    const sent = isALDeliveryAdmitted(outcome.lifecycle);
     return sent
         ? { status: 'sent', transport: 'ws', ws }
-        : { status: 'failed', transport: 'ws', ws, reason: ws.reason };
-}
-
-function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
-    return status === 'enqueued' ||
-        status === 'accepted' ||
-        status === 'skipped' ||
-        status === 'duplicate';
+        : { status: 'failed', transport: 'ws', ws, reason: outcome.lifecycle.evidence.reason };
 }

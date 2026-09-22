@@ -1,10 +1,17 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import { ControlHttpError } from '../../control-http-error.ts';
 import {
     resolveBlackBoxControlToken,
     shouldRefreshBlackBoxControlToken,
     type BlackBoxControlTokenSession
 } from '../../control-operator-token.ts';
-import { ControlRunManagerHttpError, type ControlRunManagerFetch } from '../../control-run-manager.ts';
+import type { ControlRunManagerFetch } from '../../control-run-manager/control-endpoint-request.ts';
+import {
+    isControlAuthorizationFailure,
+    type ControlHttpRequestFailure,
+    type ControlRequestFailure
+} from '../../control-run-manager/control-request-failure.ts';
 import {
     controlAuthorizationErrorMessage,
     RecipeConsoleControlAuthorizationError,
@@ -24,14 +31,21 @@ export type AuthorizedControlResult<Value> = Readonly<{
     authorization: RecipeConsoleControlAuthorization;
 }>;
 
+export type ControlAuthorizedOperation<Value> = (
+    token: string | undefined,
+    fetchFn: ControlRunManagerFetch
+) => Promise<Either<ControlRequestFailure, Value>>;
+
 export type ControlEndpointAuthorization = {
     requiresAuthorization: boolean;
-    challenge?: ControlRunManagerHttpError;
+    challenge?: ControlHttpRequestFailure;
 };
 
 export type ControlAuthorizedEndpoint = Readonly<{
     response<Value>(
-        operation: (fetchFn: ControlRunManagerFetch) => Promise<Value>,
+        operation: (
+            fetchFn: ControlRunManagerFetch
+        ) => Promise<Either<ControlRequestFailure, Value>>,
         signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
 }>;
@@ -40,18 +54,12 @@ export type ControlAuthorizedTransport = Readonly<{
     createEndpointAuthorization(): ControlEndpointAuthorization;
     createAuthorizedEndpoint(): ControlAuthorizedEndpoint;
     request<Value>(
-        operation: (
-            token: string | undefined,
-            fetchFn: ControlRunManagerFetch
-        ) => Promise<Value>,
+        operation: ControlAuthorizedOperation<Value>,
         endpoint: ControlEndpointAuthorization,
         signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
     response<Value>(
-        operation: (
-            token: string | undefined,
-            fetchFn: ControlRunManagerFetch
-        ) => Promise<Value>,
+        operation: ControlAuthorizedOperation<Value>,
         endpoint: ControlEndpointAuthorization,
         signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
@@ -67,6 +75,12 @@ export type ControlAuthorizedTransportConfig = Readonly<{
     isProtocolCandidate(error: unknown): boolean;
 }>;
 
+/**
+ * The recipe console presents a control failure as a thrown operation error: its query layer, its
+ * Analyze worker boundary and its panels all read `reachable`, `authorizationRequired` and
+ * `credentialTrustRequired` off an error object. This transport is the one place that translates a
+ * control request failure value into that protocol, after deciding whether a token answers it.
+ */
 export function createControlAuthorizedTransport(
     config: ControlAuthorizedTransportConfig
 ): ControlAuthorizedTransport {
@@ -99,9 +113,9 @@ export function createControlAuthorizedTransport(
             if (
                 brokerResponse &&
                 !brokerResponse.ok &&
-                !(error instanceof ControlRunManagerHttpError)
+                !(error instanceof ControlHttpError)
             ) {
-                throw new ControlRunManagerHttpError(
+                throw new ControlHttpError(
                     controlAuthorizationErrorMessage(error),
                     brokerResponse.status,
                     brokerResponse.statusText
@@ -117,15 +131,16 @@ export function createControlAuthorizedTransport(
     }
 
     async function request<Value>(
-        operation: (
-            token: string | undefined,
-            fetchFn: ControlRunManagerFetch
-        ) => Promise<Value>,
+        operation: ControlAuthorizedOperation<Value>,
         endpoint: ControlEndpointAuthorization,
         signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>> {
         throwIfControlAborted(signal);
         const fetchFn = controlFetchWithSignal(config.fetchFn, signal);
+        const attemptWithToken = (
+            token: string | undefined
+        ): Promise<Either<ControlRequestFailure, Value>> => runControlOperation({ operation, token, fetchFn, signal });
+
         let authorization: RecipeConsoleControlAuthorization = manualToken
             ? 'manual'
             : endpoint.requiresAuthorization && brokeredToken
@@ -141,105 +156,120 @@ export function createControlAuthorizedTransport(
             brokeredToken &&
             shouldRefreshBlackBoxControlToken(brokeredToken)
         ) {
-            try {
-                token = await resolveBrokeredToken(signal);
-                throwIfControlAborted(signal);
-            }
-            catch (brokerError) {
-                if (isControlAbortError(brokerError)) {
-                    throw brokerError;
-                }
-                if (endpoint.challenge) {
-                    throw new RecipeConsoleControlAuthorizationError(
-                        endpoint.challenge,
-                        brokerError
-                    );
-                }
-                throw brokerError;
-            }
+            token = await refreshTokenBeforeRequest(endpoint, signal);
             authorization = 'brokered';
         }
 
-        try {
-            throwIfControlAborted(signal);
-            const value = await operation(token, fetchFn);
-            throwIfControlAborted(signal);
-            return {
-                value,
-                authorization
-            };
-        }
-        catch (error) {
-            throwIfControlAborted(signal);
-            if (manualToken || !isAuthorizationError(error)) {
-                throw error;
-            }
-            if (!config.credentialPolicy.allowBrokeredToken) {
-                if (config.authSession || configuredManualToken) {
-                    throw new RecipeConsoleControlCredentialTrustError(
-                        error,
-                        config.credentialPolicy.blockedMessage ??
-                            'Automatic control credentials are blocked for this endpoint source.'
-                    );
-                }
-                throw error;
-            }
-            if (!config.authSession) {
-                throw error;
-            }
+        const outcome = await attemptWithToken(token);
+        return outcome.fold(
+            (failure) =>
+                answerControlFailure({
+                    failure,
+                    endpoint,
+                    requestToken: token,
+                    attemptWithToken,
+                    signal
+                }),
+            async (value) => ({ value, authorization })
+        );
+    }
 
-            endpoint.requiresAuthorization = true;
-            endpoint.challenge = error;
-            if (token === undefined && brokeredToken) {
-                try {
-                    throwIfControlAborted(signal);
-                    const value = await operation(brokeredToken.token, fetchFn);
-                    throwIfControlAborted(signal);
-                    return {
-                        value,
-                        authorization: 'brokered'
-                    };
-                }
-                catch (cachedTokenError) {
-                    throwIfControlAborted(signal);
-                    if (
-                        isControlAbortError(cachedTokenError) ||
-                        !isAuthorizationError(cachedTokenError)
-                    ) {
-                        throw cachedTokenError;
-                    }
-                    endpoint.challenge = cachedTokenError;
-                }
+    async function refreshTokenBeforeRequest(
+        endpoint: ControlEndpointAuthorization,
+        signal: AbortSignal | undefined
+    ): Promise<string> {
+        try {
+            const token = await resolveBrokeredToken(signal);
+            throwIfControlAborted(signal);
+            return token;
+        }
+        catch (brokerError) {
+            if (isControlAbortError(brokerError) || !endpoint.challenge) {
+                throw brokerError;
             }
-            brokeredToken = undefined;
-            try {
-                token = await resolveBrokeredToken(signal);
-                throwIfControlAborted(signal);
-            }
-            catch (brokerError) {
-                if (isControlAbortError(brokerError)) {
-                    throw brokerError;
-                }
-                throw new RecipeConsoleControlAuthorizationError(
-                    endpoint.challenge ?? error,
-                    brokerError
+            throw new RecipeConsoleControlAuthorizationError(
+                toControlHttpError(endpoint.challenge),
+                brokerError
+            );
+        }
+    }
+
+    async function answerControlFailure<Value>(
+        input: Readonly<{
+            failure: ControlRequestFailure;
+            endpoint: ControlEndpointAuthorization;
+            requestToken: string | undefined;
+            attemptWithToken(token: string | undefined): Promise<Either<ControlRequestFailure, Value>>;
+            signal: AbortSignal | undefined;
+        }>
+    ): Promise<AuthorizedControlResult<Value>> {
+        if (manualToken || !isControlAuthorizationFailure(input.failure)) {
+            throw toControlOperationError(input.failure);
+        }
+        if (!config.credentialPolicy.allowBrokeredToken) {
+            if (config.authSession || configuredManualToken) {
+                throw new RecipeConsoleControlCredentialTrustError(
+                    toControlHttpError(input.failure),
+                    config.credentialPolicy.blockedMessage ??
+                        'Automatic control credentials are blocked for this endpoint source.'
                 );
             }
+            throw toControlOperationError(input.failure);
+        }
+        if (!config.authSession) {
+            throw toControlOperationError(input.failure);
+        }
+
+        input.endpoint.requiresAuthorization = true;
+        input.endpoint.challenge = input.failure;
+        if (input.requestToken === undefined && brokeredToken) {
+            const cached = toCachedTokenAttempt(
+                await input.attemptWithToken(brokeredToken.token)
+            );
+            if (cached.kind === 'value') {
+                return { value: cached.value, authorization: 'brokered' };
+            }
+            if (cached.kind === 'failure') {
+                throw toControlOperationError(cached.failure);
+            }
+            input.endpoint.challenge = cached.challenge;
+        }
+        brokeredToken = undefined;
+        const refreshedToken = await refreshTokenAfterChallenge(
+            input.endpoint.challenge ?? input.failure,
+            input.signal
+        );
+        const retried = await input.attemptWithToken(refreshedToken);
+        return retried.fold(
+            (retriedFailure) => {
+                throw toControlOperationError(retriedFailure);
+            },
+            async (value) => ({ value, authorization: 'brokered' as const })
+        );
+    }
+
+    async function refreshTokenAfterChallenge(
+        challenge: ControlHttpRequestFailure,
+        signal: AbortSignal | undefined
+    ): Promise<string> {
+        try {
+            const token = await resolveBrokeredToken(signal);
             throwIfControlAborted(signal);
-            const value = await operation(token, fetchFn);
-            throwIfControlAborted(signal);
-            return {
-                value,
-                authorization: 'brokered'
-            };
+            return token;
+        }
+        catch (brokerError) {
+            if (isControlAbortError(brokerError)) {
+                throw brokerError;
+            }
+            throw new RecipeConsoleControlAuthorizationError(
+                toControlHttpError(challenge),
+                brokerError
+            );
         }
     }
 
     async function response<Value>(
-        operation: (
-            token: string | undefined,
-            fetchFn: ControlRunManagerFetch
-        ) => Promise<Value>,
+        operation: ControlAuthorizedOperation<Value>,
         endpoint: ControlEndpointAuthorization,
         signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>> {
@@ -293,9 +323,47 @@ export function createControlAuthorizedTransport(
     };
 }
 
-function isAuthorizationError(
-    error: unknown
-): error is ControlRunManagerHttpError {
-    return error instanceof ControlRunManagerHttpError &&
-        (error.status === 401 || error.status === 403);
+/**
+ * What a retry with the cached brokered token produced: the value, the next authorization
+ * challenge, or a failure no token answers.
+ */
+type CachedTokenAttempt<Value> =
+    | Readonly<{ kind: 'value'; value: Value; }>
+    | Readonly<{ kind: 'challenge'; challenge: ControlHttpRequestFailure; }>
+    | Readonly<{ kind: 'failure'; failure: ControlRequestFailure; }>;
+
+function toCachedTokenAttempt<Value>(
+    cached: Either<ControlRequestFailure, Value>
+): CachedTokenAttempt<Value> {
+    return cached.fold<CachedTokenAttempt<Value>>(
+        (failure) =>
+            isControlAuthorizationFailure(failure)
+                ? { kind: 'challenge', challenge: failure }
+                : { kind: 'failure', failure },
+        (value) => ({ kind: 'value', value })
+    );
+}
+
+async function runControlOperation<Value>(
+    input: Readonly<{
+        operation: ControlAuthorizedOperation<Value>;
+        token: string | undefined;
+        fetchFn: ControlRunManagerFetch;
+        signal: AbortSignal | undefined;
+    }>
+): Promise<Either<ControlRequestFailure, Value>> {
+    throwIfControlAborted(input.signal);
+    const outcome = await input.operation(input.token, input.fetchFn);
+    throwIfControlAborted(input.signal);
+    return outcome;
+}
+
+function toControlOperationError(failure: ControlRequestFailure): Error {
+    return failure.kind === 'http'
+        ? toControlHttpError(failure)
+        : new Error(failure.message);
+}
+
+function toControlHttpError(failure: ControlHttpRequestFailure): ControlHttpError {
+    return new ControlHttpError(failure.message, failure.status, failure.statusText);
 }

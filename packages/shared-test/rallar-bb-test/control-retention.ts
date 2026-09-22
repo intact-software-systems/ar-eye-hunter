@@ -1,9 +1,9 @@
 import {
-    assertControlRetentionString as assertString,
-    boundedControlRetentionArray as boundedArray,
-    canonicalControlRetentionJson as canonicalJson,
+    assertControlRetentionString,
+    boundedControlRetentionArray,
+    canonicalControlRetentionJson,
     CONTROL_RETENTION_PLAN_LIMITS,
-    controlRetentionLimitError as limitError
+    controlRetentionLimitError
 } from './control-retention-canonical.ts';
 import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from './control-snapshots.ts';
 import type { ControlFleetRunReport } from './fleet-report.ts';
@@ -13,67 +13,67 @@ export {
     ControlRetentionPlanLimitError
 } from './control-retention-canonical.ts';
 
-export type ControlRetentionIssuedRunTokenMetadata = Readonly<{
-    agentId: string;
-    issuedAtEpochMs: number;
-    expiresAtEpochMs: number;
-}>;
+export interface ControlRetentionIssuedRunTokenMetadata {
+    readonly agentId: string;
+    readonly issuedAtEpochMs: number;
+    readonly expiresAtEpochMs: number;
+}
 
-export type ControlRetentionRunSafety = Readonly<{
-    runId: string;
-    connectedAgentIds: readonly string[];
-    issuedRunTokens: readonly ControlRetentionIssuedRunTokenMetadata[];
-    runStateFingerprint: string;
-    issuedRunTokenStateFingerprint: string;
-}>;
+export interface ControlRetentionRunSafety {
+    readonly runId: string;
+    readonly connectedAgentIds: readonly string[];
+    readonly issuedRunTokens: readonly ControlRetentionIssuedRunTokenMetadata[];
+    readonly runStateFingerprint: string;
+    readonly issuedRunTokenStateFingerprint: string;
+}
 
-export type ControlRetentionPlanInput = Readonly<{
-    maxRuns?: number;
-    runs: readonly ControlRunSnapshot[];
-    distributedRuns?: readonly ControlDistributedRunSnapshot[];
-    fleetReports?: readonly ControlFleetRunReport[];
-    runSafety: readonly ControlRetentionRunSafety[];
-}>;
+export interface ControlRetentionPlanInput {
+    readonly maxRuns?: number;
+    readonly runs: readonly ControlRunSnapshot[];
+    readonly distributedRuns?: readonly ControlDistributedRunSnapshot[];
+    readonly fleetReports?: readonly ControlFleetRunReport[];
+    readonly runSafety: readonly ControlRetentionRunSafety[];
+}
 
-export type ControlRetentionCandidate = Readonly<{
-    runId: string;
-    createdAtEpochMs: number;
-    updatedAtEpochMs: number;
-    connectedAgentCount: number;
-    issuedRunTokenCount: number;
-    distributedRuns: readonly Readonly<{
+export interface ControlRetentionCandidate {
+    readonly runId: string;
+    readonly createdAtEpochMs: number;
+    readonly updatedAtEpochMs: number;
+    readonly connectedAgentCount: number;
+    readonly issuedRunTokenCount: number;
+    readonly distributedRuns: readonly Readonly<{
         distributedRunId: string;
         state: ControlDistributedRunSnapshot['state'];
     }>[];
-    fleetReportIds: readonly string[];
-}>;
+    readonly fleetReportIds: readonly string[];
+}
 
-export type ControlRetentionPlan = Readonly<{
-    maxRuns: number | undefined;
-    currentRuns: number;
-    projectedRetainedRuns: number;
-    candidates: readonly ControlRetentionCandidate[];
-    deletedRunIds: readonly string[];
-    distributedRunIds: readonly string[];
-    fleetReportIds: readonly string[];
-    canonicalConsequence: string;
-}>;
+export interface ControlRetentionPlan {
+    readonly maxRuns: number | undefined;
+    readonly currentRuns: number;
+    readonly projectedRetainedRuns: number;
+    readonly candidates: readonly ControlRetentionCandidate[];
+    readonly deletedRunIds: readonly string[];
+    readonly distributedRunIds: readonly string[];
+    readonly fleetReportIds: readonly string[];
+    readonly canonicalConsequence: string;
+}
 
-type CandidateConsequence = Readonly<{
-    run: ControlRunSnapshot;
-    safety: ControlRetentionRunSafety;
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-    fleetReports: readonly ControlFleetRunReport[];
-}>;
+interface CandidateConsequence {
+    readonly run: ControlRunSnapshot;
+    readonly safety: ControlRetentionRunSafety;
+    readonly distributedRuns: readonly ControlDistributedRunSnapshot[];
+    readonly fleetReports: readonly ControlFleetRunReport[];
+}
 
 export function planControlRunRetention(
     input: ControlRetentionPlanInput
 ): ControlRetentionPlan {
     assertMaxRuns(input.maxRuns);
-    const runs = boundedArray(input.runs, 'runs');
-    const distributedRuns = boundedArray(input.distributedRuns ?? [], 'distributedRuns');
-    const fleetReports = boundedArray(input.fleetReports ?? [], 'fleetReports');
-    const runSafety = boundedArray(input.runSafety, 'runSafety');
+    const runs = boundedControlRetentionArray(input.runs, 'runs');
+    const distributedRuns = boundedControlRetentionArray(input.distributedRuns ?? [], 'distributedRuns');
+    const fleetReports = boundedControlRetentionArray(input.fleetReports ?? [], 'fleetReports');
+    const runSafety = boundedControlRetentionArray(input.runSafety, 'runSafety');
     assertUniqueRecords(runs, 'runId', 'control run');
     assertUniqueRecords(distributedRuns, 'distributedRunId', 'distributed run');
     assertUniqueRecords(fleetReports, 'distributedRunId', 'fleet report');
@@ -81,43 +81,23 @@ export function planControlRunRetention(
     const safetyByRunId = validateRunSafety(runs, runSafety);
     validateRunTimes(runs);
 
-    const keepIds = retainedRunIds(runs, input.maxRuns);
+    const keepIds = resolveRetainedControlRunIds(runs, input.maxRuns);
     const deletedRuns = keepIds === undefined
         ? []
         : runs.filter((run) => !keepIds.has(run.runId));
     if (deletedRuns.length > CONTROL_RETENTION_PLAN_LIMITS.candidates) {
-        throw limitError('candidates');
+        throw controlRetentionLimitError('candidates');
     }
 
-    const deletedIds = new Set(deletedRuns.map((run) => run.runId));
-    const linkedDistributedRuns = distributedRuns.filter((run) => deletedIds.has(run.controlRunId));
-    const distributedByControlId = new Map<string, ControlDistributedRunSnapshot[]>();
-    for (const run of linkedDistributedRuns) {
-        const linked = distributedByControlId.get(run.controlRunId) ?? [];
-        linked.push(run);
-        distributedByControlId.set(run.controlRunId, linked);
-    }
-    const fleetByDistributedId = new Map(
-        fleetReports.map((report) => [report.distributedRunId, report])
-    );
-    const consequences = deletedRuns.map((run): CandidateConsequence => {
-        const linked = distributedByControlId.get(run.runId) ?? [];
-        return {
-            run,
-            safety: safetyByRunId.get(run.runId)!,
-            distributedRuns: linked,
-            fleetReports: linked.flatMap((item) => {
-                const report = fleetByDistributedId.get(item.distributedRunId);
-                return report ? [report] : [];
-            })
-        };
+    const { consequences, candidates, distributedRunIds, fleetReportIds } = toRetentionConsequences({
+        deletedRuns,
+        distributedRuns,
+        fleetReports,
+        safetyByRunId
     });
-    const candidates = consequences.map(toCandidate);
-    const distributedRunIds = linkedDistributedRuns.map((run) => run.distributedRunId);
-    const fleetReportIds = distributedRunIds.filter((id) => fleetByDistributedId.has(id));
     const currentRuns = runs.length;
     const projectedRetainedRuns = currentRuns - deletedRuns.length;
-    const canonicalConsequence = canonicalJson({
+    const canonicalConsequence = canonicalControlRetentionJson({
         schemaVersion: 1,
         maxRuns: input.maxRuns ?? null,
         currentRuns,
@@ -140,10 +120,10 @@ export function planControlRunRetention(
     };
 }
 
-function retainedRunIds(
-    runs: readonly ControlRunSnapshot[],
+export function resolveRetainedControlRunIds(
+    runs: readonly Pick<ControlRunSnapshot, 'runId' | 'updatedAtEpochMs'>[],
     maxRuns: number | undefined
-): Set<string> | undefined {
+): ReadonlySet<string> | undefined {
     if (maxRuns === undefined || maxRuns <= 0 || runs.length <= maxRuns) {
         return undefined;
     }
@@ -205,17 +185,17 @@ function validateRunSafety(
         if (!runIds.has(entry.runId)) {
             throw new TypeError(`Unknown run safety ${entry.runId}.`);
         }
-        const connectedAgentIds = boundedArray(entry.connectedAgentIds, 'connectedAgentIds');
+        const connectedAgentIds = boundedControlRetentionArray(entry.connectedAgentIds, 'connectedAgentIds');
         assertUniqueStrings(connectedAgentIds, 'connected agent');
-        const tokens = boundedArray(entry.issuedRunTokens, 'issuedRunTokens');
-        assertString(entry.runStateFingerprint, 'run state fingerprint');
-        assertString(entry.issuedRunTokenStateFingerprint, 'issued token fingerprint');
+        const tokens = boundedControlRetentionArray(entry.issuedRunTokens, 'issuedRunTokens');
+        assertControlRetentionString(entry.runStateFingerprint, 'run state fingerprint');
+        assertControlRetentionString(entry.issuedRunTokenStateFingerprint, 'issued token fingerprint');
         for (const token of tokens) {
             const keys = Object.keys(token).sort(compareText);
             if (keys.join(',') !== 'agentId,expiresAtEpochMs,issuedAtEpochMs') {
                 throw new TypeError('Issued token metadata must contain only secret-free fields.');
             }
-            assertString(token.agentId, 'issued token agentId');
+            assertControlRetentionString(token.agentId, 'issued token agentId');
             assertSafeInteger(token.issuedAtEpochMs, 'issuedAtEpochMs');
             assertSafeInteger(token.expiresAtEpochMs, 'expiresAtEpochMs');
         }
@@ -258,7 +238,7 @@ function assertUniqueRecords<T>(
             throw new TypeError(`${label} must be an object.`);
         }
         const identity = value[key];
-        assertString(identity, `${label} identity`);
+        assertControlRetentionString(identity, `${label} identity`);
         return identity;
     });
     assertUniqueStrings(identities, label);
@@ -267,7 +247,7 @@ function assertUniqueRecords<T>(
 function assertUniqueStrings(values: readonly string[], label: string): void {
     const seen = new Set<string>();
     for (const value of values) {
-        assertString(value, label);
+        assertControlRetentionString(value, label);
         if (seen.has(value)) {
             throw new TypeError(`Duplicate ${label} ${value}.`);
         }
@@ -286,4 +266,51 @@ function compareTokenMetadata(
 
 function compareText(left: string, right: string): number {
     return left < right ? -1 : left > right ? 1 : 0;
+}
+
+interface RetentionConsequenceInput {
+    readonly deletedRuns: readonly ControlRunSnapshot[];
+    readonly distributedRuns: readonly ControlDistributedRunSnapshot[];
+    readonly fleetReports: readonly ControlFleetRunReport[];
+    readonly safetyByRunId: ReadonlyMap<string, ControlRetentionRunSafety>;
+}
+
+interface RetentionConsequences {
+    readonly consequences: readonly CandidateConsequence[];
+    readonly candidates: readonly ControlRetentionCandidate[];
+    readonly distributedRunIds: readonly string[];
+    readonly fleetReportIds: readonly string[];
+}
+
+function toRetentionConsequences(
+    { deletedRuns, distributedRuns, fleetReports, safetyByRunId }: RetentionConsequenceInput
+): RetentionConsequences {
+    const deletedIds = new Set(deletedRuns.map((run) => run.runId));
+    const linkedDistributedRuns = distributedRuns.filter((run) => deletedIds.has(run.controlRunId));
+    const distributedByControlId = new Map<string, ControlDistributedRunSnapshot[]>();
+    for (const run of linkedDistributedRuns) {
+        const linked = distributedByControlId.get(run.controlRunId) ?? [];
+        linked.push(run);
+        distributedByControlId.set(run.controlRunId, linked);
+    }
+    const fleetByDistributedId = new Map(
+        fleetReports.map((report) => [report.distributedRunId, report])
+    );
+    const consequences = deletedRuns.map((run): CandidateConsequence => {
+        const linked = distributedByControlId.get(run.runId) ?? [];
+        return {
+            run,
+            safety: safetyByRunId.get(run.runId)!,
+            distributedRuns: linked,
+            fleetReports: linked.flatMap((item) => {
+                const report = fleetByDistributedId.get(item.distributedRunId);
+                return report ? [report] : [];
+            })
+        };
+    });
+    const candidates = consequences.map(toCandidate);
+    const distributedRunIds = linkedDistributedRuns.map((run) => run.distributedRunId);
+    const fleetReportIds = distributedRunIds.filter((id) => fleetByDistributedId.has(id));
+
+    return { consequences, candidates, distributedRunIds, fleetReportIds };
 }

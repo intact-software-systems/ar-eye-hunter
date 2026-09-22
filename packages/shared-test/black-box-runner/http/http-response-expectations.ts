@@ -10,9 +10,7 @@ import {
 } from '../../json-compare/compare-json-values.ts';
 import type { ControlResultEnvelope } from '../../rallar-bb-test/control-protocol.ts';
 import { toInteractionOutputFields } from '../execution/black-box-scenario-results.ts';
-import type {
-    RallarRemoteBrowserConfig
-} from '../rallar-remote-browser-provider.ts';
+import type { RallarRemoteBrowserConfig } from '../remote-browser/resolve-rallar-remote-browser-config.ts';
 import { normalizeBlackBoxResponseHeaders } from './normalize-black-box-response-headers.ts';
 
 interface HttpInteractionRequest {

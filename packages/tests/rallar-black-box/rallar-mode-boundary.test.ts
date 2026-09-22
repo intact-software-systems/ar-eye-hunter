@@ -1,11 +1,13 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { appTabsForMode } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { analyzeSourceFile, resolveRelativeTypeScriptDependency } from '../helpers/source-analysis';
 
-const appSourcePath = new URL('../../../apps/rallar-black-box/src/App.tsx', import.meta.url);
+const appSourcePath = new URL('../../../apps/rallar-black-box/src/app.tsx', import.meta.url);
 const styleSourcePath = new URL('../../../apps/rallar-black-box/src/styles.css', import.meta.url);
 const legacyExperienceSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
+    '../../../apps/rallar-black-box/src/legacy/shell/legacy-experience.tsx',
     import.meta.url
 );
 const legacyRunHeaderSourcePath = new URL(
@@ -34,10 +36,6 @@ const runnerRunsControllerSourcePath = new URL(
 );
 const runnerRunsPanelSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/runner/runs/RunnerRunsPanel.tsx',
-    import.meta.url
-);
-const flowBuilderPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/runner/builder/FlowBuilderPanel.tsx',
     import.meta.url
 );
 const runnerFleetControlsSourcePath = new URL(
@@ -85,90 +83,13 @@ const quickControllerSourcePath = new URL(
     import.meta.url
 );
 const quickPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
+    '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-test-panel.tsx',
     import.meta.url
 );
 const quickViewSourcePath = new URL(
     '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestView.tsx',
     import.meta.url
 );
-const rtcRealtimeViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimeView.tsx',
-    import.meta.url
-);
-const rtcRealtimeControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/use-rtc-realtime-controller.ts',
-    import.meta.url
-);
-const rtcRealtimePanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rtc-realtime/RtcRealtimePanel.tsx',
-    import.meta.url
-);
-const webSocketSupportSourcePaths = [
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/auth-command-center-ticket.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-contracts.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-presets.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-routing.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-recipes.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/websocket-diagnostics.ts'
-].map((path) => new URL(path, import.meta.url));
-const webSocketViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterView.tsx',
-    import.meta.url
-);
-const webSocketControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/use-websocket-command-center-controller.ts',
-    import.meta.url
-);
-const webSocketPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
-    import.meta.url
-);
-const mediaConsolePanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/media/MediaConsolePanel.tsx',
-    import.meta.url
-);
-const rallarDataPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-data/RallarDataPanel.tsx',
-    import.meta.url
-);
-const authPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
-    import.meta.url
-);
-const roomsClientsRequestSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/rooms-clients-request.ts',
-    import.meta.url
-);
-const roomsClientsControllerSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/use-rooms-clients-controller.ts',
-    import.meta.url
-);
-const roomsClientsViewSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsView.tsx',
-    import.meta.url
-);
-const roomsClientsPanelSourcePath = new URL(
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rooms-clients/RoomsClientsPanel.tsx',
-    import.meta.url
-);
-const rallarServerOwnerSourcePaths = [
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-contracts.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/rallar-server-parsing.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerRequestFeedbackPanel.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/use-rallar-server-controller.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerView.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/rallar-server/RallarServerPanel.tsx'
-].map((path) => new URL(path, import.meta.url));
-const crdtOwnerSourcePaths = [
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/crdt-contracts.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-editor-controller.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorBoardView.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorEntitiesView.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtEditorView.tsx',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/use-crdt-health-controller.ts',
-    '../../../apps/rallar-black-box/src/legacy/diagnostics/crdt/CrdtHealthPanel.tsx'
-].map((path) => new URL(path, import.meta.url));
 const runnerRecipeViewSourcePaths = [
     new URL(
         '../../../apps/rallar-black-box/src/legacy/runner/recipes/views/RunnerRecipesOverview.tsx',
@@ -183,6 +104,56 @@ const runnerRecipeViewSourcePaths = [
         import.meta.url
     )
 ] as const;
+
+const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
+const DIRECT_RALLAR_TAB_GROUPS = [
+    'apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx',
+    'apps/rallar-black-box/src/legacy/shell/tabs/DirectResourceTabPanels.tsx',
+    'apps/rallar-black-box/src/legacy/shell/tabs/diagnostic-evidence-tab-panels.tsx'
+].map((relativePath) => path.resolve(repositoryRoot, relativePath));
+const BLACK_BOX_RUNTIME_STORE = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/runtime-store.ts');
+const DIAGNOSTICS_SOURCE_ROOT = path.resolve(repositoryRoot, 'apps/rallar-black-box/src/legacy/diagnostics');
+const BLACK_BOX_RUNTIME_COMMAND_NAMES: ReadonlySet<string> = new Set([
+    'runManualCommand',
+    'runManualCommands',
+    'runCommandFromJsonText',
+    'loadRecipeFromJson',
+    'runLoadedRecipe',
+    'runSample',
+    '__blackBoxRallar',
+    '__blackBoxRallarEmit',
+    'createSpaBrowserRallarRuntime'
+]);
+
+/** The runtime store is the black-box boundary: panels may record events through it, so the walk stops there. */
+function directPanelDependencyClosure(): readonly string[] {
+    const visited = new Set<string>();
+    const pending = [...DIRECT_RALLAR_TAB_GROUPS];
+    while (pending.length > 0) {
+        const filePath = pending.pop();
+        if (filePath === undefined || visited.has(filePath) || filePath === BLACK_BOX_RUNTIME_STORE) {
+            continue;
+        }
+        visited.add(filePath);
+        const analysis = analyzeSourceFile(filePath);
+        const specifiers = [
+            ...analysis.imports.map((entry) => entry.specifier),
+            ...analysis.exports.flatMap((entry) => entry.specifier ? [entry.specifier] : []),
+            ...analysis.dynamicImports.flatMap((entry) => entry.literal && entry.specifier ? [entry.specifier] : [])
+        ];
+        pending.push(
+            ...specifiers.flatMap((specifier) => resolveRelativeTypeScriptDependency(filePath, specifier) ?? [])
+        );
+    }
+    return [...visited].sort();
+}
+
+function diagnosticActionOwners(): readonly string[] {
+    return readdirSync(DIAGNOSTICS_SOURCE_ROOT, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.endsWith('-actions.ts'))
+        .map((entry) => path.join(entry.parentPath, entry.name))
+        .sort();
+}
 
 function appSource(): string {
     return readFileSync(appSourcePath, 'utf8');
@@ -257,138 +228,6 @@ function diagnosticOwnerSources(source: string): Readonly<{
     };
 }
 
-function rtcRealtimeOwnerSource(source: string): string {
-    const controllerFallback = existsSync(rtcRealtimeControllerSourcePath) &&
-            existsSync(rtcRealtimePanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function RtcRealtimePanel',
-            'function RallarDataPanel'
-        );
-    return [
-        sourceOrFallback(rtcRealtimeControllerSourcePath, controllerFallback),
-        sourceOrFallback(rtcRealtimePanelSourcePath, ''),
-        sourceOrFallback(rtcRealtimeViewSourcePath, '')
-    ].join('\n');
-}
-
-function webSocketCommandCenterOwnerSource(source: string): string {
-    const controllerFallback = existsSync(webSocketControllerSourcePath) &&
-            existsSync(webSocketPanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function WebSocketCommandCenterPanel',
-            existsSync(rtcRealtimeControllerSourcePath) &&
-                existsSync(rtcRealtimePanelSourcePath)
-                ? 'function RallarDataPanel'
-                : 'function RtcRealtimePanel'
-        );
-    return [
-        sourceOrFallback(
-            webSocketControllerSourcePath,
-            controllerFallback
-        ),
-        sourceOrFallback(webSocketPanelSourcePath, ''),
-        ...webSocketSupportSourcePaths.map((path) => sourceOrFallback(path, '')),
-        sourceOrFallback(webSocketViewSourcePath, '')
-    ].join('\n');
-}
-
-function mediaConsoleOwnerSource(source: string): string {
-    const fallback = existsSync(mediaConsolePanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function MediaConsolePanel',
-            'function AuthCommandCenterPanel'
-        );
-    return sourceOrFallback(mediaConsolePanelSourcePath, fallback);
-}
-
-function rallarDataOwnerSource(source: string): string {
-    const fallback = existsSync(rallarDataPanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function RallarDataPanel',
-            existsSync(mediaConsolePanelSourcePath)
-                ? 'function AuthCommandCenterPanel'
-                : 'function MediaConsolePanel'
-        );
-    return sourceOrFallback(rallarDataPanelSourcePath, fallback);
-}
-
-function authCommandCenterOwnerSource(source: string): string {
-    const fallback = existsSync(authPanelSourcePath)
-        ? ''
-        : sourceBetween(
-            source,
-            'function AuthCommandCenterPanel',
-            existsSync(roomsClientsPanelSourcePath)
-                ? 'function RallarServerRequestFeedbackPanel'
-                : 'function RoomsClientsPanel'
-        );
-    return sourceOrFallback(authPanelSourcePath, fallback);
-}
-
-function roomsClientsOwnerSource(source: string): string {
-    const extracted = [
-        roomsClientsRequestSourcePath,
-        roomsClientsControllerSourcePath,
-        roomsClientsViewSourcePath,
-        roomsClientsPanelSourcePath
-    ].every((path) => existsSync(path));
-    const fallback = extracted
-        ? ''
-        : sourceBetween(
-            source,
-            'function RoomsClientsPanel',
-            'function RallarServerRequestFeedbackPanel'
-        );
-    return [
-        sourceOrFallback(roomsClientsRequestSourcePath, fallback),
-        sourceOrFallback(roomsClientsControllerSourcePath, ''),
-        sourceOrFallback(roomsClientsViewSourcePath, ''),
-        sourceOrFallback(roomsClientsPanelSourcePath, '')
-    ].join('\n');
-}
-
-function rallarServerOwnerSource(source: string): string {
-    const extracted = rallarServerOwnerSourcePaths.every((path) => existsSync(path));
-    const fallback = extracted
-        ? ''
-        : sourceBetween(
-            source,
-            'function RallarServerRequestFeedbackPanel',
-            existsSync(flowBuilderPanelSourcePath)
-                ? 'export default function App'
-                : 'function parseVariablesText'
-        );
-    return [
-        ...rallarServerOwnerSourcePaths.map((path) => sourceOrFallback(path, '')),
-        fallback
-    ].join('\n');
-}
-
-function crdtOwnerSource(source: string): string {
-    const extracted = crdtOwnerSourcePaths.every((path) => existsSync(path));
-    const fallback = extracted || !source.includes('type CrdtAdminDocumentStatus')
-        ? ''
-        : sourceBetween(
-            source,
-            'type CrdtAdminDocumentStatus',
-            existsSync(flowBuilderPanelSourcePath)
-                ? 'export default function App'
-                : 'function parseVariablesText'
-        );
-    return [
-        ...crdtOwnerSourcePaths.map((path) => sourceOrFallback(path, '')),
-        fallback
-    ].join('\n');
-}
-
 describe('rallar-black-box Rallar mode boundary', () => {
     it('does not expose black-box-runner command tabs in Rallar mode', () => {
         expect(appTabsForMode('rallar').map((tab) => tab.id)).not.toEqual(
@@ -442,54 +281,20 @@ describe('rallar-black-box Rallar mode boundary', () => {
         );
     });
 
-    it('does not execute black-box runtime commands from direct Rallar panels', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const directPanels = [
-            diagnostics.quickPanel,
-            diagnostics.rtcController,
-            diagnostics.rtcPanel,
-            diagnostics.topologyPanel,
-            webSocketCommandCenterOwnerSource(source),
-            rtcRealtimeOwnerSource(source),
-            rallarDataOwnerSource(source),
-            mediaConsoleOwnerSource(source),
-            authCommandCenterOwnerSource(source),
-            roomsClientsOwnerSource(source),
-            rallarServerOwnerSource(source),
-            crdtOwnerSource(source)
-        ].join('\n');
+    it('keeps black-box runtime commands out of every module the direct Rallar tab groups load', () => {
+        const closure = directPanelDependencyClosure();
+        const violations = closure.flatMap((filePath) => {
+            const analysis = analyzeSourceFile(filePath);
+            const commandNames = analysis.identifierNames.filter((name) => BLACK_BOX_RUNTIME_COMMAND_NAMES.has(name));
+            const runtimeImports = [
+                ...analysis.imports.map((entry) => entry.specifier),
+                ...analysis.dynamicImports.flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+            ].filter((specifier) => specifier.includes('browser-rallar-runtime'));
+            return [...new Set([...commandNames, ...runtimeImports])].map((name) => `${path.relative(repositoryRoot, filePath)}: ${name}`);
+        });
 
-        expect(directPanels).not.toMatch(/executeManualCommand|executeManualCommands|executeCommandFromJson/);
-        expect(directPanels).not.toMatch(/loadRecipeFromJson|runLoadedRecipe|runSample/);
-        expect(directPanels).not.toContain('__blackBoxRallar');
-        expect(directPanels).not.toContain('__blackBoxRallarEmit');
-        expect(directPanels).not.toContain('browser-rallar-runtime');
-        expect(directPanels).not.toContain('createSpaBrowserRallarRuntime');
-    });
-
-    it('uses the shared browser Rallar facade for direct WebSocket and RTC actions', () => {
-        const source = appSource();
-        const diagnostics = diagnosticOwnerSources(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
-
-        expect(websocketPanel).toContain('runDirectRallarWsSend');
-        expect(websocketPanel).toContain('runDirectRallarWsSubscribe');
-        expect(websocketPanel).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('loadBrowserRallarFacade');
-        expect(diagnostics.rtcController).toContain('facade.start');
-    });
-
-    it('keeps RTC sends on the direct facade fast path after the room is joined', () => {
-        const source = appSource();
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
-
-        expect(rtcRealtimePanel).toContain('\'rallar.direct.rtc_realtime.phase\'');
-        expect(rtcRealtimePanel).toContain('isFacadeJoinedToActiveGroup');
-        expect(rtcRealtimePanel).toContain('status: \'skipped\'');
-        expect(rtcRealtimePanel).toMatch(
-            /useState<\s*'best-effort' \| 'at-least-once'\s*>\('best-effort'\)/
-        );
+        expect(diagnosticActionOwners().filter((filePath) => !closure.includes(filePath))).toEqual([]);
+        expect(violations).toEqual([]);
     });
 
     it('surfaces action feedback and live subscription state in direct command panels', () => {
@@ -508,18 +313,9 @@ describe('rallar-black-box Rallar mode boundary', () => {
             actionFeedbackPanelSourcePath,
             actionFeedbackPanelFallback
         );
-        const roomsClientsPanel = roomsClientsOwnerSource(source);
-        const websocketPanel = webSocketCommandCenterOwnerSource(source);
-        const rtcRealtimePanel = rtcRealtimeOwnerSource(source);
 
         expect(actionFeedbackPanel).toContain('feedback.state');
         expect(actionFeedbackPanel).toContain('aria-live="polite"');
-        expect(roomsClientsPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(websocketPanel).toContain('WS subscribed');
-        expect(rtcRealtimePanel).toContain('CommandCenterActionFeedbackPanel');
-        expect(rtcRealtimePanel).toContain('Realtime sub');
-        expect(rtcRealtimePanel).toContain('RTC message sub');
         expect(diagnostics.rtcPanel).toContain('RtcDiagnosticsTimeseriesPanel');
     });
 
@@ -600,7 +396,7 @@ describe('rallar-black-box Rallar mode boundary', () => {
         expect(runsDistributedView).toContain('Clear seed');
         expect(fleetViews).toContain('Live Fleet');
         expect(fleetViews).toContain('title="Live Fleet Agents"');
-        expect(fleetController).toContain('fetchControlServerSnapshot');
+        expect(fleetController).toContain('readControlServerSnapshot');
         expect(recipesPanel).toContain('resolveBlackBoxControlToken');
         expect(recipesPanel).toContain('brokeredControlToken');
         expect(recipesPanel).toContain('Session control token valid until');

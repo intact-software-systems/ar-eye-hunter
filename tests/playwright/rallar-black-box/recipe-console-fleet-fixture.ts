@@ -249,6 +249,8 @@ function controlAgent(
             ...GROUP,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: BASE_EPOCH_MS + 8_000 - index,
             ...(resolved
                 ? {
                     region: `region-${pad(index % 30)}`,

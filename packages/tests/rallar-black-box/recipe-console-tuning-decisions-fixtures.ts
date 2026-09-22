@@ -1,17 +1,24 @@
+import {
+    computeDistributedRunTuningInventory
+} from '../../../packages/shared-test/rallar-bb-test/compute-distributed-run-tuning-inventory.ts';
 import type {
-    DistributedRunAnalysis,
+    DistributedRunFailureAnalysis,
     DistributedRunPerformanceAnalysis,
     DistributedRunTargetResolutionAnalysis
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { inventoryDistributedRunTuningKnobs, type DistributedRunTuningInventory } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning.ts';
-import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import type { DistributedRunTuningAnalysisEvidence } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-decisions.ts';
+import type {
+    RallarBlackBoxDistributedBarrierPolicy,
+    RallarBlackBoxDistributedRunManifest
+} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { DistributedRunTuningInventory } from '../../shared-test/rallar-bb-test/distributed-run-tuning-types.ts';
+import type { RallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 export function tuningManifest(input: Readonly<{
     commands?: readonly RallarBlackBoxTestCommand[];
     referenceOnly?: boolean;
     ackTimeoutMs?: number;
-    barrier?: Readonly<{ enabled?: boolean; timeoutMs?: number; }>;
+    barrier?: RallarBlackBoxDistributedBarrierPolicy;
 }> = {}): RallarBlackBoxDistributedRunManifest {
     const recipe = input.referenceOnly
         ? undefined
@@ -30,19 +37,22 @@ export function tuningManifest(input: Readonly<{
             workspaceId: 'default',
             groupId: 'tune-group'
         },
-        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', required: true }],
+        recipes: [{ recipeId: 'tune-recipe', recipe, profile: 'rtc', variables: {} }],
         targetPolicy: {
             mode: 'selected-agents',
             agentIds: ['agent-a', 'agent-b'],
             expectedParticipantCount: 2
         },
         roleAssignments: [
-            { agentId: 'agent-a', role: 'sender', required: true },
-            { agentId: 'agent-b', role: 'receiver', required: true }
+            { agentId: 'agent-a', role: 'sender', variables: {}, recipeIds: [] },
+            { agentId: 'agent-b', role: 'receiver', variables: {}, recipeIds: [] }
         ],
         ackTimeoutMs: input.ackTimeoutMs ?? 5_000,
         barrier: input.barrier ?? { enabled: true, timeoutMs: 7_500 },
-        startMode: 'manual'
+        startMode: 'manual',
+        variables: {},
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
@@ -72,39 +82,20 @@ export function streamCommand(input: Readonly<{
 export function tuningInventory(
     manifest = tuningManifest()
 ): DistributedRunTuningInventory {
-    return inventoryDistributedRunTuningKnobs(manifest);
+    return computeDistributedRunTuningInventory(manifest);
 }
 
 export function tuningAnalysis(input: Readonly<{
     ok?: boolean;
-    failure?: DistributedRunAnalysis['failure'];
+    failure?: DistributedRunFailureAnalysis;
     performance?: DistributedRunPerformanceAnalysis;
     targetResolution?: DistributedRunTargetResolutionAnalysis;
-}> = {}): DistributedRunAnalysis {
-    const ok = input.ok ?? false;
+}> = {}): DistributedRunTuningAnalysisEvidence {
     return {
-        generatedAtEpochMs: 10_000,
-        artifactSchemaVersion: 2,
-        distributedRunId: 'tune-run',
-        controlRunId: 'tune-control',
-        status: ok ? 'passed' : 'failed',
-        ok,
-        group: {
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
-            groupId: 'tune-group'
-        },
-        summary: {
-            agents: 2,
-            passRate: ok ? 1 : 0.5,
-            failureGroups: input.failure ? 1 : 0,
-            blockingFailures: input.failure ? 1 : 0
-        },
-        parseWarnings: [],
+        ok: input.ok ?? false,
         failure: input.failure,
         performance: input.performance,
-        targetResolution: input.targetResolution,
-        summaryMarkdown: ''
+        targetResolution: input.targetResolution
     };
 }
 
@@ -203,7 +194,7 @@ export function targetResolution(
 export function failure(
     category: string,
     title: string
-): NonNullable<DistributedRunAnalysis['failure']> {
+): DistributedRunFailureAnalysis {
     return {
         category,
         title,

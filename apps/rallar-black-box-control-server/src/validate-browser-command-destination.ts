@@ -1,16 +1,28 @@
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
-import type { BlackBoxControlServerConfiguration } from './control-server-configuration.ts';
+export interface BrowserCommandDestinationPolicy {
+    readonly httpAllowedHosts: readonly string[];
+    readonly httpAllowedOrigins: readonly string[];
+    readonly wsAllowedHosts: readonly string[];
+    readonly wsAllowedOrigins: readonly string[];
+}
+
+interface BrowserCommandDestination {
+    readonly value: string | undefined;
+    readonly allowedOrigins: readonly string[];
+    readonly allowedHosts: readonly string[];
+    readonly label: string;
+}
 
 export function validateBrowserCommandDestination(
     command: RallarBlackBoxTestCommand,
-    configuration: BlackBoxControlServerConfiguration
-): string | undefined {
+    policy: BrowserCommandDestinationPolicy
+): readonly string[] {
     if (command.kind === 'http.request') {
         return validateDestination({
             value: command.request.url ?? command.request.path,
-            allowedOrigins: configuration.httpAllowedOrigins,
-            allowedHosts: configuration.httpAllowedHosts,
+            allowedOrigins: policy.httpAllowedOrigins,
+            allowedHosts: policy.httpAllowedHosts,
             label: 'HTTP'
         });
     }
@@ -18,53 +30,32 @@ export function validateBrowserCommandDestination(
     if (command.kind === 'ws.open') {
         return validateDestination({
             value: command.url,
-            allowedOrigins: configuration.wsAllowedOrigins,
-            allowedHosts: configuration.wsAllowedHosts,
+            allowedOrigins: policy.wsAllowedOrigins,
+            allowedHosts: policy.wsAllowedHosts,
             label: 'WebSocket'
         });
     }
 
-    return undefined;
+    return [];
 }
 
-interface BrowserCommandDestinationInput {
-    readonly value?: string;
-    readonly allowedOrigins: readonly string[];
-    readonly allowedHosts: readonly string[];
-    readonly label: string;
+function validateDestination(destination: BrowserCommandDestination): readonly string[] {
+    if (!destination.value || (destination.allowedOrigins.length === 0 && destination.allowedHosts.length === 0)) {
+        return [];
+    }
+
+    const parsed = URL.parse(destination.value);
+    if (!parsed || destination.allowedOrigins.includes(parsed.origin)) {
+        return [];
+    }
+    if (destination.allowedHosts.some((allowedHost) => isAllowedHost(parsed, allowedHost))) {
+        return [];
+    }
+    return [`${destination.label} destination is not allowed: ${parsed.origin}`];
 }
 
-function validateDestination(input: BrowserCommandDestinationInput): string | undefined {
-    if (
-        !input.value ||
-        (input.allowedOrigins.length === 0 && input.allowedHosts.length === 0)
-    ) {
-        return undefined;
-    }
-
-    let parsed: URL;
-    try {
-        parsed = new URL(input.value);
-    }
-    catch (_error) {
-        return undefined;
-    }
-
-    if (input.allowedOrigins.includes(parsed.origin)) {
-        return undefined;
-    }
-
-    if (
-        input.allowedHosts.some((allowedHost) => hostMatches(parsed.host, parsed.hostname, allowedHost))
-    ) {
-        return undefined;
-    }
-
-    return `${input.label} destination is not allowed: ${parsed.origin}`;
-}
-
-function hostMatches(host: string, hostname: string, allowedHost: string): boolean {
-    if (allowedHost === host || allowedHost === hostname) {
+function isAllowedHost(destination: URL, allowedHost: string): boolean {
+    if (allowedHost === destination.host || allowedHost === destination.hostname) {
         return true;
     }
     if (!allowedHost.startsWith('*.')) {
@@ -72,5 +63,5 @@ function hostMatches(host: string, hostname: string, allowedHost: string): boole
     }
 
     const suffix = allowedHost.slice(1);
-    return hostname.endsWith(suffix) && hostname.length > suffix.length;
+    return destination.hostname.endsWith(suffix) && destination.hostname.length > suffix.length;
 }

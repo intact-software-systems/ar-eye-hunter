@@ -31,13 +31,13 @@ export function HistoryTable({
         <section
             aria-labelledby="history-ledger-title"
             className={styles.ledger}
-            data-history-action-projections={model.work?.actionProjections ?? 0}
-            data-history-catalog-run-projections={model.work?.catalogRunProjections ?? 0}
-            data-history-control-agent-visits={model.work?.controlAgentVisits ?? 0}
+            data-history-action-projections={model.work.actionProjections}
+            data-history-catalog-run-projections={model.work.catalogRunProjections}
+            data-history-control-agent-visits={model.work.controlAgentVisits}
             data-history-control-run-visits={collectionWork?.controlRunVisits ?? 0}
             data-history-distributed-run-visits={collectionWork?.distributedRunVisits ?? 0}
-            data-history-label-projections={model.work?.labelProjections ?? 0}
-            data-history-projected-rows={model.work?.projectedRows ?? 0}
+            data-history-label-projections={model.work.labelProjections}
+            data-history-projected-rows={model.work.projectedRows}
         >
             <header className={styles.heading}>
                 <div>

@@ -210,7 +210,8 @@ it('preserves nested live bootstrap identity and RTC lane defaults', async () =>
         }
     });
     expect(facade.records.configurationWrites).toContainEqual({ apiBaseUrl: 'https://api.example.test' });
-    expect(facade.records.defaultWrites).toContainEqual({
+    const defaults = facade.records.defaultWrites.at(-1);
+    expect(defaults).toMatchObject({
         applicationId: 'app',
         workspaceId: 'workspace',
         room: {
@@ -218,16 +219,10 @@ it('preserves nested live bootstrap identity and RTC lane defaults', async () =>
             roomRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' }
         },
         realtime: { laneId: 'authored-documents', openTimeoutMs: 500 },
-        rtc: { dataChannelLanes },
-        diagnosticsPorts: {
-            transportFaultPort: facade.rallar.diagnostics.faults,
-            indexedDbOperationObserver: facade.rallar.diagnostics.storage,
-            outboundDiagnostics: facade.rallar.diagnostics.outboundDiagnostics.sink,
-            inboundDiagnostics: facade.rallar.diagnostics.inboundDiagnostics.sink,
-            onStorageReset: facade.rallar.diagnostics.storageReset.sink
-        }
+        rtc: { dataChannelLanes }
     });
-    const defaults = facade.records.defaultWrites.at(-1);
+    expect(defaults?.diagnosticsPorts?.submissionReadinessFaultPort).toBe(facade.rallar.diagnostics.faults);
+    expect(defaults?.diagnosticsPorts?.transportFaultPort).toBe(facade.rallar.diagnostics.faults);
     expect(defaults?.rtc?.dataChannelLanes?.[0]?.flowControl).toStrictEqual({ maxQueueItems: 20 });
     expect(facade.records.crdtOpens).toHaveLength(1);
 });

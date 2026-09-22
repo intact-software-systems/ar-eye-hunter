@@ -731,7 +731,7 @@ jobs:
             echo "No artifact directory copied; skipping analysis."
             exit 0
           fi
-          npx tsx apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts \
+          npx tsx apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts \
             --artifact-dir "${artifact_dir}" \
             --out-dir "${artifact_dir}/analysis"
 

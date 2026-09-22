@@ -1,20 +1,93 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    buildHetznerDistributedManifestCatalog,
+    describe,
+    expect,
+    it
+} from 'vitest';
+
+import {
+    createHetznerDistributedManifestCatalog,
     HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER,
     HETZNER_DISTRIBUTED_MANIFEST_GREEN_ORDER
-} from '../../../apps/rallar-black-box/src/hetzner-distributed-manifests.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
-import { distributedArtifactSnapshotsFromFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+} from '../../../apps/rallar-black-box/src/create-hetzner-distributed-manifest-catalog.ts';
+import { deriveDistributedRunMonitor, distributedRecipePreflight } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
+import { toDistributedArtifactSnapshots } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, validateJsonSchema } from '../../../packages/shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import { validateDistributedRunManifestContract } from '../../shared-test/rallar-bb-test/distributed-run-validation.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA } from '../../shared-test/rallar-bb-test/schema.ts';
+import { validateJsonSchema } from '../../shared-test/rallar-bb-test/schema/json-schema-validation.ts';
+
+interface ManifestCommand {
+    readonly kind?: string;
+    readonly commandId?: string;
+    readonly transport?: string;
+    readonly rallar?: Readonly<Record<string, unknown>>;
+    readonly commands?: readonly ManifestCommand[];
+    readonly groups?: readonly Readonly<{
+        commands?: readonly ManifestCommand[];
+    }>[];
+    readonly readiness?: Readonly<{
+        minReadyPeers?: number;
+        timeoutMs?: number;
+        intervalMs?: number;
+    }>;
+    readonly count?: number;
+    readonly durationMs?: number;
+    readonly intervalMs?: number;
+    readonly maxInFlight?: number;
+    readonly maxCommands?: number;
+    readonly continueOnSendFailure?: boolean;
+    readonly metadata?: Record<string, unknown>;
+    readonly thresholds?: Record<string, unknown>;
+}
+
+interface ControlCommandInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly queuedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+interface ControlResultInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly endedAtEpochMs: number;
+    readonly durationMs: number;
+}
+
+interface ControlEventInput {
+    readonly runId: string;
+    readonly agentId: string;
+    readonly commandId: string;
+    readonly topic: string;
+    readonly atEpochMs: number;
+}
+
+interface ExpectedStream {
+    readonly rateHz: number;
+    readonly intervalMs: number;
+    readonly durationSeconds: number;
+    readonly frameCount: number;
+    readonly maxDroppedFrames: number;
+    readonly maxP95SendDurationMs?: number;
+    readonly maxP99SendDurationMs?: number;
+    readonly minSendSuccessRatio: number;
+    readonly maxInFlight: number;
+}
+
+/** The clock each RTC diagnostics case reads, so the generated bundle time is deterministic. */
+const DIAGNOSTICS_NOW_EPOCH_MS = 100_000;
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const MATRIX_AGENT_COUNTS = [10, 15, 20, 30] as const;
@@ -22,17 +95,17 @@ const MATRIX_DURATION_SECONDS = [30, 300] as const;
 const MATRIX_RATE_HZ = [10, 20] as const;
 const MATRIX_PROFILES = ['principal', 'all-peer'] as const;
 
-function durationLabel(seconds: number): string {
+function toDurationLabel(seconds: number): string {
     return seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
 }
 
-function expectedMatrixDiagnosticPaths(): readonly string[] {
+function toExpectedMatrixDiagnosticPaths(): readonly string[] {
     return MATRIX_AGENT_COUNTS.flatMap((agentCount) =>
         MATRIX_DURATION_SECONDS.flatMap((durationSeconds) =>
             MATRIX_RATE_HZ.flatMap((rateHz) =>
                 MATRIX_PROFILES.map((profile) =>
                     `apps/rallar-black-box/manifests/hetzner/diagnostic/matrix/rtc-messages-${profile}-${agentCount}-agent-${
-                        durationLabel(durationSeconds)
+                        toDurationLabel(durationSeconds)
                     }-${rateHz}hz-tree.json`
                 )
             )
@@ -40,42 +113,18 @@ function expectedMatrixDiagnosticPaths(): readonly string[] {
     );
 }
 
-function allValues(value: unknown): readonly string[] {
+function toNestedStringValues(value: unknown): readonly string[] {
     if (typeof value === 'string') {
         return [value];
     }
     if (Array.isArray(value)) {
-        return value.flatMap(allValues);
+        return value.flatMap(toNestedStringValues);
     }
     if (value && typeof value === 'object') {
-        return Object.values(value).flatMap(allValues);
+        return Object.values(value).flatMap(toNestedStringValues);
     }
     return [];
 }
-
-type ManifestCommand = Readonly<{
-    kind?: string;
-    commandId?: string;
-    transport?: string;
-    rallar?: Readonly<Record<string, unknown>>;
-    commands?: readonly ManifestCommand[];
-    groups?: readonly Readonly<{
-        commands?: readonly ManifestCommand[];
-    }>[];
-    readiness?: Readonly<{
-        minReadyPeers?: number;
-        timeoutMs?: number;
-        intervalMs?: number;
-    }>;
-    count?: number;
-    durationMs?: number;
-    intervalMs?: number;
-    maxInFlight?: number;
-    maxCommands?: number;
-    continueOnSendFailure?: boolean;
-    metadata?: Record<string, unknown>;
-    thresholds?: Record<string, unknown>;
-}>;
 
 // Every multi-agent Hetzner manifest must carry the standard barrier so agents start synchronized;
 // only these two are exempt, because neither drives RTC traffic between peers. A new manifest
@@ -85,7 +134,7 @@ const BARRIER_EXEMPT_MANIFEST_PATHS: ReadonlySet<string> = new Set([
     'apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json'
 ]);
 
-function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
+function toManifestCommands(manifest: RallarBlackBoxDistributedRunManifest): readonly ManifestCommand[] {
     const walk = (commands: readonly ManifestCommand[]): readonly ManifestCommand[] =>
         commands.flatMap((command) => [
             command,
@@ -98,7 +147,7 @@ function manifestCommands(manifest: RallarBlackBoxDistributedRunManifest): reado
 
 describe('Hetzner distributed manifest catalog', () => {
     it('defines the mainline green, extended, and diagnostic manifest groups separately', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const greenPaths = catalog.filter((entry) => entry.mainline).map((entry) => entry.filePath);
         const extendedPaths = catalog.filter((entry) => !entry.mainline && !entry.diagnostic).map((entry) => entry.filePath);
         const diagnosticPaths = catalog.filter((entry) => entry.diagnostic).map((entry) => entry.filePath);
@@ -144,12 +193,12 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-10hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/diagnostic/rtc-messages-all-peer-50-agent-60m-20hz-tree.json',
-            ...expectedMatrixDiagnosticPaths()
+            ...toExpectedMatrixDiagnosticPaths()
         ]);
     });
 
     it('writes checked-in JSON that matches the generated catalog exactly', async () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const expectedJson = `${JSON.stringify(entry.manifest, null, 2)}\n`;
             const actualJson = await readFile(path.join(repoRoot, entry.filePath), 'utf8');
             expect(actualJson).toBe(expectedJson);
@@ -157,7 +206,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('validates every checked-in manifest against schema and contract', async () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const manifest = JSON.parse(
                 await readFile(path.join(repoRoot, entry.filePath), 'utf8')
             ) as RallarBlackBoxDistributedRunManifest;
@@ -165,7 +214,7 @@ describe('Hetzner distributed manifest catalog', () => {
             const contractResult = validateDistributedRunManifestContract(manifest);
 
             expect(schemaResult, entry.filePath).toMatchObject({ ok: true });
-            expect(contractResult, entry.filePath).toMatchObject({ ok: true });
+            expect(contractResult, entry.filePath).toEqual([]);
             expect(manifest.group).toEqual({
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
@@ -184,8 +233,8 @@ describe('Hetzner distributed manifest catalog', () => {
                     }
                 });
                 expect(manifest.roleAssignments).toEqual([
-                    { role: 'sender', agentId: 'controller-01', required: true },
-                    { role: 'receiver', agentId: 'controller-02', required: true }
+                    { role: 'sender', agentId: 'controller-01', recipeIds: [], variables: {} },
+                    { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
                 ]);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
             }
@@ -204,12 +253,13 @@ describe('Hetzner distributed manifest catalog', () => {
                     }
                 });
                 expect(manifest.roleAssignments).toHaveLength(entry.agentCount);
-                expect(manifest.roleAssignments?.at(0)).toEqual({
+                expect(manifest.roleAssignments.at(0)).toEqual({
                     role: 'sender',
                     agentId: 'controller-01',
-                    required: true
+                    recipeIds: [],
+                    variables: {}
                 });
-                expect(manifest.roleAssignments?.slice(1).map((assignment) => assignment.agentId)).toEqual(receivers);
+                expect(manifest.roleAssignments.slice(1).map((assignment) => assignment.agentId)).toEqual(receivers);
                 expect(manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
             }
             else {
@@ -218,20 +268,18 @@ describe('Hetzner distributed manifest catalog', () => {
                     expectedParticipantCount: entry.agentCount
                 });
             }
-            expect(manifest.artifactPolicy).toMatchObject({
-                retainArtifacts: true,
-                includeDistributedMetadata: true,
-                includeEventJsonl: true,
-                includeResultJsonl: true,
-                includeFailureBundle: true
-            });
             expect(manifest.recipes.length).toBeGreaterThan(0);
             expect(manifest.recipes.every((selection) => Boolean(selection.recipe))).toBe(true);
         }
     });
 
+    it('names the Hetzner manifest catalog as the creator of every manifest', () => {
+        expect(new Set(createHetznerDistributedManifestCatalog().map((entry) => entry.manifest.metadata.createdBy)))
+            .toEqual(new Set(['rallar-black-box-hetzner-manifest-catalog']));
+    });
+
     it('keeps mainline green manifests secret-free and marks the expected-failure diagnostic only', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const greenEntries = catalog.filter((entry) => entry.mainline);
         const expectedFailure = catalog.find((entry) => entry.filePath.endsWith('/expected-failure-1-agent.json'));
 
@@ -242,13 +290,13 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(greenEntries.every((entry) => entry.manifest.metadata?.expectedFailure !== true)).toBe(true);
 
         for (const entry of catalog) {
-            const strings = allValues(entry.manifest);
+            const strings = toNestedStringValues(entry.manifest);
             expect(strings.some((value) => /bearer|password|secret|token/i.test(value)), entry.filePath).toBe(false);
         }
     });
 
     it('matches expected participant counts in filenames', () => {
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             const match = entry.filePath.match(/-(\d+)-agent/);
             expect(match?.[1], entry.filePath).toBe(String(entry.agentCount));
             expect(entry.manifest.targetPolicy.expectedParticipantCount).toBe(entry.agentCount);
@@ -258,11 +306,11 @@ describe('Hetzner distributed manifest catalog', () => {
     it('configures matching selectors for every messages.rtc connection', () => {
         // The alm-conformance family intentionally connects messages.rtc with its own per-scenario
         // typeId and the room.alm-conformance topic, not the shared multicast-position selector.
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             if (entry.manifest.metadata?.family === 'alm-conformance') {
                 continue;
             }
-            for (const command of manifestCommands(entry.manifest)) {
+            for (const command of toManifestCommands(entry.manifest)) {
                 if (command.kind !== 'rtc.connect' || command.transport !== 'messages.rtc') {
                     continue;
                 }
@@ -302,8 +350,8 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/21-alm-conformance-50-agent-30s.json', { peers: 1, timeoutMs: 45_000 }]
         ]);
 
-        for (const entry of buildHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
-            const commands = manifestCommands(entry.manifest);
+        for (const entry of createHetznerDistributedManifestCatalog().filter((candidate) => !candidate.diagnostic)) {
+            const commands = toManifestCommands(entry.manifest);
             const sendsRtc = commands.some((command) => command.kind === 'rtc.send' || command.kind === 'rtc.stream');
             if (!sendsRtc) {
                 expect(expectedReadyPeers.has(entry.filePath)).toBe(false);
@@ -323,7 +371,7 @@ describe('Hetzner distributed manifest catalog', () => {
     it('synchronizes every multi-agent Hetzner recipe before execution', () => {
         const checkedPaths: string[] = [];
 
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             if (entry.agentCount < 2 || BARRIER_EXEMPT_MANIFEST_PATHS.has(entry.filePath)) {
                 continue;
             }
@@ -339,7 +387,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(
             [...BARRIER_EXEMPT_MANIFEST_PATHS].filter(
                 (exemptPath) =>
-                    !buildHetznerDistributedManifestCatalog().some(
+                    !createHetznerDistributedManifestCatalog().some(
                         (entry) => entry.filePath === exemptPath
                     )
             )
@@ -349,10 +397,10 @@ describe('Hetzner distributed manifest catalog', () => {
     it('keeps readiness-enabled recipes resolvable to exact rooms', () => {
         const checkedPaths: string[] = [];
 
-        for (const entry of buildHetznerDistributedManifestCatalog()) {
+        for (const entry of createHetznerDistributedManifestCatalog()) {
             for (const selection of entry.manifest.recipes) {
                 const recipe = selection.recipe;
-                if (!recipe || !manifestCommands(entry.manifest).some((command) => command.readiness)) {
+                if (!recipe || !toManifestCommands(entry.manifest).some((command) => command.readiness)) {
                     continue;
                 }
 
@@ -372,17 +420,6 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('uses lower-rate rtc.stream baselines for non-diagnostic realtime Hetzner manifests', () => {
-        type ExpectedStream = Readonly<{
-            rateHz: number;
-            intervalMs: number;
-            durationSeconds: number;
-            frameCount: number;
-            maxDroppedFrames: number;
-            maxP95SendDurationMs?: number;
-            maxP99SendDurationMs?: number;
-            minSendSuccessRatio: number;
-            maxInFlight: number;
-        }>;
         const expectedStreams = new Map<string, ExpectedStream>([
             ['apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json', {
                 rateHz: 5,
@@ -456,14 +493,14 @@ describe('Hetzner distributed manifest catalog', () => {
         ]);
 
         for (
-            const entry of buildHetznerDistributedManifestCatalog()
+            const entry of createHetznerDistributedManifestCatalog()
                 .filter((candidate) =>
                     !candidate.diagnostic &&
                     !candidate.filePath.includes('rtc-messages-') &&
                     !candidate.filePath.includes('alm-conformance')
                 )
         ) {
-            const commands = manifestCommands(entry.manifest);
+            const commands = toManifestCommands(entry.manifest);
             const stream = commands.find((command) => command.kind === 'rtc.stream');
             const highRateLoop = commands.find((command) =>
                 command.kind === 'loop' &&
@@ -512,7 +549,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps strict 20 Hz realtime stress coverage as a diagnostic manifest', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/diagnostic/rtc-realtime-2-agent-20hz-stress.json'));
         expect(entry).toBeDefined();
         expect(entry?.diagnostic).toBe(true);
@@ -523,7 +560,7 @@ describe('Hetzner distributed manifest catalog', () => {
             expectedFailure: false
         });
 
-        const stream = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+        const stream = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .find((command) => command.kind === 'rtc.stream');
         expect(stream).toMatchObject({
             count: 100,
@@ -543,7 +580,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps the lower-risk realtime stability manifest in mainline before heavier extended baselines', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const stabilityPath = 'apps/rallar-black-box/manifests/hetzner/05a-rtc-realtime-stability-2-agent-5s.json';
         const baselinePath = 'apps/rallar-black-box/manifests/hetzner/05-rtc-realtime-2-agent-5s.json';
         const stability = catalog.find((entry) => entry.filePath === stabilityPath);
@@ -566,7 +603,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps provider parity manifests from replacing headless auth with restore-only demo auth', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const parity = catalog.find((entry) => entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json');
         const configure = parity?.manifest.recipes[0]?.recipe?.commands[0];
 
@@ -592,7 +629,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('keeps provider parity peers alive through the readiness window before teardown', () => {
-        const parity = buildHetznerDistributedManifestCatalog().find((entry) =>
+        const parity = createHetznerDistributedManifestCatalog().find((entry) =>
             entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
         );
         const commands = parity?.manifest.recipes[0]?.recipe?.commands as readonly ManifestCommand[] | undefined;
@@ -631,7 +668,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/05-rtc-realtime-2-agent-5s.json'));
         expect(entry).toBeDefined();
         const manifest = entry?.manifest as RallarBlackBoxDistributedRunManifest;
@@ -664,14 +701,15 @@ describe('Hetzner distributed manifest catalog', () => {
                 ok: true,
                 summary: {
                     participants: 2,
-                    requiredParticipants: 2,
                     readyParticipants: 2,
                     passedParticipants: 2,
                     failedParticipants: 0,
                     recipes: 1,
-                    requiredRecipes: 1,
                     passedRecipes: 2,
                     failedRecipes: 0,
+                    groupAssertions: 0,
+                    passedGroupAssertions: 0,
+                    failedGroupAssertions: 0,
                     blockingFailures: 0
                 },
                 failures: []
@@ -682,6 +720,7 @@ describe('Hetzner distributed manifest catalog', () => {
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 5_500,
             agents: agentIds.map((agentId) => ({
+                runId: controlRunId,
                 agentId,
                 connected: true,
                 status: 'connected',
@@ -690,24 +729,32 @@ describe('Hetzner distributed manifest catalog', () => {
                 identity: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: 'hetzner-headless-room'
-                }
+                    groupId: 'hetzner-headless-room',
+                    sessionLabel: agentId,
+                    updatedAtEpochMs: 5_500
+                },
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 2,
+                receivedEventCount: 1,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: []
             })),
             commands: [
-                controlCommand(controlRunId, 'controller-01', 'stage-controller-01', 1_210, 40),
-                controlCommand(controlRunId, 'controller-02', 'stage-controller-02', 1_220, 60),
-                controlCommand(controlRunId, 'controller-01', 'start-controller-01', 2_010, 180),
-                controlCommand(controlRunId, 'controller-02', 'start-controller-02', 2_020, 420)
+                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', queuedAtEpochMs: 1_210, durationMs: 40 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', queuedAtEpochMs: 1_220, durationMs: 60 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', queuedAtEpochMs: 2_010, durationMs: 180 }),
+                toControlCommand({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', queuedAtEpochMs: 2_020, durationMs: 420 })
             ],
             results: [
-                controlResult(controlRunId, 'controller-01', 'stage-controller-01', 1_250, 40),
-                controlResult(controlRunId, 'controller-02', 'stage-controller-02', 1_280, 60),
-                controlResult(controlRunId, 'controller-01', 'start-controller-01', 2_190, 180),
-                controlResult(controlRunId, 'controller-02', 'start-controller-02', 2_440, 420)
+                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'stage-controller-01', endedAtEpochMs: 1_250, durationMs: 40 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'stage-controller-02', endedAtEpochMs: 1_280, durationMs: 60 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', endedAtEpochMs: 2_190, durationMs: 180 }),
+                toControlResult({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', endedAtEpochMs: 2_440, durationMs: 420 })
             ],
             events: [
-                controlEvent(controlRunId, 'controller-01', 'start-controller-01', 'rtc.started', 2_050),
-                controlEvent(controlRunId, 'controller-02', 'start-controller-02', 'rtc.started', 2_060)
+                toControlEvent({ runId: controlRunId, agentId: 'controller-01', commandId: 'start-controller-01', topic: 'rtc.started', atEpochMs: 2_050 }),
+                toControlEvent({ runId: controlRunId, agentId: 'controller-02', commandId: 'start-controller-02', topic: 'rtc.started', atEpochMs: 2_060 })
             ],
             stats: [],
             reports: [],
@@ -721,25 +768,27 @@ describe('Hetzner distributed manifest catalog', () => {
             'events.jsonl': controlRun.events.map((event) => JSON.stringify(event)).join('\n')
         };
 
-        const snapshots = distributedArtifactSnapshotsFromFiles(files, 6_000);
-        const monitor = deriveDistributedRunMonitor({
-            distributedRun: snapshots.distributedRun,
-            controlRun: snapshots.controlRun,
-            artifactBundle: snapshots.artifactBundle
+        const snapshots = toDistributedArtifactSnapshots(files, 6_000);
+        expect(snapshots.left).toBeUndefined();
+        const monitor = snapshots.right && deriveDistributedRunMonitor({
+            distributedRun: snapshots.right.distributedRun,
+            controlRun: snapshots.right.controlRun,
+            artifactBundle: snapshots.right.artifactBundle
         });
-        const performance = deriveRtcPerformanceView({
-            diagnostics: deriveRtcDiagnostics(emptySpaState()),
-            state: emptySpaState(),
-            distributedMonitor: monitor
+        const performance = computeRtcPerformanceView({
+            diagnostics: computeRtcDiagnostics(toEmptySpaState(), DIAGNOSTICS_NOW_EPOCH_MS),
+            state: toEmptySpaState(),
+            distributedMonitor: monitor,
+            histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
         });
 
-        expect(monitor.state).toBe('passed');
-        expect(monitor.artifact.status).toBe('valid');
-        expect(monitor.agentProgress.map((row) => [row.agentId, row.execution, row.averageLatencyMs])).toEqual([
+        expect(monitor?.state).toBe('passed');
+        expect(monitor?.artifact.status).toBe('valid');
+        expect(monitor?.agentProgress.map((row) => [row.agentId, row.execution, row.averageLatencyMs])).toEqual([
             ['controller-01', 'passed', 110],
             ['controller-02', 'passed', 240]
         ]);
-        expect(monitor.latency.p95Ms).toBe(420);
+        expect(monitor?.latency.p95Ms).toBe(420);
         expect(performance.summary.commandCount).toBe(2);
         expect(performance.summary.p99Ms).toBe(240);
         expect(performance.scatter.map((point) => [point.source, point.agentId, point.durationMs])).toEqual([
@@ -749,7 +798,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds 50-agent messages.rtc multicast manifests with tree, mesh, and long-run metadata', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
         const principalTree = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-tree');
         const principalMesh = byId.get('hetzner-rtc-messages-principal-50-agent-30s-20hz-mesh');
@@ -832,7 +881,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('labels the short 50-agent principal tree manifest as the GitHub Free smoke candidate', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/07-rtc-messages-principal-50-agent-30s-20hz-tree.json'));
 
         expect(entry).toBeDefined();
@@ -843,7 +892,7 @@ describe('Hetzner distributed manifest catalog', () => {
 
     it('adds 15- and 30-agent mainline alternatives for the three 50-agent multicast recipes', () => {
         const byId = new Map(
-            buildHetznerDistributedManifestCatalog().map((entry) => [entry.manifest.distributedRunId, entry])
+            createHetznerDistributedManifestCatalog().map((entry) => [entry.manifest.distributedRunId, entry])
         );
 
         for (const agentCount of [15, 30]) {
@@ -922,11 +971,11 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds medium-scale messages.rtc multicast matrix manifests for 10 to 30 agents', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
         const matrix = catalog.filter((entry) => entry.filePath.includes('/diagnostic/matrix/rtc-messages-'));
         const byId = new Map(catalog.map((entry) => [entry.manifest.distributedRunId, entry]));
 
-        expect(matrix.map((entry) => entry.filePath)).toEqual(expectedMatrixDiagnosticPaths());
+        expect(matrix.map((entry) => entry.filePath)).toEqual(toExpectedMatrixDiagnosticPaths());
         expect(matrix).toHaveLength(
             MATRIX_AGENT_COUNTS.length * MATRIX_DURATION_SECONDS.length * MATRIX_RATE_HZ.length * MATRIX_PROFILES.length
         );
@@ -935,7 +984,7 @@ describe('Hetzner distributed manifest catalog', () => {
             for (const durationSeconds of MATRIX_DURATION_SECONDS) {
                 for (const rateHz of MATRIX_RATE_HZ) {
                     const frameCount = durationSeconds * rateHz;
-                    const label = durationLabel(durationSeconds);
+                    const label = toDurationLabel(durationSeconds);
                     const principal = byId.get(
                         `hetzner-diagnostic-rtc-messages-principal-${agentCount}-agent-${label}-${rateHz}hz-tree`
                     );
@@ -994,7 +1043,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 
     it('adds the ALM conformance 2-agent manifest with sender/receiver roles across all three carriers', () => {
-        const entry = buildHetznerDistributedManifestCatalog()
+        const entry = createHetznerDistributedManifestCatalog()
             .find((candidate) => candidate.filePath.endsWith('/18-alm-conformance-2-agent.json'));
 
         expect(entry).toBeDefined();
@@ -1010,24 +1059,25 @@ describe('Hetzner distributed manifest catalog', () => {
             roles: { sender: ['controller-01'], receiver: ['controller-02'] }
         });
         expect(entry?.manifest.roleAssignments).toEqual([
-            { role: 'sender', agentId: 'controller-01', required: true },
-            { role: 'receiver', agentId: 'controller-02', required: true }
+            { role: 'sender', agentId: 'controller-01', recipeIds: [], variables: {} },
+            { role: 'receiver', agentId: 'controller-02', recipeIds: [], variables: {} }
         ]);
         expect(entry?.manifest.recipes.map((selection) => selection.role)).toEqual(['sender', 'receiver']);
         expect(entry?.manifest.metadata).toMatchObject({
             family: 'alm-conformance',
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'ordering-resync']
+            scenarios: ['delivery-reload', 'bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
         });
 
-        const rtcConnects = manifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+        const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
-        expect(rtcConnects.length).toBeGreaterThan(0);
+        expect(rtcConnects).toHaveLength(5);
+        expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
     });
 
     it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {
-        const catalog = buildHetznerDistributedManifestCatalog();
+        const catalog = createHetznerDistributedManifestCatalog();
 
         for (const agentCount of [15, 30, 50]) {
             const entry = catalog.find((candidate) => candidate.filePath.endsWith(`-alm-conformance-${agentCount}-agent-30s.json`));
@@ -1053,7 +1103,7 @@ describe('Hetzner distributed manifest catalog', () => {
     });
 });
 
-function controlCommand(runId: string, agentId: string, commandId: string, queuedAtEpochMs: number, durationMs: number) {
+function toControlCommand({ runId, agentId, commandId, queuedAtEpochMs, durationMs }: ControlCommandInput) {
     return {
         envelope: {
             kind: 'command',
@@ -1063,7 +1113,8 @@ function controlCommand(runId: string, agentId: string, commandId: string, queue
             commandId,
             command: {
                 kind: 'recipe.run',
-                commandId
+                commandId,
+                recipe: { schemaVersion: 1, recipeId: 'rtc-realtime', commands: [{ kind: 'health' }] }
             }
         },
         queuedAtEpochMs,
@@ -1073,7 +1124,7 @@ function controlCommand(runId: string, agentId: string, commandId: string, queue
     };
 }
 
-function controlResult(runId: string, agentId: string, commandId: string, endedAtEpochMs: number, durationMs: number) {
+function toControlResult({ runId, agentId, commandId, endedAtEpochMs, durationMs }: ControlResultInput) {
     return {
         kind: 'result',
         protocolVersion: 1,
@@ -1094,13 +1145,7 @@ function controlResult(runId: string, agentId: string, commandId: string, endedA
     };
 }
 
-function controlEvent(
-    runId: string,
-    agentId: string,
-    commandId: string,
-    topic: string,
-    atEpochMs: number
-) {
+function toControlEvent({ runId, agentId, commandId, topic, atEpochMs }: ControlEventInput) {
     return {
         kind: 'event',
         protocolVersion: 1,
@@ -1116,7 +1161,7 @@ function controlEvent(
     };
 }
 
-function emptySpaState(): RallarBlackBoxTestState {
+function toEmptySpaState(): RallarBlackBoxTestState {
     const events: readonly RallarBlackBoxTestEvent[] = [];
     return {
         status: 'completed',

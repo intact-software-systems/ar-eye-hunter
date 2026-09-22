@@ -1,7 +1,6 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
-
-import type { RallarBlackBoxBootstrapConfig } from './runtime-store.ts';
 
 export type RallarBlackBoxAuthFacade = Readonly<{
     configure(config: { apiBaseUrl?: string; }): void;

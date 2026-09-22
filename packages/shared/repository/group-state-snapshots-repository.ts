@@ -59,9 +59,7 @@ export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryTo
     'Group state snapshot repository is not configured'
 );
 
-type GroupSessionIndex = Map<string, Set<string>>;
-
-const groupSessionIndexes = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, GroupSessionIndex>();
+const groupSessionIndexes = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, Map<string, Set<string>>>();
 const observedGroupSnapshotKeys = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, Set<string>>();
 
 export function configureGroupStateSnapshotRepository(
@@ -153,17 +151,15 @@ export function findGroupStateSnapshotsBySessionIds(
 
     const repository = requireGroupStateSnapshotRepository(manager);
     const index = groupSessionIndexForRepository(repository);
-    const sessionGroupKeys = uniqueSessionIds.map((sessionId) => index.get(sessionId));
-
-    if (sessionGroupKeys.some((keys) => keys === undefined || keys.size === 0)) {
-        return [];
+    const sessionGroupKeys: Set<string>[] = [];
+    for (const sessionId of uniqueSessionIds) {
+        const keys = index.get(sessionId);
+        if (!keys || keys.size === 0) {
+            return [];
+        }
+        sessionGroupKeys.push(keys);
     }
-
-    const [smallest, ...rest] = sessionGroupKeys
-        .toSorted((left, right) => (left?.size ?? 0) - (right?.size ?? 0)) as [
-            Set<string>,
-            ...Set<string>[]
-        ];
+    const [smallest, ...rest] = sessionGroupKeys.toSorted((left, right) => left.size - right.size);
     const snapshots: GroupSnapshot[] = [];
 
     for (const groupKey of smallest) {
@@ -279,6 +275,23 @@ export function removeGroupStateSnapshotIfUnchanged(
     return removed;
 }
 
+/** A current authoritative acquisition may renew cache age without changing domain facts. */
+export function refreshGroupStateSnapshotIfUnchanged(
+    expected: GroupSnapshot,
+    authoritative: GroupSnapshot,
+    manager?: RepositoryManager
+): boolean {
+    const key = toGroupStateSnapshotRepositoryKey(expected.group);
+    if (key !== toGroupStateSnapshotRepositoryKey(authoritative.group) || !jsonEquals(expected, authoritative)) {
+        return false;
+    }
+    const repository = requireGroupStateSnapshotRepository(manager);
+    if (repository.read(key) !== expected) {
+        return false;
+    }
+    return repository.touch(key);
+}
+
 export function replaceGroupStateSnapshotIfUnchanged(
     expected: GroupSnapshot,
     replacement: GroupSnapshot,
@@ -319,7 +332,7 @@ export function findLatestGroupSnapshotById(groupId: string) {
 
 function groupSessionIndexForRepository(
     repository: ObservableLatestRepository<string, GroupSnapshot>
-): GroupSessionIndex {
+): Map<string, Set<string>> {
     let index = groupSessionIndexes.get(repository);
     if (!index) {
         index = readGroupSessionIndex(repository);
@@ -341,8 +354,8 @@ function observedGroupSnapshotKeysForRepository(
 
 function readGroupSessionIndex(
     repository: ObservableLatestRepository<string, GroupSnapshot>
-): GroupSessionIndex {
-    const index: GroupSessionIndex = new Map();
+): Map<string, Set<string>> {
+    const index: Map<string, Set<string>> = new Map();
     for (const [key, entry] of repository.entriesView()) {
         const snapshot = entry.read();
         if (snapshot) {
@@ -367,7 +380,7 @@ function replaceGroupSnapshotInSessionIndex(input: GroupSnapshotIndexReplacement
 }
 
 function addGroupSnapshotToSessionIndex(
-    index: GroupSessionIndex,
+    index: Map<string, Set<string>>,
     key: string,
     snapshot: GroupSnapshot
 ): void {
@@ -382,7 +395,7 @@ function addGroupSnapshotToSessionIndex(
 }
 
 function removeGroupSnapshotFromSessionIndex(
-    index: GroupSessionIndex,
+    index: Map<string, Set<string>>,
     key: string,
     snapshot: GroupSnapshot | undefined
 ): void {
@@ -405,7 +418,7 @@ function removeGroupSnapshotFromSessionIndex(
 }
 
 function removeGroupKeyFromSessionIndex(
-    index: GroupSessionIndex,
+    index: Map<string, Set<string>>,
     key: string
 ): void {
     for (const [sessionId, groupKeys] of index) {

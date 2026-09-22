@@ -1,18 +1,32 @@
+import type { RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+import { Either } from '@shared/resilience/Either.ts';
 
-import type {
-    BlackBoxRallarRoomRef,
-    BlackBoxRallarScope,
-    BlackBoxRallarSendInput,
-    BlackBoxRallarTransport
-} from './black-box-rallar-operation-contracts.ts';
-import type { BlackBoxRallarWsSendInput } from './black-box-rallar-runtime-contract.ts';
+import type { BlackBoxRallarRoomRef, BlackBoxRallarScope } from './black-box-rallar-operation-contracts.ts';
 
 /** A decoded command envelope whose fields the decoders below narrow one at a time. */
 export type BlackBoxRallarCommandRecord = Record<string, unknown>;
 
+/** The first reason a page runtime command input is unusable; the window surface rejects with its message. */
+export interface BlackBoxRallarInputIssue {
+    readonly message: string;
+}
+
+export interface BlackBoxRallarCommandRouting {
+    readonly roomRef: BlackBoxRallarRoomRef | undefined;
+    readonly ack: ALAckMode | undefined;
+}
+
+const AL_ACK_MODES: readonly ALAckMode[] = ['none', 'receiver', 'all-logical-recipients', 'group-leader'];
+
 export function isBlackBoxCommandRecord(value: unknown): value is BlackBoxRallarCommandRecord {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Undefined, functions, symbols and bigints cannot travel as a message payload. */
+export function isRallarMessagePayload(value: unknown): value is RallarMessagePayload {
+    return value === null || typeof value === 'object' || typeof value === 'string' || typeof value === 'number' ||
+        typeof value === 'boolean';
 }
 
 export function decodeBlackBoxCommandString(value: unknown): string | undefined {
@@ -35,114 +49,48 @@ export function decodeBlackBoxCommandScope(value: unknown): BlackBoxRallarScope 
 }
 
 export function decodeBlackBoxCommandRoomRef(value: unknown): BlackBoxRallarRoomRef | undefined {
+    return requireBlackBoxRallarInput(decodeBlackBoxCommandRouting({ roomRef: value })).roomRef;
+}
+
+/** The room reference is checked before the acknowledgement mode, so a command naming both reports the room. */
+export function decodeBlackBoxCommandRouting(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarCommandRouting> {
+    const roomRef = decodeRoutingRoomRef(record.roomRef);
+    if (roomRef !== undefined && 'message' in roomRef) {
+        return Either.ofLeft(roomRef);
+    }
+    const ack = record.ack;
+    if (ack !== undefined && !isAlAckMode(ack)) {
+        return Either.ofLeft({ message: 'Rallar command ack mode is invalid.' });
+    }
+    return Either.ofRight({ roomRef, ack });
+}
+
+/** The window surface is a promise contract, so an unusable input rejects there with the message of its issue. */
+export function requireBlackBoxRallarInput<T>(decoded: Either<BlackBoxRallarInputIssue, T>): T {
+    return decoded.fold(
+        (issue) => {
+            throw new TypeError(issue.message);
+        },
+        (value) => value
+    );
+}
+
+function decodeRoutingRoomRef(value: unknown): BlackBoxRallarRoomRef | BlackBoxRallarInputIssue | undefined {
     if (value === undefined || value === null) {
         return undefined;
     }
     if (!isBlackBoxCommandRecord(value)) {
-        throw new Error('Rallar command roomRef must be an object.');
+        return { message: 'Rallar command roomRef must be an object.' };
     }
     const applicationId = decodeBlackBoxCommandString(value.applicationId);
     const groupId = decodeBlackBoxCommandString(value.groupId);
-    if (!applicationId || !groupId) {
-        throw new Error('Rallar command roomRef requires applicationId and groupId.');
-    }
-    return { applicationId, groupId, workspaceId: decodeBlackBoxCommandString(value.workspaceId) };
+    return applicationId && groupId
+        ? { applicationId, groupId, workspaceId: decodeBlackBoxCommandString(value.workspaceId) }
+        : { message: 'Rallar command roomRef requires applicationId and groupId.' };
 }
 
-function decodePeerIds(value: unknown): readonly string[] | undefined {
-    return Array.isArray(value) && value.every((entry): entry is string => typeof entry === 'string')
-        ? value
-        : undefined;
-}
-
-export function decodeBlackBoxCommandAck(value: unknown): ALAckMode | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
-    if (value === 'none' || value === 'receiver' || value === 'all-logical-recipients' || value === 'group-leader') {
-        return value;
-    }
-    throw new Error('Rallar command ack mode is invalid.');
-}
-
-function decodeMessageFields(record: BlackBoxRallarCommandRecord): BlackBoxRallarSendInput {
-    return {
-        ...('payload' in record ? { payload: record.payload } : {}),
-        ...('data' in record ? { data: record.data } : {}),
-        roomId: decodeBlackBoxCommandString(record.roomId),
-        roomRef: decodeBlackBoxCommandRoomRef(record.roomRef),
-        applicationId: decodeBlackBoxCommandString(record.applicationId),
-        workspaceId: decodeBlackBoxCommandString(record.workspaceId),
-        scope: decodeBlackBoxCommandScope(record.scope),
-        typeId: decodeBlackBoxCommandString(record.typeId),
-        topicId: decodeBlackBoxCommandString(record.topicId),
-        contextId: decodeBlackBoxCommandString(record.contextId),
-        resourceId: decodeBlackBoxCommandString(record.resourceId),
-        ttlHops: decodeBlackBoxCommandNumber(record.ttlHops),
-        ttlMs: decodeBlackBoxCommandNumber(record.ttlMs),
-        reliability: record.reliability === 'best-effort' || record.reliability === 'at-least-once'
-            ? record.reliability
-            : undefined,
-        ack: decodeBlackBoxCommandAck(record.ack),
-        ownership: record.ownership === 'shared' || record.ownership === 'exclusive' ? record.ownership : undefined,
-        minSnapshotVersion: decodeBlackBoxCommandNumber(record.minSnapshotVersion)
-    };
-}
-
-function isRealtimeSendEnvelope(input: BlackBoxRallarCommandRecord): boolean {
-    return [
-        'data',
-        'laneId',
-        'roomId',
-        'roomRef',
-        'applicationId',
-        'workspaceId',
-        'scope',
-        'peerIds',
-        'nextHopPeerIds',
-        'remotePeerId',
-        'typeId',
-        'topicId',
-        'contextId',
-        'resourceId'
-    ]
-        .some((field) => field in input);
-}
-
-export function decodeBlackBoxRallarSendInput(
-    input: unknown,
-    transport: BlackBoxRallarTransport
-): BlackBoxRallarSendInput {
-    if (!isBlackBoxCommandRecord(input) || (transport === 'realtime' && !isRealtimeSendEnvelope(input))) {
-        return transport === 'realtime' ? { data: input } : { payload: input };
-    }
-    return {
-        ...decodeMessageFields(input),
-        laneId: decodeBlackBoxCommandString(input.laneId),
-        peerIds: decodePeerIds(input.peerIds),
-        nextHopPeerIds: decodePeerIds(input.nextHopPeerIds),
-        remotePeerId: decodeBlackBoxCommandString(input.remotePeerId),
-        membershipEpoch: decodeBlackBoxCommandNumber(input.membershipEpoch),
-        seq: decodeBlackBoxCommandNumber(input.seq),
-        orderingKey: decodeBlackBoxCommandString(input.orderingKey),
-        overlayId: decodeBlackBoxCommandString(input.overlayId),
-        fanoutLimit: decodeBlackBoxCommandNumber(input.fanoutLimit),
-        openTimeoutMs: decodeBlackBoxCommandNumber(input.openTimeoutMs),
-        key: decodeBlackBoxCommandString(input.key),
-        maxAgeMs: decodeBlackBoxCommandNumber(input.maxAgeMs)
-    };
-}
-
-export function decodeBlackBoxRallarWsSendInput(input: unknown): BlackBoxRallarWsSendInput {
-    if (!isBlackBoxCommandRecord(input)) {
-        return { payload: input };
-    }
-    return {
-        ...decodeMessageFields(input),
-        scope: input.scope === 'room' || input.scope === 'world' || input.scope === 'all' ? input.scope : undefined,
-        groupId: decodeBlackBoxCommandString(input.groupId),
-        topic: decodeBlackBoxCommandString(input.topic),
-        kind: decodeBlackBoxCommandString(input.kind),
-        exceptPeerIds: decodePeerIds(input.exceptPeerIds)
-    };
+function isAlAckMode(value: unknown): value is ALAckMode {
+    return typeof value === 'string' && AL_ACK_MODES.some((mode) => mode === value);
 }

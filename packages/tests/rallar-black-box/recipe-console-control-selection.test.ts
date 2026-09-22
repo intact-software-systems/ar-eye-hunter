@@ -1,16 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { controlAgentBoardWorkForTest } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { describe, expect, it } from 'vitest';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
+import { deriveControlRunSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/control/control-run-selection-patch.ts';
 import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import {
     deriveRecipeConsoleControlSelection,
-    recipeConsoleControlRunSelectionPatch,
     recipeConsoleControlSelectionWorkForTest
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection.ts';
 import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
@@ -43,6 +42,8 @@ function controlAgent(
         identity: {
             principalId: `${agentId}-principal`,
             sessionId: `${agentId}-session`,
+            sessionLabel: `${agentId}-principal:${agentId}-session`,
+            updatedAtEpochMs: 1_000,
             ...group
         },
         connectionSequence: 1,
@@ -90,12 +91,19 @@ function distributedRun(
             distributedRunId,
             controlRunId,
             group,
-            recipes: [{ recipeId: 'health-only', required: true }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: [],
                 expectedParticipantCount: 1
-            }
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: {
@@ -103,12 +111,10 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: 0,
-                requiredParticipants: 0,
                 readyParticipants: 0,
                 passedParticipants: 0,
                 failedParticipants: 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,
@@ -294,6 +300,9 @@ describe('Recipe Console control selection', () => {
             distributedRuns: terminalRuns
         };
         const selectionIndex = createControlSelectionIndexCache().get(snapshot);
+        Object.defineProperty(snapshot, 'distributedRuns', {
+            value: forbidGlobalTraversal(snapshot.distributedRuns!)
+        });
 
         const selection = deriveRecipeConsoleControlSelection({
             urlState: { ...baseUrlState, controlRunId: 'run-a' },
@@ -310,14 +319,11 @@ describe('Recipe Console control selection', () => {
             fallback: false,
             activeRunProjectionCount: 0
         });
-        expect(controlAgentBoardWorkForTest(selection.boardRows)).toMatchObject({
-            indexed: true,
-            fallback: false,
-            distributedRunProjectionCount: 0
-        });
+        expect(selection.boardRows.map((row) => row.agentId)).toEqual(['agent-a']);
+        expect(selection.boardRows.every((row) => row.activeRuns.length === 0 && row.selectedRun === undefined)).toBe(true);
     });
 
-    it('keeps the indexed control board when partial truth omits distributed runs', () => {
+    it('keeps the control board rows and reports the gap when partial truth omits distributed runs', () => {
         const first: ControlServerSnapshot = {
             runs: [controlRun('run-a', [controlAgent('run-a', 'agent-a')])]
         };
@@ -335,10 +341,7 @@ describe('Recipe Console control selection', () => {
             nowEpochMs: 10_000
         });
 
-        expect(controlAgentBoardWorkForTest(selected.boardRows)).toMatchObject({
-            indexed: true,
-            fallback: false
-        });
+        expect(selected.boardRows.map((row) => row.agentId)).toEqual(['agent-a']);
         expect(selected.issues).toContainEqual(expect.objectContaining({
             field: 'distributedRuns',
             code: 'unavailable'
@@ -767,7 +770,7 @@ describe('Recipe Console control selection', () => {
             agentId: 'agent-a'
         };
 
-        expect(recipeConsoleControlRunSelectionPatch({
+        expect(deriveControlRunSelectionPatch({
             state,
             controlRunId: 'run-b',
             distributedRuns
@@ -776,7 +779,7 @@ describe('Recipe Console control selection', () => {
             distributedRunId: undefined,
             agentId: undefined
         });
-        expect(recipeConsoleControlRunSelectionPatch({
+        expect(deriveControlRunSelectionPatch({
             state: { ...state, distributedRunId: 'distributed-b' },
             controlRunId: 'run-b',
             distributedRuns

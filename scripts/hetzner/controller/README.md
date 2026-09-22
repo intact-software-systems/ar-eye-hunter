@@ -791,7 +791,7 @@ It copies a checked-in distributed manifest to the VM, optionally runs
 `08-rollout-controller.sh`, starts headless browsers with
 `09-start-headless-workers.sh`, runs `14-run-distributed-recipe.sh`, copies
 artifacts back to GitHub, runs
-`apps/rallar-black-box/scripts/analyze-distributed-run-artifacts.ts`, and
+`apps/rallar-black-box/scripts/write-distributed-run-artifact-analysis.ts`, and
 uploads both raw artifacts and analysis.
 
 Use `manifest_path` for the repo-relative distributed manifest file. Leave
@@ -818,7 +818,10 @@ those failures.
 If `recipeStarted` is `true`, continue with `analysis/fix-proposal.md` for a
 failed recipe or `analysis/performance.md` for a passed run. If it is `false`,
 the missing distributed artifact is expected; use the operation report rather
-than requesting an analyzer rerun.
+than requesting an analyzer rerun. When the control server rejected the create
+request, `analysis/summary.md` and `analysis/fix-proposal.md` still describe
+that failed request (method, path, HTTP and curl status, and the error body)
+from `control-post-error-metadata.json`.
 
 Already-running global-fleet agents use a separate no-spawn flow. Do not use
 the Hetzner lifecycle workflow when the browsers are already running around the

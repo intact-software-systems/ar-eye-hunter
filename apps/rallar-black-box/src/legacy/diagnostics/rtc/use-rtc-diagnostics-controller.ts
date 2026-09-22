@@ -1,7 +1,8 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
 import type {
     RallarBlackBoxTestRuntimeEventInput,
     RallarBlackBoxTestState
-} from '@shared-test/rallar-bb-test/types.ts';
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { useMemo, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
@@ -10,21 +11,26 @@ import {
     createDirectRallarRuntimeEvent,
     runDirectRallarStatusCheck
 } from '../../../direct-rallar-operations.ts';
-import { DEFAULT_MANUAL_WORKBENCH_VALUES, type ManualWorkbenchAction } from '../../../manual-workbench.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../rtc-diagnostics.ts';
-import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+import type { ManualWorkbenchAction } from '../../../manual-workbench.ts';
+import {
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../rtc-diagnostics.ts';
+import { rallarBlackBoxRuntimeStore } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 
-export type UseRtcDiagnosticsControllerInput = Readonly<{
-    state: RallarBlackBoxTestState;
-    bootstrap: RallarBlackBoxBootstrapConfig;
-    authSession?: AuthSession;
-    globalValues?: CommandCenterGlobalValues;
-    busy: boolean;
+export interface UseRtcDiagnosticsControllerInput {
+    readonly state: RallarBlackBoxTestState;
+    readonly bootstrap: RallarBlackBoxBootstrapConfig;
+    /** Absent while the browser is signed out; the direct RTC actions then stay disabled. */
+    readonly authSession?: AuthSession;
+    readonly globalValues: CommandCenterGlobalValues;
+    readonly busy: boolean;
     onSelectCommand(commandId: string): void;
-}>;
+}
 
 export function useRtcDiagnosticsController({
     state,
@@ -34,9 +40,15 @@ export function useRtcDiagnosticsController({
     busy,
     onSelectCommand
 }: UseRtcDiagnosticsControllerInput) {
-    const diagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const diagnostics = useMemo(() => computeRtcDiagnostics(state, Date.now()), [state]);
     const rtcPerformance = useMemo(
-        () => deriveRtcPerformanceView({ diagnostics, state }),
+        () =>
+            computeRtcPerformanceView({
+                diagnostics,
+                state,
+                distributedMonitor: undefined,
+                histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+            }),
         [diagnostics, state]
     );
     const [sequence, setSequence] = useState(1);
@@ -50,12 +62,10 @@ export function useRtcDiagnosticsController({
     );
     const directContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
         providerMode,
-        apiBaseUrl: globalValues?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        applicationId: globalValues?.applicationId ??
-            DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
-        workspaceId: globalValues?.workspaceId ??
-            DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
-        roomId: globalValues?.roomId ?? bootstrap.roomId,
+        apiBaseUrl: globalValues.apiBaseUrl,
+        applicationId: globalValues.applicationId,
+        workspaceId: globalValues.workspaceId,
+        roomId: globalValues.roomId,
         actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
         connection: 'rtc-diagnostics',
         authSession,
@@ -69,6 +79,7 @@ export function useRtcDiagnosticsController({
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
+                kind: 'diagnostic',
                 topic,
                 context: directContext(),
                 transport: 'realtime',

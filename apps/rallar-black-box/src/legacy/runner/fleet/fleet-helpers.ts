@@ -1,4 +1,4 @@
-import type { ControlFleetReportFilter, ControlFleetRunReport } from '../../../control-run-manager.ts';
+import type { ControlFleetReportFilter, ControlFleetRunReport } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     DEFAULT_FLEET_WORLD_MAP_LAYER_STATE,
     FLEET_WORLD_MAP_LAYER_IDS,

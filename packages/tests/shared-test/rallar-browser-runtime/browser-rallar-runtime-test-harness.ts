@@ -4,10 +4,12 @@ import {
     createBlackBoxRallarRuntime,
     type BlackBoxRallarRuntimeInstallationTarget
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime.ts';
+
 import {
     facadeBehavior,
     facadeRecords,
     facadeSession,
+    getFacadeDeliveryRegistry,
     rallarFacadeTestDouble,
     resetBrowserRuntimeFacadeTestDouble
 } from './browser-runtime-facade-test-double.ts';
@@ -16,7 +18,10 @@ export const facade = {
     behavior: facadeBehavior,
     records: facadeRecords,
     session: facadeSession,
-    rallar: rallarFacadeTestDouble
+    rallar: rallarFacadeTestDouble,
+    get deliveries() {
+        return getFacadeDeliveryRegistry();
+    }
 };
 
 export const events: BlackBoxRallarEvent[] = [];
@@ -120,6 +125,7 @@ export async function loadRuntime(): Promise<BlackBoxRallarRuntime> {
         facade: facade.rallar,
         targetWindow: target,
         clock: { now: Date.now },
+        readDocument: () => ({ timeOrigin: 1_700_000_000_000.25, origin: 'https://runtime.example.test' }),
         delay: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     });
 }

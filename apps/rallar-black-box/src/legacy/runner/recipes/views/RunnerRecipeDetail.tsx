@@ -1,9 +1,12 @@
-import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import type { AppTabId } from '../../../../app-tabs.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot
-} from '../../../../control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    RallarBlackBoxTestResult,
+    RallarBlackBoxTestState
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { AppTabId } from '../../../../app-tabs.ts';
 import { distributedRecipeStateTone, type DistributedRecipePreflightSummary } from '../../../../distributed-recipes.ts';
 import { runnerFriendlyErrorMessage, type RecipeLaunchState } from '../../../../runner-readiness.ts';
 import { resultSummary, statusTone } from '../../../shared/command-presentation.ts';

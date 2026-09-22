@@ -12,6 +12,7 @@
     {
       "recipeId": "rtc-realtime-stability",
       "recipe": {
+        "schemaVersion": 1,
         "recipeId": "rtc-realtime-stability",
         "name": "RTC realtime stability stream",
         "description": "Connect RTC and send a lower-rate stream intended as a green realtime stability baseline.",
@@ -198,7 +199,7 @@
       },
       "role": "sender",
       "profile": "rtc",
-      "required": true
+      "variables": {}
     },
     {
       "recipeId": "rtc-realtime-stability-receiver",
@@ -344,7 +345,7 @@
       },
       "role": "receiver",
       "profile": "rtc",
-      "required": true
+      "variables": {}
     }
   ],
   "targetPolicy": {
@@ -359,16 +360,19 @@
     },
     "expectedParticipantCount": 2
   },
+  "variables": {},
   "roleAssignments": [
     {
       "role": "sender",
       "agentId": "controller-01",
-      "required": true
+      "recipeIds": [],
+      "variables": {}
     },
     {
       "role": "receiver",
       "agentId": "controller-02",
-      "required": true
+      "recipeIds": [],
+      "variables": {}
     }
   ],
   "ackTimeoutMs": 30000,
@@ -377,15 +381,9 @@
     "timeoutMs": 15000
   },
   "startMode": "manual",
-  "artifactPolicy": {
-    "retainArtifacts": true,
-    "includeDistributedMetadata": true,
-    "includeEventJsonl": true,
-    "includeResultJsonl": true,
-    "includeFailureBundle": true
-  },
+  "groupAssertions": [],
   "metadata": {
-    "createdBy": "rallar-black-box-spa",
+    "createdBy": "rallar-black-box-hetzner-manifest-catalog",
     "rolePattern": "sender-receiver",
     "manifestSuite": "hetzner-distributed",
     "diagnostic": false,

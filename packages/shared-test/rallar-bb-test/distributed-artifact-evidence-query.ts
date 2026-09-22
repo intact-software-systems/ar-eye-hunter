@@ -1,67 +1,47 @@
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
+
 import type {
     DistributedArtifactEvidenceEntry,
     DistributedArtifactEvidenceWindowQuery
 } from './distributed-artifact-evidence-contracts.ts';
-import { normalizedEvidenceText } from './distributed-artifact-evidence-utils.ts';
+import { toNormalizedEvidenceText } from './distributed-artifact-evidence/to-normalized-evidence-text.ts';
 
-export type CompiledDistributedArtifactEvidenceQuery = Readonly<{
-    query: DistributedArtifactEvidenceWindowQuery;
-    tokens: readonly string[];
-}>;
+export interface CompiledDistributedArtifactEvidenceQuery {
+    readonly query: DistributedArtifactEvidenceWindowQuery;
+    readonly tokens: readonly string[];
+}
 
-export function compileDistributedArtifactEvidenceQuery(
-    query: DistributedArtifactEvidenceWindowQuery = {}
+export function toCompiledDistributedArtifactEvidenceQuery(
+    query: DistributedArtifactEvidenceWindowQuery
 ): CompiledDistributedArtifactEvidenceQuery {
-    const tokens = normalizedEvidenceText(query.query).split(/\s+/).filter(Boolean);
+    const tokens = toNormalizedEvidenceText(query.query).split(/\s+/).filter(Boolean);
     return { query, tokens };
 }
 
-export function distributedArtifactEvidenceQueryFingerprintValue(
+export function toDistributedArtifactEvidenceQueryFingerprint(
     compiled: CompiledDistributedArtifactEvidenceQuery
-): readonly unknown[] {
+): readonly ApiJsonValue[] {
     const query = compiled.query;
     return [
         [...new Set(compiled.tokens)].sort(),
-        optionalTextFingerprint(query.agentId),
-        optionalTextFingerprint(query.recipeId),
-        optionalTextFingerprint(query.commandId),
+        toOptionalTextFingerprint(query.agentId),
+        toOptionalTextFingerprint(query.recipeId),
+        toOptionalTextFingerprint(query.commandId),
         query.status === undefined
             ? ['absent']
-            : ['present', normalizedStatus(query.status)],
-        optionalTextFingerprint(query.severity),
-        optionalTextFingerprint(query.transport),
-        optionalTextFingerprint(query.category),
-        optionalNumberFingerprint(query.fromEpochMs),
-        optionalNumberFingerprint(query.toEpochMs)
+            : ['present', toNormalizedStatus(query.status)],
+        toOptionalTextFingerprint(query.severity),
+        toOptionalTextFingerprint(query.transport),
+        toOptionalTextFingerprint(query.category),
+        toOptionalNumberFingerprint(query.fromEpochMs),
+        toOptionalNumberFingerprint(query.toEpochMs)
     ];
 }
 
-function optionalTextFingerprint(value: string | undefined): readonly unknown[] {
-    return value === undefined
-        ? ['absent']
-        : ['present', normalizedEvidenceText(value)];
-}
-
-function optionalNumberFingerprint(value: number | undefined): readonly unknown[] {
-    if (value === undefined) {
-        return ['absent'];
-    }
-    if (Number.isNaN(value)) {
-        return ['present', 'nan'];
-    }
-    if (value === Number.POSITIVE_INFINITY) {
-        return ['present', 'positive-infinity'];
-    }
-    if (value === Number.NEGATIVE_INFINITY) {
-        return ['present', 'negative-infinity'];
-    }
-    return ['present', 'finite', value];
-}
-
-export function distributedArtifactEvidenceSearchHaystack(
+export function toDistributedArtifactEvidenceSearchHaystack(
     entry: DistributedArtifactEvidenceEntry
 ): string {
-    return normalizedEvidenceText(
+    return toNormalizedEvidenceText(
         [
             entry.agentId,
             ...(entry.agentIds ?? []),
@@ -85,46 +65,69 @@ export function distributedArtifactEvidenceSearchHaystack(
     );
 }
 
-export function distributedArtifactEvidenceEntryMatches(
+/** The haystack is normalized search text that holds at least the entry's own search haystack. */
+export function isDistributedArtifactEvidenceQueryMatch(
     entry: DistributedArtifactEvidenceEntry,
     compiled: CompiledDistributedArtifactEvidenceQuery,
-    haystack = distributedArtifactEvidenceSearchHaystack(entry)
+    haystack: string
 ): boolean {
     const query = compiled.query;
     return compiled.tokens.every((token) => haystack.includes(token)) &&
-        relatedMatch(entry.agentId, entry.agentIds, query.agentId) &&
-        exactMatch(entry.recipeId, query.recipeId) &&
-        exactMatch(entry.commandId, query.commandId) &&
-        statusMatch(entry.status, query.status) &&
-        exactMatch(entry.severity, query.severity) &&
-        exactMatch(entry.transport, query.transport) &&
-        exactMatch(entry.category, query.category) &&
+        isRelatedMatch(entry.agentId, entry.agentIds, query.agentId) &&
+        isExactMatch(entry.recipeId, query.recipeId) &&
+        isExactMatch(entry.commandId, query.commandId) &&
+        isStatusMatch(entry.status, query.status) &&
+        isExactMatch(entry.severity, query.severity) &&
+        isExactMatch(entry.transport, query.transport) &&
+        isExactMatch(entry.category, query.category) &&
         (query.fromEpochMs === undefined ||
             (entry.atEpochMs !== undefined && entry.atEpochMs >= query.fromEpochMs)) &&
         (query.toEpochMs === undefined ||
             (entry.atEpochMs !== undefined && entry.atEpochMs <= query.toEpochMs));
 }
 
-function exactMatch(value: string | undefined, expected: string | undefined): boolean {
-    return expected === undefined ||
-        normalizedEvidenceText(value) === normalizedEvidenceText(expected);
+function toOptionalTextFingerprint(value: string | undefined): readonly ApiJsonValue[] {
+    return value === undefined
+        ? ['absent']
+        : ['present', toNormalizedEvidenceText(value)];
 }
 
-function relatedMatch(
+function toOptionalNumberFingerprint(value: number | undefined): readonly ApiJsonValue[] {
+    if (value === undefined) {
+        return ['absent'];
+    }
+    if (Number.isNaN(value)) {
+        return ['present', 'nan'];
+    }
+    if (value === Number.POSITIVE_INFINITY) {
+        return ['present', 'positive-infinity'];
+    }
+    if (value === Number.NEGATIVE_INFINITY) {
+        return ['present', 'negative-infinity'];
+    }
+    return ['present', 'finite', value];
+}
+
+function isExactMatch(value: string | undefined, expected: string | undefined): boolean {
+    return expected === undefined ||
+        toNormalizedEvidenceText(value) === toNormalizedEvidenceText(expected);
+}
+
+function isRelatedMatch(
     value: string | undefined,
     values: readonly string[] | undefined,
     expected: string | undefined
 ): boolean {
-    return expected === undefined || exactMatch(value, expected) ||
-        (values ?? []).some((candidate) => exactMatch(candidate, expected));
+    return expected === undefined || isExactMatch(value, expected) ||
+        (values ?? []).some((candidate) => isExactMatch(candidate, expected));
 }
 
-function statusMatch(value: string | undefined, expected: string | undefined): boolean {
-    return expected === undefined || normalizedStatus(value) === normalizedStatus(expected);
+function isStatusMatch(value: string | undefined, expected: string | undefined): boolean {
+    return expected === undefined || toNormalizedStatus(value) === toNormalizedStatus(expected);
 }
 
-function normalizedStatus(value: string | undefined): string {
-    const status = normalizedEvidenceText(value);
+function toNormalizedStatus(value: string | undefined): string {
+    const status = toNormalizedEvidenceText(value);
     if (status === 'ok' || status === 'pass' || status === 'success') {
         return 'passed';
     }

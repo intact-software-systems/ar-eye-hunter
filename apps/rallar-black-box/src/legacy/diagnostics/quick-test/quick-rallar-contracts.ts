@@ -1,3 +1,22 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type { RallarMessage, RallarMessagePayload } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
+import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
+
+export interface UseQuickRallarTestControllerInput {
+    state: RallarBlackBoxTestState;
+    bootstrap: RallarBlackBoxBootstrapConfig;
+    authSession?: AuthSession;
+    globalValues: CommandCenterGlobalValues;
+    browserStatus: RallarBrowserStatusSummary;
+    onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
+        key: K,
+        value: CommandCenterGlobalValues[K]
+    ): void;
+}
+
 export type QuickRallarTransport = 'ws';
 
 export type QuickRallarValues = Readonly<{
@@ -28,8 +47,8 @@ export type QuickRallarReceivedMessageRow = Readonly<{
     topicId: string;
     contextId: string;
     resourceId: string;
-    payload?: unknown;
-    raw?: unknown;
+    payload: RallarMessagePayload;
+    raw: RallarMessage<RallarMessagePayload>;
 }>;
 
 export type QuickRallarPayloadResult =
@@ -63,7 +82,7 @@ export type QuickRallarTestViewModel = Readonly<{
         typeId: string;
         topicId: string;
         contextId: string;
-        payload?: unknown;
+        payload: RallarMessagePayload;
     }>[];
     waitStatus: string;
     providerMode: 'simulated' | 'browser-rallar';

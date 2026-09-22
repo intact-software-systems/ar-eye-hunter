@@ -1,9 +1,9 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import type { RallarCrdtDocument } from '@shared-web/browser/rallar-crdt.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtDocumentRef, RallarCrdtOperationBatch } from '@shared/crdt/crdt-types.ts';
 import type { CrdtEditorValue } from '../../../crdt-editor.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 
 export type CrdtPanelInput = Readonly<{

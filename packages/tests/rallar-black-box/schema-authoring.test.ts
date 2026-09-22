@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    commandExampleSnippets,
-    schemaAuthoringSummary,
-    schemaAuthoringTone,
+    toCommandExampleSnippets,
+    toSchemaAuthoringSummary,
+    toSchemaAuthoringTone,
     validateSchemaAuthoringText,
     validateSchemaAuthoringValue
 } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
@@ -26,8 +26,8 @@ describe('schema authoring helpers', () => {
         expect(validation.liveServiceRequirements).toContain('HTTP endpoint');
         expect(validation.artifactExpectations).toContain('HTTP status');
         expect(validation.distributedCompatible).toBe(true);
-        expect(schemaAuthoringTone(validation)).toBe('warn');
-        expect(schemaAuthoringSummary(validation)).toContain('live requirements');
+        expect(toSchemaAuthoringTone(validation)).toBe('warn');
+        expect(toSchemaAuthoringSummary(validation)).toContain('live requirements');
     });
 
     it('returns parse and schema errors for invalid JSON', () => {
@@ -42,10 +42,18 @@ describe('schema authoring helpers', () => {
         expect(schemaValidation.ok).toBe(false);
         expect(schemaValidation.parseOk).toBe(true);
         expect(schemaValidation.errorText).toContain('Missing required property request');
+
+        const unversionedRecipeValidation = validateSchemaAuthoringValue('recipe', {
+            recipeId: 'unversioned-recipe',
+            commands: [{ kind: 'health' }]
+        });
+        expect(unversionedRecipeValidation.ok).toBe(false);
+        expect(unversionedRecipeValidation.errorText).toContain('Missing required property schemaVersion');
     });
 
     it('validates recipe and distributed manifests and derives command kinds from inline recipes', () => {
         const recipe = {
+            schemaVersion: 1,
             recipeId: 'authoring-recipe',
             commands: [
                 { kind: 'health' },
@@ -59,16 +67,24 @@ describe('schema authoring helpers', () => {
         const manifestValidation = validateSchemaAuthoringValue('distributed-run-manifest', {
             schemaVersion: 1,
             distributedRunId: 'dist-authoring',
+            controlRunId: 'dist-authoring',
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: 'bb-group'
             },
-            recipes: [{ recipeId: recipe.recipeId, recipe }],
+            recipes: [{ recipeId: recipe.recipeId, recipe, variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a']
-            }
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         });
 
         expect(manifestValidation.ok).toBe(true);
@@ -78,6 +94,7 @@ describe('schema authoring helpers', () => {
 
     it('derives capability hints recursively for composite recipes', () => {
         const recipe = {
+            schemaVersion: 1,
             recipeId: 'composite-authoring-recipe',
             commands: [
                 {
@@ -102,7 +119,8 @@ describe('schema authoring helpers', () => {
                                 {
                                     kind: 'ws.send',
                                     commandId: 'send-ws',
-                                    connection: 'apiWs'
+                                    connection: 'apiWs',
+                                    data: { text: 'probe' }
                                 }
                             ]
                         },
@@ -146,11 +164,11 @@ describe('schema authoring helpers', () => {
         expect(validation.liveServiceRequirements).toContain('open WebSocket connection');
         expect(validation.artifactExpectations).toContain('parent loop rollup');
         expect(validation.artifactExpectations).toContain('parent parallel rollup');
-        expect(schemaAuthoringSummary(validation)).toContain('live requirements');
+        expect(toSchemaAuthoringSummary(validation)).toContain('live requirements');
     });
 
     it('generates one example snippet for each command capability', () => {
-        const snippets = commandExampleSnippets();
+        const snippets = toCommandExampleSnippets();
         expect(snippets.length).toBeGreaterThan(10);
         expect(snippets.map((snippet) => snippet.kind)).toContain('ws.send');
         expect(snippets.find((snippet) => snippet.kind === 'ws.send')?.commandText).toContain('"kind": "ws.send"');

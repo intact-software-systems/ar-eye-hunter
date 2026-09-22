@@ -28,8 +28,8 @@ function lifecycleModule(
     };
 }
 
-type AdvancedPanel = typeof import('../../../apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx')['RunnerAdvancedPanel'];
-type DirectPanels = typeof import('../../../apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx')['DirectConnectionTabPanels'];
+type AdvancedPanel = typeof import('../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx')['RunnerAdvancedPanel'];
+type DirectPanels = typeof import('../../../apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx')['DirectConnectionTabPanels'];
 
 let RunnerAdvancedPanel: AdvancedPanel;
 let DirectConnectionTabPanels: DirectPanels;
@@ -54,7 +54,7 @@ beforeAll(async () => {
         lifecycleModule('LocalWorkbenchSection')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/runner/manual/ManualRallarSection.tsx',
+        '../../../apps/rallar-black-box/src/legacy/runner/manual/manual-rallar-section.tsx',
         lifecycleModule('ManualRallarSection')
     );
     vi.doMock(
@@ -70,15 +70,15 @@ beforeAll(async () => {
         lifecycleModule('RtcDiagnosticsPanel')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/QuickRallarTestPanel.tsx',
+        '../../../apps/rallar-black-box/src/legacy/diagnostics/quick-test/quick-rallar-test-panel.tsx',
         lifecycleModule('QuickRallarTestPanel')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/AuthCommandCenterPanel.tsx',
+        '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-command-center-panel.tsx',
         lifecycleModule('AuthCommandCenterPanel')
     );
     vi.doMock(
-        '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/WebSocketCommandCenterPanel.tsx',
+        '../../../apps/rallar-black-box/src/legacy/diagnostics/websocket/web-socket-command-center-panel.tsx',
         lifecycleModule('WebSocketCommandCenterPanel')
     );
     vi.doMock(
@@ -107,10 +107,10 @@ beforeAll(async () => {
     ]);
 
     ({ RunnerAdvancedPanel } = await import(
-        '../../../apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx'
+        '../../../apps/rallar-black-box/src/legacy/runner/advanced/runner-advanced-panel.tsx'
     ));
     ({ DirectConnectionTabPanels } = await import(
-        '../../../apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx'
+        '../../../apps/rallar-black-box/src/legacy/shell/tabs/direct-connection-tab-panels.tsx'
     ));
 });
 

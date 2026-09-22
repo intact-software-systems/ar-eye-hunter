@@ -1,4 +1,4 @@
-import type { ControlFleetFailureSignature } from '../../../../control-run-manager.ts';
+import type { ControlFleetFailureSignature } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { formatTime } from '../../../shared/time-format.ts';
 import { shortRunId } from '../../shared/run-id-presentation.ts';
 import type { fleetAgentDetail } from '../fleet-derivations.ts';

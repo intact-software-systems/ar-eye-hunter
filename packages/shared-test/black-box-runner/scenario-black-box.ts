@@ -21,11 +21,17 @@ import { resolveBlackBoxVariables } from './execution/black-box-run-secrets.ts';
 import { groupInteractionResultsByName, type StoredInteractionResult } from './execution/black-box-scenario-results.ts';
 import { parseScenarioCliOptions, scenarioCliHelp } from './parse-scenario-cli-options.ts';
 import {
-    collectBlackBoxRunnerEnvRequirements,
-    explainBlackBoxRunnerPlan,
-    resolveBlackBoxRunnerVariablesForPreflight,
+    computeBlackBoxRunnerPlanPreflight,
     type BlackBoxRunnerPreflightProfile
 } from './preflight/plan-preflight.ts';
+import {
+    computeBlackBoxRunnerEnvRequirements,
+    resolveBlackBoxRunnerVariablesForPreflight
+} from './preflight/preflight-env-variables.ts';
+import {
+    decodePreflightJsonArray,
+    decodePreflightJsonObject
+} from './preflight/preflight-json-values.ts';
 import {
     readScenarioRecipeIncludes,
     type ScenarioRecipe,
@@ -130,12 +136,13 @@ const preflightRawInput: ScenarioRecipe = {
         ...cliReplacements
     }
 };
-const envRequirements = collectBlackBoxRunnerEnvRequirements(preflightRawInput, process.env);
+const preflightRecipe = decodePreflightJsonObject(preflightRawInput);
+const envRequirements = computeBlackBoxRunnerEnvRequirements(preflightRecipe, process.env);
 const resolvedVariables = preflightMode
     ? resolveBlackBoxRunnerVariablesForPreflight(
-        preflightRawInput.variables,
+        decodePreflightJsonObject(preflightRawInput.variables),
         process.env,
-        preflightRawInput.secretVariables || preflightRawInput.secrets || []
+        preflightRecipe.secretVariables || preflightRecipe.secrets || []
     )
     : resolveBlackBoxVariables(
         preflightRawInput.variables,
@@ -617,14 +624,16 @@ async function executeScale(): Promise<ScenarioRunReport> {
 }
 
 if (preflightMode) {
-    const preflight = explainBlackBoxRunnerPlan({
-        rawConfig: preflightRawInput,
-        expandedConfig: expandedInput,
-        executableInteractions: scenarioJson,
+    const preflight = computeBlackBoxRunnerPlanPreflight({
+        rawConfig: preflightRecipe,
+        expandedConfig: decodePreflightJsonObject(expandedInput),
+        executableInteractions: decodePreflightJsonArray(scenarioJson),
         envRequirements,
-        trafficPlanArtifact: trafficExpansion.artifact,
+        ...(trafficExpansion.artifact === undefined
+            ? {}
+            : { trafficPlanArtifact: decodePreflightJsonObject(trafficExpansion.artifact) }),
         profile: preflightProfile,
-        expansionError: planExpansionError
+        ...(planExpansionError === undefined ? {} : { expansionError: planExpansionError })
     });
 
     console.log(JSON.stringify(redactBlackBoxData(preflight, resolvedVariables.redactions), null, 2));

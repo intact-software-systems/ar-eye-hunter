@@ -238,6 +238,31 @@ describe('browser Rallar runtime lifecycle policy', () => {
         });
     });
 
+    it('treats a blank restored username as the live session', () => {
+        const session = { username: 'alice' };
+        const room = {
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                applicationId: 'app',
+                workspaceId: 'default'
+            }
+        };
+        const restored = blackBoxRallarConnectionTargetOf(
+            { ...room, rallar: { ...room.rallar, username: '' } },
+            session
+        );
+        const next = blackBoxRallarConnectionTargetOf(room, session);
+
+        expect(restored.username).toBe('alice');
+        expect(
+            decideBlackBoxRallarLifecycleRequest(
+                { status: 'connected', activeTarget: restored },
+                { kind: 'connect', target: next }
+            )
+        ).toEqual({ kind: 'allow' });
+    });
+
     it('compares only stable session identity fields', () => {
         expect(
             isSameBlackBoxRallarSession(

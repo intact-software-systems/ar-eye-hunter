@@ -28,7 +28,8 @@ export type AnalyzeWorkspaceState<Artifact extends AnalyzeArtifactIdentity> = Re
     selectedEvidenceId?: string;
     operationGeneration: number;
     activeOperation?: AnalyzeWorkspaceOperationAuthority;
-    operationError?: unknown;
+    /** Absent while no operation has failed since the last successful one. */
+    operationError?: Error;
 }>;
 
 export function createAnalyzeWorkspaceContext(
@@ -170,7 +171,7 @@ export function completeAnalyzeWorkspaceOperation<Artifact extends AnalyzeArtifa
 export function failAnalyzeWorkspaceOperation<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
     authority: AnalyzeWorkspaceOperationAuthority,
-    error: unknown
+    error: Error
 ): AnalyzeWorkspaceState<Artifact> {
     return hasAnalyzeWorkspaceAuthority(state, authority)
         ? failWithAuthority(state, error)
@@ -278,7 +279,7 @@ export function hasAnalyzeWorkspaceAuthority(
 
 function failWithAuthority<Artifact extends AnalyzeArtifactIdentity>(
     state: AnalyzeWorkspaceState<Artifact>,
-    error: unknown
+    error: Error
 ): AnalyzeWorkspaceState<Artifact> {
     return {
         ...state,

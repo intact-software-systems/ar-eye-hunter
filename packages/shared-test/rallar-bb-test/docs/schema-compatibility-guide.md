@@ -7,7 +7,7 @@ generate or validate `rallar-bb-test` browser-agent recipes.
 
 The current recipe schema version is `1`.
 
-New recipes should include:
+Every recipe must include:
 
 - `schemaVersion: 1`
 - stable `recipeId` values
@@ -15,10 +15,10 @@ New recipes should include:
   reports, control-server events, and artifacts
 - only fields accepted by `RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA`
 
-Existing recipes without `schemaVersion` are still treated as legacy-compatible
-v1 recipes. `validateRallarBlackBoxRecipeCompatibility(...)` returns a warning
-for those recipes so tools can nudge authors toward explicit versioning without
-breaking old fixtures.
+Recipes without `schemaVersion: 1` are rejected, including inline recipes in
+commands or distributed manifests at every nesting level. Author or regenerate
+an explicit v1 recipe before dispatch. No automatic conversion or saved-recipe
+migration is provided.
 
 Unsupported explicit recipe versions fail schema validation. Distributed run
 manifests also use `schemaVersion: 1` and should include explicit v1 inline
@@ -45,6 +45,7 @@ recipes.
 {
   "schemaVersion": 1,
   "distributedRunId": "compat-distributed-health-v1",
+  "controlRunId": "compat-distributed-health-v1",
   "displayName": "Compatibility health smoke",
   "group": {
     "applicationId": "rallar-server",
@@ -55,7 +56,6 @@ recipes.
     {
       "recipeId": "health-all-agents-v1",
       "role": "all-agents",
-      "required": true,
       "recipe": {
         "schemaVersion": 1,
         "recipeId": "health-all-agents-v1",
@@ -65,15 +65,21 @@ recipes.
             "commandId": "distributed-health-v1"
           }
         ]
-      }
+      },
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
     "expectedParticipantCount": 1
   },
+  "variables": {},
+  "roleAssignments": [],
   "ackTimeoutMs": 5000,
-  "startMode": "manual"
+  "barrier": { "enabled": false },
+  "startMode": "manual",
+  "groupAssertions": [],
+  "metadata": {}
 }
 ```
 
@@ -83,6 +89,7 @@ recipes.
 {
   "schemaVersion": 1,
   "distributedRunId": "compat-group-assertions-v1",
+  "controlRunId": "compat-group-assertions-v1",
   "displayName": "Compatibility group assertions",
   "group": {
     "applicationId": "rallar-server",
@@ -92,7 +99,6 @@ recipes.
   "recipes": [
     {
       "recipeId": "probe-v1",
-      "required": true,
       "recipe": {
         "schemaVersion": 1,
         "recipeId": "probe-v1",
@@ -107,13 +113,16 @@ recipes.
             "response": { "acceptedStatusCodes": [200] }
           }
         ]
-      }
+      },
+      "variables": {}
     }
   ],
   "targetPolicy": {
     "mode": "all-online-group-members",
     "expectedParticipantCount": 2
   },
+  "variables": {},
+  "roleAssignments": [],
   "groupAssertions": [
     {
       "groupAssertionId": "members-converge",
@@ -136,7 +145,9 @@ recipes.
     }
   ],
   "ackTimeoutMs": 5000,
-  "startMode": "manual"
+  "barrier": { "enabled": false },
+  "startMode": "manual",
+  "metadata": {}
 }
 ```
 
@@ -146,14 +157,12 @@ Use the lightweight schema validator before staging or executing generated
 JSON:
 
 - Recipes: `validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value)`
-- Recipe compatibility: `validateRallarBlackBoxRecipeCompatibility(value)`
-- Distributed manifests:
-  `validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, value)`
-- Distributed manifest semantics:
-  `validateDistributedRunManifestContract(value)`
+- Distributed manifests: `decodeDistributedRunManifest(value)`, which runs
+  `RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and returns the schema
+  issues as its Left, or, once the schema holds, the manifest contract issues
 
-Treat compatibility warnings as authoring feedback. Treat validation errors as
-blocking failures.
+Treat validation errors as blocking failures. Catalog schema results report
+`valid` or `invalid`; they do not expose a legacy status or compatibility warning.
 
 ## Golden Corpus
 
@@ -176,7 +185,8 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 
 ## External Tool Rules
 
-- Emit `schemaVersion: 1` for every new recipe and distributed manifest.
+- Emit `schemaVersion: 1` for every recipe, including nested and inline recipes,
+  and for every distributed manifest.
 - Do not emit unknown top-level recipe fields.
 - Put non-contract authoring hints under `metadata` when the schema allows it.
 - Keep command IDs stable across repair prompts unless a command is split or
@@ -471,8 +481,8 @@ insensitive, array-order sensitive), allEqualWithin (absolute tolerance).
 Typed sources { recipeId, commandId, path }; predicates reuse
 assert/assert-value-operators.ts; scope.role narrows participants and
 minParticipants is the only explicit relaxation of the participant set
-frozen at target resolution. Missing, duplicate, or unresolved evidence
-fails by default. Failure codes
+frozen at target resolution. Missing, duplicate, unresolved, or undecodable
+evidence fails by default. Failure codes
 RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED /
 _EVIDENCE_MISSING / _NO_PARTICIPANTS carry redacted per-agent value tables
 into failures.json and the artifact analyzer. Correctness-only in v1: no
@@ -500,5 +510,157 @@ Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-group-assertion-conformance.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```
+
+```text
+Title: Control agent identities and capability blocks decode strictly
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batch B6b
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RallarBlackBoxControlAgentIdentity (sessionLabel and updatedAtEpochMs required)
+- RallarBlackBoxControlAgentCapabilities (assertions block required)
+- Control register and heartbeat envelopes
+
+Old shape:
+The capability decoder read an absent or malformed assertions block as an agent
+that predates assertion advertisement, filled a missing operators list with an
+empty one, and dropped unknown CRDT transports. The identity decoder read an
+unreadable capability block as no capabilities and a missing location precision
+as exact.
+
+New shape:
+decodeControlAgentCapabilities returns a Left for a missing or malformed crdt,
+assertions or messaging block and for unknown transports, operators or
+carriers. decodeControlAgentIdentity returns a Left for a missing sessionLabel
+or updatedAtEpochMs, a present but unreadable fact, or a location without a
+precision, and the control protocol rejects a register or heartbeat envelope
+that carries such an identity or none at all. An agent leaves a configured fleet
+location that does not decode out of its identity and reports it as a
+rallar.bb.control.identity_invalid diagnostic.
+
+Migration:
+Rebuild agents from this checkout; every current agent build writes the full
+identity and capability blocks. Agents built before assertion advertisement
+can no longer register.
+
+Golden corpus updates:
+None.
+
+Prompt/documentation updates:
+schema-and-capabilities.md and distributed-run-contract.md describe the
+required identity facts and the rejected envelopes.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```
+
+```text
+Title: Distributed manifests write every author setting; unread settings are removed
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batches B6b and B6b2
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+- RallarBlackBoxDistributedRunManifest and its selection, target policy,
+  role assignment, barrier and start variants
+
+Old shape:
+controlRunId, variables, roleAssignments, ackTimeoutMs, barrier, startMode,
+groupAssertions, metadata, each recipe selection's variables and required,
+each role assignment's recipeIds, required and variables, and
+roleAssignmentPolicy.orderBy were optional, and readers filled defaults for
+them. An absent ackTimeoutMs meant no ACK deadline. The manifest also carried
+secretRefs (manifest level and per recipe selection),
+targetPolicy.includeOfflineExpectedAgents and artifactPolicy, which no reader
+ever acted on.
+
+New shape:
+Every author setting above is required. The target policy is a union on mode
+(agentIds only on selected-agents, roles only on role-map), the barrier is
+{ enabled: false } or { enabled: true, timeoutMs }, and only a scheduled start
+carries startDeadlineEpochMs. secretRefs, includeOfflineExpectedAgents and
+artifactPolicy are gone: the schema rejects each as "Unexpected property.".
+decodeDistributedRunManifest is the JSON entry point.
+
+Migration:
+Regenerate checked-in manifests with
+apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts and
+write-world-fleet-distributed-manifests.ts. Hand-authored manifests write the
+required settings and drop the three removed ones. A persisted control snapshot
+or artifact bundle whose manifest does not decode is rejected.
+
+Golden corpus updates:
+Every valid and invalid manifest case writes the full contract, so each invalid
+case fails only for the defect it pins. Added invalid missing-author-setting
+and removed-artifact-policy-setting cases.
+
+Prompt/documentation updates:
+distributed-run-contract.md lists the required and optional fields;
+ai-recipe-prompt-guide.md asks for explicit settings and points at
+decodeDistributedRunManifest; this guide's examples follow the contract.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/rallar-black-box/world-fleet-distributed-manifests.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
+```
+
+```text
+Title: Distributed manifest recipe selections and role assignments drop the required flag
+Date: 2026-09-17
+Owner: ALM S1 Task 9h batch B6b3
+
+Change type:
+- Breaking schema change (no old-data loading)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+- RallarBlackBoxDistributedRunRecipeSelection and
+  RallarBlackBoxDistributedRoleAssignment
+- DistributedRunRecipeProgressRow
+
+Old shape:
+Each recipe selection and role assignment carried a required boolean. It never
+changed the verdict: the snapshot decoder checked it, recipe progress rows
+copied it, and the Recipe Console Monitor showed it as a "Required" fact.
+
+New shape:
+Neither carries required, and every recipe selection and role assignment still
+counts toward the verdict. The schema rejects the flag as "Unexpected
+property."; recipe progress rows and the Monitor recipe rollup no longer carry
+or show it.
+
+Migration:
+Regenerate checked-in manifests with
+apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts and
+write-world-fleet-distributed-manifests.ts. A hand-authored manifest, a
+persisted control snapshot or an artifact bundle whose manifest still carries
+the flag is rejected.
+
+Golden corpus updates:
+Valid and invalid manifest cases drop the flag. Added the invalid
+removed-required-flag case.
+
+Prompt/documentation updates:
+distributed-run-contract.md and ai-recipe-prompt-guide.md no longer ask for the
+flag; this guide's examples follow the contract.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/rallar-black-box/recipe-console-monitor-inspector-window.test.ts
+npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts --check
+npx tsx apps/rallar-black-box/scripts/write-world-fleet-distributed-manifests.ts --check
 cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```

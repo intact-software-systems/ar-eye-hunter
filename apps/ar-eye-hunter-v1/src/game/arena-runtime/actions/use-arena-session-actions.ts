@@ -1,9 +1,10 @@
+import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
+
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { createRallarAiFunnyRoomName, createRallarAiRoomNameSeed } from '@shared/rallar-ai/mod.ts';
-import { useCallback, useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
 
 import { GAME_ROOM_NAME } from '../../types.ts';
 import type {
@@ -12,7 +13,6 @@ import type {
     DirectorAttemptSource,
     DirectorAttemptState
 } from '../arena-connection-contracts.ts';
-import { toErrorMessage } from '../arena-connection-helpers.ts';
 
 interface ArenaSessionActionsInput {
     readonly attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
@@ -34,38 +34,82 @@ interface ArenaSessionActionsInput {
     readonly setSession: Dispatch<SetStateAction<AuthSession | undefined>>;
 }
 
+interface ArenaAuthentication {
+    readonly mode: 'login' | 'register';
+    readonly username: string;
+    readonly password: string;
+    readonly displayName: string | undefined;
+}
+
 export function useArenaSessionActions(
     input: ArenaSessionActionsInput
 ): Pick<
     ArenaConnection,
-    | 'login'
-    | 'register'
-    | 'logout'
-    | 'refreshRooms'
-    | 'createArenaRoom'
-    | 'joinRoom'
-    | 'appointSelfAsDirector'
+    'login' | 'register' | 'logout' | 'refreshRooms' | 'createArenaRoom' | 'joinRoom' | 'appointSelfAsDirector'
 > {
-    const {
-        attemptDirectorAppointment,
-        clearRoomScopedArenaState,
-        connect,
-        connectionState,
-        directorAttemptRef,
-        directorStatusRef,
-        isNetworkEnabled,
-        resetForSignedOutAuth,
-        roomId,
-        roomIdRef,
-        rooms,
-        sessionRef,
-        setConnectionState,
-        setError,
-        setRoomId,
-        setRooms,
-        setSession
-    } = input;
+    const authentication = useArenaAuthentication(input);
+    const rooms = useArenaRoomActions(input);
+    const appointSelfAsDirector = useCallback(async () => {
+        if (input.isNetworkEnabled()) {
+            await input.attemptDirectorAppointment('manual');
+        }
+    }, [input.attemptDirectorAppointment, input.isNetworkEnabled]);
+    useArenaAutomaticAppointment(input);
+    return { ...authentication, ...rooms, appointSelfAsDirector };
+}
 
+function useArenaAuthentication(
+    input: ArenaSessionActionsInput
+): Pick<ArenaConnection, 'login' | 'register' | 'logout'> {
+    const login = useCallback(
+        (username: string, password: string) =>
+            authenticateArena(input, { username, password, mode: 'login', displayName: undefined }),
+        [input.connect]
+    );
+    const register = useCallback(
+        (username: string, password: string, displayName?: string) =>
+            authenticateArena(input, { username, password, displayName, mode: 'register' }),
+        [input.connect]
+    );
+    const logout = useCallback(async () => {
+        input.resetForSignedOutAuth();
+        try {
+            await rallar.auth.logout();
+        }
+        catch {
+            // The facade already performed local cleanup; revocation is best effort.
+        }
+        finally {
+            input.resetForSignedOutAuth();
+        }
+    }, [input.resetForSignedOutAuth]);
+    return { login, register, logout };
+}
+
+async function authenticateArena(input: ArenaSessionActionsInput, authentication: ArenaAuthentication): Promise<void> {
+    input.setConnectionState('connecting');
+    input.setError(undefined);
+    try {
+        const session = authentication.mode === 'login'
+            ? await rallar.auth.login({ username: authentication.username, password: authentication.password })
+            : await rallar.auth.registerAndLogin({
+                username: authentication.username,
+                password: authentication.password,
+                displayName: authentication.displayName || authentication.username
+            });
+        input.setSession(session);
+        await input.connect();
+    }
+    catch (error) {
+        input.setConnectionState('error');
+        input.setError(error instanceof Error ? error.message : String(error));
+    }
+}
+
+function useArenaRoomActions(
+    input: ArenaSessionActionsInput
+): Pick<ArenaConnection, 'refreshRooms' | 'createArenaRoom' | 'joinRoom'> {
+    const { sessionRef, setRooms, setRoomId, clearRoomScopedArenaState, rooms } = input;
     const refreshRooms = useCallback(async () => {
         if (!sessionRef.current) {
             return;
@@ -77,55 +121,6 @@ export function useArenaSessionActions(
         setRooms(state.rooms);
         setRoomId(state.currentRoomId);
     }, []);
-
-    const login = useCallback(async (username: string, password: string) => {
-        setConnectionState('connecting');
-        setError(undefined);
-        try {
-            const response = await rallar.auth.login({ username, password });
-            setSession(response);
-            await connect();
-        }
-        catch (err) {
-            setConnectionState('error');
-            setError(toErrorMessage(err instanceof Error ? err : new Error(String(err))));
-        }
-    }, [connect]);
-
-    const register = useCallback(async (
-        username: string,
-        password: string,
-        displayName?: string
-    ) => {
-        setConnectionState('connecting');
-        setError(undefined);
-        try {
-            const response = await rallar.auth.registerAndLogin({
-                username,
-                password,
-                displayName: displayName || username
-            });
-            setSession(response);
-            await connect();
-        }
-        catch (err) {
-            setConnectionState('error');
-            setError(toErrorMessage(err instanceof Error ? err : new Error(String(err))));
-        }
-    }, [connect]);
-
-    const logout = useCallback(async () => {
-        resetForSignedOutAuth();
-        try {
-            await rallar.auth.logout();
-        }
-        catch {
-            // Manual logout is best-effort; the facade performs local cleanup first.
-        }
-        finally {
-            resetForSignedOutAuth();
-        }
-    }, [resetForSignedOutAuth]);
 
     const createArenaRoom = useCallback(async () => {
         if (!sessionRef.current) {
@@ -161,13 +156,12 @@ export function useArenaSessionActions(
         await refreshRooms();
     }, [clearRoomScopedArenaState, refreshRooms]);
 
-    const appointSelfAsDirector = useCallback(async () => {
-        if (!isNetworkEnabled()) {
-            return;
-        }
-        await attemptDirectorAppointment('manual');
-    }, [attemptDirectorAppointment, isNetworkEnabled]);
+    return { refreshRooms, createArenaRoom, joinRoom };
+}
 
+function useArenaAutomaticAppointment(input: ArenaSessionActionsInput): void {
+    const { connectionState, roomId, directorStatusRef, directorAttemptRef, roomIdRef, attemptDirectorAppointment } =
+        input;
     useEffect(() => {
         if (connectionState !== 'connected' || !roomId) {
             return;
@@ -190,14 +184,4 @@ export function useArenaSessionActions(
         }, 750);
         return () => window.clearTimeout(timer);
     }, [attemptDirectorAppointment, connectionState, roomId]);
-
-    return {
-        login,
-        register,
-        logout,
-        refreshRooms,
-        createArenaRoom,
-        joinRoom,
-        appointSelfAsDirector
-    };
 }

@@ -2,14 +2,14 @@
 import { executeLocalWsInteraction } from './execute-local-ws-interaction.ts';
 import { rememberWsCloseEvent } from './local-websocket-session.ts';
 import {
-    executeRemoteWsInteraction,
-    shouldExecuteRemoteWsInteraction
+    isRemoteWsInteraction,
+    runRemoteWsInteraction
 } from './remote-browser-websocket-interaction.ts';
 
 export { rememberWsCloseEvent };
 
 export function executeWsInteraction(interaction: any, config: any, context: any): Promise<any> {
-    return shouldExecuteRemoteWsInteraction(interaction, context)
-        ? executeRemoteWsInteraction(interaction, config, context)
+    return isRemoteWsInteraction(interaction, context)
+        ? runRemoteWsInteraction(interaction, config, context)
         : executeLocalWsInteraction(interaction, config, context);
 }

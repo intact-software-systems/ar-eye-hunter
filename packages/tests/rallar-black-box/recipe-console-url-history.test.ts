@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { recipeConsoleExecuteRecipeSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 import { createRecipeConsoleUrlHistory, type RecipeConsoleHistoryPort } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-history.ts';
-import { RECIPE_CONSOLE_SENSITIVE_URL_KEYS } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import { RECIPE_CONSOLE_SENSITIVE_URL_KEYS } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-key-policy.ts';
 
 class MemoryHistoryPort implements RecipeConsoleHistoryPort {
     currentSearch: string;
@@ -188,7 +188,7 @@ describe('Recipe Console URL history', () => {
         const params = new URLSearchParams(port.pushed[0]);
         expect(params.get('provider')).toBe('simulated');
         expect(params.get('roomId')).toBe('room-a');
-        expect(params.has('workspace')).toBe(false);
+        expect(params.get('workspace')).toBe('black-box-runner');
     });
 
     it('replaces high-frequency patches without creating a push entry', () => {

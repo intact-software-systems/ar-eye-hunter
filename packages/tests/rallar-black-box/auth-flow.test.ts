@@ -8,7 +8,7 @@ import {
     bootstrapPatchFromAuthSession,
     type RallarBlackBoxAuthFacade
 } from '../../../apps/rallar-black-box/src/auth-flow.ts';
-import { resolveRallarBlackBoxBootstrapConfig } from '../../../apps/rallar-black-box/src/runtime-store.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../../packages/shared-test/rallar-bb-test/browser-control-agent-config.ts';
 
 function session(username = 'alice') {
     return {
@@ -133,7 +133,8 @@ describe('rallar-black-box auth flow', () => {
         const authSession = session('alice');
         const initial = resolveRallarBlackBoxBootstrapConfig(
             '?provider=browser-rallar&apiBaseUrl=https%3A%2F%2Fapi.example.test',
-            {}
+            {},
+            ''
         );
         expect(bootstrapMatchesAuthSession(initial, authSession)).toBe(false);
 

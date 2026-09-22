@@ -1,11 +1,14 @@
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { validateRallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/control/validate-rallar-black-box-test-command.ts';
 import { describe, expect, it } from 'vitest';
-import { authRecipeSnippet } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-recipe.ts';
+import { toAuthCommandCenterRecipeText } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/to-auth-command-center-recipe-text.ts';
 
 describe('auth command-center recipe mutation identity', () => {
     it('allocates distinct opaque path identities for each generated operator action', () => {
-        const recipe = readRecipe(authRecipeSnippet('visible-username'));
-        const repeated = readRecipe(authRecipeSnippet('visible-username'));
+        let issued = 0;
+        const createRequestId = () => `operator-request-${++issued}`;
+        const recipe = readRecipe(toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId }));
+        const repeated = readRecipe(toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId }));
 
         expect(recipe.commands.map((command) => command.request.path)).toEqual([
             expect.stringMatching(/^\/api\/auth\/login\/requests\/[^/]+$/),
@@ -25,6 +28,17 @@ describe('auth command-center recipe mutation identity', () => {
         expect(repeated.commands.map((command) => command.request.path)).not.toEqual(
             recipe.commands.map((command) => command.request.path)
         );
+    });
+});
+
+describe('auth command-center recipe export', () => {
+    it('copies a strict version-1 recipe', () => {
+        const recipe = JSON.parse(
+            toAuthCommandCenterRecipeText({ username: 'visible-username', createRequestId: () => 'operator-request' })
+        );
+
+        expect(recipe).toMatchObject({ schemaVersion: 1 });
+        expect(validateRallarBlackBoxTestCommand({ kind: 'recipe.load', recipe })).toEqual({ ok: true });
     });
 });
 

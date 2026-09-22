@@ -1,15 +1,16 @@
 import { describe, expect, it, vi, type Mock } from 'vitest';
+import { createMessageDelivery } from './messages/test-message-delivery.ts';
 
-import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type {
     RallarDirectorRelayConfig,
     RallarDirectorRelayHandle,
     RallarDirectorRelaySendResult,
     RallarDirectorStatus,
     RallarMessage,
+    RallarMessageHandle,
     RallarMessageHandler,
     RallarMessageSelectorInput,
-    RallarMessageSendResult,
     RallarPeopleState,
     RallarRealtimeHandler,
     RallarRealtimeJsonSendInput,
@@ -30,8 +31,9 @@ import type {
     RallarWsSendInput,
     RallarWsStatus
 } from '@shared-web/browser/rallar.ts';
-import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import type { RallarGameEnvelope, RallarGameMatchConfig, RallarGameRallarFacade } from '@shared-web/game/mod.ts';
+import { createRallarGameEnvelope, createRallarGameMatch } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -71,6 +73,39 @@ describe('Rallar Game match', () => {
             syncRequestTypeId: 'game.topic.sync-request.v1',
             heartbeatTypeId: 'game.topic.heartbeat.v1'
         });
+    });
+
+    it.each(['queued', 'rejected', 'superseded'] as const)('waits for capability admission before reporting %s', async (state) => {
+        const fake = createFakeRallar();
+        const match = createMatch(fake);
+        await match.start();
+        const delivery = createMessageDelivery('ws', undefined);
+        fake.wsSend.mockResolvedValueOnce(delivery.handle);
+        let completed = false;
+        const sending = match.reportCapability({ scoreBias: 5 }).then((result) => {
+            completed = true;
+            return result;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        delivery.registry.record({
+            kind: 'admission',
+            carrier: 'ws',
+            msgId: delivery.handle.msgId,
+            atMs: Date.now(),
+            verdict: state === 'queued'
+                ? { kind: 'admitted', durable: true, queuedAttempts: 1 }
+                : state === 'rejected'
+                ? { kind: 'refused', reason: 'unauthorized', detail: 'Denied' }
+                : { kind: 'superseded', detail: 'Replaced' }
+        });
+        expect(await sending).toEqual(
+            state === 'queued'
+                ? { status: 'sent', transport: 'ws', ws: delivery.handle }
+                : { status: 'failed', transport: 'ws', ws: delivery.handle, reason: state === 'rejected' ? 'Denied' : 'Replaced' }
+        );
+        match.stop();
     });
 
     it('sends capability reports as room-scoped WS messages', async () => {
@@ -471,7 +506,7 @@ describe('Rallar Game match', () => {
         await fake.emitRealtime(
             'game-input',
             'peer-b',
-            envelope('presence', 'peer-b', { x: 4 }, 51)
+            envelope({ kind: 'presence', senderId: 'peer-b', payload: { x: 4 }, seq: 51 })
         );
 
         expect(receivedPresence).toHaveLength(1);
@@ -524,12 +559,12 @@ describe('Rallar Game match', () => {
         await fake.emitRealtime(
             'game-snapshot',
             'peer-c',
-            envelope('snapshot', 'peer-c', { tick: 1 }, 1)
+            envelope({ kind: 'snapshot', senderId: 'peer-c', payload: { tick: 1 }, seq: 1 })
         );
         await fake.emitRealtime(
             'game-snapshot',
             'peer-b',
-            envelope('snapshot', 'peer-b', { tick: 2 }, 2)
+            envelope({ kind: 'snapshot', senderId: 'peer-b', payload: { tick: 2 }, seq: 2 })
         );
 
         expect(receivedSnapshots).toHaveLength(1);
@@ -553,7 +588,7 @@ describe('Rallar Game match', () => {
         await fake.emitRealtime(
             'game-input',
             'peer-b',
-            envelope('input', 'peer-b', { x: 4 }, 1, 'match-a')
+            envelope({ kind: 'input', senderId: 'peer-b', payload: { x: 4 }, seq: 1, matchId: 'match-a' })
         );
 
         expect(receivedInputs).toEqual([]);
@@ -595,7 +630,7 @@ describe('Rallar Game match', () => {
         await fake.emitRealtime(
             'game-input',
             'peer-b',
-            envelope('input', 'peer-b', { x: 4 }, 1)
+            envelope({ kind: 'input', senderId: 'peer-b', payload: { x: 4 }, seq: 1 })
         );
 
         expect(receivedInputs).toEqual([]);
@@ -693,7 +728,7 @@ describe('Rallar Game match', () => {
         await fake.emitRealtime(
             'game-snapshot',
             'peer-b',
-            envelope('snapshot', 'peer-b', { tick: 1 }, 1)
+            envelope({ kind: 'snapshot', senderId: 'peer-b', payload: { tick: 1 }, seq: 1 })
         );
 
         expect(match.status()).toMatchObject({
@@ -772,13 +807,8 @@ function createMatch(
     });
 }
 
-function envelope<T>(
-    kind: RallarGameEnvelope<T>['kind'],
-    senderId: string,
-    payload: T,
-    seq: number,
-    matchId?: string
-): RallarGameEnvelope<T> {
+function envelope<T>(input: TestEnvelopeInput<T>): RallarGameEnvelope<T> {
+    const { kind, senderId, payload, seq, matchId } = input;
     return createRallarGameEnvelope({
         protocol: 'test.game.v1',
         kind,
@@ -796,13 +826,7 @@ async function emitRelaySnapshot(
     fake: FakeRallar,
     matchId?: string
 ): Promise<void> {
-    const snapshot = envelope(
-        'snapshot',
-        'peer-a',
-        { tick: 1 },
-        2,
-        matchId
-    );
+    const snapshot = envelope({ kind: 'snapshot', senderId: 'peer-a', payload: { tick: 1 }, seq: 2, matchId: matchId });
     await fake.relayConfig?.onSnapshot?.({
         transport: 'rtc',
         senderId: 'peer-a',
@@ -1074,29 +1098,9 @@ function createFakeRelayPorts(state: FakeRallarState): FakeRelayPorts {
 }
 
 function createFakeWsSend() {
-    return vi.fn(async <T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult> => ({
-        transport: 'ws',
-        status: 'enqueued',
-        message: {
-            id: {
-                v: 2,
-                msgId: 'fake-ws-message',
-                ts: 1_000,
-                senderId: 'peer-a'
-            },
-            route: {
-                topicId: input.topicId ?? 'game.topic',
-                resourceId: input.resourceId ?? 'game-resource',
-                contextId: input.contextId ?? 'room-1'
-            },
-            payload: {
-                typeId: input.typeId,
-                contentType: 'application/json',
-                resource: JSON.stringify(input.payload) ?? 'null'
-            }
-        },
-        entries: []
-    }));
+    return vi.fn(async <T>(_input: RallarWsSendInput<T>): Promise<RallarMessageHandle> =>
+        createMessageDelivery('ws', { kind: 'admitted', durable: true, queuedAttempts: 1 }).handle
+    );
 }
 
 function createFakeRealtimePorts(state: FakeRallarState): FakeRealtimePorts {
@@ -1358,7 +1362,7 @@ async function emitFakeCapability(
     input: FakeRallarAssembly,
     capability: Readonly<{ peerId: string; reportedAtEpochMs: number; scoreBias?: number; }>
 ): Promise<void> {
-    const payload = toTestJsonValue(envelope('capability', capability.peerId, capability, 100)) ?? null;
+    const payload = toTestJsonValue(envelope({ kind: 'capability', senderId: capability.peerId, payload: capability, seq: 100 })) ?? null;
     const raw = {
         id: { v: 2 as const, msgId: 'capability-message', ts: 1_100, senderId: capability.peerId },
         route: { topicId: 'game.topic', resourceId: 'capability', contextId: 'room-1' },
@@ -1427,7 +1431,7 @@ function createDirectorStatus(
     };
 }
 
-function createSubscriptionScope() {
+function createSubscriptionScope(): RallarSubscriptionScope {
     const unsubscribes: Array<() => void> = [];
     return {
         add(unsubscribe?: (() => void) | null) {
@@ -1458,4 +1462,12 @@ function toTestJsonValue<T>(value: T): ApiJsonValue | undefined {
     const serialized = JSON.stringify(value);
     // The wire boundary accepts JSON; each generic callback owns its application payload contract.
     return serialized === undefined ? undefined : JSON.parse(serialized) as ApiJsonValue;
+}
+
+interface TestEnvelopeInput<T> {
+    readonly kind: RallarGameEnvelope<T>['kind'];
+    readonly senderId: string;
+    readonly payload: T;
+    readonly seq: number;
+    readonly matchId?: string;
 }

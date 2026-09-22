@@ -1,15 +1,16 @@
-// deno-lint-ignore-file no-explicit-any
-import type { JsonValue } from '../../json-compare/compare-json-values.ts';
+import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
+import type { JsonComparisonObject } from '../../json-compare/compare-json-values.ts';
+
+import type { RallarBlackBoxTestAssertOperator } from '../rallar-black-box-test-contracts.ts';
 import type { AssertionOutcomeVerdict } from './assertion-outcome-parity.ts';
 
 export interface ComparatorParityFixture {
     readonly fixtureId: string;
-    readonly value: any;
-    readonly runnerComparator: Readonly<Record<string, any>> & Readonly<{ path: string; }>;
+    readonly value: JsonComparisonObject;
+    readonly runnerComparator: JsonComparisonObject & Readonly<{ path: string; }>;
     readonly runtimeOperator: RallarBlackBoxTestAssertOperator;
-    readonly runtimeExpected: any;
+    readonly runtimeExpected: ApiJsonValue;
     readonly expectedVerdict: AssertionOutcomeVerdict;
 }
 
@@ -98,8 +99,8 @@ export const COMPARATOR_FIXTURES: readonly ComparatorParityFixture[] = [
 
 export interface CompleteArrayParityFixture {
     readonly fixtureId: string;
-    readonly expected: JsonValue;
-    readonly actual: JsonValue;
+    readonly expected: ApiJsonValue;
+    readonly actual: ApiJsonValue;
     readonly expectedVerdict: AssertionOutcomeVerdict;
 }
 

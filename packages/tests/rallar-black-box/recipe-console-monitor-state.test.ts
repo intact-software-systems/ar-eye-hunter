@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
     ControlServerSnapshot
-} from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import * as distributedRecipes from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
@@ -15,21 +15,23 @@ import {
     failMonitorOperation
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-operation-state.ts';
 import {
+    computeMonitorDistributedRunSelection,
+    computeMonitorRunOptions,
+    getMonitorDistributedRunSelectionIndexWork,
+    getMonitorRunOptionsIndexWork
+} from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection-projection.ts';
+import {
+    computeMonitorRecipeEvidenceStatus,
+    createMonitorControlRunSelectionPatch,
+    createMonitorDistributedRunSelectionPatch,
     createMonitorRecipeEvidenceSelectionId,
-    deriveMonitorDistributedRunSelection,
-    deriveMonitorRecipeEvidenceStatus,
-    deriveMonitorRunOptions,
-    deriveMonitorUrlEvidenceSelection,
     MONITOR_ARTIFACT_EVIDENCE_ID,
-    monitorDistributedRunSelectionWorkForTest,
-    monitorEvidenceSelectionIdentifier,
-    monitorRunOptionsWorkForTest,
-    monitorUrlEvidenceKey,
-    parseMonitorRecipeEvidenceSelectionId,
-    recipeConsoleMonitorControlRunSelectionPatch,
-    recipeConsoleMonitorDistributedRunSelectionPatch
+    resolveMonitorUrlEvidenceSelection,
+    toMonitorEvidenceSelectionLabel,
+    toMonitorRecipeEvidenceIdentity,
+    toMonitorUrlEvidenceKey
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection.ts';
-import { deriveMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
+import { computeMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
 import {
     createInitialMonitorWorkspaceState,
     createMonitorWorkspaceContext,
@@ -39,8 +41,8 @@ import {
     setMonitorCancelArm,
     setMonitorEvidenceSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
-import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
+import { createControlSnapshotSelectionIndex } from '../../shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { createElementReadWitness } from '../shared-test/element-read-witness-fixture.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',
@@ -91,12 +93,19 @@ function distributedRun(
                 workspaceId: 'workspace-a',
                 groupId: 'group-a'
             },
-            recipes: [{ recipeId: 'health-only', required: true }],
+            recipes: [{ recipeId: 'health-only', variables: {} }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
                 expectedParticipantCount: 1
-            }
+            },
+            variables: {},
+            roleAssignments: [],
+            ackTimeoutMs: 30_000,
+            barrier: { enabled: false },
+            startMode: 'manual',
+            groupAssertions: [],
+            metadata: {}
         },
         commandLinks: [],
         rollup: {
@@ -104,12 +113,10 @@ function distributedRun(
             ok: state === 'passed',
             summary: {
                 participants: 1,
-                requiredParticipants: 1,
                 readyParticipants: 1,
                 passedParticipants: state === 'passed' ? 1 : 0,
                 failedParticipants: state === 'failed' ? 1 : 0,
                 recipes: 1,
-                requiredRecipes: 1,
                 passedRecipes: state === 'passed' ? 1 : 0,
                 failedRecipes: state === 'failed' ? 1 : 0,
                 groupAssertions: 0,
@@ -187,11 +194,11 @@ describe('Recipe Console Monitor selection', () => {
         ]);
         const lastKnown = distributedRun('last-known', 'run-last', 'passed', 40);
 
-        expect(deriveMonitorRunOptions({
+        expect(computeMonitorRunOptions({
             controlRunId: undefined,
             distributedRuns
         })).toEqual([]);
-        expect(deriveMonitorRunOptions({
+        expect(computeMonitorRunOptions({
             controlRunId: undefined,
             distributedRuns,
             lastKnown
@@ -222,17 +229,17 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: current.distributedRuns!,
             distributedRunsAuthoritative: true
         } as const;
-        const legacySelection = deriveMonitorDistributedRunSelection(selectionInput);
-        const indexedSelection = deriveMonitorDistributedRunSelection({
+        const legacySelection = computeMonitorDistributedRunSelection(selectionInput);
+        const indexedSelection = computeMonitorDistributedRunSelection({
             ...selectionInput,
             snapshot: current,
             selectionIndex
         });
-        const legacyOptions = deriveMonitorRunOptions({
+        const legacyOptions = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!
         });
-        const indexedOptions = deriveMonitorRunOptions({
+        const indexedOptions = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -249,11 +256,11 @@ describe('Recipe Console Monitor selection', () => {
 
         expect(indexedSelection).toEqual(legacySelection);
         expect(indexedSelection.run).toBe(current.distributedRuns![0]);
-        expect(monitorDistributedRunSelectionWorkForTest(indexedSelection))
+        expect(getMonitorDistributedRunSelectionIndexWork(indexedSelection))
             .toEqual({ indexed: false, fallback: true });
         expect(indexedOptions).toEqual(legacyOptions);
         expect(indexedOptions[0]).toBe(current.distributedRuns![0]);
-        expect(monitorRunOptionsWorkForTest(indexedOptions))
+        expect(getMonitorRunOptionsIndexWork(indexedOptions))
             .toEqual({ indexed: false, fallback: true });
         expect(indexedState).toEqual(legacyState);
         expect(indexedState.source?.controlRun).toBe(current.runs[0]);
@@ -271,7 +278,7 @@ describe('Recipe Console Monitor selection', () => {
             current,
             createControlSnapshotSelectionIndex(current)
         );
-        const selection = deriveMonitorDistributedRunSelection({
+        const selection = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing-distributed',
             distributedRuns: current.distributedRuns!,
@@ -282,7 +289,7 @@ describe('Recipe Console Monitor selection', () => {
 
         expect(selection.run).toBeUndefined();
         expect(selection.issue?.code).toBe('unavailable');
-        expect(monitorDistributedRunSelectionWorkForTest(selection))
+        expect(getMonitorDistributedRunSelectionIndexWork(selection))
             .toEqual({ indexed: true, fallback: false });
     });
 
@@ -299,7 +306,7 @@ describe('Recipe Console Monitor selection', () => {
             }
         });
 
-        const selection = deriveMonitorDistributedRunSelection({
+        const selection = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing-distributed',
             distributedRuns: current.distributedRuns!,
@@ -307,7 +314,7 @@ describe('Recipe Console Monitor selection', () => {
             snapshot: current,
             selectionIndex
         });
-        const options = deriveMonitorRunOptions({
+        const options = computeMonitorRunOptions({
             controlRunId: 'missing-run',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -328,10 +335,10 @@ describe('Recipe Console Monitor selection', () => {
         );
 
         expect(selection.issue?.code).toBe('unavailable');
-        expect(monitorDistributedRunSelectionWorkForTest(selection))
+        expect(getMonitorDistributedRunSelectionIndexWork(selection))
             .toEqual({ indexed: true, fallback: false });
         expect(options).toEqual([]);
-        expect(monitorRunOptionsWorkForTest(options))
+        expect(getMonitorRunOptionsIndexWork(options))
             .toEqual({ indexed: true, fallback: false });
         expect(state.source).toBeUndefined();
         expect(monitorWorkspaceReconciliationWorkForTest(state))
@@ -356,7 +363,7 @@ describe('Recipe Console Monitor selection', () => {
             createControlSnapshotSelectionIndex(first)
         );
 
-        const indexed = deriveMonitorDistributedRunSelection({
+        const indexed = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'duplicate\0\u202e',
             distributedRuns: current.distributedRuns!,
@@ -395,7 +402,7 @@ describe('Recipe Console Monitor selection', () => {
             createControlSnapshotSelectionIndex(first)
         );
 
-        const options = deriveMonitorRunOptions({
+        const options = computeMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
@@ -410,7 +417,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('canonicalizes only a sole compatible run and never chooses by collection order', () => {
-        const sole = deriveMonitorDistributedRunSelection({
+        const sole = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('other', 'run-b'),
@@ -418,7 +425,7 @@ describe('Recipe Console Monitor selection', () => {
             ],
             distributedRunsAuthoritative: true
         });
-        const ambiguous = deriveMonitorDistributedRunSelection({
+        const ambiguous = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('first', 'run-a'),
@@ -426,7 +433,7 @@ describe('Recipe Console Monitor selection', () => {
             ],
             distributedRunsAuthoritative: true
         });
-        const none = deriveMonitorDistributedRunSelection({
+        const none = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('other', 'run-b')],
             distributedRunsAuthoritative: true
@@ -451,19 +458,19 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('preserves explicit unavailable and incompatible IDs without fallback', () => {
-        const unavailable = deriveMonitorDistributedRunSelection({
+        const unavailable = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [distributedRun('first', 'run-a')],
             distributedRunsAuthoritative: true
         });
-        const incompatible = deriveMonitorDistributedRunSelection({
+        const incompatible = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'other',
             distributedRuns: [distributedRun('other', 'run-b')],
             distributedRunsAuthoritative: true
         });
-        const pending = deriveMonitorDistributedRunSelection({
+        const pending = computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [],
@@ -486,7 +493,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('does not canonicalize a sole run from a non-authoritative collection', () => {
-        expect(deriveMonitorDistributedRunSelection({
+        expect(computeMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('sole', 'run-a')],
             distributedRunsAuthoritative: false
@@ -498,7 +505,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('clears URL-backed evidence dependencies when the distributed run changes', () => {
-        expect(recipeConsoleMonitorDistributedRunSelectionPatch('distributed-b'))
+        expect(createMonitorDistributedRunSelectionPatch('distributed-b'))
             .toEqual({
                 distributedRunId: 'distributed-b',
                 agentId: undefined,
@@ -518,7 +525,7 @@ describe('Recipe Console Monitor selection', () => {
     });
 
     it('clears every Monitor evidence dependency when the control run changes', () => {
-        expect(recipeConsoleMonitorControlRunSelectionPatch({
+        expect(createMonitorControlRunSelectionPatch({
             state: {
                 v: 1,
                 experience: 'recipe-console',
@@ -550,26 +557,26 @@ describe('Recipe Console Monitor selection', () => {
             commandId: 'command-a'
         };
 
-        expect(deriveMonitorUrlEvidenceSelection(state)).toEqual({
+        expect(resolveMonitorUrlEvidenceSelection(state)).toEqual({
             kind: 'command',
             id: 'command-a'
         });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined
         })).toEqual({ kind: 'recipe', id: 'recipe-a' });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
             recipeId: undefined
         })).toEqual({ kind: 'agent', id: 'agent-a' });
-        expect(deriveMonitorUrlEvidenceSelection({
+        expect(resolveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
             recipeId: undefined,
             agentId: undefined
         })).toBeUndefined();
-        expect(monitorUrlEvidenceKey(state)).toBe(
+        expect(toMonitorUrlEvidenceKey(state)).toBe(
             JSON.stringify(['agent-a', 'recipe-a', 'command-a'])
         );
     });
@@ -587,13 +594,13 @@ describe('Recipe Console Monitor selection', () => {
         });
 
         expect(sender).not.toBe(receiver);
-        expect(parseMonitorRecipeEvidenceSelectionId(sender)).toEqual({
+        expect(toMonitorRecipeEvidenceIdentity(sender)).toEqual({
             recipeId: 'recipe-a',
             role: 'sender',
             profile: 'rtc'
         });
-        expect(parseMonitorRecipeEvidenceSelectionId('recipe-a')).toBeUndefined();
-        expect(monitorEvidenceSelectionIdentifier({
+        expect(toMonitorRecipeEvidenceIdentity('recipe-a')).toBeUndefined();
+        expect(toMonitorEvidenceSelectionLabel({
             kind: 'recipe',
             id: sender
         })).toBe('recipe-a · sender · rtc');
@@ -601,7 +608,6 @@ describe('Recipe Console Monitor selection', () => {
             recipeId: 'recipe-a',
             profile: 'rtc',
             role: 'sender',
-            required: true,
             targetCount: 1,
             queuedCount: 0,
             runningCount: 0,
@@ -613,7 +619,6 @@ describe('Recipe Console Monitor selection', () => {
             recipeId: 'recipe-a',
             profile: 'rtc',
             role: 'receiver',
-            required: true,
             targetCount: 1,
             queuedCount: 0,
             runningCount: 0,
@@ -622,9 +627,9 @@ describe('Recipe Console Monitor selection', () => {
             missingCount: 0,
             averageLatencyMs: 20
         }];
-        expect(deriveMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
+        expect(computeMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
             .toBe('failed');
-        expect(deriveMonitorRecipeEvidenceStatus(roleRows, sender))
+        expect(computeMonitorRecipeEvidenceStatus(roleRows, sender))
             .toBe('passed');
         expect(MONITOR_ARTIFACT_EVIDENCE_ID).toBe('artifact');
     });
@@ -673,19 +678,21 @@ describe('Recipe Console Monitor coherent state', () => {
             distributedRecipes,
             'deriveDistributedRunAnalysisReport'
         );
-        const commands = Array.from({ length: 120 }, (_, index) => ({
-            envelope: {
-                kind: 'command' as const,
-                protocolVersion: 1 as const,
-                runId: 'run-a',
-                agentId: 'agent-a',
-                commandId: `unlinked-${index}`,
-                command: { kind: 'health' as const }
-            },
-            queuedAtEpochMs: index,
-            dispatchCount: 0
-        }));
-        const run = { ...controlRun(), commands };
+        const commands = createElementReadWitness(
+            Array.from({ length: 120 }, (_, index) => ({
+                envelope: {
+                    kind: 'command' as const,
+                    protocolVersion: 1 as const,
+                    runId: 'run-a',
+                    agentId: 'agent-a',
+                    commandId: `unlinked-${index}`,
+                    command: { kind: 'health' as const }
+                },
+                queuedAtEpochMs: index,
+                dispatchCount: 0
+            }))
+        );
+        const run = { ...controlRun(), commands: commands.values };
         const state = reconcile(
             createInitialMonitorWorkspaceState(),
             query(
@@ -693,7 +700,7 @@ describe('Recipe Console Monitor coherent state', () => {
                 { runs: [run], distributedRuns: [distributedRun()] }
             )
         );
-        const model = deriveMonitorWorkspaceModel(state);
+        const model = computeMonitorWorkspaceModel(state);
 
         expect(state.source).toMatchObject({
             freshness: 'current',
@@ -716,14 +723,7 @@ describe('Recipe Console Monitor coherent state', () => {
         expect(monitorDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation.mock.calls[0]?.[0].monitor).toBe(model?.monitor);
-        expect(distributedRunMonitorDerivationWorkForTest(model!.report)).toMatchObject({
-            monitorDerivationCount: 1,
-            reportDerivationCount: 1,
-            commandLinkVisitCount: 0,
-            controlCommandVisitCount: 120,
-            controlResultVisitCount: 0,
-            controlEventVisitCount: 0
-        });
+        expect(new Set(commands.readsPerElement())).toEqual(new Set([1]));
     });
 
     it.each(['stale', 'offline'] as const)(
@@ -858,7 +858,12 @@ describe('Recipe Console Monitor coherent state', () => {
             id: 'failure-a'
         });
         state = setMonitorCancelArm(state, context.key, 'cancel-arm-a');
-        const pending = beginMonitorOperation(state, context.key, 'load-artifact');
+        const pending = beginMonitorOperation({
+            state,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: state.operationGeneration + 1
+        });
         state = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
@@ -1073,7 +1078,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
                 { runs: [controlRun()], distributedRuns: [distributedRun()] }
             )
         );
-        const loading = beginMonitorOperation(state, context.key, 'load-artifact');
+        const loading = beginMonitorOperation({
+            state,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: state.operationGeneration + 1
+        });
         state = completeMonitorArtifactOperation(
             loading.state,
             loading.authority,
@@ -1084,7 +1094,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('retains a same-run prior bundle while pending and after failure', () => {
         const ready = withCurrentArtifact();
-        const pending = beginMonitorOperation(ready, context.key, 'load-artifact');
+        const pending = beginMonitorOperation({
+            state: ready,
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: ready.operationGeneration + 1
+        });
         const provenance = Object.assign(new Error('artifact endpoint failed'), {
             status: 403,
             authorizationRequired: true
@@ -1109,7 +1124,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('rejects artifact identity mismatches without replacing prior evidence', () => {
         const ready = withCurrentArtifact();
-        const pending = beginMonitorOperation(ready, context.key, 'export-artifact');
+        const pending = beginMonitorOperation({
+            state: ready,
+            contextKey: context.key,
+            action: 'export-artifact',
+            generation: ready.operationGeneration + 1
+        });
         const mismatched = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
@@ -1125,13 +1145,18 @@ describe('Recipe Console Monitor artifact operation state', () => {
 
     it('uses context-bound generations to ignore abort-resistant late responses', () => {
         const state = withCurrentArtifact();
-        const first = beginMonitorOperation(
+        const first = beginMonitorOperation({
             state,
-            context.key,
-            'load-artifact',
-            50
-        );
-        const second = beginMonitorOperation(first.state, context.key, 'export-artifact');
+            contextKey: context.key,
+            action: 'load-artifact',
+            generation: 50
+        });
+        const second = beginMonitorOperation({
+            state: first.state,
+            contextKey: context.key,
+            action: 'export-artifact',
+            generation: first.state.operationGeneration + 1
+        });
         const afterLateFailure = failMonitorOperation(
             second.state,
             first.authority,

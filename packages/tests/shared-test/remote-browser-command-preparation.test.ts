@@ -4,17 +4,19 @@ import {
     it
 } from 'vitest';
 
-import { executeRemoteHttpInteraction } from '../../shared-test/black-box-runner/execution/execute-remote-http-interaction.ts';
-import { executeRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import type { ApiJsonObject } from '@shared/api/api-json-value.ts';
+
+import { runRemoteWsInteraction } from '../../shared-test/black-box-runner/execution/remote-browser-websocket-interaction.ts';
+import { runRemoteHttpInteraction } from '../../shared-test/black-box-runner/execution/run-remote-http-interaction.ts';
 import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import {
     toCloseCommand,
     toConnectCommand,
-    toCrdtCommand,
     toHealthCommand,
     toRallarRemoteBrowserCommandId,
     toSendCommand
 } from '../../shared-test/black-box-runner/remote-browser/remote-browser-commands.ts';
+import { toCrdtCommand } from '../../shared-test/black-box-runner/remote-browser/to-crdt-command.ts';
 
 const opaque = { toString: 0 };
 
@@ -32,7 +34,7 @@ describe('remote browser command preparation', () => {
         expect(result.right).toBeUndefined();
     });
 
-    it.each([
+    it.each<ApiJsonObject>([
         { action: opaque },
         { action: 'open', name: 'document', persist: opaque },
         { action: 'sync', handle: 'document', transport: opaque },
@@ -58,7 +60,7 @@ describe('remote browser command preparation', () => {
         expect(result.right).toBeUndefined();
     });
 
-    it.each([
+    it.each<ApiJsonObject>([
         { rallar: opaque, minSnapshotVersion: null },
         { applicationId: opaque },
         { roomRef: { applicationId: 'app', groupId: opaque } },
@@ -67,7 +69,7 @@ describe('remote browser command preparation', () => {
         expect(toConnectCommand('command', { request }).left).toBeInstanceOf(Error);
     });
 
-    it.each([
+    it.each<ApiJsonObject>([
         { action: 'open', name: 'document', initialValue: opaque, transport: 'local-only' },
         { action: 'apply', handle: 'document', batch: { kind: 'batch', operations: [{ kind: 'map.set', path: [], key: 'data', value: opaque }] } },
         { action: 'sync', handle: 'document', reason: 'test', transport: 'rtc-with-ws-fallback' },
@@ -152,11 +154,11 @@ describe('remote browser command preparation', () => {
             rtcDiagnostics: {},
             rtcCloseEvents: {}
         };
-        const execute = provider[operation];
-        if (!execute) {
+        const runOperation = provider[operation];
+        if (!runOperation) {
             throw new Error('Provider command boundary is unavailable');
         }
-        const result = await execute(interaction, config, context);
+        const result = await runOperation(interaction, config, context);
         expect(result.status).toBe('FAILURE');
         expect(requests).toEqual([]);
     });
@@ -170,8 +172,7 @@ describe('remote browser command preparation', () => {
         Reflect.set(interaction.request, 'repeatIndex', opaque);
         const config = { interactionName: 'invalidIdentity', interaction };
         const context = {
-            dependencies: { now: () => 1000, createUuid: () => 'fixed-id' },
-            options: { rallarRemoteBrowser: { fetch } },
+            dependencies: { now: () => 1000, createUuid: () => 'fixed-id', fetch },
             wsConnections: {},
             wsMessages: {},
             wsCloseEvents: {}
@@ -180,8 +181,8 @@ describe('remote browser command preparation', () => {
             Reflect.set(context.wsConnections, 'room', { remote: true });
         }
         const result = operation === 'http'
-            ? await executeRemoteHttpInteraction(interaction, config, context)
-            : await executeRemoteWsInteraction(interaction, config, context);
+            ? await runRemoteHttpInteraction(interaction, config, context)
+            : await runRemoteWsInteraction(interaction, config, context);
         expect(result.status).toBe('FAILURE');
         expect(requests).toEqual([]);
     });

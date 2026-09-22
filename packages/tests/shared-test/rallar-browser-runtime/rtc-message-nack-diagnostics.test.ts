@@ -29,7 +29,8 @@ describe('RTC message diagnostic receipts', () => {
             const { admissionStore } = stores;
             const controlAdmission = admissionStore.createControlAdmission(
                 createOutboundWorkPort(stores.workQueue, admissionStore.namespace),
-                { nowMs: Date.now }
+                { nowMs: Date.now },
+                () => {}
             );
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
             await admitAttemptedMessage(admissionStore, sessionId);

@@ -122,6 +122,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                     value: {
                                         schemaVersion: 1,
                                         distributedRunId: 'group-assertions-example',
+                                        controlRunId: 'group-assertions-example',
                                         group: {
                                             applicationId: 'rallar-server',
                                             workspaceId: 'default',
@@ -142,12 +143,17 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                     },
                                                     response: { acceptedStatusCodes: [200] }
                                                 }]
-                                            }
+                                            },
+                                            variables: {}
                                         }],
                                         targetPolicy: {
                                             mode: 'all-online-group-members',
                                             expectedParticipantCount: 2
                                         },
+                                        variables: {},
+                                        roleAssignments: [],
+                                        ackTimeoutMs: 30_000,
+                                        barrier: { enabled: false },
                                         groupAssertions: [{
                                             groupAssertionId: 'members-converge',
                                             aggregate: 'allEqual',
@@ -157,7 +163,8 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                                                 path: 'body.memberCount'
                                             }
                                         }],
-                                        startMode: 'manual'
+                                        startMode: 'manual',
+                                        metadata: {}
                                     }
                                 }
                             }
@@ -1976,7 +1983,7 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
             },
             ControlHeartbeatEnvelope: {
                 type: 'object',
-                required: ['kind', 'protocolVersion', 'runId', 'agentId', 'atEpochMs', 'status'],
+                required: ['kind', 'protocolVersion', 'runId', 'agentId', 'atEpochMs', 'status', 'identity'],
                 properties: {
                     kind: { type: 'string', enum: ['heartbeat'] },
                     protocolVersion: { type: 'integer', enum: [1] },

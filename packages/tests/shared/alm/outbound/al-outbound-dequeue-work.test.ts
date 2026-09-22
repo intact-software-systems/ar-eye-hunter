@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { ALOutboundDropReasonCode } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
     AL_OUTBOUND_WORK_PAGE_SIZE,
     computeALOutboundWorkEntry
@@ -68,12 +69,13 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) => ({
                 msg,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }]
             }),
             sendPreparedMessage: async (prepared) => {
                 sent.push(prepared);
-                return { status: 'sent' as const };
+                return { status: 'sent' as const, submissionAttempted: true };
             }
         });
         const message = createDequeuedMessage('dequeue-admits');
@@ -86,6 +88,37 @@ describe('AL outbound dequeue work', () => {
         expect(sent.map((prepared) => prepared.msgId)).toEqual([message.id.msgId]);
         expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
     });
+
+    it.each(['not-yet-in-sync', 'unauthorized', 'planner-drop'] as const satisfies readonly ALOutboundDropReasonCode[])(
+        'completes a %s dequeue without publishing the row',
+        async (dropReasonCode) => {
+            const outbox = createOutboxQueue();
+            const published: string[] = [];
+            const runtime = createDefaultOutboundTestRuntime({
+                outbox,
+                dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
+                planOutgoingMessage: (msg) => ({
+                    msg,
+                    dropReason: 'Dropped before a route exists',
+                    dropReasonCode,
+                    persist: false,
+                    preparedMessages: []
+                }),
+                afterDequeueAdmission: async (msg) => {
+                    published.push(msg.id.msgId);
+                },
+                sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+            });
+            const message = createDequeuedMessage(`discarded-${dropReasonCode}`);
+            const queued = QueueBoxUtilities.toResourceEntryFromMsg(message, DEQUEUE_TYPE);
+            await outbox.enqueueIfAbsent(queued);
+
+            await runtime.ready();
+
+            expect((await outbox.getItem(queued.key))?.status).toBe(EntityStatus.COMPLETED);
+            expect(published).toEqual([]);
+        }
+    );
 
     it('keeps a no-route dequeue on the retry budget and a failed admission non-retryable', async () => {
         // The batch reschedules the no-route row 1 ms out, and the admission the failed row commits
@@ -101,13 +134,14 @@ describe('AL outbound dequeue work', () => {
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience: createDequeueResilience() },
             planOutgoingMessage: (msg) =>
                 msg.route.resourceId === 'no-route'
-                    ? { msg, persist: false, preparedMessages: [] }
+                    ? { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }
                     : {
                         msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
+                        dropReasonCode: undefined,
                         persist: false,
                         preparedMessages: []
                     },
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         const noRoute = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('no-route'), DEQUEUE_TYPE);
         const failed = QueueBoxUtilities.toResourceEntryFromMsg(createDequeuedMessage('failed'), DEQUEUE_TYPE);
@@ -131,10 +165,11 @@ describe('AL outbound dequeue work', () => {
             // A rewritten sender fails validation, which the dequeue path rethrows as non-retryable.
             planOutgoingMessage: (msg) => ({
                 msg: { ...msg, id: { ...msg.id, senderId: 'other-sender' } },
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: []
             }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         for (const resourceId of ['charged-1', 'charged-2', 'charged-3']) {
             await outbox.enqueueIfAbsent(
@@ -155,8 +190,8 @@ describe('AL outbound dequeue work', () => {
             outbox,
             queueEngine,
             dequeue: { types: new Set([DEQUEUE_TYPE]), resilience },
-            planOutgoingMessage: (msg) => ({ msg, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
-            sendPreparedMessage: async () => ({ status: 'sent' as const })
+            planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: true, preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }] }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
         await runtime.ready();
         for (let charge = 0; charge < 3; charge += 1) {

@@ -1,24 +1,35 @@
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import {
-    selectRallarBlackBoxCommandHistory,
-    selectRallarBlackBoxFailures,
-    selectRallarBlackBoxLatestStats
-} from '@shared-test/rallar-bb-test/selectors.ts';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+    getRallarBlackBoxCommandHistory,
+    getRallarBlackBoxFailures,
+    getRallarBlackBoxLatestStats
+} from '@shared-test/rallar-bb-test/test-state-accessors.ts';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
-import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
+import { CONTROL_AGENT_BOARD_STALE_AFTER_MS } from '../../../control-agent-board-contract.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    fetchControlRunSnapshot,
-    fetchDistributedRun,
-    fetchDistributedRunArtifactBundle,
-    fetchDistributedRuns,
-    type ControlDistributedRunArtifactBundle,
-    type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot
-} from '../../../control-run-manager.ts';
+    computeControlAgentBoardRows,
+    computeControlAgentBoardSummary
+} from '../../../control-agent-board.ts';
+import {
+    readDistributedRun,
+    readDistributedRunArtifactBundle,
+    readDistributedRuns
+} from '../../../control-run-manager/control-distributed-run-endpoints.ts';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl,
+    type ControlEndpointRequest
+} from '../../../control-run-manager/control-endpoint-request.ts';
+import { readControlRunSnapshot } from '../../../control-run-manager/control-run-endpoints.ts';
 import {
     compareDistributedRuns,
     deriveDistributedRunAnalysisReport,
@@ -27,15 +38,19 @@ import {
 } from '../../../distributed-recipes.ts';
 import {
     createSyntheticDistributedRunSeed,
-    distributedRunSeedIdFromValue,
+    resolveDistributedRunSeedId,
     type DistributedRunSeedId,
     type SyntheticDistributedRunSeed
 } from '../../../distributed-run-seeds.ts';
-import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../rtc-diagnostics.ts';
+import {
+    computeRtcDiagnostics,
+    computeRtcPerformanceView,
+    DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
+} from '../../../rtc-diagnostics.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
+import { toRunnerFriendlyControlFailureMessage } from '../shared/to-runner-friendly-control-failure-message.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
     distributedArtifactImportStatus,
@@ -43,6 +58,7 @@ import {
 } from './distributed-artifact-import.ts';
 import { readDistributedRunSeedFromUrl, writeDistributedRunSeedToUrl } from './distributed-run-seed-url.ts';
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
+import { readAvailableControlValue } from './read-available-control-value.ts';
 import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
 import { DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS, RUNNER_DISTRIBUTED_POLL_MS } from './runner-runs-constants.ts';
 
@@ -59,9 +75,9 @@ export function useRunnerRunsController({
     control,
     preferredDistributedRun
 }: UseRunnerRunsControllerInput) {
-    const history = selectRallarBlackBoxCommandHistory(state);
-    const failures = selectRallarBlackBoxFailures(state);
-    const latestStats = selectRallarBlackBoxLatestStats(state);
+    const history = getRallarBlackBoxCommandHistory(state);
+    const failures = getRallarBlackBoxFailures(state);
+    const latestStats = getRallarBlackBoxLatestStats(state);
     const recentHistory = [...history].reverse().slice(0, 12);
     const initialSyntheticSeed = useMemo<SyntheticDistributedRunSeed | undefined>(
         () => {
@@ -74,7 +90,7 @@ export function useRunnerRunsController({
     );
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         preferredDistributedRun?.controlBaseUrl ??
-            controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
+            toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
         preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? ''
@@ -138,14 +154,17 @@ export function useRunnerRunsController({
     const runParticipantRows = useMemo(
         () =>
             selectedDistributedRun
-                ? deriveControlAgentBoardRows({
+                ? computeControlAgentBoardRows({
                     run: distributedControlRun,
                     group: selectedDistributedRun.manifest.group,
                     agentIds: selectedDistributedRun.targetAgentIds,
                     distributedRuns,
                     selectedDistributedRun,
                     monitorAgentProgress: selectedMonitor?.agentProgress ?? [],
-                    nowEpochMs: Date.now()
+                    requiredCommandKinds: [],
+                    requiredRecipes: [],
+                    nowEpochMs: Date.now(),
+                    staleAfterMs: CONTROL_AGENT_BOARD_STALE_AFTER_MS
                 })
                 : [],
         [
@@ -156,7 +175,7 @@ export function useRunnerRunsController({
         ]
     );
     const runParticipantSummary = useMemo(
-        () => summarizeControlAgentBoardRows(runParticipantRows),
+        () => computeControlAgentBoardSummary(runParticipantRows),
         [runParticipantRows]
     );
     const analysisReport = useMemo(
@@ -189,13 +208,14 @@ export function useRunnerRunsController({
             selectedMonitor
         ]
     );
-    const rtcDiagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
+    const rtcDiagnostics = useMemo(() => computeRtcDiagnostics(state, Date.now()), [state]);
     const rtcPerformance = useMemo(
         () =>
-            deriveRtcPerformanceView({
+            computeRtcPerformanceView({
                 diagnostics: rtcDiagnostics,
                 state,
-                distributedMonitor: selectedMonitor
+                distributedMonitor: selectedMonitor,
+                histogramBucketCount: DEFAULT_RTC_PERFORMANCE_HISTOGRAM_BUCKET_COUNT
             }),
         [rtcDiagnostics, selectedMonitor, state]
     );
@@ -243,6 +263,7 @@ export function useRunnerRunsController({
         const request = distributedRefreshRequests.begin();
         const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
         const token = override?.controlToken ?? controlToken;
+        const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
         const preferredRunId = override?.distributedRunId ?? selectedDistributedRunId;
         if (!options.quiet) {
             manualDistributedRefreshActive.current = true;
@@ -250,35 +271,34 @@ export function useRunnerRunsController({
         }
         setDistributedError(undefined);
         try {
-            const fetchedRuns = await fetchDistributedRuns({ baseUrl, token });
+            const runsOutcome = await readDistributedRuns(controlEndpoint);
             if (!request.isCurrent()) {
+                return;
+            }
+            const fetchedRuns = runsOutcome.right;
+            if (fetchedRuns === undefined) {
+                setDistributedError(toRunnerFriendlyControlFailureMessage(runsOutcome.left));
                 return;
             }
             const list = [...fetchedRuns].sort(
                 (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             );
-            const selectedFromList = preferredRunId
-                ? list.find((item) => item.distributedRunId === preferredRunId)
-                : undefined;
-            const nextDistributedRun = preferredRunId
-                ? await fetchDistributedRun({
-                    baseUrl,
-                    token,
-                    distributedRunId: preferredRunId
-                }).catch(() => selectedFromList)
-                : list[0];
+            const nextDistributedRun = await readPreferredDistributedRun({
+                controlEndpoint,
+                preferredRunId,
+                list
+            });
             if (!request.isCurrent()) {
                 return;
             }
             const nextControlRunId = nextDistributedRun?.controlRunId ?? override?.controlRunId ??
                 controlRunId;
             const nextControlRun = nextControlRunId
-                ? await fetchControlRunSnapshot({
-                    baseUrl,
-                    token,
+                ? await readAvailableControlValue(readControlRunSnapshot({
+                    ...controlEndpoint,
                     runId: nextControlRunId,
                     bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
-                }).catch(() => undefined)
+                }))
                 : undefined;
             if (!request.isCurrent()) {
                 return;
@@ -289,11 +309,10 @@ export function useRunnerRunsController({
                         isDistributedRunTerminalState(nextDistributedRun.state))
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
-                ? await fetchDistributedRunArtifactBundle({
-                    baseUrl,
-                    token,
+                ? await readAvailableControlValue(readDistributedRunArtifactBundle({
+                    ...controlEndpoint,
                     distributedRunId: nextDistributedRun.distributedRunId
-                }).catch(() => undefined)
+                }))
                 : preferredRunId === selectedDistributedRunId
                 ? artifactBundle
                 : undefined;
@@ -383,7 +402,7 @@ export function useRunnerRunsController({
     };
 
     const selectSyntheticDistributedRunSeed = (value: string): void => {
-        const seedId = distributedRunSeedIdFromValue(value);
+        const seedId = resolveDistributedRunSeedId(value);
         if (seedId) {
             applySyntheticDistributedRunSeed(seedId);
             return;
@@ -413,36 +432,36 @@ export function useRunnerRunsController({
         setDistributedError(undefined);
         try {
             const generatedAtEpochMs = Date.now();
-            const {
-                artifactFiles,
-                analysis,
-                snapshots,
-                artifactBundle
-            } = await readDistributedArtifactFiles(
+            const read = await readDistributedArtifactFiles(
                 selectedFiles,
                 generatedAtEpochMs
             );
-            activeSyntheticSeedRef.current = undefined;
-            setActiveSyntheticSeed(undefined);
-            setSelectedSyntheticSeedId('');
-            setImportedArtifactAnalysis(analysis);
-            setImportedArtifactStatus(distributedArtifactImportStatus(
-                artifactFiles,
-                analysis.parseWarnings.length
-            ));
-            setDistributedRuns((current) => [
-                snapshots.distributedRun,
-                ...current.filter((item) => item.distributedRunId !== snapshots.distributedRun.distributedRunId)
-            ]);
-            setSelectedDistributedRun(snapshots.distributedRun);
-            setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
-            setControlRunId(snapshots.controlRun.runId);
-            setDistributedControlRun(snapshots.controlRun);
-            setArtifactBundle(artifactBundle ?? snapshots.artifactBundle);
-            setLastDistributedRefresh(generatedAtEpochMs);
-            setCompareLeftId(snapshots.distributedRun.distributedRunId);
-            setCompareRightId('');
-            writeDistributedRunSeedToUrl(undefined);
+            read.fold(
+                (rejection) => setDistributedError(rejection.message),
+                ({ artifactFiles, analysis, snapshots, artifactBundle }) => {
+                    activeSyntheticSeedRef.current = undefined;
+                    setActiveSyntheticSeed(undefined);
+                    setSelectedSyntheticSeedId('');
+                    setImportedArtifactAnalysis(analysis);
+                    setImportedArtifactStatus(distributedArtifactImportStatus(
+                        artifactFiles,
+                        analysis.parseWarnings.length
+                    ));
+                    setDistributedRuns((current) => [
+                        snapshots.distributedRun,
+                        ...current.filter((item) => item.distributedRunId !== snapshots.distributedRun.distributedRunId)
+                    ]);
+                    setSelectedDistributedRun(snapshots.distributedRun);
+                    setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
+                    setControlRunId(snapshots.controlRun.runId);
+                    setDistributedControlRun(snapshots.controlRun);
+                    setArtifactBundle(artifactBundle ?? snapshots.artifactBundle);
+                    setLastDistributedRefresh(generatedAtEpochMs);
+                    setCompareLeftId(snapshots.distributedRun.distributedRunId);
+                    setCompareRightId('');
+                    writeDistributedRunSeedToUrl(undefined);
+                }
+            );
         }
         catch (error) {
             setDistributedError(runnerFriendlyErrorMessage(error));
@@ -597,3 +616,25 @@ export function useRunnerRunsController({
 }
 
 export type RunnerRunsControllerModel = ReturnType<typeof useRunnerRunsController>;
+
+/**
+ * The distributed run the operator asked for, read fresh from the control server. A failed read
+ * falls back to the copy the list already carries; with no preferred id the newest run is shown.
+ */
+async function readPreferredDistributedRun(
+    input: Readonly<{
+        controlEndpoint: ControlEndpointRequest;
+        preferredRunId: string;
+        list: readonly ControlDistributedRunSnapshot[];
+    }>
+): Promise<ControlDistributedRunSnapshot | undefined> {
+    if (!input.preferredRunId) {
+        return input.list[0];
+    }
+    const preferred = await readAvailableControlValue(readDistributedRun({
+        ...input.controlEndpoint,
+        distributedRunId: input.preferredRunId
+    }));
+    return preferred ??
+        input.list.find((item) => item.distributedRunId === input.preferredRunId);
+}

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-    analyzeDistributedRunArtifactFiles,
-    deriveDistributedRunSnapshotPerformance,
-    distributedArtifactSnapshotsFromFiles,
-    inventoryDistributedRunTuningKnobs,
+    computeDistributedRunArtifactAnalysis,
+    computeDistributedRunTuningInventory,
+    decodeDistributedRunManifest,
+    toDistributedArtifactSnapshots,
     type DistributedRunArtifactFiles,
     type DistributedRunPerformanceAnalysis,
     type RallarBlackBoxDistributedRunManifest
@@ -21,16 +21,24 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         },
         recipes: [{
             recipeId: 'tune-inline',
-            recipe: { recipeId: 'tune-inline', commands: [{ kind: 'health' }] }
+            recipe: { schemaVersion: 1, recipeId: 'tune-inline', commands: [{ kind: 'health' }] },
+            variables: {}
         }],
-        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] }
+        targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
+        variables: {},
+        roleAssignments: [],
+        ackTimeoutMs: 30_000,
+        barrier: { enabled: false },
+        startMode: 'manual',
+        groupAssertions: [],
+        metadata: {}
     };
 }
 
 function files(
-    distributedRun: Record<string, unknown>,
-    results: readonly Record<string, unknown>[] = [],
-    controlResults: readonly Record<string, unknown>[] = []
+    distributedRun: object,
+    results: readonly object[] = [],
+    controlResults: readonly object[] = []
 ): DistributedRunArtifactFiles {
     return {
         'distributed-run.json': JSON.stringify(distributedRun),
@@ -39,7 +47,17 @@ function files(
             runId: 'manifest-control',
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 2_000,
-            agents: [{ agentId: 'agent-a', connected: true, reconnectCount: 0 }],
+            agents: [{
+                runId: 'manifest-control',
+                agentId: 'agent-a',
+                connected: true,
+                connectionSequence: 1,
+                reconnectCount: 0,
+                receivedResultCount: 0,
+                receivedEventCount: 0,
+                completedCommandIds: [],
+                resumeCompletedCommandIds: []
+            }],
             commands: [],
             results: controlResults,
             events: [],
@@ -52,8 +70,10 @@ function files(
     };
 }
 
-function distributedRun(overrides: Record<string, unknown> = {}) {
+function distributedRun(overrides: object = {}) {
     return {
+        distributedRunId: 'outer-distributed',
+        controlRunId: 'manifest-control',
         state: 'passed',
         createdAtEpochMs: 1_000,
         updatedAtEpochMs: 2_000,
@@ -62,7 +82,24 @@ function distributedRun(overrides: Record<string, unknown> = {}) {
         targetAgentIds: ['agent-a'],
         commandLinks: [],
         manifest: manifest(),
-        rollup: { state: 'passed', ok: true, failures: [], summary: { blockingFailures: 0 } },
+        rollup: {
+            state: 'passed',
+            ok: true,
+            failures: [],
+            summary: {
+                participants: 1,
+                readyParticipants: 1,
+                passedParticipants: 1,
+                failedParticipants: 0,
+                recipes: 1,
+                passedRecipes: 1,
+                failedRecipes: 0,
+                groupAssertions: 0,
+                passedGroupAssertions: 0,
+                failedGroupAssertions: 0,
+                blockingFailures: 0
+            }
+        },
         ...overrides
     };
 }
@@ -70,9 +107,11 @@ function distributedRun(overrides: Record<string, unknown> = {}) {
 function analyzedPerformance(
     artifactFiles: DistributedRunArtifactFiles
 ): DistributedRunPerformanceAnalysis {
-    const performance = analyzeDistributedRunArtifactFiles({
-        files: artifactFiles
-    }).performance;
+    const analyzed = computeDistributedRunArtifactAnalysis({
+        files: artifactFiles,
+        generatedAtEpochMs: 2_000
+    }).right;
+    const performance = analyzed?.variant === 'distributed-run' ? analyzed.analysis.performance : undefined;
     if (!performance) {
         throw new Error('artifact analysis returned no performance section');
     }
@@ -80,38 +119,32 @@ function analyzedPerformance(
 }
 
 describe('distributed recipe tuning Task 2 hardening', () => {
-    it('uses one normalized identity for outer and manifest snapshots', () => {
+    it('rejects snapshot identities that are not strings instead of borrowing the manifest identity', () => {
         for (
             const input of [
-                distributedRun(),
+                distributedRun({ distributedRunId: undefined }),
                 distributedRun({ distributedRunId: 42, controlRunId: null })
             ]
         ) {
-            const snapshot = distributedArtifactSnapshotsFromFiles(files(input), 2_000)
-                .distributedRun;
-            expect(snapshot).toMatchObject({
-                distributedRunId: 'manifest-distributed',
-                controlRunId: 'manifest-control',
-                manifest: {
-                    distributedRunId: 'manifest-distributed',
-                    controlRunId: 'manifest-control'
-                }
+            expect(toDistributedArtifactSnapshots(files(input), 2_000).left).toEqual({
+                fileName: 'distributed-run.json',
+                message: 'distributed-run.json is not a distributed run snapshot: distributedRunId must be a non-empty string.'
             });
         }
-        const outer = distributedArtifactSnapshotsFromFiles(
+        const outer = toDistributedArtifactSnapshots(
             files(distributedRun({
                 distributedRunId: 'outer-distributed',
                 controlRunId: 'outer-control'
             })),
             2_000
-        ).distributedRun;
-        expect(outer.distributedRunId).toBe('outer-distributed');
-        expect(outer.controlRunId).toBe('outer-control');
-        expect(outer.manifest.distributedRunId).toBe('outer-distributed');
-        expect(outer.manifest.controlRunId).toBe('outer-control');
+        ).right?.distributedRun;
+        expect(outer?.distributedRunId).toBe('outer-distributed');
+        expect(outer?.controlRunId).toBe('outer-control');
+        expect(outer?.manifest.distributedRunId).toBe('manifest-distributed');
+        expect(outer?.manifest.controlRunId).toBe('manifest-control');
     });
 
-    it('does not double count normalized fallback and explicit RTC results', () => {
+    it('counts a results.jsonl stream row once when the same row stands in for a control result', () => {
         const result = {
             resultKey: 'stream-result-a',
             agentId: 'agent-a',
@@ -153,16 +186,10 @@ describe('distributed recipe tuning Task 2 hardening', () => {
             }),
             [result]
         );
-        const snapshots = distributedArtifactSnapshotsFromFiles(artifactFiles, 2_000);
-        const performance = deriveDistributedRunSnapshotPerformance({
-            ...snapshots,
-            artifactResults: [result]
-        });
+        const snapshots = toDistributedArtifactSnapshots(artifactFiles, 2_000).right;
 
-        expect(performance).toEqual(
-            analyzeDistributedRunArtifactFiles({ files: artifactFiles }).performance
-        );
-        expect(performance.streamTiming).toMatchObject({
+        expect(snapshots?.controlRun.results.map((envelope) => envelope.commandId)).toEqual(['stream-a']);
+        expect(analyzedPerformance(artifactFiles).streamTiming).toMatchObject({
             streamCount: 1,
             plannedFrames: 3,
             completedFrames: 2,
@@ -294,34 +321,39 @@ describe('distributed recipe tuning Task 2 hardening', () => {
         });
     });
 
-    it('contains malformed and over-depth command trees without throwing', () => {
-        const malformed = {
-            ...manifest(),
-            recipes: [{
+    it('leaves malformed command trees to the manifest decoder and stops over-depth branches', () => {
+        const malformed = manifest();
+        Reflect.set(malformed, 'recipes', [{
+            recipeId: 'malformed',
+            recipe: {
+                schemaVersion: 1,
                 recipeId: 'malformed',
-                recipe: {
-                    recipeId: 'malformed',
-                    commands: [{ kind: 'loop' }]
-                }
-            }]
-        } as unknown as RallarBlackBoxDistributedRunManifest;
+                commands: [{ kind: 'loop' }]
+            },
+            variables: {}
+        }]);
         const nested = (depth: number): Record<string, unknown> =>
             depth === 0
                 ? { kind: 'health' }
                 : { kind: 'loop', commands: [nested(depth - 1)] };
-        const tooDeep = {
-            ...manifest(),
-            recipes: [{
-                recipeId: 'too-deep',
-                recipe: { recipeId: 'too-deep', commands: [nested(6)] }
-            }]
-        } as unknown as RallarBlackBoxDistributedRunManifest;
+        const tooDeep = manifest();
+        Reflect.set(tooDeep, 'recipes', [{
+            recipeId: 'too-deep',
+            recipe: { schemaVersion: 1, recipeId: 'too-deep', commands: [nested(6)] },
+            variables: {}
+        }]);
 
-        expect(() => inventoryDistributedRunTuningKnobs(malformed)).not.toThrow();
-        expect(inventoryDistributedRunTuningKnobs(malformed).limitations)
-            .toContainEqual(expect.objectContaining({ code: 'malformed-command' }));
-        expect(inventoryDistributedRunTuningKnobs(tooDeep).limitations)
-            .toContainEqual(expect.objectContaining({ code: 'depth-limit-exceeded' }));
+        expect(decodeDistributedRunManifest(malformed).left).toContainEqual({
+            source: 'schema',
+            path: '$.recipes[0].recipe.commands[0]',
+            message: 'Missing required property commands.'
+        });
+        const tooDeepLimitations = decodeDistributedRunManifest(tooDeep).fold<readonly unknown[]>(
+            (issues) => issues,
+            (decoded) => computeDistributedRunTuningInventory(decoded).limitations
+        );
+        expect(tooDeepLimitations)
+            .toContainEqual(expect.objectContaining({ code: 'depth-limit-exceeded', recipeId: 'too-deep' }));
     });
 
     it('stops wide group and recipe traversal at the shared command bound', () => {
@@ -334,53 +366,61 @@ describe('distributed recipe tuning Task 2 hardening', () => {
                 throw new Error('walked past group command bound');
             }
         });
-        const wide = {
+        const wide: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: [{
                 recipeId: 'wide',
                 recipe: {
+                    schemaVersion: 1,
                     recipeId: 'wide',
                     commands: [{ kind: 'parallel', groups }]
-                }
+                },
+                variables: {}
             }]
-        } as RallarBlackBoxDistributedRunManifest;
+        };
 
-        expect(() => inventoryDistributedRunTuningKnobs(wide)).not.toThrow();
-        expect(inventoryDistributedRunTuningKnobs(wide).limitations)
+        expect(() => computeDistributedRunTuningInventory(wide)).not.toThrow();
+        expect(computeDistributedRunTuningInventory(wide).limitations)
             .toContainEqual(expect.objectContaining({
                 code: 'command-limit-exceeded',
                 recipeId: 'wide'
             }));
 
         const firstCommands = Array.from({ length: 2_000 }, () => ({ kind: 'health' as const }));
-        const later = { recipeId: 'later', recipe: { recipeId: 'later', commands: [] } };
+        const later: RallarBlackBoxDistributedRunManifest['recipes'][number] = {
+            recipeId: 'later',
+            recipe: { schemaVersion: 1, recipeId: 'later', commands: [] },
+            variables: {}
+        };
         Object.defineProperty(later, 'recipe', {
             get: () => {
                 throw new Error('walked past recipe command bound');
             }
         });
-        const wideRecipes = {
+        const wideRecipes: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: [{
                 recipeId: 'first',
-                recipe: { recipeId: 'first', commands: firstCommands }
+                recipe: { schemaVersion: 1, recipeId: 'first', commands: firstCommands },
+                variables: {}
             }, later]
-        } as RallarBlackBoxDistributedRunManifest;
-        expect(() => inventoryDistributedRunTuningKnobs(wideRecipes)).not.toThrow();
+        };
+        expect(() => computeDistributedRunTuningInventory(wideRecipes)).not.toThrow();
 
         const references = Array.from({ length: 2_100 }, (_, index) => ({
-            recipeId: `reference-${index}`
+            recipeId: `reference-${index}`,
+            variables: {}
         }));
         Object.defineProperty(references, 2_000, {
             get: () => {
                 throw new Error('walked past recipe structure bound');
             }
         });
-        const wideReferences = {
+        const wideReferences: RallarBlackBoxDistributedRunManifest = {
             ...manifest(),
             recipes: references
-        } as RallarBlackBoxDistributedRunManifest;
-        const referenceInventory = inventoryDistributedRunTuningKnobs(wideReferences);
+        };
+        const referenceInventory = computeDistributedRunTuningInventory(wideReferences);
         expect(referenceInventory.limitations).toContainEqual(expect.objectContaining({
             code: 'command-limit-exceeded'
         }));

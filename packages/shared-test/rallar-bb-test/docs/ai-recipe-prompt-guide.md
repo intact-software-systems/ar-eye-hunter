@@ -34,6 +34,11 @@ Give the AI the schema, a short goal, and hard constraints.
 Useful constraints:
 
 - Output JSON only. No Markdown.
+- Write every distributed manifest author setting explicitly (`controlRunId`,
+  `variables`, `roleAssignments`, `ackTimeoutMs`, `barrier`, `startMode`,
+  `groupAssertions`, `metadata`, and each recipe selection's `variables`); the
+  schema rejects a manifest that omits one or adds a field it does not define,
+  including a `required` flag on a recipe selection or role assignment.
 - Use `schemaVersion: 1` on distributed manifests and every inline
   `rallar-bb-test` recipe.
 - Use stable, descriptive `distributedRunId`, `recipeId`, and `commandId`
@@ -57,14 +62,14 @@ Useful constraints:
 - Do not put credentials, bearer tokens, or long-lived secrets in generated
   recipes. Use variables or environment setup instead.
 
-After generation, validate the JSON with:
-
-- `validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, value)`
-- `validateDistributedRunManifestContract(value)`
+After generation, decode the JSON with
+`decodeDistributedRunManifest(value)`: it runs
+`RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA` and returns the schema issues
+as its Left, or, once the schema holds, the manifest contract issues.
 
 For black-box-runner scenarios, validate with:
 
-- `validateBlackBoxRunnerScenarioRecipe(value)`
+- `validateBlackBoxRunnerScenarioRecipe(recipe)` on the parsed JSON recipe
 
 ## Prompt: Distributed RTC Smoke
 
@@ -168,9 +173,6 @@ Constraints:
 - Set expectedParticipantCount to 2.
 - Set ackTimeoutMs to 5000.
 - Inline recipe should only contain a health command.
-- Use required: true.
-- Include artifactPolicy that keeps event JSONL, result JSONL, failure bundle,
-  and distributed metadata.
 ```
 
 ## Prompt: Distributed Absence Wait
@@ -408,10 +410,10 @@ Constraints:
 - When the expected value is known, use allMatch equals X — allEqual alone
   passes when every agent agrees on the same wrong value; compose the two
   for convergence claims.
-- The participant set freezes at target resolution; missing, duplicate, or
-  unresolved evidence fails by default. scope.role narrows to a declared
-  role; minParticipants (integer >= 1) is the only explicit relaxation and
-  only excuses missing agents.
+- The participant set freezes at target resolution; missing, duplicate,
+  unresolved, or undecodable evidence fails by default. scope.role narrows
+  to a declared role; minParticipants (integer >= 1) is the only explicit
+  relaxation and only excuses missing agents.
 - Address commands must carry explicit authored commandIds; a command inside
   a loop yields duplicate evidence and fails, so give the assertion its own
   single-shot read command after the polling loop.
@@ -521,8 +523,6 @@ JSON:
 Task:
 - Return JSON only.
 - Add labels and descriptions where supported by the schema.
-- Add artifactPolicy for event JSONL, result JSONL, failure bundle, and
-  distributed metadata.
 - Add command metadata that explains role, transport, and expected delivery.
 - Do not change the behavior of the test.
 ```

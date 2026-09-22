@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
@@ -16,6 +17,7 @@ import type {
 import { computeStateSnapshotPages, type StateSnapshotEnvelope } from '@shared/api/state-snapshot-page.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+
 import { readGroupVisibility } from '../group-state/policy/group-snapshot-visibility-policy.ts';
 import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import {
@@ -99,9 +101,7 @@ export function computeClientStateSyncEntries(
                 effect.payloadKind === 'snapshot'
                     ? 'clientStateSnapshot'
                     : 'clientStateEvent'
-            ],
-            sequence: computed.acceptedCausalRevision,
-            epoch: 0
+            ]
         })
     );
 }
@@ -127,9 +127,7 @@ export function computeGroupStateSyncEntries(
             computed,
             effect,
             senderId,
-            topicId,
-            sequence: computed.acceptedCausalRevision.presenceRevision,
-            epoch: computed.acceptedCausalRevision.groupRevision
+            topicId
         });
     });
 }
@@ -144,12 +142,10 @@ interface ToStateSyncEntryInput {
     readonly effect: ComputedStateSyncEffect;
     readonly senderId: string;
     readonly topicId: string;
-    readonly sequence: number;
-    readonly epoch: number;
 }
 
 function toStateSyncEntries(input: ToStateSyncEntryInput): readonly ResourceEntry[] {
-    const { computed, effect, senderId, topicId, sequence, epoch } = input;
+    const { computed, effect, senderId, topicId } = input;
     const causalIdentity = typeof computed.acceptedCausalRevision === 'number'
         ? `revision=${computed.acceptedCausalRevision}`
         : `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
@@ -191,7 +187,11 @@ function toStateSyncEntries(input: ToStateSyncEntryInput): readonly ResourceEntr
             }, (pages) => pages)
         : [decodePersistedALMessageValue({
             ...envelope,
-            ordering: { orderingKey: key.contextId, epoch, seq: sequence },
+            // Client revisions are scalar. Group deltas carry their own predecessor/resulting
+            // causal tuples; neither component promises contiguous AL sequence numbers.
+            ...(effect.payloadKind === 'event'
+                ? { ordering: { orderingKey: key.contextId, epoch: 0, seq: effect.payload.snapshotVersion } }
+                : {}),
             payload: { typeId: topicId, contentType: 'application/json', resource: JSON.stringify(effect.payload) }
         })];
     return messages.map((message) => toStateSyncPageEntry(computed, message));

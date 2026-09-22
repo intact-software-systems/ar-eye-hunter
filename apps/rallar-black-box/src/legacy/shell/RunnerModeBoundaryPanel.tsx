@@ -1,4 +1,4 @@
-import type { RallarBlackBoxControlSnapshot } from '../../control-client.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
 import { Metric } from '../shared/Metric.tsx';
 
 export function RunnerModeBoundaryPanel({

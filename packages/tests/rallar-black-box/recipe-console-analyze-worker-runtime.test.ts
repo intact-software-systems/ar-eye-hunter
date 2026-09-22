@@ -5,13 +5,17 @@ import {
     ANALYZE_PROJECTION_MAX_TEXT_BYTES
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-artifact-projection.ts';
 import { createAnalyzeControlIdentityDigest } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-control-identity-digest.ts';
-import type { AnalyzeWorkerEnvelope, AnalyzeWorkerResponse } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
+import type {
+    AnalyzeWorkerEnvelope,
+    AnalyzeWorkerLocalFilesOffer,
+    AnalyzeWorkerResponse
+} from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-contract.ts';
 import {
     ANALYZE_WORKER_MAX_LABEL_BYTES,
     ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-request-boundary.ts';
 import { createAnalyzeWorkerRuntime } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-worker-runtime.ts';
-import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import { createDefaultRecipeConsoleScaleFixture, createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 describe('Recipe Console Analyze worker runtime', () => {
     it('accepts transferred bytes without parsing and derives one bounded model only after start', async () => {
@@ -37,8 +41,8 @@ describe('Recipe Console Analyze worker runtime', () => {
                     source: 'local-files',
                     label: 'Scale artifact',
                     generatedAtEpochMs: fixture.generatedAtEpochMs,
-                    artifactSchemaVersion: fixture.artifactSchemaVersion,
-                    files: transferFiles(fixture.files)
+                    files: transferFiles(fixture.files),
+                    ignoredFiles: []
                 }
             });
             expect(messages(posted)).toEqual([{
@@ -55,7 +59,9 @@ describe('Recipe Console Analyze worker runtime', () => {
             expect(complete).toBeDefined();
             expect(complete?.projection.identity).toEqual({
                 distributedRunId: 'recipe-console-scale-distributed-run',
-                controlRunId: 'recipe-console-scale-control-run'
+                distributedRunIdExact: true,
+                controlRunId: 'recipe-console-scale-control-run',
+                controlRunIdExact: true
             });
             expect(complete?.initialWindow.entries.length).toBeLessThanOrEqual(64);
             expect(complete?.telemetry).toMatchObject({
@@ -98,7 +104,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Raw Control artifact',
-                files: [],
                 controlEnvelope: envelopeBytes,
                 expectedControlIdentity
             }
@@ -132,7 +137,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Too many files',
-                files: [],
                 expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                     distributedRunId: 'too-many'
                 }),
@@ -158,7 +162,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Mismatched outer identity',
-                files: [],
                 expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                     distributedRunId: 'outer-other-run'
                 }),
@@ -206,7 +209,6 @@ describe('Recipe Console Analyze worker runtime', () => {
                 artifact: {
                     source: 'control',
                     label: 'Contract-invalid Control artifact',
-                    files: [],
                     expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                         distributedRunId: 'recipe-console-scale-distributed-run'
                     }),
@@ -263,7 +265,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Long identity Control artifact',
-                files: [],
                 expectedControlIdentity,
                 controlEnvelope: new TextEncoder().encode(JSON.stringify(envelope)).buffer
             }
@@ -287,7 +288,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Wrong expected identity',
-                files: [],
                 expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                     distributedRunId: `${distributedRunId}-other`,
                     controlRunId
@@ -313,6 +313,7 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'local-files',
                 label: 'Malformed envelope',
+                generatedAtEpochMs: 1,
                 files: transferFiles({
                     'malformed-artifact-envelope.json': JSON.stringify({
                         artifactSchemaVersion: '2',
@@ -320,7 +321,8 @@ describe('Recipe Console Analyze worker runtime', () => {
                         generatedAtEpochMs: 1,
                         files: { 'secret.json': secret }
                     })
-                })
+                }),
+                ignoredFiles: []
             }
         });
         await harness.runtime.handle({ type: 'start', operationGeneration: 8 });
@@ -374,7 +376,7 @@ describe('Recipe Console Analyze worker runtime', () => {
     });
 
     it('finds first, middle, and last scale evidence and returns only bounded worker projections', async () => {
-        const fixture = createRecipeConsoleScaleFixture();
+        const fixture = createDefaultRecipeConsoleScaleFixture();
         const harness = runtimeHarness();
         await harness.runtime.handle(offer(9, fixture));
         await harness.runtime.handle({ type: 'start', operationGeneration: 9 });
@@ -570,7 +572,9 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'local-files',
                 label: secret,
-                files: [{ name: 'secret.json', bytes: bytes.buffer as ArrayBuffer }]
+                generatedAtEpochMs: 1,
+                files: [{ name: 'secret.json', bytes: bytes.buffer as ArrayBuffer }],
+                ignoredFiles: []
             }
         });
         await harness.runtime.handle({ type: 'start', operationGeneration: 1 });
@@ -659,7 +663,7 @@ describe('Recipe Console Analyze worker runtime', () => {
         const oversizedLabel = 'l'.repeat(ANALYZE_WORKER_MAX_LABEL_BYTES + 1);
         await offerHarness.runtime.handle({
             ...offer(1, fixture),
-            artifact: { ...offer(1, fixture).artifact, label: oversizedLabel }
+            artifact: localFilesArtifact(fixture, oversizedLabel)
         });
         expect(offerHarness.messages.at(-1)).toMatchObject({
             type: 'failed',
@@ -668,7 +672,7 @@ describe('Recipe Console Analyze worker runtime', () => {
         await offerHarness.runtime.handle({
             ...offer(1, fixture),
             artifact: {
-                ...offer(1, fixture).artifact,
+                ...localFilesArtifact(fixture, 'Too many ignored files'),
                 ignoredFiles: Array.from({ length: 25 }, (_, index) => ({
                     basename: `ignored-${index}.txt`,
                     sourcePath: `ignored-${index}.txt`,
@@ -689,7 +693,6 @@ describe('Recipe Console Analyze worker runtime', () => {
             artifact: {
                 source: 'control',
                 label: 'Digest with smuggled metadata',
-                files: [],
                 controlEnvelope: new ArrayBuffer(0),
                 expectedControlIdentity: {
                     ...digest,
@@ -873,7 +876,9 @@ describe('Recipe Console Analyze worker runtime', () => {
                 artifact: {
                     source: 'local-files',
                     label: 'Reimported envelope',
-                    files: [{ name: 'portable.json', bytes: exported.exportBytes }]
+                    generatedAtEpochMs: 1,
+                    files: [{ name: 'portable.json', bytes: exported.exportBytes }],
+                    ignoredFiles: []
                 }
             });
             await reimported.runtime.handle({ type: 'start', operationGeneration: 2 });
@@ -915,13 +920,20 @@ function offer(
     return {
         type: 'offer',
         operationGeneration,
-        artifact: {
-            source: 'local-files',
-            label: `Scale ${operationGeneration}`,
-            generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
-            files: transferFiles(fixture.files)
-        }
+        artifact: localFilesArtifact(fixture, `Scale ${operationGeneration}`)
+    };
+}
+
+function localFilesArtifact(
+    fixture: ScaleFixture,
+    label: string
+): AnalyzeWorkerLocalFilesOffer {
+    return {
+        source: 'local-files',
+        label,
+        generatedAtEpochMs: fixture.generatedAtEpochMs,
+        files: transferFiles(fixture.files),
+        ignoredFiles: []
     };
 }
 

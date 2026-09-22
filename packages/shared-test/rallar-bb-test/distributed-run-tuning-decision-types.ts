@@ -1,4 +1,4 @@
-import type { DistributedRunTuningInventory, DistributedRunTuningKnob } from './distributed-run-tuning.ts';
+import type { DistributedRunTuningInventory, DistributedRunTuningKnob } from './distributed-run-tuning-types.ts';
 
 export type DistributedRunTuningHintKind =
     | 'fix-target-readiness'

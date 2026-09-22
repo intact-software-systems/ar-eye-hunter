@@ -1,10 +1,10 @@
+import type { ControlFleetRunReport } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     deriveFleetReportAgentDetail,
     deriveFleetReportHeatmapRows,
     deriveFleetReportMissingLabelAgentIds,
     deriveFleetReportRegionRows
 } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
-import type { ControlFleetRunReport } from '../../../control-run-manager.ts';
 import type { FleetAgentHeatmapRow } from './fleet-types.ts';
 
 export function fleetHeatmapRows(

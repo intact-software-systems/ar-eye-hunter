@@ -354,7 +354,7 @@ describe('RTC baseline evidence acceptance', () => {
         const rawEvidence = {
             attemptFailure: {
                 kind: 'control-result-failures',
-                failedResults: [{ commandId: 'send-broadcast', admissionStatus: 'no-route' }]
+                failedResults: [{ commandId: 'send-broadcast', state: 'failed' }]
             }
         };
         externalAttempt.producerExitStatus = 9;

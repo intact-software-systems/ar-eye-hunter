@@ -1,4 +1,4 @@
-import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { resultSummary, statusTone } from '../../shared/command-presentation.ts';
 import { formatDuration } from '../../shared/time-format.ts';
 

@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
-    deriveDistributedRunFailureEvidenceDestinations
+    computeDistributedRunFailureEvidenceDestinations
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run-evidence.ts';
 import {
     deriveDistributedRunMonitor,
@@ -468,7 +468,7 @@ test('windows every inspector pressure path while retaining exact selected evide
     const failure = monitor.failures.find(
         (row) => row.key === LARGE_MONITOR_FIRST_FAILURE_COMMAND_ID
     )!;
-    const destinations = deriveDistributedRunFailureEvidenceDestinations({
+    const destinations = computeDistributedRunFailureEvidenceDestinations({
         failure,
         monitor
     });

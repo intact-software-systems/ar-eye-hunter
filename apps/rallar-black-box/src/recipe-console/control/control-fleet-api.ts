@@ -1,6 +1,6 @@
 import { validateControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
 import type { ControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report.ts';
-import { fetchFleetReportBundleBytes } from '../../control-run-manager.ts';
+import { readFleetReportBundleBytes } from '../../control-run-manager/control-fleet-report-endpoints.ts';
 import { throwIfControlAborted } from './control-authorized-fetch.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
@@ -39,15 +39,19 @@ export function createRecipeConsoleControlFleetApi(
             try {
                 throwIfControlAborted(linked.signal);
                 const pending = input.endpoint.response(
-                    async (fetchFn) =>
-                        parseFleetReportBundleBytes(
-                            await fetchFleetReportBundleBytes({
-                                baseUrl: input.baseUrl,
-                                distributedRunId: request.distributedRunId,
-                                fetchFn
-                            }),
-                            request.distributedRunId
-                        ),
+                    async (fetchFn) => {
+                        const bytes = await readFleetReportBundleBytes({
+                            baseUrl: input.baseUrl,
+                            distributedRunId: request.distributedRunId,
+                            // The authorized endpoint's own fetch already carries the
+                            // Authorization header, so this reader sends none itself.
+                            token: undefined,
+                            fetchFn
+                        });
+                        return bytes.mapRight((carried) =>
+                            parseFleetReportBundleBytes(carried, request.distributedRunId)
+                        );
+                    },
                     linked.signal
                 );
                 const result = await settleFleetSelection(

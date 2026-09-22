@@ -404,7 +404,7 @@ function resetCallRtcDoubles(): void {
     mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
     mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
     mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.rtcRxStreamer
@@ -414,7 +414,7 @@ function resetCallRtcDoubles(): void {
 
 function resetCallWsDoubles(): void {
     mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
-        async (message) => ({ status: 'enqueued', message, entries: [] })
+        async (message) => ({ status: 'enqueued', verdict: { kind: 'admitted' as const, durable: true, queuedAttempts: 1 }, message, entries: [] })
     );
     mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
         mocks.ctx.middleware.webSocketQueueBox

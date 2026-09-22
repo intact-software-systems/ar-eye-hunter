@@ -36,14 +36,14 @@ describe('outbound dispatch value ownership', () => {
 
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, persist: true, preparedMessages: [] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [] }),
             intent: 'enqueue',
             phase: 'immediate',
             origin: 'send',
             options: {}
         });
 
-        expect(result.computed.status).toBe('failed');
+        expect(result.computed.verdict.kind).toBe('failed');
         expect(result.computed.reason).toBe('Outbound queue candidate differs from its message');
         expect(result.committed).toBe(false);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();
@@ -59,6 +59,7 @@ describe('outbound dispatch value ownership', () => {
             msg: message,
             planner: () => ({
                 msg: message,
+                dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [] as readonly OutboundTestPayload[],
                 supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'shared-value' }
@@ -78,7 +79,7 @@ describe('outbound dispatch value ownership', () => {
 
         const computed = freezeValues(computeALOutboundDispatch(input));
         expect(computed).toEqual(computeALOutboundDispatch(input));
-        expect(computed.status).toBe('enqueued');
+        expect(computed.verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(computed.bundle?.canonicalEntry).toEqual(outboxEntry);
         expect(computed.bundle?.durableEffects).toEqual([]);
         if (!computed.bundle) {
@@ -124,14 +125,14 @@ describe('outbound dispatch value ownership', () => {
         });
         const result = await admission.commit({
             msg: message,
-            planner: () => ({ msg: message, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
+            planner: () => ({ msg: message, dropReasonCode: undefined, persist: true, preparedMessages: [{ resourceId: message.route.resourceId }] }),
             intent,
             phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
             origin: intent === 'enqueue' ? 'send' : 'drain',
             options: { observedOutboxEntry }
         });
         expect(result.committed).toBe(true);
-        expect(result.computed.status).toBe('enqueued');
+        expect(result.computed.verdict).toMatchObject({ kind: 'admitted', durable: true });
         if (intent === 'enqueue') {
             expect(result.computed.entries).toEqual([{ ...observedOutboxEntry, status: 'COMPLETED' }]);
             expect(result.computed.entries[0].resource).toBe(observedOutboxEntry.resource);
@@ -148,6 +149,7 @@ describe('outbound dispatch value ownership', () => {
             msg: message,
             planner: () => ({
                 msg: message,
+                dropReasonCode: undefined,
                 persist: false,
                 preparedMessages: [{ resourceId: 'exhausted-repair' }]
             }),
@@ -168,7 +170,7 @@ describe('outbound dispatch value ownership', () => {
             options: { repairBudget: { priorAttempts: 1, maxAttempts: 3 } }
         });
 
-        expect(computed.status).toBe('skipped');
+        expect(computed.verdict.kind).toBe('skipped');
         expect(computed.bundle).toBeUndefined();
         expect(computed.entries).toEqual([]);
     });

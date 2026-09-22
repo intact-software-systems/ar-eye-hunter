@@ -1,4 +1,9 @@
-import { expect, test, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Frame,
+    type TestInfo
+} from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -7,6 +12,7 @@ import {
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
 import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import {
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
@@ -18,14 +24,30 @@ import {
     createAlmConformanceRecipes,
     type AlmConformanceScenario
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
+import { parseControlClientMessage } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import {
     createTwoAgentRun,
     readFullStackConfig,
     runRecipePairOnTwoAgents,
     uniqueSuffix,
     type ControlRunSnapshot,
+    type RecipePairOutcome,
     type TwoAgentRun
 } from './full-stack-helpers.ts';
+
+interface ObservationCell {
+    readonly run: TwoAgentRun;
+    readonly testInfo: TestInfo;
+    readonly carrier: AlmConformanceCarrier;
+    readonly cellOutcome: ALMObservationCellOutcome;
+}
+
+interface ObservationFiles {
+    readonly testInfo: TestInfo;
+    readonly carrier: AlmConformanceCarrier;
+    readonly regime: ALMObservationRegime;
+    readonly snapshot: ControlRunSnapshot;
+}
 
 const config = readFullStackConfig();
 const scope = process.env.RALLAR_BLACK_BOX_ALM_SCOPE === 'full' ? 'full' : 'smoke';
@@ -39,8 +61,7 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// 4 scenarios x 18s deadline x 2 (sender+receiver) + 60s RTC readiness = 204s expected; kept at
-// 300s for slow-CI slack rather than rounded down to the expected figure.
+// Finite carrier ceiling covers the conformance recipes and connection readiness.
 const CARRIER_TEST_TIMEOUT_MS = 300_000;
 
 /**
@@ -49,34 +70,6 @@ const CARRIER_TEST_TIMEOUT_MS = 300_000;
  * not inside one. The observation job uploads the whole root, which carries this directory with it.
  */
 const OBSERVATION_DIRECTORY_NAME = 'alm-observation';
-
-/**
- * Every ensure command in the family builds the API mutation requestId
- * `alm-conformance-{runId}-<carrier>-<scenarioId>-<role>-<operation>-{runtimeIdentity}`, and the API
- * rejects a requestId longer than 128 characters. The longest carrier, scenario, role and operation
- * plus the 13-character runtime identity consume 85 of those, so the run id gets the other 43.
- */
-const RUN_ID_BUDGET = 43;
-
-/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
-function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
-    const requested = (value ?? '')
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-    if (requested.length === 0) {
-        return ALM_CONFORMANCE_CARRIERS;
-    }
-    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
-    if (unsupported.length > 0) {
-        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
-    }
-    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
-}
-
-function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
-    return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
-}
 
 test.describe('ALM conformance lane', () => {
     test.skip(!config.enabled, 'RALLAR_BLACK_BOX_FULL_STACK is not set');
@@ -89,7 +82,7 @@ test.describe('ALM conformance lane', () => {
                 browser,
                 request,
                 testInfo,
-                runId: `alm-${carrier}-${uniqueSuffix()}`.slice(0, RUN_ID_BUDGET)
+                runId: `alm-${carrier}-${uniqueSuffix()}`
             });
 
             let scenarioFailed = false;
@@ -119,12 +112,89 @@ async function runAlmConformanceScenarios(
     carrier: AlmConformanceCarrier
 ): Promise<void> {
     for (const scenario of selectScenarios(run, carrier)) {
-        const outcome = await runRecipePairOnTwoAgents(run, scenario);
+        let senderNavigations = 0;
+        let receiverNavigations = 0;
+        const onSenderNavigation = (frame: Frame): void => {
+            if (frame === run.sender.page.mainFrame()) {
+                senderNavigations += 1;
+            }
+        };
+        const onReceiverNavigation = (frame: Frame): void => {
+            if (frame === run.receiver.page.mainFrame()) {
+                receiverNavigations += 1;
+            }
+        };
+        const reload = scenario.scenarioId === 'delivery-reload';
+        if (reload) {
+            run.sender.page.on('framenavigated', onSenderNavigation);
+            run.receiver.page.on('framenavigated', onReceiverNavigation);
+        }
+        let outcome: RecipePairOutcome;
+        try {
+            outcome = await runRecipePairOnTwoAgents(run, scenario);
+        }
+        finally {
+            if (reload) {
+                run.sender.page.off('framenavigated', onSenderNavigation);
+                run.receiver.page.off('framenavigated', onReceiverNavigation);
+            }
+        }
+        if (reload) {
+            expect.soft(senderNavigations, 'reload replaces the actual sender main-frame document once').toBe(1);
+            expect.soft(receiverNavigations, 'receiver retains its document and subscriptions').toBe(0);
+        }
         expect.soft(outcome.receiver.ok, `${scenario.scenarioId} receiver: ${outcome.receiver.summary}`)
             .toBe(true);
         expect.soft(outcome.sender.ok, `${scenario.scenarioId} sender: ${outcome.sender.summary}`)
             .toBe(true);
+        if (scenario.scenarioId === 'delivery-lifecycle' || reload) {
+            await assertScenarioIdentity(run, scenario, outcome);
+        }
     }
+}
+
+async function assertScenarioIdentity(
+    run: TwoAgentRun,
+    scenario: AlmConformanceScenario,
+    outcome: RecipePairOutcome
+): Promise<void> {
+    const snapshot = await run.readSnapshot();
+    const issues = assessAlmConformanceIdentity({
+        runId: run.runId,
+        participants: (['sender', 'receiver'] as const).map((role) => {
+            const commandId = outcome[role].commandId;
+            const recorded = snapshot.results?.find((result) => result.commandId === commandId);
+            const decoded = parseControlClientMessage(recorded);
+            return {
+                role,
+                agentId: run[role].agentId,
+                recipe: scenario[role],
+                commandId,
+                result: decoded.ok && decoded.envelope.kind === 'result' ? decoded.envelope : undefined
+            };
+        })
+    });
+    expect.soft(issues, 'ALM actual sender/receiver identity evidence').toEqual([]);
+}
+
+/** Comma-separated carriers; empty runs every carrier. Narrows a local or observation run to one carrier. */
+function toCarrierSelection(value: string | undefined): readonly AlmConformanceCarrier[] {
+    const requested = (value ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+    if (requested.length === 0) {
+        return ALM_CONFORMANCE_CARRIERS;
+    }
+    const unsupported = requested.filter((entry) => !isAlmConformanceCarrier(entry));
+    if (unsupported.length > 0) {
+        throw new RangeError(`RALLAR_BLACK_BOX_ALM_CARRIERS names unsupported carriers: ${unsupported.join(', ')}`);
+    }
+    return ALM_CONFORMANCE_CARRIERS.filter((carrier) => requested.includes(carrier));
+}
+
+function isAlmConformanceCarrier(value: string): value is AlmConformanceCarrier {
+    return (ALM_CONFORMANCE_CARRIERS as readonly string[]).includes(value);
 }
 
 function selectScenarios(
@@ -146,12 +216,7 @@ function selectScenarios(
 
 /** A cell records its regime whether it passed or failed, and never fails the cell for doing so. */
 async function recordObservation(
-    cell: Readonly<{
-        run: TwoAgentRun;
-        testInfo: TestInfo;
-        carrier: AlmConformanceCarrier;
-        cellOutcome: ALMObservationCellOutcome;
-    }>
+    cell: ObservationCell
 ): Promise<void> {
     try {
         const snapshot = await cell.run.readSnapshot();
@@ -188,12 +253,7 @@ function toObservationRegime(
 }
 
 async function writeObservationFiles(
-    observation: Readonly<{
-        testInfo: TestInfo;
-        carrier: AlmConformanceCarrier;
-        regime: ALMObservationRegime;
-        snapshot: ControlRunSnapshot;
-    }>
+    observation: ObservationFiles
 ): Promise<void> {
     const directory = path.join(
         observation.testInfo.project.outputDir,

@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest';
 const repositoryRoot = resolve(import.meta.dirname, '../../..');
 const recipeConsoleRoot = 'apps/rallar-black-box/src/recipe-console';
 const fleetRoot = `${recipeConsoleRoot}/fleet`;
-const workspacePath = `${recipeConsoleRoot}/app/RecipeConsoleWorkspace.tsx`;
+const workspacePath = `${recipeConsoleRoot}/app/recipe-console-workspace.tsx`;
 const activeWorkPath = `${recipeConsoleRoot}/app/RecipeConsoleActiveWork.tsx`;
 const fleetWorkspacePath = `${fleetRoot}/FleetWorkspace.tsx`;
 const fleetContractPath = `${fleetRoot}/fleet-workspace-contract.ts`;

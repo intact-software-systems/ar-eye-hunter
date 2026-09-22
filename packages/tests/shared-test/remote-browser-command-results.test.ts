@@ -4,11 +4,11 @@ import {
     it
 } from 'vitest';
 
+import { createRallarRemoteBrowserRtcProvider } from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
 import {
-    createRallarRemoteBrowserRtcProvider,
-    executeRallarRemoteBrowserCommand,
+    runRallarRemoteBrowserCommand,
     syncRallarRemoteBrowserEvents
-} from '../../shared-test/black-box-runner/rallar-remote-browser-provider.ts';
+} from '../../shared-test/black-box-runner/remote-browser/rallar-remote-browser-control-client.ts';
 
 const remote = {
     controlBaseUrl: 'http://control.invalid',
@@ -43,12 +43,12 @@ const event = {
     }
 };
 
-async function executeSnapshot(snapshot: unknown) {
-    return await executeRallarRemoteBrowserCommand({
+function runCommandAgainstSnapshot(snapshot: object | null) {
+    return runRallarRemoteBrowserCommand({
         remote,
         command: { kind: 'health', commandId: result.commandId },
         context: { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() } },
-        fetchFn: async (_input, init) =>
+        fetch: async (_input, init) =>
             init?.method === 'POST'
                 ? Response.json({ accepted: true }, { status: 202 })
                 : Response.json(snapshot)
@@ -58,9 +58,14 @@ async function executeSnapshot(snapshot: unknown) {
 describe('remote-browser command results', () => {
     it('reports malformed result truthiness as a connection failure at the public provider', async () => {
         const interaction = { request: { commandId: result.commandId, connection: 'socket' }, response: {} };
-        const context = { dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() }, rtcConnections: {}, rtcMessages: {}, rtcCloseEvents: {} };
+        const context = {
+            dependencies: { now: Date.now, createUuid: () => crypto.randomUUID() },
+            options: { rallarRemoteBrowser: remote },
+            rtcConnections: {},
+            rtcMessages: {},
+            rtcCloseEvents: {}
+        };
         const provider = createRallarRemoteBrowserRtcProvider({
-            ...remote,
             fetch: async (_input, init) =>
                 init?.method === 'POST'
                     ? Response.json({ accepted: true }, { status: 202 })
@@ -72,7 +77,7 @@ describe('remote-browser command results', () => {
     });
 
     it('matches the run and agent as well as the command identity', async () => {
-        const received = await executeSnapshot({
+        const received = await runCommandAgainstSnapshot({
             runId: remote.runId,
             results: [
                 { ...result, agentId: 'another-agent', ok: false },
@@ -81,7 +86,7 @@ describe('remote-browser command results', () => {
             ],
             events: []
         });
-        expect(received).toMatchObject(result);
+        expect(received.right).toMatchObject(result);
     });
 
     it.each([
@@ -93,8 +98,8 @@ describe('remote-browser command results', () => {
         { ...result, commandId: '' },
         { ...result, runId: 'another-run' }
     ])('rejects malformed command envelopes instead of accepting their truthiness: %j', async (invalid) => {
-        await expect(executeSnapshot({ runId: remote.runId, results: [invalid], events: [] }))
-            .rejects.toThrow(/Invalid remote browser snapshot/);
+        const received = await runCommandAgainstSnapshot({ runId: remote.runId, results: [invalid], events: [] });
+        expect(received.left?.message).toMatch(/Invalid remote browser snapshot/);
     });
 
     it.each([
@@ -104,7 +109,8 @@ describe('remote-browser command results', () => {
         { runId: remote.runId, results: {}, events: [] },
         { runId: remote.runId, results: [result], events: {} }
     ])('rejects malformed HTTP observation containers: %j', async (snapshot) => {
-        await expect(executeSnapshot(snapshot)).rejects.toThrow(/Invalid remote browser snapshot/);
+        const received = await runCommandAgainstSnapshot(snapshot);
+        expect(received.left?.message).toMatch(/Invalid remote browser snapshot/);
     });
 
     it.each([
@@ -117,12 +123,13 @@ describe('remote-browser command results', () => {
         { ...event, payload: { ...event.payload, transport: [] } }
     ])('rejects invalid event projections before storing any snapshot observations: %j', async (invalid) => {
         const context = {};
-        await expect(syncRallarRemoteBrowserEvents(remote, async () =>
+        const synced = await syncRallarRemoteBrowserEvents(remote, async () =>
             Response.json({
                 runId: remote.runId,
                 results: [],
                 events: [event, invalid]
-            }), context)).rejects.toThrow(/Invalid remote browser snapshot/);
+            }), context);
+        expect(synced.left?.message).toMatch(/Invalid remote browser snapshot/);
         expect(context).toEqual({});
     });
 

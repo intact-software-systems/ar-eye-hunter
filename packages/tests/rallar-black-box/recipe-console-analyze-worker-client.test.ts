@@ -37,7 +37,9 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         const generation = client.offer({
             source: 'local-files',
             label: 'artifact',
-            files: [{ name: 'manifest.json', bytes }]
+            generatedAtEpochMs: 1,
+            files: [{ name: 'manifest.json', bytes }],
+            ignoredFiles: []
         });
         expect(worker.posts[0]).toEqual({
             message: expect.objectContaining({ type: 'offer', operationGeneration: generation }),
@@ -75,7 +77,6 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         client.offer({
             source: 'control',
             label: 'raw control',
-            files: [],
             controlEnvelope,
             expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                 distributedRunId: 'dist'
@@ -85,7 +86,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         expect(worker.posts[0]?.transfer).toEqual([controlEnvelope]);
         expect(worker.posts[0]?.message).toMatchObject({
             type: 'offer',
-            artifact: { files: [], controlEnvelope }
+            artifact: { controlEnvelope }
         });
         client.dispose();
     });
@@ -104,14 +105,14 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             }
         });
 
-        const first = client.offer({ source: 'local-files', label: 'first', files: [] });
+        const first = localFilesOffer(client, 'first');
         acceptedWorker.emitMessage({ type: 'accepted', operationGeneration: first });
         frames.shift()?.(0);
         frames.shift()?.(16);
         acceptedWorker.emitMessage(completeResponse(first, 1));
         const acceptedExport = client.currentExport();
 
-        client.offer({ source: 'local-files', label: 'replacement', files: [] });
+        localFilesOffer(client, 'replacement');
         candidateWorker.emit('error');
         expect(acceptedWorker.terminate).not.toHaveBeenCalled();
         expect(client.currentExport()).toBe(acceptedExport);
@@ -132,7 +133,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
                 onUnavailable: (reason, scope) => unavailable.push(`${scope}:${reason}`)
             }
         });
-        const operation = client.offer({ source: 'local-files', label: 'artifact', files: [] });
+        const operation = localFilesOffer(client, 'artifact');
         worker.emitMessage({ type: 'accepted', operationGeneration: operation });
         frames.shift()?.(0);
         frames.shift()?.(16);
@@ -241,7 +242,6 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         rejectGeneration = client.offer({
             source: 'control',
             label: 'wrong identity',
-            files: [],
             controlEnvelope: new TextEncoder().encode('{}').buffer as ArrayBuffer,
             expectedControlIdentity: await createAnalyzeControlIdentityDigest({
                 distributedRunId: 'wrong'
@@ -289,13 +289,16 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             client.offer({
                 source: 'local-files',
                 label: 'l'.repeat(ANALYZE_WORKER_MAX_LABEL_BYTES + 1),
-                files: []
+                generatedAtEpochMs: 1,
+                files: [],
+                ignoredFiles: []
             })
         ).toThrow(/bounded|metadata|offer/i);
         expect(() =>
             client.offer({
                 source: 'local-files',
                 label: 'too many ignored files',
+                generatedAtEpochMs: 1,
                 files: [],
                 ignoredFiles: Array.from({ length: 25 }, (_, index) => ({
                     basename: `ignored-${index}.txt`,
@@ -321,21 +324,11 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             requestAnimationFrame: () => 1
         });
 
-        expect(() =>
-            client.offer({
-                source: 'local-files',
-                label: 'first',
-                files: []
-            })
-        ).toThrow('post failed');
+        expect(() => localFilesOffer(client, 'first')).toThrow('post failed');
         expect(throwingWorker.terminate).toHaveBeenCalledOnce();
         expect(timers.callbacks.size).toBe(0);
 
-        expect(client.offer({
-            source: 'local-files',
-            label: 'replacement',
-            files: []
-        })).toBe(2);
+        expect(localFilesOffer(client, 'replacement')).toBe(2);
         expect(replacementWorker.posts.at(-1)?.message).toMatchObject({
             type: 'offer',
             operationGeneration: 2
@@ -373,7 +366,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
         expect(searches).toEqual([]);
         expect(acceptedWorker.terminate).not.toHaveBeenCalled();
 
-        const candidate = client.offer({ source: 'local-files', label: 'held', files: [] });
+        const candidate = localFilesOffer(client, 'held');
         timers.runOldest();
         candidateWorker.emitMessage({ type: 'accepted', operationGeneration: candidate });
         expect(candidateWorker.terminate).toHaveBeenCalledOnce();
@@ -496,11 +489,7 @@ describe('Recipe Console Analyze worker client boundaries', () => {
             createWorker: () => worker,
             requestAnimationFrame: (callback) => (frames.push(callback), frames.length)
         });
-        const generation = client.offer({
-            source: 'local-files',
-            label: 'unsafe identity',
-            files: []
-        });
+        const generation = localFilesOffer(client, 'unsafe identity');
         worker.emitMessage({ type: 'accepted', operationGeneration: generation });
         frames.shift()?.(0);
         frames.shift()?.(16);
@@ -707,7 +696,12 @@ function completeResponse(
         projection: {
             distributedRunId: 'dist',
             controlRunId: 'control',
-            identity: { distributedRunId: 'dist', controlRunId: 'control' },
+            identity: {
+                distributedRunId: 'dist',
+                distributedRunIdExact: true,
+                controlRunId: 'control',
+                controlRunIdExact: true
+            },
             workspace: {
                 source: 'loose-files',
                 support: 'supported',
@@ -717,13 +711,29 @@ function completeResponse(
                 issues: []
             },
             analysis: {
+                detail: 'full',
                 generatedAtEpochMs: 1,
+                artifactSchemaVersion: 1,
                 distributedRunId: 'dist',
                 controlRunId: 'control',
                 status: 'passed',
                 ok: true,
                 summary: { agents: 1, passRate: 1, failureGroups: 0, blockingFailures: 0 },
                 parseWarnings: [],
+                spa: {
+                    verdict: {
+                        verdict: 'passed',
+                        tone: 'good',
+                        title: 'Outcome passed',
+                        summary: 'summary',
+                        artifactStatus: 'valid',
+                        artifactMessage: 'Artifact bundle is valid.',
+                        primaryEvidence: [],
+                        successSignals: [],
+                        warningSignals: [],
+                        causalTrail: []
+                    }
+                },
                 summaryMarkdown: 'summary'
             },
             issueMarkdown: 'issue',
@@ -741,7 +751,8 @@ function completeResponse(
             }
         },
         initialWindow: emptyWindow(),
-        telemetry: telemetry()
+        telemetry: telemetry(),
+        controlIdentityValidated: false
     };
 }
 
@@ -805,11 +816,13 @@ function tuneResponse(
         facade: {
             identity: complete.projection.identity,
             support: 'supported',
+            supportIssues: { entries: [], total: 0, omitted: 0 },
             generatedAtEpochMs: 1,
             manifestSummary: {
                 distributedRunId: 'dist',
                 controlRunId: 'control',
                 group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'group' },
+                startMode: 'manual',
                 recipeIds: { entries: [], total: 0, omitted: 0 },
                 targetPolicy: {
                     mode: 'selected-agents',
@@ -839,12 +852,10 @@ function tuneResponse(
                     failures: [],
                     summary: {
                         participants: 0,
-                        requiredParticipants: 0,
                         readyParticipants: 0,
                         passedParticipants: 0,
                         failedParticipants: 0,
                         recipes: 0,
-                        requiredRecipes: 0,
                         passedRecipes: 0,
                         failedRecipes: 0,
                         groupAssertions: 0,
@@ -861,17 +872,26 @@ function tuneResponse(
     };
 }
 
+function localFilesOffer(
+    client: ReturnType<typeof createAnalyzeWorkerClient>,
+    label: string
+): number {
+    return client.offer({
+        source: 'local-files',
+        label,
+        generatedAtEpochMs: 1,
+        files: [],
+        ignoredFiles: []
+    });
+}
+
 function accept(
     client: ReturnType<typeof createAnalyzeWorkerClient>,
     worker: FakeWorkerPort,
     frames: FrameRequestCallback[],
     modelGeneration: number
 ): number {
-    const generation = client.offer({
-        source: 'local-files',
-        label: 'artifact',
-        files: []
-    });
+    const generation = localFilesOffer(client, 'artifact');
     worker.emitMessage({ type: 'accepted', operationGeneration: generation });
     frames.shift()?.(0);
     frames.shift()?.(16);

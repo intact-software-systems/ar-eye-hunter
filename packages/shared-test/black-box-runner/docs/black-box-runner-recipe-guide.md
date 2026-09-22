@@ -1474,6 +1474,27 @@ steps become `http.request` control commands, WS steps become `ws.open`,
 `rtc.send`, `wait`, and `close` provider operations. Remote events are mapped
 back into the same report stores used by local providers.
 
+A remote-browser step addresses the control server through its `control` block,
+normally declared once on the connection:
+
+```json
+"control": {
+  "baseUrl": "{controlBaseUrl}",
+  "runId": "{controlRunId}",
+  "agentId": "{controlAgentId}",
+  "timeoutMs": 15000
+}
+```
+
+`baseUrl`, `runId`, `agentId`, and `token` fall back to the interaction config,
+the `rallarRemoteBrowser` runner options, and then
+`RALLAR_BLACK_BOX_CONTROL_BASE_URL`, `RALLAR_BLACK_BOX_RUN_ID`,
+`RALLAR_BLACK_BOX_AGENT_ID`, and `RALLAR_BLACK_BOX_CONTROL_TOKEN`;
+`pollIntervalMs` and `timeoutMs` fall back to the runner options. A step's own
+`timeoutMs` outranks `control.timeoutMs`, because the browser runs the command
+under it and the result cannot arrive sooner. No other step key addresses the
+control server.
+
 Provider adapters may call Rallar facade methods internally. Recipes should
 still describe observable network behavior: HTTP calls, WS messages, RTC
 connect/send/wait/close, and assertions.

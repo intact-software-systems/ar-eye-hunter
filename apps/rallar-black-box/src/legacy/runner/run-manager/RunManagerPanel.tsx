@@ -1,27 +1,37 @@
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
-    controlHttpBaseUrlFromWsUrl,
-    controlRunAgentRows,
-    controlRunCommandRows,
-    controlRunManagerStats,
+    parseBlackBoxRunnerArtifactBundle
+} from '@shared-test/black-box-runner/artifacts/artifact-reader.ts';
+import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { RallarBlackBoxControlSnapshot } from '@shared-test/rallar-bb-test/control-client.ts';
+import type {
+    ControlRunArtifactBundle,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+    createDefaultControlEndpointRequest,
+    toControlHttpBaseUrl
+} from '../../../control-run-manager/control-endpoint-request.ts';
+import { toControlFailureMessage } from '../../../control-run-manager/control-request-failure.ts';
+import {
     deleteControlRun,
     enqueueBulkControlCommand,
-    fetchControlRunArtifactBundle,
-    fetchControlRunFailureBundle,
-    fetchControlRunJsonl,
-    fetchControlRunSnapshot,
-    fetchControlServerSnapshot,
-    resetControlRun,
-    type ControlRunArtifactBundle,
-    type ControlRunSnapshot,
-    type ControlServerSnapshot
-} from '../../../control-run-manager.ts';
-import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-presets.ts';
-import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
+    readControlRunArtifactBundle,
+    readControlRunFailureBundle,
+    readControlRunJsonl,
+    readControlRunSnapshot,
+    readControlServerSnapshot,
+    resetControlRun
+} from '../../../control-run-manager/control-run-endpoints.ts';
+import {
+    computeControlRunManagerStats,
+    toControlRunAgentRows,
+    toControlRunCommandRows
+} from '../../../control-run-manager/control-run-projections.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from '../../../run-manager-command-presets.ts';
 import { validateSchemaAuthoringText } from '../../../schema-authoring.ts';
-import { parseRallarBlackBoxSharedTestArtifactBundle } from '../../../shared-test-handoff-fixtures.ts';
 import { resolveRunManagerRefreshSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
 import { useLegacyDiagnosticContext } from '../../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import { json } from '../../shared/json-presentation.ts';
@@ -49,7 +59,7 @@ export function RunManagerPanel({
 }) {
     const diagnosticContext = useLegacyDiagnosticContext().context;
     const diagnosticControlRunId = diagnosticContext?.controlRunId;
-    const [baseUrl, setBaseUrl] = useState(() => controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl));
+    const [baseUrl, setBaseUrl] = useState(() => toControlHttpBaseUrl(control.url ?? bootstrap.controlUrl));
     const [token, setToken] = useState('');
     const [selectedRunId, setSelectedRunId] = useState(
         diagnosticControlRunId ?? control.runId ?? bootstrap.runId ?? ''
@@ -64,13 +74,14 @@ export function RunManagerPanel({
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
     const [lastAction, setLastAction] = useState<string | undefined>();
+    const controlEndpoint = createDefaultControlEndpointRequest({ baseUrl, token });
     const lastDiagnosticControlRunId = useRef(diagnosticControlRunId);
     const selectionRequests = useLatestRequestGuard();
-    const stats = useMemo(() => controlRunManagerStats(snapshot), [snapshot]);
-    const agentRows = useMemo(() => controlRunAgentRows(run), [run]);
+    const stats = useMemo(() => computeControlRunManagerStats(snapshot), [snapshot]);
+    const agentRows = useMemo(() => toControlRunAgentRows(run), [run]);
     const agentRowsKey = agentRows.map((row) => row.agentId).join('\u0000');
     const commandRows = useMemo(
-        () => controlRunCommandRows(run).slice(0, 24),
+        () => toControlRunCommandRows(run).slice(0, 24),
         [run]
     );
     const runOptions = useMemo(
@@ -95,7 +106,7 @@ export function RunManagerPanel({
     const parsedArtifact = useMemo(
         () =>
             artifactBundle
-                ? parseRallarBlackBoxSharedTestArtifactBundle(
+                ? parseBlackBoxRunnerArtifactBundle(
                     artifactBundle.files
                 )
                 : undefined,
@@ -112,12 +123,16 @@ export function RunManagerPanel({
         setBusyAction('refresh');
         setError(undefined);
         try {
-            const serverSnapshot = await fetchControlServerSnapshot({
-                baseUrl,
-                token,
+            const snapshotOutcome = await readControlServerSnapshot({
+                ...controlEndpoint,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const serverSnapshot = snapshotOutcome.right;
+            if (serverSnapshot === undefined) {
+                setError(toControlFailureMessage(snapshotOutcome.left));
                 return;
             }
             setSnapshot(serverSnapshot);
@@ -138,13 +153,17 @@ export function RunManagerPanel({
                 return;
             }
             if (nextRunId) {
-                const nextRun = await fetchControlRunSnapshot({
-                    baseUrl,
-                    token,
+                const runOutcome = await readControlRunSnapshot({
+                    ...controlEndpoint,
                     runId: nextRunId,
                     bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 });
                 if (!request.isCurrent()) {
+                    return;
+                }
+                const nextRun = runOutcome.right;
+                if (nextRun === undefined) {
+                    setError(toControlFailureMessage(runOutcome.left));
                     return;
                 }
                 setRun(nextRun);
@@ -211,13 +230,17 @@ export function RunManagerPanel({
         setBusyAction('load-run');
         setError(undefined);
         try {
-            const loaded = await fetchControlRunSnapshot({
-                baseUrl,
-                token,
+            const loadOutcome = await readControlRunSnapshot({
+                ...controlEndpoint,
                 runId,
                 bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
             if (!request.isCurrent()) {
+                return;
+            }
+            const loaded = loadOutcome.right;
+            if (loaded === undefined) {
+                setError(toControlFailureMessage(loadOutcome.left));
                 return;
             }
             setRun(loaded);
@@ -249,14 +272,18 @@ export function RunManagerPanel({
         setError(undefined);
         try {
             const command = parseRunManagerCommandText(commandText);
-            const result = await enqueueBulkControlCommand({
-                baseUrl,
-                token,
+            const enqueued = await enqueueBulkControlCommand({
+                ...controlEndpoint,
                 runId: run.runId,
                 agentIds: selectedAgentIds,
                 command,
                 commandIdPrefix: runManagerCommandPrefix(command)
             });
+            const result = enqueued.right;
+            if (result === undefined) {
+                setError(toControlFailureMessage(enqueued.left));
+                return;
+            }
             setLastAction(`Queued ${result.commands.length} command(s).`);
             await refresh(run.runId);
         }
@@ -276,11 +303,15 @@ export function RunManagerPanel({
         setBusyAction('reset-run');
         setError(undefined);
         try {
-            const resetRun = await resetControlRun({
-                baseUrl,
-                token,
+            const resetOutcome = await resetControlRun({
+                ...controlEndpoint,
                 runId: run.runId
             });
+            const resetRun = resetOutcome.right;
+            if (resetRun === undefined) {
+                setError(toControlFailureMessage(resetOutcome.left));
+                return;
+            }
             setRun(resetRun);
             setLastAction(`Reset ${run.runId}.`);
             await refresh(run.runId);
@@ -302,11 +333,14 @@ export function RunManagerPanel({
         setBusyAction('delete-run');
         setError(undefined);
         try {
-            await deleteControlRun({
-                baseUrl,
-                token,
+            const deleted = await deleteControlRun({
+                ...controlEndpoint,
                 runId: deletedRunId
             });
+            if (deleted.right === undefined) {
+                setError(toControlFailureMessage(deleted.left));
+                return;
+            }
             setRun(undefined);
             setSelectedRunId('');
             setSelectedAgentIds([]);
@@ -338,11 +372,15 @@ export function RunManagerPanel({
         setBusyAction('artifact');
         setError(undefined);
         try {
-            const bundle = await fetchControlRunArtifactBundle({
-                baseUrl,
-                token,
+            const bundleOutcome = await readControlRunArtifactBundle({
+                ...controlEndpoint,
                 runId: run.runId
             });
+            const bundle = bundleOutcome.right;
+            if (bundle === undefined) {
+                setError(toControlFailureMessage(bundleOutcome.left));
+                return;
+            }
             setArtifactBundle(bundle);
             setLastAction(`Loaded artifact bundle for ${run.runId}.`);
         }
@@ -355,14 +393,7 @@ export function RunManagerPanel({
     };
 
     const copyArtifactBundle = async (): Promise<void> => {
-        const bundle = artifactBundle ??
-            (run
-                ? await fetchControlRunArtifactBundle({
-                    baseUrl,
-                    token,
-                    runId: run.runId
-                })
-                : undefined);
+        const bundle = artifactBundle ?? await readSelectedArtifactBundle();
         if (bundle) {
             setArtifactBundle(bundle);
             await navigator.clipboard?.writeText(json(bundle.files));
@@ -370,16 +401,34 @@ export function RunManagerPanel({
         }
     };
 
+    const readSelectedArtifactBundle = async (): Promise<ControlRunArtifactBundle | undefined> => {
+        if (!run) {
+            return undefined;
+        }
+        const outcome = await readControlRunArtifactBundle({
+            ...controlEndpoint,
+            runId: run.runId
+        });
+        if (outcome.right === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+        }
+        return outcome.right;
+    };
+
     const copyJsonl = async (kind: 'events' | 'results'): Promise<void> => {
         if (!run) {
             return;
         }
-        const text = await fetchControlRunJsonl({
-            baseUrl,
-            token,
+        const outcome = await readControlRunJsonl({
+            ...controlEndpoint,
             runId: run.runId,
             kind
         });
+        const text = outcome.right;
+        if (text === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+            return;
+        }
         await navigator.clipboard?.writeText(text);
         setLastAction(`Copied ${kind} JSONL.`);
     };
@@ -388,11 +437,15 @@ export function RunManagerPanel({
         if (!run) {
             return;
         }
-        const bundle = await fetchControlRunFailureBundle({
-            baseUrl,
-            token,
+        const outcome = await readControlRunFailureBundle({
+            ...controlEndpoint,
             runId: run.runId
         });
+        const bundle = outcome.right;
+        if (bundle === undefined) {
+            setError(toControlFailureMessage(outcome.left));
+            return;
+        }
         await navigator.clipboard?.writeText(json(bundle));
         setLastAction('Copied failure bundle.');
     };

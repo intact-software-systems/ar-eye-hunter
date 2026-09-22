@@ -3,6 +3,7 @@ import {
     beforeEach,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
@@ -10,12 +11,20 @@ import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupTopologyManagementView } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { isRallarValidationError } from '@shared/api/rallar-validation.ts';
+import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
+import {
+    findGroupStateSnapshotByRef,
+    onGroupStateSnapshotChange,
+    waitForGroupStateSnapshotChangesIdle
+} from '@shared/repository/group-state-snapshots-repository.ts';
 import { configureOverlayRepositories } from '@shared/repository/overlays-repository.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
 import {
     createRoomSnapshot,
+    readRoomWorkflowMocks,
     resetRoomWorkflowTestRuntime,
     seedRoomSnapshots
 } from './room-workflow-test-runtime.ts';
@@ -78,20 +87,7 @@ it('refreshes a bound room and its current topology', async () => {
             presenceRevision: observed.causalRevision.presenceRevision
         }
     };
-    const topology: GroupTopologyManagementView = {
-        groupRef: current.group,
-        overlayId: toScopedOverlayId(current.group),
-        snapshot: null,
-        acceptedSnapshot: null,
-        config: {
-            serverDefaults: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 },
-            durable: null,
-            temporary: null,
-            requestOptions: null,
-            effective: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 }
-        },
-        pending: null
-    };
+    const topology = createEmptyTopology(current.group);
     seedRoomSnapshots([observed]);
     let groupReadObserved = false;
     let topologyReadObserved = false;
@@ -190,3 +186,96 @@ it('preserves a newer publication that races targeted 404 cleanup', async () => 
 
     expect(session.snapshot()).toBe(newer);
 });
+
+it.each(['equal', 'aborted', 'stale-session', 'wrong-scope', 'failed'] as const)(
+    'renews a bound room only after a current exact authoritative acquisition: %s',
+    async (outcome) => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(1_000);
+        onTestFinished(() => {
+            vi.useRealTimers();
+        });
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const original = createRoomSnapshot('fresh-room', ['session-1']);
+        const snapshot = {
+            ...original,
+            activeSessions: original.activeSessions.map((session) => ({ ...session, expiresAtEpochMs: 300_000 }))
+        };
+        seedRoomSnapshots([snapshot]);
+        await waitForGroupStateSnapshotChangesIdle();
+        const events: ObservableValueEventType[] = [];
+        onTestFinished(onGroupStateSnapshotChange((change) => {
+            events.push(change.kind);
+        }));
+        const requested = Promise.withResolvers<void>();
+        const response = Promise.withResolvers<Response>();
+        vi.stubGlobal('fetch', (url: RequestInfo | URL) => {
+            if (String(url).endsWith('/topology')) {
+                return Promise.resolve(
+                    new Response(JSON.stringify(createEmptyTopology(snapshot.group)), {
+                        headers: { 'content-type': 'application/json' }
+                    })
+                );
+            }
+            requested.resolve();
+            return response.promise;
+        });
+        const roomSession = createRallarFacade().rooms.session(snapshot.group);
+        const controller = new AbortController();
+        vi.setSystemTime(51_000);
+        const refreshing = roomSession.refresh({ signal: controller.signal });
+        const completion = refreshing.then(() => 'completed', (error: Error) => error);
+        await requested.promise;
+        if (outcome === 'aborted') {
+            controller.abort();
+        }
+        if (outcome === 'stale-session') {
+            const runtime = readRoomWorkflowMocks();
+            runtime.readSession.mockReturnValue({ ...runtime.session, sessionId: 'replacement-session' });
+        }
+        const acquired = outcome === 'wrong-scope'
+            ? { ...snapshot, group: { ...snapshot.group, workspaceId: 'wrong' } }
+            : snapshot;
+        response.resolve(
+            outcome === 'failed' ? new Response('', { status: 503 }) : new Response(JSON.stringify(acquired), {
+                headers: {
+                    'content-type': 'application/json',
+                    'cache-control': 'no-store',
+                    'rallar-state-source': 'durable',
+                    'rallar-group-revision': '1',
+                    'rallar-presence-revision': '1'
+                }
+            })
+        );
+        const result = await completion;
+        await waitForGroupStateSnapshotChangesIdle();
+        vi.setSystemTime(62_000);
+        if (outcome === 'equal') {
+            expect(result).toBe('completed');
+            expect(events).toEqual([ObservableValueEventType.Refreshed]);
+            expect(findGroupStateSnapshotByRef(snapshot.group)).toBe(snapshot);
+        }
+        else {
+            expect(result).toBeInstanceOf(Error);
+            expect(events).toEqual([]);
+            expect(findGroupStateSnapshotByRef(snapshot.group)).toBeUndefined();
+        }
+    }
+);
+
+function createEmptyTopology(groupRef: GroupRef): GroupTopologyManagementView {
+    return {
+        groupRef,
+        overlayId: toScopedOverlayId(groupRef),
+        snapshot: null,
+        acceptedSnapshot: null,
+        config: {
+            serverDefaults: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 },
+            durable: null,
+            temporary: null,
+            requestOptions: null,
+            effective: { topologyKind: 'auto', degreeLimit: 5, treeMinSize: 3, meshMinSize: 8, meshParamK: 2 }
+        },
+        pending: null
+    };
+}
