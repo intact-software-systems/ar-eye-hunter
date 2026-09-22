@@ -139,6 +139,14 @@ finalization. If the terminal write fails, the reservation remains recoverable t
 ordinary QueueBox claims. Release uses the existing observed-entry comparison and
 expiry conditions; a failed comparison returns a lost-reservation result.
 
+One work batch releases every claim it collected in a single queue write, with a disposition
+per entry; `releaseDurationMs` measures exactly that one write, run once at the batch's end
+inside a `finally` so a throwing selection or claim cannot strand a reservation. A lost
+reservation inside that batch drops the affected entry and retries the rest as one write; a
+queue write conflict degrades the batch once to releasing each entry serially. A retained claim
+is different: it releases on its own settlement, independently of any batch, one claim at a
+time, with no coalescing window or timer.
+
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before
 any message effect is returned for execution.
