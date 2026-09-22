@@ -129,7 +129,7 @@ while F2c runs in its own slice.
 **Interfaces:** consumes `createCountingIndexedDbOperationObserver`, `IndexedDbAdmissionBackend`,
 `createDefaultOutboundTestRuntime`; produces no runtime surface.
 
-- [ ] **Step 1: The default-send operation pin (GREEN at HEAD).** Add
+- [x] **Step 1: The default-send operation pin (GREEN at HEAD).** Add
       `describe('outbound default send IndexedDB volume')` that builds a real outbound runtime over
       `IndexedDbAdmissionBackend` with a counting observer (the shape
       `outbound-commit-phase-diagnostics.test.ts:30-57` uses), enqueues one message with
@@ -138,7 +138,7 @@ while F2c runs in its own slice.
       figures in the assertion message. This is the "no new default write" witness Task 12 re-runs.
       Command: `npx vitest run packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`
       Expected: GREEN, the two numbers recorded in the test.
-- [ ] **Step 2: Commit.** One commit, message naming the measured counts.
+- [x] **Step 2: Commit.** One commit, message naming the measured counts.
 
 ### Task 1: The lifecycle vocabulary and reducer
 
@@ -383,7 +383,7 @@ The evidence keeps the two admission facts the verdict carries and the state can
 and a carrier with no peer all read `unroutable`. Every later observer reads them from the evidence
 rather than from a second channel of its own.
 
-- [ ] **Step 1: Write the failing tests.** One `it.each` per table row over both `ackMode: 'none'` and
+- [x] **Step 1: Write the failing tests.** One `it.each` per table row over both `ackMode: 'none'` and
       `ackMode: 'receiver'`, plus: the terminal guard (a `sent` after `cancelled` leaves `cancelled`
       and counts one late settlement, the attempt row still appended); `transport-accepted` terminal
       only for `'none'`; `pending` keeps `pending-authority`; `AL_DELIVERY_ADMITTED_STATES` equals every
@@ -391,13 +391,13 @@ rather than from a second channel of its own.
       previous, deep-equal before/after).
       Command: `npx vitest run packages/tests/shared/alm/delivery/compute-al-delivery-lifecycle.test.ts`
       Expected: FAIL (module missing).
-- [ ] **Step 2: Implement the two modules** exactly as the interfaces above; keep the reducer as one
+- [x] **Step 2: Implement the two modules** exactly as the interfaces above; keep the reducer as one
       `switch (settlement.kind)` that dispatches to one pure function per family
       (`toAdmissionLifecycle`, `toAttemptLifecycle`, `toAcknowledgementLifecycle`, `toTerminalLifecycle`),
       each under 40 lines; `AL_DELIVERY_STATES` is the single runtime list every other list derives from.
       Command: the Step 1 command; `npx tsc -p packages/shared/tsconfig.json --noEmit`
       Expected: PASS.
-- [ ] **Step 3: Commit.** `npx dprint check` on the three files.
+- [x] **Step 3: Commit.** `npx dprint check` on the three files.
 
 ### Task 2: The structured admission verdict inside the outbound owner
 
@@ -423,7 +423,7 @@ rather than from a second channel of its own.
   beside the existing `status`, with `status` derived by `toALOutboundEnqueueStatus(verdict)` in the
   new temporary module so every current consumer compiles unchanged; `ALOutboundComputedDto.verdict`.
 
-- [ ] **Step 1: Failing tests.** In `outbound-admission-verdict.test.ts`: `computeALOutboundDispatch`
+- [x] **Step 1: Failing tests.** In `outbound-admission-verdict.test.ts`: `computeALOutboundDispatch`
       yields `{ kind: 'admitted', durable: true, queuedAttempts: 1 }` for a persisted plan with one
       prepared attempt, `{ kind: 'admitted', durable: false, queuedAttempts: 1 }` for a volatile plan,
       `{ kind: 'unroutable', reason: 'no-route' }` for an enqueue with no attempts, `duplicate` for a
@@ -434,7 +434,7 @@ rather than from a second channel of its own.
       `toALOutboundEnqueueStatus` as a total function over every verdict kind.
       Command: `npx vitest run packages/tests/shared/alm/outbound-admission-verdict.test.ts`
       Expected: FAIL.
-- [ ] **Step 2: Carry the code, not the string.** Add `dropReasonCode` to `ALOutboundDispatchPlan`;
+- [x] **Step 2: Carry the code, not the string.** Add `dropReasonCode` to `ALOutboundDispatchPlan`;
       the RTC planner sets it where it sets `dropReason` (`web-rtc-overlay-multicast-manager.ts:865-872`
       from `admission.kind`, `rtc-room-snapshot-admission.ts:113-114` already has a code); the WS
       planners set `undefined`. Replace `toALOutboundEnqueueStatusFromReason` (`:297-326`, the
@@ -447,7 +447,7 @@ rather than from a second channel of its own.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit`; the Step 1 command; the four listed
       suites.
       Expected: all green; no consumer outside these files changed.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ### Task 3: The settlement stream in the outbound owner
 
@@ -495,7 +495,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
 | acknowledgement accepted                                                                                                                                                                                                        | `ALOutboundControlAdmission.admit` when the pending-ack write is `set` or `remove`               | `acknowledgement` with `confirmedHopPeerIds = ackedPeerIds`, `unconfirmedHopPeerIds = expectedPeerIds − ackedPeerIds`, `complete = isALOutboundReceiptComplete`                                                                                                                                                                                                                                                                                                 |
 | cancel (Task 4)                                                                                                                                                                                                                 | runtime                                                                                          | `cancelled`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
-- [ ] **Step 1: Failing tests.** `outbound-delivery-settlements.test.ts` over memory and IndexedDB
+- [x] **Step 1: Failing tests.** `outbound-delivery-settlements.test.ts` over memory and IndexedDB
       (the `it.each(['memory', 'indexeddb'])` shape of `outbound-commit-phase-diagnostics.test.ts`),
       collecting settlements from a runtime built with `carrier: 'ws'` and a stub transport: (a) one
       enqueue + drain with `{ status: 'sent', submissionAttempted: true }` yields exactly
@@ -509,7 +509,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
       `toALOutboundRtcSettlement` carries `submissionAttempted` through.
       Command: `npx vitest run packages/tests/shared/alm/outbound-delivery-settlements.test.ts packages/tests/shared/multicast/rtc-outbound-transport-results.test.ts`
       Expected: FAIL.
-- [ ] **Step 2: Thread the sink and the carrier.** Add both dependencies; thread `settlements` into
+- [x] **Step 2: Thread the sink and the carrier.** Add both dependencies; thread `settlements` into
       `ALOutboundMessageEffects` and `ALOutboundControlAdmission` through their `Dependencies`; the
       three composition roots supply the carrier (`'rtc'` in the multicast manager, `'ws'` in both WS
       services) and `settlements` (`undefined` from the two WS services' own inputs for now — Task 6
@@ -521,7 +521,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
       `settlements`.
       Command: the Step 1 command; `npx vitest run packages/tests/shared/al-outbound-durable-effects.test.ts packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared/alm packages/tests/shared/multicast packages/tests/shared/services`; `npx tsc -p packages/shared/tsconfig.json --noEmit`; `cd apps/api-v1 && deno task check`
       Expected: green; `readOperationCount` pins in `outbound-commit-phase-diagnostics.test.ts` unchanged.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ### Task 4: Per-message cancellation in the outbound owner
 
@@ -542,7 +542,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
   claims for it, so the caller's decision holds whether or not work exists yet); `SendLifecycle.signal`
   becomes the message's own signal; `sendSignal` stays the disposal signal.
 
-- [ ] **Step 1: Failing tests.** (a) `cancel(msgId)` before the drain: the claimed `send-prepared`
+- [x] **Step 1: Failing tests.** (a) `cancel(msgId)` before the drain: the claimed `send-prepared`
       effect completes without calling the transport and the runtime emits exactly one `cancelled`
       settlement; (b) `cancel` during a retained RTC-shaped send: the lifecycle signal handed to
       `sendPreparedMessage` is aborted, the transport settles `cancelled`, the settlement stream shows
@@ -553,7 +553,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
       unchanged and green — the per-send signal semantics at the channel are not touched.
       Command: `npx vitest run packages/tests/shared/alm/outbound-delivery-settlements.test.ts packages/tests/shared/rtc-queued-send-settlement.test.ts packages/tests/shared/al-outbound-durable-effects.test.ts`
       Expected: the new cases FAIL, the rest GREEN.
-- [ ] **Step 2: Implement.** A `Map<string, AbortController>` of live attempt controllers keyed by
+- [x] **Step 2: Implement.** A `Map<string, AbortController>` of live attempt controllers keyed by
       msgId (created in `runDurableEffect` for `send-prepared`, removed when the attempt settles) and a
       `Set<string>` of cancelled ids on the runtime; `cancel()` adds the id, aborts a live controller,
       emits `cancelled` once; `runDurableEffect` returns `{ status: 'completed' }` for any effect whose
@@ -566,7 +566,7 @@ already-guarded sink as a dependency and call it bare — one guard, not three (
       next owner (D13; the durable cancel fact is S3/I2 work).
       Command: the Step 1 command; `npx tsc -p packages/shared/tsconfig.json --noEmit`
       Expected: PASS.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ### Task 5: The browser delivery registry and the handle contract
 
@@ -661,7 +661,7 @@ No timer runs per entry: `wait()` arms one timer for
 its own timeout and one for the message deadline when it is nearer; `lifecycle()` compares the
 deadline on read. `cancel()` on a terminal handle is a no-op.
 
-- [ ] **Step 1: Failing tests.** (a) `open` returns a handle whose `lifecycle().state` is `submitted`
+- [x] **Step 1: Failing tests.** (a) `open` returns a handle whose `lifecycle().state` is `submitted`
       and whose `msgId`/`typeId` come from the envelope; a second `open` for the same msgId returns the
       same handle; (b) `record` moves the state through `admission admitted` → `attempt-started` →
       `attempt-settled sent` and each step reaches an `onEvent` listener once, in order, through
@@ -674,14 +674,14 @@ deadline on read. `cancel()` on a terminal handle is a no-op.
       see `settled` with that state; (h) `releaseAll` resolves every non-terminal entry `unobservable`.
       Command: `npx vitest run packages/tests/shared-web/messages/browser-rallar-delivery-registry.test.ts`
       Expected: FAIL.
-- [ ] **Step 2: Implement** the registry as the one stateful owner (a class: it owns subscriptions
+- [x] **Step 2: Implement** the registry as the one stateful owner (a class: it owns subscriptions
       and retention), the handle as a plain object literal closing over it
       (`browser-call-session-runtime.ts:63-76` is the precedent). Keep the file under the cognitive
       warn tier; if the wait machinery pushes it over, split `browser-rallar-delivery-wait.ts` as its
       own owner rather than a helper.
       Command: the Step 1 command; `npx tsc -p packages/shared-web/tsconfig.json --noEmit`
       Expected: PASS.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
 
 ### Task 6: The sender returns the handle; composition, lifecycle, and the public surface
 
@@ -761,7 +761,7 @@ and epoch: a context replaced before admission releases that handle `unobservabl
 already awaiting an old owner cannot publish through a new epoch. Actual carrier/runtime exceptions
 remain failure values.
 
-- [ ] **Step 1: Failing tests.** Rewrite `browser-rallar-message-sender.test.ts`: the four
+- [x] **Step 1: Failing tests.** Rewrite `browser-rallar-message-sender.test.ts`: the four
       input-validation throws stay (`:282`, `:297`, `:312`); `:326` becomes "an oversized payload
       resolves a handle in `rejected` with reason `Payload exceeds…`"; the status-with-message cases
       (`:352`, `:534`) become "resolves a handle whose lifecycle is `submitted` before the stubbed
@@ -774,7 +774,7 @@ remain failure values.
       `browser-typed-message-channels.test.ts:206` the fallback case reads the handle.
       Command: `npx vitest run packages/tests/shared-web/messages`
       Expected: FAIL on the new expectations.
-- [ ] **Step 2: Compose and wire.** Construct the completed shared transport first, then one
+- [x] **Step 2: Compose and wire.** Construct the completed shared transport first, then one
       browser-wide `BrowserRallarDeliveryRegistry`, then its `BrowserSessionDeliveries` session owner,
       then facade session and messaging consumers. The canonical shared delivery composition injects
       `Date.now`, retains terminal observations for 60 000 ms, and bounds the browser to 512 entries.
@@ -799,7 +799,7 @@ remain failure values.
       Command: `npx vitest run packages/tests/shared-web/composition packages/tests/shared-web/al-runtime`
       Expected: `browser-runtime-construction.test.ts:58` still green (the registry touches no session
       at construction).
-- [ ] **Step 3: The sender and the public surface.** Implement the semantics above; delete
+- [x] **Step 3: The sender and the public surface.** Implement the semantics above; delete
       `RallarMessageSendResult` and `toRallarMessageSendResult`; update the three export lists and the
       snapshot arrays (`RallarMessageHandle` sorts between `RallarMessageHandler` and `RallarMessageLane`);
       update the facade test double. If `browser-rallar-message-sender.ts` crosses cognitive load 50,
@@ -820,7 +820,7 @@ remain failure values.
       `setRecorder` construction seam and workflow callbacks in full, and restore package typechecks.
       Task 6 does not introduce a second registry composition or alter the untouched harness root.
 
-- [ ] **Step 4: Commit** (one commit for composition, one for the sender and the surface is acceptable;
+- [x] **Step 4: Commit** (one commit for composition, one for the sender and the surface is acceptable;
       both keep `npx tsc -p packages/shared-web/tsconfig.json --noEmit` green except the listed
       consumers).
 
@@ -1116,7 +1116,7 @@ state, `enqueued` from `admittedDurable`, and `backpressured` from an `unroutabl
 observable for the first time, because the page runtime's own status could only say `sent` or
 `no-peers`.
 
-- [ ] **Step 1: Failing tests.** Move the ledger cases to the dedicated browser-runtime delivery
+- [x] **Step 1: Failing tests.** Move the ledger cases to the dedicated browser-runtime delivery
       suite and exercise the actual session registry and production sender. Prove send → observe
       `queued` → cancel `cancelled` → receipts with hop lists; observe timeout message unchanged; the
       unknown handle reads `unobservable`; the storage counters during an observe over a `pending`
@@ -1126,14 +1126,16 @@ observable for the first time, because the page runtime's own status could only 
       field names and the schema suite's corpus.
       Command: `npx vitest run packages/tests/rallar-black-box/browser-rallar-runtime.test.ts packages/tests/shared-test/rallar-bb-test-alm-commands.test.ts packages/tests/shared-test/rallar-bb-test-schema.test.ts packages/tests/shared-test/rallar-browser-runtime`
       Expected: FAIL.
-- [ ] **Step 2: Implement** the projection; delete the listed members; derive both runtime state lists
+- [x] **Step 2: Implement** the projection; delete the listed members; derive both runtime state lists
       from `AL_DELIVERY_STATES`; rewrite `schema-and-capabilities.md:136-149` to describe the
       settlement-fed ledger, the twelve states, the hop-level lists, and that `messages.cancel` stops
       the owner's remaining attempts without recalling a submitted frame.
       Command: the Step 1 command; `npx tsc -p packages/shared-test/tsconfig.json --noEmit`;
       `npm run test:repo-governance`
       Expected: green.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
+      Delivered across `15c12f48d..f29b3e384` (independent review approved the admission, core, and smoke
+      closures); the live-RTC evidence closure below landed during Task 11.
 
 Closure found during Task 11 (2026-09-21): the Playwright live-RTC evidence helper
 `tests/playwright/rallar-black-box/live-rtc-control-client.ts` and its summaries in
@@ -1225,17 +1227,19 @@ Foundation validation exercises the real normalizer, admission store, worker, li
 and native transport ports. Full touched-file standards closure applies recursively. Subsequent
 scenario/orchestration integration retains the following acceptance steps:
 
-- [ ] **Step 1: Failing tests.** Add both ids to `CARRIER_SCENARIO_IDS`, the tag matrix, the command-kind
+- [x] **Step 1: Failing tests.** Add both ids to `CARRIER_SCENARIO_IDS`, the tag matrix, the command-kind
       set (unchanged kinds), the deadline arithmetic, and the manifest `scenarios` array.
       Command: `npx vitest run packages/tests/shared-test/alm-conformance-recipe-validation.test.ts packages/tests/shared-test/alm-conformance-recipes.test.ts packages/tests/shared-test/alm-conformance-deadline-expiry.test.ts packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`
       Expected: FAIL.
-- [ ] **Step 2: Implement** the two definitions and their builders, extend `deadline-expiry`, update
+- [x] **Step 2: Implement** the two definitions and their builders, extend `deadline-expiry`, update
       the manifest description prose, regenerate the JSON.
       Command: the Step 1 command; `npm run test:rallar:full-stack:memory:alm` (all carriers), then
       `RALLAR_BLACK_BOX_ALM_SCOPE=full RALLAR_BLACK_BOX_ALM_CARRIERS=rtc npm run test:rallar:full-stack:memory:alm`
       Expected: green locally in a normal regime; the per-carrier medians and the new scenarios'
       durations recorded in the PR body draft.
-- [ ] **Step 3: Commit.**
+- [x] **Step 3: Commit.**
+      Delivered: foundation `033b90943`, reload coordinator `b5f04cbed`, the acceptance repairs through
+      `7bf4842c2` (full family 3 passed locally, all normal) and the regenerated two-agent catalog `56e51bf9c`.
 
 ### Task 11: Retire `ALOutboundEnqueueStatus` (D14)
 
