@@ -2,16 +2,19 @@ import type { IndexedDbWriteDeadline } from '../persistence/indexed-db-request.t
 import { toError } from '../resilience/to-error.ts';
 import type {
     IndexedDbAdmissionFence,
-    IndexedDbAdmissionObservedRevision
+    IndexedDbAdmissionObservedRow
 } from './indexed-db-admission-fence.ts';
-import { toIndexedDbAdmissionObservedRevision } from './indexed-db-admission-fence.ts';
+import {
+    isIndexedDbAdmissionObservationUnmoved,
+    toIndexedDbAdmissionObservedRow
+} from './indexed-db-admission-fence.ts';
 import { decodeIndexedDbAdmissionStoredRow } from './indexed-db-admission-row.ts';
 import { isIndexedDbAdmissionBookkeepingKey } from './read-indexed-db-admission-snapshot.ts';
 
-/** One fenced key with the revision the write phase observed for it. */
+/** One fenced key with what the write phase observed there. */
 type IndexedDbAdmissionRowObservation = readonly [
     key: string,
-    observed: IndexedDbAdmissionObservedRevision
+    observed: IndexedDbAdmissionObservedRow
 ];
 
 /** One listed prefix with the keys that list returned to the write phase. */
@@ -68,9 +71,9 @@ function completeFencedIndexedDbAdmissionRow(
         return;
     }
     const [key, observed] = observation;
-    let current: IndexedDbAdmissionObservedRevision;
+    let current: IndexedDbAdmissionObservedRow;
     try {
-        current = toIndexedDbAdmissionObservedRevision(
+        current = toIndexedDbAdmissionObservedRow(
             result === undefined ? undefined : decodeIndexedDbAdmissionStoredRow(result, key)
         );
     }
@@ -78,7 +81,9 @@ function completeFencedIndexedDbAdmissionRow(
         read.input.onCorruption(key, toError(error));
         return;
     }
-    current === observed ? completeFencedIndexedDbAdmissionRead(read) : read.input.onConflict();
+    isIndexedDbAdmissionObservationUnmoved(observed, current)
+        ? completeFencedIndexedDbAdmissionRead(read)
+        : read.input.onConflict();
 }
 
 /**

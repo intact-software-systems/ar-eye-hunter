@@ -50,6 +50,9 @@ const WORKLOAD = {
  * messages x 3) and every payload, not the three latest. The band is the run-to-run spread of
  * identity and timestamp digits: the readback serializes each row without whitespace, so nothing
  * else moves.
+ *
+ * `AL_ADMISSION` moved from 101,570 bytes for one reason: F2c gives every admission row its own
+ * `revision` field, which the per-row fence compares in place of the deleted store-global scalar.
  */
 const EXPECTED_BYTES_BY_TOPIC = {
     AL_OUTBOUND: 1_813_460,

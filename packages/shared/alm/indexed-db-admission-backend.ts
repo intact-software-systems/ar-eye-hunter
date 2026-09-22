@@ -31,9 +31,9 @@ import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictErr
 import {
     computeIndexedDbAdmissionWriteRevision,
     EMPTY_INDEXED_DB_ADMISSION_FENCE,
-    toIndexedDbAdmissionObservedRevision,
+    toIndexedDbAdmissionObservedRow,
     type IndexedDbAdmissionFence,
-    type IndexedDbAdmissionObservedRevision
+    type IndexedDbAdmissionObservedRow
 } from './indexed-db-admission-fence.ts';
 import { IndexedDbAdmissionReadSession } from './indexed-db-admission-read-session.ts';
 import {
@@ -259,7 +259,7 @@ namespace IndexedDbAdmissionWriteBuffer {
 class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     #usedMetadata = false;
     readonly #pending = new Map<string, IndexedDbAdmissionStoredRow | undefined>();
-    readonly #observedRows = new Map<string, IndexedDbAdmissionObservedRevision>();
+    readonly #observedRows = new Map<string, IndexedDbAdmissionObservedRow>();
     readonly #observedPrefixes = new Map<string, readonly string[]>();
     readonly #workObservations = new Map<string, StoredResourceEntry | undefined>();
     readonly #pendingWork = new Map<string, ComputedIndexedDbQueuePut>();
@@ -355,14 +355,14 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     #recordObservedRow(
         key: string,
         stored: IndexedDbAdmissionStoredRow | undefined
-    ): IndexedDbAdmissionObservedRevision {
-        const observed = this.#observedRows.get(key) ?? toIndexedDbAdmissionObservedRevision(stored);
+    ): IndexedDbAdmissionObservedRow {
+        const observed = this.#observedRows.get(key) ?? toIndexedDbAdmissionObservedRow(stored);
         this.#observedRows.set(key, observed);
         return observed;
     }
 
     /** A key written without being read costs one unobserved request inside the fence snapshot. */
-    async #observeRevision(key: string): Promise<IndexedDbAdmissionObservedRevision> {
+    async #observeRevision(key: string): Promise<IndexedDbAdmissionObservedRow> {
         return this.#observedRows.get(key) ??
             this.#recordObservedRow(key, await this.#session.readRow(key));
     }

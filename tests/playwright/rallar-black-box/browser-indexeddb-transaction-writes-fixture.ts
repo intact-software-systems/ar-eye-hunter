@@ -3,7 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import {
     computeIndexedDbAdmissionWriteRevision,
     INDEXED_DB_ADMISSION_FIRST_REVISION,
-    type IndexedDbAdmissionObservedRevision
+    type IndexedDbAdmissionObservedRow
 } from '../../../packages/shared/alm/indexed-db-admission-fence.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
@@ -214,7 +214,7 @@ async function probeAtomicQueueConflict(database: IDBDatabase, existing: Resourc
 async function probeAtomicAdmissionConflict(database: IDBDatabase, queue: IndexedDbQueueBox): Promise<boolean> {
     const entry = createQueueEntry('stale-admission', 'stale');
     const computed = computeBrowserAdmissionWrite(
-        INDEXED_DB_ADMISSION_FIRST_REVISION,
+        { revision: INDEXED_DB_ADMISSION_FIRST_REVISION, writeToken: `${entry.key.resourceId}-row-token` },
         entry,
         [computeIndexedDbQueuePut(undefined, entry)]
     );
@@ -223,7 +223,7 @@ async function probeAtomicAdmissionConflict(database: IDBDatabase, queue: Indexe
 }
 
 function computeBrowserAdmissionWrite(
-    observed: IndexedDbAdmissionObservedRevision,
+    observed: IndexedDbAdmissionObservedRow,
     entry: ResourceEntry,
     queueMutations: readonly ComputedIndexedDbQueueMutation[]
 ): Omit<WriteIndexedDbAdmissionMutationsInput, 'db'> {

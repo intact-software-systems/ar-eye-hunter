@@ -29,6 +29,8 @@ import { writeIndexedDbAdmissionMutations } from '@shared/alm/write-indexed-db-a
 import '../../setup-browser-indexeddb.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
+import { setNextAdmissionWritePhaseInterleaved } from './inbound-runtime-test-fixture.ts';
+
 afterEach(() => {
     vi.restoreAllMocks();
 });
@@ -517,7 +519,10 @@ describe('admission storage envelopes', () => {
                 db: database,
                 storeName: 'entries',
                 fence: {
-                    rows: new Map([['version:bad', INDEXED_DB_ADMISSION_FIRST_REVISION]]),
+                    rows: new Map([[
+                        'version:bad',
+                        { revision: INDEXED_DB_ADMISSION_FIRST_REVISION, writeToken: 'write-token' }
+                    ]]),
                     prefixes: new Map()
                 },
                 mutations: []
@@ -529,6 +534,57 @@ describe('admission storage envelopes', () => {
         finally {
             database.close();
         }
+    });
+
+    it('conflicts when a fenced row is deleted and recreated at the same revision', async () => {
+        const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
+            dbName: `admission-recreated-row-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await backend.write((transaction) => transaction.set('version:recreated', '7'));
+        // A recreated row restarts at the first revision, so the revision alone reads as unmoved.
+        setNextAdmissionWritePhaseInterleaved(backend, async () => {
+            await backend.write((transaction) => transaction.remove('version:recreated'));
+            await backend.write((transaction) => transaction.set('version:recreated', '9'));
+        });
+
+        await expect(backend.write(async (transaction) => {
+            expect(await transaction.read('version:recreated', decodeVersion)).toBe(7);
+            await transaction.set('version:dependent', '8');
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+
+        expect(await backend.read('version:recreated', decodeVersion)).toBe(9);
+        expect(await backend.read('version:dependent', decodeVersion)).toBeUndefined();
+    });
+
+    it('conflicts when a row is removed from a prefix the write phase listed', async () => {
+        const backend = new IndexedDbAdmissionBackend({
+            schemaId: AL_ADMISSION_SCHEMA_ID,
+            onStorageReset: () => {},
+            dbName: `admission-listed-removal-${crypto.randomUUID()}`,
+            storeName: 'entries',
+            nowMs: Date.now,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: createPassThroughIndexedDbOperationObserver()
+        });
+        await backend.write((transaction) => transaction.set('version:listed', '7'));
+        setNextAdmissionWritePhaseInterleaved(backend, async () => {
+            await backend.write((transaction) => transaction.remove('version:listed'));
+        });
+
+        await expect(backend.write(async (transaction) => {
+            expect(await transaction.list('version:', decodeVersion)).toEqual([
+                { key: 'version:listed', value: 7 }
+            ]);
+            await transaction.set('other:dependent', '8');
+        })).rejects.toMatchObject({ name: 'ALAdmissionBackendConflictError' });
+
+        expect(await backend.read('other:dependent', decodeVersion)).toBeUndefined();
     });
 
     it('lists a matching key whose suffix starts with the maximum UTF-16 code unit', async () => {
