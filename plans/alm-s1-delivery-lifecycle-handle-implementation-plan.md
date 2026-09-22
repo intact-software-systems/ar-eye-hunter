@@ -1327,7 +1327,7 @@ dequeue completes the row and does not publish it.
       body.
       Re-run on `3e3fa2dc`: the headless boundary test passed under the 270 KiB ceiling. `browser/rallar.ts`
       brotli was 211.9 KiB against a 212.0 KiB budget, and the shared-web budget check passed.
-- [ ] **Step 4: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
+- [x] **Step 4: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       the three Deno checks; `npm run test:deno`; `npx dprint check`;
       `npm run check:repo-style:changed -- origin/main HEAD`; `node scripts/check-tests-typecheck.mjs`;
       `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`; `npm run build`;
@@ -1396,6 +1396,18 @@ dequeue completes the row and does not publish it.
       is from `7bf4842c`; later commits are the type narrowing, the manifest, and this note.
       This step stays open because `test:ci` was not one green process at the default timeout and
       `dprint check` still names the untouched shell script. No budget or assertion was changed.
+      Closed on `a1e9179b` (2026-09-22, macOS, shfmt on PATH). Passed: `npx dprint check` on the whole tree (the
+      `15-logs.sh` complaint was the other environment's shfmt); `npm run typecheck`; the three `deno task check`;
+      `check:repo-style:changed` (no new findings); `check-tests-typecheck` (1,262 files, 0 debt); the coupling check
+      (195 candidates classified); `check:browser-bundles` (facade 211.97 KiB brotli under 212); `npm run build`.
+      `npm run test:ci` as one process at the default timeouts exited 0: unit 11,924 passed / 12 skipped, Deno
+      561 / 174 / 5 (12 steps) / 146, e2e 40 + 210, full-stack memory 7. (A first attempt on `05266990` had two
+      load-timing failures in the unit leg — an untouched git-fixture test at 5 s and the headless SIGTERM case — both
+      green in isolation.) ALM smoke lane: 3 passed in 4.8 minutes, all normal (WS 5.06, RTC 4.28, fallback 4 ms/op).
+      ALM full family: WS and fallback passed (lifecycle, reload, ordering-resync; 4 and 14.44 ms/op); RTC failed
+      `ordering-resync` at the receiver absence proof (2 messages observed while absent) and passed on an immediate
+      RTC-only rerun (11.44 ms/op, 2.9 minutes) — a flake in a scenario that predates S1, recorded, not diagnosed.
+      No budget or assertion was changed.
 - [x] **Step 5: Postgres lanes.** `npm run db:test:up`, then `npm run test:integration:postgres`
       (the settlement sink over the PostgreSQL backend) and, because the server WS router's publish
       result changed, `npm run test:api-v1:black-box:postgres:medium-scale`. Never weaken their
@@ -1405,7 +1417,7 @@ dequeue completes the row and does not publish it.
       `npm run test:optional:postgres` then passed: 21 files / 69 tests, plus presence expiry 10 tests.
       Medium-scale passed: `api-v1-state-medium-scale-churn` exit 0, 2757 success, 0 failure, 193126 ms.
       No constant or assertion was changed.
-- [ ] **Step 6: The observation job and the PR.** Push; read the `alm-conformance-lane-<sha>` artifact
+- [x] **Step 6: The observation job and the PR.** Push; read the `alm-conformance-lane-<sha>` artifact
       under the regime rule (a red counts only against a same-regime green baseline; the F2b baseline is
       slow at 48–55 ms per operation with every cell red); record per cell the regime, the per-operation
       median, and each S1 scenario's outcome. PR body in the F2b shape: Goal, Changes, Acceptance (the
@@ -1414,6 +1426,13 @@ dequeue completes the row and does not publish it.
       revert restores the send result), Follow-up (the durable cancel fact for S3/I2; WS receipts in S2;
       the lane's return to `test:ci` is the maintainer's). `pr:delivery status` decides the next action;
       `ready` and auto-merge are not used.
+      Hosted observation on `6f6006cf` (smoke), every cell in the normal regime: WS 18.89 ms/op passed; RTC
+      18.56 ms/op failed `delivery-lifecycle` (`observe-superseded-3` command timeout, receiver
+      `receive-replacement` wait timeout); fallback 12.89 ms/op passed. A same-regime green exists for the RTC cell
+      (`f6a07c5e`, 9.44 ms/op), so under the regime rule the red counts; since the lease fix the hosted RTC cell
+      failed at a different step each run (connect readiness twice, `observe-acknowledged-4`,
+      `observe-superseded-3`) while the local family passes, so it is carried as an open hosted-only intermittent for
+      the maintainer. PR body rewritten in the F2b shape on the final head; `ready` and auto-merge not used.
 - [ ] **Step 7: Branch Release Gate** green on the final feature-branch commit before review is
       requested; its result is recorded on the pull request, not here. Any change after a passing gate
       invalidates it.
