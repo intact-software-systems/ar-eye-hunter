@@ -2,11 +2,17 @@ import { Either } from '../../../../shared/resilience/Either.ts';
 import type { RallarBlackBoxTestRecord } from '../../rallar-black-box-test-contracts.ts';
 
 const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
+const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';
 const STORAGE_COUNTERS_TOPIC = 'rallar.bb.storage.counters';
 const COMMIT_PHASES_DIAGNOSTIC_KIND = 'commit-phases';
+const ADMISSION_OUTCOME_DIAGNOSTIC_KIND = 'admission-outcome';
+const EFFECT_DRAIN_DIAGNOSTIC_KIND = 'effect-drain';
 const WORK_PAGE_COUNTER_KIND = 'work-page';
 const RECIPE_RUN_RESULT_KIND = 'recipe.run';
+/** The ALM lane mints its agent ids with these prefixes (`full-stack-helpers.ts:838`). */
+const SENDER_AGENT_ID_PREFIX = 'alm-sender-';
+const RECEIVER_AGENT_ID_PREFIX = 'alm-receiver-';
 
 export interface ALMObservationCommitPhase {
     readonly atEpochMs: number;
@@ -31,6 +37,43 @@ export type ALMObservationCommandResult =
     | Readonly<{ outcome: 'completed'; commandId: string; recipeId: string; durationMs: number; }>
     | Readonly<{ outcome: 'failed'; commandId: string; failureCode: string; }>;
 
+/**
+ * Which page an inbound event came from. The ALM lane mints its agent ids as `alm-sender-…` and
+ * `alm-receiver-…` (`full-stack-helpers.ts:838`); any other id is `unattributed` rather than
+ * guessed, so a snapshot from another lane still decodes.
+ */
+export type ALMObservationAgentRole = 'sender' | 'receiver' | 'unattributed';
+
+export interface ALMObservationInboundOutcome {
+    readonly atEpochMs: number;
+    readonly role: ALMObservationAgentRole;
+    readonly workerId: string;
+    /** `committed`, `pending`, `unauthorized`, `rejected` or `not-handled`, as the topic emits it. */
+    readonly outcome: string;
+}
+
+export interface ALMObservationInboundDrain {
+    readonly atEpochMs: number;
+    readonly role: ALMObservationAgentRole;
+    readonly workerId: string;
+    readonly durationMs: number;
+    readonly selectionDurationMs: number;
+    readonly claimDurationMs: number;
+    readonly runDurationMs: number;
+    readonly releaseDurationMs: number;
+    readonly queueWaitMs: number;
+}
+
+export function resolveALMObservationAgentRole(agentId: string): ALMObservationAgentRole {
+    if (agentId.startsWith(SENDER_AGENT_ID_PREFIX)) {
+        return 'sender';
+    }
+    if (agentId.startsWith(RECEIVER_AGENT_ID_PREFIX)) {
+        return 'receiver';
+    }
+    return 'unattributed';
+}
+
 export interface ALMObservationSnapshot {
     readonly runId: string;
     readonly firstEventAtEpochMs: number;
@@ -38,10 +81,13 @@ export interface ALMObservationSnapshot {
     readonly rtcLifecycles: readonly ALMObservationRtcLifecycle[];
     readonly storageCounters: readonly ALMObservationStorageCounters[];
     readonly commandResults: readonly ALMObservationCommandResult[];
+    readonly inboundOutcomes: readonly ALMObservationInboundOutcome[];
+    readonly inboundDrains: readonly ALMObservationInboundDrain[];
 }
 
 interface ALMObservationDiagnostic {
     readonly atEpochMs: number;
+    readonly agentId: string;
     readonly topic: string;
     readonly detail: RallarBlackBoxTestRecord;
 }
@@ -73,7 +119,13 @@ export function decodeALMObservationSnapshot(
         storageCounters: toTopicDiagnostics(diagnostics, STORAGE_COUNTERS_TOPIC).map(toStorageCounter).filter(
             isPresent
         ),
-        commandResults: results.map(toCommandResult).filter(isPresent)
+        commandResults: results.map(toCommandResult).filter(isPresent),
+        inboundOutcomes: toTopicDiagnostics(diagnostics, INBOUND_DIAGNOSTICS_TOPIC).map(toInboundOutcome).filter(
+            isPresent
+        ),
+        inboundDrains: toTopicDiagnostics(diagnostics, INBOUND_DIAGNOSTICS_TOPIC).map(toInboundDrain).filter(
+            isPresent
+        )
     });
 }
 
@@ -146,6 +198,52 @@ function toStorageCounter(
         : { atEpochMs: diagnostic.atEpochMs, workPageCount };
 }
 
+function toInboundOutcome(
+    diagnostic: ALMObservationDiagnostic
+): ALMObservationInboundOutcome | undefined {
+    const workerId = decodeText(diagnostic.detail.workerId);
+    const outcome = decodeText(diagnostic.detail.outcome);
+    return diagnostic.detail.kind !== ADMISSION_OUTCOME_DIAGNOSTIC_KIND || workerId === undefined ||
+            outcome === undefined
+        ? undefined
+        : {
+            atEpochMs: diagnostic.atEpochMs,
+            role: resolveALMObservationAgentRole(diagnostic.agentId),
+            workerId,
+            outcome
+        };
+}
+
+function toInboundDrain(
+    diagnostic: ALMObservationDiagnostic
+): ALMObservationInboundDrain | undefined {
+    const workerId = decodeText(diagnostic.detail.workerId);
+    const durationMs = decodeFiniteNumber(diagnostic.detail.durationMs);
+    const selectionDurationMs = decodeFiniteNumber(diagnostic.detail.selectionDurationMs);
+    const claimDurationMs = decodeFiniteNumber(diagnostic.detail.claimDurationMs);
+    const runDurationMs = decodeFiniteNumber(diagnostic.detail.runDurationMs);
+    const releaseDurationMs = decodeFiniteNumber(diagnostic.detail.releaseDurationMs);
+    const queueWaitMs = decodeFiniteNumber(diagnostic.detail.queueWaitMs);
+    if (
+        diagnostic.detail.kind !== EFFECT_DRAIN_DIAGNOSTIC_KIND || workerId === undefined ||
+        durationMs === undefined || selectionDurationMs === undefined || claimDurationMs === undefined ||
+        runDurationMs === undefined || releaseDurationMs === undefined || queueWaitMs === undefined
+    ) {
+        return undefined;
+    }
+    return {
+        atEpochMs: diagnostic.atEpochMs,
+        role: resolveALMObservationAgentRole(diagnostic.agentId),
+        workerId,
+        durationMs,
+        selectionDurationMs,
+        claimDurationMs,
+        runDurationMs,
+        releaseDurationMs,
+        queueWaitMs
+    };
+}
+
 /**
  * A recipe run that failed carries no result object at all, only an error, so its wall clock is not
  * recorded anywhere. The wrapping code is the same `RALLAR_BLACK_BOX_RECIPE_FAILED` on every failure;
@@ -170,11 +268,12 @@ function toCommandResult(entry: RallarBlackBoxTestRecord): ALMObservationCommand
 function toDiagnostic(event: RallarBlackBoxTestRecord): ALMObservationDiagnostic | undefined {
     const envelope = decodeRecord(event.payload);
     const atEpochMs = decodeFiniteNumber(event.atEpochMs);
+    const agentId = decodeText(event.agentId);
     const topic = decodeText(envelope?.topic);
     const detail = decodeRecord(decodeRecord(envelope?.payload)?.data);
-    return atEpochMs === undefined || topic === undefined || detail === undefined
+    return atEpochMs === undefined || agentId === undefined || topic === undefined || detail === undefined
         ? undefined
-        : { atEpochMs, topic, detail };
+        : { atEpochMs, agentId, topic, detail };
 }
 
 function isRecord(value: unknown): value is RallarBlackBoxTestRecord {
