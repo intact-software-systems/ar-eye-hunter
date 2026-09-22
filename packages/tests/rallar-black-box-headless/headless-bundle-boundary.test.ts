@@ -56,10 +56,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
 
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The delivery handle and its browser-side registry measure 269.6328125 KiB with this
-        // exact harness. The preauthorized next whole-KiB ceiling is 270;
+        // The batched work release -- one disposition per entry, one flush per batch -- measures
+        // 270.01953125 KiB with this exact harness. The preauthorized next whole-KiB ceiling is 271;
         // all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(270);
+        expect(result.brotliKiB).toBeLessThan(271);
     });
 });
 

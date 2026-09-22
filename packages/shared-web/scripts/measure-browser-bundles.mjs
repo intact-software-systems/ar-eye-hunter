@@ -28,13 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // S1 lifecycle handles, the shared session observation owner and the admission facts the
-        // evidence records measure 211.0244140625 KiB. The maintainer-approved next whole-KiB
-        // ceiling is 212.
+        // The batched work release -- one disposition per entry, one flush per batch -- measures
+        // 212.298828125 KiB. The maintainer-approved next whole-KiB ceiling is 213.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 212
+        brotliBudgetKiB: 213
     },
     {
         label: 'browser/rallar-core.ts',

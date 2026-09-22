@@ -60,6 +60,27 @@ records what the runner was doing while the cell ran:
   error code. A failed recipe run carries no result object, so it has no duration to report.
 - `workPageRate` — `work-page` storage operations per second between the cell's first and last
   `storage.counters` reading.
+- `inbound` — one entry per direction (`sender`, `receiver`, `unattributed`), from the
+  `admission-outcome` and `effect-drain` events of the
+  [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from
+  the lane's `alm-<role>` agent id prefix; any other id is `unattributed` rather than guessed. `[]`
+  when the cell carried no inbound event at all; otherwise every direction is reported, `no-events`
+  for one that carried neither kind. A measured direction carries:
+  - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
+    `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
+    or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
+    `admission-outcome` event, because a percentage over zero outcomes is not a measurement. The
+    drain medians beside it are still reported in that case.
+  - `phases` — the median of each `effect-drain` phase (`selectionMedianMs`, `claimMedianMs`,
+    `runMedianMs`, `releaseMedianMs`, `queueWaitMedianMs`) and of `durationMs` itself
+    (`drainMedianMs`), over `drainCount` drains. Unlike `perOperation`, these medians are taken over
+    the whole cell, not the opening window, because this block reads the receiver rather than the
+    runner. `drainCount: 0` with every median at `0` means the direction reported admission outcomes
+    but no drain — the mirror of `pendingShare`'s `unmeasured` case above. As the diagnostic contract
+    explains, the four phases do not sum to `durationMs`, and — since Task 2 of the F2c slice —
+    `releaseMedianMs` is the median of one release flush per batch, not one flush per claim. F2c's
+    acceptance figure for the inbound pending share and drain phases is read from this block, not
+    from a session script.
 - `cellOutcome` — `passed` or `failed`, including a soft-assertion failure.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 

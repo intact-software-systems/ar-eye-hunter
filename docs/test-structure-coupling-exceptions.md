@@ -125,6 +125,21 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-work-release-batch-one-transaction",
+      "domain": "ALM work release batching on PostgreSQL",
+      "owner": "Rallar shared maintainers",
+      "summary": "One batch of work releases, each entry carrying its own disposition, commits inside exactly one PostgreSQL transaction. Executable assertion: “commits one mixed release batch in one transaction, each entry on its own disposition”.",
+      "semanticCoverage": "packages/tests/shared-server/al-runtime/postgres/p-sql-admission-work-transactions.test.ts#commits one mixed release batch in one transaction, each entry on its own disposition",
+      "coverageRelation": "The test reserves three real rows through the PGlite-backed work queue, releases them in one call as completed, retry and not-ready, then reads each released row's own status and retry delay from the returned map.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "PSqlSql.begin, opened by PSqlQueueBox.releaseEntries through PSqlResourceInboxRepository.transaction",
+        "observableEffect": "Every release of one work batch reaches the database inside a single transaction, so the batch's rows move together or not at all.",
+        "requiredConstraint": "A three-entry batch must open exactly one transaction; per-entry transactions are the cost this slice removes and would also let one lost reservation leave the batch half written.",
+        "failureRationale": "The final row statuses are identical whether the batch committed once or three times, so only the transaction count distinguishes an atomic batch release from a per-entry loop."
+      }
+    },
+    {
       "id": "alm-outbound-control-conflict-single-write",
       "domain": "ALM outbound control admission conflict retention",
       "owner": "Rallar shared maintainers",
@@ -6954,6 +6969,17 @@ moved or changed test.
       "owner": "Rallar shared-test maintainers",
       "rationale": "The absence assertion observes the external SQL port: invalid raw evidence input must not issue database work even if a later error is correct.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts#keeps raw JSON evidence inputs untrusted until the SQL validator runs"
+    },
+    {
+      "id": "test-structure-coupling-3ec1adc4c7e8a4f2",
+      "path": "packages/tests/shared-server/al-runtime/postgres/p-sql-admission-work-transactions.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-work-release-batch-one-transaction",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The single transaction is required independently of the released statuses: a per-entry loop reaches the same end state while giving up the batch's atomicity and its one round trip.",
+      "semanticCoverage": "packages/tests/shared-server/al-runtime/postgres/p-sql-admission-work-transactions.test.ts#commits one mixed release batch in one transaction, each entry on its own disposition"
     }
   ]
 }

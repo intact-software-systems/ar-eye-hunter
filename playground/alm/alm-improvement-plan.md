@@ -23,24 +23,25 @@ Decided with the maintainer on 2026-09-08 (D1–D8) and on 2026-09-12 (D9–D16,
 questions and the slice sequencing). Each later section applies these; none is restated as a
 question.
 
-| #   | Decision                                                                                                                                                                                                                                                                                                                  |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Target is the full general product, conformance-driven: every capability in the product description, with acceptance defined by the conformance suite over both carriers.                                                                                                                                                 |
-| D2  | A typed send with no options is reliable, receipted, and volatile: at-least-once, the receipt chosen by the channel's purpose, retried within the deadline, kept in memory only. Durability is an explicit per-channel opt-in.                                                                                            |
-| D3  | There are no real users yet. Incompatible ALM browser storage is deleted on schema mismatch; no data migration, no compatibility window.                                                                                                                                                                                  |
-| D4  | Both existing reliable paths become real ALM consumers: the game authority client awaits receipts, and the Relic server's snapshot publish moves to the durable outbox. The two games may be changed in any way that helps prove ALM.                                                                                     |
-| D5  | Every declared capability is implemented, including principal, world, all, and fixed audiences, group-leader ACK, membership fencing on group-state authority, exclusive ownership, and reply correlation with trace propagation.                                                                                         |
-| D6  | PRs are medium by default; a large coordinated PR is allowed where a cutover genuinely couples contracts, consumers, and harness. Each PR is reviewed and merged by the maintainer.                                                                                                                                       |
-| D7  | Sequencing is foundation first: the conformance lane and the storage consolidation land before new capabilities.                                                                                                                                                                                                          |
-| D8  | No legacy is retained anywhere in this series; unused code is deleted in the same PR. Search `packages/**` for an existing library before writing one; ask the maintainer before adding an internal library; never add a third-party dependency beyond those already used.                                                |
-| D9  | S1 handle evidence is hop-level and honest: the admission result plus each carrier's transport settlement per attempt, with confirmed and unconfirmed peer lists filled from what the hop saw under names that say hop. Logical receipts and the frozen audience stay S2.                                                 |
-| D10 | `pending-authority` is the bounded wait for room or group authority only (`not-yet-in-sync`, `minSnapshotVersion`, the retained-until-refresh case). The handle's initial state is `submitted`; a retained admission conflict awaiting replay is not a public state; `pending-admission` leaves the public vocabulary.    |
-| D11 | The WS ordering block (`seq`, `orderingKey`) lands in S2 with the session-logical namespace; S1's lifecycle matrix records that WS has no ordering settlements.                                                                                                                                                           |
-| D12 | S1's game proof is AR Eye Hunter's match send consuming the handle; Relic's REST-to-`command` move is S3's, beside the durable outbox and receipts it needs.                                                                                                                                                              |
-| D13 | No reload-surviving handle in S1: the lifecycle is a volatile projection with zero new IndexedDB operations on the default send; after a reload the work resumes from storage and the lost observation resolves to a distinct `unobservable` outcome, never `failed`; durable survival is a named sink seam for S3 or I2. |
-| D14 | `RallarMessageSendResult` and its browser exposure are deleted when the handle arrives, and `ALOutboundEnqueueStatus` is retired before the S1 plan finishes: the server WS router and RTC signaling admission are re-typed onto the shared lifecycle vocabulary, so no legacy union survives S1.                         |
-| D15 | `RallarGameSendResult` converges on the handle; `rallar.realtime` stays the volatile lane without a handle.                                                                                                                                                                                                               |
-| D16 | S1 starts from `main` in parallel with F2c (the inbound fence and batched releases); F2c merges first and S1 merges `main` in before its final gate.                                                                                                                                                                      |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Target is the full general product, conformance-driven: every capability in the product description, with acceptance defined by the conformance suite over both carriers.                                                                                                                                                                                                                                                                   |
+| D2  | A typed send with no options is reliable, receipted, and volatile: at-least-once, the receipt chosen by the channel's purpose, retried within the deadline, kept in memory only. Durability is an explicit per-channel opt-in.                                                                                                                                                                                                              |
+| D3  | There are no real users yet. Incompatible ALM browser storage is deleted on schema mismatch; no data migration, no compatibility window.                                                                                                                                                                                                                                                                                                    |
+| D4  | Both existing reliable paths become real ALM consumers: the game authority client awaits receipts, and the Relic server's snapshot publish moves to the durable outbox. The two games may be changed in any way that helps prove ALM.                                                                                                                                                                                                       |
+| D5  | Every declared capability is implemented, including principal, world, all, and fixed audiences, group-leader ACK, membership fencing on group-state authority, exclusive ownership, and reply correlation with trace propagation.                                                                                                                                                                                                           |
+| D6  | PRs are medium by default; a large coordinated PR is allowed where a cutover genuinely couples contracts, consumers, and harness. Each PR is reviewed and merged by the maintainer.                                                                                                                                                                                                                                                         |
+| D7  | Sequencing is foundation first: the conformance lane and the storage consolidation land before new capabilities.                                                                                                                                                                                                                                                                                                                            |
+| D8  | No legacy is retained anywhere in this series; unused code is deleted in the same PR. Search `packages/**` for an existing library before writing one; ask the maintainer before adding an internal library; never add a third-party dependency beyond those already used.                                                                                                                                                                  |
+| D9  | S1 handle evidence is hop-level and honest: the admission result plus each carrier's transport settlement per attempt, with confirmed and unconfirmed peer lists filled from what the hop saw under names that say hop. Logical receipts and the frozen audience stay S2.                                                                                                                                                                   |
+| D10 | `pending-authority` is the bounded wait for room or group authority only (`not-yet-in-sync`, `minSnapshotVersion`, the retained-until-refresh case). The handle's initial state is `submitted`; a retained admission conflict awaiting replay is not a public state; `pending-admission` leaves the public vocabulary.                                                                                                                      |
+| D11 | The WS ordering block (`seq`, `orderingKey`) lands in S2 with the session-logical namespace; S1's lifecycle matrix records that WS has no ordering settlements.                                                                                                                                                                                                                                                                             |
+| D12 | S1's game proof is AR Eye Hunter's match send consuming the handle; Relic's REST-to-`command` move is S3's, beside the durable outbox and receipts it needs.                                                                                                                                                                                                                                                                                |
+| D13 | No reload-surviving handle in S1: the lifecycle is a volatile projection with zero new IndexedDB operations on the default send; after a reload the work resumes from storage and the lost observation resolves to a distinct `unobservable` outcome, never `failed`; durable survival is a named sink seam for S3 or I2.                                                                                                                   |
+| D14 | `RallarMessageSendResult` and its browser exposure are deleted when the handle arrives, and `ALOutboundEnqueueStatus` is retired before the S1 plan finishes: the server WS router and RTC signaling admission are re-typed onto the shared lifecycle vocabulary, so no legacy union survives S1.                                                                                                                                           |
+| D15 | `RallarGameSendResult` converges on the handle; `rallar.realtime` stays the volatile lane without a handle.                                                                                                                                                                                                                                                                                                                                 |
+| D16 | S1 starts from `main` in parallel with F2c (the inbound fence and batched releases); F2c merges first and S1 merges `main` in before its final gate.                                                                                                                                                                                                                                                                                        |
+| D17 | F2c replaces the IndexedDB admission backend's store-global revision compare-and-set with per-row revisions validated over the attempt's read and write sets, bumps the ALM schema id with the ordinary reset-on-mismatch (no migration, no fallback), and batches the releases of one work batch through a per-entry disposition; retained-claim releases stay serial and the app-level fence's ordering scan stays as it is (2026-09-22). |
 
 ### Standing direction
 
@@ -207,12 +208,11 @@ stall segment is uninstrumented on the server side.
 ## Release map
 
 Fourteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
-not on each other. Release 2 and F2b are delivered. F2c (the inbound fence and batched releases,
-F2b's ruling R20) and S1 are the concrete horizon: S1's plan is
-`plans/alm-s1-delivery-lifecycle-handle-implementation-plan.md`, arguing from the maintainer's
-decisions D9–D16 folded into [alm-s1-design-proposal.md](alm-s1-design-proposal.md) section 4;
-F2c's plan lands with its own slice. S2 and S3 are named by outcome; later releases are
-outcome-shaped with exit evidence.
+not on each other. Release 2, F2b and S1 are delivered. F2c (the per-row fence and batched releases, F2b's ruling
+R20 reframed by D17) is the concrete horizon: its plan is
+`plans/alm-f2c-per-row-fence-batched-releases-implementation-plan.md`, arguing from the section below.
+S2 follows it as the next concrete slice once F2c merges; S3 and later releases are named by outcome
+with exit evidence.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
 | ------------- | ----------------------------------------------------- | ------ | -------------------------- |
@@ -411,6 +411,43 @@ snapshots and both bundle ceilings recorded; the ledger producing `transport-acc
 three carriers and read on the runner under the regime rule; `deno task check` and `test:deno` green
 after the server publish result changes; no new cognitive-load pin under `packages/shared/alm` or
 `packages/shared-web/browser/messages`.
+
+### Release 3, F2c: the per-row fence and batched releases
+
+**Outcome:** an inbound commit conflicts only when a row its decision read or wrote actually moved, and a
+work batch releases its claims in one storage round trip, so the receiver's pending share and release
+phase fall on slow storage without touching a budget.
+
+**Owners:** [alm](../../packages/shared/alm/) (the IndexedDB admission backend and its write path),
+[alm/work](../../packages/shared/alm/work/) and the QueueBox release contract in
+[queuebox](../../packages/shared/queuebox/), the observation snapshot in
+[rallar-bb-test/conformance/alm](../../packages/shared-test/rallar-bb-test/conformance/alm/).
+
+**What F2b's measurement did not name:** on IndexedDB the commit's compare-and-set is one un-namespaced
+scalar per physical object store (`AL_ADMISSION_REVISION_KEY`), and a browser session's inbound and
+outbound stores share that store, so every admission write on the page — the receiver's own ACK sends
+included — conflicts an inbound commit in flight regardless of row overlap. PostgreSQL and PGlite compare
+per row; memory serializes writers. The three backends were not conflict-equivalent.
+
+**Changes:**
+
+1. Per-row optimistic concurrency on IndexedDB: every stored admission row carries a revision; the write
+   phase records the revision it observed for each key it read or wrote; the readwrite re-checks exactly
+   those keys and aborts as a typed conflict when one moved. The global revision key is deleted and
+   `AL_ADMISSION_SCHEMA_ID` bumps, resetting existing browser storage on mismatch (D3, D17).
+2. `releaseEntries` takes a disposition per entry and commits a batch in one transaction on the memory,
+   IndexedDB and PostgreSQL queues; the work handler flushes one batch's releases once at its end.
+   Retained-claim releases stay serial: no coalescing window, timer, queue or registry.
+3. The observation snapshot decodes the inbound diagnostics topic, so each cell records the inbound
+   pending share and the `effect-drain` phase medians beside the outbound figures the regime rule reads.
+
+**Acceptance:** two admissions on disjoint keys interleaved across the fence commit both, pinned over
+memory, IndexedDB and PGlite with the transaction-shape pins re-stated; one default inbound admission and
+one default send keep their operation counts; a batch of N completed claims costs one `work-release`
+operation; the local lane green on three carriers; on the runner, under the regime rule, the inbound
+pending share and release-phase median per cell read from the repo-owned snapshot against F2b's
+77 % / 4.0 s slow-regime figures; no harness budget changed; no new cognitive-load pin. The lane's
+return to `test:ci` stays the maintainer's decision.
 
 ### Release 3, Slice 2: outcomes
 
@@ -614,3 +651,5 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-12: F2b delivered (merged as `a336ad41c`); the S1 design questions and the slice sequencing
   settled as D9–D16 and folded into the proposal; S1 moved into the concrete horizon with its plan
   under `plans/`; F2c named as its own slice beside it.
+- 2026-09-22: S1 delivered (merged as `f82c64e23`); the shared IndexedDB revision scalar found while
+  grounding F2c and settled as D17; F2c moved into the concrete horizon with its plan under `plans/`.

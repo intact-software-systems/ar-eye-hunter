@@ -1,5 +1,8 @@
 import type {
+    ALMObservationAgentRole,
     ALMObservationCommandResult,
+    ALMObservationInboundDrain,
+    ALMObservationInboundOutcome,
     ALMObservationRtcLifecycle,
     ALMObservationSnapshot,
     ALMObservationStorageCounters
@@ -21,6 +24,9 @@ export const ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT = 5;
 export const ALM_OBSERVATION_WINDOW_MS = 20_000;
 export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
 
+const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender', 'receiver', 'unattributed'];
+const PENDING_INBOUND_OUTCOME = 'pending';
+
 export type ALMObservationRegimeName = 'normal' | 'slow' | 'unclassified';
 
 export type ALMObservationCellOutcome = 'passed' | 'failed';
@@ -37,6 +43,30 @@ export type ALMObservationWorkPageRate =
     | Readonly<{ outcome: 'measured'; perSecond: number; readingCount: number; spanMs: number; }>
     | Readonly<{ outcome: 'too-few-readings'; readingCount: number; }>;
 
+export interface ALMObservationInboundPhases {
+    readonly selectionMedianMs: number;
+    readonly claimMedianMs: number;
+    readonly runMedianMs: number;
+    readonly releaseMedianMs: number;
+    readonly queueWaitMedianMs: number;
+    readonly drainMedianMs: number;
+    readonly drainCount: number;
+}
+
+/** A `pendingSharePercent` over zero `admission-outcome` events is not a measurement. */
+export type ALMObservationInboundPendingShare =
+    | Readonly<{ outcome: 'measured'; pendingSharePercent: number; outcomeCount: number; }>
+    | Readonly<{ outcome: 'unmeasured'; }>;
+
+export type ALMObservationInboundDirection =
+    | Readonly<{
+        role: ALMObservationAgentRole;
+        outcome: 'measured';
+        pendingShare: ALMObservationInboundPendingShare;
+        phases: ALMObservationInboundPhases;
+    }>
+    | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
+
 export interface ALMObservationRegime {
     readonly runId: string;
     readonly carrier: string;
@@ -48,6 +78,7 @@ export interface ALMObservationRegime {
     readonly peerReadiness: readonly ALMObservationPeerReadiness[];
     readonly scenarioSends: readonly ALMObservationCommandResult[];
     readonly workPageRate: ALMObservationWorkPageRate;
+    readonly inbound: readonly ALMObservationInboundDirection[];
     readonly snapshotIssues: readonly string[];
 }
 
@@ -85,6 +116,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         peerReadiness: computePeerReadiness(input.snapshot.rtcLifecycles),
         scenarioSends: input.snapshot.commandResults,
         workPageRate: computeWorkPageRate(input.snapshot.storageCounters),
+        inbound: computeInboundDirections(input.snapshot),
         snapshotIssues: []
     };
 }
@@ -104,6 +136,7 @@ export function createUnreadableALMObservationRegime(
         peerReadiness: [],
         scenarioSends: [],
         workPageRate: { outcome: 'too-few-readings', readingCount: 0 },
+        inbound: [],
         snapshotIssues: input.snapshotIssues
     };
 }
@@ -217,7 +250,70 @@ function computeWorkPageRate(
     };
 }
 
+/**
+ * `[]` when the whole snapshot carries no inbound event at all, so a cell that never enabled the
+ * inbound sink leaves no placeholder rows. Otherwise every one of the three roles is reported, in a
+ * fixed order, because the block reads the receiver whether or not the sender happened to emit too.
+ */
+function computeInboundDirections(snapshot: ALMObservationSnapshot): readonly ALMObservationInboundDirection[] {
+    if (snapshot.inboundOutcomes.length === 0 && snapshot.inboundDrains.length === 0) {
+        return [];
+    }
+    return ALM_OBSERVATION_AGENT_ROLES.map((role) =>
+        toInboundDirection(
+            role,
+            snapshot.inboundOutcomes.filter((outcome) => outcome.role === role),
+            snapshot.inboundDrains.filter((drain) => drain.role === role)
+        )
+    );
+}
+
+function toInboundDirection(
+    role: ALMObservationAgentRole,
+    outcomes: readonly ALMObservationInboundOutcome[],
+    drains: readonly ALMObservationInboundDrain[]
+): ALMObservationInboundDirection {
+    return outcomes.length === 0 && drains.length === 0
+        ? { role, outcome: 'no-events' }
+        : {
+            role,
+            outcome: 'measured',
+            pendingShare: computeInboundPendingShare(outcomes),
+            phases: computeInboundPhases(drains)
+        };
+}
+
+function computeInboundPendingShare(
+    outcomes: readonly ALMObservationInboundOutcome[]
+): ALMObservationInboundPendingShare {
+    if (outcomes.length === 0) {
+        return { outcome: 'unmeasured' };
+    }
+    const pendingCount = outcomes.filter((outcome) => outcome.outcome === PENDING_INBOUND_OUTCOME).length;
+    return {
+        outcome: 'measured',
+        pendingSharePercent: toTwoDecimals(100 * pendingCount / outcomes.length),
+        outcomeCount: outcomes.length
+    };
+}
+
+function computeInboundPhases(drains: readonly ALMObservationInboundDrain[]): ALMObservationInboundPhases {
+    return {
+        selectionMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.selectionDurationMs))),
+        claimMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.claimDurationMs))),
+        runMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.runDurationMs))),
+        releaseMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.releaseDurationMs))),
+        queueWaitMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.queueWaitMs))),
+        drainMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.durationMs))),
+        drainCount: drains.length
+    };
+}
+
+/** Zero for an empty series rather than `NaN`, so a role with outcomes but no drains still reports. */
 function computeMedian(values: readonly number[]): number {
+    if (values.length === 0) {
+        return 0;
+    }
     const sorted = [...values].sort((left, right) => left - right);
     const middle = Math.floor(sorted.length / 2);
     return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;

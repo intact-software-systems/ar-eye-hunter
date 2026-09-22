@@ -56,9 +56,8 @@ describe('IndexedDbQueueBox computed writes', () => {
         for (const offsetMs of [-1, 0, 1]) {
             const computed = computeIndexedDbQueueRelease({
                 currentEntries: new Map([[key, current]]),
-                disposition: { status: EntityStatus.COMPLETED, delayMs: null },
                 releasedAt: expiryTs.add({ milliseconds: offsetMs }),
-                resources: [reserved],
+                releases: [{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }],
                 storedEntries: new Map([[key, encodeStoredResourceEntry(current, 1)]])
             });
 
@@ -76,9 +75,8 @@ describe('IndexedDbQueueBox computed writes', () => {
         const reserved = { ...createEntry('reserved'), status: EntityStatus.RESERVED };
         const computed = computeIndexedDbQueueRelease({
             currentEntries: new Map(),
-            disposition: { status: EntityStatus.COMPLETED, delayMs: null },
             releasedAt: Temporal.Instant.from('2026-01-01T12:00:00Z'),
-            resources: [reserved],
+            releases: [{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }],
             storedEntries: new Map()
         });
 

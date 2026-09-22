@@ -2,7 +2,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import { toError } from '../../resilience/to-error.ts';
 import { INBOX_OUTBOX_ENGINE_MAX_IDLE_MS, type InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort } from './al-work-queue-port.ts';
+import type { ALWorkClaim, ALWorkOutcome, ALWorkQueuePort, ALWorkRelease } from './al-work-queue-port.ts';
 
 export type ALWorkAttemptResult =
     | ALWorkOutcome
@@ -80,7 +80,7 @@ export interface ALWorkBatchDiagnostics {
     readonly claimDurationMs: number;
     /** Every claim's own work, summed. A retained claim contributes only the part that ran in the batch. */
     readonly runDurationMs: number;
-    /** Every release this batch wrote, summed, including the exhaustion sweep's. A retained claim releases after the batch and contributes nothing. */
+    /** The one flush that released this batch, the exhaustion sweep's claims included. A retained claim releases after the batch and contributes nothing. */
     readonly releaseDurationMs: number;
     /** How long the earliest claimed row had been due when the batch started; zero when it claimed none. */
     readonly queueWaitMs: number;
@@ -313,7 +313,7 @@ export class ALWorkHandler {
     }
 
     private async runSelectedWork(): Promise<ALWorkBatchProgress> {
-        const { port, pageSize, selectReady, clock, workerId, queueEngine, diagnostics } = this.dependencies;
+        const { clock, workerId, queueEngine } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const progress: ALWorkBatchProgress = {
             claimedCount: 0,
@@ -323,19 +323,56 @@ export class ALWorkHandler {
             runDurationMs: 0,
             releaseDurationMs: 0
         };
-        await this.finalizeExhaustedWork(progress);
-        if (this.shutdown.signal.aborted) {
+        const releases: ALWorkRelease[] = [...await this.finalizeExhaustedWork(progress)];
+        let selection: ALWorkReadySelection | undefined;
+        try {
+            if (!this.shutdown.signal.aborted) {
+                selection = await this.runClaimedWork(releases, startedAtMs, progress);
+            }
+        }
+        finally {
+            // The sweep's finalizations are reserved rows already: a selection or a claim that
+            // throws must not leave them waiting for their leases to expire.
+            await this.flushReleases(releases, progress);
+        }
+        if (selection === undefined) {
             return progress;
         }
+        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
+        this.reportBatch(selection, startedAtMs, progress);
+        return progress;
+    }
+
+    /**
+     * The selection this batch claimed from, or nothing once disposal ended the batch mid-claim,
+     * which leaves the wake and the diagnostics to whichever batch resumes.
+     */
+    private async runClaimedWork(
+        releases: ALWorkRelease[],
+        batchStartedAtMs: number,
+        progress: ALWorkBatchProgress
+    ): Promise<ALWorkReadySelection | undefined> {
+        const { port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
         progress.claimedCount = selection.claims.length;
         for (const claim of selection.claims) {
             if (this.shutdown.signal.aborted) {
-                return progress;
+                return undefined;
             }
-            await this.runOne(claim, startedAtMs, progress);
+            const release = await this.runOne(claim, batchStartedAtMs, progress);
+            if (release !== undefined) {
+                releases.push(release);
+            }
         }
-        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
+        return selection;
+    }
+
+    private reportBatch(
+        selection: ALWorkReadySelection,
+        startedAtMs: number,
+        progress: ALWorkBatchProgress
+    ): void {
+        const { clock, workerId, diagnostics } = this.dependencies;
         diagnostics?.({
             kind: 'work-batch',
             workerId,
@@ -345,25 +382,29 @@ export class ALWorkHandler {
             claimDurationMs: selection.claimDurationMs,
             queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs)
         });
-        return progress;
     }
 
-    private async finalizeExhaustedWork(progress: ALWorkBatchProgress): Promise<void> {
+    private async finalizeExhaustedWork(
+        progress: ALWorkBatchProgress
+    ): Promise<readonly ALWorkRelease[]> {
         const { port, pageSize } = this.dependencies;
+        const releases: ALWorkRelease[] = [];
         for (const claim of await port.finalizeExhausted(pageSize)) {
             if (this.shutdown.signal.aborted) {
-                return;
+                return releases;
             }
-            await this.releaseClaim(claim, { status: 'non-retryable' }, progress);
+            releases.push({ claim, outcome: { status: 'non-retryable' } });
             progress.rejectedCount += 1;
         }
+        return releases;
     }
 
+    /** The release the batch's flush owes this claim, or nothing at all for a retained one. */
     private async runOne(
         claim: ALWorkClaim,
         batchStartedAtMs: number,
         progress: ALWorkBatchProgress
-    ): Promise<void> {
+    ): Promise<ALWorkRelease | undefined> {
         const { clock, runClaim } = this.dependencies;
         const runStartedAtMs = clock.nowMs();
         let result: ALWorkAttemptResult;
@@ -371,14 +412,13 @@ export class ALWorkHandler {
             result = await runClaim(claim, batchStartedAtMs);
         }
         catch (error) {
-            result = toALWorkFailureOutcome(error);
+            result = toALWorkFailureOutcome(toError(error));
         }
         progress.runDurationMs += computeElapsedMs(runStartedAtMs, clock.nowMs());
         if (result.status === 'retained') {
             this.releaseRetainedClaim(claim, result.settled);
-            return;
+            return undefined;
         }
-        await this.releaseClaim(claim, result, progress);
         if (result.status === 'completed') {
             progress.completedCount += 1;
         }
@@ -388,27 +428,27 @@ export class ALWorkHandler {
         else {
             progress.rescheduledCount += 1;
         }
+        return { claim, outcome: result };
     }
 
-    private async releaseClaim(
-        claim: ALWorkClaim,
-        outcome: ALWorkOutcome,
+    private async flushReleases(
+        releases: readonly ALWorkRelease[],
         progress: ALWorkBatchProgress
     ): Promise<void> {
         const { clock, port } = this.dependencies;
         const startedAtMs = clock.nowMs();
-        await port.release(claim, outcome);
-        progress.releaseDurationMs += computeElapsedMs(startedAtMs, clock.nowMs());
+        await port.releaseAll(releases);
+        progress.releaseDurationMs = computeElapsedMs(startedAtMs, clock.nowMs());
     }
 
     /**
-     * A rejected `settled` only logs here: `release` never runs, so the claim is recovered solely by
+     * A rejected `settled` only logs here: the release never runs, so the claim is recovered solely by
      * lease expiry (the port's timeout-reservation path), and it is never added to the batch's counts
      * on this path or on the eventual release.
      */
     private releaseRetainedClaim(claim: ALWorkClaim, settled: Promise<ALWorkOutcome>): void {
         void settled
-            .then((outcome) => this.dependencies.port.release(claim, outcome))
+            .then((outcome) => this.dependencies.port.releaseAll([{ claim, outcome }]))
             .catch((error) => console.error('Retained ALM work failed', error))
             .finally(() => {
                 // This release lands after its batch ended, so it is the one row change no batch
@@ -436,8 +476,8 @@ function computeALWorkQueueWaitMs(
     return earliestDueAtMs === undefined ? 0 : computeElapsedMs(earliestDueAtMs, batchStartedAtMs);
 }
 
-/** The one place a thrown claim becomes an outcome. */
-function toALWorkFailureOutcome(error: unknown): ALWorkOutcome {
+/** The one place a thrown claim becomes an outcome; the caught value is normalized before it. */
+function toALWorkFailureOutcome(error: Error): ALWorkOutcome {
     return error instanceof ALAdmissionCorruptionError || error instanceof NonRetryableException
         ? { status: 'non-retryable' }
         : { status: 'retry' };

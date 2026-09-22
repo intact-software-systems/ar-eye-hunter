@@ -40,7 +40,11 @@ it.each(['read', 'list'] as const)('guards a metadata %s even when only queue ro
     });
     const entry = workEntry();
     await expect(backend.write(async (tx) => {
-        await tx[operation]('authority:', String);
+        // The fence is per row: a read depends on the key it read, a list on the keys its prefix
+        // returned, so the interleaved write below moves exactly one observation in either shape.
+        operation === 'read'
+            ? await tx.read('authority:new', String)
+            : await tx.list('authority:', String);
         await tx.readWork(entry.key);
         await backend.write((other) => other.set('authority:new', 'revoked'));
         tx.writeWork(entry);

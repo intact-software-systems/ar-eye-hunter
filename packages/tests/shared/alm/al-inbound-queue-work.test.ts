@@ -401,9 +401,9 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
     const resume = Promise.withResolvers<void>();
     onTestFinished(() => resume.resolve());
     const release = backend.workQueue.releaseEntries.bind(backend.workQueue);
-    vi.spyOn(backend.workQueue, 'releaseEntries').mockImplementation(async (entries, disposition) => {
-        const released = await release(entries, disposition);
-        if (disposition.status === EntityStatus.RETRY) {
+    vi.spyOn(backend.workQueue, 'releaseEntries').mockImplementation(async (releases) => {
+        const released = await release(releases);
+        if (releases.some((entry) => entry.disposition.status === EntityStatus.RETRY)) {
             failedAttemptReleased.resolve();
             await resume.promise;
         }

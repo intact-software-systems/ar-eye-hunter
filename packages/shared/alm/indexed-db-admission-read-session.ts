@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { IndexedDbOperationObserver } from '../persistence/indexed-db-operation-observer.ts';
-import { readIndexedDbRequest } from '../persistence/indexed-db-request.ts';
 import {
     decodeStoredResourceEntry,
     type StoredResourceEntry
@@ -21,11 +20,7 @@ import {
     decodeIndexedDbAdmissionValue,
     type IndexedDbAdmissionStoredRow
 } from './indexed-db-admission-row.ts';
-import {
-    AL_ADMISSION_REVISION_KEY,
-    AL_ADMISSION_WORK_STORE_NAME,
-    decodeIndexedDbAdmissionRevision
-} from './open-indexed-db-admission-database.ts';
+import { AL_ADMISSION_WORK_STORE_NAME } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSelection } from './read-indexed-db-admission-snapshot.ts';
 import type { IndexedDbAdmissionMutation } from './write-indexed-db-admission-mutations.ts';
 
@@ -41,9 +36,8 @@ interface IndexedDbAdmissionReadSnapshot {
     readonly work: IDBObjectStore;
 }
 
-/** The expired rows a finished chain observed, fenced by the revision the chain read them at. */
+/** The expired rows a finished chain observed, each fenced by the write token it read them at. */
 export interface ExpiredIndexedDbAdmissionRows {
-    readonly expectedRevision: number;
     readonly removals: readonly IndexedDbAdmissionMutation[];
 }
 
@@ -63,7 +57,6 @@ export namespace IndexedDbAdmissionReadSession {
  */
 export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
     #snapshot: IndexedDbAdmissionReadSnapshot | undefined;
-    #expiredRevision: number | undefined;
     readonly #expired = new Map<string, IndexedDbAdmissionMutation>();
     readonly #db: IDBDatabase;
     readonly #storeName: string;
@@ -87,7 +80,7 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
         if (!expired) {
             return value;
         }
-        await this.#recordExpired(stored);
+        this.#recordExpired(stored);
         return undefined;
     }
 
@@ -98,7 +91,7 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
         for (const stored of await this.readRows(prefix)) {
             const [value, expired] = decodeIndexedDbAdmissionValue({ stored, key: stored.key, decode, nowMs });
             if (expired) {
-                await this.#recordExpired(stored);
+                this.#recordExpired(stored);
                 continue;
             }
             entries.push({ key: stored.key, value });
@@ -134,22 +127,14 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
         return await this.#issue((snapshot) => readStoredQueueEntryWithin(snapshot.work, keyString));
     }
 
-    async readRevision(): Promise<number> {
-        return decodeIndexedDbAdmissionRevision(
-            await this.#issue((snapshot) => readIndexedDbRequest(snapshot.admission.get(AL_ADMISSION_REVISION_KEY)))
-        );
-    }
-
     /** What the chain read past its expiry, for the caller that owns evicting it. Reported once. */
     takeExpiredRows(): ExpiredIndexedDbAdmissionRows | undefined {
-        const expectedRevision = this.#expiredRevision;
-        if (expectedRevision === undefined) {
+        if (this.#expired.size === 0) {
             return undefined;
         }
         const removals = [...this.#expired.values()];
         this.#expired.clear();
-        this.#expiredRevision = undefined;
-        return { expectedRevision, removals };
+        return { removals };
     }
 
     /**
@@ -175,14 +160,13 @@ export class IndexedDbAdmissionReadSession implements ALAdmissionReadSession {
         }
     }
 
-    /** The revision comes from the snapshot the first expired row was read at: that is its fence. */
-    async #recordExpired(stored: IndexedDbAdmissionStoredRow): Promise<void> {
+    /** The write token the row was read at is its fence: a row replaced since then carries another. */
+    #recordExpired(stored: IndexedDbAdmissionStoredRow): void {
         this.#expired.set(stored.key, {
             kind: 'remove-if-write-token',
             key: stored.key,
             expectedWriteToken: stored.writeToken
         });
-        this.#expiredRevision = this.#expiredRevision ?? await this.readRevision();
     }
 
     async #issue<Result>(

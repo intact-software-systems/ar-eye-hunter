@@ -9,7 +9,6 @@ import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@share
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import {
-    AL_ADMISSION_REVISION_KEY,
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_SCHEMA_KEY,
     openIndexedDbAdmissionDatabase
@@ -89,7 +88,7 @@ it.each(['get', 'put'] as const)('does not admit or retain outbound ownership ac
                     readIndexedDbRequest(transaction.objectStore('alm-work').getAll())
                 ]);
                 expect(
-                    metadata.filter((row) => row.key !== AL_ADMISSION_REVISION_KEY && row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
+                    metadata.filter((row) => row.key !== AL_ADMISSION_SCHEMA_KEY).length > 0
                 ).toBe(offset < 0 && !pending);
                 expect(work.length > 0).toBe(offset < 0);
             }

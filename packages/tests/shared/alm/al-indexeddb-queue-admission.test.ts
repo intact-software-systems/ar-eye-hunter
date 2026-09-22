@@ -12,6 +12,7 @@ import {
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
+import { INDEXED_DB_ADMISSION_FIRST_REVISION } from '@shared/alm/indexed-db-admission-fence.ts';
 import {
     AL_ADMISSION_SCHEMA_ID,
     AL_ADMISSION_WORK_STORE_NAME,
@@ -19,7 +20,6 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
 import {
-    computeIndexedDbAdmissionRevisionWrite,
     writeIndexedDbAdmissionMutations,
     type WriteIndexedDbAdmissionMutationsInput
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
@@ -170,12 +170,12 @@ describe('atomic admission and QueueBox work', () => {
         const entry = createEntry('reused');
         await queue.enqueue(entry);
         const [old] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values();
-        await queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null });
+        await queue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
         await queue.enqueue({ ...entry, resource: 'later-work' });
         const [current] = (await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 }))
             .values();
         expect(old.dequeueAudit.attempts).toBe(current.dequeueAudit.attempts);
-        await expect(queue.releaseEntries([old], { status: EntityStatus.COMPLETED, delayMs: null }))
+        await expect(queue.releaseEntries([{ entry: old, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         expect(await queue.getItem(entry.key)).toEqual(current);
     });
@@ -188,14 +188,14 @@ describe('atomic admission and QueueBox work', () => {
         Object.freeze(write.mutations);
         Object.freeze(write);
         expect(await writeIndexedDbAdmissionMutations(write)).toBe(true);
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored)
+        expect(await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' }))
             .toHaveLength(1);
         const reserved = await queue.reserveEntries({ typeIds: new Set(['alm-work']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 });
         expect([...reserved.values()]).toMatchObject([{ key: entry.key, resource: entry.resource, status: EntityStatus.RESERVED }]);
         expect(write.queueMutations[0]).toMatchObject({ kind: 'put', value: { status: EntityStatus.NEW } });
     });
 
-    it('rolls back queued work when the admission revision changed after the read', async () => {
+    it('rolls back queued work when the admitted row changed after the read', async () => {
         const { db, queue } = await createStorage();
         const stale = createWrite(db, createEntry('stale'));
         const winner = createWrite(db, createEntry('winner'));
@@ -203,7 +203,7 @@ describe('atomic admission and QueueBox work', () => {
         expect(await writeIndexedDbAdmissionMutations(stale)).toBe(false);
         expect(await queue.getItem(createEntry('stale').key)).toBeUndefined();
         expect(await queue.getItem(createEntry('winner').key)).toBeDefined();
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored[0].value)
+        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' }))[0].value)
             .toBe('winner');
     });
 
@@ -213,10 +213,9 @@ describe('atomic admission and QueueBox work', () => {
         const computed = createWrite(db, entry);
         await queue.enqueueIfAbsent({ ...entry, resource: 'winner' });
         expect(await writeIndexedDbAdmissionMutations(computed)).toBe(false);
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored)
+        expect(await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' }))
             .toEqual([]);
         expect((await queue.getItem(entry.key))?.resource).toBe('winner');
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'revision' })).revision).toBe(0);
     });
 
     it('preserves neither admission nor work after a native transaction abort', async () => {
@@ -236,7 +235,7 @@ describe('atomic admission and QueueBox work', () => {
         finally {
             failure.mockRestore();
         }
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored).toEqual([]);
+        expect(await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).toEqual([]);
         expect(await queue.getItem(entry.key)).toBeUndefined();
     });
 
@@ -248,7 +247,7 @@ describe('atomic admission and QueueBox work', () => {
             ...computed,
             queueMutations: [...computed.queueMutations, ...computed.queueMutations]
         })).rejects.toThrow('duplicate queue key');
-        expect((await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).stored).toEqual([]);
+        expect(await readIndexedDbAdmissionSnapshot(db, admissionStore, { kind: 'key', key: 'admitted' })).toEqual([]);
         expect(await queue.getItem(entry.key)).toBeUndefined();
     });
 
@@ -310,18 +309,20 @@ function createWrite(db: IDBDatabase, entry: ResourceEntry): WriteIndexedDbAdmis
     return {
         db,
         storeName: admissionStore,
-        expectedRevision: 0,
+        // Every write here read the same absent 'admitted' row, so the second one to reach the
+        // store finds a revision where it observed none.
+        fence: { rows: new Map([['admitted', 'absent']]), prefixes: new Map() },
         mutations: [{
             kind: 'set' as const,
             stored: {
                 key: 'admitted',
                 value: entry.key.resourceId,
                 expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-                writeToken: crypto.randomUUID()
+                writeToken: crypto.randomUUID(),
+                revision: INDEXED_DB_ADMISSION_FIRST_REVISION
             }
         }],
-        queueMutations: [computeIndexedDbQueuePut(undefined, entry)],
-        revisionWrite: computeIndexedDbAdmissionRevisionWrite(0)
+        queueMutations: [computeIndexedDbQueuePut(undefined, entry)]
     };
 }
 

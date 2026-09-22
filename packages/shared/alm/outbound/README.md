@@ -62,8 +62,9 @@ owns durable effect rows; and
 decodes the persisted snapshots. Every fence — the sender version, the pending-admission
 row, an observed effect row, and a moved supersedence observation — resolves a conflict
 the same way: the guard throws `ALAdmissionBackendConflictError` inside the transaction so
-the backend aborts without a write or a revision bump, and the store catches it at its
-public boundary and returns the typed `'conflict'` result.
+the backend aborts without writing, leaving every row at the revision and write token it
+already had, and the store catches it at its public boundary and returns the typed
+`'conflict'` result.
 
 ## Canonical message storage
 
@@ -138,6 +139,14 @@ finalization. If the terminal write fails, the reservation remains recoverable t
 ordinary QueueBox claims. Release uses the existing observed-entry comparison and
 expiry conditions; a failed comparison returns a lost-reservation result.
 
+One work batch releases every claim it collected in a single queue write, with a disposition
+per entry; `releaseDurationMs` measures exactly that one write, run once at the batch's end
+inside a `finally` so a throwing selection or claim cannot strand a reservation. A lost
+reservation inside that batch drops the affected entry and retries the rest as one write; a
+queue write conflict degrades the batch once to releasing each entry serially. A retained claim
+is different: it releases on its own settlement, independently of any batch, one claim at a
+time, with no coalescing window or timer.
+
 Readiness reads queue status and timestamps only. It never needs a transport decoder
 or reparses terminal payloads. Payload validation occurs on the claimed item before
 any message effect is returned for execution.
@@ -209,8 +218,10 @@ an explicit storage effect.
 accepts already computed admission and QueueBox mutations. The pure QueueBox
 validator returns an `Either` before transaction entry. The joint transaction uses
 QueueBox's existing revision-guarded writer and applies the supplied values without
-recomputing them. A stale admission revision, queue revision, or guarded removal
-rolls back the whole transaction. A native abort also preserves neither write.
+recomputing them. Admission rows carry a per-row revision, so a moved row the write
+phase observed, a moved key set behind a prefix it listed, a stale queue revision, or a
+guarded removal rolls back the whole transaction. A native abort also preserves neither
+write.
 Reopened QueueBox instances can reserve the committed work through the ordinary
 queue API.
 
@@ -222,9 +233,10 @@ bookkeeping may continue separately without permitting an expired payload to be 
 
 A write context that uses only `readWork` and `writeWork` uses QueueBox's existing
 atomic observed-row writer. Unrelated admission metadata cannot invalidate that
-queue-only ownership decision. Any metadata read, list, set, or removal retains
-the metadata revision check, including a metadata-dependent decision that writes
-only queue rows. Empty mutation output alone does not establish independence.
+queue-only ownership decision. Any metadata read, list, set, or removal is fenced on
+exactly what it observed -- the keys it read or wrote, and the keys every prefix it
+listed returned -- including a metadata-dependent decision that writes only queue rows.
+Empty mutation output alone does not establish independence.
 
 [`ALAdmissionWorkBackend`](../al-admission-work-backend.ts) connects admission to its
 QueueBox. Memory, IndexedDB, and PostgreSQL implementations commit the work and its

@@ -281,6 +281,63 @@ describe('inbound work owner IndexedDB scan volume', () => {
     );
 });
 
+describe('work batch release volume', () => {
+    it('releases one batch of completed claims in 1 work-release operation', async () => {
+        expect(await readCompletedBatchReleaseOperations(4)).toBe(1);
+    });
+});
+
+/**
+ * One batch of `claimCount` retained rows run to completion, counted by `work-release` alone.
+ *
+ * The engine's own task pump starts a batch and returns without awaiting it (`ComputeAsyncTask`
+ * tracks the runnable rather than blocking the pump on it), so `engine.executeOnce()` resolves
+ * before the batch's own releases land. The `work-batch` diagnostic fires only once every claim in
+ * the batch released, so waiting on it -- rather than on `executeOnce()` alone -- is what makes
+ * this measurement observe the batch's completed cost instead of a mid-flight snapshot.
+ */
+async function readCompletedBatchReleaseOperations(claimCount: number): Promise<number> {
+    const observer = createCountingIndexedDbOperationObserver();
+    const port = createOutboundWorkPort(observer);
+    const engine = new InboxOutboxEngine();
+    let onBatchSettled: () => void;
+    const batchSettled = new Promise<void>((resolve) => {
+        onBatchSettled = resolve;
+    });
+    const handler = new ALWorkHandler({
+        workerId: 'al-outbound:batched-release',
+        port,
+        queueEngine: engine,
+        ownsQueueEngine: false,
+        clock: { nowMs: () => NOW_MS },
+        pageSize: AL_OUTBOUND_WORK_PAGE_SIZE,
+        readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+        readNextReadyAtMs: (probed) => readALOutboundWorkReadyAt(probed, NOW_MS, NO_DEFERRAL),
+        selectReady: async (claimable, size) =>
+            toTestALWorkReadySelection(
+                await claimable.claim({ maxCount: size, observedEntries: undefined })
+            ),
+        runClaim: async () => ({ status: 'completed' }),
+        diagnostics: (event) => {
+            if (event.kind === 'work-batch' && event.completedCount === claimCount) {
+                onBatchSettled();
+            }
+        }
+    });
+    await handler.ready();
+    for (let index = 0; index < claimCount; index += 1) {
+        await port.retainIfAbsent(newOutboundWorkEntry(WORK_TYPES[0], `batched-${index}`));
+    }
+    // The rows reach the queue behind the handler's back, so only this wake announces them.
+    engine.wakeAfterExternalWrite();
+    const before = observer.getCounts().byKind['work-release'] ?? 0;
+    await engine.executeOnce();
+    await batchSettled;
+    const released = (observer.getCounts().byKind['work-release'] ?? 0) - before;
+    handler.dispose();
+    return released;
+}
+
 interface IdleInboundRotation {
     readonly workPages: number;
     readonly relayedKinds: readonly ALInboundRuntimeDiagnosticsEvent['kind'][];

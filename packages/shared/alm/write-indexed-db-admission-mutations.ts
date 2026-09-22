@@ -3,7 +3,6 @@ import {
     requireLivePersistenceWrite,
     type PersistenceWriteDeadline
 } from '../persistence/persistence-write-deadline.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import {
     validateComputedIndexedDbQueueMutations,
     type ComputedIndexedDbQueueMutation
@@ -11,12 +10,10 @@ import {
 import { submitComputedIndexedDbQueueMutations } from '../queuebox/write-computed-indexed-db-queue-mutations.ts';
 import { toError } from '../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from './al-admission-decoder.ts';
+import type { IndexedDbAdmissionFence } from './indexed-db-admission-fence.ts';
 import type { IndexedDbAdmissionStoredRow } from './indexed-db-admission-row.ts';
-import {
-    AL_ADMISSION_REVISION_KEY,
-    AL_ADMISSION_WORK_STORE_NAME,
-    decodeIndexedDbAdmissionRevision
-} from './open-indexed-db-admission-database.ts';
+import { AL_ADMISSION_WORK_STORE_NAME } from './open-indexed-db-admission-database.ts';
+import { readIndexedDbAdmissionWriteFence } from './read-indexed-db-admission-write-fence.ts';
 
 export type IndexedDbAdmissionMutation =
     | Readonly<{ kind: 'set'; stored: IndexedDbAdmissionStoredRow; }>
@@ -29,19 +26,12 @@ export type IndexedDbAdmissionMutation =
 
 type IndexedDbAdmissionGuardedRemoval = Extract<IndexedDbAdmissionMutation, { kind: 'remove-if-write-token'; }>;
 
-interface IndexedDbAdmissionRevisionWrite {
-    readonly key: typeof AL_ADMISSION_REVISION_KEY;
-    readonly value: number;
-    readonly expireAtTimestamp: number;
-}
-
 export interface WriteIndexedDbAdmissionMutationsInput {
     readonly deadline?: PersistenceWriteDeadline;
     readonly db: IDBDatabase;
-    readonly expectedRevision: number;
+    readonly fence: IndexedDbAdmissionFence;
     readonly mutations: readonly IndexedDbAdmissionMutation[];
     readonly queueMutations: readonly ComputedIndexedDbQueueMutation[];
-    readonly revisionWrite: IndexedDbAdmissionRevisionWrite;
     readonly storeName: string;
 }
 
@@ -53,16 +43,6 @@ interface IndexedDbAdmissionWriteContext {
     readonly transaction: IDBTransaction;
     conflict: boolean;
     storedValueError: Error | undefined;
-}
-
-export function computeIndexedDbAdmissionRevisionWrite(
-    expectedRevision: number
-): IndexedDbAdmissionRevisionWrite {
-    return {
-        key: AL_ADMISSION_REVISION_KEY,
-        value: expectedRevision + 1,
-        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
-    };
 }
 
 export async function writeIndexedDbAdmissionMutations(
@@ -90,7 +70,6 @@ export async function writeIndexedDbAdmissionMutations(
             input.queueMutations,
             eligibility
         );
-    const revisionRequest = eligibility.observe(store.get(AL_ADMISSION_REVISION_KEY));
     const context: IndexedDbAdmissionWriteContext = {
         eligibility,
         guardedRemovals,
@@ -100,7 +79,15 @@ export async function writeIndexedDbAdmissionMutations(
         conflict: false,
         storedValueError: undefined
     };
-    revisionRequest.onsuccess = () => continueIndexedDbAdmissionWrite(context, revisionRequest.result);
+    readIndexedDbAdmissionWriteFence({
+        eligibility,
+        fence: input.fence,
+        store,
+        onMatched: () => continueIndexedDbAdmissionWrite(context),
+        onConflict: () => conflictIndexedDbAdmissionWrite(context),
+        onCorruption: (key, error) => abortIndexedDbAdmissionWrite(context, key, error),
+        settled: () => isIndexedDbAdmissionWriteSettled(context)
+    });
     try {
         await completed;
         return true;
@@ -122,24 +109,8 @@ export async function writeIndexedDbAdmissionMutations(
     }
 }
 
-function continueIndexedDbAdmissionWrite(
-    context: IndexedDbAdmissionWriteContext,
-    revisionValue: IDBRequest['result']
-): void {
+function continueIndexedDbAdmissionWrite(context: IndexedDbAdmissionWriteContext): void {
     if (context.eligibility.expired) {
-        return;
-    }
-    let actualRevision: number;
-    try {
-        actualRevision = decodeIndexedDbAdmissionRevision(revisionValue);
-    }
-    catch (error) {
-        abortIndexedDbAdmissionWrite(context, AL_ADMISSION_REVISION_KEY, toError(error));
-        return;
-    }
-    if (actualRevision !== context.input.expectedRevision) {
-        context.conflict = true;
-        context.transaction.abort();
         return;
     }
     if (context.guardedRemovals.length === 0) {
@@ -147,6 +118,18 @@ function continueIndexedDbAdmissionWrite(
         return;
     }
     readGuardedIndexedDbAdmissionRemovals(context, context.guardedRemovals);
+}
+
+function conflictIndexedDbAdmissionWrite(context: IndexedDbAdmissionWriteContext): void {
+    context.conflict = true;
+    context.transaction.abort();
+}
+
+/** A decided write ignores every re-read still in flight: its transaction is already aborting. */
+function isIndexedDbAdmissionWriteSettled(context: IndexedDbAdmissionWriteContext): boolean {
+    return context.conflict ||
+        context.storedValueError !== undefined ||
+        context.eligibility.expired !== undefined;
 }
 
 function readGuardedIndexedDbAdmissionRemovals(
@@ -157,7 +140,7 @@ function readGuardedIndexedDbAdmissionRemovals(
     for (const removal of removals) {
         const request = context.eligibility.observe(context.store.get(removal.key));
         request.onsuccess = () => {
-            if (context.conflict || context.storedValueError || context.eligibility.expired) {
+            if (isIndexedDbAdmissionWriteSettled(context)) {
                 return;
             }
             let currentWriteToken: string | undefined;
@@ -169,8 +152,7 @@ function readGuardedIndexedDbAdmissionRemovals(
                 return;
             }
             if (currentWriteToken !== removal.expectedWriteToken) {
-                context.conflict = true;
-                context.transaction.abort();
+                conflictIndexedDbAdmissionWrite(context);
                 return;
             }
             remaining -= 1;
@@ -222,5 +204,4 @@ function applyIndexedDbAdmissionMutations(
             ? eligibility.observe(store.put(mutation.stored))
             : eligibility.observe(store.delete(mutation.key));
     }
-    eligibility.observe(store.put(input.revisionWrite));
 }

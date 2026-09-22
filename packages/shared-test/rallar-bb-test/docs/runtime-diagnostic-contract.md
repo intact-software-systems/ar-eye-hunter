@@ -243,8 +243,10 @@ independent of any connection. The event's `data` is the event itself:
   opaque number: `selectionDurationMs` (the page read and every eligibility read
   it made), `claimDurationMs` (the port's reservation of the rows that read
   cleared), `runDurationMs` (every claim's own work, summed) and
-  `releaseDurationMs` (every release the batch wrote, summed, the exhaustion
-  sweep's included). `queueWaitMs` is the fifth, and it is not a phase: it is how
+  `releaseDurationMs` (the one release flush that ended the batch, the exhaustion
+  sweep's finalizations included in it; a retained claim settles serially after the
+  batch and is released outside this flush, so it adds nothing to the figure).
+  `queueWaitMs` is the fifth, and it is not a phase: it is how
   long the earliest row the batch claimed had already been **due** when the batch
   started, so a backlog reads apart from a slow drain. It counts every row the
   batch took, including a reservation whose lease start was missing and which the

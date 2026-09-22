@@ -6,7 +6,7 @@ import { Either } from '../resilience/Either.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 import {
     computeResourceInboxRelease,
-    validateResourceInboxReleaseDisposition
+    toValidatedResourceInboxReleases
 } from './compute-resource-inbox-release.ts';
 import { InMemoryQueueWorkIndex } from './in-memory-queue-work-index.ts';
 import { matchesQueueBoxCompletedRetention, type QueueBoxCompletedRetention } from './queue-box-completed-retention.ts';
@@ -18,7 +18,7 @@ import {
     ResourceInboxFinalizationReservationOptions,
     ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
-    ResourceInboxReleaseDisposition,
+    ResourceInboxRelease,
     ResourceInboxWorkAdvertisementOptions,
     ResourceInboxWorkPage,
     toResourceInboxFairnessReservationOptions,
@@ -214,45 +214,15 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
             : null;
     }
 
-    async releaseEntries(
-        resources: ResourceEntry[],
-        releaseInput: ResourceInboxReleaseDisposition
-    ): Promise<Map<Key, ResourceEntry>> {
-        const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
-            (error) => {
-                throw error;
-            },
-            (value) => value
-        );
+    async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
         const releasedAt = this.now();
-        const currentEntries = resources.map((resource) => {
-            const current = this.data.get(toKeyAsString(resource.key));
-            if (
-                !current ||
-                (
-                    (
-                        isExpiredResourceEntry(current, releasedAt) ||
-                        current.status !== EntityStatus.RESERVED ||
-                        !hasSameResourceEntryValue(current, resource)
-                    ) &&
-                    !isIdempotentHandlerFinalizedRelease({
-                        current,
-                        reserved: resource,
-                        disposition,
-                        observedAt: releasedAt
-                    })
-                )
-            ) {
-                throw new ResourceInboxLostReservationError(
-                    resource.key,
-                    resource.dequeueAudit.attempts
-                );
-            }
-            return current;
-        });
+        const reserved = toValidatedResourceInboxReleases(releases).map((release) => ({
+            current: this.readReservedEntryForRelease(release, releasedAt),
+            disposition: release.disposition
+        }));
         const released = new Map<Key, ResourceEntry>();
 
-        for (const current of currentEntries) {
+        for (const { current, disposition } of reserved) {
             if (current.status !== EntityStatus.RESERVED) {
                 const snapshot = toResourceEntrySnapshot(current);
                 released.set(snapshot.key, snapshot);
@@ -265,6 +235,36 @@ export class InMemoryQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         return released;
+    }
+
+    /** The live row a release may write, or the lost reservation the whole batch rolls back on. */
+    private readReservedEntryForRelease(
+        release: ResourceInboxRelease,
+        releasedAt: Temporal.Instant
+    ): ResourceEntry {
+        const current = this.data.get(toKeyAsString(release.entry.key));
+        if (
+            !current ||
+            (
+                (
+                    isExpiredResourceEntry(current, releasedAt) ||
+                    current.status !== EntityStatus.RESERVED ||
+                    !hasSameResourceEntryValue(current, release.entry)
+                ) &&
+                !isIdempotentHandlerFinalizedRelease({
+                    current,
+                    reserved: release.entry,
+                    disposition: release.disposition,
+                    observedAt: releasedAt
+                })
+            )
+        ) {
+            throw new ResourceInboxLostReservationError(
+                release.entry.key,
+                release.entry.dequeueAudit.attempts
+            );
+        }
+        return current;
     }
 
     async reserveTimeoutEntries(

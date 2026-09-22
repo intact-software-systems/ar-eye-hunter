@@ -364,7 +364,10 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 ...args: Parameters<PSqlQueueBox['releaseEntries']>
             ): ReturnType<PSqlQueueBox['releaseEntries']> {
                 const released = await super.releaseEntries(...args);
-                if (args[1].status === EntityStatus.RETRY && retryReleaseCount++ === 0) {
+                if (
+                    args[0].some((release) => release.disposition.status === EntityStatus.RETRY) &&
+                    retryReleaseCount++ === 0
+                ) {
                     await onFirstRetryRelease();
                 }
                 return released;

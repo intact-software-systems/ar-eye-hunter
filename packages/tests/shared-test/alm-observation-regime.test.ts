@@ -26,6 +26,10 @@ const NORMAL_FIXTURE = 'alm-observation-normal-regime-snapshot.json';
 const SLOW_FIXTURE = 'alm-observation-slow-regime-snapshot.json';
 
 const READ_OPERATION_COUNT = 9;
+const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
+const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
+const SYNTHETIC_OUTBOUND_AGENT_ID = SENDER_AGENT_ID;
+const INBOUND_WORKER_ID = 'al-inbound:worker-1';
 
 function readFixtureRegime(
     fixtureName: string,
@@ -50,6 +54,7 @@ function toCommitPhaseEvent(
     return {
         kind: 'diagnostic',
         atEpochMs,
+        agentId: SYNTHETIC_OUTBOUND_AGENT_ID,
         payload: {
             topic: 'rallar.browser.alm.outbound_diagnostics',
             payload: {
@@ -59,6 +64,49 @@ function toCommitPhaseEvent(
                     readDurationMs: msPerOperation * READ_OPERATION_COUNT,
                     readOperationCount: READ_OPERATION_COUNT
                 }
+            }
+        }
+    };
+}
+
+function toInboundOutcomeEvent(
+    atEpochMs: number,
+    agentId: string,
+    outcome: string
+): Record<string, unknown> {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: { kind: 'admission-outcome', workerId: INBOUND_WORKER_ID, outcome }
+            }
+        }
+    };
+}
+
+function toInboundDrainEvent(
+    atEpochMs: number,
+    agentId: string,
+    phases: Readonly<{
+        durationMs: number;
+        selectionDurationMs: number;
+        claimDurationMs: number;
+        runDurationMs: number;
+        releaseDurationMs: number;
+        queueWaitMs: number;
+    }>
+): Record<string, unknown> {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: { kind: 'effect-drain', workerId: INBOUND_WORKER_ID, ...phases }
             }
         }
     };
@@ -106,6 +154,7 @@ describe('computeALMObservationRegime', () => {
         expect(regime.cellOutcome).toBe('passed');
         expect(regime.windowMs).toBe(ALM_OBSERVATION_WINDOW_MS);
         expect(regime.snapshotIssues).toEqual([]);
+        expect(regime.inbound).toEqual([]);
     });
 
     it('reports both peers ready and the work-page rate for the green hosted run', () => {
@@ -155,6 +204,7 @@ describe('computeALMObservationRegime', () => {
             sampleCount: 7
         });
         expect(regime.cellOutcome).toBe('failed');
+        expect(regime.inbound).toEqual([]);
     });
 
     it('names the failing step code and the never-ready peers of the red hosted run', () => {
@@ -219,6 +269,141 @@ describe('computeALMObservationRegime', () => {
         expect(regime.perOperation).toEqual({ outcome: 'measured', medianMs: 12, sampleCount: 5 });
     });
 
+    it('computes the pending share and drain phase medians per inbound direction', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, RECEIVER_AGENT_ID, 'pending'),
+            toInboundOutcomeEvent(1_001, RECEIVER_AGENT_ID, 'pending'),
+            toInboundOutcomeEvent(1_002, RECEIVER_AGENT_ID, 'pending'),
+            toInboundOutcomeEvent(1_003, RECEIVER_AGENT_ID, 'committed'),
+            toInboundOutcomeEvent(1_004, SENDER_AGENT_ID, 'pending'),
+            toInboundOutcomeEvent(1_005, SENDER_AGENT_ID, 'committed'),
+            toInboundDrainEvent(1_006, SENDER_AGENT_ID, {
+                durationMs: 100,
+                selectionDurationMs: 10,
+                claimDurationMs: 5,
+                runDurationMs: 50,
+                releaseDurationMs: 8,
+                queueWaitMs: 3
+            }),
+            toInboundDrainEvent(1_007, SENDER_AGENT_ID, {
+                durationMs: 200,
+                selectionDurationMs: 20,
+                claimDurationMs: 15,
+                runDurationMs: 70,
+                releaseDurationMs: 12,
+                queueWaitMs: 7
+            }),
+            toInboundDrainEvent(1_008, RECEIVER_AGENT_ID, {
+                durationMs: 300,
+                selectionDurationMs: 30,
+                claimDurationMs: 25,
+                runDurationMs: 150,
+                releaseDurationMs: 18,
+                queueWaitMs: 13
+            }),
+            toInboundDrainEvent(1_009, RECEIVER_AGENT_ID, {
+                durationMs: 400,
+                selectionDurationMs: 40,
+                claimDurationMs: 35,
+                runDurationMs: 170,
+                releaseDurationMs: 22,
+                queueWaitMs: 17
+            })
+        ]);
+
+        expect(regime.inbound).toEqual([
+            {
+                role: 'sender',
+                outcome: 'measured',
+                pendingShare: { outcome: 'measured', pendingSharePercent: 50, outcomeCount: 2 },
+                phases: {
+                    selectionMedianMs: 15,
+                    claimMedianMs: 10,
+                    runMedianMs: 60,
+                    releaseMedianMs: 10,
+                    queueWaitMedianMs: 5,
+                    drainMedianMs: 150,
+                    drainCount: 2
+                }
+            },
+            {
+                role: 'receiver',
+                outcome: 'measured',
+                pendingShare: { outcome: 'measured', pendingSharePercent: 75, outcomeCount: 4 },
+                phases: {
+                    selectionMedianMs: 35,
+                    claimMedianMs: 30,
+                    runMedianMs: 160,
+                    releaseMedianMs: 20,
+                    queueWaitMedianMs: 15,
+                    drainMedianMs: 350,
+                    drainCount: 2
+                }
+            },
+            { role: 'unattributed', outcome: 'no-events' }
+        ]);
+    });
+
+    it('reports a measured direction with zero drain medians when a role has outcomes but no drains', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, SENDER_AGENT_ID, 'pending')
+        ]);
+
+        expect(regime.inbound).toEqual([
+            {
+                role: 'sender',
+                outcome: 'measured',
+                pendingShare: { outcome: 'measured', pendingSharePercent: 100, outcomeCount: 1 },
+                phases: {
+                    selectionMedianMs: 0,
+                    claimMedianMs: 0,
+                    runMedianMs: 0,
+                    releaseMedianMs: 0,
+                    queueWaitMedianMs: 0,
+                    drainMedianMs: 0,
+                    drainCount: 0
+                }
+            },
+            { role: 'receiver', outcome: 'no-events' },
+            { role: 'unattributed', outcome: 'no-events' }
+        ]);
+    });
+
+    it('reports pending share as unmeasured when a role has drains but no admission outcomes', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundDrainEvent(1_000, SENDER_AGENT_ID, {
+                durationMs: 100,
+                selectionDurationMs: 10,
+                claimDurationMs: 5,
+                runDurationMs: 50,
+                releaseDurationMs: 8,
+                queueWaitMs: 3
+            })
+        ]);
+
+        expect(regime.inbound).toEqual([
+            {
+                role: 'sender',
+                outcome: 'measured',
+                pendingShare: { outcome: 'unmeasured' },
+                phases: {
+                    selectionMedianMs: 10,
+                    claimMedianMs: 5,
+                    runMedianMs: 50,
+                    releaseMedianMs: 8,
+                    queueWaitMedianMs: 3,
+                    drainMedianMs: 100,
+                    drainCount: 1
+                }
+            },
+            { role: 'receiver', outcome: 'no-events' },
+            { role: 'unattributed', outcome: 'no-events' }
+        ]);
+    });
+
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
             'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed'
@@ -265,6 +450,72 @@ describe('decodeALMObservationSnapshot', () => {
             'snapshot.runId is not a string',
             'snapshot.results is not an array',
             'snapshot.events carries no timestamped event'
+        ]);
+    });
+
+    it('decodes inbound admission outcomes and drains per agent role', () => {
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-inbound-synthetic',
+            results: [],
+            events: [
+                ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+                toInboundOutcomeEvent(1_000, RECEIVER_AGENT_ID, 'pending'),
+                toInboundOutcomeEvent(1_001, RECEIVER_AGENT_ID, 'pending'),
+                toInboundOutcomeEvent(1_002, RECEIVER_AGENT_ID, 'pending'),
+                toInboundOutcomeEvent(1_003, RECEIVER_AGENT_ID, 'committed'),
+                toInboundOutcomeEvent(1_004, SENDER_AGENT_ID, 'pending'),
+                toInboundOutcomeEvent(1_005, SENDER_AGENT_ID, 'committed'),
+                toInboundDrainEvent(1_006, SENDER_AGENT_ID, {
+                    durationMs: 100,
+                    selectionDurationMs: 10,
+                    claimDurationMs: 5,
+                    runDurationMs: 50,
+                    releaseDurationMs: 8,
+                    queueWaitMs: 3
+                }),
+                toInboundDrainEvent(1_007, SENDER_AGENT_ID, {
+                    durationMs: 200,
+                    selectionDurationMs: 20,
+                    claimDurationMs: 15,
+                    runDurationMs: 70,
+                    releaseDurationMs: 12,
+                    queueWaitMs: 7
+                }),
+                toInboundDrainEvent(1_008, RECEIVER_AGENT_ID, {
+                    durationMs: 300,
+                    selectionDurationMs: 30,
+                    claimDurationMs: 25,
+                    runDurationMs: 150,
+                    releaseDurationMs: 18,
+                    queueWaitMs: 13
+                }),
+                toInboundDrainEvent(1_009, RECEIVER_AGENT_ID, {
+                    durationMs: 400,
+                    selectionDurationMs: 40,
+                    claimDurationMs: 35,
+                    runDurationMs: 170,
+                    releaseDurationMs: 22,
+                    queueWaitMs: 17
+                })
+            ]
+        });
+
+        expect(decoded.left).toBeUndefined();
+        expect(decoded.right?.inboundOutcomes).toHaveLength(6);
+        expect(decoded.right?.inboundOutcomes.map((outcome) => outcome.role)).toEqual([
+            'receiver',
+            'receiver',
+            'receiver',
+            'receiver',
+            'sender',
+            'sender'
+        ]);
+        expect(decoded.right?.inboundDrains).toHaveLength(4);
+        expect(decoded.right?.inboundDrains.map((drain) => drain.role)).toEqual([
+            'sender',
+            'sender',
+            'receiver',
+            'receiver'
         ]);
     });
 

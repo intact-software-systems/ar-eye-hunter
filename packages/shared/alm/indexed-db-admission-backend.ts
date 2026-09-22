@@ -28,6 +28,13 @@ import {
     type ALAdmissionWorkWriteContext
 } from './al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
+import {
+    computeIndexedDbAdmissionWriteRevision,
+    EMPTY_INDEXED_DB_ADMISSION_FENCE,
+    toIndexedDbAdmissionObservedRow,
+    type IndexedDbAdmissionFence,
+    type IndexedDbAdmissionObservedRow
+} from './indexed-db-admission-fence.ts';
 import { IndexedDbAdmissionReadSession } from './indexed-db-admission-read-session.ts';
 import {
     decodeIndexedDbAdmissionValue,
@@ -40,7 +47,6 @@ import {
 } from './open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from './read-indexed-db-admission-snapshot.ts';
 import {
-    computeIndexedDbAdmissionRevisionWrite,
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from './write-indexed-db-admission-mutations.ts';
@@ -104,7 +110,6 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
                 await removeExpiredIndexedDbAdmissionValues({
                     db,
                     storeName: this.#storeName,
-                    expectedRevision: expired.expectedRevision,
                     removals: expired.removals
                 });
             }
@@ -118,12 +123,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     async read<V>(key: string, decode: ALAdmissionDecoder<V>): Promise<V | undefined> {
         this.#observer.observe({ owner: 'al-admission', kind: 'read' });
         const db = await this.#connection.open();
-        const snapshot = await readIndexedDbAdmissionSnapshot(
-            db,
-            this.#storeName,
-            { kind: 'key', key }
-        );
-        const stored = snapshot.stored[0];
+        const stored = (await readIndexedDbAdmissionSnapshot(db, this.#storeName, { kind: 'key', key }))[0];
         if (stored === undefined) {
             return undefined;
         }
@@ -134,7 +134,6 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         await removeExpiredIndexedDbAdmissionValues({
             db,
             storeName: this.#storeName,
-            expectedRevision: snapshot.revision,
             removals: [{
                 kind: 'remove-if-write-token',
                 key,
@@ -147,7 +146,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     async list<V>(prefix: string, decode: ALAdmissionDecoder<V>): Promise<readonly ALAdmissionBackendEntry<V>[]> {
         this.#observer.observe({ owner: 'al-admission', kind: 'list' });
         const db = await this.#connection.open();
-        const snapshot = await readIndexedDbAdmissionSnapshot(
+        const rows = await readIndexedDbAdmissionSnapshot(
             db,
             this.#storeName,
             { kind: 'prefixes', prefixes: [prefix] }
@@ -155,7 +154,7 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
         const entries: ALAdmissionBackendEntry<V>[] = [];
         const expiredRemovals: IndexedDbAdmissionMutation[] = [];
         const nowMs = this.#nowMs();
-        for (const row of snapshot.stored) {
+        for (const row of rows) {
             const [value, expired] = decodeIndexedDbAdmissionValue({ stored: row, key: row.key, decode, nowMs });
             if (expired) {
                 expiredRemovals.push({
@@ -171,7 +170,6 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             await removeExpiredIndexedDbAdmissionValues({
                 db,
                 storeName: this.#storeName,
-                expectedRevision: snapshot.revision,
                 removals: expiredRemovals
             });
         }
@@ -194,9 +192,8 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
                 queueMutations: fenced.buffer.queueMutations(),
                 db,
                 storeName: this.#storeName,
-                expectedRevision: fenced.expectedRevision,
-                mutations: fenced.buffer.mutations(),
-                revisionWrite: computeIndexedDbAdmissionRevisionWrite(fenced.expectedRevision)
+                fence: fenced.buffer.fence(),
+                mutations: fenced.buffer.mutations()
             })
             : await writeComputedIndexedDbQueueMutations({
                 db,
@@ -211,12 +208,11 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     }
 
     /**
-     * The revision opens the snapshot every fence the callback re-reads then joins, so the whole
-     * write phase observes one store state before it computes its conditional commit. The snapshot
-     * is closed before the caller creates its readwrite -- a readwrite queues behind an idle
-     * two-store readonly -- and a callback that throws its own conflict is the normal path, so the
-     * close belongs in a finally. The revision compare inside the readwrite is what keeps a commit
-     * that lands in between from being missed.
+     * One snapshot serves the whole write phase, which records every key and prefix it observed as
+     * it goes. The snapshot is closed before the caller creates its readwrite -- a readwrite queues
+     * behind an idle two-store readonly -- and a callback that throws its own conflict is the
+     * normal path, so the close belongs in a finally. Re-reading exactly that fence inside the
+     * readwrite is what keeps a commit that lands in between from being missed.
      */
     async #readFencedWrite<T>(
         db: IDBDatabase,
@@ -224,13 +220,12 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
     ): Promise<IndexedDbAdmissionFencedWrite<T>> {
         const session = this.#createReadSession(db);
         try {
-            const expectedRevision = await session.readRevision();
             const buffer = new IndexedDbAdmissionWriteBuffer({
                 session,
                 nowMs: this.#nowMs,
                 newWriteToken: this.#newWriteToken
             });
-            return { expectedRevision, buffer, result: await fn(buffer) };
+            return { buffer, result: await fn(buffer) };
         }
         finally {
             session.close();
@@ -249,7 +244,6 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
 
 /** What one write phase's fence snapshot produced, ready for the conditional write that follows it. */
 interface IndexedDbAdmissionFencedWrite<T> {
-    readonly expectedRevision: number;
     readonly buffer: IndexedDbAdmissionWriteBuffer;
     readonly result: T;
 }
@@ -265,6 +259,8 @@ namespace IndexedDbAdmissionWriteBuffer {
 class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
     #usedMetadata = false;
     readonly #pending = new Map<string, IndexedDbAdmissionStoredRow | undefined>();
+    readonly #observedRows = new Map<string, IndexedDbAdmissionObservedRow>();
+    readonly #observedPrefixes = new Map<string, readonly string[]>();
     readonly #workObservations = new Map<string, StoredResourceEntry | undefined>();
     readonly #pendingWork = new Map<string, ComputedIndexedDbQueuePut>();
     readonly #session: IndexedDbAdmissionReadSession;
@@ -286,6 +282,7 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
         let stored = this.#pending.get(key);
         if (!this.#pending.has(key)) {
             stored = await this.#session.readRow(key);
+            this.#recordObservedRow(key, stored);
         }
         if (stored === undefined) {
             return undefined;
@@ -298,8 +295,12 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
         this.#usedMetadata = true;
         const values = new Map<string, V>();
         const storedEntries = await this.#session.readRows(prefix);
+        if (!this.#observedPrefixes.has(prefix)) {
+            this.#observedPrefixes.set(prefix, storedEntries.map((row) => row.key));
+        }
         const nowMs = this.#nowMs();
         for (const row of storedEntries) {
+            this.#recordObservedRow(row.key, row);
             if (this.#pending.has(row.key)) {
                 continue;
             }
@@ -329,17 +330,41 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
 
     async set<V>(key: string, value: V, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP): Promise<void> {
         this.#usedMetadata = true;
+        const observed = await this.#observeRevision(key);
         this.#pending.set(key, {
             key,
             value,
             expireAtTimestamp: decodeALAdmissionNumber(expireAtTimestamp),
-            writeToken: this.#newWriteToken()
+            writeToken: this.#newWriteToken(),
+            revision: computeIndexedDbAdmissionWriteRevision(observed)
         });
     }
 
     async remove(key: string): Promise<void> {
         this.#usedMetadata = true;
+        await this.#observeRevision(key);
         this.#pending.set(key, undefined);
+    }
+
+    /** What this write phase read, wrote and listed, for the conditional write that fences on it. */
+    fence(): IndexedDbAdmissionFence {
+        return { rows: this.#observedRows, prefixes: this.#observedPrefixes };
+    }
+
+    /** First observation of a key wins, so a key read twice or written twice keeps one baseline. */
+    #recordObservedRow(
+        key: string,
+        stored: IndexedDbAdmissionStoredRow | undefined
+    ): IndexedDbAdmissionObservedRow {
+        const observed = this.#observedRows.get(key) ?? toIndexedDbAdmissionObservedRow(stored);
+        this.#observedRows.set(key, observed);
+        return observed;
+    }
+
+    /** A key written without being read costs one unobserved request inside the fence snapshot. */
+    async #observeRevision(key: string): Promise<IndexedDbAdmissionObservedRow> {
+        return this.#observedRows.get(key) ??
+            this.#recordObservedRow(key, await this.#session.readRow(key));
     }
 
     async readWork(key: Key): Promise<ResourceEntry | undefined> {
@@ -382,11 +407,11 @@ class IndexedDbAdmissionWriteBuffer implements ALAdmissionWorkWriteContext {
 
 interface RemoveExpiredIndexedDbAdmissionValuesInput {
     readonly db: IDBDatabase;
-    readonly expectedRevision: number;
     readonly removals: readonly IndexedDbAdmissionMutation[];
     readonly storeName: string;
 }
 
+/** Every removal here is write-token guarded, so a row replaced since the read conflicts on its own. */
 async function removeExpiredIndexedDbAdmissionValues(
     input: RemoveExpiredIndexedDbAdmissionValuesInput
 ): Promise<void> {
@@ -394,9 +419,8 @@ async function removeExpiredIndexedDbAdmissionValues(
         queueMutations: [],
         db: input.db,
         storeName: input.storeName,
-        expectedRevision: input.expectedRevision,
-        mutations: input.removals,
-        revisionWrite: computeIndexedDbAdmissionRevisionWrite(input.expectedRevision)
+        fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
+        mutations: input.removals
     });
     if (!committed) {
         throw new ALAdmissionBackendConflictError('IndexedDB AL admission expiry cleanup conflicted');

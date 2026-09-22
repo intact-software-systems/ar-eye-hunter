@@ -283,7 +283,9 @@ describe('canonical outbound payload storage', () => {
             const release = vi.spyOn(backend.workQueue, 'releaseEntries');
             const draining = createRuntime();
             await draining.ready();
-            expect(release).toHaveBeenCalledWith(expect.any(Array), { status: EntityStatus.COMPLETED, delayMs: null });
+            expect(release).toHaveBeenCalledWith([
+                expect.objectContaining({ disposition: { status: EntityStatus.COMPLETED, delayMs: null } })
+            ]);
         }
     });
 

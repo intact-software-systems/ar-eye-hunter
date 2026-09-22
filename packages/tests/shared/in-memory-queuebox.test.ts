@@ -10,6 +10,7 @@ import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     EntityStatus,
     NEVER_EXPIRE_TS,
+    type Key,
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -34,10 +35,13 @@ describe('InMemoryQueueBox', () => {
             const { reserved, current } = entries();
             await queue.enqueue(current);
 
-            const release = queue.releaseEntries([reserved], {
-                status: EntityStatus.COMPLETED,
-                delayMs: null
-            });
+            const release = queue.releaseEntries([{
+                entry: reserved,
+                disposition: {
+                    status: EntityStatus.COMPLETED,
+                    delayMs: null
+                }
+            }]);
 
             if (accepted) {
                 expect(firstValue(await release)).toEqual(current);
@@ -170,7 +174,7 @@ describe('InMemoryQueueBox', () => {
         await queue.enqueue(entry);
 
         const released = firstValue(
-            await queue.releaseEntries([entry], { status: EntityStatus.RETRY, delayMs: 37 })
+            await queue.releaseEntries([{ entry: entry, disposition: { status: EntityStatus.RETRY, delayMs: 37 } }])
         );
 
         expect(released.status).toBe(EntityStatus.RETRY);
@@ -185,6 +189,45 @@ describe('InMemoryQueueBox', () => {
             .toBe(released.dequeueAudit.endTs?.toString());
         expect((await queue.getItem(entry.key))?.dequeueAudit.nextTs?.toString())
             .toBe(released.dequeueAudit.nextTs?.toString());
+    });
+
+    it('commits one batch whose three entries each carry their own disposition', async () => {
+        const queue = new InMemoryQueueBox();
+        const completed = createEntry('chat.private-text.v1', 'mixed-completed', {
+            status: EntityStatus.RESERVED,
+            attempts: 1
+        });
+        const retried = createEntry('chat.private-text.v1', 'mixed-retry', {
+            status: EntityStatus.RESERVED,
+            attempts: 1
+        });
+        const deferred = createEntry('chat.private-text.v1', 'mixed-not-ready', {
+            status: EntityStatus.RESERVED,
+            attempts: 1
+        });
+        await queue.enqueue(completed);
+        await queue.enqueue(retried);
+        await queue.enqueue(deferred);
+
+        const released = byResourceId(
+            await queue.releaseEntries([
+                { entry: completed, disposition: { status: EntityStatus.COMPLETED, delayMs: null } },
+                { entry: retried, disposition: { status: EntityStatus.RETRY, delayMs: 37 } },
+                { entry: deferred, disposition: { status: EntityStatus.RETRY, delayMs: 5_000, reason: 'not-ready' } }
+            ])
+        );
+
+        expect(released.get('mixed-completed')).toMatchObject({ status: EntityStatus.COMPLETED });
+        expect(released.get('mixed-retry')).toMatchObject({ status: EntityStatus.RETRY });
+        expect(released.get('mixed-not-ready')).toMatchObject({ status: EntityStatus.RETRY });
+        expect(toReleaseDelayMs(released.get('mixed-retry')!)).toBe(37);
+        expect(toReleaseDelayMs(released.get('mixed-not-ready')!)).toBe(5_000);
+        // A terminal release leaves no next attempt at all, so the batch cannot have shared one disposition.
+        expect(released.get('mixed-completed')!.dequeueAudit.nextTs).toBeUndefined();
+        expect((await queue.getItem(retried.key))?.dequeueAudit.nextTs?.toString())
+            .toBe(released.get('mixed-retry')!.dequeueAudit.nextTs?.toString());
+        expect((await queue.getItem(deferred.key))?.dequeueAudit.nextTs?.toString())
+            .toBe(released.get('mixed-not-ready')!.dequeueAudit.nextTs?.toString());
     });
 
     it('rejects a stale release without overwriting a newer reservation', async () => {
@@ -202,7 +245,7 @@ describe('InMemoryQueueBox', () => {
         };
         await queue.enqueue(current);
 
-        await expect(queue.releaseEntries([stale], { status: EntityStatus.RETRY, delayMs: 1 }))
+        await expect(queue.releaseEntries([{ entry: stale, disposition: { status: EntityStatus.RETRY, delayMs: 1 } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
 
         expect(await queue.getItem(current.key)).toMatchObject({
@@ -219,23 +262,21 @@ describe('InMemoryQueueBox', () => {
         });
         await queue.enqueue({ ...reserved, status: EntityStatus.COMPLETED });
 
-        const released = await queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        );
+        const released = await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }]);
 
         expect(firstValue(released)).toMatchObject({
             status: EntityStatus.COMPLETED,
             dequeueAudit: { attempts: 7 }
         });
-        await expect(queue.releaseEntries(
-            [{ ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } }],
-            { status: EntityStatus.COMPLETED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
-        await expect(queue.releaseEntries(
-            [reserved],
-            { status: EntityStatus.FAILED, delayMs: null }
-        )).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(
+            queue.releaseEntries([{
+                entry: { ...reserved, dequeueAudit: { ...reserved.dequeueAudit, attempts: 6 } },
+                disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+            }])
+        ).rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
+        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.FAILED, delayMs: null } }])).rejects.toMatchObject({
+            code: 'resource-inbox-lost-reservation'
+        });
     });
 
     it('reclaims only live stale exhausted AppInbox reservations for finalization', async () => {
@@ -355,13 +396,13 @@ describe('InMemoryQueueBox', () => {
         await queue.enqueue(first);
         await queue.enqueue(second);
 
-        await expect(queue.releaseEntries([
-            first,
-            {
+        await expect(queue.releaseEntries([{ entry: first, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
+            entry: {
                 ...second,
                 dequeueAudit: { ...second.dequeueAudit, attempts: 1 }
-            }
-        ], { status: EntityStatus.COMPLETED, delayMs: null })).rejects.toMatchObject({
+            },
+            disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+        }])).rejects.toMatchObject({
             code: 'resource-inbox-lost-reservation'
         });
 
@@ -393,7 +434,7 @@ describe('InMemoryQueueBox', () => {
         await queue.enqueue(first);
         await queue.enqueue(second);
 
-        await expect(queue.releaseEntries([first, second], disposition as never))
+        await expect(queue.releaseEntries([{ entry: first, disposition: disposition as never }, { entry: second, disposition: disposition as never }]))
             .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
 
         expect((await queue.getItem(first.key))?.status).toBe(EntityStatus.RESERVED);
@@ -549,6 +590,14 @@ function createEntry(
         },
         db: undefined
     };
+}
+
+function byResourceId(released: Map<Key, ResourceEntry>): Map<string, ResourceEntry> {
+    return new Map([...released.values()].map((entry) => [entry.key.resourceId, entry]));
+}
+
+function toReleaseDelayMs(released: ResourceEntry): number {
+    return released.dequeueAudit.endTs!.until(released.dequeueAudit.nextTs!).total({ unit: 'milliseconds' });
 }
 
 function firstValue<K, V>(map: Map<K, V>): V {

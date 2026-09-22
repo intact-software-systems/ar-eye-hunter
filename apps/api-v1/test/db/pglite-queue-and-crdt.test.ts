@@ -376,16 +376,16 @@ Deno.test(
             const queueBox = new PSqlQueueBox(inbox);
             await assert.rejects(
                 () =>
-                    queueBox.releaseEntries([
-                        firstReservation.right!,
-                        {
+                    queueBox.releaseEntries([{ entry: firstReservation.right!, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }, {
+                        entry: {
                             ...secondReservation.right!,
                             dequeueAudit: {
                                 ...secondReservation.right!.dequeueAudit,
                                 attempts: 0
                             }
-                        }
-                    ], { status: EntityStatus.COMPLETED, delayMs: null }),
+                        },
+                        disposition: { status: EntityStatus.COMPLETED, delayMs: null }
+                    }]),
                 (error) =>
                     error instanceof Error &&
                     'code' in error &&

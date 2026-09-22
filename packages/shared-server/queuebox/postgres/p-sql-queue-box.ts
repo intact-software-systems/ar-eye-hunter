@@ -3,7 +3,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
     computeResourceInboxRelease,
-    validateResourceInboxReleaseDisposition
+    toValidatedResourceInboxReleases
 } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
@@ -13,6 +13,7 @@ import {
     ResourceInboxFinalizationReservationOptions,
     ResourceInboxFinalizationSelection,
     ResourceInboxLostReservationError,
+    ResourceInboxRelease,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
     ResourceInboxWorkAdvertisementOptions,
@@ -42,6 +43,7 @@ import { toError } from '@shared/resilience/to-error.ts';
 import { isAdminPruneHandlerFinalizedRelease } from '../../rallar-system/admin-operations/prune/is-admin-prune-handler-finalized-release.ts';
 import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
 import { computeResourceInboxObservedReplacement } from './p-sql-resource-inbox-entry-repository.ts';
+import type { ResourceInboxObservedReplacement } from './replace-observed-resource-inbox-entry.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly resourceInbox: PSqlResourceInboxRepository;
@@ -294,27 +296,16 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         });
     }
 
-    async releaseEntries(
-        resources: ResourceEntry[],
-        releaseInput: ResourceInboxReleaseDisposition
-    ): Promise<Map<Key, ResourceEntry>> {
-        const disposition = validateResourceInboxReleaseDisposition(releaseInput).fold(
-            (error) => {
-                throw error;
-            },
-            (value) => value
-        );
+    async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
         const releasedAt = Temporal.Instant.fromEpochMilliseconds(this.now().epochMilliseconds);
-        const candidates = resources.map((entry) =>
-            computeResourceInboxObservedReplacement(entry, computeResourceInboxRelease(entry, disposition, releasedAt))
-        );
+        const candidates = toPSqlQueueReleaseCandidates(releases, releasedAt);
         return await this.resourceInbox.transaction(
             async (txRepo: PSqlResourceInboxRepository) => {
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
-                for (const candidate of candidates) {
-                    const entry = candidate.expected.entry;
-                    const updated = await txRepo.reservations.releaseReserved(candidate);
+                for (const { disposition, replacement } of candidates) {
+                    const entry = replacement.expected.entry;
+                    const updated = await txRepo.reservations.releaseReserved(replacement);
                     if (!updated) {
                         const current = await txRepo.entries.findAnyByKey(entry.key);
                         if (
@@ -394,4 +385,23 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     async deleteExpired(): Promise<number> {
         return await this.resourceInbox.maintenance.deleteExpired();
     }
+}
+
+interface PSqlQueueReleaseCandidate {
+    readonly disposition: ResourceInboxReleaseDisposition;
+    readonly replacement: ResourceInboxObservedReplacement;
+}
+
+/** Every release of a batch decided before its one transaction opens: validated, then computed. */
+function toPSqlQueueReleaseCandidates(
+    releases: readonly ResourceInboxRelease[],
+    releasedAt: Temporal.Instant
+): readonly PSqlQueueReleaseCandidate[] {
+    return toValidatedResourceInboxReleases(releases).map((release) => ({
+        disposition: release.disposition,
+        replacement: computeResourceInboxObservedReplacement(
+            release.entry,
+            computeResourceInboxRelease(release.entry, release.disposition, releasedAt)
+        )
+    }));
 }

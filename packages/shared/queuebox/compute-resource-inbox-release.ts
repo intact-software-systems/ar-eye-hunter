@@ -3,6 +3,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Either } from '../resilience/Either.ts';
 import {
     ResourceInboxInvalidReleaseDispositionError,
+    type ResourceInboxRelease,
     type ResourceInboxReleaseDisposition
 } from './queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from './ResourceEntry.ts';
@@ -64,4 +65,23 @@ export function validateResourceInboxReleaseDisposition(
     }
 
     return Either.ofLeft(new ResourceInboxInvalidReleaseDispositionError());
+}
+
+/**
+ * Every release of a batch with its own disposition normalized. A malformed disposition is a
+ * programmer error rather than a release outcome, so the three queues share this one throwing
+ * boundary and reject the whole batch through it before any row is read.
+ */
+export function toValidatedResourceInboxReleases(
+    releases: readonly ResourceInboxRelease[]
+): readonly ResourceInboxRelease[] {
+    return releases.map((release) => ({
+        entry: release.entry,
+        disposition: validateResourceInboxReleaseDisposition(release.disposition).fold(
+            (error) => {
+                throw error;
+            },
+            (value) => value
+        )
+    }));
 }

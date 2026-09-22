@@ -118,8 +118,9 @@ describe('ALOutboundMessageRuntime', () => {
         settlement.resolve({ status: 'not-ready', submissionAttempted: false, retryAfterMs: 60_000 });
         await vi.advanceTimersByTimeAsync(0);
         // A settlement past the deadline is dropped, never rescheduled.
-        expect(release.mock.calls.map((call) => call[1].status)).toEqual([EntityStatus.COMPLETED]);
-        expect(release.mock.calls[0]![0][0]!.audit.expiryTs.epochMilliseconds).toBe(31_000);
+        expect(release.mock.calls.flatMap((call) => call[0].map((entry) => entry.disposition.status)))
+            .toEqual([EntityStatus.COMPLETED]);
+        expect(release.mock.calls[0]![0][0]!.entry.audit.expiryTs.epochMilliseconds).toBe(31_000);
         expect(send).toHaveBeenCalledTimes(1);
         expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();

@@ -55,12 +55,14 @@ describe('Postgres AL outbound effect claims', () => {
             await new Promise((resolve) => setTimeout(resolve, 10_010));
             const [newClaim] = await second.port.claim(input);
 
-            await first.port.release(oldClaim!, { status: 'completed' });
+            await first.port.releaseAll([{ claim: oldClaim!, outcome: { status: 'completed' } }]);
             const leaseAt = await second.peek();
             expect(leaseAt).toBeGreaterThanOrEqual(newClaim!.leaseUntilMs);
-            await first.port.release(oldClaim!, { status: 'not-ready', readyAtMs: Date.now() + 5_000 });
+            await first.port.releaseAll([
+                { claim: oldClaim!, outcome: { status: 'not-ready', readyAtMs: Date.now() + 5_000 } }
+            ]);
             expect(await second.peek()).toBe(leaseAt);
-            await second.port.release(newClaim!, { status: 'completed' });
+            await second.port.releaseAll([{ claim: newClaim!, outcome: { status: 'completed' } }]);
             expect(await first.peek()).toBeUndefined();
         });
     }, 60_000);

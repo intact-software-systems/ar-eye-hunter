@@ -1,18 +1,16 @@
 import { isIndexedDbALRuntimeStoreSupported } from '@shared/alm/al-runtime-stores.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import { EMPTY_INDEXED_DB_ADMISSION_FENCE } from '@shared/alm/indexed-db-admission-fence.ts';
 import {
-    AL_ADMISSION_REVISION_KEY,
     AL_ADMISSION_SCHEMA_ID,
     openIndexedDbAdmissionDatabase,
     type ALStorageResetEvent
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { readIndexedDbAdmissionSnapshot } from '@shared/alm/read-indexed-db-admission-snapshot.ts';
 import {
-    computeIndexedDbAdmissionRevisionWrite,
     writeIndexedDbAdmissionMutations,
     type IndexedDbAdmissionMutation
 } from '@shared/alm/write-indexed-db-admission-mutations.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { StoredResourceEntry } from '@shared/queuebox/indexed-db-queue-box-entry-codec.ts';
 import type { ComputedIndexedDbQueueMutation } from '@shared/queuebox/indexed-db-queue-box-entry.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
@@ -34,7 +32,6 @@ import {
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
 export interface BrowserALRuntimeCleanupRead {
-    readonly revision: number;
     readonly rows: readonly BrowserALRuntimeCleanupRow[];
     readonly workRows: readonly StoredResourceEntry[];
 }
@@ -48,11 +45,6 @@ export interface BrowserALRuntimeCleanupRow {
 export interface BrowserALRuntimeCleanupComputed {
     readonly mutations: readonly IndexedDbAdmissionMutation[];
     readonly queueMutations: readonly ComputedIndexedDbQueueMutation[];
-    readonly revisionWrite: Readonly<{
-        key: typeof AL_ADMISSION_REVISION_KEY;
-        value: number;
-        expireAtTimestamp: number;
-    }>;
 }
 
 export type BrowserALRuntimeDeletionPolicy =
@@ -63,7 +55,6 @@ export interface BrowserALRuntimeCleanupValidationIssue {
     readonly code:
         | 'duplicate-mutation'
         | 'missing-mutation'
-        | 'revision-write-mismatch'
         | 'unexpected-mutation'
         | 'unexpected-mutation-kind'
         | 'write-token-mismatch'
@@ -233,7 +224,7 @@ async function deleteBrowserALRuntimeEntriesMatching(
         if (issues.length > 0) {
             throw new TypeError(issues.map((issue) => issue.message).join('; '));
         }
-        await writeBrowserALRuntimeCleanup(db, read.revision, computed);
+        await writeBrowserALRuntimeCleanup(db, computed);
         return toBrowserALRuntimeCleanupResult(
             keyPrefixes,
             read.rows.length + read.workRows.length,
@@ -258,7 +249,7 @@ async function readBrowserALRuntimeCleanup(
     const readsExpiryIndex = policy.kind === 'expired' &&
         keyPrefixes.length === 1 &&
         keyPrefixes[0] === BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX;
-    const snapshot = await readIndexedDbAdmissionSnapshot(
+    const rows = await readIndexedDbAdmissionSnapshot(
         db,
         BROWSER_AL_RUNTIME_STORE_NAME,
         readsExpiryIndex
@@ -266,16 +257,12 @@ async function readBrowserALRuntimeCleanup(
             : { kind: 'prefixes', prefixes: keyPrefixes }
     );
     return {
-        revision: snapshot.revision,
         // The 'expired' policy hands AL work rows to writeBrowserALWorkExpiryCleanup instead.
         workRows: policy.kind === 'all'
             ? await readBrowserALWorkCleanupRows(db, { namespacePrefixes: workNamespaces, canonicalScopes })
             : [],
-        rows: snapshot.stored
-            .filter((stored) =>
-                stored.key !== AL_ADMISSION_REVISION_KEY &&
-                matchesAnyBrowserALRuntimePrefix(stored.key, keyPrefixes)
-            )
+        rows: rows
+            .filter((stored) => matchesAnyBrowserALRuntimePrefix(stored.key, keyPrefixes))
             .map((stored) => ({
                 key: stored.key,
                 expireAtTimestamp: stored.expireAtTimestamp,
@@ -298,8 +285,7 @@ function computeBrowserALRuntimeCleanup(
                 kind: 'remove-if-write-token',
                 key: row.key,
                 expectedWriteToken: row.writeToken
-            })),
-        revisionWrite: computeIndexedDbAdmissionRevisionWrite(read.revision)
+            }))
     };
 }
 
@@ -321,8 +307,7 @@ export function validateBrowserALRuntimeCleanup(
                 code: 'queue-mutations-mismatch' as const,
                 message: 'Browser AL work cleanup mutations differ from the owned queue observations'
             }]
-            : []),
-        ...validateBrowserALRuntimeCleanupRevision(read.revision, computed.revisionWrite)
+            : [])
     ];
 }
 
@@ -392,27 +377,9 @@ function validateBrowserALRuntimeCleanupMutation(
     return issues;
 }
 
-function validateBrowserALRuntimeCleanupRevision(
-    expectedRevision: number,
-    revisionWrite: BrowserALRuntimeCleanupComputed['revisionWrite']
-): readonly BrowserALRuntimeCleanupValidationIssue[] {
-    if (
-        revisionWrite.key !== AL_ADMISSION_REVISION_KEY ||
-        revisionWrite.value !== expectedRevision + 1 ||
-        revisionWrite.expireAtTimestamp !== NEVER_EXPIRE_AT_TIMESTAMP
-    ) {
-        return [{
-            code: 'revision-write-mismatch',
-            message: 'Browser AL runtime cleanup revision write is invalid'
-        }];
-    }
-
-    return [];
-}
-
+/** Every deleted row is a write-token guarded removal, so the cleanup needs no fence of its own. */
 async function writeBrowserALRuntimeCleanup(
     db: IDBDatabase,
-    expectedRevision: number,
     computed: BrowserALRuntimeCleanupComputed
 ): Promise<void> {
     if (computed.mutations.length === 0 && computed.queueMutations.length === 0) {
@@ -422,9 +389,8 @@ async function writeBrowserALRuntimeCleanup(
         queueMutations: computed.queueMutations,
         db,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
-        expectedRevision,
-        mutations: computed.mutations,
-        revisionWrite: computed.revisionWrite
+        fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
+        mutations: computed.mutations
     });
     if (!committed) {
         throw new ALAdmissionBackendConflictError('Browser AL runtime cleanup conflicted');

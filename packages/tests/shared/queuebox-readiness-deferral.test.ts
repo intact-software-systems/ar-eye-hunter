@@ -30,7 +30,7 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
         const reserved =
             [...(await queue.reserveEntries({ typeIds: new Set(['waiting']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values()][0];
         vi.setSystemTime(startedAt + elapsedMs);
-        await expect(queue.releaseEntries([reserved], { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' }))
+        await expect(queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         vi.setSystemTime(startedAt);
         expect(await queue.getItem(original.key)).toEqual(reserved);
@@ -46,7 +46,9 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
         await queue.enqueue(original);
         const reserved =
             [...(await queue.reserveEntries({ typeIds: new Set(['waiting']), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values()][0];
-        const released = [...(await queue.releaseEntries([reserved], { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' })).values()][0];
+        const released =
+            [...(await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' } }]))
+                .values()][0];
         expect(released.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 30_000);
         expect(released.audit).toEqual(original.audit);
         vi.setSystemTime(Date.now() + 30_000);
@@ -61,17 +63,20 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
         await queue.enqueue(createEntry());
         const request = { typeIds: new Set(['waiting']), statusIds: new Set([EntityStatus.NEW, EntityStatus.RETRY]), reservationInput: 1 };
         const failed = [...(await queue.reserveEntries(request)).values()][0];
-        await queue.releaseEntries([failed], { status: EntityStatus.RETRY, delayMs: 1 });
+        await queue.releaseEntries([{ entry: failed, disposition: { status: EntityStatus.RETRY, delayMs: 1 } }]);
         vi.setSystemTime(Date.now() + 1);
         for (let cycle = 0; cycle < 25; cycle += 1) {
             const reserved = [...(await queue.reserveEntries(request)).values()][0];
             expect(reserved.dequeueAudit.attempts).toBe(2);
-            const released = [...(await queue.releaseEntries([reserved], { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' })).values()][0];
+            const released =
+                [...(await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' } }])).values()][
+                    0
+                ];
             expect(released.dequeueAudit.attempts).toBe(1);
             vi.setSystemTime(Date.now() + 1);
         }
         const reserved = [...(await queue.reserveEntries(request)).values()][0];
-        const completed = [...(await queue.releaseEntries([reserved], { status: EntityStatus.COMPLETED, delayMs: null })).values()][0];
+        const completed = [...(await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }])).values()][0];
         expect(completed.dequeueAudit.attempts).toBe(2);
     });
 
@@ -92,11 +97,14 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
             })).values()][0];
             expect(reserved).toBeDefined();
             const snapshot = JSON.stringify(reserved);
-            const released = [...(await queue.releaseEntries([reserved], {
-                status: EntityStatus.RETRY,
-                delayMs: 50,
-                reason: 'not-ready'
-            })).values()][0];
+            const released = [...(await queue.releaseEntries([{
+                entry: reserved,
+                disposition: {
+                    status: EntityStatus.RETRY,
+                    delayMs: 50,
+                    reason: 'not-ready'
+                }
+            }])).values()][0];
             expect(released.dequeueAudit.attempts).toBe(0);
             expect(released.status).toBe(EntityStatus.RETRY);
             expect(released.dequeueAudit.nextTs?.epochMilliseconds).toBe(Date.now() + 50);
@@ -109,7 +117,7 @@ describe.each(['memory', 'indexeddb'])('QueueBox readiness accounting: %s', (bac
 
         const reserved =
             [...(await queue.reserveEntries({ typeIds: new Set(['waiting']), statusIds: new Set([EntityStatus.RETRY]), reservationInput: 1 })).values()][0];
-        const completed = [...(await queue.releaseEntries([reserved], { status: EntityStatus.COMPLETED, delayMs: null })).values()][0];
+        const completed = [...(await queue.releaseEntries([{ entry: reserved, disposition: { status: EntityStatus.COMPLETED, delayMs: null } }])).values()][0];
         expect(completed.status).toBe(EntityStatus.COMPLETED);
         expect(completed.dequeueAudit.attempts).toBe(1);
     });

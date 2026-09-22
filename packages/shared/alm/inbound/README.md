@@ -89,6 +89,15 @@ writes, which is why these reads stay outside the write that follows them, and t
 `requireOriginalObservations` still re-reads the whole observed surface inside the write —
 the snapshot makes the read cheap, the fence is what makes the commit conditional.
 
+What makes that commit conditional: the backend records, for every key the write phase read or
+wrote, the revision and write token it observed there (or that the key was absent), and for every
+prefix it listed, the exact key set that listing returned. Before the transaction commits it
+re-reads exactly those rows and prefixes and rolls back as a typed conflict only when one of them
+moved; an admission, send, or ACK against a different message's rows and a different listed range
+touches none of that and commits alongside it. The three backends are conflict-equivalent under
+this fence: the in-memory backend serializes writers on its own write-tail promise, and IndexedDB
+and PostgreSQL both compare per row instead.
+
 Every stored key is `topicId/resourceId/contextId`, and inbound work is
 `AL_INBOUND/<namespace>/<effectId>` so one session's rows are a bounded key range.
 An admitted message writes two provenance rows: the message owner row, keyed by

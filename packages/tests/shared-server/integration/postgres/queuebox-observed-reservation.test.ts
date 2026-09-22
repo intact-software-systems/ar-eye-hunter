@@ -40,7 +40,7 @@ describe('Postgres observed QueueBox reservation', () => {
         });
         vi.setSystemTime(expiry.epochMilliseconds + lateMs);
         const rowsBefore = await sql`select * from resource_inbox where fk_ext_bank_id = ${entry.key.contextId}`;
-        await expect(first.releaseEntries([persisted!], { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' }))
+        await expect(first.releaseEntries([{ entry: persisted!, disposition: { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' } }]))
             .rejects.toMatchObject({ code: 'resource-inbox-lost-reservation' });
         expect(await sql`select * from resource_inbox where fk_ext_bank_id = ${entry.key.contextId}`).toEqual(rowsBefore);
     });
@@ -51,7 +51,10 @@ describe('Postgres observed QueueBox reservation', () => {
         const claimed =
             [...(await first.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.NEW]), reservationInput: 1 })).values()][0];
         const snapshot = JSON.stringify(claimed);
-        const waiting = [...(await first.releaseEntries([claimed], { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' })).values()][0];
+        const waiting =
+            [...(await first.releaseEntries([{ entry: claimed, disposition: { status: EntityStatus.RETRY, delayMs: 60_000, reason: 'not-ready' } }])).values()][
+                0
+            ];
         expect(waiting.dequeueAudit.attempts).toBe(0);
         expect(waiting.dequeueAudit.nextTs!.epochMilliseconds - waiting.dequeueAudit.endTs!.epochMilliseconds).toBe(60_000);
         expect(waiting.audit).toEqual(claimed.audit);
@@ -61,9 +64,10 @@ describe('Postgres observed QueueBox reservation', () => {
         expect(await second.reserveEntries({ typeIds: new Set([entry.typeId]), statusIds: new Set([EntityStatus.RETRY]), reservationInput: 1 })).toEqual(
             new Map()
         );
-        await expect(first.releaseEntries([claimed], { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' })).rejects.toMatchObject({
-            code: 'resource-inbox-lost-reservation'
-        });
+        await expect(first.releaseEntries([{ entry: claimed, disposition: { status: EntityStatus.RETRY, delayMs: 1, reason: 'not-ready' } }])).rejects
+            .toMatchObject({
+                code: 'resource-inbox-lost-reservation'
+            });
     });
     postgresIt('gives competing workers one unchanged selected message and preserves stale and waiting work', async () => {
         const { first, second, entry } = await createStorage();
@@ -94,7 +98,7 @@ describe('Postgres observed QueueBox reservation', () => {
         expect(claimed).toMatchObject([{ key: entry.key, status: EntityStatus.RESERVED, dequeueAudit: { attempts: 1 } }]);
         expect(await second.getItem(stale.key)).toMatchObject({ resource: 'replacement', dequeueAudit: { attempts: 0 } });
         expect(await second.getItem(waiting.key)).toMatchObject({ status: EntityStatus.NEW, dequeueAudit: { attempts: 0 } });
-        await first.releaseEntries(claimed, { status: EntityStatus.NON_RETRYABLE, delayMs: null });
+        await first.releaseEntries(claimed.map((entry) => ({ entry, disposition: { status: EntityStatus.NON_RETRYABLE, delayMs: null } })));
         expect(
             await second.reserveEntries({
                 typeIds: new Set([entry.typeId]),

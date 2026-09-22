@@ -242,7 +242,7 @@ export async function releaseOutboundTestWork<TPrepared>(
     outcome: ALWorkOutcome
 ): Promise<void> {
     const port = createOutboundWorkPort(stores.workQueue, stores.admissionStore.namespace);
-    await port.release({ entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: Date.now() }, outcome);
+    await port.releaseAll([{ claim: { entry, attempts: entry.dequeueAudit.attempts, leaseUntilMs: Date.now() }, outcome: outcome }]);
 }
 
 export async function waitUntil(predicate: () => boolean): Promise<void> {

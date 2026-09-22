@@ -334,7 +334,7 @@ Deno.test(
                     ...args: Parameters<PSqlQueueBox['releaseEntries']>
                 ): ReturnType<PSqlQueueBox['releaseEntries']> {
                     const released = await super.releaseEntries(...args);
-                    if (args[1].status === EntityStatus.RETRY) {
+                    if (args[0].some((release) => release.disposition.status === EntityStatus.RETRY)) {
                         retryReleaseCount += 1;
                     }
                     return released;
