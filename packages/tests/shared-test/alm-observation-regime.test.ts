@@ -316,8 +316,7 @@ describe('computeALMObservationRegime', () => {
             {
                 role: 'sender',
                 outcome: 'measured',
-                pendingSharePercent: 50,
-                outcomeCount: 2,
+                pendingShare: { outcome: 'measured', pendingSharePercent: 50, outcomeCount: 2 },
                 phases: {
                     selectionMedianMs: 15,
                     claimMedianMs: 10,
@@ -331,8 +330,7 @@ describe('computeALMObservationRegime', () => {
             {
                 role: 'receiver',
                 outcome: 'measured',
-                pendingSharePercent: 75,
-                outcomeCount: 4,
+                pendingShare: { outcome: 'measured', pendingSharePercent: 75, outcomeCount: 4 },
                 phases: {
                     selectionMedianMs: 35,
                     claimMedianMs: 30,
@@ -357,8 +355,7 @@ describe('computeALMObservationRegime', () => {
             {
                 role: 'sender',
                 outcome: 'measured',
-                pendingSharePercent: 100,
-                outcomeCount: 1,
+                pendingShare: { outcome: 'measured', pendingSharePercent: 100, outcomeCount: 1 },
                 phases: {
                     selectionMedianMs: 0,
                     claimMedianMs: 0,
@@ -367,6 +364,39 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 0,
                     drainMedianMs: 0,
                     drainCount: 0
+                }
+            },
+            { role: 'receiver', outcome: 'no-events' },
+            { role: 'unattributed', outcome: 'no-events' }
+        ]);
+    });
+
+    it('reports pending share as unmeasured when a role has drains but no admission outcomes', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundDrainEvent(1_000, SENDER_AGENT_ID, {
+                durationMs: 100,
+                selectionDurationMs: 10,
+                claimDurationMs: 5,
+                runDurationMs: 50,
+                releaseDurationMs: 8,
+                queueWaitMs: 3
+            })
+        ]);
+
+        expect(regime.inbound).toEqual([
+            {
+                role: 'sender',
+                outcome: 'measured',
+                pendingShare: { outcome: 'unmeasured' },
+                phases: {
+                    selectionMedianMs: 10,
+                    claimMedianMs: 5,
+                    runMedianMs: 50,
+                    releaseMedianMs: 8,
+                    queueWaitMedianMs: 3,
+                    drainMedianMs: 100,
+                    drainCount: 1
                 }
             },
             { role: 'receiver', outcome: 'no-events' },

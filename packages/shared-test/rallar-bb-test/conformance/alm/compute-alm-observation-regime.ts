@@ -53,12 +53,16 @@ export interface ALMObservationInboundPhases {
     readonly drainCount: number;
 }
 
+/** A `pendingSharePercent` over zero `admission-outcome` events is not a measurement. */
+export type ALMObservationInboundPendingShare =
+    | Readonly<{ outcome: 'measured'; pendingSharePercent: number; outcomeCount: number; }>
+    | Readonly<{ outcome: 'unmeasured'; }>;
+
 export type ALMObservationInboundDirection =
     | Readonly<{
         role: ALMObservationAgentRole;
         outcome: 'measured';
-        pendingSharePercent: number;
-        outcomeCount: number;
+        pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
@@ -246,7 +250,6 @@ function computeWorkPageRate(
     };
 }
 
-/** Zero for an empty series rather than `NaN`, so a role with outcomes but no drains still reports. */
 /**
  * `[]` when the whole snapshot carries no inbound event at all, so a cell that never enabled the
  * inbound sink leaves no placeholder rows. Otherwise every one of the three roles is reported, in a
@@ -270,16 +273,27 @@ function toInboundDirection(
     outcomes: readonly ALMObservationInboundOutcome[],
     drains: readonly ALMObservationInboundDrain[]
 ): ALMObservationInboundDirection {
-    if (outcomes.length === 0 && drains.length === 0) {
-        return { role, outcome: 'no-events' };
+    return outcomes.length === 0 && drains.length === 0
+        ? { role, outcome: 'no-events' }
+        : {
+            role,
+            outcome: 'measured',
+            pendingShare: computeInboundPendingShare(outcomes),
+            phases: computeInboundPhases(drains)
+        };
+}
+
+function computeInboundPendingShare(
+    outcomes: readonly ALMObservationInboundOutcome[]
+): ALMObservationInboundPendingShare {
+    if (outcomes.length === 0) {
+        return { outcome: 'unmeasured' };
     }
     const pendingCount = outcomes.filter((outcome) => outcome.outcome === PENDING_INBOUND_OUTCOME).length;
     return {
-        role,
         outcome: 'measured',
-        pendingSharePercent: outcomes.length === 0 ? 0 : toTwoDecimals(100 * pendingCount / outcomes.length),
-        outcomeCount: outcomes.length,
-        phases: computeInboundPhases(drains)
+        pendingSharePercent: toTwoDecimals(100 * pendingCount / outcomes.length),
+        outcomeCount: outcomes.length
     };
 }
 
@@ -295,6 +309,7 @@ function computeInboundPhases(drains: readonly ALMObservationInboundDrain[]): AL
     };
 }
 
+/** Zero for an empty series rather than `NaN`, so a role with outcomes but no drains still reports. */
 function computeMedian(values: readonly number[]): number {
     if (values.length === 0) {
         return 0;
