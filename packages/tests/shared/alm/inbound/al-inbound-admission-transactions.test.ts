@@ -24,12 +24,14 @@ import {
 } from '../create-inbound-test-dispatch.ts';
 import {
     createInboundTestAdmission,
+    createInboundTestBackendStores,
     createInboundTestMessage,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
     planInboundTestMessage,
     readInboundTestAdmission,
     readInboundTestDecisionSurface,
+    setNextAdmissionWritePhaseInterleaved,
     setNextInboundCommitConflicted
 } from '../inbound-runtime-test-fixture.ts';
 import { recordIndexedDbTransactions } from '../record-indexed-db-transactions.ts';
@@ -310,6 +312,32 @@ it('commits one bundle with one fence snapshot and one write, neither queued beh
     // Each one starts on an unlocked store: the fence snapshot is closed before the conditional
     // write is created, so the readwrite never queues behind an idle readonly.
     expect(recorded.liveWhenOpened()).toEqual([0, 0]);
+});
+
+it.fails('commits two disjoint admissions interleaved across one fence', async () => {
+    const { backend, stores } = createInboundTestBackendStores({
+        namespace: TRANSACTION_NAMESPACE,
+        storage: 'indexeddb',
+        observer: createPassThroughIndexedDbOperationObserver()
+    });
+    await stores.admissionStore.ready();
+    const fenced = await readInboundTestAdmission(
+        stores.admissionStore,
+        createInboundTestMessage({ msgId: 'fenced-admission' })
+    );
+    setNextAdmissionWritePhaseInterleaved(backend, async () => {
+        await admitIncomingMessage(
+            stores.admissionStore,
+            createInboundTestMessage({ msgId: 'interleaved-admission' })
+        );
+    });
+
+    // Today: the interleaved commit bumps AL_ADMISSION_REVISION_KEY, which the fenced write
+    // compares even though the two messages share no row. Task 1 flips this to `it`.
+    expect(
+        await stores.admissionStore.commitBundle(fenced),
+        'a commit whose read and write sets no other writer touched must not conflict'
+    ).toBe('committed');
 });
 
 it('admits one message in 1 surface, 1 fence and 1 write', async () => {

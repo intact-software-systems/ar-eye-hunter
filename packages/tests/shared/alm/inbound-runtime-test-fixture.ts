@@ -4,6 +4,7 @@ import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { computeALInboundAdmission } from '@shared/alm/inbound/admission/compute-al-inbound-admission.ts';
 import {
@@ -60,7 +61,12 @@ export interface CreateInboundTestStoresInput {
     readonly observer: IndexedDbOperationObserver;
 }
 
-export function createInboundTestStores(input: CreateInboundTestStoresInput): ALInboundRuntimeStores {
+export interface InboundTestBackendStores {
+    readonly backend: ALAdmissionWorkBackend;
+    readonly stores: ALInboundRuntimeStores;
+}
+
+export function createInboundTestBackendStores(input: CreateInboundTestStoresInput): InboundTestBackendStores {
     const backend = input.storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : new IndexedDbAdmissionBackend({
@@ -73,16 +79,23 @@ export function createInboundTestStores(input: CreateInboundTestStoresInput): AL
             observer: input.observer
         });
     return {
-        admissionStore: createALInboundAdmissionStore({
-            nowMs: Date.now,
-            namespace: input.namespace,
-            backend,
-            orderingTrackTtlMs: 60_000,
-            supersedenceTrackTtlMs: 60_000,
-            retention: normalizeALRuntimeStoreRetention()
-        }),
-        workQueue: backend.workQueue
+        backend,
+        stores: {
+            admissionStore: createALInboundAdmissionStore({
+                nowMs: Date.now,
+                namespace: input.namespace,
+                backend,
+                orderingTrackTtlMs: 60_000,
+                supersedenceTrackTtlMs: 60_000,
+                retention: normalizeALRuntimeStoreRetention()
+            }),
+            workQueue: backend.workQueue
+        }
     };
+}
+
+export function createInboundTestStores(input: CreateInboundTestStoresInput): ALInboundRuntimeStores {
+    return createInboundTestBackendStores(input).stores;
 }
 
 export interface InboundTestRuntime {
@@ -229,4 +242,24 @@ export function setNextInboundCommitConflicted(admissionStore: ALInboundAdmissio
         }
         return await commitBundle(bundle);
     });
+}
+
+/**
+ * Lands a complete second write between the next write phase's fence snapshot and its
+ * conditional write: the callback has computed its mutations and nothing has committed yet,
+ * which is the exact window a store-global revision turns into a false conflict.
+ */
+export function setNextAdmissionWritePhaseInterleaved(
+    backend: ALAdmissionWorkBackend,
+    interleave: () => Promise<void>
+): void {
+    const write = backend.write.bind(backend);
+    vi.spyOn(backend, 'write').mockImplementationOnce(
+        async (operation, executionExpiresAtMs) =>
+            await write(async (transaction) => {
+                const result = await operation(transaction);
+                await interleave();
+                return result;
+            }, executionExpiresAtMs)
+    );
 }
