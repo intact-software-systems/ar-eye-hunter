@@ -174,7 +174,7 @@ Per ruling R-F2c-4. Nothing in this task changes production code.
   `createInboundTestBackendStores(input).stores`, so the existing fixture is widened rather than
   duplicated and no caller changes.
 
-- [ ] **Step 1: Widen the fixture to hand back its backend.** Move today's
+- [x] **Step 1: Widen the fixture to hand back its backend.** Move today's
       `createInboundTestStores` body (`inbound-runtime-test-fixture.ts:63-85`) into
       `createInboundTestBackendStores`, returning `{ backend, stores }`, and leave
       `createInboundTestStores` as the one-line delegation above. Add the interleave hook beside
@@ -207,7 +207,7 @@ Per ruling R-F2c-4. Nothing in this task changes production code.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit` and
       `npx vitest run packages/tests/shared/alm/inbound`
       Expected: green; no behaviour changed yet.
-- [ ] **Step 2: The disjoint-key interleave (RED).** Add to
+- [x] **Step 2: The disjoint-key interleave (RED).** Add to
       `al-inbound-admission-transactions.test.ts`:
 
       ```ts
@@ -242,7 +242,7 @@ Per ruling R-F2c-4. Nothing in this task changes production code.
       `npx vitest run packages/tests/shared/alm/inbound/al-inbound-admission-transactions.test.ts`
       Expected: the new test reports as an expected failure (`commitBundle` returns `'conflict'`);
       every other pin in the file stays green.
-- [ ] **Step 3: The per-claim release count (RED).** Add to `al-indexeddb-operation-counts.test.ts`,
+- [x] **Step 3: The per-claim release count (RED).** Add to `al-indexeddb-operation-counts.test.ts`,
       reusing that file's `createOutboundWorkPort` (`:403-416`) and `newOutboundWorkEntry`
       (`:419-432`):
 
@@ -297,7 +297,7 @@ Per ruling R-F2c-4. Nothing in this task changes production code.
       Expected: the first test passes at 4; the second reports as an expected failure. If the
       measured figure is not 4, record the real one in both tests and in the commit message rather
       than adjusting the batch.
-- [ ] **Step 4: Re-state the pins that must survive, without weakening them.** Confirm by running
+- [x] **Step 4: Re-state the pins that must survive, without weakening them.** Confirm by running
       them, and name them in the commit message as the slice's regression set:
       `al-inbound-admission-transactions.test.ts` — `COMMITTING_CONTROL_ADMISSION` and
       `COMMITTING_ADMISSION_ATTEMPT` both `['readonly', 'readonly', 'readwrite']` (`:55-66`),
@@ -318,7 +318,7 @@ Per ruling R-F2c-4. Nothing in this task changes production code.
       Task 1 adds requests but no counted operation and no transaction.
       Commands:
       `npx vitest run packages/tests/shared/alm/inbound packages/tests/shared/alm/outbound packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`
-- [ ] **Step 5: Commit the pins.** One commit, message naming the two measured figures (a disjoint
+- [x] **Step 5: Commit the pins.** One commit, message naming the two measured figures (a disjoint
       interleave conflicts today; four completed claims cost four `work-release` operations) and the
       regression set from Step 4. The two new tests are `it.fails` at this commit so
       `npm run test:unit` stays green, and Tasks 1 and 2 flip each to `it` in the commit that earns
@@ -456,7 +456,7 @@ initial row, and every symbol that served it are deleted in this commit.
 | `IndexedDbAdmissionFencedWrite.expectedRevision`                                                                                                                | `packages/shared/alm/indexed-db-admission-backend.ts:252`                                    |
 | `BrowserALRuntimeCleanupRead.revision`, `BrowserALRuntimeCleanupComputed.revisionWrite`, `validateBrowserALRuntimeCleanupRevision`, `'revision-write-mismatch'` | `packages/shared-web/browser/al-runtime/browser-al-runtime-cleanup.ts:47-56,289-305,394-411` |
 
-- [ ] **Step 1: The row carries its revision (RED first).** Write the row-shape test before the
+- [x] **Step 1: The row carries its revision (RED first).** Write the row-shape test before the
       change: in `al-admission-backend.test.ts`, assert that a row read back after one
       `backend.write(async (tx) => tx.set('version:first', 'a'))` has `revision`
       `INDEXED_DB_ADMISSION_FIRST_REVISION`, and that a second `set` on the same key stores
@@ -467,7 +467,7 @@ initial row, and every symbol that served it are deleted in this commit.
       (`open-indexed-db-admission-database.ts:17`).
       Command: `npx vitest run packages/tests/shared/alm/al-admission-backend.test.ts`
       Expected: RED before the change (no `revision` on the row), GREEN after.
-- [ ] **Step 2: The write buffer records the fence.** In `IndexedDbAdmissionWriteBuffer`
+- [x] **Step 2: The write buffer records the fence.** In `IndexedDbAdmissionWriteBuffer`
       (`indexed-db-admission-backend.ts:265-381`) add
       `readonly #observedRows = new Map<string, IndexedDbAdmissionObservedRevision>()` and
       `readonly #observedPrefixes = new Map<string, readonly string[]>()`, and a private
@@ -489,7 +489,7 @@ initial row, and every symbol that served it are deleted in this commit.
       A key the write phase writes without reading is therefore still guarded — the buffer reads it
       once inside the fence snapshot, which costs one unobserved request and no transaction.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit`
-- [ ] **Step 3: The readwrite re-reads exactly the fence.** In
+- [x] **Step 3: The readwrite re-reads exactly the fence.** In
       `write-indexed-db-admission-mutations.ts` replace the single
       `store.get(AL_ADMISSION_REVISION_KEY)` (`:93,103,125-144`) with a fence read, keeping the
       existing callback style so nothing awaits a non-IndexedDB promise inside the transaction. Add
@@ -518,7 +518,7 @@ initial row, and every symbol that served it are deleted in this commit.
       Command: `npx vitest run packages/tests/shared/alm packages/tests/shared-web/al-runtime`
       Expected: `al-inbound-admission-transactions.test.ts`'s interleave test now returns
       `'committed'` — flip it from `it.fails` to `it` in this commit.
-- [ ] **Step 4: Re-express the expiry fence on the per-row model.** In
+- [x] **Step 4: Re-express the expiry fence on the per-row model.** In
       `indexed-db-admission-read-session.ts`, delete `readRevision` (`:137-141`) and
       `#expiredRevision` (`:66,185`); `#recordExpired` (`:179-186`) becomes synchronous in effect —
       it records only the `remove-if-write-token` removal — and `takeExpiredRows` (`:144-153`)
@@ -528,7 +528,7 @@ initial row, and every symbol that served it are deleted in this commit.
       a redundant guard and one unobserved read, not a protection. Update
       `IndexedDbAdmissionBackend.readWithin` (`:94-116`) to the narrowed contract.
       Command: `npx vitest run packages/tests/shared/alm/al-admission-backend.test.ts packages/tests/shared/alm/al-inbound-indexeddb-commit-deadline.test.ts`
-- [ ] **Step 5: Rows only from the snapshot reader, and the browser cleanup writer.** In
+- [x] **Step 5: Rows only from the snapshot reader, and the browser cleanup writer.** In
       `read-indexed-db-admission-snapshot.ts` make `readIndexedDbAdmissionSnapshot` return
       `readonly IndexedDbAdmissionStoredRow[]` (delete the `IndexedDbAdmissionSnapshot` interface and
       the second `Promise.all` leg, `:17-44`), delete the `{ kind: 'revision' }` selection arm
@@ -545,7 +545,7 @@ initial row, and every symbol that served it are deleted in this commit.
       Commands: `npx vitest run packages/tests/shared-web/al-runtime`
       `npm --workspace @ar-eye-hunter/shared-web run typecheck`
       `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
-- [ ] **Step 6: Same-key conflicts still conflict, over all three backends.** These must stay green
+- [x] **Step 6: Same-key conflicts still conflict, over all three backends.** These must stay green
       and are not weakened: `al-outbound-admission-transactions.test.ts:173-185` (a stale bundle
       conflicts inside its own write phase and closes its fence snapshot),
       `al-inbound-admission-transactions.test.ts:325-353` (`setNextInboundCommitConflicted` writes a
@@ -563,7 +563,7 @@ initial row, and every symbol that served it are deleted in this commit.
       Commands:
       `npx vitest run packages/tests/shared/alm packages/tests/shared-server/al-runtime`
       `npx vitest run packages/tests/shared/alm/outbound/al-outbound-admission-fences.test.ts`
-- [ ] **Step 7: The storage reset, once.** Extend
+- [x] **Step 7: The storage reset, once.** Extend
       `packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts:16-49`: seed the
       database at the previous schema id `'rallar-alm-2026-09-f2'` with one admission row, open at
       `AL_ADMISSION_SCHEMA_ID`, and assert one `schema-id-mismatch` event carrying
@@ -572,7 +572,7 @@ initial row, and every symbol that served it are deleted in this commit.
       the recreated store holds no `'__rallar_al_admission_revision__'` row, using the literal string
       because the constant is deleted.
       Command: `npx vitest run packages/tests/shared-web/al-runtime/browser-al-storage-reset.test.ts`
-- [ ] **Step 8: The remaining callers of the deleted symbols.** Update
+- [x] **Step 8: The remaining callers of the deleted symbols.** Update
       `al-admission-backend.test.ts:472-535` (the guarded-removal corruption case passes a fence; the
       "rejects a revision row" case is deleted, since there is no revision row — replace it with a
       row whose `revision` field is not a number, asserting `ALAdmissionCorruptionError` for that
@@ -584,7 +584,7 @@ initial row, and every symbol that served it are deleted in this commit.
       fence in place of `computeIndexedDbAdmissionRevisionWrite`). Prove no symbol survives:
       `grep -rn 'AL_ADMISSION_REVISION_KEY\|computeIndexedDbAdmissionRevisionWrite\|decodeIndexedDbAdmissionRevision\|readRevision()\|expectedRevision' packages/shared/alm packages/shared-web/browser/al-runtime packages/tests/shared/alm packages/tests/shared-web/al-runtime tests/playwright`
       Expected: no matches in the ALM and browser-AL trees.
-- [ ] **Step 9: Verify and commit.** The transaction-shape pins stay at their counts
+- [x] **Step 9: Verify and commit.** The transaction-shape pins stay at their counts
       (`['readonly', 'readonly', 'readwrite']` for a committing attempt, `liveWhenOpened()` all
       zeroes) and the operation-count pins stay at 6 + 2 for an inbound message and 10 / 15 for a
       default send.
@@ -712,7 +712,7 @@ the medium-scale gate and `npm run test:deno`.
 - Produces, `packages/shared/alm/work/al-work-handler.ts`: `ALWorkBatchDiagnostics` keeps all five
   duration fields; `releaseDurationMs` now measures the single flush. `releaseClaim` is deleted.
 
-- [ ] **Step 1: The per-entry contract, mechanically (RED at the type level).** Change
+- [x] **Step 1: The per-entry contract, mechanically (RED at the type level).** Change
       `releaseEntries` on `DequeueResourceEntryRepository` and add `ResourceInboxRelease`; then move
       the three implementations — `in-memory-queue-box.ts:217-265` (validate each entry's own
       disposition, and pass `release.disposition` into both `isIdempotentHandlerFinalizedRelease` and
@@ -725,7 +725,7 @@ the medium-scale gate and `npm run test:deno`.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit && npm run typecheck`
       Expected: RED across the 35 files listed above until each call site moves; no behaviour change
       once they have.
-- [ ] **Step 2: A mixed batch commits once (RED).** Before touching the handler, pin the contract in
+- [x] **Step 2: A mixed batch commits once (RED).** Before touching the handler, pin the contract in
       `packages/tests/shared/in-memory-queuebox.test.ts` and
       `packages/tests/shared/indexeddb-queuebox.test.ts`: reserve three entries, then release them in
       one call as `completed` (`delayMs: null`), `retry` with `delayMs: 37`, and
@@ -739,7 +739,7 @@ the medium-scale gate and `npm run test:deno`.
       Commands: `npx vitest run packages/tests/shared/in-memory-queuebox.test.ts packages/tests/shared/indexeddb-queuebox.test.ts packages/tests/shared-server/al-runtime/postgres`
       Expected: RED only where the mixed batch is new; the existing single-disposition assertions
       are rewritten, not weakened.
-- [ ] **Step 3: The port collects instead of releasing.** Replace `release` with `releaseAll` in
+- [x] **Step 3: The port collects instead of releasing.** Replace `release` with `releaseAll` in
       `createALWorkQueuePort` (`al-work-queue-port.ts:116`) and rename `releaseALWorkClaim`
       (`:150-163`) to `releaseALWorkClaims`:
 
@@ -776,7 +776,7 @@ the medium-scale gate and `npm run test:deno`.
       already released elsewhere still releases the other two, and the retry delay of an entry with
       `attempts: 2` is unchanged from the single-release path.
       Command: `npx vitest run packages/tests/shared/alm/work/al-work-queue-port.test.ts`
-- [ ] **Step 4: The handler flushes once at the batch's end.** In `al-work-handler.ts`: delete
+- [x] **Step 4: The handler flushes once at the batch's end.** In `al-work-handler.ts`: delete
       `releaseClaim` (`:392-400`); `runSelectedWork` (`:315-348`) declares
       `const releases: ALWorkRelease[] = []` and passes it to `finalizeExhaustedWork` and `runOne`,
       which push `{ claim, outcome }` instead of awaiting a release; add
@@ -806,13 +806,13 @@ the medium-scale gate and `npm run test:deno`.
       `it.fails` to `it` in this commit.
       Commands: `npx vitest run packages/tests/shared/alm/work packages/tests/shared/alm/al-indexeddb-operation-counts.test.ts`
       Expected: four completed claims now cost 1 `work-release` operation.
-- [ ] **Step 5: The owners' own suites.** Run the inbound and outbound runtimes over the new flush
+- [x] **Step 5: The owners' own suites.** Run the inbound and outbound runtimes over the new flush
       and rewrite the coupled spies in the same commit — `al-inbound-effect-worker-lifecycle.test.ts:400-407,775-778`
       and `al-inbound-queue-work.test.ts:403-404` mock `releaseEntries` with the old two-argument
       shape, `al-outbound-durable-effects.test.ts:699-706` and `al-outbound-message-runtime.test.ts:105`
       spy on it.
       Commands: `npx vitest run packages/tests/shared/alm packages/tests/shared/queue.test.ts packages/tests/shared/queuebox-readiness-deferral.test.ts packages/tests/shared/handler-finalized-rtc-topology.test.ts`
-- [ ] **Step 6: Verify and commit.** Include the AppInbox dequeuer's two call sites and the Deno
+- [x] **Step 6: Verify and commit.** Include the AppInbox dequeuer's two call sites and the Deno
       tests.
       Commands: `npm run test:unit`
       `cd apps/api-v1 && deno task check` then `npm run test:deno`
@@ -910,7 +910,7 @@ reports per.
 - Unchanged: `computePerOperationCost` (`:119-127`) and `resolveRegimeName` (`:129-139`). The regime
   stays outbound-based, read from `send`-origin `commit-phases` inside the opening window.
 
-- [ ] **Step 1: Decode the inbound topic (RED first).** Add the test before the change, in
+- [x] **Step 1: Decode the inbound topic (RED first).** Add the test before the change, in
       `alm-observation-regime.test.ts`, using that file's synthetic builders (`:44-90`): a snapshot
       carrying `ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT` outbound `commit-phases` events plus inbound
       `admission-outcome` events from both agent ids (three `pending`, one `committed` on
@@ -922,7 +922,7 @@ reports per.
       event whose kind or fields do not match is skipped, not reported — the file's existing rule
       (`:49-53`).
       Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
-- [ ] **Step 2: The `inbound` block on the regime.** Add `computeInboundDirections(snapshot)` to
+- [x] **Step 2: The `inbound` block on the regime.** Add `computeInboundDirections(snapshot)` to
       `compute-alm-observation-regime.ts`, grouping both arrays by `role` over the three role values
       in a fixed order (`sender`, `receiver`, `unattributed`), and dropping a role with no events to
       `'no-events'`. `pendingSharePercent` is `toTwoDecimals(100 * pending / outcomeCount)`; each
@@ -935,7 +935,7 @@ reports per.
       reports 75 % pending for the receiver, 50 % for the sender, and the medians the builder set.
       Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
       Expected: every pre-existing regime assertion unchanged.
-- [ ] **Step 3: Document the block.** Add an `inbound` bullet list to the regime-file section of
+- [x] **Step 3: Document the block.** Add an `inbound` bullet list to the regime-file section of
       `packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:42-64`: what each field
       answers, that the direction comes from the lane's `alm-<role>` agent ids and is `unattributed`
       for any other id, that the medians are whole-cell and the `perOperation` median is
@@ -944,7 +944,7 @@ reports per.
       acceptance figure is read from this block rather than from a session script. Leave "The budgets
       stay" and "Reading a red" untouched.
       Command: `npx dprint check packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`
-- [ ] **Step 4: Verify and commit.**
+- [x] **Step 4: Verify and commit.**
       Commands: `npx vitest run packages/tests/shared-test`
       `npx tsc -p packages/shared/tsconfig.json --noEmit`
       `npx dprint check <touched files>`
@@ -960,7 +960,7 @@ reports per.
 
 **Interfaces:** none. Documentation only, plus the local lane run.
 
-- [ ] **Step 1: The inbound map tells the truth about the fence.** In `inbound/README.md`, keep the
+- [x] **Step 1: The inbound map tells the truth about the fence.** In `inbound/README.md`, keep the
       sentence that the session never writes and that `requireOriginalObservations` re-reads the whole
       observed surface inside the write (`:87-90`) — that is still exactly what happens — and add
       what now makes the commit conditional: the backend compares the revision of every row the write
@@ -968,20 +968,20 @@ reports per.
       one of those moved, and an unrelated admission, send or ACK on another message no longer does.
       Say that the three backends are now conflict-equivalent: memory serializes writers, IndexedDB
       and PostgreSQL both compare per row.
-- [ ] **Step 2: The outbound map tells the truth about the write and the releases.** In
+- [x] **Step 2: The outbound map tells the truth about the write and the releases.** In
       `outbound/README.md`, rewrite "A stale admission revision, queue revision, or guarded removal
       rolls back the whole transaction" (`:211-213`) and "Any metadata read, list, set, or removal
       retains the metadata revision check" (`:225-227`) as the per-row fence, and add that one work
       batch releases its claims in a single queue write with a disposition per entry, that
       `releaseDurationMs` measures that one write, and that a retained claim releases on its own
       settlement, one at a time, with no coalescing window or timer.
-- [ ] **Step 3: The local lane, three carriers.** `npm run test:rallar:full-stack:memory:alm`.
+- [x] **Step 3: The local lane, three carriers.** `npm run test:rallar:full-stack:memory:alm`.
       Expected: three cells pass and each writes `test-results/alm-observation/<carrier>-smoke.json`
       with a non-empty `inbound` block carrying both roles. Record the local per-operation median, the
       inbound pending share and the release median per cell in the PR body draft. A cell whose
       `inbound` block is empty means the relay is not reaching the snapshot — diagnose that before
       pushing, because Task 5 reads the same block.
-- [ ] **Step 4: Commit.**
+- [x] **Step 4: Commit.**
       Commands: `npx dprint check packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md`
       `git commit -am 'docs(alm): per-row admission fence and batched work releases'`
 
@@ -989,9 +989,9 @@ reports per.
 
 **Files:** none in production; the lane's own artifacts and the pull request.
 
-- [ ] **Step 1: Push and let the observation job run.** The Release Gate's non-blocking
+- [x] **Step 1: Push and let the observation job run.** The Release Gate's non-blocking
       `alm-conformance-observation` job uploads `alm-conformance-lane-<sha>`. Download it.
-- [ ] **Step 2: Classify before judging.** Read `regime` in every cell's
+- [x] **Step 2: Classify before judging.** Read `regime` in every cell's
       `alm-observation/<carrier>-smoke.json`. Take the **rtc** cell's regime as the runner's verdict;
       a `normal` regime on ws or fallback is unattributed (4–13 opening-window samples). Rules, from
       `packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:66-82`: both `normal` → a
@@ -999,7 +999,7 @@ reports per.
       runner, not a verdict; either `unclassified` → no regime evidence, rerun. The thresholds
       (`ALM_OBSERVATION_NORMAL_REGIME_MAX_MS_PER_OPERATION` 30,
       `ALM_OBSERVATION_SLOW_REGIME_MIN_MS_PER_OPERATION` 35) are constants, not knobs.
-- [ ] **Step 3: The acceptance figures, from the repo-owned block.** Record per cell, from
+- [x] **Step 3: The acceptance figures, from the repo-owned block.** Record per cell, from
       `alm-observation/<carrier>-smoke.json`: `regime` and `perOperation.medianMs`; and from the new
       `inbound` block, per role, `pendingSharePercent`, `phases.releaseMedianMs`,
       `phases.runMedianMs`, `phases.drainMedianMs` and `phases.queueWaitMedianMs`. Compare against
@@ -1011,7 +1011,7 @@ reports per.
       session record in the shape of the earlier ones and route it to the maintainer rather than
       tuning a budget or a threshold. Two iterations are allowed before the maintainer is asked
       again.
-- [ ] **Step 4: The PR body.** Goal, Changes, Acceptance, Validation, Risk and rollback, Follow-up,
+- [x] **Step 4: The PR body.** Goal, Changes, Acceptance, Validation, Risk and rollback, Follow-up,
       in the F2b shape. Acceptance names the conformance scenarios, the three-backend disjoint-key
       pins, the re-stated transaction-shape and operation-count pins, and the one-`work-release`
       batch. Validation names the artifacts and the commands, with the commit each figure was
@@ -1023,12 +1023,25 @@ reports per.
       bundle) against their budgets; a crossed budget is raised to the next whole KiB with the
       measured figure recorded and reported (maintainer ruling 2026-09-05).
       `npm run pr:delivery -- status` decides the next action; `ready` and auto-merge are not used.
-- [ ] **Step 5: Branch Release Gate.** Green on the final feature-branch commit before review is
+- [x] **Step 5: Branch Release Gate.** Green on the final feature-branch commit before review is
       requested. Any change after a passing gate invalidates it.
+
+**Task 5 outcome (2026-09-22):** two hosted reads on code-identical heads. `f33dd8118` (run 35756050199,
+smoke): WS passed, normal, 29.78 ms/op; RTC failed, unclassified, 33.56; fallback failed, unclassified,
+30.22 — both at the S1 `delivery-lifecycle` `receive-replacement` wait. `f870feaf4` (run 35757310189,
+the rerun): WS failed, unclassified, 33.44; RTC failed, normal, 20.78 (`receive-submission`); fallback
+failed, normal, 29.22 (`receive-replacement`) — every failure is the S1 lifecycle intermittent recorded
+on #570, not an F2c scenario. The inbound block, sender / receiver, across both reads: pending share
+5.88–6.25 % / 7.14–10.71 % (16–30 outcomes); release medians 525–764 / 574–908 ms; drain medians
+4.1–9.0 / 3.8–7.7 s. Against F2b's slow-regime baseline (pending 63–77 %, release 2.3–4.0 s, drains
+5.1–14.1 s) at 30–34 ms/op there, the pending share fell about sevenfold and the release phase three to
+five times; in the normal-regime cells the figures hold. The regime rule: the RTC and fallback reds on
+`f870feaf4` are normal-regime reds in S1's scenarios with the same signature as before F2c, so they are
+not attributed to this slice; the WS red is unclassified (no regime evidence). No budget changed.
 
 ### Task 6: Final gates
 
-- [ ] **Step 1: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
+- [x] **Step 1: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       `cd apps/api-v1 && deno task check`, and the same for `apps/rallar-black-box-control-server`
       and `apps/relic-hunter-server-v1`; `npm run test:deno`; `npx dprint check`;
       `npm run check:repo-style:changed -- origin/main HEAD`;
@@ -1039,17 +1052,27 @@ reports per.
       `npm run test:deno` is not optional here: Task 2 moves `PSqlQueueBox.releaseEntries`, and five
       Deno test files under `apps/api-v1/test/db/` type against its signature, which
       `deno task check` (src only) does not read.
-- [ ] **Step 2: Postgres lanes.** `npm run db:test:up`, then
+- [x] **Step 2: Postgres lanes.** `npm run db:test:up`, then
       `npm run test:api-v1:black-box:postgres:medium-scale` and
       `npm run test:integration:postgres`. The medium-scale gate **is** required for this slice:
       Task 2 changes `releaseEntries` on the PostgreSQL queue and both release call sites of the
       AppInbox dequeuer (`create-default-resource-inbox-dequeuer.ts:293-302,363`), which is an
       authoritative mutation path. Task 1 alone would not have required it — it changes only the
       browser IndexedDB backend. Never weaken the gate's constants, operation matrix or assertions.
-- [ ] **Step 3: Report.** Name every command that passed, failed, or was skipped, with the head it
+- [x] **Step 3: Report.** Name every command that passed, failed, or was skipped, with the head it
       ran on, in the PR body's Validation section.
 
 ---
+
+**Task 6 outcome (2026-09-22, `f870feaf4`):** passed — `npx dprint check` (whole tree), `npm run typecheck`,
+`check:repo-style:changed -- origin/main HEAD`, `check-tests-typecheck`, the coupling check,
+`check:browser-bundles`, the three `deno task check`, `npm run build`, `npm run test:deno`, `npm run test:e2e`
+(40 + 210), `npm run test:full-stack:memory` (7), the ALM smoke lane (3 passed, normal). `npm run test:ci` as
+one process stopped twice in the unit leg on the untouched `rtc-observation-publication-shell.test.ts`
+(13.7 s against the 5 s default; 4 passed three times in isolation at ~4 s), so its legs are reported
+separately; that borderline test is flagged as its own follow-up. The API v1 Medium-Scale, Formation and
+Topology Replay gates were green on the queue-contract head `9d0ea0435`; the Branch Release Gate result on
+the final commit is recorded on the pull request.
 
 ## Not in this slice
 
