@@ -2,9 +2,20 @@ import { Temporal } from '@js-temporal/polyfill';
 import { createALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import type { ALWorkClaim } from '@shared/alm/work/al-work-queue-port.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { IndexedDbQueueWriteConflictError } from '@shared/queuebox/indexed-db-queue-write-conflict-error.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import {
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
 import { newWorkEntry } from './al-work-test-entries.ts';
+
+afterEach(() => {
+    vi.restoreAllMocks();
+});
 
 describe('ALWorkQueuePort', () => {
     it('claims new work, decides retry once, and refunds a not-ready release', async () => {
@@ -115,6 +126,51 @@ describe('ALWorkQueuePort', () => {
         expect((await port.readEntry(claims[0].entry.key))?.status).toBe(EntityStatus.COMPLETED);
         expect((await port.readEntry(claims[2].entry.key))?.status).toBe(EntityStatus.COMPLETED);
         expect((await port.readEntry(lost.entry.key))?.status).toBe(EntityStatus.FAILED);
+    });
+
+    it('degrades a write-conflicting batch to serial releases and surfaces only that conflict', async () => {
+        const now = 10_000;
+        const queue = new InMemoryQueueBox(
+            undefined,
+            () => Temporal.Instant.fromEpochMilliseconds(now)
+        );
+        const port = createALWorkQueuePort({
+            queue,
+            workTypes: new Set(['AL_TEST']),
+            leaseMs: 5_000,
+            nowMs: () => now,
+            random: () => 0.5
+        });
+        for (const effectId of ['conflict-first', 'conflict-middle', 'conflict-last']) {
+            await port.retainIfAbsent(newWorkEntry('AL_TEST', effectId));
+        }
+        const claims = byEffectId(await port.claim({ maxCount: 3, observedEntries: undefined }));
+        const releaseEntries = queue.releaseEntries.bind(queue);
+        const conflict = new IndexedDbQueueWriteConflictError('Queue row changed under the release');
+        // The middle row's conditional write loses, which fails the batched attempt as a whole and
+        // then fails again on its own serial attempt.
+        vi.spyOn(queue, 'releaseEntries').mockImplementation(async (releases) => {
+            if (
+                releases.length > 1 ||
+                releases.some((release) => release.entry.key.contextId === 'conflict-middle')
+            ) {
+                throw conflict;
+            }
+            return await releaseEntries(releases);
+        });
+
+        await expect(port.releaseAll([
+            { claim: claims.get('conflict-first')!, outcome: { status: 'completed' } },
+            { claim: claims.get('conflict-middle')!, outcome: { status: 'completed' } },
+            { claim: claims.get('conflict-last')!, outcome: { status: 'completed' } }
+        ])).rejects.toBe(conflict);
+
+        expect((await port.readEntry(claims.get('conflict-first')!.entry.key))?.status)
+            .toBe(EntityStatus.COMPLETED);
+        expect((await port.readEntry(claims.get('conflict-last')!.entry.key))?.status)
+            .toBe(EntityStatus.COMPLETED);
+        expect((await port.readEntry(claims.get('conflict-middle')!.entry.key))?.status)
+            .toBe(EntityStatus.RESERVED);
     });
 
     it('computes a batched retry delay per claim, exactly as a one-claim batch does', async () => {

@@ -458,7 +458,7 @@ describe('ALWorkHandler', () => {
     });
 
     it('flushes one batch of mixed outcomes in a single releaseAll, in claim order', async () => {
-        const flushes: readonly ALWorkRelease[][] = [];
+        const flushes: ALWorkRelease[][] = [];
         const port = recordingPort(['flush-1', 'flush-2', 'flush-3'], flushes);
         const handler = new ALWorkHandler({
             workerId: 'flush-worker',
@@ -492,7 +492,7 @@ describe('ALWorkHandler', () => {
     });
 
     it('flushes the claim a disposed batch already ran before it abandons the rest', async () => {
-        const flushes: readonly ALWorkRelease[][] = [];
+        const flushes: ALWorkRelease[][] = [];
         const port = recordingPort(['abort-1', 'abort-2'], flushes);
         let handler: ALWorkHandler | undefined;
         handler = new ALWorkHandler({
@@ -517,6 +517,40 @@ describe('ALWorkHandler', () => {
         // The second claim is never run, and the first is not stranded reserved by the disposal.
         expect(flushes).toHaveLength(1);
         expect(flushes[0]!.map((release) => release.claim.entry.key.contextId)).toEqual(['abort-1']);
+    });
+
+    it('flushes a collected exhaustion finalization even when the selection throws', async () => {
+        const flushes: ALWorkRelease[][] = [];
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const port: ALWorkQueuePort = {
+            ...recordingPort([], flushes),
+            finalizeExhausted: async () => [toFakeALWorkClaim('stranded-finalization')]
+        };
+        const handler = new ALWorkHandler({
+            workerId: 'stranded-worker',
+            port,
+            queueEngine: createEngine(),
+            ownsQueueEngine: false,
+            clock: { nowMs: () => 1_000 },
+            pageSize: 16,
+            readinessMemoryMs: AL_WORK_READINESS_MEMORY_MS,
+            readNextReadyAtMs: async () => undefined,
+            selectReady: async () => {
+                throw new Error('selection storage unavailable');
+            },
+            runClaim: async () => ({ status: 'completed' }),
+            diagnostics: undefined
+        });
+
+        await handler.ready();
+
+        // The sweep already reserved the row, so a thrown selection must not leave it waiting for
+        // its lease to expire.
+        expect(flushes.map((flush) => flush.map((release) => release.claim.entry.key.contextId)))
+            .toEqual([['stranded-finalization']]);
+        expect(consoleErrorSpy).toHaveBeenCalledWith('ALM work batch failed', expect.any(Error));
+        consoleErrorSpy.mockRestore();
+        handler.dispose();
     });
 
     it('selects no work once dispose() lands while the exhausted-work finalization is in flight', async () => {
@@ -1136,12 +1170,12 @@ function fakePort(input: FakeALWorkPortInput): ALWorkQueuePort {
 }
 
 /** A port whose every flush is kept whole, so a pin can count the batches and read their order. */
-function recordingPort(claims: readonly string[], flushes: readonly ALWorkRelease[][]): ALWorkQueuePort {
+function recordingPort(claims: readonly string[], flushes: ALWorkRelease[][]): ALWorkQueuePort {
     return {
         ...fakePort({ claims, onRelease: () => {} }),
         releaseAll: async (releases) => {
             if (releases.length > 0) {
-                (flushes as ALWorkRelease[][]).push([...releases]);
+                flushes.push([...releases]);
             }
         }
     };

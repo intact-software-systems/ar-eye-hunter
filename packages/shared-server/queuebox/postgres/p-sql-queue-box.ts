@@ -3,7 +3,7 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 import {
     computeResourceInboxRelease,
-    validateResourceInboxReleaseDisposition
+    toValidatedResourceInboxReleases
 } from '@shared/queuebox/compute-resource-inbox-release.ts';
 import {
     isIdempotentHandlerFinalizedRelease,
@@ -397,19 +397,11 @@ function toPSqlQueueReleaseCandidates(
     releases: readonly ResourceInboxRelease[],
     releasedAt: Temporal.Instant
 ): readonly PSqlQueueReleaseCandidate[] {
-    return releases.map((release) => {
-        const disposition = validateResourceInboxReleaseDisposition(release.disposition).fold(
-            (error) => {
-                throw error;
-            },
-            (value) => value
-        );
-        return {
-            disposition,
-            replacement: computeResourceInboxObservedReplacement(
-                release.entry,
-                computeResourceInboxRelease(release.entry, disposition, releasedAt)
-            )
-        };
-    });
+    return toValidatedResourceInboxReleases(releases).map((release) => ({
+        disposition: release.disposition,
+        replacement: computeResourceInboxObservedReplacement(
+            release.entry,
+            computeResourceInboxRelease(release.entry, release.disposition, releasedAt)
+        )
+    }));
 }

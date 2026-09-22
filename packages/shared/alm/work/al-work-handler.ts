@@ -313,7 +313,7 @@ export class ALWorkHandler {
     }
 
     private async runSelectedWork(): Promise<ALWorkBatchProgress> {
-        const { port, pageSize, selectReady, clock, workerId, queueEngine } = this.dependencies;
+        const { clock, workerId, queueEngine } = this.dependencies;
         const startedAtMs = clock.nowMs();
         const progress: ALWorkBatchProgress = {
             claimedCount: 0,
@@ -324,26 +324,47 @@ export class ALWorkHandler {
             releaseDurationMs: 0
         };
         const releases: ALWorkRelease[] = [...await this.finalizeExhaustedWork(progress)];
-        if (this.shutdown.signal.aborted) {
+        let selection: ALWorkReadySelection | undefined;
+        try {
+            if (!this.shutdown.signal.aborted) {
+                selection = await this.runClaimedWork(releases, startedAtMs, progress);
+            }
+        }
+        finally {
+            // The sweep's finalizations are reserved rows already: a selection or a claim that
+            // throws must not leave them waiting for their leases to expire.
             await this.flushReleases(releases, progress);
+        }
+        if (selection === undefined) {
             return progress;
         }
+        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
+        this.reportBatch(selection, startedAtMs, progress);
+        return progress;
+    }
+
+    /**
+     * The selection this batch claimed from, or nothing once disposal ended the batch mid-claim,
+     * which leaves the wake and the diagnostics to whichever batch resumes.
+     */
+    private async runClaimedWork(
+        releases: ALWorkRelease[],
+        batchStartedAtMs: number,
+        progress: ALWorkBatchProgress
+    ): Promise<ALWorkReadySelection | undefined> {
+        const { port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
         progress.claimedCount = selection.claims.length;
         for (const claim of selection.claims) {
             if (this.shutdown.signal.aborted) {
-                await this.flushReleases(releases, progress);
-                return progress;
+                return undefined;
             }
-            const release = await this.runOne(claim, startedAtMs, progress);
+            const release = await this.runOne(claim, batchStartedAtMs, progress);
             if (release !== undefined) {
                 releases.push(release);
             }
         }
-        await this.flushReleases(releases, progress);
-        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
-        this.reportBatch(selection, startedAtMs, progress);
-        return progress;
+        return selection;
     }
 
     private reportBatch(

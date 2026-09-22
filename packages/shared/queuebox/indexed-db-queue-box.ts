@@ -7,7 +7,7 @@ import type { PersistenceSetItemOptions } from '../persistence/PersistenceProvid
 import { RateLimiter } from '../resilience/Resilience.ts';
 import { computeIndexedDbFairnessReservation } from './compute-indexed-db-fairness-reservation.ts';
 import { computeIndexedDbQueueRelease } from './compute-indexed-db-queue-release.ts';
-import { validateResourceInboxReleaseDisposition } from './compute-resource-inbox-release.ts';
+import { toValidatedResourceInboxReleases } from './compute-resource-inbox-release.ts';
 import {
     decodeStoredResourceEntry,
     decodeStoredResourceEntryValue,
@@ -305,15 +305,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async releaseEntries(releases: readonly ResourceInboxRelease[]): Promise<Map<Key, ResourceEntry>> {
         this.#observer.observe({ owner: 'al-work', kind: 'work-release' });
-        const validated = releases.map((release) => ({
-            entry: release.entry,
-            disposition: validateResourceInboxReleaseDisposition(release.disposition).fold(
-                (error) => {
-                    throw error;
-                },
-                (value) => value
-            )
-        }));
+        const validated = toValidatedResourceInboxReleases(releases);
         if (validated.length === 0) {
             return new Map<Key, ResourceEntry>();
         }

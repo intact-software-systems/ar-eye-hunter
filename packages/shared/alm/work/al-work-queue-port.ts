@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { IndexedDbQueueWriteConflictError } from '../../queuebox/indexed-db-queue-write-conflict-error.ts';
 import { ResourceInboxLostReservationError } from '../../queuebox/queue-box-types.ts';
 import type {
     QueueBoxResourceEntryRepository,
@@ -14,6 +15,7 @@ import {
     type ResourceEntry
 } from '../../queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '../../queuebox/ResourceInboxRetryPolicy.ts';
+import { toError } from '../../resilience/to-error.ts';
 
 export type ALWorkOutcome =
     | Readonly<{ status: 'completed'; }>
@@ -171,6 +173,10 @@ function toALWorkClaim(entry: ResourceEntry, leaseMs: number): ALWorkClaim {
  * A batch whose one reservation was recovered elsewhere must not strand the releases beside it: the
  * queue validates the whole batch before it writes, so the lost key leaves the batch and the rest is
  * written. Each pass removes at least one release, so this terminates.
+ *
+ * A conditional write that loses under contention is different: the queue has already rejected the
+ * batch as a whole and cannot say which row lost from the error alone, so the batch degrades once to
+ * the one-at-a-time path it replaced.
  */
 async function releaseALWorkClaims(
     queue: QueueBoxResourceEntryRepository,
@@ -183,11 +189,41 @@ async function releaseALWorkClaims(
             return;
         }
         catch (error) {
+            if (error instanceof IndexedDbQueueWriteConflictError) {
+                await releaseALWorkClaimsSerially(queue, remaining);
+                return;
+            }
             if (!(error instanceof ResourceInboxLostReservationError)) {
                 throw error;
             }
             remaining = remaining.filter((release) => !isKeysEqual(release.entry.key, error.key));
         }
+    }
+}
+
+/**
+ * One conflicting row must not discard the releases beside it. Every release is written on its own,
+ * in order, so each one that can land lands; the first rejection the batched attempt hid is then
+ * raised, exactly as a single-claim release would have raised it. One pass only -- a conflict that
+ * survives it belongs to the next batch, after the lease recovery the caller already relies on.
+ */
+async function releaseALWorkClaimsSerially(
+    queue: QueueBoxResourceEntryRepository,
+    releases: readonly ResourceInboxRelease[]
+): Promise<void> {
+    let raised: Error | undefined;
+    for (const release of releases) {
+        try {
+            await queue.releaseEntries([release]);
+        }
+        catch (error) {
+            if (!(error instanceof ResourceInboxLostReservationError)) {
+                raised ??= toError(error);
+            }
+        }
+    }
+    if (raised !== undefined) {
+        throw raised;
     }
 }
 
