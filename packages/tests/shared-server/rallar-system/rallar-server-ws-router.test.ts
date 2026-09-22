@@ -772,7 +772,7 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(qboxEngine.wakeRequested).toBe(true);
     });
 
-    it('maps a deferred admission verdict to queued-outbox status', async () => {
+    it('maps a deferred admission verdict to skipped status', async () => {
         const { server, socket, service, qboxEngine } = createPublicRouterFixture();
         const message = newALBroadcastMessage(
             'server-1',
@@ -800,7 +800,7 @@ describe('RallarServer.ws.publish current behavior', () => {
 
         const result = await server.ws.publish(message, 'outbox');
 
-        expect(result).toMatchObject({ fanout: 'outbox', status: 'queued-outbox', verdict });
+        expect(result).toMatchObject({ fanout: 'outbox', status: 'skipped', verdict });
         expect(socket.sent).toHaveLength(0);
         expect(qboxEngine.wakeRequested).toBe(false);
     });

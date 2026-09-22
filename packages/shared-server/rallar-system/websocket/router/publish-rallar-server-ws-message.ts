@@ -129,7 +129,6 @@ function toOutboxPublishStatus(
     switch (verdict.kind) {
         case 'admitted':
         case 'pending':
-        case 'deferred':
             return 'queued-outbox';
         case 'duplicate':
             return 'duplicate';
@@ -137,6 +136,9 @@ function toOutboxPublishStatus(
             return verdict.reason === 'unauthorized' ? 'skipped' : 'failed';
         case 'unroutable':
             return verdict.reason;
+        // An enqueue-time deferred writes no outbox row, so it reports the same status as skipped.
+        case 'deferred':
+            return 'skipped';
         case 'superseded':
         case 'expired':
         case 'skipped':

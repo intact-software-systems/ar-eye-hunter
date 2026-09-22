@@ -174,6 +174,7 @@ function writeHeartbeatGroupSnapshots(
                 applicationId: acquired.group.applicationId,
                 workspaceId: acquired.group.workspaceId
             },
+            // No-op: the heartbeat writes above are already unconditional for the live session.
             assertCanMutate() {}
         });
     }

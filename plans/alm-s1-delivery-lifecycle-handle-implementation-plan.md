@@ -1274,7 +1274,8 @@ scenario/orchestration integration retains the following acceptance steps:
   named where it is used; `RallarRtcSignalAdmission.status: string` becomes `verdict`.
 
 - [x] **Step 1: Failing tests.** Re-type the listed suites onto verdicts; add a case per exhaustive
-      switch that a `deferred` verdict is retryable for signaling and `queued-outbox` for the router.
+      switch that a `deferred` verdict is retryable for signaling and `skipped` for the router (an
+      enqueue-time `deferred` writes no row).
       Command: the listed suites.
       Expected: FAIL until Step 2.
 - [x] **Step 2: Delete the union** and every derivation; re-type the two switches and the three

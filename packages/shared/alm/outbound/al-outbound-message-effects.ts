@@ -302,9 +302,9 @@ interface ComputeALOutboundRetainedAdmissionSkipInput {
 }
 
 /**
- * A dequeue that produced nothing to hand on completes the row and skips `afterDequeueAdmission`.
- * Deferred and an unauthorized refusal are discards: publishing them would deliver a message the
- * planner already dropped.
+ * Skips `afterDequeueAdmission` for `expired`, `superseded`, `skipped`, `deferred`, and a `refused`
+ * `unauthorized` verdict — the set the deleted status converter mapped to `skipped`. Publishing any
+ * of them would deliver a message the planner already dropped.
  */
 function isDiscardedDequeuedAdmission(verdict: ALDeliveryAdmissionVerdict): boolean {
     return verdict.kind === 'expired' ||
