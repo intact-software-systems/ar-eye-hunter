@@ -186,6 +186,58 @@ describe('ALInboundWorkSelector claim order', () => {
         }
     );
 
+    it(
+        'pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running',
+        async () => {
+            let releaseHeld: (() => void) | undefined;
+            const held = new Promise<void>((resolve) => {
+                releaseHeld = resolve;
+            });
+            let signalHeldEntered: (() => void) | undefined;
+            const heldEntered = new Promise<void>((resolve) => {
+                signalHeldEntered = resolve;
+            });
+            const dispatchedIds: string[] = [];
+            const fixture = createInboundTestRuntime({
+                stores: createInboundTestStores({
+                    namespace: 'ingress-wake',
+                    storage: 'memory',
+                    observer: createPassThroughIndexedDbOperationObserver()
+                }),
+                effectWorkerId: 'al-inbound:ingress-wake',
+                gateDispatch: async (msg) => {
+                    dispatchedIds.push(msg.id.msgId);
+                    if (msg.id.msgId !== 'held') {
+                        return;
+                    }
+                    signalHeldEntered?.();
+                    await held;
+                }
+            });
+            const wake = vi.spyOn(fixture.queueEngine, 'wake');
+            await fixture.runtime.ready();
+            wake.mockClear();
+
+            // The commit starts a batch through `ALWorkHandler.committed()` alone: the engine is
+            // never started or driven by this test, so nothing here can claim `held`'s row except
+            // that same batch.
+            await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'held' }), INBOUND_TEST_SOURCE);
+            await heldEntered;
+            expect(wake).toHaveBeenCalledTimes(1);
+
+            // A second commit lands while the batch above is still running the first claim's
+            // dispatch. R-S2a-6: its own admission still reaches the same wake, even though the
+            // batch cannot claim the new row until its follow-up round.
+            await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'second' }), INBOUND_TEST_SOURCE);
+            expect(wake).toHaveBeenCalledTimes(2);
+
+            releaseHeld?.();
+            // No `start()` and no `executeOnce()` run in this test: `second` can only be dispatched by
+            // the follow-up batch `runBatch()`'s own `finally` schedules at the first batch's end.
+            await expect.poll(() => dispatchedIds).toEqual(['held', 'second']);
+        }
+    );
+
     it('ranks page deliveries first, then admission replays and undecoded rows, then control sends', () => {
         const claims = [
             createTestClaim('forward-message'),

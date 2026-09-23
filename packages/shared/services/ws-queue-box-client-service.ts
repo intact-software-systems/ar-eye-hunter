@@ -464,6 +464,19 @@ export class WsQueueBoxClientService {
         return await this.outboundRuntime.enqueueIfAbsent(message);
     }
 
+    /**
+     * One message straight to an open socket: no admission, work row or retry. Only for latest-value
+     * telemetry a newer message replaces, so a dropped send costs nothing worth recovering.
+     */
+    sendLive(message: ALMessage): 'sent' | 'socket-closed' {
+        if (!this.isSocketOpen()) {
+            return 'socket-closed';
+        }
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE);
+        this.socket.sendAsJsonString(entry.resource);
+        return 'sent';
+    }
+
     private hasInboxConsumer(message: ALMessage): boolean {
         return this.onInboxMessageCallbacks.has(message.payload.typeId) ||
             this.onInboxMessageCallbacks.has(WsQueueBoxClientService.ALL_IN) ||

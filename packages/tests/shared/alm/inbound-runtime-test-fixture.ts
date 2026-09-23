@@ -2,6 +2,7 @@ import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import {
     planALMessageHandling,
     type ALMessageHandlingPlan,
@@ -126,6 +127,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly dispatchOutcome?: 'completed' | 'retry';
     /** Absent leaves a retained admission's replay authorized by the source it captured. */
     readonly readPendingAdmissionAuthority?: ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority'];
+    /** Absent settles every dispatch immediately; a message this awaits holds that claim's batch open until it resolves. */
+    readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -147,7 +150,8 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         },
         canDispatchMessage: input.canDispatchMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
-        dispatchInboxEntry: async () => {
+        dispatchInboxEntry: async (entry) => {
+            await input.gateDispatch?.(decodePersistedALMessage(entry.resource));
             delivered.push('dispatched');
             sequence.push('dispatched');
             return input.dispatchOutcome;
