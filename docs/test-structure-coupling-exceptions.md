@@ -125,6 +125,21 @@ moved or changed test.
       }
     },
     {
+      "id": "ws-send-live-never-writes-closed-socket",
+      "domain": "WS queue box live sends",
+      "owner": "Rallar shared maintainers",
+      "summary": "A live send on a socket that is no longer open answers socket-closed as a value and writes no frame to the native socket.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-client-send-live.test.ts#reports the closed socket and writes nothing",
+      "coverageRelation": "The test opens a real JsonWebSocketClient over TestWebSocket, lets the peer close it, spies on the native socket's send, and checks both the socket-closed answer and that send was never called.",
+      "interactionRequirement": {
+        "interactionKind": "absence",
+        "ownedPort": "WebSocket.send called by WsQueueBoxClientService.sendLive through JsonWebSocketClient",
+        "observableEffect": "A closed native socket receives no frame from sendLive.",
+        "requiredConstraint": "sendLive must decide socket-closed before any write, so a closed socket is never written to.",
+        "failureRationale": "The socket-closed answer alone does not exclude a write attempted before or alongside it; a write to a closed native socket throws or is silently discarded in browsers, so the absence of send is the only witness that the live path checks the socket before writing."
+      }
+    },
+    {
       "id": "alm-invalid-queue-candidate-no-transaction",
       "domain": "ALM atomic IndexedDB admission",
       "owner": "Rallar shared maintainers",
@@ -6016,6 +6031,17 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The count-of-two after a second admission lands while the first batch is still running its held claim proves that admission's own commit reaches the same wake too, even though the running batch cannot claim the new row until its own follow-up round.",
       "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running"
+    },
+    {
+      "id": "test-structure-coupling-6a5c7121c5ec0433",
+      "path": "packages/tests/shared/services/ws-queue-box-client-send-live.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "ws-send-live-never-writes-closed-socket",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The not-called assertion on the native socket's send pins a durable interaction boundary: a closed socket must never be written to. The socket-closed answer alone cannot show that no write was attempted.",
+      "semanticCoverage": "packages/tests/shared/services/ws-queue-box-client-send-live.test.ts#reports the closed socket and writes nothing"
     },
     {
       "id": "test-structure-coupling-3cf15c4dbe54dee4",
