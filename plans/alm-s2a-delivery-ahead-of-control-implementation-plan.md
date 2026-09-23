@@ -1959,7 +1959,7 @@ read and is cleared after it. The PR body reports each change and the run that c
       (`:194`), raise that one figure to the measured next multiple of ten and record it — it is a job
       ceiling, not a harness budget. Command: `npm run test:repo-governance` after the workflow edit.
       Read the full-scope artifact under the same regime rule as Step 1.
-- [ ] **Step 3: The acceptance (D31).** `delivery-lifecycle` (smoke and full) and `delivery-reload`
+- [x] **Step 3: The acceptance (D31).** `delivery-lifecycle` (smoke and full) and `delivery-reload`
       (full) green on all three carriers, in regimes that have a green baseline with the same two
       regimes. Record per cell:
 
@@ -2005,7 +2005,7 @@ read and is cleared after it. The PR body reports each change and the run that c
       if 2C landed: `npm run db:test:up` and `npm run test:api-v1:black-box:postgres:medium-scale`,
       since 2C touches the WS server service's control path; never weaken its constants, matrix or
       assertions.
-- [ ] **Step 6: Branch Release Gate** green on the final commit before review (any later change
+- [x] **Step 6: Branch Release Gate** green on the final commit before review (any later change
       invalidates it); after merge, **Run Hetzner Supported Distributed Manifests** on `main`.
 
 **Task 6 closing record (2026-09-23).** Steps 1, 2, 4 and 5 done; Step 3 (D31) **not met**; Step 6 pending on
@@ -2039,6 +2039,31 @@ the final docs commit.
   :30001 never became healthy, SIGTERM by the harness) and passed 174/174 alone.
 - The repository variable `RALLAR_BLACK_BOX_ALM_SCOPE` is cleared; the observation job is back on
   its `smoke` default.
+
+**Task 6 closing record, 2C head (2026-09-24).** After ruling R-S2a-10, Task 2C landed as 8ca0fc1fc,
+237f0b3f3, ace13dd05 and 8043b19c4 (two review rounds, final re-review clean).
+
+- Step 3 (D31): **met on 237f0b3f3** (run 35920857609) — all three cells passed, every cell
+  both-normal (ws 11.89 ms/op / 2.5 ms per probe, rtc 8.67 / 1, fallback 5.33 / 2); receiver
+  reservation 1 334 / 1 062 / 1 886 ms against 2 221 and 6 257 on f44af2799's both-normal cells;
+  the reload sender's post-reload segment 12.0 s rtc / 12.9 s fallback (was 23.5–23.9 s), the
+  original received at 15.1 / 16.1 s inside the 27 s wait; `send-control` median 484 / 454 / 473 ms
+  under R-S2a-11's caveat. The final head 8043b19c4 (the two group-throw-path fix commits on top)
+  read twice on slow runners (run 35926861709: first attempt ws 244.5 ms/probe with rtc/fallback
+  unrecorded — the reload sender's reconnect failed at RTC readiness and the cell hit Playwright's
+  300 s test timeout before its snapshot was attached, a harness observation gap; rerun: pages
+  114 / 139.5 / 281 ms/probe) — measurements, not verdicts. Two iterations are spent on the final
+  head; whether the 237f0b3f3 confirmation carries the merge, or a third read is ordered, is the
+  maintainer's.
+- Step 4: the PR body is republished with Task 2C, the reads and R-S2a-11.
+- Step 5 on 8043b19c4: dprint, typecheck, changed-style, tests-typecheck, coupling, bundles
+  (214.4 KiB < 215), three `deno task check`, governance 428/428, `test:deno` (561 / 174 / 5 / 146),
+  `test:e2e` 40 + 210, `test:full-stack:memory` 7, build — PASS; `test:unit` 12,072 passed /
+  12 skipped with one load-timing red of the untouched `inbound-admission-diagnostics.test.ts`
+  (17/17 on three reruns alone; the reviewer's concurrent run of the whole alm set passed 865/865).
+- Step 6: Branch Release Gate green on 8043b19c4 (run 35926861709, Release Gate job success;
+  the non-blocking observation job red as the measurements above). The closing docs commit
+  re-triggers it; its scope variable is cleared, so that observation runs smoke.
 
 ---
 
