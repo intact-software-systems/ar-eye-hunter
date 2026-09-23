@@ -31,6 +31,9 @@ export function validateALOutboundControlAdmission(
     }
     if (read.parsed.type === 'ack') {
         const payload = read.parsed.payload;
+        if (read.sent.reference.expiresAtMs <= read.nowMs) {
+            issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
+        }
         if (
             !read.pending || !read.pending.expectedPeerIds.includes(payload.fromPeerId) ||
             read.pending.ackedPeerIds.includes(payload.fromPeerId)

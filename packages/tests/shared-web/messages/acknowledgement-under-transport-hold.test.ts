@@ -5,6 +5,7 @@ import {
     ACK_UNDER_HOLD_CASES,
     expectAcknowledgedUnderHold,
     expectExpiredPastTheDeadline,
+    expectRefusedPastAShortDeadline,
     openRtcHoldSender,
     openWsHoldSender
 } from './acknowledgement-under-hold-fixture.ts';
@@ -34,5 +35,10 @@ describe('an acknowledgement that arrives while a transport hold drops another s
     it.each(['rtc', 'ws'] as const)('ends a %s send expired when no ACK arrives inside the message deadline', async (carrier) => {
         const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
         await expectExpiredPastTheDeadline(sender);
+    });
+
+    it.each(['rtc', 'ws'] as const)('refuses a %s ACK past a deadline that ends inside the retry schedule', async (carrier) => {
+        const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+        await expectRefusedPastAShortDeadline(sender);
     });
 });

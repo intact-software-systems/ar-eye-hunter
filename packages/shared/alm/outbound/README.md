@@ -124,11 +124,13 @@ transport action and does not confirm the logical audience.
 | `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached message (by ordering track when the hint names missing sequences), applies repair policy, and commits a fresh dispatch through dispatch admission.                                                          | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                        |
 | Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.        | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim. |
 
-The receipt an acknowledgement completes against is an obligation that lasts until the
-message's own deadline, not until its retry schedule ends: the `ack-timeout` rows expire with
-the schedule, and spending the budget stops retransmission without deleting the receipt, so an
-ACK that arrives after the last retry but inside the deadline still commits and states its
-`acknowledgement` settlement. Every carrier discards `acceptControlMessage`'s answer, so repair
+The receipt an acknowledgement completes against is an obligation that expires exactly at the
+message's deadline, however early or late its retry schedule ends. The `ack-timeout` rows expire
+when the schedule ends or at the deadline, whichever comes first, and spending the budget stops
+retransmission without deleting the receipt. So an ACK that arrives after the last retry but inside
+the deadline still commits and states its `acknowledgement` settlement, and an ACK at or after the
+deadline is refused. The receipt is gone by then, and control admission's validation refuses an
+ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
 admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
 reasons) for every control it decides.
 

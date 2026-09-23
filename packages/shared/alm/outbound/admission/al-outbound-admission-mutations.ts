@@ -16,7 +16,6 @@ import type {
     ALReplacementSupersedenceValue
 } from '../../compute-al-supersedence-observation.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
-import { toALOutboundAckRetryScheduleEndTimestamp } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundMessageOwnerKey,
     toALOutboundOrderingMessageKey,
@@ -57,7 +56,8 @@ export type ALOutboundAdmissionMutation =
     | Readonly<{
         kind: 'set-pending-ack';
         snapshot: ALOutboundPendingAckSnapshot;
-        expireAtTimestamp?: number;
+        /** The message deadline: the receipt is the obligation an acknowledgement completes against until then. */
+        expireAtTimestamp: number;
     }>
     | Readonly<{
         kind: 'delete-pending-ack';
@@ -259,8 +259,7 @@ export class ALOutboundAdmissionMutations {
             : {
                 key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
                 value: mutation.snapshot,
-                expireAtTimestamp: mutation.expireAtTimestamp ??
-                    toALOutboundAckRetryScheduleEndTimestamp(mutation.snapshot),
+                expireAtTimestamp: mutation.expireAtTimestamp,
                 supersedenceGuard: undefined
             };
     }

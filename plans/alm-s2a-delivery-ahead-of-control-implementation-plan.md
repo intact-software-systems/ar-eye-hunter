@@ -1730,27 +1730,36 @@ and 7.1 s (fallback) after that, so `validateALOutboundControlAdmission` refused
 acknowledgement sender has no pending outbound obligation`. The RTC streamer's `onControlMessage`
 discarded that verdict unlogged.
 
-The fix separates "no more retries" from "the obligation ended". The receipt row lives until the
-message's own deadline, never shorter than its retry schedule. The `ack-timeout` effect rows keep
-the schedule's end. A spent budget stops scheduling and deletes nothing. The ACK therefore finds its
-receipt and commits the normal `acknowledgement` settlement, and `expired` at the deadline stays the
-terminal state when no ACK comes.
+The fix separates "no more retries" from "the obligation ended". The receipt row expires exactly at
+the message's deadline. The `ack-timeout` effect rows expire at the schedule's end or at the
+deadline, whichever comes first. A spent budget stops scheduling and deletes nothing. Control
+admission's validation refuses an ACK whose message deadline has passed (fix round 1). An ACK inside
+the deadline therefore finds its receipt and commits the normal `acknowledgement` settlement. An ACK
+after the deadline is refused even when the deadline falls inside the retry schedule, and `expired`
+stays the terminal state.
 
 **Files:**
 
 - Modify: `packages/shared/alm/outbound/transition-al-outbound-pending-ack.ts`. The old expiry
-  function is renamed `toALOutboundAckRetryScheduleEndTimestamp` and is now the schedule's end.
-  `toALOutboundPendingAckExpireAtTimestamp(snapshot, messageExpiresAtMs)` is the receipt row's
-  expiry: the later of the schedule's end and the message deadline.
-- Modify: `packages/shared/alm/outbound/compute-al-outbound-dispatch.ts` and
-  `al-outbound-repair-admission.ts`. Both pass the receipt row's expiry on `set-pending-ack`, with the
-  deadline taken from `resolveALMessageExpireAtMs(msg)`. The `ack-timeout` effect keeps the schedule's
-  end. In `retryPendingAck`, a spent budget warns and returns instead of calling
-  `commitClearPendingAck`.
-- Modify: `packages/shared/alm/outbound/compute-al-outbound-control-admission.ts`. A partial receipt's
-  expiry uses the sent message's `reference.expiresAtMs`.
-- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts`. The default
-  expiry of a `set-pending-ack` that names none is the schedule's end.
+  function is renamed `toALOutboundAckRetryScheduleEndTimestamp(snapshot, messageExpiresAtMs)`. It
+  returns the schedule's end, capped at the message deadline, and it bounds the `ack-timeout` rows
+  only.
+- Modify: `packages/shared/alm/outbound/compute-al-outbound-dispatch.ts`. `computeAckTrackingWrites`
+  replaces `appendAckTrackingMutationsAndEffects` and writes `set-pending-ack` with
+  `expireAtTimestamp` set to the canonical reference's `expiresAtMs`.
+- Modify: `al-outbound-repair-admission.ts`, which does the same from the repair read's
+  `storedMessage.reference.expiresAtMs` (`RetriedReceipt` carries it). The orphan cleanup moves into
+  `commitOrphanedReceiptCleanup`. In `retryPendingAck`, a spent budget warns and returns instead of
+  calling `commitClearPendingAck`.
+- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-store.ts` and
+  `al-outbound-admission-reads.ts`. `ALOutboundRepairReadDto` gains `storedMessage`.
+- Modify: `packages/shared/alm/outbound/compute-al-outbound-control-admission.ts`. A partial receipt
+  expires at the sent message's `reference.expiresAtMs`.
+- Modify: `packages/shared/alm/outbound/validate-al-outbound-control-admission.ts`. It refuses an ACK
+  with `AL acknowledgement arrived after its message deadline` once `reference.expiresAtMs <= nowMs`.
+- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts`.
+  `set-pending-ack.expireAtTimestamp` is required, and its fallback to the schedule's end is deleted.
+  Six test files that write the mutation by hand now name it.
 - Modify: `packages/shared/alm/outbound/al-outbound-message-runtime.ts` (the diagnostics union, the
   repair admission's wiring), `al-outbound-repair-admission.ts` (the `diagnostics` dependency and
   `emitControlAdmission`), and `packages/tests/shared/alm/al-outbound-message-expiry.test.ts` (the new
@@ -1771,11 +1780,13 @@ terminal state when no ACK comes.
 
 ```ts
 // packages/shared/alm/outbound/transition-al-outbound-pending-ack.ts
-export function toALOutboundAckRetryScheduleEndTimestamp(snapshot: ALOutboundPendingAckSnapshot): number;
-export function toALOutboundPendingAckExpireAtTimestamp(
+export function toALOutboundAckRetryScheduleEndTimestamp(
     snapshot: ALOutboundPendingAckSnapshot,
-    messageExpiresAtMs: number | undefined
-): number;
+    messageExpiresAtMs: number
+): number; // min(schedule end, message deadline)
+
+// packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts
+| Readonly<{ kind: 'set-pending-ack'; snapshot: ALOutboundPendingAckSnapshot; expireAtTimestamp: number; }>;
 
 // packages/shared/alm/outbound/al-outbound-message-runtime.ts: ALOutboundRuntimeDiagnosticsEvent gains
 | Readonly<{
@@ -1836,9 +1847,9 @@ export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<
       receipt is gone, and that the handle reads `expired` with no confirmed hop. It is GREEN before
       and after the fix.
       Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold-indexeddb.test.ts packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts`
-- [x] **Step 2: The fix at the source, one mechanism.** The receipt row's expiry becomes
-      `max(schedule end, message deadline)`, and a spent retry budget stops scheduling without
-      deleting the receipt. The row an ACK completes against is the obligation, and it must outlive
+- [x] **Step 2: The fix at the source, one mechanism.** The receipt row's expiry becomes the message
+      deadline (first written as `max(schedule end, message deadline)`; fix round 1 made it exact),
+      and a spent retry budget stops scheduling without deleting the receipt. The row an ACK completes against is the obligation, and it must outlive
       the retransmission schedule, while the `ack-timeout` rows are what carry that schedule. So
       moving only the row's expiry, and removing only the exhaustion delete, ends retries exactly
       where they ended before and keeps the obligation to the deadline. Both halves are needed:
@@ -1883,6 +1894,24 @@ export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<
       - `npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
       - `npx dprint check <touched files>`
       - `npm run test:rallar:full-stack:memory:alm`, once.
+- [x] **Fix round 1: the obligation ends exactly at the deadline.** The review found two problems.
+      First, `max(schedule end, message deadline)` kept a receipt past a deadline shorter than the
+      retry schedule, so an ACK after that deadline committed. Second, the row's expiry input was
+      optional, with a fallback to the schedule's end. The fix:
+      - The row expires at the deadline.
+      - The `ack-timeout` rows are capped at it.
+      - Validation refuses a past-deadline ACK even when a receipt is read.
+      - The expiry is required from every caller.
+
+      The new negative pin is `expectRefusedPastAShortDeadline`. It uses a 3 s TTL against the
+      2 s × 3-retry schedule (it asserts the schedule ends more than 2 s after the deadline), and the
+      ACK arrives 2 s after the deadline with no drain in between. It must read `rejected` with an
+      `AL acknowledgement` reason, and the send must read `expired` with no confirmed hop. At
+      `f44af2799` it was RED on rtc and ws over both stores, 4 cases:
+      `+ "kind": "committed"`, with the handle `acknowledged`. It is GREEN after the fix. A unit pin in
+      `outbound-control-version-candidate.test.ts` refuses an ACK at `nowMs = reference.expiresAtMs`
+      with a receipt still present, and accepts it 1 ms earlier. The positive pins (inside the
+      schedule; after the schedule but inside the deadline) stay GREEN.
 
 ### Task 6: Re-observe hosted under the regime rule, the PR, and the gates
 
@@ -2151,9 +2180,10 @@ read and is cleared after it. The PR body reports each change and the run that c
     `rejected: AL acknowledgement sender has no pending outbound obligation`, and the handle stays
     `transport-accepted`. This holds on both carriers, armed and unarmed, over both stores. An ACK 1
     s before the schedule's end acknowledges.
-  - **Fix.** The receipt row's expiry is the message deadline, never shorter than the retry schedule.
-    The `ack-timeout` rows keep the schedule's end, and a spent budget schedules nothing and deletes
-    nothing.
+  - **Fix.** The receipt row expires exactly at the message deadline. The `ack-timeout` rows
+    expire at the schedule's end or the deadline, whichever is first. A spent budget schedules
+    nothing and deletes nothing. Validation refuses an ACK past its deadline. The row's expiry is a
+    required input (fix round 1).
   - **Why.** The receipt is the obligation an ACK completes against, and the `ack-timeout` rows are
     the retransmission schedule. The two lifetimes were one number, so ending the retries ended the
     obligation.

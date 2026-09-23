@@ -305,7 +305,8 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
                 maxAttempts: 3,
                 attempts: 0,
                 deadlineAtMs: Date.now() + 2_000
-            }
+            },
+            expireAtTimestamp: Date.now() + 30_000
         }]
     });
     expect(committed).toBe('committed');

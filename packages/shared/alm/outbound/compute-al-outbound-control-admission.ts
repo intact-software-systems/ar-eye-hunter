@@ -18,8 +18,7 @@ import type { ALOutboundSettlementFact } from './al-outbound-message-runtime.ts'
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     acceptALOutboundPendingAckSnapshot,
-    isALOutboundReceiptComplete,
-    toALOutboundPendingAckExpireAtTimestamp
+    isALOutboundReceiptComplete
 } from './transition-al-outbound-pending-ack.ts';
 
 export type ALControlHistory =
@@ -80,7 +79,7 @@ export function computeALOutboundControlAdmission(
         removeRepairAttempt: terminal || pending.kind === 'remove' ||
             (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value)),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
-            ? toALOutboundPendingAckExpireAtTimestamp(pending.value, read.sent?.reference.expiresAtMs)
+            ? read.sent?.reference.expiresAtMs ?? read.nowMs
             : Math.max(
                 read.sent?.reference.expiresAtMs ?? 0,
                 toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)

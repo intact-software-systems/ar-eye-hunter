@@ -43,6 +43,12 @@ import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
 
+/** The browser sender's default deadline, which outlives the receipt's 2 s × 3-retry schedule. */
+export const ACK_UNDER_HOLD_MESSAGE_TTL_MS = 30_000;
+
+/** A deadline that ends inside that retry schedule. */
+const SHORT_MESSAGE_TTL_MS = 3_000;
+
 /** One sender page's carrier as the lane composes it, over memory stores, with a scripted hold. */
 export interface HoldSender {
     readonly carrier: 'rtc' | 'ws';
@@ -53,7 +59,7 @@ export interface HoldSender {
     /** `drop` on RTC, `not-ready` on WS; matches the scenario typeId only, as `toHeldFaultCommands` arms it. */
     readonly hold: ScriptedTransportFault;
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
-    createMessage(resourceId: string): ALMessage;
+    createMessage(resourceId: string, ttlMs: number): ALMessage;
     /** Opens the registry handle and admits the message; the caller drains. */
     send(message: ALMessage): Promise<RallarMessageHandle>;
     cancel(msgId: string): void;
@@ -201,17 +207,14 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     };
 }
 
-/**
- * The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in
- * sequence, with the browser sender's default 30 s deadline.
- */
-function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string) => ALMessage {
+/** The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in sequence. */
+function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
     let seq = 0;
-    return (resourceId) => {
+    return (resourceId, ttlMs) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs: 30_000 });
+        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs });
     };
 }
 
@@ -283,7 +286,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         selfPeerId: sessionId,
         outboundAdmissionNamespace: resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.namespace,
         hold: WS_HOLD,
-        createMessage: (resourceId) => toWsHeldMessage(sessionId, resourceId),
+        createMessage: (resourceId, ttlMs) => toWsHeldMessage({ sessionId, resourceId, ttlMs }),
         cancel: (msgId) => void service.cancelOutbox(msgId),
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
@@ -293,10 +296,11 @@ export async function openWsHoldSender(): Promise<HoldSender> {
 }
 
 /** The `ws-retained-work-fault.test.ts` shape: a durable unicast of the held typeId that `receiver` acknowledges. */
-function toWsHeldMessage(sessionId: string, resourceId: string): ALMessage {
+function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string; ttlMs: number; }>): ALMessage {
+    const { sessionId, resourceId, ttlMs } = input;
     return {
         ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
-            ttlMs: 60_000
+            ttlMs
         }),
         delivery: { reliability: 'at-least-once', ack: 'receiver' }
     };
@@ -428,13 +432,13 @@ export async function expectAcknowledgedUnderHold(
     escalation: HoldEscalation
 ): Promise<void> {
     const witness = watchControlAdmission();
-    const submission = sender.createMessage('submission');
+    const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
     const handle = await sender.send(submission);
     await sender.drain();
     if (armed) {
         sender.faults.inject(sender.hold);
     }
-    const held = sender.createMessage('held');
+    const held = sender.createMessage('held', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
     await sender.send(held);
     await sender.drain();
     await sender.advance(100);
@@ -468,7 +472,7 @@ export async function expectAcknowledgedUnderHold(
 /** Without an ACK inside the deadline the send ends `expired`, and an ACK after it is refused. */
 export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<void> {
     const witness = watchControlAdmission();
-    const submission = sender.createMessage('submission');
+    const submission = sender.createMessage('submission', ACK_UNDER_HOLD_MESSAGE_TTL_MS);
     const handle = await sender.send(submission);
     await sender.drain();
     await runAckTimeoutClaimsToExhaustion(sender, submission.id.msgId);
@@ -484,6 +488,31 @@ export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<
 
     expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered', result: { kind: 'rejected' } });
     expect(await sender.readPendingAck(submission.id.msgId)).toBeUndefined();
+    expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { confirmedHopPeerIds: [] } });
+}
+
+/**
+ * A deadline that ends before the receipt's retry schedule ends the obligation with it: an ACK after
+ * the deadline, though inside that schedule, is refused and the send ends `expired`.
+ */
+export async function expectRefusedPastAShortDeadline(sender: HoldSender): Promise<void> {
+    const witness = watchControlAdmission();
+    const submission = sender.createMessage('submission', SHORT_MESSAGE_TTL_MS);
+    const handle = await sender.send(submission);
+    await sender.drain();
+    const deadlineMs = handle.lifecycle().expiresAtMs ?? 0;
+    expect(await readRetryScheduleEndMs(sender, submission.id.msgId)).toBeGreaterThan(deadlineMs + 2_000);
+    await sender.advance(deadlineMs + 2_000 - Date.now());
+    const ack = toReceiverAck(submission, sender.selfPeerId);
+    sender.deliver(ack);
+    await sender.settle();
+    await sender.drain();
+    await sender.settle();
+
+    expect(readControlAdmissionStop(witness, ack)).toEqual({
+        stop: 'outbound-answered',
+        result: { kind: 'rejected', reason: expect.stringContaining('AL acknowledgement') }
+    });
     expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { confirmedHopPeerIds: [] } });
 }
 

@@ -17,7 +17,6 @@ import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
     toALOutboundAckRetryScheduleEndTimestamp,
-    toALOutboundPendingAckExpireAtTimestamp,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
 
@@ -72,7 +71,12 @@ export function computeALOutboundDispatch<TPrepared>(
     // Captured before the ack-timeout effect (if any) is appended below: only `send-prepared` counts.
     const queuedAttempts = durableEffects.length;
     if (read.plan.preparedMessages.length > 0) {
-        appendAckTrackingMutationsAndEffects(mutations, durableEffects, read);
+        const ackTracking = computeAckTrackingWrites(
+            read,
+            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
+        );
+        mutations.push(...ackTracking.mutations);
+        durableEffects.push(...ackTracking.durableEffects);
     }
 
     const verdict = computeALOutboundRouteVerdict(read, awaitPhysicalDispatch || read.plan.persist, queuedAttempts);
@@ -303,14 +307,18 @@ export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommit
     return [...new Set(replaced)];
 }
 
-function appendAckTrackingMutationsAndEffects<TPrepared>(
-    mutations: ALOutboundAdmissionMutation[],
-    durableEffects: ALOutboundDurableEffectWrite<TPrepared>[],
-    read: ALOutboundMessageReadDto<TPrepared>
-): void {
+interface ALOutboundAckTrackingWrites<TPrepared> {
+    readonly mutations: readonly ALOutboundAdmissionMutation[];
+    readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
+}
+
+function computeAckTrackingWrites<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    messageExpiresAtMs: number
+): ALOutboundAckTrackingWrites<TPrepared> {
     const tracking = read.plan.ackTracking;
     if (!tracking?.enabled || tracking.expectedPeerIds.length === 0 || tracking.timeoutMs <= 0) {
-        return;
+        return { mutations: [], durableEffects: [] };
     }
 
     const pending = trackALOutboundPendingAckSnapshot({
@@ -321,31 +329,31 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
         nowMs: read.nowMs
     });
     if (!pending) {
-        if (read.pendingAck) {
-            mutations.push(
-                { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
-                { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
-            );
-        }
-        return;
+        return {
+            mutations: read.pendingAck
+                ? [
+                    { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
+                    { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
+                ]
+                : [],
+            durableEffects: []
+        };
     }
 
-    mutations.push({
-        kind: 'set-pending-ack',
-        snapshot: pending,
-        expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending, resolveALMessageExpireAtMs(read.msg))
-    });
-    durableEffects.push({
-        effectId: toALOutboundEffectId([
-            'ack-timeout',
-            pending.msgId,
-            pending.attempts + 1,
-            pending.deadlineAtMs
-        ]),
-        retryAtMs: pending.deadlineAtMs,
-        expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending),
-        payload: { kind: 'ack-timeout', msgId: pending.msgId }
-    });
+    return {
+        mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+        durableEffects: [{
+            effectId: toALOutboundEffectId([
+                'ack-timeout',
+                pending.msgId,
+                pending.attempts + 1,
+                pending.deadlineAtMs
+            ]),
+            retryAtMs: pending.deadlineAtMs,
+            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
+            payload: { kind: 'ack-timeout', msgId: pending.msgId }
+        }]
+    };
 }
 
 function toSentMessageMutation<TPrepared>(

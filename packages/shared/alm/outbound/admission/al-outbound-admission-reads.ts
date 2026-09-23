@@ -187,6 +187,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             msgId,
             nowMs: this.nowMs(),
             clientRecord,
+            storedMessage: stored,
             sentSnapshot,
             ...await this.readControlTracking(session, msgId),
             plan

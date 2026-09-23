@@ -115,7 +115,8 @@ async function seedAcknowledgeableMessage(
                     maxAttempts: 3,
                     attempts: 0,
                     deadlineAtMs: Date.now() + 2_000
-                }
+                },
+                expireAtTimestamp: Date.now() + 30_000
             }]
         })
     ).toBe('committed');

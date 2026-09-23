@@ -135,6 +135,8 @@ export interface ALOutboundRepairReadDto<TPrepared> {
     readonly msgId: string;
     readonly nowMs: number;
     readonly clientRecord?: ALOutboundVersionedClientRecord;
+    /** The fenced sent row; its reference carries the message deadline that bounds the receipt. */
+    readonly storedMessage: ALStoredOutboundMessage | undefined;
     readonly sentSnapshot?: ALOutboundSentMessageSnapshot;
     readonly pendingAck?: ALOutboundPendingAckSnapshot;
     readonly repairAttempt?: ALOutboundRepairAttemptSnapshot;
