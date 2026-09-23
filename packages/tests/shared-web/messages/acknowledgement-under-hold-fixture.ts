@@ -59,7 +59,10 @@ export interface HoldSender {
     advance(ms: number): Promise<void>;
     /** Runs `ACK_UNDER_HOLD_SETTLE_TURNS` queued turns; a chain still pending afterwards is the C3 reading. */
     settle(): Promise<void>;
-    /** Hands the frame to the carrier's own inbound path and does not await its admission. */
+    /**
+     * Raises the frame as the native `message` event on the RTC data channel or the WebSocket the
+     * client is connected to, so the carrier's own identity guards run first; does not await admission.
+     */
     deliver(frame: ALMessage): void;
     /** The typeId of every frame the fault port was asked about. */
     readFaultedTypeIds(): readonly string[];
@@ -235,7 +238,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
     const sessionId = crypto.randomUUID();
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts: toRallarDiagnosticsPorts(undefined) });
     const runtime = createHoldSenderRuntime();
-    const service = await connectWsQueueBox(runtime, sessionId);
+    const { service, native } = await connectWsQueueBox(runtime, sessionId);
     const readiness = vi.spyOn(runtime.faults, 'decideSubmissionReadiness');
     return {
         ...toSharedHoldSenderMembers(runtime, {
@@ -248,7 +251,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         createMessage: (resourceId) => toWsHeldMessage(sessionId, resourceId),
         cancel: (msgId) => void service.cancelOutbox(msgId),
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
-        deliver: (frame) => void service.acceptIncomingMessage(frame),
+        deliver: (frame) => native.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
         readPendingAck: (msgId) => resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck(msgId)
     };
@@ -287,7 +290,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         service.close();
         runtime.engine.stop();
     });
-    return service;
+    return { service, native };
 }
 
 interface HoldSenderCarrierInput {

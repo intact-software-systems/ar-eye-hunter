@@ -1760,6 +1760,19 @@ read and is cleared after it. The PR body reports each change and the run that c
   matrix `ACK_UNDER_HOLD_CASES` (12 cases per store). The WS opener fakes `Date`, `setTimeout`,
   `setInterval` and their clears, not every timer, because fake-indexeddb completes on `setImmediate`
   and E3's unarmed WS case otherwise never settled; this matches `ws-durable-owner-recovery.test.ts`.
+  Corrected in fix round 1: the first pin handed the WS ACK straight to
+  `WsQueueBoxClientService.acceptIncomingMessage`, which skipped the WS ingress. So the claim was
+  symmetric only for RTC and for the closed-client guard (`ws-queue-box-client-service.ts:431-433`).
+  Both carriers now raise the ACK as the native `message` event. On RTC, the fixture's
+  `channel.receive` reaches `onmessage` (`qrtc-data-channel.ts:494`) and then the `status.dc` guard
+  (`:519`). On WS, `TestWebSocket.receive` reaches `JsonWebSocketClient.dispatchMessage`, whose guard
+  requires the event's socket to be the client's current `ws` (`json-web-socket-client.ts:205`).
+  Next is the inbox callback, whose guard requires `event.target` to be `this.socket.ws`
+  (`ws-queue-box-client-service.ts:417`). Only then does `acceptIncomingMessage` run. The matrix is
+  still GREEN on both stores, so WS C0 is ruled out: the `not-ready` hold only reads
+  `ws.readyState` in `decideSubmissionReadiness` and never replaces the socket, so the ACK arrives
+  on the same socket identity both guards compare. Inverting any one of the three guards turns the
+  six WS or six RTC cases RED as `never-admitted`, so each guard is on the pin's path.
 
 - **Maintainer ruling (2026-09-23, Task 7b).** Decided: build the harness-only addition R-S2a-7 routed
   — sender/receiver `pageerror` and console capture in the ALM lane, folded into the observation
