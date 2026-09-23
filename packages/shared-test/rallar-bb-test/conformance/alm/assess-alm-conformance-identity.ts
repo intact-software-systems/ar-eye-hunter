@@ -167,11 +167,22 @@ function assessAcknowledgedIdentity({ send, sender, issues }: AcknowledgedIdenti
     }
 }
 
+interface AlmIdentitySendPayload {
+    readonly marker: 'delivery-lifecycle' | 'delivery-reload';
+    readonly specimen?: 'submission' | 'cancellation' | 'supersedence';
+    readonly revision?: 'old' | 'replacement';
+}
+
 function isIdentitySend(
     command: RallarBlackBoxTestCommand
-): command is RallarBlackBoxTestMessagesSendCommand & {
-    readonly payload: Record<string, unknown>;
-} {
-    return command.kind === 'messages.send' && isJsonRecordValue(command.payload) &&
-        (command.payload.marker === 'delivery-lifecycle' || command.payload.marker === 'delivery-reload');
+): command is RallarBlackBoxTestMessagesSendCommand & { readonly payload: AlmIdentitySendPayload; } {
+    return command.kind === 'messages.send' && isAlmIdentitySendPayload(command.payload);
+}
+
+function isAlmIdentitySendPayload(value: unknown): value is AlmIdentitySendPayload {
+    return isJsonRecordValue(value) &&
+        (value.marker === 'delivery-lifecycle' || value.marker === 'delivery-reload') &&
+        (value.specimen === undefined || value.specimen === 'submission' || value.specimen === 'cancellation' ||
+            value.specimen === 'supersedence') &&
+        (value.revision === undefined || value.revision === 'old' || value.revision === 'replacement');
 }
