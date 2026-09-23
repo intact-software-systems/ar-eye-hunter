@@ -84,6 +84,8 @@ export interface ALWorkBatchDiagnostics {
     readonly releaseDurationMs: number;
     /** How long the earliest claimed row had been due when the batch started; zero when it claimed none. */
     readonly queueWaitMs: number;
+    /** The instant every claim of this batch receives as `batchStartedAtMs`. */
+    readonly startedAtMs: number;
 }
 
 /**
@@ -380,7 +382,8 @@ export class ALWorkHandler {
             ...progress,
             selectionDurationMs: selection.selectionDurationMs,
             claimDurationMs: selection.claimDurationMs,
-            queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs)
+            queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs),
+            startedAtMs
         });
     }
 

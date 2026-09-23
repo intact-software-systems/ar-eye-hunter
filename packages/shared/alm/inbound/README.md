@@ -189,7 +189,13 @@ claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ra
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
 decoded and a claim that throws are counted by the drain and named by no event; and
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
-`longestRoundMs` so one crawling scan is not averaged away by the rest. No
+`longestRoundMs` so one crawling scan is not averaged away by the rest. A delivery's wait
+splits at three instants every `claim-settled` carries — when its row became due, when its
+batch started and when the claim itself started — and the drain names the effects it ran in
+run order (`claimedEffectIds`, recorded by this owner as it runs them). The due rows a round
+saw and did not run ride on the events that already exist, never on one of their own: a
+round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them
+into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
 

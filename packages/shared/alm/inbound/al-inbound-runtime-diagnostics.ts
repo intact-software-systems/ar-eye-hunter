@@ -1,3 +1,5 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { parseALControlMessage } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { Either } from '../../resilience/Either.ts';
 import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
@@ -44,12 +46,21 @@ export type ALInboundRuntimeDiagnosticsEvent =
         releaseDurationMs: number;
         /** How long the earliest claimed row had been due when the batch started. */
         queueWaitMs: number;
+        /** The instant every claim of this batch measures its `batchStartedAtMs` from. */
+        startedAtMs: number;
+        /** The effects this batch ran, in run order. */
+        claimedEffectIds: readonly string[];
+        /** Due rows this batch's page saw and did not run, oldest first. */
+        deferred: readonly ALInboundDeferredEffect[];
     }>
     | Readonly<{
         kind: 'claim-settled';
         workerId: string;
+        effectId: string;
         /** The claimed message. Null for `release-buffered`, which names a track and a sequence and no message. */
         msgId: string | null;
+        /** The message the effect acts on: the join key from an ACK back to the delivery it acknowledges. */
+        subjectMsgId: string | null;
         /**
          * The claimed message's type. Null for `dispatch-local` and `forward-message`, whose effect
          * retains only a message reference, and for `release-buffered`, which retains neither.
@@ -61,8 +72,12 @@ export type ALInboundRuntimeDiagnosticsEvent =
         /** Processing attempts the row has spent, this claim included. */
         attempts: number;
         outcome: ALWorkOutcome['status'];
-        /** How long the row had been due when the batch that claimed it started. */
+        /** How long the row had been due when the batch that claimed it started: `batchStartedAtMs − dueAtMs`. */
         queueWaitMs: number;
+        dueAtMs: number;
+        batchStartedAtMs: number;
+        /** When this claim's own work began, so `startedAtMs − batchStartedAtMs` is its wait behind earlier claims. */
+        startedAtMs: number;
     }>
     | Readonly<{
         kind: 'rotation-alive';
@@ -73,7 +88,16 @@ export type ALInboundRuntimeDiagnosticsEvent =
         durationMs: number;
         /** The slowest single round of them, so one crawling scan is not averaged away by the rest. */
         longestRoundMs: number;
+        /** How many of those rounds saw a due row they did not run. */
+        deferredRoundCount: number;
+        /** The due rows the latest such round did not run, oldest first. */
+        latestDeferred: readonly ALInboundDeferredEffect[];
     }>;
+
+export interface ALInboundDeferredEffect {
+    readonly effectId: string;
+    readonly dueAtMs: number;
+}
 
 export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnosticsEvent) => void;
 
@@ -84,25 +108,46 @@ export type ALInboundRuntimeDiagnosticsSink = (event: ALInboundRuntimeDiagnostic
 export interface ALInboundClaimIdentity {
     readonly msgId: string | null;
     readonly typeId: string | null;
+    readonly subjectMsgId: string | null;
 }
 
 /**
  * A retained message answers with its own identity. A delivery effect holds only a reference, which
  * carries the id and not the type, and a buffered release names a track and a sequence rather than
- * any message at all. Every kind is listed, so a seventh one has to decide what it reports.
+ * any message at all. The subject is the message the effect acts on -- a control's is the message it
+ * acknowledges, nacks or repairs, not its own envelope. Every kind is listed, so a seventh one has to
+ * decide what it reports.
  */
 export function toALInboundClaimIdentity(payload: ALInboundDurableEffect): ALInboundClaimIdentity {
     switch (payload.kind) {
         case 'admit-message':
+            return {
+                msgId: payload.msg.id.msgId,
+                typeId: payload.msg.payload.typeId,
+                subjectMsgId: payload.msg.id.msgId
+            };
         case 'admit-control':
         case 'send-control':
-            return { msgId: payload.msg.id.msgId, typeId: payload.msg.payload.typeId };
+            return {
+                msgId: payload.msg.id.msgId,
+                typeId: payload.msg.payload.typeId,
+                subjectMsgId: toALControlSubjectMsgId(payload.msg)
+            };
         case 'dispatch-local':
         case 'forward-message':
-            return { msgId: payload.message.msgId, typeId: null };
+            return { msgId: payload.message.msgId, typeId: null, subjectMsgId: payload.message.msgId };
         case 'release-buffered':
-            return { msgId: null, typeId: null };
+            return { msgId: null, typeId: null, subjectMsgId: null };
     }
+}
+
+/** An ACK names the message it acknowledges; a NACK and a repair name the message they concern. */
+function toALControlSubjectMsgId(msg: ALMessage): string | null {
+    const control = parseALControlMessage(msg);
+    if (control === undefined) {
+        return null;
+    }
+    return control.type === 'ack' ? control.payload.ackedMsgId : control.payload.msgId;
 }
 
 export interface ALInboundAdmissionDiagnostics {

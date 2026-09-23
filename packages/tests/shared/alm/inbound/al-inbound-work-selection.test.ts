@@ -4,9 +4,13 @@ import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-admitted-delivery.ts';
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
-import { computeALInboundWorkEntry } from '@shared/alm/inbound/al-inbound-work-entry.ts';
+import {
+    computeALInboundWorkEntry,
+    resolveALInboundWorkDueAtMs
+} from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
@@ -128,6 +132,19 @@ describe('ALInboundWorkSelector eligibility reads', () => {
             expect(readReadiness).toHaveBeenCalledTimes(pageSize);
         }
     );
+
+    it('reports a due row its eligibility read deferred, with its due time, and claims nothing', async () => {
+        const fixture = await createDispatchPageFixture(1);
+        const [deferred] = fixture.effects;
+        vi.spyOn(fixture.delivery, 'readReadiness').mockResolvedValue({ ready: false, observed: undefined });
+
+        const selection = await fixture.selector.selectReady(fixture.port, AL_INBOUND_WORK_PAGE_SIZE);
+
+        expect(selection.claims).toEqual([]);
+        expect(fixture.selector.getUnreservedDue()).toEqual([
+            { effectId: deferred!.effectId, dueAtMs: resolveALInboundWorkDueAtMs(deferred!.entry) }
+        ]);
+    });
 });
 
 interface SelectorFixture {
@@ -234,26 +251,29 @@ interface DispatchPageFixture {
     readonly delivery: ALInboundAdmittedDelivery;
     readonly port: ALWorkQueuePort;
     readonly selector: ALInboundWorkSelector;
+    readonly effects: readonly ALPersistedInboundEffect[];
 }
 
-/** A full page of committed `dispatch-local` rows: every one of them claimable by the next batch. */
-async function createDispatchPageFixture(): Promise<DispatchPageFixture> {
+/** A page of committed `dispatch-local` rows, full by default: every one of them claimable by the next batch. */
+async function createDispatchPageFixture(rowCount: number = DISPATCH_PAGE_ROWS): Promise<DispatchPageFixture> {
     const namespace = 'inbound-dispatch-page';
     const stores = createInboundTestStores({
         namespace,
         storage: 'memory',
         observer: createPassThroughIndexedDbOperationObserver()
     });
-    for (let row = 0; row < DISPATCH_PAGE_ROWS; row += 1) {
-        await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: `dispatch-${row}` }));
+    const effects: ALPersistedInboundEffect[] = [];
+    for (let row = 0; row < rowCount; row += 1) {
+        effects.push(
+            await readInboundTestDispatchEffect(stores, createInboundTestMessage({ msgId: `dispatch-${row}` }))
+        );
     }
-    expect(await stores.workQueue.getAllKeys(), 'one dispatch-local row per admission').toHaveLength(
-        DISPATCH_PAGE_ROWS
-    );
+    expect(await stores.workQueue.getAllKeys(), 'one dispatch-local row per admission').toHaveLength(rowCount);
     const delivery = createInboundTestDispatch(stores, Date.now).delivery;
     return {
         delivery,
         port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
-        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now })
+        selector: createALInboundWorkSelector({ delivery, namespace, nowMs: Date.now }),
+        effects
     };
 }

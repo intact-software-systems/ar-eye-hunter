@@ -30,6 +30,13 @@ const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
 const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
 const SYNTHETIC_OUTBOUND_AGENT_ID = SENDER_AGENT_ID;
 const INBOUND_WORKER_ID = 'al-inbound:worker-1';
+const NO_CLAIM_WAITS = {
+    reservationWaitMedianMs: 0,
+    intraBatchWaitMedianMs: 0,
+    dispatchClaimCount: 0,
+    sendControlClaimMedianMs: 0,
+    sendControlClaimCount: 0
+};
 
 function readFixtureRegime(
     fixtureName: string,
@@ -110,6 +117,46 @@ function toInboundDrainEvent(
             }
         }
     };
+}
+
+function toInboundClaimEvent(
+    atEpochMs: number,
+    agentId: string,
+    claim: Readonly<{
+        payloadKind: string;
+        durationMs: number;
+        dueAtMs: number;
+        batchStartedAtMs: number;
+        startedAtMs: number;
+    }>
+): Record<string, unknown> {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: { kind: 'claim-settled', workerId: INBOUND_WORKER_ID, ...claim }
+            }
+        }
+    };
+}
+
+/** A `dispatch-local` claim whose two wait halves are the given figures, after a batch that started at 10 000. */
+function toDispatchClaimEvent(
+    atEpochMs: number,
+    reservationWaitMs: number,
+    intraBatchWaitMs: number
+): Record<string, unknown> {
+    const batchStartedAtMs = 10_000;
+    return toInboundClaimEvent(atEpochMs, RECEIVER_AGENT_ID, {
+        payloadKind: 'dispatch-local',
+        durationMs: 5,
+        dueAtMs: batchStartedAtMs - reservationWaitMs,
+        batchStartedAtMs,
+        startedAtMs: batchStartedAtMs + intraBatchWaitMs
+    });
 }
 
 function toSyntheticRegime(events: readonly Record<string, unknown>[]): ALMObservationRegime {
@@ -325,7 +372,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 5,
                     drainMedianMs: 150,
                     drainCount: 2
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             {
                 role: 'receiver',
@@ -339,10 +387,48 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 15,
                     drainMedianMs: 350,
                     drainCount: 2
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'unattributed', outcome: 'no-events' }
         ]);
+    });
+
+    it('splits the receiver\'s delivery wait into its reservation and intra-batch halves', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, SENDER_AGENT_ID, 'committed'),
+            toDispatchClaimEvent(1_001, 100, 4_000),
+            toDispatchClaimEvent(1_002, 200, 5_000),
+            toDispatchClaimEvent(1_003, 300, 6_000),
+            toInboundClaimEvent(1_004, RECEIVER_AGENT_ID, {
+                payloadKind: 'send-control',
+                durationMs: 3_000,
+                dueAtMs: 9_000,
+                batchStartedAtMs: 10_000,
+                startedAtMs: 10_000
+            }),
+            toInboundClaimEvent(1_005, RECEIVER_AGENT_ID, {
+                payloadKind: 'send-control',
+                durationMs: 5_000,
+                dueAtMs: 9_000,
+                batchStartedAtMs: 10_000,
+                startedAtMs: 13_000
+            })
+        ]);
+
+        const claimWaitsOf = (role: string) => {
+            const direction = regime.inbound.find((candidate) => candidate.role === role);
+            return direction?.outcome === 'measured' ? direction.claimWaits : undefined;
+        };
+        expect(claimWaitsOf('receiver')).toEqual({
+            reservationWaitMedianMs: 200,
+            intraBatchWaitMedianMs: 5_000,
+            dispatchClaimCount: 3,
+            sendControlClaimMedianMs: 4_000,
+            sendControlClaimCount: 2
+        });
+        expect(claimWaitsOf('sender')).toEqual(NO_CLAIM_WAITS);
     });
 
     it('reports a measured direction with zero drain medians when a role has outcomes but no drains', () => {
@@ -364,7 +450,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 0,
                     drainMedianMs: 0,
                     drainCount: 0
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -397,7 +484,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 3,
                     drainMedianMs: 100,
                     drainCount: 1
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -517,6 +605,44 @@ describe('decodeALMObservationSnapshot', () => {
             'receiver',
             'receiver'
         ]);
+    });
+
+    it('decodes a claim-settled event and skips one missing a wait instant', () => {
+        // A claim emitted before the wait instants existed: it names no batch start.
+        const legacyClaim = {
+            kind: 'diagnostic',
+            atEpochMs: 1_002,
+            agentId: RECEIVER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'claim-settled',
+                        workerId: INBOUND_WORKER_ID,
+                        payloadKind: 'dispatch-local',
+                        durationMs: 5,
+                        dueAtMs: 1,
+                        startedAtMs: 3
+                    }
+                }
+            }
+        };
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-claims',
+            results: [],
+            events: [toDispatchClaimEvent(1_001, 100, 4_000), legacyClaim]
+        });
+
+        expect(decoded.right?.inboundClaims).toEqual([{
+            atEpochMs: 1_001,
+            role: 'receiver',
+            workerId: INBOUND_WORKER_ID,
+            payloadKind: 'dispatch-local',
+            durationMs: 5,
+            dueAtMs: 9_900,
+            batchStartedAtMs: 10_000,
+            startedAtMs: 14_000
+        }]);
     });
 
     it('skips the events it does not read instead of rejecting the snapshot', () => {

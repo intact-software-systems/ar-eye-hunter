@@ -257,6 +257,14 @@ independent of any connection. The event's `data` is the event itself:
   none of its own and reports a `selectionDurationMs` near zero. That page read
   is reported nowhere on this topic — it is the cost the suppressed probe event
   would have carried, and a reader must not mistake its absence for a fast round
+- `effect-drain` also carries `startedAtMs`, the instant every claim of the
+  batch receives as its `batchStartedAtMs`; `claimedEffectIds`, the effect ids
+  the batch ran, in run order, recorded by the inbound owner as it runs each
+  claim (a claim whose row could not be decoded is absent, the same ceiling
+  `claim-settled` follows); and `deferred`, the due rows the batch's page saw and
+  did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their
+  eligibility read, or cleared by it and left unreserved by the port. A row a
+  live lease holds is not due, so a batch's own rows never read as deferred
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
   `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
   so a delivery can be followed from its own `admission-outcome` to the claim
@@ -266,6 +274,21 @@ independent of any connection. The event's `data` is the event itself:
   `outcome` is what the claim returned: `completed`, `retry`, `not-ready` or
   `non-retryable`. `attempts` is how many processing attempts the row has spent,
   this claim included
+- `claim-settled` also carries `effectId`, `subjectMsgId`, `dueAtMs`,
+  `batchStartedAtMs` and `startedAtMs`. `effectId` is the claimed row's own
+  effect id, the join key to the `effect-drain.claimedEffectIds` of its batch.
+  `dueAtMs` is when the row became due, `batchStartedAtMs` when its batch started
+  and `startedAtMs` when this claim's own work began, so a delivery's wait splits
+  into `batchStartedAtMs − dueAtMs` (waiting for a round to reserve the row) and
+  `startedAtMs − batchStartedAtMs` (waiting behind earlier claims of the same
+  batch). `queueWaitMs` is now exactly `batchStartedAtMs − dueAtMs` of the same
+  event, floored at zero, so the two can never disagree
+- `subjectMsgId` is the message the effect acts on: a control's acknowledged,
+  nacked or repaired message (`ackedMsgId` or `msgId` of its payload), a retained
+  or delivered message's own id, and `null` for `release-buffered`. It is the
+  join key from an ACK to the delivery it acknowledges: a `send-control` claim's
+  `msgId` is the control envelope's own id, and its `effectId` is suffixed with
+  that envelope id, so neither names the delivery
 - a `claim-settled` `queueWaitMs` is computed from the reserved entry, and a
   reservation clears the row's retry stamp: a row that had already been retried
   answers from when it was written, so its claim overstates the wait. The
@@ -292,6 +315,12 @@ independent of any connection. The event's `data` is the event itself:
   a rotation that keeps finding nothing and a rotation that stopped running both
   report nothing at all. An owner whose queue is empty scans nothing and reports
   none
+- `rotation-alive` also carries `deferredRoundCount`, how many of those rounds
+  saw a due row they did not run, and `latestDeferred`, the `{ effectId, dueAtMs }`
+  rows the latest such round did not run, oldest first. A round that finds a due
+  row it cannot run is exactly the idle round that must relay nothing, so the
+  witness rides on this event, which already stands for its rounds, rather than
+  on one of its own
 
 The kinds together discriminate a delivery that never arrives. An
 `unauthorized` outcome is the drop that otherwise leaves no trace at all: it
@@ -300,6 +329,16 @@ no `effect-drain` ever follows is the other shape — the row exists and no
 consumer is registered for its `typeId`, so the rotation never selects it, and
 the `rotation-alive` events beside it are what say the rotation was running
 while that happened.
+
+After a submission's `admission-outcome`, the receiver's events say where its
+delivery waited:
+
+| What the receiver's snapshot shows after the submission's `admission-outcome`                        | Meaning                                                                   |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A `claim-settled` naming the dispatch effect, with `batchStartedAtMs` after the admission            | A round reserved it; the two wait halves are on that event                |
+| The dispatch effect id in an `effect-drain.deferred` or `rotation-alive.latestDeferred`              | Rounds ran and held it back (eligibility), or the port left it unreserved |
+| `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started and was still running at teardown (the in-flight batch)   |
+| None of the three, and no `rotation-alive` after the admission                                       | No round ran at all — the rotation was blocked or stopped                 |
 
 `commit-phases.transportSettleDurationMs` is **never emitted**. No runtime
 writes that field, on this topic or the outbound one, so no reader may depend on

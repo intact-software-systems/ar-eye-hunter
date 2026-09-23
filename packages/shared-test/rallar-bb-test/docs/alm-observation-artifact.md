@@ -61,11 +61,11 @@ records what the runner was doing while the cell ran:
 - `workPageRate` — `work-page` storage operations per second between the cell's first and last
   `storage.counters` reading.
 - `inbound` — one entry per direction (`sender`, `receiver`, `unattributed`), from the
-  `admission-outcome` and `effect-drain` events of the
+  `admission-outcome`, `effect-drain` and `claim-settled` events of the
   [inbound admission diagnostics](./runtime-diagnostic-contract.md). The direction is resolved from
   the lane's `alm-<role>` agent id prefix; any other id is `unattributed` rather than guessed. `[]`
   when the cell carried no inbound event at all; otherwise every direction is reported, `no-events`
-  for one that carried neither kind. A measured direction carries:
+  for one that carried none of the three kinds. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no
@@ -81,6 +81,15 @@ records what the runner was doing while the cell ran:
     `releaseMedianMs` is the median of one release flush per batch, not one flush per claim. F2c's
     acceptance figure for the inbound pending share and drain phases is read from this block, not
     from a session script.
+  - `claimWaits` — the delivery wait split at its two instants, from the `claim-settled` events on
+    that direction: `reservationWaitMedianMs`, the median `batchStartedAtMs − dueAtMs` over the
+    `dispatch-local` claims (waiting for a round to reserve the row), and `intraBatchWaitMedianMs`,
+    the median `startedAtMs − batchStartedAtMs` over the same claims (waiting behind earlier claims of
+    the same batch), over `dispatchClaimCount` claims; and `sendControlClaimMedianMs`, the median
+    `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians, like
+    `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
+    `claim-settled` event missing `durationMs`, `dueAtMs`, `batchStartedAtMs` or `startedAtMs` (one
+    emitted before the three instants existed) is skipped rather than counted.
 - `cellOutcome` — `passed` or `failed`, including a soft-assertion failure.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 

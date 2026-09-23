@@ -2,7 +2,11 @@ import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
+import {
+    planALMessageHandling,
+    type ALMessageHandlingPlan,
+    type ALQosPolicyRequest
+} from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -156,6 +160,8 @@ export interface InboundTestMessageInput {
     readonly seq?: number;
     /** Absent leaves the message untracked, so its admission reads no supersedence pair. */
     readonly supersedenceKey?: string;
+    /** Absent leaves the message unacknowledged, so its admission writes no `send-control` row. */
+    readonly acknowledged?: boolean;
 }
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
@@ -165,12 +171,7 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
         INBOUND_TEST_SELF_PEER_ID,
         'chat.private-text.v1',
         { text: input.msgId },
-        {
-            ttlMs: 60_000,
-            qos: input.supersedenceKey === undefined ? undefined : {
-                supersedence: { algo: 'latest-wins', opts: { supersedenceKey: input.supersedenceKey } }
-            }
-        }
+        { ttlMs: 60_000, qos: toInboundTestQos(input) }
     );
     return {
         ...message,
@@ -178,6 +179,18 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
         ordering: input.seq === undefined
             ? undefined
             : { orderingKey: INBOUND_TEST_ORDERING_KEY, seq: input.seq }
+    };
+}
+
+function toInboundTestQos(input: InboundTestMessageInput): ALQosPolicyRequest | undefined {
+    if (input.supersedenceKey === undefined && input.acknowledged !== true) {
+        return undefined;
+    }
+    return {
+        ...(input.supersedenceKey === undefined ? {} : {
+            supersedence: { algo: 'latest-wins', opts: { supersedenceKey: input.supersedenceKey } }
+        }),
+        ...(input.acknowledged === true ? { ack: { algo: 'hop' } } : {})
     };
 }
 

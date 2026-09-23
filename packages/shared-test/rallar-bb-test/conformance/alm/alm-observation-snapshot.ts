@@ -8,6 +8,7 @@ const STORAGE_COUNTERS_TOPIC = 'rallar.bb.storage.counters';
 const COMMIT_PHASES_DIAGNOSTIC_KIND = 'commit-phases';
 const ADMISSION_OUTCOME_DIAGNOSTIC_KIND = 'admission-outcome';
 const EFFECT_DRAIN_DIAGNOSTIC_KIND = 'effect-drain';
+const CLAIM_SETTLED_DIAGNOSTIC_KIND = 'claim-settled';
 const WORK_PAGE_COUNTER_KIND = 'work-page';
 const RECIPE_RUN_RESULT_KIND = 'recipe.run';
 /** The ALM lane mints its agent ids with these prefixes (`full-stack-helpers.ts:838`). */
@@ -64,6 +65,19 @@ export interface ALMObservationInboundDrain {
     readonly queueWaitMs: number;
 }
 
+/** One `claim-settled`: what the claim cost, and the three instants its wait splits at. */
+export interface ALMObservationInboundClaim {
+    readonly atEpochMs: number;
+    readonly role: ALMObservationAgentRole;
+    readonly workerId: string;
+    /** `dispatch-local`, `send-control` or another effect kind, as the topic emits it. */
+    readonly payloadKind: string;
+    readonly durationMs: number;
+    readonly dueAtMs: number;
+    readonly batchStartedAtMs: number;
+    readonly startedAtMs: number;
+}
+
 export function resolveALMObservationAgentRole(agentId: string): ALMObservationAgentRole {
     if (agentId.startsWith(SENDER_AGENT_ID_PREFIX)) {
         return 'sender';
@@ -83,6 +97,7 @@ export interface ALMObservationSnapshot {
     readonly commandResults: readonly ALMObservationCommandResult[];
     readonly inboundOutcomes: readonly ALMObservationInboundOutcome[];
     readonly inboundDrains: readonly ALMObservationInboundDrain[];
+    readonly inboundClaims: readonly ALMObservationInboundClaim[];
 }
 
 interface ALMObservationDiagnostic {
@@ -124,6 +139,9 @@ export function decodeALMObservationSnapshot(
             isPresent
         ),
         inboundDrains: toTopicDiagnostics(diagnostics, INBOUND_DIAGNOSTICS_TOPIC).map(toInboundDrain).filter(
+            isPresent
+        ),
+        inboundClaims: toTopicDiagnostics(diagnostics, INBOUND_DIAGNOSTICS_TOPIC).map(toInboundClaim).filter(
             isPresent
         )
     });
@@ -241,6 +259,34 @@ function toInboundDrain(
         runDurationMs,
         releaseDurationMs,
         queueWaitMs
+    };
+}
+
+function toInboundClaim(
+    diagnostic: ALMObservationDiagnostic
+): ALMObservationInboundClaim | undefined {
+    const workerId = decodeText(diagnostic.detail.workerId);
+    const payloadKind = decodeText(diagnostic.detail.payloadKind);
+    const durationMs = decodeFiniteNumber(diagnostic.detail.durationMs);
+    const dueAtMs = decodeFiniteNumber(diagnostic.detail.dueAtMs);
+    const batchStartedAtMs = decodeFiniteNumber(diagnostic.detail.batchStartedAtMs);
+    const startedAtMs = decodeFiniteNumber(diagnostic.detail.startedAtMs);
+    if (
+        diagnostic.detail.kind !== CLAIM_SETTLED_DIAGNOSTIC_KIND || workerId === undefined ||
+        payloadKind === undefined || durationMs === undefined || dueAtMs === undefined ||
+        batchStartedAtMs === undefined || startedAtMs === undefined
+    ) {
+        return undefined;
+    }
+    return {
+        atEpochMs: diagnostic.atEpochMs,
+        role: resolveALMObservationAgentRole(diagnostic.agentId),
+        workerId,
+        payloadKind,
+        durationMs,
+        dueAtMs,
+        batchStartedAtMs,
+        startedAtMs
     };
 }
 

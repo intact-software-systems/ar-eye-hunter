@@ -1,6 +1,7 @@
 import type {
     ALMObservationAgentRole,
     ALMObservationCommandResult,
+    ALMObservationInboundClaim,
     ALMObservationInboundDrain,
     ALMObservationInboundOutcome,
     ALMObservationRtcLifecycle,
@@ -26,6 +27,8 @@ export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
 
 const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender', 'receiver', 'unattributed'];
 const PENDING_INBOUND_OUTCOME = 'pending';
+const DISPATCH_LOCAL_PAYLOAD_KIND = 'dispatch-local';
+const SEND_CONTROL_PAYLOAD_KIND = 'send-control';
 
 export type ALMObservationRegimeName = 'normal' | 'slow' | 'unclassified';
 
@@ -53,6 +56,17 @@ export interface ALMObservationInboundPhases {
     readonly drainCount: number;
 }
 
+export interface ALMObservationInboundClaimWaits {
+    /** Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: waiting for a round to reserve the row. */
+    readonly reservationWaitMedianMs: number;
+    /** Median `startedAtMs − batchStartedAtMs` over the same claims: waiting behind earlier claims of the same batch. */
+    readonly intraBatchWaitMedianMs: number;
+    readonly dispatchClaimCount: number;
+    /** Median `durationMs` over this role's `send-control` claims. */
+    readonly sendControlClaimMedianMs: number;
+    readonly sendControlClaimCount: number;
+}
+
 /** A `pendingSharePercent` over zero `admission-outcome` events is not a measurement. */
 export type ALMObservationInboundPendingShare =
     | Readonly<{ outcome: 'measured'; pendingSharePercent: number; outcomeCount: number; }>
@@ -64,6 +78,7 @@ export type ALMObservationInboundDirection =
         outcome: 'measured';
         pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
+        claimWaits: ALMObservationInboundClaimWaits;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
 
@@ -256,30 +271,41 @@ function computeWorkPageRate(
  * fixed order, because the block reads the receiver whether or not the sender happened to emit too.
  */
 function computeInboundDirections(snapshot: ALMObservationSnapshot): readonly ALMObservationInboundDirection[] {
-    if (snapshot.inboundOutcomes.length === 0 && snapshot.inboundDrains.length === 0) {
+    if (
+        snapshot.inboundOutcomes.length === 0 && snapshot.inboundDrains.length === 0 &&
+        snapshot.inboundClaims.length === 0
+    ) {
         return [];
     }
     return ALM_OBSERVATION_AGENT_ROLES.map((role) =>
-        toInboundDirection(
-            role,
-            snapshot.inboundOutcomes.filter((outcome) => outcome.role === role),
-            snapshot.inboundDrains.filter((drain) => drain.role === role)
-        )
+        toInboundDirection(role, {
+            outcomes: snapshot.inboundOutcomes.filter((outcome) => outcome.role === role),
+            drains: snapshot.inboundDrains.filter((drain) => drain.role === role),
+            claims: snapshot.inboundClaims.filter((claim) => claim.role === role)
+        })
     );
+}
+
+/** One role's share of the inbound events. */
+interface ALMObservationInboundRoleEvents {
+    readonly outcomes: readonly ALMObservationInboundOutcome[];
+    readonly drains: readonly ALMObservationInboundDrain[];
+    readonly claims: readonly ALMObservationInboundClaim[];
 }
 
 function toInboundDirection(
     role: ALMObservationAgentRole,
-    outcomes: readonly ALMObservationInboundOutcome[],
-    drains: readonly ALMObservationInboundDrain[]
+    events: ALMObservationInboundRoleEvents
 ): ALMObservationInboundDirection {
-    return outcomes.length === 0 && drains.length === 0
+    const { outcomes, drains, claims } = events;
+    return outcomes.length === 0 && drains.length === 0 && claims.length === 0
         ? { role, outcome: 'no-events' }
         : {
             role,
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
-            phases: computeInboundPhases(drains)
+            phases: computeInboundPhases(drains),
+            claimWaits: computeInboundClaimWaits(claims)
         };
 }
 
@@ -306,6 +332,22 @@ function computeInboundPhases(drains: readonly ALMObservationInboundDrain[]): AL
         queueWaitMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.queueWaitMs))),
         drainMedianMs: toTwoDecimals(computeMedian(drains.map((drain) => drain.durationMs))),
         drainCount: drains.length
+    };
+}
+
+function computeInboundClaimWaits(claims: readonly ALMObservationInboundClaim[]): ALMObservationInboundClaimWaits {
+    const dispatches = claims.filter((claim) => claim.payloadKind === DISPATCH_LOCAL_PAYLOAD_KIND);
+    const sendControls = claims.filter((claim) => claim.payloadKind === SEND_CONTROL_PAYLOAD_KIND);
+    return {
+        reservationWaitMedianMs: toTwoDecimals(
+            computeMedian(dispatches.map((claim) => claim.batchStartedAtMs - claim.dueAtMs))
+        ),
+        intraBatchWaitMedianMs: toTwoDecimals(
+            computeMedian(dispatches.map((claim) => claim.startedAtMs - claim.batchStartedAtMs))
+        ),
+        dispatchClaimCount: dispatches.length,
+        sendControlClaimMedianMs: toTwoDecimals(computeMedian(sendControls.map((claim) => claim.durationMs))),
+        sendControlClaimCount: sendControls.length
     };
 }
 

@@ -38,6 +38,23 @@ const push = (id, line) => {
     rows.get(id).push(line);
 };
 const sends = [];
+// A `dispatch-local` claim carries no typeId by contract, so claims are matched on the msgIds the
+// lifecycle sends and admissions named: a delivery by its own msgId, an ACK by its subjectMsgId.
+const lifecycleMsgIds = new Set();
+for (const e of snap.events) {
+    const p = e.payload ?? {};
+    const b = p.payload ?? {};
+    const d = b.data ?? {};
+    if (p.topic === 'rallar.bb.messages.sent' && typeRe.test(b.commandId ?? '')) {
+        lifecycleMsgIds.add(b.msgId);
+    }
+    if (
+        p.topic === 'rallar.browser.alm.inbound_diagnostics' && d.kind === 'admission-outcome' &&
+        typeRe.test(d.typeId ?? '')
+    ) {
+        lifecycleMsgIds.add(d.msgId);
+    }
+}
 for (const e of snap.events) {
     const p = e.payload ?? {};
     const b = p.payload ?? {};
@@ -65,11 +82,13 @@ for (const e of snap.events) {
     }
     if (
         p.topic === 'rallar.browser.alm.inbound_diagnostics' && d.kind === 'claim-settled' &&
-        typeRe.test(d.typeId ?? '')
+        (lifecycleMsgIds.has(d.msgId) || lifecycleMsgIds.has(d.subjectMsgId))
     ) {
         push(
-            d.msgId,
-            `${t} ${r} IN  claim-settled outcome=${d.outcome} payloadKind=${d.payloadKind} attempts=${d.attempts} queueWait=${d.queueWaitMs} dur=${d.durationMs}`
+            lifecycleMsgIds.has(d.msgId) ? d.msgId : d.subjectMsgId,
+            `${t} ${r} IN  claim-settled outcome=${d.outcome} payloadKind=${d.payloadKind} attempts=${d.attempts} queueWait=${d.queueWaitMs} reservationWait=${
+                d.batchStartedAtMs - d.dueAtMs
+            } intraBatchWait=${d.startedAtMs - d.batchStartedAtMs} dur=${d.durationMs}`
         );
     }
     if (

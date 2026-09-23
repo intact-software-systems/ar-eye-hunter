@@ -223,7 +223,8 @@ describe('ALWorkHandler', () => {
             claimDurationMs: PHASE_CLAIM_MS,
             runDurationMs: 2 * PHASE_RUN_MS,
             releaseDurationMs: PHASE_RELEASE_MS,
-            queueWaitMs: PHASE_QUEUE_WAIT_MS
+            queueWaitMs: PHASE_QUEUE_WAIT_MS,
+            startedAtMs: PHASE_BATCH_START_MS
         }]);
 
         handler.dispose();
@@ -267,7 +268,8 @@ describe('ALWorkHandler', () => {
             claimDurationMs: 0,
             runDurationMs: 0,
             releaseDurationMs: PHASE_RELEASE_MS,
-            queueWaitMs: 0
+            queueWaitMs: 0,
+            startedAtMs: PHASE_BATCH_START_MS
         }]);
 
         handler.dispose();
