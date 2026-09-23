@@ -177,7 +177,7 @@ npm run perf:api-v1:state-write -- \
   --concurrency=10 \
   --out=tmp/perf/api-v1-state-write-candidate.json
 
-node scripts/perf/compare-api-v1-state-write-results.mjs \
+node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs \
   tmp/perf/api-v1-state-write-baseline.json \
   tmp/perf/api-v1-state-write-candidate.json
 ```

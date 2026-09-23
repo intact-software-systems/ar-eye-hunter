@@ -612,7 +612,7 @@ It writes `rtc-topology-replay-proof.json` plus isolated A, B, C, and C' logs.
 
 A mutation-path or concurrency-domain change must also run
 `npm run perf:api-v1:state-write` and pass
-`node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
+`node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
 The comparative result gate validates the artifact and durable receipt/outbox
 linkage before evaluating latency, throughput, SQL/resource counts, transaction
 duration, and retry exhaustion.

@@ -5,7 +5,7 @@ import {
     expect,
     it
 } from 'vitest';
-import { deriveAppInboxAttemptObservations } from '../../../scripts/perf/api-v1-state-write-attempt-evidence.ts';
+import { deriveAppInboxAttemptObservations } from '../../../apps/api-v1/scripts/perf/api-v1-state-write-attempt-evidence.ts';
 
 const evidence = [{
     commandId: 'command-1',

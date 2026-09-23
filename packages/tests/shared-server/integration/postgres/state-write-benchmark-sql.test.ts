@@ -4,7 +4,7 @@ import {
     it
 } from 'vitest';
 
-import { createStateWriteBenchmarkSql } from '../../../../../scripts/perf/create-state-write-benchmark-sql.ts';
+import { createStateWriteBenchmarkSql } from '../../../../../apps/api-v1/scripts/perf/create-state-write-benchmark-sql.ts';
 import { requirePostgresDatabaseUrl } from '../../runtime-state/postgres/postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;

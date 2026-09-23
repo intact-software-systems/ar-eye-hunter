@@ -110,7 +110,7 @@ fails validation.
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.
 - When shared state contracts, mandatory fields, repository interfaces, or
   service composition/signatures change, native-check every affected reusable
-  `scripts/perf/**` consumer and smoke the relevant executable harness.
+  `apps/api-v1/scripts/perf/**` and `scripts/platform/perf/**` consumers and smoke the relevant executable harness.
   An unchanged historical artifact hash proves preservation, not that current
   HEAD can reproduce it.
 - Scoped storage-key changes: prove exact canonical keys and pairwise
@@ -149,7 +149,7 @@ fails validation.
   replace this semantic proof with log counts.
 - A mutation-path or concurrency-domain change also requires
   `npm run perf:api-v1:state-write` and the comparative result gate implemented
-  by `node scripts/perf/compare-api-v1-state-write-results.mjs`.
+  by `node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs`.
 - Browser facade changes: include `packages/tests/shared-web` and app builds if game apps consume the surface.
 - Server/middleware changes: include `packages/tests/shared-server`, Deno checks for API apps, and focused restart/routing tests when relevant.
 - REST API additions or behavior changes: add or update Rallar black-box recipes/tests in `packages/shared-test/black-box-runner` alongside the API change, then run the focused black-box command when its required services are available.

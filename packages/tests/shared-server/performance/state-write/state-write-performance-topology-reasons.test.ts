@@ -4,13 +4,13 @@ import {
     GROUP_TOPOLOGY_CONFLICT_REASON,
     GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
     parseGroupTopologyRegressionReasons
-} from '../../../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
+} from '../../../../../apps/api-v1/scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
 
-import { parseBenchmarkOptions } from '../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
+import { parseBenchmarkOptions } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
 
-import { selectStateWriteRegressionReasons } from '../../../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
+import { selectStateWriteRegressionReasons } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
-import type { StateWriteBenchmarkRegressionReason } from '../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
+import type { StateWriteBenchmarkRegressionReason } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
 
 const APPROVED_PR_C_BASE_COMMIT = '39ad65b499c4bf944acfe48446ad1c334d97d37d';
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
@@ -27,7 +27,7 @@ interface GroupTopologyConflictReasonInput {
 
 describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, () => {
     it('binds precommitted topology conflict reasons before measurement', async () => {
-        const artifactOwner = await import('../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts');
+        const artifactOwner = await import('../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts');
         const input = createConflictReasonInput();
         const parseReasons = (text: string | undefined) => parseGroupTopologyRegressionReasons(text, CANDIDATE_IDENTITY);
         expect(parseReasons(undefined)).toEqual([]);

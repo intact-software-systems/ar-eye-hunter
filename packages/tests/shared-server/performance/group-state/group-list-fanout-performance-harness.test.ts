@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 describe('group list fanout performance harness repository', () => {
     it('preserves optimistic insert, update, and delete conflict semantics', async () => {
         vi.stubGlobal('Deno', { args: [] });
-        const bench = await import('../../../../../scripts/perf/group-list-fanout-bench.ts');
+        const bench = await import('../../../../../scripts/platform/perf/group-list-fanout-bench.ts');
         expect(bench.CountingRuntimeStateRepository).toBeTypeOf('function');
         const repository = new bench.CountingRuntimeStateRepository();
 

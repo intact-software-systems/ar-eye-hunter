@@ -16,7 +16,7 @@ Treat static analysis as hypothesis generation unless the issue is obvious from 
 
 For an api-v1 state mutation-path or concurrency-domain change, run
 `npm run perf:api-v1:state-write` and require the comparative result gate:
-`node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
+`node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
 Also preserve the medium-scale correctness gate after focused tests:
 `npm run test:api-v1:black-box:postgres:medium-scale`, with 100 independently
 authenticated clients, five groups, three Postgres-backed API processes, 10

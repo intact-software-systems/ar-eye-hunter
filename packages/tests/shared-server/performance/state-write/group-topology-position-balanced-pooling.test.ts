@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import {
     GROUP_TOPOLOGY_CONFLICT_REASON,
     poolGroupTopologyStateWritePositionBalancedResults
-} from '../../../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
-import type { StateWriteBenchmarkRegressionReason } from '../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
-import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../../../scripts/perf/write-group-topology-state-write-position-balanced-results.mjs';
+} from '../../../../../apps/api-v1/scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
+import type { StateWriteBenchmarkRegressionReason } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
+import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../../../apps/api-v1/scripts/perf/write-group-topology-state-write-position-balanced-results.mjs';
 import {
     createStateWritePerformanceArtifact,
     decodeStateWritePerformanceArtifact,

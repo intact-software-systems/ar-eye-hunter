@@ -7,7 +7,7 @@ import {
     analyzeCrdtAppendHistoryReport,
     CRDT_APPEND_HISTORY_CASES,
     validateCrdtAppendHistoryArtifactCase
-} from '../../../scripts/perf/compare-api-v1-crdt-append-history-results.mjs';
+} from '../../../apps/api-v1/scripts/perf/compare-api-v1-crdt-append-history-results.mjs';
 import { readApiV1Matrix, readApiV1Recipe, toFlatApiV1RecipeSteps } from './api-v1-recipe-test-fixture.ts';
 
 interface BlackBoxStep extends Readonly<Record<string, unknown>> {

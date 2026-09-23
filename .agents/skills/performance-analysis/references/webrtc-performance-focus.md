@@ -359,7 +359,7 @@ Tests and perf harnesses:
 - `packages/tests/shared-server/rallar-system/websocket/`
 - `packages/tests/shared-server/rallar-system/topology/`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/`
-- `scripts/perf/README.md`
+- `scripts/platform/perf/README.md`
 - `packages/shared-rtc-bench/workloads/`
 - `packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs`
 
@@ -388,7 +388,7 @@ npm run test:shared-black-box:matrix:live:traffic
 npm run test:shared-black-box:browser:live
 ```
 
-Reusable WebRTC perf harness examples from `scripts/perf/README.md`:
+Reusable WebRTC perf harness examples from `scripts/platform/perf/README.md`:
 
 ```sh
 deno run --config apps/api-v1/deno.json --allow-read --allow-write packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts --peers=500 --ice-candidates=5 --offer-collisions=3 --runs=3 --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
@@ -406,10 +406,10 @@ Diagnostics artifact capture:
 RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR=tmp/perf/results npm run test:rallar:full-stack:memory:live-rtc-3
 ```
 
-Profiling patterns documented in `scripts/perf/README.md`:
+Profiling patterns documented in `scripts/platform/perf/README.md`:
 
 ```sh
-deno run --config apps/api-v1/deno.json --allow-read --allow-write --v8-flags=--prof,--expose-gc scripts/perf/runtime-validation-bench.ts --mode=full --runs=1 --out=tmp/perf/results/runtime-validation-focused-profiled-run.json
+deno run --config apps/api-v1/deno.json --allow-read --allow-write --v8-flags=--prof,--expose-gc scripts/platform/perf/runtime-validation-bench.ts --mode=full --runs=1 --out=tmp/perf/results/runtime-validation-focused-profiled-run.json
 node --prof-process tmp/perf/profiles/runtime-validation-focused-v8.log > tmp/perf/profiles/runtime-validation-focused-v8-processed.txt
 ```
 

@@ -206,7 +206,7 @@ npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:postgres:medium-scale
 npm run test:api-v1:black-box:postgres:topology-replay
 npm run perf:api-v1:state-write
-node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>
+node apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>
 ```
 
 The medium-scale gate retains 100 independently authenticated clients, five

@@ -235,8 +235,8 @@ When using the `performance-analysis` skill:
 - Start static audits from `packages/**`, `apps/api-v1`,
   `apps/rallar-black-box-control-server`, and
   `apps/rallar-black-box-headless`.
-- Read `scripts/perf/README.md` and the relevant existing harness under
-  `scripts/perf/**` before adding a benchmark.
+- Read `scripts/platform/perf/README.md` before adding a shared-server benchmark.
+  API-v1 state-write harnesses live under `apps/api-v1/scripts/perf/`.
 - Run focused correctness tests from the `rallar-testing` skill before
   accepting an optimization.
 - Put generated profiles under `tmp/perf/` and do not commit them unless
