@@ -6,9 +6,11 @@ import { describe, expect, it } from 'vitest';
 import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import {
-    ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
     ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT,
-    ALM_OBSERVATION_PAGE_WINDOW_END_MS,
+    ALM_OBSERVATION_PAGE_WINDOW_END_MS
+} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-page-regime.ts';
+import {
+    ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
     ALM_OBSERVATION_WINDOW_MS,
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
@@ -16,6 +18,7 @@ import {
     type ALMObservationCellOutcome,
     type ALMObservationRegime
 } from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');
@@ -60,7 +63,7 @@ function toCommitPhaseEvent(
     atEpochMs: number,
     msPerOperation: number,
     origin: string
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -83,7 +86,7 @@ function toReadinessProbeEvent(
     atEpochMs: number,
     agentId: string,
     probe: Readonly<{ cause: string; durationMs: number; }>
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -102,7 +105,7 @@ function toPageWindowProbes(
     durationMs: number,
     count: number,
     cause = 'age-bound'
-): readonly Record<string, unknown>[] {
+): readonly RallarBlackBoxTestRecord[] {
     return [
         toCommitPhaseEvent(1_000, 12, 'send'),
         ...Array.from({ length: count }, (_unused, index) =>
@@ -118,7 +121,7 @@ function toInboundOutcomeEvent(
     atEpochMs: number,
     agentId: string,
     outcome: string
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -143,7 +146,7 @@ function toInboundDrainEvent(
         releaseDurationMs: number;
         queueWaitMs: number;
     }>
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -167,7 +170,7 @@ function toInboundClaimEvent(
         batchStartedAtMs: number;
         startedAtMs: number;
     }>
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -186,7 +189,7 @@ function toDispatchClaimEvent(
     atEpochMs: number,
     reservationWaitMs: number,
     intraBatchWaitMs: number
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     const batchStartedAtMs = 10_000;
     return toInboundClaimEvent(atEpochMs, RECEIVER_AGENT_ID, {
         payloadKind: 'dispatch-local',
@@ -198,7 +201,7 @@ function toDispatchClaimEvent(
 }
 
 function toSyntheticRegime(
-    events: readonly Record<string, unknown>[],
+    events: readonly RallarBlackBoxTestRecord[],
     pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile
 ): ALMObservationRegime {
     return decodeALMObservationSnapshot({ runId: 'alm-synthetic', results: [], events }).fold(
@@ -220,7 +223,7 @@ function toEvenlySpacedCommitPhases(
     msPerOperation: number,
     count: number,
     origin = 'send'
-): readonly Record<string, unknown>[] {
+): readonly RallarBlackBoxTestRecord[] {
     return Array.from(
         { length: count },
         (_unused, index) => toCommitPhaseEvent(1_000 + index * 100, msPerOperation, origin)
