@@ -455,19 +455,8 @@ function registerBrowserRttEgress(
     rtcRxStreamer: WebRtcRxStreamerService
 ): void {
     rtcRxStreamer.onRttMeasurementDo(AppTopics.rtt, {
-        onHeartbeat: (rtt: RttMeasurementInfo): Promise<void> => {
-            const queueBox = input.webSocketTransport;
-            void queueBox.webSocketQueueBox.enqueueOutboxIfAbsent(
-                createBrowserRttHeartbeatMessage(input.clientData.sessionId, rtt, input.creation.createMessage)
-            ).then((result) => {
-                if (result.verdict.kind === 'admitted' || result.verdict.kind === 'duplicate') {
-                    queueBox.qboxEngine.wake();
-                }
-            }).catch((error) => {
-                console.error('Failed to enqueue RTT heartbeat', toError(error));
-            });
-            return Promise.resolve();
-        }
+        // PROBE (never merged): RTT heartbeats are not enqueued, so the outbound commit lock sees no rtt commits.
+        onHeartbeat: (): Promise<void> => Promise.resolve()
     });
 }
 
