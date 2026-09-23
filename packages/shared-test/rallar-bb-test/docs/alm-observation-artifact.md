@@ -22,7 +22,7 @@ capture; every real lane run does, so its absence marks an artifact from before 
 The cell also prints one line to the job log:
 
 ```text
-ALM observation ws-smoke: regime=normal perOperation=8.67 ms/op over 15 commits outcome=passed
+ALM observation ws-smoke: regime=normal perOperation=8.67 ms/op over 15 commits outcome=passed page=normal (2 ms/probe over 34)
 ```
 
 ## The budgets stay
@@ -56,6 +56,15 @@ records what the runner was doing while the cell ran:
   Only `send`-origin commits count. A failing cell's own degradation dominates a whole-cell median,
   and a drain's commit measures a different read chain than a caller's own admission, so neither
   belongs in a reading of the runner.
+- `pageRegime` — the page's storage queue, beside `regime`'s admission chain. It is the median
+  `durationMs` of the outbound `age-bound` `readiness-probe` events, over both roles, from
+  `ALM_OBSERVATION_WINDOW_MS` to `ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event: an
+  `age-bound` probe is a fixed-shape storage read taken only because the remembered answer aged out,
+  so its duration reads how long the read queued behind the page's other IndexedDB transactions
+  rather than anything about the admission chain itself. The window is deferred past the outbound
+  regime's own opening window because page start-up contends too. `{ outcome: 'unmeasured',
+  sampleCount, regime: 'unclassified' }` below `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples;
+  otherwise `{ outcome: 'measured', storageProbeMedianMs, sampleCount, regime }`.
 - `peerReadiness` — per lifecycle stream and peer, the time from first known to first ready, or
   `never-ready` with how long the peer was observed.
 - `scenarioSends` — each recipe run's wall clock, or, for a run that failed, the failing step's
@@ -112,16 +121,26 @@ records what the runner was doing while the cell ran:
 
 ## Reading a red
 
-A red cell is a regression only when its runner regime matches a green baseline's.
+> **Classify before judging.** A run is `normal` only when its `regime` and its
+> `pageRegime.regime` are both `normal`, and `slow` when either is `slow`. The `rtc` cell's two
+> regimes together are the runner's verdict. A red counts only against a green baseline of the
+> same carrier and scope whose two regimes match the red's. A red in a slow page regime, compared
+> against a normal-page baseline, is a measurement of the runner, not a verdict on the change.
+> That holds even when the outbound `regime` of both runs is `normal`: the page regime exists
+> because the outbound regime scored `7add928af`'s page `normal`, whose probe took 141–210 ms,
+> beside the RTT-off probe's page at 2–4 ms. An `unclassified` in either regime leaves the cell
+> unattributed. Re-run it.
 
-1. Read `regime` in the failing cell's file.
-2. Find the most recent green run of the same carrier and scope, and read its `regime`.
-3. If both say `normal`, the red is a product regression: diff the two snapshots.
-4. If the red says `slow` and the baseline says `normal`, the red is a measurement of the runner,
-   not a verdict on the change. Re-run, or compare against a green baseline that also ran `slow`.
-5. If either says `unclassified`, the run carries no regime evidence — `perOperation` says whether
-   that is too few commit phases or a median inside the band between the thresholds. Treat the cell
-   as unattributed and re-run.
+1. Read `regime` and `pageRegime.regime` in the failing cell's file.
+2. Find the most recent green run of the same carrier and scope, and read the same two fields.
+3. If both cells' `regime` and `pageRegime.regime` are `normal`, the red is a product regression:
+   diff the two snapshots.
+4. If either of the red's two regimes is `slow` and the baseline's matching regime is not, the red
+   is a measurement of the runner, not a verdict on the change. Re-run, or compare against a green
+   baseline whose two regimes match the red's.
+5. If either regime says `unclassified` on either run, the cell carries no regime evidence —
+   `perOperation` and `pageRegime`'s `sampleCount` say whether that is too few samples or a median
+   inside a band. Treat the cell as unattributed and re-run.
 
 The band was established on the `rtc` cell. The `ws` and `rtc-with-ws-fallback` cells carry only
 4–13 opening-window samples per run, a weaker discriminator than `rtc`'s. Take a run's `rtc` regime
@@ -134,5 +153,19 @@ at or above 36 ms went 0 ready / 6 timeout — including a same-day re-execution
 which failed identically in the slow regime. The per-run table behind that claim is in the F2 pull
 request body (PR #559), under the runner-regime section.
 
-The thresholds are constants, not tuning knobs. Widening them to absorb a red erases the one signal
-that separates a slow runner from a regression.
+The page thresholds were put the same way, from 24 hosted cells across eight lane runs of the S2
+corpus, read as the median `age-bound` probe `durationMs` from `ALM_OBSERVATION_WINDOW_MS` to
+`ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event:
+
+| Page | Count | Median band | Cells                                                         |
+| ---- | ----- | ----------- | ------------------------------------------------------------- |
+| fast | 6     | 1–3 ms      | the RTT-off probe (1 / 3 / 2) and `6f6006cfe` (2 / 1 / 3)     |
+| slow | 18    | 66.5–358 ms | every other cell: F 66.5 / 69 / 358, Task 0 113 / 199.5 / 315 |
+
+`ALM_OBSERVATION_NORMAL_PAGE_MAX_PROBE_MS` (20) sits at about 6× the fast band's top;
+`ALM_OBSERVATION_SLOW_PAGE_MIN_PROBE_MS` (50) sits below the slow band's lowest cell (66.5 ms).
+`ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` (10) is the sample floor, and
+`ALM_OBSERVATION_PAGE_WINDOW_END_MS` (60 000) is where the window closes.
+
+The thresholds — outbound and page alike — are constants, not tuning knobs. Widening them to
+absorb a red erases the one signal that separates a slow runner from a regression.

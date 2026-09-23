@@ -7,6 +7,8 @@ import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar
 import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import {
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
+    ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT,
+    ALM_OBSERVATION_PAGE_WINDOW_END_MS,
     ALM_OBSERVATION_WINDOW_MS,
     computeALMObservationRegime,
     createUnreadableALMObservationRegime,
@@ -75,6 +77,41 @@ function toCommitPhaseEvent(
             }
         }
     };
+}
+
+function toReadinessProbeEvent(
+    atEpochMs: number,
+    agentId: string,
+    probe: Readonly<{ cause: string; durationMs: number; }>
+): Record<string, unknown> {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: { kind: 'readiness-probe', workerId: 'al-outbound:worker-1', readyAtMs: 'none', ...probe }
+            }
+        }
+    };
+}
+
+/** `count` probes a second apart inside the page window; the anchor commit keeps the run's first event at 1 000. */
+function toPageWindowProbes(
+    durationMs: number,
+    count: number,
+    cause = 'age-bound'
+): readonly Record<string, unknown>[] {
+    return [
+        toCommitPhaseEvent(1_000, 12, 'send'),
+        ...Array.from({ length: count }, (_unused, index) =>
+            toReadinessProbeEvent(
+                1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1),
+                index % 2 === 0 ? SENDER_AGENT_ID : RECEIVER_AGENT_ID,
+                { cause, durationMs }
+            ))
+    ];
 }
 
 function toInboundOutcomeEvent(
@@ -207,6 +244,7 @@ describe('computeALMObservationRegime', () => {
         expect(regime.windowMs).toBe(ALM_OBSERVATION_WINDOW_MS);
         expect(regime.snapshotIssues).toEqual([]);
         expect(regime.inbound).toEqual([]);
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
     it('reports both peers ready and the work-page rate for the green hosted run', () => {
@@ -257,6 +295,7 @@ describe('computeALMObservationRegime', () => {
         });
         expect(regime.cellOutcome).toBe('failed');
         expect(regime.inbound).toEqual([]);
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
     it('names the failing step code and the never-ready peers of the red hosted run', () => {
@@ -287,6 +326,64 @@ describe('computeALMObservationRegime', () => {
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(30, 7)).regime).toBe('unclassified');
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(34.99, 7)).regime).toBe('unclassified');
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(35, 7)).regime).toBe('slow');
+    });
+
+    it('classifies the page from the median age-bound probe, unmoved by probes outside its window or cause', () => {
+        const regime = toSyntheticRegime([
+            ...toPageWindowProbes(2, 10),
+            ...Array.from({ length: 5 }, (_unused, index) => toReadinessProbeEvent(1_000 + index, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 400 })),
+            ...Array.from({ length: 5 }, (_unused, index) =>
+                toReadinessProbeEvent(
+                    1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1),
+                    RECEIVER_AGENT_ID,
+                    { cause: 'own-commit', durationMs: 400 }
+                )),
+            ...Array.from({ length: 5 }, (_unused, index) =>
+                toReadinessProbeEvent(
+                    1_000 + ALM_OBSERVATION_PAGE_WINDOW_END_MS + 1_000 * (index + 1),
+                    SENDER_AGENT_ID,
+                    { cause: 'age-bound', durationMs: 400 }
+                ))
+        ]);
+
+        expect(regime.pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 2,
+            sampleCount: 10,
+            regime: 'normal'
+        });
+    });
+
+    it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {
+        expect(toSyntheticRegime(toPageWindowProbes(120, 10)).pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 120,
+            sampleCount: 10,
+            regime: 'slow'
+        });
+        expect(toSyntheticRegime(toPageWindowProbes(30, 10)).pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 30,
+            sampleCount: 10,
+            regime: 'unclassified'
+        });
+    });
+
+    it('classifies the two edges of the page band', () => {
+        expect(toSyntheticRegime(toPageWindowProbes(19.99, 10)).pageRegime.regime).toBe('normal');
+        expect(toSyntheticRegime(toPageWindowProbes(20, 10)).pageRegime.regime).toBe('unclassified');
+        expect(toSyntheticRegime(toPageWindowProbes(49.99, 10)).pageRegime.regime).toBe('unclassified');
+        expect(toSyntheticRegime(toPageWindowProbes(50, 10)).pageRegime.regime).toBe('slow');
+    });
+
+    it('refuses to classify the page from fewer probes than the minimum', () => {
+        const regime = toSyntheticRegime(toPageWindowProbes(2, ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT - 1));
+
+        expect(regime.pageRegime).toEqual({
+            outcome: 'unmeasured',
+            sampleCount: ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT - 1,
+            regime: 'unclassified'
+        });
     });
 
     it('refuses to classify fewer commit phases than the minimum', () => {
@@ -499,7 +596,8 @@ describe('computeALMObservationRegime', () => {
 
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
-            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed'
+            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed ' +
+                'page=unclassified (unmeasured, 0 probes)'
         );
         expect(
             toALMObservationRegimeSummary(
@@ -511,8 +609,15 @@ describe('computeALMObservationRegime', () => {
                 })
             )
         ).toBe(
-            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed'
+            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed ' +
+                'page=unclassified (unmeasured, 0 probes)'
         );
+    });
+
+    it('summarizes a measured page regime with its median and sample count', () => {
+        const regime = toSyntheticRegime(toPageWindowProbes(2, 10));
+
+        expect(toALMObservationRegimeSummary(regime)).toContain('page=normal (2 ms/probe over 10)');
     });
 });
 
@@ -736,6 +841,34 @@ describe('decodeALMObservationSnapshot', () => {
             batchStartedAtMs: 10_000,
             startedAtMs: 14_000
         }]);
+    });
+
+    it('decodes a readiness-probe per agent role and skips one missing a cause or a finite duration', () => {
+        const missingCause = {
+            kind: 'diagnostic',
+            atEpochMs: 1_002,
+            agentId: SENDER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payload: {
+                    data: { kind: 'readiness-probe', workerId: 'al-outbound:worker-1', readyAtMs: 'none', durationMs: 12 }
+                }
+            }
+        };
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-probes',
+            results: [],
+            events: [
+                toReadinessProbeEvent(1_000, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 12 }),
+                toReadinessProbeEvent(1_001, RECEIVER_AGENT_ID, { cause: 'own-commit', durationMs: 8 }),
+                missingCause
+            ]
+        });
+
+        expect(decoded.right?.readinessProbes).toEqual([
+            { atEpochMs: 1_000, role: 'sender', cause: 'age-bound', durationMs: 12 },
+            { atEpochMs: 1_001, role: 'receiver', cause: 'own-commit', durationMs: 8 }
+        ]);
     });
 
     it('skips the events it does not read instead of rejecting the snapshot', () => {

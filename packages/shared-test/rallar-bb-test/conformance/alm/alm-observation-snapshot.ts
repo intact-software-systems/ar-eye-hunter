@@ -6,6 +6,7 @@ const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 const RTC_LIFECYCLE_TOPIC = 'rallar.browser.rtc.lifecycle';
 const STORAGE_COUNTERS_TOPIC = 'rallar.bb.storage.counters';
 const COMMIT_PHASES_DIAGNOSTIC_KIND = 'commit-phases';
+const READINESS_PROBE_DIAGNOSTIC_KIND = 'readiness-probe';
 const ADMISSION_OUTCOME_DIAGNOSTIC_KIND = 'admission-outcome';
 const EFFECT_DRAIN_DIAGNOSTIC_KIND = 'effect-drain';
 const CLAIM_SETTLED_DIAGNOSTIC_KIND = 'claim-settled';
@@ -78,6 +79,15 @@ export interface ALMObservationInboundClaim {
     readonly startedAtMs: number;
 }
 
+/** One outbound `readiness-probe`: a fixed-shape storage read, so its duration reads the page's storage queue. */
+export interface ALMObservationReadinessProbe {
+    readonly atEpochMs: number;
+    readonly role: ALMObservationAgentRole;
+    /** `age-bound`, `own-commit`, `batch`, `retained-release`, `external-wake` or `no-memory`, as the topic emits it. */
+    readonly cause: string;
+    readonly durationMs: number;
+}
+
 export function resolveALMObservationAgentRole(agentId: string): ALMObservationAgentRole {
     if (agentId.startsWith(SENDER_AGENT_ID_PREFIX)) {
         return 'sender';
@@ -98,6 +108,7 @@ export interface ALMObservationSnapshot {
     readonly inboundOutcomes: readonly ALMObservationInboundOutcome[];
     readonly inboundDrains: readonly ALMObservationInboundDrain[];
     readonly inboundClaims: readonly ALMObservationInboundClaim[];
+    readonly readinessProbes: readonly ALMObservationReadinessProbe[];
 }
 
 interface ALMObservationDiagnostic {
@@ -142,6 +153,9 @@ export function decodeALMObservationSnapshot(
             isPresent
         ),
         inboundClaims: toTopicDiagnostics(diagnostics, INBOUND_DIAGNOSTICS_TOPIC).map(toInboundClaim).filter(
+            isPresent
+        ),
+        readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(
             isPresent
         )
     });
@@ -288,6 +302,22 @@ function toInboundClaim(
         batchStartedAtMs,
         startedAtMs
     };
+}
+
+function toReadinessProbe(
+    diagnostic: ALMObservationDiagnostic
+): ALMObservationReadinessProbe | undefined {
+    const cause = decodeText(diagnostic.detail.cause);
+    const durationMs = decodeFiniteNumber(diagnostic.detail.durationMs);
+    return diagnostic.detail.kind !== READINESS_PROBE_DIAGNOSTIC_KIND || cause === undefined ||
+            durationMs === undefined
+        ? undefined
+        : {
+            atEpochMs: diagnostic.atEpochMs,
+            role: resolveALMObservationAgentRole(diagnostic.agentId),
+            cause,
+            durationMs
+        };
 }
 
 /**

@@ -185,7 +185,9 @@ every session the page opens. The event's `data` is the event itself:
   suppression the drains carry. The inbound rotation reports none: its probe
   reads a page every engine round by construction, and relaying one event per
   round costs more in this harness than the answer is worth (see **Inbound
-  Admission Diagnostics** below)
+  Admission Diagnostics** below). The ALM observation artifact reads this
+  bullet's `age-bound` probes as the page's storage-queue regime (`pageRegime`,
+  `alm-observation-artifact.md`)
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:
