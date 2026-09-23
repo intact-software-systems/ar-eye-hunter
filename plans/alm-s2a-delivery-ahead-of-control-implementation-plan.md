@@ -507,8 +507,8 @@ builds on existing functionality with no new abstraction or layer. Reading the c
 follow-up batch at that batch's end (`:168`). The reservation term is therefore the running batch's
 remaining duration, inflated by RTT-contended `send-control` claims; 2D shortens it, and preempting a
 running batch would be shape B. **Task 2 = 2D plus one pin** (Step 0 below) that the existing wake is
-reached from the ingress path and lands in the follow-up batch. Task 2C is recorded, not executed,
-unless Task 6 Step 3's re-read rule selects it (maintainer ruling, 2026-09-23).
+reached from the ingress path and lands in the follow-up batch. Task 2C was recorded, not executed,
+until the maintainer selected it on the Task 6 Step 3 record (ruling R-S2a-10, 2026-09-23).
 
 2D landed per Task 0 Step 9. 2C lands only if Task 6 Step 3's re-read rule selects it; otherwise the PR
 body records it as not chosen.
@@ -2222,6 +2222,17 @@ the final docs commit.
   - **Diagnostic.** The outbound verdict that every carrier discarded is now the `control-admission`
     outbound diagnostic.
   - **Changed in the plan:** Task 10 added after Task 9.
+
+- **R-S2a-10 (Task 2C executed).** Maintainer ruling, 2026-09-23, on the Task 6 Step 3 record: after
+  two iterations (f44af2799: the fallback both-normal cell at `send-control` 1 536.5 ms > 1 200 ms and
+  `delivery-reload` red at the post-reload RTC re-dial; 9cdf0a4ce: slow-runner measurement), the
+  maintainer chose "Execute 2C on this branch". Task 2C (one outbound commit per batch for that
+  batch's control sends) leaves "recorded, not executed" and runs as the next task on this branch,
+  with its preface's file count reported first (10 source files, 3 named test files, 17 test files
+  that pass `sendControlMessage`). Its acceptance is Task 6 Step 3 re-run on its head: the receiver
+  `send-control` claim median and the reload re-dial time on a both-normal cell, against the
+  f44af2799 fallback reading (1 536.5 ms; re-dial 20.9 s). No harness constant changes.
+  - **Changed in the plan:** Task 2C's steps become active; Task 6 Steps 3–6 reopen for the 2C head.
 
 ## Not in this slice
 
