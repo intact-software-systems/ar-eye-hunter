@@ -21,13 +21,22 @@ describe('WsQueueBoxClientService.sendLive', () => {
         TestWebSocket.instances.length = 0;
     });
 
-    it('reports the closed socket and writes nothing', () => {
+    it('reports the closed socket and writes nothing', async () => {
         vi.stubGlobal('WebSocket', TestWebSocket);
         const socket = new JsonWebSocketClient('ws://send-live-test', createPassThroughTransportFaultPort());
         const service = createDefaultWsQueueBoxClientService({ socket, sessionId: 'self', outbox: new InMemoryQueueBox() });
         onTestFinished(() => service.close());
+        const connected = socket.connect();
+        await Promise.resolve();
+        const native = TestWebSocket.instances.at(-1)!;
+        native.open();
+        await connected;
+        native.disconnect(1000, 'peer-closed');
+        const sendSpy = vi.spyOn(native, 'send');
 
         expect(service.sendLive(sendLiveMessage())).toBe('socket-closed');
+
+        expect(sendSpy).not.toHaveBeenCalled();
     });
 
     it('writes the exact outbox resource string to an open socket', async () => {

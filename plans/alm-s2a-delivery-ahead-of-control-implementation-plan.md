@@ -136,8 +136,7 @@ Per D18 and D19. No behaviour changes in this task; its hosted read decides Task
 
 - Modify: `packages/shared/alm/work/al-work-handler.ts:11-26,69-87,370-385`,
   `packages/shared/alm/inbound/read-al-inbound-work-selection.ts:41-57,78-83,156-204,274-298`,
-  `packages/shared/alm/inbound/al-inbound-work-entry.ts:56-62` (one inverse beside
-  `toALInboundWorkKey`), `packages/shared/alm/inbound/al-inbound-runtime-diagnostics.ts:29-106`,
+  `packages/shared/alm/inbound/al-inbound-runtime-diagnostics.ts:29-106`,
   `packages/shared/alm/inbound/al-inbound-message-runtime.ts:228-273,368-396,428-435`,
   `packages/shared/alm/outbound/al-outbound-message-runtime.ts:497-511` (`unreservedDue: []`),
   `packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts:9-12,55-86,113-130`,
@@ -156,16 +155,13 @@ Per D18 and D19. No behaviour changes in this task; its hosted read decides Task
 - Produces:
 
   ```ts
-  // packages/shared/alm/work/al-work-handler.ts
-  /** A due row the selection saw and did not hand the batch: held back by eligibility, or left unreserved by the port. */
-  export interface ALWorkUnreservedDue {
-      readonly key: Key;
-      readonly dueAtMs: number;
-  }
+  // packages/shared/alm/work/al-work-handler.ts gains no new exported type here (R-S2a-3): only
+  // `ALWorkBatchDiagnostics.startedAtMs` below. Run order and deferred rows are inbound-owned.
 
-  // packages/shared/alm/inbound/al-inbound-work-entry.ts
-  /** The effect id a work key was minted from: the inverse of `toALInboundWorkKey`'s context segment. */
-  export function toALInboundWorkEffectId(key: Key): string;
+  // No inverse of `toALInboundWorkKey` is added (R-S2a-3): queue-key context segments hash parts
+  // longer than 35 chars, so the inverse cannot exist. Effect ids are recorded at source instead --
+  // `runInboundClaim`'s own decoded `effect.effectId` in run order, and `ALInboundDeferredEffect`
+  // below from the selector -- never decoded back out of a `Key`.
 
   // packages/shared/alm/inbound/al-inbound-runtime-diagnostics.ts
   export interface ALInboundDeferredEffect {
@@ -174,11 +170,12 @@ Per D18 and D19. No behaviour changes in this task; its hosted read decides Task
   }
   ```
 
-- `ALWorkReadySelection` gains `readonly unreservedDue: readonly ALWorkUnreservedDue[]` (empty for
-  an owner that reserves without observing a page — the outbound owner and
-  `toTestALWorkReadySelection`). `ALWorkBatchDiagnostics` gains `readonly startedAtMs: number` (the
-  instant `runClaim` receives as `batchStartedAtMs`), `readonly claimedKeys: readonly Key[]` (run
-  order) and `readonly unreservedDue: readonly ALWorkUnreservedDue[]`.
+- `ALWorkBatchDiagnostics` gains only `readonly startedAtMs: number` (the instant `runClaim` receives
+  as `batchStartedAtMs`) — no `claimedKeys` or `unreservedDue` field lands on the generic
+  `ALWorkReadySelection`/`ALWorkBatchDiagnostics` types (R-S2a-3). Run order and deferred rows stay
+  inbound-owned: `runInboundClaim` records each claim's own `effect.effectId` at source into a
+  private `batchRunOrder`, and the inbound selector's `getUnreservedDue()` returns
+  `ALInboundDeferredEffect { effectId, dueAtMs }` directly — both keyed by effect id, never by `Key`.
 - `effect-drain` gains `startedAtMs: number`, `claimedEffectIds: readonly string[]` (run order) and
   `deferred: readonly ALInboundDeferredEffect[]`; `claim-settled` gains `effectId: string`,
   `subjectMsgId: string | null`, `dueAtMs`, `batchStartedAtMs` and `startedAtMs` (numbers);
@@ -196,9 +193,13 @@ Per D18 and D19. No behaviour changes in this task; its hosted read decides Task
 
   ```ts
   export interface ALMObservationInboundClaimWaits {
-      /** Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: waiting for a round to reserve the row. */
+      /**
+       * Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: from due to the
+       * run loop of the batch that ran the claim — the wait for a round, plus that batch's selection
+       * and reservation (R-S2a-4).
+       */
       readonly reservationWaitMedianMs: number;
-      /** Median `startedAtMs − batchStartedAtMs` over the same claims: waiting behind earlier claims of the same batch. */
+      /** Median `startedAtMs − batchStartedAtMs` over the same claims: the serialization behind earlier claims of the run loop (R-S2a-4). */
       readonly intraBatchWaitMedianMs: number;
       readonly dispatchClaimCount: number;
       /** Median `durationMs` over this role's `send-control` claims. */
@@ -229,7 +230,7 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
 | `claim-settled` events of another effect with a `batchStartedAtMs` after the admission, and no drain | A batch started and was still running at teardown (the in-flight batch)   |
 | None of the three, and no `rotation-alive` after the admission                                       | No round ran at all — the rotation was blocked or stopped                 |
 
-- [ ] **Step 1: The handler reports the batch's start, its run order and what it left behind (RED
+- [x] **Step 1: The handler reports the batch's start, its run order and what it left behind (RED
       first).** Add to `inbound-admission-diagnostics.test.ts` the test below before any
       production change; it fails to compile, then fails its assertions, until Step 3 lands:
 
@@ -261,18 +262,15 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       );
       ```
 
-      Add `drainsOf` beside the file's `claimsOf` (`:77-79`). Then, in `al-work-handler.ts`, add
-      `ALWorkUnreservedDue`, the new `ALWorkReadySelection` field and the three
-      `ALWorkBatchDiagnostics` fields, and make `reportBatch` (`:370-385`) pass `startedAtMs`,
-      `claimedKeys: selection.claims.map((claim) => claim.entry.key)` and
-      `unreservedDue: selection.unreservedDue`. `selectOutboundWork`
-      (`al-outbound-message-runtime.ts:498-511`) and `toTestALWorkReadySelection`
-      (`al-work-test-entries.ts:55-66`) return `unreservedDue: []`; the selection literal at
-      `al-work-handler.test.ts:195-202` gains `unreservedDue: []` and the two batch literals
-      (`:214-228`, `:258-272`) gain `startedAtMs: PHASE_BATCH_START_MS`, `claimedKeys` and
-      `unreservedDue: []`.
+      Add `drainsOf` beside the file's `claimsOf` (`:77-79`). Then, in `al-work-handler.ts`, add only
+      the one `ALWorkBatchDiagnostics.startedAtMs` field, and make `reportBatch` (`:370-385`) pass
+      `startedAtMs`. No `ALWorkUnreservedDue` type and no `claimedKeys`/`unreservedDue` field land on
+      the generic `ALWorkReadySelection`/`ALWorkBatchDiagnostics` types (R-S2a-3):
+      `selectOutboundWork` (`al-outbound-message-runtime.ts:498-511`) and `toTestALWorkReadySelection`
+      (`al-work-test-entries.ts:55-66`) are unchanged; the two batch literals in
+      `al-work-handler.test.ts` (`:214-228`, `:258-272`) gain only `startedAtMs: PHASE_BATCH_START_MS`.
       Command: `npx tsc -p packages/shared/tsconfig.json --noEmit && npx vitest run packages/tests/shared/alm/work`
-- [ ] **Step 2: The selector records what it deferred.** `readALInboundPageEligibility` is 49
+- [x] **Step 2: The selector records what it deferred.** `readALInboundPageEligibility` is 49
       lines today (`:156-204`), so the closure rule splits it before it grows: extract the `try`
       body (`:170-189`) into
 
@@ -291,9 +289,10 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       ```
 
       and fold its answer in the loop, keeping the corruption `catch` (`:191-201`) where it is. A
-      `deferred` answer pushes `{ key: entry.key, dueAtMs: resolveALInboundWorkDueAtMs(entry) }` onto
-      a new `deferred: readonly ALWorkUnreservedDue[]` on `ALInboundPageEligibility` (`:78-83`) and
-      `ALInboundWorkSelection` (`:41-57`). `readALInboundClaimedSelection` (`:274-298`) returns
+      `deferred` answer pushes `{ effectId: row.effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(entry) }`
+      onto a new `deferred: readonly ALInboundDeferredEffect[]` on `ALInboundPageEligibility` (`:78-83`)
+      and `ALInboundWorkSelection` (`:41-57`) (R-S2a-3: keyed by effect id, not by `Key`).
+      `readALInboundClaimedSelection` (`:274-298`) returns
       `unreservedDue: [...selection.deferred, ...toUnreservedClaimableDue(selection, claimedKeys)]`,
       where the new private `toUnreservedClaimableDue` maps every claimable entry the port did not
       reserve through the same `resolveALInboundWorkDueAtMs`. A row reserved by a live lease is not
@@ -302,14 +301,19 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       page whose only row `readReadiness` defers reports it in `unreservedDue` with its due time and
       claims nothing.
       Command: `npx vitest run packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts`
-- [ ] **Step 3: The inbound runtime relays the split.** Add `toALInboundWorkEffectId` beside
-      `toALInboundWorkKey` (`al-inbound-work-entry.ts:56-62`) as
-      `decodeURIComponent(key.contextId)`. Widen `toALInboundClaimIdentity`
+- [x] **Step 3: The inbound runtime relays the split.** No inverse of `toALInboundWorkKey` is added
+      (R-S2a-3). Widen `toALInboundClaimIdentity`
       (`al-inbound-runtime-diagnostics.ts:94-106`) with `subjectMsgId`, and add the fields and
-      `ALInboundDeferredEffect` above. In `al-inbound-message-runtime.ts`: `recordWorkBatch`
-      (`:228-247`) passes `startedAtMs`, `claimedEffectIds: event.claimedKeys.map(toALInboundWorkEffectId)`
-      and `deferred: toALInboundDeferredEffects(event.unreservedDue)` (a new pure function beside it,
-      oldest first); `recordEmptyRotationRound` (`:255-273`) adds a `deferredRoundCount` and a
+      `ALInboundDeferredEffect` above. In `al-inbound-message-runtime.ts`: a new private
+      `recordClaimStarted(batchStartedAtMs, effectId)`, called from `runInboundClaim`, keeps
+      `batchRunOrder: { batchStartedAtMs, effectIds: string[] } | undefined`, starting a fresh array
+      whenever `batchStartedAtMs` changes and appending the effect id `decodeALInboundWorkEntry`
+      already decoded — effect ids recorded at source, never decoded back out of a `Key` (R-S2a-3).
+      `recordWorkBatch` (`:228-247`) passes `startedAtMs`, `claimedEffectIds` read from
+      `batchRunOrder` when its `batchStartedAtMs` matches the event's (else `[]`), and `deferred`
+      from the selector's own `getUnreservedDue()` through `toOldestFirstALInboundDeferredEffects`
+      (oldest first) — not a field on `ALWorkBatchDiagnostics`; `recordEmptyRotationRound` (`:255-273`)
+      also reads `getUnreservedDue()` and adds a `deferredRoundCount` and a
       `latestDeferred` beside its three existing accumulators, reset with them; `runInboundClaim`
       (`:368-380`) passes its `startedAtMs` into `ALInboundClaimSettlement` (`:428-435`, one new
       required field) and `recordClaimSettled` (`:382-396`) emits `effectId: settled.effect.effectId`,
@@ -317,13 +321,13 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       so the two can never disagree. Every function stays under 40 lines.
       Command: `npx vitest run packages/tests/shared/alm/inbound-admission-diagnostics.test.ts`
       Expected: Step 1's test passes over both backends with the control-first run order.
-- [ ] **Step 4: The deferred witness, and the relay pin that must not move.** Over both backends, a
+- [x] **Step 4: The deferred witness, and the relay pin that must not move.** Over both backends, a
       runtime with `canDispatchMessage: () => false` admits one message and `runRotationUntilAlive`
       (`:82-92`); the first `rotation-alive` reports `deferredRoundCount > 0` and the dispatch effect
       id in `latestDeferred`. Then `al-indexeddb-operation-counts.test.ts` runs unchanged: the
       deferred-row idle rotation (`:347-376`) still relays only `rotation-alive`, and the 6 + 2,
       10 / 15 and one-release pins hold — in-memory fields on existing events, no storage read.
-- [ ] **Step 5: The observation snapshot decodes `claim-settled` (RED first).** In
+- [x] **Step 5: The observation snapshot decodes `claim-settled` (RED first).** In
       `alm-observation-regime.test.ts`, add a `toInboundClaimEvent(atEpochMs, agentId, claim)` builder
       beside `toInboundDrainEvent` (`:90-113`) and a test that feeds the receiver three
       `dispatch-local` claims with reservation waits 100 / 200 / 300 ms and intra-batch waits
@@ -339,7 +343,7 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       `inboundClaims` before it returns `[]`. The two hosted fixtures still classify exactly as
       before and report `inbound: []`.
       Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
-- [ ] **Step 6: The contract, the artifact document and the session tool.** In
+- [x] **Step 6: The contract, the artifact document and the session tool.** In
       `runtime-diagnostic-contract.md` extend the `effect-drain` (`:233-259`), `claim-settled`
       (`:260-286`) and `rotation-alive` (`:287-294`) bullets with each new field, say that
       `claim-settled.queueWaitMs` is now `batchStartedAtMs − dueAtMs` of the same event, that
@@ -353,7 +357,7 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       the set of `msgId`s the lifecycle `bb.sent` and `admission-outcome` events named, matching
       `msgId` or `subjectMsgId`.
       Command: `npx dprint check packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`
-- [ ] **Step 7: Commit and push the instrumentation alone.** `npx vitest run packages/tests/shared/alm packages/tests/shared-test`,
+- [x] **Step 7: Commit and push the instrumentation alone.** `npx vitest run packages/tests/shared/alm packages/tests/shared-test`,
       `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`,
       `npx dprint check <touched files>`, `git commit -am 'feat(alm): split the inbound delivery wait into its reservation and intra-batch halves'`,
       then push `claude/alm-s2a-delivery-ahead-of-control`. Nothing else is pushed until this
@@ -421,7 +425,7 @@ shape, no scheduling object.
   `readonly sequence: readonly InboundTestEffectCall[]` — one entry per port call in run order, pushed
   by the fixture's `dispatchInboxEntry` and `sendControlMessage` (`:141-145`).
 
-- [ ] **Step 1: The delivery runs first (RED).** Add to `al-inbound-work-selection.test.ts`:
+- [x] **Step 1: The delivery runs first (RED).** Add to `al-inbound-work-selection.test.ts`:
 
       ```ts
       describe('ALInboundWorkSelector claim order', () => {
@@ -455,7 +459,7 @@ shape, no scheduling object.
       Expected: RED on both backends, `['control-sent', 'dispatched']`. If a backend already
       dispatches first, record it and keep the other as the RED pin — the page order is the
       queue's, and this slice does not change it.
-- [ ] **Step 2: The ranks, pinned purely.** Add a second test in the same `describe`: seven claims —
+- [x] **Step 2: The ranks, pinned purely.** Add a second test in the same `describe`: seven claims —
       one per `ALInboundDurableEffect['kind']` and one whose key is absent from `effectKinds` — fed as
       `forward-message`, `send-control`, unknown, `admit-control`, `admit-message`,
       `release-buffered`, `dispatch-local`, come back as `release-buffered`, `dispatch-local`,
@@ -464,7 +468,7 @@ shape, no scheduling object.
       `toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2` whose
       `switch` lists all six kinds and `undefined` with no `default`, so a seventh kind must choose
       its rank.
-- [ ] **Step 3: Order the list the batch already builds.** Record `effectKinds` in the eligibility
+- [x] **Step 3: Order the list the batch already builds.** Record `effectKinds` in the eligibility
       fold, and in `readALInboundClaimedSelection` (`:274-298`) replace
       `claims: [...selection.unleasedReservations, ...claims]` with
       `claims: computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds)`.
@@ -474,7 +478,7 @@ shape, no scheduling object.
       `expect(drain.claimedEffectIds).toEqual([dispatch.effectId, control.effectId])` in this commit.
       Commands: `npx vitest run packages/tests/shared/alm/inbound packages/tests/shared/alm/inbound-admission-diagnostics.test.ts`
       Expected: Step 1 GREEN on both backends.
-- [ ] **Step 4: The pins that must not move.** Run them unchanged and name them in the commit
+- [x] **Step 4: The pins that must not move.** Run them unchanged and name them in the commit
       message: `al-indexeddb-operation-counts.test.ts` — 6 + 2 `al-admission` operations for one
       message admitted and delivered (`:259-264`), 2 for one drained `dispatch-local` row
       (`:244-250`), 10 `al-admission` / 15 `al-work` for one default send (`:196-234`), one
@@ -621,22 +625,22 @@ outbound admission (`:453-470` → `ws-queue-box-client-service.ts:449-465`) hol
   (`packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts:25-40`)
   receives an identical frame.
 
-- [ ] **Step 0: The existing wake is reached from ingress (pin).** In the inbound diagnostics or work
+- [x] **Step 0: The existing wake is reached from ingress (pin).** In the inbound diagnostics or work
       suite, over a real memory runtime with a batch held mid-run (the Task 3 test's held-queue seam),
       admit one message through `admitIncomingMessage`; assert `queueEngine.wake()` was called once by
       the admission (`ALWorkHandler.committed()` → `queueEngine.wake()`) and that the dispatch effect
       runs in the follow-up batch the running batch schedules at its end, not a later round. No
       production change: the pin proves R-S2a-6. If the pin is RED on any ingress path, stop and report.
       Command: `npx vitest run packages/tests/shared/alm/inbound packages/tests/shared/alm/work`
-- [ ] **Step 1: A heartbeat costs no admission (RED).** In `browser-middleware-rtt.test.ts`, drive
+- [x] **Step 1: A heartbeat costs no admission (RED).** In `browser-middleware-rtt.test.ts`, drive
       `registerBrowserRttEgress`'s heartbeat against a WS client over a counting IndexedDB observer
       and assert zero `al-admission` operations and one socket write; today it spends a full
       admission.
-- [ ] **Step 2: `sendLive`, and the egress uses it.** Implement it on the client with
+- [x] **Step 2: `sendLive`, and the egress uses it.** Implement it on the client with
       `isSocketOpen` (`:572-574`); `registerBrowserRttEgress` calls it and drops the enqueue, the
       verdict branch and the `qboxEngine.wake()`. Tests: closed socket → `'socket-closed'` and no
       write; open socket → the exact outbox resource string.
-- [ ] **Step 3: Verify and commit.** `npx vitest run packages/tests/shared-web/connection packages/tests/shared/webrtc-rtt-lifecycle.test.ts packages/tests/shared/services`,
+- [x] **Step 3: Verify and commit.** `npx vitest run packages/tests/shared-web/connection packages/tests/shared/webrtc-rtt-lifecycle.test.ts packages/tests/shared/services`,
       the server RTT topic suite under `packages/tests/shared-server/rallar-system/rtc-rtt/`,
       `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`,
       `git commit -am 'feat(rtc): send RTT heartbeats live instead of through the durable outbound admission'`
@@ -652,7 +656,9 @@ or timer is added (the S1 rule, `packages/shared/alm/outbound/README.md:183-185`
 
 - Modify (under `packages/shared/alm/`): `delivery/al-delivery-lifecycle.ts:79-130`,
   `delivery/compute-al-delivery-lifecycle.ts:24-38`, `outbound/compute-al-outbound-dispatch.ts` (one
-  function after `:262-284`), `outbound/al-outbound-message-runtime.ts:476-486`
+  function after `:262-284`), `outbound/al-outbound-dispatch-admission.ts` (the new
+  `emitSupersededSettlements`, R-S2a-5), `outbound/al-outbound-message-runtime.ts` (wires the
+  `settlements` dependency, no `commitDispatchPlan` edit)
 - Test (under `packages/tests/`): `shared/alm/outbound-delivery-settlements.test.ts` (656 lines),
   `shared/alm/delivery/compute-al-delivery-lifecycle.test.ts`,
   `shared-web/messages/browser-rallar-delivery-registry.test.ts`, and
@@ -683,7 +689,7 @@ or timer is added (the S1 rule, `packages/shared/alm/outbound/README.md:183-185`
   flight; their `attempt-settled superseded` now lands on a terminal lifecycle as evidence
   (`compute-al-delivery-lifecycle.ts:64-84`).
 
-- [ ] **Step 1: The predecessor settles without a drain (RED).** Add to
+- [x] **Step 1: The predecessor settles without a drain (RED).** Add to
       `outbound-delivery-settlements.test.ts`:
 
       ```ts
@@ -716,25 +722,29 @@ or timer is added (the S1 rule, `packages/shared/alm/outbound/README.md:183-185`
 
       Command: `npx vitest run packages/tests/shared/alm/outbound-delivery-settlements.test.ts`
       Expected: RED on both backends (no settlement for the old message at all).
-- [ ] **Step 2: The vocabulary and the reducer.** Add the arm; add
+- [x] **Step 2: The vocabulary and the reducer.** Add the arm; add
       `case 'superseded': return toReasonedLifecycle(previous, 'superseded', settlement.detail);` to
       the switch (`compute-al-delivery-lifecycle.ts:24-38`). Tests in
       `compute-al-delivery-lifecycle.test.ts`: a `queued` lifecycle reaches `superseded` with the
       detail as its reason; a later `attempt-settled superseded` on it only adds evidence and
       increments `lateSettlementCount`; a `superseded` on an `acknowledged` lifecycle stays
       `acknowledged`.
-- [ ] **Step 3: The runtime states it from the commit.** Implement
+- [x] **Step 3: The admission states it from the commit.** Implement
       `toALOutboundSupersededMsgIds` as the `msgId` of every `set-supersedence-replacement`
-      mutation in `bundle.mutations`. In `commitDispatchPlan` (`al-outbound-message-runtime.ts:476-486`),
-      when `result.committed` and the computed DTO carries a bundle and a message, call a new private
-      `emitSupersededSettlements(computed)` that states
-      `{ kind: 'superseded', msgId, replacementMsgId: computed.msg.id.msgId, detail: 'A newer message replaced this one at its admission.' }`
-      for each id, through the existing guarded `emitSettlement` (`:703-713`). It runs on every
-      commit path — enqueue, pending replay and dequeue — because the commit is the decision point.
+      mutation in `bundle.mutations` whose `observed` is `undefined`, guarded by a genuine
+      `set-supersedence-latest` transition (`expected?.latestMsgId !== value.latestMsgId`) — so a
+      re-commit of the replacement row emits nothing (R-S2a-5). The emission does not live in the
+      runtime's `commitDispatchPlan`: a new private `emitSupersededSettlements(result)` on
+      `ALOutboundDispatchAdmission` (`al-outbound-dispatch-admission.ts`) runs in `commitDispatchOnce`
+      after `toCommitResult`, on a committed result, and states
+      `{ kind: 'superseded', msgId, replacementMsgId: msg.id.msgId, detail: 'A newer message replaced this one at its admission.' }`
+      for each id, through the `settlements` dependency the runtime wires to its own guarded
+      `emitSettlement` (`:703-713`). It runs on every commit path — enqueue, pending replay and
+      dequeue — because the commit is the decision point.
       Step 1 turns GREEN; after `held.release()` a drained attempt of the old message states its
       `attempt-settled superseded`, and the test asserts the lifecycle a registry would compute from
       both stays `superseded`.
-- [ ] **Step 4: The handle, end to end.** In `browser-rallar-delivery-registry.test.ts` a handle
+- [x] **Step 4: The handle, end to end.** In `browser-rallar-delivery-registry.test.ts` a handle
       waiting on `['superseded']` resolves on the recorded `superseded` settlement with no attempt
       settlement at all. Run the public API snapshot and bundle checks; record the facade and
       headless figures.
@@ -776,14 +786,14 @@ after the scenario, where the whole run has elapsed.
   `handleId` and requires a non-empty `confirmedHopPeerIds` and an empty `unconfirmedHopPeerIds`,
   after `assessReceivedIdentity` (`:107-137`) has joined the same `msgId` to the receiver's envelope.
 
-- [ ] **Step 1: No recipe polls `acknowledged` (RED).** Add to `alm-lifecycle-recipes.test.ts`, over
+- [x] **Step 1: No recipe polls `acknowledged` (RED).** Add to `alm-lifecycle-recipes.test.ts`, over
       the three carriers: no `messages.observe` in the `delivery-lifecycle` sender lists
       `acknowledged` in its `state`, and `receipts-1` comes after the last `supersede-release-`
       command. Update `expectReplacementSubmittedAfterRelease` (`:69-78`) to
       `observe-transport-accepted-4` on every carrier.
       Command: `npx vitest run packages/tests/shared-test/alm-lifecycle-recipes.test.ts`
       Expected: RED for `rtc` and `rtc-with-ws-fallback`.
-- [ ] **Step 2: The recipe edits.** `toSubmissionSpecimenCommands` (`:450-496`): the observed state is
+- [x] **Step 2: The recipe edits.** `toSubmissionSpecimenCommands` (`:450-496`): the observed state is
       `transport-accepted` on every carrier — the handle wait resolves on it or on any terminal
       state, including `acknowledged` (`browser-rallar-delivery-registry.ts:367-372`) — and
       `assert-submitted-state-1` becomes `matches` `^(transport-accepted|acknowledged)$` for the two
@@ -793,12 +803,12 @@ after the scenario, where the whole run has elapsed.
       in the 10 000 ms class (`:894-898`); `observe-superseded-3` keeps its 3 000 ms, which Task 3
       makes a local, immediate state. `cancel-1` still expects `^acknowledged$` on RTC, now read
       after the whole scenario rather than 10 s after the send.
-- [ ] **Step 3: Correlate afterwards.** Add `assessAcknowledgedIdentity`, called for the submission
+- [x] **Step 3: Correlate afterwards.** Add `assessAcknowledgedIdentity`, called for the submission
       beside `assessReceivedIdentity` (`:58-63`). Tests in `alm-identity-assessment.test.ts`: the
       generated rtc evidence with a filled receipts result passes; the same evidence with an empty
       `confirmedHopPeerIds` is rejected with the send's command id in the issue; `ws` is not asked
       for a confirmed hop.
-- [ ] **Step 4: The generated manifests.**
+- [x] **Step 4: The generated manifests.**
       `npx tsx apps/rallar-black-box/scripts/write-hetzner-distributed-manifests.ts`, then the same
       with `--check`; `npx vitest run packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts packages/tests/shared-test`.
       Commit: `git commit -am 'test(alm): observe lifecycle receipts on the receiver and correlate them afterwards'`
@@ -809,24 +819,24 @@ after the scenario, where the whole run has elapsed.
 `packages/shared/alm/outbound/README.md:111-123,162-208`. **Interfaces:** none — documentation and
 the local lane run.
 
-- [ ] **Step 1: The inbound map.** In "Selection, failure, and cleanup", after the observation
+- [x] **Step 1: The inbound map.** In "Selection, failure, and cleanup", after the observation
       paragraph (`:156-164`): the batch runs its claims in rank order — `dispatch-local` and
       `release-buffered`, then admission replays and undecoded rows, then `send-control` and
       `forward-message` — because page order is key order and an ACK's key sorts before its own
       dispatch; the sort reads kinds the eligibility read already decoded and costs no operation.
       Under 2C, one batch's control sends commit together. In the diagnostics paragraph
       (`:185-194`), the new fields and that the deferred witness rides on existing events.
-- [ ] **Step 2: The outbound map.** In "Transport attempt settlement" (`:162-208`): a replacement's
+- [x] **Step 2: The outbound map.** In "Transport attempt settlement" (`:162-208`): a replacement's
       commit states `superseded` for each predecessor it marks replaced, before the admission
       returns, and the attempt-time and dequeue-time checks only add evidence to that terminal
       state. Under 2D, RTT heartbeats leave through `sendLive` and never hold the commit lock
       (`:111-123`); under 2C, `commitBundles`' single sender-version fence.
-- [ ] **Step 3: The local lane, three carriers.** `npm run test:rallar:full-stack:memory:alm`.
+- [x] **Step 3: The local lane, three carriers.** `npm run test:rallar:full-stack:memory:alm`.
       Expected: three cells pass and each `test-results/alm-observation/<carrier>-smoke.json` has a
       receiver `claimWaits` with a non-zero `dispatchClaimCount`; record per cell the per-operation
       median and the three `claimWaits` medians for the PR body. An empty `claimWaits` means
       `claim-settled` is not reaching the snapshot — diagnose before pushing; Task 6 reads it.
-- [ ] **Step 4: Commit.** `npx dprint check packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md`,
+- [x] **Step 4: Commit.** `npx dprint check packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md`,
       `git commit -am 'docs(alm): delivery-first inbound drain and superseded at admission'`
 
 ### Task 6: Re-observe hosted under the regime rule, the PR, and the gates
@@ -889,6 +899,73 @@ the local lane run.
       invalidates it); after merge, **Run Hetzner Supported Distributed Manifests** on `main`.
 
 ---
+
+## Rulings during execution (2026-09-23)
+
+- **R-S2a-1 (witness relay).** Decided: the "one event per round that finds a row still unreserved"
+  witness rides on the existing `effect-drain` and `rotation-alive` events instead of a new
+  per-round event. Why: a dedicated per-round event is exactly the relay cost that already doubled
+  the RTC cell's per-operation time once (8.2 → 20.9 ms/op) and would repeat the F2b regression; the
+  idle-rotation-relays-nothing pin (`al-indexeddb-operation-counts.test.ts:265-282`) has to hold.
+  Changed in the plan: Task 0's "Why the witness rides on existing payloads" section and its
+  discrimination table already describe this shape; no step adds a separate event.
+
+- **R-S2a-2 (hosted full-scope read mechanism).** Decided: the hosted full-scope read for
+  `delivery-reload` is a `release-gate.yml` observation-job input `alm_scope` (default `smoke`) fed
+  by the repository variable `RALLAR_BLACK_BOX_ALM_SCOPE`, not a throwaway branch. Why: a variable
+  flip is reversible and auditable without pushing, running and deleting a branch. Changed in the
+  plan: Task 6 Step 2's workflow-input mechanics.
+
+- **R-S2a-3 (effect ids recorded at source).** Decided: queue keys hash their context segment to
+  more than 35 characters, so `toALInboundWorkKey`'s inverse cannot exist; `toALInboundWorkEffectId`
+  and the generic `claimedKeys: readonly Key[]` field are dropped. Effect ids are instead recorded at
+  the point that already decodes them: `runInboundClaim` appends each claim's own `effect.effectId`
+  to a private run-order accumulator, and the selector's `getUnreservedDue()` returns
+  `ALInboundDeferredEffect { effectId, dueAtMs }` directly. Why: the brief's inverse-function design
+  was unimplementable once the actual key encoding was read. Changed in the plan: Task 0's Files
+  list, Interfaces (no `ALWorkUnreservedDue` type, no `toALInboundWorkEffectId`, no `claimedKeys`
+  field) and Steps 1–3's implementation text.
+
+- **R-S2a-4 (claimWaits definitions).** Decided: `batchStartedAtMs` is captured at the run loop's
+  start, after the selection and reservation, not before them. `reservationWaitMedianMs` is due to
+  that run-loop start (the wait for a round, plus that batch's own selection and reservation);
+  `intraBatchWaitMedianMs` is the serialization behind earlier claims of the same run loop. Why: a
+  quality review found the original timestamp placement made intra-batch wait over-count the batch's
+  own selection/reservation cost. Changed in the plan: Task 0's `claimWaits` JSDoc.
+
+- **R-S2a-5 (superseded emission site).** Decided: the dispatch admission itself
+  (`ALOutboundDispatchAdmission.commitDispatchOnce`) emits `superseded`, guarded, after a committed
+  result — covering enqueue, pending replay and dequeue from one call site inside the existing lock,
+  with no new queue or timer — once per predecessor transition, derived from observed-vs-written
+  supersedence state so a re-commit of the replacement row emits nothing. Why: only enqueue/dequeue
+  pass through the runtime's `commitDispatchPlan`; the pending replay and repair commits call the
+  admission's commit directly, so a `commitDispatchPlan`-only emitter would miss two of the four
+  paths. Changed in the plan: Task 3's Files list and Step 3 now name
+  `al-outbound-dispatch-admission.ts` and `commitDispatchOnce`, not the runtime's
+  `commitDispatchPlan`.
+
+- **R-S2a-6 (reading the code for the maintainer's wake condition).** Decided: the wake-on-admission
+  the maintainer asked for already exists — `admitDecodedMessage` calls `commitWork()` on
+  `wroteWork` (`al-inbound-message-runtime.ts:335`), which runs `restartScan()` and
+  `ALWorkHandler.committed()` → `queueEngine.wake()` (`al-work-handler.ts:218-220`), and a wake
+  landing during a batch is drained by one follow-up batch at that batch's end (`:168`). Why: this
+  answers the maintainer's condition that the wake "builds on existing functionality" and introduces
+  no new abstraction. Changed in the plan: Task 2's "Read on 2026-09-23" resolution and Task 2D's
+  Step 0, which pin the existing wake rather than build a new one.
+
+- **Maintainer ruling (2026-09-23, amends D19).** Decided: Task 2 = 2D (RTT heartbeats off the
+  durable AL commit path) plus wake-on-admission, conditioned on the wake building on existing
+  functionality and introducing no new abstraction or layer. Why: Task 0's Step 9 probe showed RTT
+  heartbeats are the lock hog (2D), and the maintainer separately wanted the reservation term
+  addressed without a new scheduling owner. Changed in the plan: Task 2's header text and its "Task 2
+  = 2D plus one pin" resolution; Task 2C is recorded as the not-chosen lever, not executed.
+
+- **Maintainer ruling (2026-09-23).** Decided: the controller may set and clear the repository
+  variable `RALLAR_BLACK_BOX_ALM_SCOPE` for Task 6's full-scope read, reporting each change in the PR
+  body. Why: paired with R-S2a-2's workflow-input mechanism, this lets the full-scope hosted read
+  happen without a throwaway branch or a standing scope change. Changed in the plan: Task 6 Step 2's
+  final two sentences, on setting and clearing the variable and recording which run carried the full
+  read.
 
 ## Not in this slice
 
