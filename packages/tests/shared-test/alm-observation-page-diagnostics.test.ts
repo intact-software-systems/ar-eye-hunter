@@ -13,7 +13,7 @@ const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/ral
 const SAMPLE_FIXTURE = 'alm-observation-page-diagnostics-sample.json';
 
 function readPageDiagnosticsFixture(fixtureName: string): ALMObservationPageDiagnosticsFile {
-    const value: unknown = JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'));
+    const value = JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'));
     return decodeALMObservationPageDiagnosticsFile(value).fold(
         (issues) => {
             throw new Error(`${fixtureName} did not decode: ${issues.join('; ')}`);
