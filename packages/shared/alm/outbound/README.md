@@ -157,7 +157,8 @@ bundles write one row, when the store answers anything but `committed`, or when 
 Every member then goes through the single-message commit, one after another, and keeps its own answer:
 a planning refusal is that member's `failed` value, as a single send answers it, and a member whose
 single commit throws does not stop the members after it; the first such throw is rethrown once every
-member ran. The RTC multicast manager applies its circuit breaker and its rate limiter once per group.
+member ran, and the runtime wakes the owner for the members that landed before it rethrows. The RTC
+multicast manager applies its circuit breaker and its rate limiter once per group.
 
 ## Read and failure boundaries
 

@@ -193,8 +193,13 @@ outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one 
 order. The round is keyed by that array's identity, never by time, so a row retried in a later
 batch never joins a finished round. A restarted scan empties the array, and a claim it left out
 sends alone. When the round's send throws, each of its claims sends its own message alone, so each
-claim settles on its own message: a message the round already admitted answers `duplicate`, and
-only the claim whose message throws again carries that failure.
+claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
+a member's storage throw once every member ran: a message the round already admitted then answers
+`duplicate`, and only the claim whose message throws again carries that failure. On RTC the round
+does not throw, because the multicast manager's circuit breaker answers a throw as `failed` values,
+as it answered a single send's throw before grouping. The WS server makes no admission; a
+synchronous throw there would send the messages before it a second time, which receivers drop by
+message id.
 
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather

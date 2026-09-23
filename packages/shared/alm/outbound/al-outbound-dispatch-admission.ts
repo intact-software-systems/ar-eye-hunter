@@ -143,9 +143,11 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
-            // A throw is a fallback signal too: each member meets its cause again alone, as its own.
             const grouped = await this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members))
-                .catch(() => undefined);
+                .catch((error) => {
+                    console.warn('AL outbound group commit threw; its members commit alone', error);
+                    return undefined;
+                });
             return grouped ?? await this.commitEachAlone(members);
         }
         finally {
@@ -193,7 +195,8 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     /**
      * Every member commits, whatever an earlier one answered. A member whose single commit would throw
      * does not stop the members after it: the first such throw is rethrown once every member ran, so
-     * the caller still sees it and the own write of each member has already landed.
+     * the caller still sees it and the own write of each member has already landed. The caller owes
+     * the owner its wake for those writes on the rethrow too.
      */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]

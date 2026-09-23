@@ -484,7 +484,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
             phase: 'immediate' as const,
             origin: 'send' as const,
             options: { explicitPlan: false }
-        })));
+        }))).catch((error) => {
+            // A group rethrows only after every member ran, so members before the throw may have landed.
+            this.work.committed();
+            throw error;
+        });
         if (results.some((result) => ALOutboundMessageRuntime.hasWrittenWork(result))) {
             this.work.committed();
         }

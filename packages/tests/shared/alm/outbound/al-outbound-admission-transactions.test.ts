@@ -39,6 +39,8 @@ afterEach(() => {
 });
 
 const TRANSACTION_NAMESPACE = 'admission-transactions';
+/** Longer than a few engine passes at their 100 ms delay, and far inside the 3 s readiness memory. */
+const IDLE_OWNER_SETTLE_MS = 300;
 
 /** Tracks the supersedence pair, so a re-admission walks both of its dependent read hops. */
 const SUPERSEDING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
@@ -336,6 +338,29 @@ describe('control sends committed as one outbound admission', () => {
     );
 
     it.each(['memory', 'indexeddb'] as const)(
+        'sends a member that landed before the rethrow as promptly as a single send over %s',
+        async (storage) => {
+            const sentTexts: string[] = [];
+            const runtime = await createControlSendRuntime(storage, (msg) => {
+                if (msg.id.msgId === 'throwing-ack') {
+                    throw new Error('The planner is broken for this message');
+                }
+                return CONTROL_PLANNER(msg);
+            }, sentTexts);
+            // A few idle engine passes, so the owner remembers storage answering "no work".
+            await new Promise((resolve) => setTimeout(resolve, IDLE_OWNER_SETTLE_MS));
+
+            await expect(
+                runtime.enqueueAllIfAbsent([createAcknowledgement('throwing-ack'), createAcknowledgement('good-ack')])
+            ).rejects.toThrow('The planner is broken for this message');
+
+            // A single send wakes its owner at once; an unannounced row waits out the owner's
+            // remembered readiness, which is longer than this poll's one second.
+            await expect.poll(() => sentTexts).toEqual(['good-ack']);
+        }
+    );
+
+    it.each(['memory', 'indexeddb'] as const)(
         'answers a newer and an older message of one supersedence key as serial sends do over %s',
         async (storage) => {
             const runtime = await createControlSendRuntime(storage, SUPERSEDING_PLANNER);
@@ -354,7 +379,8 @@ describe('control sends committed as one outbound admission', () => {
 /** The outbound owner of a receiver, ready, so the measured window holds the admission and nothing of start-up. */
 async function createControlSendRuntime(
     storage: 'memory' | 'indexeddb',
-    planner: ALOutboundPlanner<OutboundTestPayload> = CONTROL_PLANNER
+    planner: ALOutboundPlanner<OutboundTestPayload> = CONTROL_PLANNER,
+    sentTexts: string[] = []
 ): Promise<ALOutboundMessageRuntime<OutboundTestPayload>> {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
@@ -362,7 +388,10 @@ async function createControlSendRuntime(
     const runtime = createDefaultOutboundTestRuntime({
         stores: { admissionStore: createTransactionAdmissionStore(backend), workQueue: backend.workQueue },
         planOutgoingMessage: planner,
-        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        sendPreparedMessage: async (prepared) => {
+            sentTexts.push(String(prepared.text));
+            return { status: 'sent' as const, submissionAttempted: true };
+        }
     });
     await runtime.ready();
     return runtime;
