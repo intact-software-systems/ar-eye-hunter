@@ -177,6 +177,21 @@ describe('BrowserRallarDeliveryRegistry', () => {
             expect(outcome.lifecycle.state).toBe('accepted');
         });
 
+        it('resolves a superseded wait on the replacement admission with no attempt settled', async () => {
+            const harness = new DeliveryRegistryHarness();
+            const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
+            harness.registry.record(toAdmittedSettlement('msg-1', START_MS));
+
+            const pending = handle.wait({ until: ['superseded'] });
+            harness.registry.record(toSupersededSettlement('msg-1', START_MS));
+
+            const outcome = await pending;
+            expect(outcome.status).toBe('settled');
+            expect(outcome.lifecycle.state).toBe('superseded');
+            expect(outcome.lifecycle.evidence.attempts).toEqual([]);
+            expect(outcome.lifecycle.evidence.reason).toBe('A newer message replaced this one.');
+        });
+
         it('resolves timeout with the current lifecycle after timeoutMs', async () => {
             const harness = new DeliveryRegistryHarness();
             const handle = harness.registry.open(toTestMessage('msg-1'), 'rtc');
@@ -613,4 +628,15 @@ function toAcknowledgementSettlement(msgId: string, atMs: number): ALDeliverySet
 
 function toCancelledSettlement(msgId: string, atMs: number): ALDeliverySettlement {
     return { kind: 'cancelled', msgId, carrier: 'rtc', atMs };
+}
+
+function toSupersededSettlement(msgId: string, atMs: number): ALDeliverySettlement {
+    return {
+        kind: 'superseded',
+        msgId,
+        carrier: 'rtc',
+        atMs,
+        replacementMsgId: 'msg-2',
+        detail: 'A newer message replaced this one.'
+    };
 }

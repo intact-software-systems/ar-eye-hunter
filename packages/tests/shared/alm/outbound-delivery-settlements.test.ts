@@ -4,7 +4,12 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type { ALDeliverySettlement } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    createInitialALDeliveryLifecycle,
+    type ALDeliveryLifecycle,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -89,6 +94,27 @@ function planSend(
         preparedMessages: [PREPARED],
         ackTracking
     });
+}
+
+function planSupersedingSend(): (msg: ALMessage) => ALOutboundDispatchPlan<OutboundTestPayload> {
+    return (msg) => ({
+        ...planSend()(msg),
+        supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'lifecycle-slot' }
+    });
+}
+
+/** The lifecycle a registry holds for a message its owner admitted with one queued attempt. */
+function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
+    return computeALDeliveryLifecycle(
+        createInitialALDeliveryLifecycle({
+            msgId: message.id.msgId,
+            typeId: message.payload.typeId,
+            ackMode: 'receiver',
+            expiresAtMs: undefined,
+            submittedAtMs: 0
+        }),
+        { kind: 'admission', msgId: message.id.msgId, carrier: 'ws', atMs: 0, verdict: { kind: 'admitted', durable: true, queuedAttempts: 1 } }
+    );
 }
 
 function trackAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
@@ -307,6 +333,86 @@ it.each(BACKEND_KINDS)('states the verdict a retained admission replay reached o
         carrier: 'ws',
         verdict: { kind: 'admitted' }
     });
+});
+
+it.each(BACKEND_KINDS)('states the old message superseded when its replacement commits over %s', async (kind) => {
+    const settlements: ALDeliverySettlement[] = [];
+    const stores = createStores(kind);
+    const held = holdOutboundClaims(stores);
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        // A supplied engine is never started, so only this test's batches ask the held queue for work.
+        queueEngine: new InboxOutboxEngine(),
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSupersedingSend(),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const old = createOutboundMessage('msg-superseded-old');
+    const replacement = createOutboundMessage('msg-superseded-replacement');
+
+    await enqueueOutboundOrThrow(runtime, old);
+    await enqueueOutboundOrThrow(runtime, replacement);
+
+    // No claim has run: the drain is held, so only the replacement's commit can have said it.
+    expect(settlements.filter((settlement) => settlement.msgId === old.id.msgId)).toEqual([
+        expect.objectContaining({ kind: 'superseded', replacementMsgId: replacement.id.msgId })
+    ]);
+    await held.release();
+    await expect.poll(async () => {
+        await runOutboundWorkTask(runtime);
+        return settlements.some((settlement) => settlement.msgId === old.id.msgId && settlement.kind === 'attempt-settled');
+    }).toBe(true);
+
+    const oldSettlements = settlements.filter((settlement) => settlement.msgId === old.id.msgId);
+    expect(oldSettlements).toEqual([
+        expect.objectContaining({ kind: 'superseded' }),
+        expect.objectContaining({ kind: 'attempt-started' }),
+        expect.objectContaining({ kind: 'attempt-settled', outcome: 'superseded' })
+    ]);
+    const lifecycle = oldSettlements.reduce(computeALDeliveryLifecycle, toQueuedLifecycle(old));
+    expect(lifecycle.state).toBe('superseded');
+    expect(lifecycle.evidence.reason).toBe('A newer message replaced this one at its admission.');
+    expect(lifecycle.lateSettlementCount).toBe(2);
+});
+
+it.each(BACKEND_KINDS)('states the old message superseded at its replacement\'s replayed admission over %s', async (kind) => {
+    const settlements: ALDeliverySettlement[] = [];
+    const stores = createStores(kind);
+    const store = stores.admissionStore;
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        settlements: (settlement) => settlements.push(settlement),
+        planOutgoingMessage: planSupersedingSend(),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const old = createOutboundMessage('msg-superseded-before-replay');
+    const replacement = createOutboundMessage('msg-replayed-replacement');
+    await enqueueOutboundOrThrow(runtime, old);
+    const competitor = await computeOutboundTestAdmission(store, createOutboundMessage('competing-replay-version'));
+    const commitBundle = store.commitBundle.bind(store);
+    let contested = false;
+    // The replacement's own commit loses the sender's version fence, so its admission waits for the replay.
+    vi.spyOn(store, 'commitBundle').mockImplementation(async (bundle) => {
+        if (!contested) {
+            contested = true;
+            expect(await commitBundle(competitor)).toBe('committed');
+        }
+        return await commitBundle(bundle);
+    });
+
+    expect((await runtime.enqueueIfAbsent(replacement)).verdict).toEqual({ kind: 'pending' });
+    expect(settlements.filter((settlement) => settlement.kind === 'superseded')).toEqual([]);
+    await expect.poll(async () => {
+        await runOutboundWorkTask(runtime);
+        return settlements.filter((settlement) => settlement.msgId === replacement.id.msgId).length;
+    }).toBeGreaterThan(0);
+
+    // Stated inside the replay's commit, which returns before the owner states the replayed verdict.
+    const admittedAt = settlements.findIndex((settlement) => settlement.kind === 'admission' && settlement.msgId === replacement.id.msgId);
+    expect(settlements.filter((settlement) => settlement.kind === 'superseded')).toEqual([
+        expect.objectContaining({ msgId: old.id.msgId, replacementMsgId: replacement.id.msgId })
+    ]);
+    expect(settlements[admittedAt - 1]).toMatchObject({ kind: 'superseded', msgId: old.id.msgId });
 });
 
 it.each(BACKEND_KINDS)('drains the same work when the settlement sink throws over %s', async (kind) => {

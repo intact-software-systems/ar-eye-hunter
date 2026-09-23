@@ -19,7 +19,8 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeDiagnosticsSink
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
 import { toALOutboundPendingAdmissionId } from './al-outbound-pending-admission.ts';
 import {
@@ -29,6 +30,7 @@ import {
 } from './al-outbound-work-entry.ts';
 import {
     computeALOutboundDispatch,
+    toALOutboundSupersededMsgIds,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
     type ALOutboundComputeIntent,
@@ -78,6 +80,7 @@ export namespace ALOutboundDispatchAdmission {
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly settlements: ALOutboundSettlementEmitter;
     }
 }
 
@@ -180,7 +183,25 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         if (status === 'conflict' && dispatch.options.pendingAdmission) {
             throw new RetryableConflictError('Outbound pending admission commit conflict');
         }
-        return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+        const result = this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+        this.emitSupersededSettlements(result);
+        return result;
+    }
+
+    /** Stated from the replacement's own commit, so the predecessor never waits on its next attempt. */
+    private emitSupersededSettlements(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
+        const { bundle, msg } = result.computed;
+        if (!result.committed || !bundle || !msg) {
+            return;
+        }
+        for (const msgId of toALOutboundSupersededMsgIds(bundle)) {
+            this.dependencies.settlements({
+                kind: 'superseded',
+                msgId,
+                replacementMsgId: msg.id.msgId,
+                detail: 'A newer message replaced this one at its admission.'
+            });
+        }
     }
 
     private async retainPendingDispatch(

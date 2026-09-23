@@ -47,7 +47,8 @@ describe('outbound admission observation order', () => {
                 decodePreparedMessage: decodeOutboundTestPayload,
                 clock: { nowMs: Date.now },
                 browserLocks: undefined,
-                diagnostics: undefined
+                diagnostics: undefined,
+                settlements: () => {}
             });
         const stale = admission();
         const winner = admission();
@@ -129,7 +130,8 @@ describe('outbound admission observation order', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
-            diagnostics: undefined
+            diagnostics: undefined,
+            settlements: () => {}
         });
         await admission.commit({
             msg: message,
@@ -197,7 +199,8 @@ describe('outbound admission observation order', () => {
             decodePreparedMessage: decodeOutboundTestPayload,
             clock: { nowMs: Date.now },
             browserLocks: undefined,
-            diagnostics: undefined
+            diagnostics: undefined,
+            settlements: () => {}
         });
         await admission.commit({
             msg: message,

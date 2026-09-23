@@ -346,7 +346,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             decodePreparedMessage: dependencies.decodePreparedMessage,
             clock: dependencies.clock,
             browserLocks: dependencies.browserLocks,
-            diagnostics: dependencies.diagnostics
+            diagnostics: dependencies.diagnostics,
+            settlements
         });
         this.repairAdmission = new ALOutboundRepairAdmission({
             admissionStore: dependencies.admissionStore,

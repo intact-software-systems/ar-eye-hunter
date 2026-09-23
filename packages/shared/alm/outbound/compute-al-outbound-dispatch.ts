@@ -283,6 +283,23 @@ function appendSupersedenceMutations<TPrepared>(
     }
 }
 
+/**
+ * The predecessors this commit newly marks replaced. Only the commit that moves the key's latest
+ * pointer to the message supersedes anything: a later commit of the same message rewrites the
+ * replacement rows over predecessors that were already superseded, and states nothing new. A
+ * predecessor that is both the latest and the named `replacesMsgId` has its row written twice.
+ */
+export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
+    const latest = bundle.mutations.find((mutation) => mutation.kind === 'set-supersedence-latest');
+    if (!latest || latest.expected?.latestMsgId === latest.value.latestMsgId) {
+        return [];
+    }
+    const replaced = bundle.mutations.flatMap((mutation) =>
+        mutation.kind === 'set-supersedence-replacement' ? [mutation.msgId] : []
+    );
+    return [...new Set(replaced)];
+}
+
 function appendAckTrackingMutationsAndEffects<TPrepared>(
     mutations: ALOutboundAdmissionMutation[],
     durableEffects: ALOutboundDurableEffectWrite<TPrepared>[],

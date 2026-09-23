@@ -408,6 +408,57 @@ describe.each(AL_ACK_MODES)('computeALDeliveryLifecycle transition table (ackMod
         });
     });
 
+    describe('superseded settlement', () => {
+        it.each([{}])('moves a queued lifecycle to superseded with the detail as its reason', () => {
+            const queued = toQueuedLifecycle(ackMode);
+            const next = computeALDeliveryLifecycle(queued, toSupersededSettlement());
+
+            expect(queued.state).toBe('queued');
+            expect(next.state).toBe('superseded');
+            expect(next.evidence.reason).toBe('A newer message replaced this one.');
+            expect(next.lateSettlementCount).toBe(0);
+        });
+
+        it.each([{}])('only adds evidence for a later superseded attempt on a superseded lifecycle', () => {
+            const superseded = computeALDeliveryLifecycle(toQueuedLifecycle(ackMode), toSupersededSettlement());
+            const next = computeALDeliveryLifecycle(
+                superseded,
+                toAttemptSettledSettlement({
+                    attemptId: 'attempt-1',
+                    outcome: 'superseded',
+                    submissionAttempted: false,
+                    willRetry: false,
+                    detail: 'A newer message superseded this attempt.'
+                })
+            );
+
+            expect(next.state).toBe('superseded');
+            expect(next.evidence.reason).toBe('A newer message replaced this one.');
+            expect(next.evidence.attempts).toEqual([
+                expect.objectContaining({ attemptId: 'attempt-1', outcome: 'superseded' })
+            ]);
+            expect(next.lateSettlementCount).toBe(1);
+        });
+
+        it.each([{}])('keeps an acknowledged lifecycle acknowledged', () => {
+            const acknowledged = computeALDeliveryLifecycle(toQueuedLifecycle(ackMode), {
+                kind: 'acknowledgement',
+                msgId: MSG_ID,
+                carrier: 'rtc',
+                atMs: AT_MS,
+                confirmedHopPeerIds: ['peer-1'],
+                unconfirmedHopPeerIds: [],
+                complete: true
+            });
+            const next = computeALDeliveryLifecycle(acknowledged, toSupersededSettlement());
+
+            expect(acknowledged.state).toBe('acknowledged');
+            expect(next.state).toBe('acknowledged');
+            expect(next.evidence.reason).toBeUndefined();
+            expect(next.lateSettlementCount).toBe(1);
+        });
+    });
+
     describe('cancelled settlement', () => {
         it.each([{}])('moves the lifecycle to cancelled with a fixed reason', () => {
             const previous = createLifecycle(ackMode);
@@ -810,6 +861,23 @@ function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
 
 function toCancelledSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'cancelled'; }>> {
     return { kind: 'cancelled', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS };
+}
+function toQueuedLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
+    return computeALDeliveryLifecycle(
+        createLifecycle(ackMode),
+        toAdmissionSettlement(MSG_ID, { kind: 'admitted', durable: true, queuedAttempts: 1 })
+    );
+}
+
+function toSupersededSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'superseded'; }>> {
+    return {
+        kind: 'superseded',
+        msgId: MSG_ID,
+        carrier: 'rtc',
+        atMs: AT_MS,
+        replacementMsgId: 'msg-2',
+        detail: 'A newer message replaced this one.'
+    };
 }
 
 function expectSameIdentity(next: ALDeliveryLifecycle, previous: ALDeliveryLifecycle): void {

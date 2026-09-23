@@ -10,7 +10,16 @@ import {
     createOutboundMessage
 } from './outbound-runtime-test-fixture.ts';
 
+import {
+    createInitialALDeliveryLifecycle,
+    type ALDeliverySettlement
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
 import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
+import type {
+    ALOutboundSettlementEmitter,
+    ALOutboundSettlementFact
+} from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -243,10 +252,62 @@ describe('outbound admission verdict', () => {
         });
         admission.dispose();
     });
+
+    it('states a predecessor superseded once across its replacement\'s enqueue and dequeue commits', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const facts: ALOutboundSettlementFact[] = [];
+        const admission = createTestOutboundDispatchAdmission(stores, (fact) => facts.push(fact));
+        const old = createOutboundMessage('verdict-replaced');
+        const replacement = createOutboundMessage('verdict-replacing');
+        const toCommit = (
+            msg: typeof old,
+            replacesMsgId: string | undefined,
+            intent: 'enqueue' | 'dequeue'
+        ): ALOutboundDispatchAdmission.Input<OutboundTestPayload> => ({
+            msg,
+            planner: () => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: [],
+                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId }
+            }),
+            intent,
+            phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
+            origin: intent === 'enqueue' ? 'send' : 'drain',
+            options: {}
+        });
+
+        expect((await admission.commit(toCommit(old, undefined, 'enqueue'))).committed).toBe(true);
+        expect((await admission.commit(toCommit(replacement, old.id.msgId, 'enqueue'))).committed).toBe(true);
+        // The dequeue commit rewrites the predecessor's replacement row over a predecessor already superseded.
+        expect((await admission.commit(toCommit(replacement, old.id.msgId, 'dequeue'))).committed).toBe(true);
+
+        expect(facts).toEqual([{
+            kind: 'superseded',
+            msgId: old.id.msgId,
+            replacementMsgId: replacement.id.msgId,
+            detail: 'A newer message replaced this one at its admission.'
+        }]);
+        const lifecycle = facts.reduce(
+            (previous, fact) => computeALDeliveryLifecycle(previous, { ...fact, carrier: 'ws', atMs: 0 } as ALDeliverySettlement),
+            createInitialALDeliveryLifecycle({
+                msgId: old.id.msgId,
+                typeId: old.payload.typeId,
+                ackMode: 'receiver',
+                expiresAtMs: undefined,
+                submittedAtMs: 0
+            })
+        );
+        expect(lifecycle.state).toBe('superseded');
+        expect(lifecycle.lateSettlementCount).toBe(0);
+        admission.dispose();
+    });
 });
 
 function createTestOutboundDispatchAdmission(
-    stores: ReturnType<typeof createDefaultOutboundTestStores>
+    stores: ReturnType<typeof createDefaultOutboundTestStores>,
+    settlements: ALOutboundSettlementEmitter = () => {}
 ): ALOutboundDispatchAdmission<OutboundTestPayload> {
     return new ALOutboundDispatchAdmission<OutboundTestPayload>({
         admissionStore: stores.admissionStore,
@@ -255,6 +316,7 @@ function createTestOutboundDispatchAdmission(
         decodePreparedMessage: decodeOutboundTestPayload,
         clock: { nowMs: Date.now },
         browserLocks: undefined,
-        diagnostics: undefined
+        diagnostics: undefined,
+        settlements
     });
 }
