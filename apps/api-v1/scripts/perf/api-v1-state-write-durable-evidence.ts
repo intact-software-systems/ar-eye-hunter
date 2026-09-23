@@ -19,7 +19,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type { Sql } from 'postgres';
 
-import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import { parsePersistedResult } from './api-v1-state-write-attempt-evidence.ts';
 import {
     readScopedGroupCommandsByRequestId,
