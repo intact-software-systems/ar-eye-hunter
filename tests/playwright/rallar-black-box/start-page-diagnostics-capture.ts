@@ -29,10 +29,9 @@ const CONSOLE_MESSAGE_KINDS: Readonly<Record<string, PageDiagnosticKind>> = {
 
 /**
  * Attaches from the moment the page exists, so a `pageerror` or console line during the initial
- * navigation and login is captured too, not only once the agent finishes registering. Task 7's
- * pinned reading found the hosted ACK loss below `admitIncomingMessage` on the sender's carrier; this
- * capture is the harness-only addition it routed to the maintainer, so the next hosted red can say
- * where the ACK died instead of leaving no console or page evidence at all.
+ * navigation and login is captured too, not only once the agent finishes registering. It can name a
+ * throw or a rejection the page raised; it cannot see an admission that never settles — a hang leaves
+ * no trace here.
  */
 export function startPageDiagnosticsCapture(
     page: Page,

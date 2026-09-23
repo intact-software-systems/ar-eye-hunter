@@ -122,25 +122,43 @@ records what the runner was doing while the cell ran:
 ## Reading a red
 
 > **Classify before judging.** A run is `normal` only when its `regime` and its
-> `pageRegime.regime` are both `normal`, and `slow` when either is `slow`. The `rtc` cell's two
+> `pageRegime.regime` are both `normal`, and `slow` when either is `slow` — `slow` takes precedence
+> over an `unclassified` reading in the other regime, since a slow page or a slow outbound chain is
+> still slow regardless of whether the other reading cleared the sample floor. The `rtc` cell's two
 > regimes together are the runner's verdict. A red counts only against a green baseline of the
 > same carrier and scope whose two regimes match the red's. A red in a slow page regime, compared
 > against a normal-page baseline, is a measurement of the runner, not a verdict on the change.
 > That holds even when the outbound `regime` of both runs is `normal`: the page regime exists
-> because the outbound regime scored `7add928af`'s page `normal`, whose probe took 141–210 ms,
-> beside the RTT-off probe's page at 2–4 ms. An `unclassified` in either regime leaves the cell
-> unattributed. Re-run it.
+> because the outbound regime scored `7add928af`'s page `normal`, whose `age-bound` storage-probe
+> median ran 141–210 ms over the page window (`ALM_OBSERVATION_WINDOW_MS` to
+> `ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event, i.e. 20 s–60 s), beside the
+> RTT-off probe's page at 2–4 ms over the same window. Neither regime `slow`, with an `unclassified`
+> in either, leaves the cell unattributed. Re-run it once; a repeat `unclassified` is no evidence.
 
 1. Read `regime` and `pageRegime.regime` in the failing cell's file.
 2. Find the most recent green run of the same carrier and scope, and read the same two fields.
 3. If both cells' `regime` and `pageRegime.regime` are `normal`, the red is a product regression:
    diff the two snapshots.
-4. If either of the red's two regimes is `slow` and the baseline's matching regime is not, the red
-   is a measurement of the runner, not a verdict on the change. Re-run, or compare against a green
-   baseline whose two regimes match the red's.
-5. If either regime says `unclassified` on either run, the cell carries no regime evidence —
-   `perOperation` and `pageRegime`'s `sampleCount` say whether that is too few samples or a median
-   inside a band. Treat the cell as unattributed and re-run.
+4. Otherwise, if either of the red's two regimes is `slow` (in the red or in the baseline), the red
+   is a measurement of the runner, not a verdict on the change — `slow` takes precedence over an
+   `unclassified` reading in the other regime, so this step fires before step 5. Re-run, or compare
+   against a green baseline whose two regimes match the red's.
+5. Otherwise, if either regime says `unclassified` on either run, the cell carries no regime
+   evidence — `perOperation` and `pageRegime`'s `sampleCount` say whether that is too few samples or
+   a median inside a band. Re-run once; if it reads `unclassified` again, treat the cell as
+   unattributed with no evidence.
+
+**The 2C decision rule reads only a both-`normal` cell.** An outbound `regime` of `slow` or
+`unclassified` beside a `normal` `pageRegime.regime` does not decide 2C either way — the rule in the
+S2a plan's Task 6 Step 3 applies only when `regime` and `pageRegime.regime` are both `normal`; any
+other combination leaves 2C undecided by that cell, under the same precedence as "Classify before
+judging" above.
+
+**A baseline recorded before Task 8 carries no `pageRegime`.** Recompute it from its stored
+`-snapshot.json` file with the shipped decoder and `computePageRegime`, the way the corpus itself was
+read, and mark the recomputed reading as such. Absent that recomputation, such a baseline is compared
+on its outbound `regime` alone, which is not a same-regime match under "Classify before judging" and
+is marked as an outbound-only comparison.
 
 The band was established on the `rtc` cell. The `ws` and `rtc-with-ws-fallback` cells carry only
 4–13 opening-window samples per run, a weaker discriminator than `rtc`'s. Take a run's `rtc` regime

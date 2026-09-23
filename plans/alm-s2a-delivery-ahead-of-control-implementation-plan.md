@@ -958,7 +958,7 @@ settled, not that the receipt moved.
   with a result arm that site already has (`rejected`, `pending-control`). No new outcome enters an
   event or a public contract.
 
-- [ ] **Step 1: The ACK is admitted and acknowledged with the hold armed (RED).** Write the fixture
+- [x] **Step 1: The ACK is admitted and acknowledged with the hold armed (RED).** Write the fixture
       and the test. Neither imports `setup-browser-indexeddb.ts`. `isIndexedDbALRuntimeStoreSupported()`
       is therefore false, and `configureBrowserALRuntimeStores` composes `InMemoryAdmissionBackend`
       stores (`packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts:118-133`).
@@ -1133,7 +1133,7 @@ settled, not that the receipt moved.
       the hold never engaged, which is a fixture error to fix before reading anything, or the
       `ControlAdmissionStop` diff that names the site. If both armed cases pass, record that and go
       to Step 2's escalation. Never loosen or reorder an assertion to manufacture a RED.
-- [ ] **Step 2: Name the site.** Read the armed case's `ControlAdmissionStop` against the site table.
+- [x] **Step 2: Name the site.** Read the armed case's `ControlAdmissionStop` against the site table.
 
       - `inbound-threw` and `outbound-threw` carry the error, and the `reason` and its stack name the
         throw line.
@@ -1176,7 +1176,7 @@ settled, not that the receipt moved.
       body and under "Rulings during execution", skip Step 3, commit the test as a pin (Step 5), and
       route to the maintainer with the one harness-only addition the diagnosis proposes: sender
       `pageerror`/console capture in the lane. That addition is not built in this task.
-- [ ] **Step 3: The fix at the named site, as a value.** One row applies, and no other file changes.
+- [x] **Step 3: The fix at the named site, as a value.** One row applies, and no other file changes.
       In every row the fault port and both carriers' call sites keep their contract: they decide
       outgoing frames only. `transport-fault-port.ts`, `qrtc-data-channel.ts:370-390` and
       `ws-queue-box-client-service.ts:538-568` are not edited, and the `readFaultedTypeIds` pin stays.
@@ -1192,7 +1192,7 @@ settled, not that the receipt moved.
       Step 1's four cases turn GREEN, and the site suite's new case pins the value. Every added
       function stays under 40 lines.
       Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts packages/tests/shared/alm`
-- [ ] **Step 4: Verify.** Run the pins unchanged and name them in the commit message:
+- [x] **Step 4: Verify.** Run the pins unchanged and name them in the commit message:
 
       - `al-indexeddb-operation-counts.test.ts`: 10 `al-admission` / 15 `al-work` for one default send
         (`:196-234`), 2 for one drained `dispatch-local` row (`:244-250`), 8 for one message admitted
@@ -1217,7 +1217,7 @@ settled, not that the receipt moved.
       - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
       - `npm run test:rallar:full-stack:memory:alm`: three cells, each recorded as in Task 5 Step 3
       - `npx dprint check <touched files>`
-- [ ] **Step 5: Commit and push.** Use
+- [x] **Step 5: Commit and push.** Use
       `git commit -am 'fix(alm): admit an acknowledgement that arrives while a transport hold drops another send'`
       when Step 3 landed a fix. On a stop row or the all-GREEN escalation, use
       `git commit -am 'test(alm): pin acknowledgement admission under a transport hold'`, with the
@@ -1226,10 +1226,12 @@ settled, not that the receipt moved.
 ### Task 7b: Page-error capture in the lane
 
 Per the maintainer's ruling (2026-09-23) that routed from R-S2a-7 (Task 7 Step 2's all-GREEN
-escalation): the hosted ACK loss is not in admission on either carrier, on either store, so it is lost
-before `admitIncomingMessage` on the sender's carrier, or in the capture — and the artifacts hold no
-console or page evidence at all to say which. This task adds that evidence. Harness and docs only; no
-product change.
+escalation): under the pin's fixed timing, the ACK is admitted and the send reaches `acknowledged` on
+both carriers, hold armed or not, over memory and fake-indexeddb stores — not reproducible in
+admission or ingress under the pin's interleavings. A slow-storage C3 (an await that never settles) is
+not ruled out, and the artifacts hold no console or page evidence at all to say whether the hosted
+loss sits there or somewhere else. This task adds that evidence, which can name a throw or a
+rejection, not a hang. Harness and docs only; no product change.
 
 **Files:**
 
@@ -1315,10 +1317,11 @@ artifact records none of it today: the snapshot decodes no `readiness-probe`
 (`packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts:128-147`).
 
 **Where the constants come from.** The corpus is 24 hosted cells from eight lane runs of the S2
-corpus. They are `6f6006cfe`, `f33dd8118`, `f870feaf4`, `8fc704552`, `fe718349c`, `c6ded1707`
-(Task 0), the RTT-off probe and `7add928af` (full), under `scratchpad/*lane*/alm-observation/`. The
-reading is the median `age-bound` probe `durationMs`, over both roles, from 20 s to 60 s after the
-run's first event.
+corpus, fetchable again from these hosted lane run ids: `6f6006cfe` (35650940898), `f33dd8118`
+(35756050199), `f870feaf4` (35757310189), `8fc704552` (35764211986), `fe718349c` (35838327536),
+`c6ded1707` (Task 0, 35843670606), the RTT-off probe (35843674446) and `7add928af` (full,
+35862174555). The reading is the median `age-bound` probe `durationMs`, over both roles, from 20 s to
+60 s after the run's first event.
 
 | Page | Count | Median band | Cells                                                         |
 | ---- | ----- | ----------- | ------------------------------------------------------------- |
@@ -1393,7 +1396,7 @@ maintainer-visible and are listed as such in the PR body.**
   writes the file (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts:233,248-251`)
   only serialises the regime and is not edited.
 
-- [ ] **Step 1: The page regime is classified from the probes (RED first).** In
+- [x] **Step 1: The page regime is classified from the probes (RED first).** In
       `alm-observation-regime.test.ts`, add beside `toCommitPhaseEvent`:
 
       ```ts
@@ -1454,7 +1457,7 @@ maintainer-visible and are listed as such in the PR body.**
       Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
       Expected: the run fails at the type level first (`pageRegime` and the constants), then on the
       assertions.
-- [ ] **Step 2: Decode, classify, and read the corpus.** In `alm-observation-snapshot.ts`:
+- [x] **Step 2: Decode, classify, and read the corpus.** In `alm-observation-snapshot.ts`:
 
       - Add `readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(isPresent)`
         to the snapshot literal (`:129-147`).
@@ -1466,8 +1469,10 @@ maintainer-visible and are listed as such in the PR body.**
       In `compute-alm-observation-regime.ts`:
 
       ```ts
-      function computePageRegime(snapshot: ALMObservationSnapshot): ALMObservationPageRegime {
-          const windowStartEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS;
+      export function computePageRegime(
+          snapshot: ALMObservationSnapshot,
+          windowStartEpochMs: number
+      ): ALMObservationPageRegime {
           const windowEndEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_PAGE_WINDOW_END_MS;
           const durations = snapshot.readinessProbes
               .filter((probe) =>
@@ -1495,7 +1500,8 @@ maintainer-visible and are listed as such in the PR body.**
       }
       ```
 
-      - `computeALMObservationRegime` (`:125-141`) sets `pageRegime: computePageRegime(input.snapshot)`.
+      - `computeALMObservationRegime` (`:125-141`) sets
+        `pageRegime: computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS)`.
       - `createUnreadableALMObservationRegime` (`:144-161`) sets
         `pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' }`.
       - `toALMObservationRegimeSummary` (`:163-169`) appends
@@ -1527,13 +1533,13 @@ maintainer-visible and are listed as such in the PR body.**
       }
       ```
 
-      Command: `npx tsx $TMPDIR/read-page-regimes.ts $(find /private/tmp/claude-501/-Users-knuthelge-ProjectLocker-github-ar-eye-hunter/dbbbec19-0da0-4f14-a05d-3a007089fcf4/scratchpad -path '*lane*' -name '*-snapshot.json' -not -path '*/s2-diagnosis/*') $(find /private/tmp/claude-501/-Users-knuthelge-ProjectLocker-github-ar-eye-hunter/dbbbec19-0da0-4f14-a05d-3a007089fcf4/scratchpad/s2-diagnosis/f2c-lane-8fc704552 -name '*-snapshot.json')`,
-      over the diagnosis' scratchpad (`.superpowers/s2a-full-read-diagnosis.md:9`), with `8fc704552`
-      read from its `s2-diagnosis/f2c-lane-8fc704552/` copy. Expected: the corpus table above, with six `normal` and
-      eighteen `slow`. Any cell outside its row stops the step: report it rather than moving a
-      threshold.
+      Command: `npx tsx $TMPDIR/read-page-regimes.ts <snapshot files>`, over the `*-snapshot.json`
+      artifacts of the eight hosted lane run ids above (`alm-conformance-lane-<sha>`, re-fetched per
+      run id rather than from a session scratchpad path, which does not outlive the session). Expected:
+      the corpus table above, with six `normal` and eighteen `slow`. Any cell outside its row stops the
+      step: report it rather than moving a threshold.
       Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
-- [ ] **Step 3: The artifact document and "Classify before judging".** In `alm-observation-artifact.md`:
+- [x] **Step 3: The artifact document and "Classify before judging".** In `alm-observation-artifact.md`:
 
       - The job-log example (`:18-22`) gains the `page=` suffix.
       - "The regime file" (`:42-99`) gains a `pageRegime` bullet. It is the median `durationMs` of the
@@ -1558,7 +1564,7 @@ maintainer-visible and are listed as such in the PR body.**
       corpus table. In `runtime-diagnostic-contract.md` the `readiness-probe` bullet (`:173-182`)
       gains one sentence: the observation regime reads its `age-bound` probes as the page regime.
       Command: `npx dprint check packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`
-- [ ] **Step 4: Commit and push.** Run
+- [x] **Step 4: Commit and push.** Run
       `npx vitest run packages/tests/shared-test`, `node scripts/check-tests-typecheck.mjs`,
       `npx tsc -p packages/shared-test/tsconfig.json --noEmit`, and `npx dprint check <touched files>`. Then commit with
       `git commit -am 'feat(alm): classify the page regime from the storage probe in the observation artifact'`,
@@ -1571,8 +1577,13 @@ maintainer-visible and are listed as such in the PR body.**
 **Re-read after Tasks 7 and 8 (maintainer ruling, 2026-09-23).** The first pass of Steps 1–3 ran on
 `7add928af` at full scope and was red on all three cells (`.superpowers/s2a-full-read-diagnosis.md`):
 
-- rtc and fallback lost the submission's ACK inside the sender's cancel-hold. Task 7 names that site
-  and fixes it.
+- rtc and fallback lost the submission's ACK inside the sender's cancel-hold. Task 7 names candidate
+  sites and rules out control admission on both carriers under its pin's fixed timing; the
+  hold-window ACK loss itself is unfixed and was not reproduced. A repeat red on rtc or fallback at
+  `receipts-1` / `assert-confirmed-1` is expected: read it against the cell's `-page-diagnostics.json`
+  file and the snapshot's claim waits and page regime, record the reading, and route it to the
+  maintainer rather than counting it as a regression of Tasks 1–4. D31 stays unmet until a hosted run
+  in a normal page regime, with a same-regime green baseline, passes both scenarios.
 - ws failed `delivery-reload`, whose original was admitted behind an in-flight inbound batch.
 - Every cell ran on a slow page, and the outbound regime scored rtc `normal`. Task 8 classifies the
   page.
@@ -1636,7 +1647,8 @@ read and is cleared after it. The PR body reports each change and the run that c
       drain-time `superseded`; under 2D a heartbeat is lost while the socket is closed; under 2C the
       RTC rate limiter counts one token per control group. Both bundle figures against their
       budgets. The body also records Task 7's site reading, and lists Task 8's page constants (20 and
-      50 ms per probe, 10 samples, the 60 s window end) as maintainer-visible.
+      50 ms per probe, 10 samples, the 60 s window end) as maintainer-visible. The body states that
+      `sendLive` bypasses the WS submission-readiness fault port.
       `npm run pr:delivery -- status` decides the next action; `ready` and auto-merge are not used.
 - [ ] **Step 5: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       `deno task check` in `apps/api-v1`, `apps/rallar-black-box-control-server` and
@@ -1751,9 +1763,14 @@ read and is cleared after it. The PR body reports each change and the run that c
   stores, in `acknowledgement-under-transport-hold-indexeddb.test.ts`) are GREEN each, and E1 with E2
   together is GREEN on both stores. The witness does discriminate: a throw injected into
   `ALOutboundRepairAdmission.acceptControlMessage` reads `outbound-threw` and turns the armed cases
-  RED. So the hosted ACK is lost before `admitIncomingMessage` on the sender's carrier, or in the
-  capture. Routed to the maintainer with the diagnosis' one harness-only addition, sender
-  `pageerror`/console capture in the lane, not built here. Why: no case reproduced, and the brief
+  RED. So the ACK is admitted and the send reaches `acknowledged`, hold armed or not, under the pin's
+  fixed timing on memory and fake-indexeddb stores, through both carriers' real ingress: this is not
+  reproducible in admission or ingress under the pin's interleavings, so the hosted loss is not in
+  those paths under that timing. An await that never settles on slow storage (C3; the hosted F page's
+  `age-bound` probe ran 66.5–358 ms, while the pin's stores settle within a few turns) is not ruled
+  out. Routed to the maintainer with the diagnosis' one harness-only addition, sender
+  `pageerror`/console capture in the lane — which can name a throw or a rejection, not a hang — not
+  built here. Why: no case reproduced, and the brief
   forbids a fix without a RED. Changed in the plan: nothing beyond this entry. The pin widens the
   brief's fixture by `readPendingAck` on `HoldSender` (E1 reads the receipt's `timeoutMs` and
   `attempts`), a `HoldEscalation` third argument to `expectAcknowledgedUnderHold` and the shared case
@@ -1807,16 +1824,18 @@ read and is cleared after it. The PR body reports each change and the run that c
   sort, 2C's array-identity round, Task 3's synchronous emission; no cognitive-load pin → Task 6
   Step 5; D18 before merge → Task 0 Steps 7–9.
 - The re-plan (2026-09-23) and its coverage:
-  - The hold-window ACK loss is covered by Task 7. Steps 1–2 give the one-variable RED over both
-    carriers' holds and a witness that names the stop site as a value. Step 3 fixes the site from a
-    written table in which every row keeps an existing result arm. Step 4 keeps the operation-count
-    pins and both carriers' hold and admission suites.
+  - The hold-window ACK loss is covered by Task 7, which did not fix it. Steps 1–2 give the
+    one-variable RED over both carriers' holds and a witness that names the stop site as a value; all
+    cases read GREEN, so Step 3 was skipped per the brief's all-GREEN escalation and the loss is
+    unfixed and unreproduced (R-S2a-7). Step 4 keeps the operation-count pins and both carriers' hold
+    and admission suites.
   - The page speed is covered by Task 8. The constants are derived from 24 hosted cells, the window
     skips start-up for a stated reason, and the "Classify before judging" rule makes the rtc cell's
     two regimes the verdict.
   - The re-read and the 2C rule are covered by Task 6's preface and Step 3.
   - No harness budget, lane constant or outbound threshold moves. Task 7 adds no timer, queue or
-    registry: its settle is a count of turns, and its C3 fix moves an await rather than adding one.
+    registry: its settle is a count of turns, and it fixed no site — C3 under slow storage remains a
+    candidate, unexercised by the pin.
 - Type consistency: `ALWorkUnreservedDue`, `toALInboundWorkEffectId`, `ALInboundDeferredEffect`,
   `ALMObservationInboundClaim`, `ALMObservationInboundClaimWaits`, `readALInboundRowEligibility`
   and the fixture's `acknowledged` are defined in Task 0 before Tasks 1 and 5 use them;
@@ -1832,12 +1851,16 @@ read and is cleared after it. The PR body reports each change and the run that c
   `al-work-handler.test.ts` (1 186; two literals gain three fields, no test added),
   `al-inbound-effect-worker-lifecycle.test.ts` (1 156; untouched — Task 1's test lives in the
   259-line selection suite) and `create-alm-conformance-recipes.ts` (1 064; Task 4 moves commands
-  and adds one short function). Task 8 widens `compute-alm-observation-regime.ts` (370 lines; about
-  +45, with a sibling-file split named in Step 2 if the changed-style gate objects),
-  `alm-observation-snapshot.ts` (351; about +25) and `alm-observation-regime.test.ts` (662; about
-  +90). Task 7's fixture is a new file of about 200 lines whose functions stay under 40 lines.
+  and adds one short function). Task 8 widened `compute-alm-observation-regime.ts` past the review
+  threshold, so the sibling-file split named in Step 2 landed: `compute-alm-observation-regime.ts` is
+  back to 422 lines (8 runtime exports), and the new `compute-alm-observation-page-regime.ts` carries
+  89 lines (8 runtime exports). `alm-observation-snapshot.ts` (351; about +25) and
+  `alm-observation-regime.test.ts` (662; about +90) are otherwise unaffected. Task 7's fixture,
+  `acknowledgement-under-hold-fixture.ts`, is a new file of 456 lines whose functions stay under 40
+  lines.
 - Placeholder scan: every step names files with line ranges, the symbol, the test code or exact
   edit, and the command. The branch points each have a written rule:
   - 2C or 2D is decided by Task 0 Step 9, and 2C is decided again by Task 6 Step 3's re-read rule.
-  - Task 7's fix is picked from the site table at Step 3. Each site has a written fix or a written
-    stop-and-route, and the all-GREEN escalation is written out.
+  - Task 7's site table gives each candidate site a written fix or a written stop-and-route; the
+    all-GREEN escalation fired, so no site's fix was picked, and the all-GREEN path (skip Step 3,
+    commit as a pin, route to the maintainer) is written out.
