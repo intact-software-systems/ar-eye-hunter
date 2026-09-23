@@ -9,7 +9,7 @@ import {
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
-import type { ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
+import type { ALInboundDurableEffect, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
@@ -51,6 +51,8 @@ interface ALInboundWorkSelection {
     readonly deferred: readonly ALInboundDeferredEffect[];
     /** Every decoded row the read cleared, by queue slot, so one the port leaves unreserved can still be named. */
     readonly claimableEffects: ReadonlyMap<ResourceEntryKeyString, ALInboundDeferredEffect>;
+    /** The durable kind the read decoded for each claimable row, by queue slot: the batch's own run-order key. */
+    readonly effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>;
     readonly scan: ALInboundWorkScan;
     /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
     readonly readyNow: boolean;
@@ -83,12 +85,16 @@ interface ALInboundClaimableObservation {
 }
 
 /** What the eligibility read decided about one page, before the port reserves anything from it. */
-interface ALInboundPageEligibility
-    extends
-        Pick<
-            ALInboundWorkSelection,
-            'claimable' | 'observations' | 'unleasedReservations' | 'deferred' | 'claimableEffects'
-        > {
+interface ALInboundPageEligibility extends
+    Pick<
+        ALInboundWorkSelection,
+        | 'claimable'
+        | 'observations'
+        | 'unleasedReservations'
+        | 'deferred'
+        | 'claimableEffects'
+        | 'effectKinds'
+    > {
     /** The earliest time a row this page passed over becomes claimable. */
     readonly readyAtMs: number | undefined;
 }
@@ -167,6 +173,7 @@ async function readALInboundWorkSelection(
         unleasedReservations: eligibility.unleasedReservations,
         deferred: eligibility.deferred,
         claimableEffects: eligibility.claimableEffects,
+        effectKinds: eligibility.effectKinds,
         readyNow: claimableNow || continueScan,
         scan: {
             cursor: page.nextCursor,
@@ -193,6 +200,7 @@ async function readALInboundPageEligibility(
         unleasedReservations: [],
         deferred: [],
         claimableEffects: new Map(),
+        effectKinds: new Map(),
         readyAtMs: undefined
     };
     for (const entry of entries) {
@@ -236,6 +244,7 @@ function computeALInboundPageEligibilityWithRow(
         ...page,
         claimable: [...page.claimable, entry],
         claimableEffects: new Map(page.claimableEffects).set(key, due),
+        effectKinds: new Map(page.effectKinds).set(key, row.effect.payload.kind),
         observations: row.observed === undefined
             ? page.observations
             : new Map(page.observations).set(row.effect.effectId, { key, observed: row.observed })
@@ -347,7 +356,7 @@ async function readALInboundClaimedSelection(
     const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
     return {
         selection: {
-            claims: [...selection.unleasedReservations, ...claims],
+            claims: computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds),
             nextReadyAtMs: selection.nextReadyAtMs,
             selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
             claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
@@ -358,6 +367,37 @@ async function readALInboundClaimedSelection(
         observations: toClaimedALInboundObservations(selection.observations, claimedKeys),
         unreservedDue: [...selection.deferred, ...toUnreservedClaimableDue(selection, claimedKeys)]
     };
+}
+
+/**
+ * The batch's run order: page deliveries first, then admission replays and rows whose kind the
+ * page never decoded, then control sends and forwards. Stable within each rank, so page order
+ * still decides among equals.
+ */
+export function computeALInboundClaimOrder(
+    claims: readonly ALWorkClaim[],
+    effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>
+): readonly ALWorkClaim[] {
+    return [...claims].sort((left, right) =>
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(left.entry.key))) -
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(right.entry.key)))
+    );
+}
+
+/** A row whose kind never decoded ranks with the admission replays: both are read again before delivery. */
+function toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2 {
+    switch (kind) {
+        case 'dispatch-local':
+        case 'release-buffered':
+            return 0;
+        case 'admit-control':
+        case 'admit-message':
+        case undefined:
+            return 1;
+        case 'forward-message':
+        case 'send-control':
+            return 2;
+    }
 }
 
 /**

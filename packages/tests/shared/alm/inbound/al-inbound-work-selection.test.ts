@@ -1,3 +1,5 @@
+import '../../../setup-browser-indexeddb.ts';
+
 import { Temporal } from '@js-temporal/polyfill';
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -13,13 +15,19 @@ import {
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
+    computeALInboundClaimOrder,
     createALInboundWorkSelector,
     type ALInboundWorkSelector
 } from '@shared/alm/inbound/read-al-inbound-work-selection.ts';
-import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
+import type { ALWorkClaim, ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    toKeyAsString,
+    type ResourceEntry,
+    type ResourceEntryKeyString
+} from '@shared/queuebox/ResourceEntry.ts';
 import {
     afterEach,
     describe,
@@ -28,8 +36,14 @@ import {
     vi
 } from 'vitest';
 
+import type { ALInboundDurableEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { createInboundTestDispatch, readInboundTestDispatchEffect } from '../create-inbound-test-dispatch.ts';
-import { createInboundTestMessage, createInboundTestStores } from '../inbound-runtime-test-fixture.ts';
+import {
+    createInboundTestMessage,
+    createInboundTestRuntime,
+    createInboundTestStores,
+    INBOUND_TEST_SOURCE
+} from '../inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_800_000_000_000;
 /** A full page of rows, so a batch that reads its own page size reads every one of them. */
@@ -147,6 +161,64 @@ describe('ALInboundWorkSelector eligibility reads', () => {
     });
 });
 
+describe('ALInboundWorkSelector claim order', () => {
+    it.each(['memory', 'indexeddb'] as const)(
+        'dispatches an acknowledged message before it sends the acknowledgement over %s',
+        async (storage) => {
+            const fixture = createInboundTestRuntime({
+                stores: createInboundTestStores({
+                    namespace: 'claim-order',
+                    storage,
+                    observer: createPassThroughIndexedDbOperationObserver()
+                }),
+                effectWorkerId: 'al-inbound:claim-order'
+            });
+            await fixture.runtime.ready();
+
+            await fixture.runtime.admitIncomingMessage(
+                createInboundTestMessage({ msgId: 'claim-order', acknowledged: true }),
+                INBOUND_TEST_SOURCE
+            );
+
+            // One commit, one batch: both rows are on the page that batch reads, and today
+            // the `ack:` key sorts ahead of the `dispatch:` key.
+            await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'control-sent']);
+        }
+    );
+
+    it('ranks page deliveries first, then admission replays and undecoded rows, then control sends', () => {
+        const claims = [
+            createTestClaim('forward-message'),
+            createTestClaim('send-control'),
+            createTestClaim('unknown'),
+            createTestClaim('admit-control'),
+            createTestClaim('admit-message'),
+            createTestClaim('release-buffered'),
+            createTestClaim('dispatch-local')
+        ];
+        const effectKinds = new Map<ResourceEntryKeyString, ALInboundDurableEffect['kind']>([
+            [toKeyAsString(claims[0]!.entry.key), 'forward-message'],
+            [toKeyAsString(claims[1]!.entry.key), 'send-control'],
+            [toKeyAsString(claims[3]!.entry.key), 'admit-control'],
+            [toKeyAsString(claims[4]!.entry.key), 'admit-message'],
+            [toKeyAsString(claims[5]!.entry.key), 'release-buffered'],
+            [toKeyAsString(claims[6]!.entry.key), 'dispatch-local']
+        ]);
+
+        const ordered = computeALInboundClaimOrder(claims, effectKinds);
+
+        expect(ordered.map((claim) => claim.entry.key.resourceId)).toEqual([
+            'release-buffered',
+            'dispatch-local',
+            'unknown',
+            'admit-control',
+            'admit-message',
+            'forward-message',
+            'send-control'
+        ]);
+    });
+});
+
 interface SelectorFixture {
     readonly namespace: string;
     readonly port: ALWorkQueuePort;
@@ -221,6 +293,27 @@ async function readFirstClaimingSelection(fixture: SelectorFixture) {
         }
     }
     throw new Error('The rotation scanned every status without claiming the seeded row');
+}
+
+/** A bare claim keyed by `resourceId`, so a rank test can name and re-identify it by that alone. */
+function createTestClaim(resourceId: string): ALWorkClaim {
+    return {
+        entry: {
+            key: { topicId: 'claim-order', resourceId, contextId: 'rank' },
+            resource: '',
+            typeId: '',
+            audit: {
+                date: Temporal.PlainTime.from('00:00'),
+                createdBy: 'test',
+                createdTs: Temporal.PlainDateTime.from('2024-01-01T00:00'),
+                expiryTs: Temporal.Instant.fromEpochMilliseconds(NOW_MS)
+            },
+            status: EntityStatus.NEW,
+            dequeueAudit: { attempts: 0 }
+        },
+        attempts: 0,
+        leaseUntilMs: NOW_MS
+    };
 }
 
 /** A reservation with no lease start: timeout reservation can never reach it, so the page recovers it. */

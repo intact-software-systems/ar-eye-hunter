@@ -102,6 +102,8 @@ export function createInboundTestStores(input: CreateInboundTestStoresInput): AL
     return createInboundTestBackendStores(input).stores;
 }
 
+export type InboundTestEffectCall = 'dispatched' | 'control-sent';
+
 export interface InboundTestRuntime {
     readonly runtime: ALInboundMessageRuntime;
     readonly stores: ALInboundRuntimeStores;
@@ -109,6 +111,8 @@ export interface InboundTestRuntime {
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
     /** One entry per dispatched message, so an absent delivery reads as an empty list. */
     readonly delivered: readonly string[];
+    /** One entry per port call in run order, so a batch's dispatch-before-control order is visible. */
+    readonly sequence: readonly InboundTestEffectCall[];
 }
 
 export interface CreateInboundTestRuntimeInput {
@@ -129,6 +133,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const queueEngine = new InboxOutboxEngine();
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const delivered: string[] = [];
+    const sequence: InboundTestEffectCall[] = [];
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -144,14 +149,17 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
         dispatchInboxEntry: async () => {
             delivered.push('dispatched');
+            sequence.push('dispatched');
             return input.dispatchOutcome;
         },
-        sendControlMessage: async () => {},
+        sendControlMessage: async () => {
+            sequence.push('control-sent');
+        },
         diagnostics: (event) => diagnostics.push(event),
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered };
+    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, sequence };
 }
 
 export interface InboundTestMessageInput {

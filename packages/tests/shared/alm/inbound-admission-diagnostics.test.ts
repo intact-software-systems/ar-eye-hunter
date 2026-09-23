@@ -180,8 +180,8 @@ it.each(['memory', 'indexeddb'] as const)(
         expect(dispatch.dueAtMs).toBeLessThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.startedAtMs).toBeGreaterThanOrEqual(dispatch.batchStartedAtMs);
         expect(dispatch.queueWaitMs).toBe(Math.max(0, dispatch.batchStartedAtMs - dispatch.dueAtMs));
-        // Today the ACK row sorts before its own dispatch row; Task 1 flips this pin.
-        expect(drain.claimedEffectIds).toEqual([control.effectId, dispatch.effectId]);
+        // The dispatch runs ahead of its own ACK: page deliveries rank before control sends.
+        expect(drain.claimedEffectIds).toEqual([dispatch.effectId, control.effectId]);
         expect(drain.deferred).toEqual([]);
     }
 );
