@@ -2234,6 +2234,20 @@ the final docs commit.
   f44af2799 fallback reading (1 536.5 ms; re-dial 20.9 s). No harness constant changes.
   - **Changed in the plan:** Task 2C's steps become active; Task 6 Steps 3–6 reopen for the 2C head.
 
+- **R-S2a-11 (2C's acceptance reading).** Controller ruling, 2026-09-23, on the Task 2C review's
+  Important 2: under 2C the first `send-control` claim of a batch carries the whole round's commit
+  and the others settle in about 0 ms, so the receiver `sendControlClaimMedianMs` is a per-message
+  figure that falls whatever the round costs and is no longer like-for-like against f44af2799's
+  1 536.5 ms. The 2C read is judged on the cell outcomes (D31), the receiver
+  `reservationWaitMedianMs` (due → run-loop start, the diagnosis' dominant term) and the post-reload
+  re-dial time (the sender's reload segment 2), with the send-control median reported beside them
+  under this caveat. No artifact field is redefined in S2a; a per-round figure is an S2b/S3
+  instrumentation candidate. Reading on 237f0b3f3 (run 35920857609): all three cells passed,
+  every cell both-normal; receiver reservation 1 334 / 1 062 / 1 886 ms (ws / rtc / fallback,
+  against 2 221 and 6 257 on f44af2799's both-normal cells); reload sender segment 2 12.0 s rtc /
+  12.9 s fallback (was 23.5–23.9 s), the original received at 15.1 / 16.1 s inside the 27 s wait.
+  The maintainer may overrule the comparison figure; the outcomes stand on their own.
+
 ## Not in this slice
 
 - **S2b, one identity** (D20) and **S2c, receipted audiences** (D21–D26, D29). S2a touches no key
