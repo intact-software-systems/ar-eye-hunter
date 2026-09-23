@@ -1,11 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { CountingRuntimeStateRepository } from '../../../../../scripts/platform/perf/counting-runtime-state-repository.ts';
 
 describe('group list fanout performance harness repository', () => {
     it('preserves optimistic insert, update, and delete conflict semantics', async () => {
-        vi.stubGlobal('Deno', { args: [] });
-        const bench = await import('../../../../../scripts/platform/perf/group-list-fanout-bench.ts');
-        expect(bench.CountingRuntimeStateRepository).toBeTypeOf('function');
-        const repository = new bench.CountingRuntimeStateRepository();
+        expect(CountingRuntimeStateRepository).toBeTypeOf('function');
+        const repository = new CountingRuntimeStateRepository();
 
         await expect(repository.insertIfAbsent('state', 'key', 'one', 10))
             .resolves.toEqual({ status: 'applied', revision: 0 });
