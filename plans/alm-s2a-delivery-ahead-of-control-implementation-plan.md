@@ -1936,7 +1936,7 @@ Steps 1–3 are re-run on the head that carries Tasks 7 and 8. Step 2's workflow
 only its read re-runs. The repository variable `RALLAR_BLACK_BOX_ALM_SCOPE` stays `full` for that
 read and is cleared after it. The PR body reports each change and the run that carried the read.
 
-- [ ] **Step 1: Push, then classify before judging.** The Release Gate's non-blocking
+- [x] **Step 1: Push, then classify before judging.** The Release Gate's non-blocking
       `alm-conformance-observation` job (`.github/workflows/release-gate.yml:196-249`) uploads
       `alm-conformance-lane-<sha>`. Read `regime` and `pageRegime` in every
       `alm-observation/<carrier>-<scope>.json`. The rtc cell's two regimes together are the runner's
@@ -1944,7 +1944,7 @@ read and is cleared after it. The PR body reports each change and the run that c
       in either is no evidence. That is the "Classify before judging" rule Task 8 Step 3 writes into
       "Reading a red" (`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:101-126`
       before Task 8).
-- [ ] **Step 2: The full scope, for `delivery-reload` (ruling R-S2a-2, 2026-09-23).** The Release Gate
+- [x] **Step 2: The full scope, for `delivery-reload` (ruling R-S2a-2, 2026-09-23).** The Release Gate
       runs the smoke scope only (`full-stack-alm-conformance.spec.ts:53,212`) and `delivery-reload` is
       tagged full (`create-alm-conformance-recipes.ts:192-193`). Give the observation job a scope input
       instead of a throwaway branch: in `.github/workflows/release-gate.yml` add the reusable-workflow
@@ -1982,7 +1982,7 @@ read and is cleared after it. The PR body reports each change and the run that c
       red with no same-regime green baseline is not a verdict: rerun once; if it reds again, write the
       diagnosis as a session record and route it to the maintainer rather than tuning a budget or a
       threshold. Two iterations before the maintainer is asked again.
-- [ ] **Step 4: The PR body.** Goal, Changes, Acceptance, Validation, Risk and rollback, Follow-up,
+- [x] **Step 4: The PR body.** Goal, Changes, Acceptance, Validation, Risk and rollback, Follow-up,
       in the F2b shape. Acceptance names the Task 0 reading and the RTT probe (heads, run ids,
       medians) as the D18 confirmation, the lever chosen and the one excluded, the claim-order pin,
       the synchronous `superseded`, the recipe change and the unchanged operation-count pins. Risk
@@ -1993,7 +1993,7 @@ read and is cleared after it. The PR body reports each change and the run that c
       50 ms per probe, 10 samples, the 60 s window end) as maintainer-visible. The body states that
       `sendLive` bypasses the WS submission-readiness fault port.
       `npm run pr:delivery -- status` decides the next action; `ready` and auto-merge are not used.
-- [ ] **Step 5: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
+- [x] **Step 5: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       `deno task check` in `apps/api-v1`, `apps/rallar-black-box-control-server` and
       `apps/relic-hunter-server-v1`; `npm run test:deno` (not optional: Task 3 widens a shared
       settlement type and `deno task check` reads `src/main.ts` only); `npx dprint check`;
@@ -2007,6 +2007,38 @@ read and is cleared after it. The PR body reports each change and the run that c
       assertions.
 - [ ] **Step 6: Branch Release Gate** green on the final commit before review (any later change
       invalidates it); after merge, **Run Hetzner Supported Distributed Manifests** on `main`.
+
+**Task 6 closing record (2026-09-23).** Steps 1, 2, 4 and 5 done; Step 3 (D31) **not met**; Step 6 pending on
+the final docs commit.
+
+- Reads classified under the two-regime rule (Step 1): ce6b1737b (run 35895320587) all red, the Task 9
+  throw gone, rtc/fallback at `assert-confirmed-1` (Task 10's late ACK), ws at the 30 s TTL crossing
+  on a slow page. f44af2799 (run 35902764952): **ws-full passed** on a both-normal cell (outbound
+  11.56 ms/op, page 4 ms/probe; receiver `send-control` 815 ms, intra-batch 1 ms, reservation
+  2 221 ms) and `delivery-lifecycle` green on all three carriers; rtc (page slow 86, outbound
+  unclassified; `send-control` 1 628, reservation 8 088) red at `ordering-resync` readiness and
+  `delivery-reload receive-original`; fallback (both normal: 15.44 ms/op, page 3; `send-control`
+  1 536.5, intra-batch 259, reservation 6 257) red only at `delivery-reload receive-original`.
+  9cdf0a4ce (run 35905260344, the rerun) all red on a slow runner (pages 349 / 166 / 73 ms/probe,
+  outbound slow 60 / 42.11 / 52), readiness timeouts even on baseline connects — a measurement.
+- The reload red (`.superpowers/s2a-reread-3-diagnosis.md`): after the sender's reload its RTC
+  re-dial took 20.9 s because each `rtc-signaling` message waited 2.3–4.7 s in the peer's inbound
+  behind the seq-resync NACK/repair control commits; readiness at 25.4 s, the original admitted on
+  the receiver at 31.3 s (`disposed`), the receiver's 27 s wait lapsed at 27.2 s. Not a Task 10
+  regression: the local full-scope rtc lane on 9cdf0a4ce is green (normal 18.67 ms/op, page
+  1 ms/probe, segment 2 ≈ 2 s). No earlier hosted read reached the rtc/fallback reload pair, so
+  the scenario has no hosted baseline on this branch.
+- 2C rule: the rtc cells were slow-page on both iterations and decide nothing; the fallback
+  both-normal cell on f44af2799 reads `send-control` 1 536.5 ms > 1 200 ms. Two iterations are
+  spent, so 2C and the reload finding go to the maintainer with the diagnosis; no harness constant
+  was changed (the 27 s `receive-original` wait and the 30 s readiness budget stand).
+- Step 5 on 9cdf0a4ce: dprint, typecheck, changed-style, tests-typecheck, coupling, bundles
+  (213.3 KiB < 214), three `deno task check`, governance 428/428, `test:unit` 12,054 passed /
+  12 skipped (1,276 files), `test:e2e` 40 + 210, `test:full-stack:memory` 7, build — PASS;
+  `test:deno` reddened once on the control server's oversized-payload test (its spawned server on
+  :30001 never became healthy, SIGTERM by the harness) and passed 174/174 alone.
+- The repository variable `RALLAR_BLACK_BOX_ALM_SCOPE` is cleared; the observation job is back on
+  its `smoke` default.
 
 ---
 
