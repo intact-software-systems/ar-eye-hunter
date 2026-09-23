@@ -285,69 +285,72 @@ Constraints that bind all three:
 - **S2 pre-empts nothing.** R2 owns membership fencing and `rosterVersion`; A1 owns principal, world, all
   and fixed audiences; A2 owns leader ACK and exclusive ownership; I1 owns correlation and trace.
 
-## 4. Maintainer decisions
+## 4. Maintainer decisions (2026-09-23)
 
-Fourteen questions, each with a recommended answer and the cost of the other.
+The fourteen questions this section carried were settled with the maintainer on 2026-09-23, together
+with the slice's split into three PRs; the roadmap's decision record holds them as D18 to D31.
 
 1. **Three sequential PRs (S2a drain, S2b identity, S2c receipts) in that order, and may S2a merge before
-   the drain hypothesis is confirmed hosted?** _Recommended: yes to the split and order, no to merging
-   unconfirmed._ Cost: one large PR re-couples a scheduling fix with a schema move and a wire cutover, so a
-   red no longer localizes; merging unconfirmed risks a reordering that fixes nothing because RTT was the
-   hog.
-2. **Which drain shape?** _Recommended: A, plus C if the cost term dominates, or D instead if alternative 1
-   is confirmed; B only with a waiver of the no-new-scheduler rule._ Cost: B buys the total-loss fix but
-   adds a second scheduling owner over one queue; A alone leaves §3.A's missed-claim-set loss addressed by
-   a shorter cycle rather than structurally.
-3. **Merge the two inbound stores, or keep two plus a shared identity index?** _Recommended: merge
-   (Q1-A)._ Cost of the index: isolation is kept, but dedup truth spans two IndexedDB keyspaces F2c's
-   per-row fence does not span.
-4. **Additive ACK fields or a wire version bump?** _Recommended: a version bump with no dual-decode
-   window (Q2)._ Cost of additive: origin and logical recipient become optional fields whose absence has
-   no domain meaning, and honest receipts stay conditional on a field being present.
-5. **`receiver` as a fourth `ALAckAlgo` value, or a reinterpretation of `hop`?** _Recommended: a fourth
-   value (Q4)._ Cost of reinterpretation: one name means two algorithms at every expected/acked-peer
-   site, and the matrix row cannot be closed honestly.
-6. **Where does broadcast-ACK aggregation state live?** _Recommended: in-memory for `live-only`, durable
-   through AppInbox only for durable channels (Q3)._ Cost of durable-always: a mutation on every live
-   broadcast ACK, which that path has never had; of in-memory-always: a durable receipt lost when the
-   origin is offline.
-7. **WS `seq`/`orderingKey` client-assigned or server-issued?** _Recommended: client-assigned (Q5)._ Cost
-   of server-issued: a new authoritative monotonic per-topic counter that must be durably serialized,
-   against the standing direction, and a much larger S2c.
-8. **Missing-recipient retry through the relay tree or point-to-point?** _Recommended: through the tree,
-   narrowed by the frozen audience (Q6)._ Cost of point-to-point: the origin must hold a route to every
-   logical recipient and bypasses the relay's authorization.
+   the drain hypothesis is confirmed hosted?** Split into three sequential PRs in that order, and S2a
+   merges only after the hosted one-variable confirmation. This keeps a scheduling fix from being
+   re-coupled with a schema move and a wire cutover, so a red localizes to one PR instead of a reordering
+   landing that fixes nothing because RTT was the hog.
+2. **Which drain shape?** Shape A — dispatch-first ordering inside the batch — is used now, with C or D
+   decided by Task 0's reading and B not chosen. This addresses §3.A's missed-claim-set loss as a list
+   ordering rather than adding a second scheduling owner over one queue.
+3. **Merge the two inbound stores, or keep two plus a shared identity index?** The two inbound stores
+   merge into one per session, with carrier a field on the control and ACK rows. This keeps dedup truth
+   inside the one IndexedDB keyspace F2c's per-row fence actually spans, instead of splitting it across
+   two keyspaces behind a shared index.
+4. **Additive ACK fields or a wire version bump?** The ACK payload takes a wire version bump
+   (`al.control.ack.v2`) with no dual-decode window. Origin and logical recipient are required from the
+   cutover, so a receipt is never conditional on an optional field whose absence carried no domain
+   meaning.
+5. **`receiver` as a fourth `ALAckAlgo` value, or a reinterpretation of `hop`?** `receiver` is a fourth
+   `ALAckAlgo` value. This keeps one name meaning one algorithm at every expected/acked-peer site, so the
+   conformance matrix row closes honestly.
+6. **Where does broadcast-ACK aggregation state live?** In memory for `live-only` channels, durable
+   through AppInbox only for durable channels. This avoids a mutation on every live broadcast ACK, which
+   that path has never had, while keeping a durable receipt from being lost when the origin is offline.
+7. **WS `seq`/`orderingKey` client-assigned or server-issued?** Client-assigned. This avoids a new
+   authoritative monotonic per-topic counter that would need durable serialization, against the standing
+   direction and a much larger S2c.
+8. **Missing-recipient retry through the relay tree or point-to-point?** Through the relay tree, narrowed
+   by the frozen audience. This keeps the origin from needing a route to every logical recipient and
+   preserves the relay's authorization.
 9. **Frozen audience pinned on `GroupSnapshot.group.snapshotVersion` or a separate audience version?**
-   _Recommended: the snapshot version (Q7)._ Cost of a separate version: a second monotonic authority
-   counter inside ALM, bought to freeze _who_ without pinning _when_ — a separation R2 needs, S2 does not.
+   Pinned on the existing snapshot version. This avoids a second monotonic authority counter inside ALM
+   bought to freeze _who_ without pinning _when_ — a separation R2 needs, not S2.
 10. **Should a replacement's admission settle its superseded predecessor synchronously in the same
-    commit?** _Recommended: yes._ Today `superseded` is computed only when the outbound drain next
-    attempts the old send (`outbound/compute-al-outbound-dispatch.ts:203-205`), so a purely local state
-    observation waits on a drain cycle plus the QoS policy's `retryTracking.retryDelayMs`
-    (`outbound/al-outbound-message-effects.ts:214,333`), which the lane never states. Cost of no: the 3 s
-    `observe-superseded-3` budget stays a bet on an unstated backoff and the diagnosis' C-class failure
-    (§3.C) is hidden by S2a rather than fixed.
-11. **May a hosted recipe poll `acknowledged` at all?** _Recommended: no for the cross-page round trip —
-    observe the receipt on the receiver, where it is local, and correlate afterwards._ The hosted control
-    passed `observe-acknowledged-1` at 10 004 ms against a 10 000 ms budget: zero margin in the _passing_
-    cell. Cost of keeping it: the headline assertion stays one hiccup from red, and `ws` keeps proving less
-    than `rtc` by asserting the sender-local `transport-accepted`
-    (`create-alm-conformance-recipes.ts:450-452,578-580`).
-12. **Does acceptance require a third agent role (Q8)?** _Recommended: yes — `AlmConformanceRole`
+    commit?** Yes — settled synchronously at the replacement's admission, in S2a. Today `superseded` is
+    computed only when the outbound drain next attempts the old send
+    (`outbound/compute-al-outbound-dispatch.ts:203-205`), waiting on a drain cycle plus the QoS policy's
+    `retryTracking.retryDelayMs` (`outbound/al-outbound-message-effects.ts:214,333`); settling it
+    synchronously fixes the diagnosis's C-class failure (§3.C) in S2a instead of leaving the 3 s
+    `observe-superseded-3` budget a bet on an unstated backoff.
+11. **May a hosted recipe poll `acknowledged` at all?** No for the cross-page round trip — hosted recipes
+    observe the receipt on the receiver, where it is local, and correlate afterwards. The hosted control
+    had passed `observe-acknowledged-1` at 10 004 ms against a 10 000 ms budget, zero margin in the
+    passing cell; removing the cross-page wait stops `ws` proving less than `rtc` by asserting only the
+    sender-local `transport-accepted` (`create-alm-conformance-recipes.ts:450-452,578-580`).
+12. **Does acceptance require a third agent role?** Yes — `AlmConformanceRole`
     (`create-alm-conformance-recipes.ts:37`) gains one and the Hetzner catalog a three-agent entry beside
-    the hardcoded two-agent one (`hetzner-alm-manifest-entries.ts:34-64`)._ One origin and two recipients
-    cannot be proven with two agents, and a hand-written recipe outside the generator escapes the carrier
-    expansion and the shared registries, so it proves one carrier and drifts.
-13. **Should this proposal pre-declare the new row and operation counts for the three moving pins (Q9)?**
-    _Recommended: no — name them and let the implementation measure them._
-    `al-storage-snapshot.test.ts:105-160` (`messageCount * 3` at `:149-155`),
-    `al-indexeddb-operation-counts.test.ts` and `inbound/al-inbound-admission-transactions.test.ts` all move
-    under S2b. Cost of pre-declaring: a wrong constant reads as a regression at review time.
+    the hardcoded two-agent one (`hetzner-alm-manifest-entries.ts:34-64`). This is what lets one origin
+    and two recipients be proven at all, inside the generator's carrier expansion and shared registries
+    rather than a hand-written recipe that proves one carrier and drifts.
+13. **Should this proposal pre-declare the new row and operation counts for the three moving pins?** No —
+    the pins are named (`al-storage-snapshot.test.ts:105-160`, `al-indexeddb-operation-counts.test.ts`,
+    `inbound/al-inbound-admission-transactions.test.ts`, all moving under S2b) and the implementation
+    measures and records each. This avoids a wrong pre-declared constant reading as a regression at
+    review time.
 14. **Are the two open hosted reds on S1's scenarios (`delivery-lifecycle`, `delivery-reload`) S2a's
-    acceptance criterion?** _Recommended: yes — S2a is done when both run green hosted in a regime with a
-    same-regime green baseline, and not before._ Cost of no: the reds carry into S2b and S2c as they
-    carried from S1 into S2, and the lane's return to `test:ci` stays blocked on an undiagnosed
+    acceptance criterion?** Yes — S2a is done when both run green hosted in a regime with a same-regime
+    green baseline, and not before. This stops the reds carrying into S2b and S2c the way they carried
+    from S1 into S2, and ties the lane's return to `test:ci` to real evidence instead of an undiagnosed
     intermittent.
+
+All fourteen matched the proposal's recommendations; the S2a plan argues from these and from the
+diagnosis.
 
 ## 5. Acceptance evidence
 
