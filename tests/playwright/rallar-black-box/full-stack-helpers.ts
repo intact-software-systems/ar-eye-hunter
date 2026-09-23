@@ -20,6 +20,7 @@ import {
 } from '../../../apps/rallar-black-box/playwright-full-stack-control-server.ts';
 import type { RallarBlackBoxDistributedGroupRef } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '../../../packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import { startPageDiagnosticsCapture, type PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
 
 export const FULL_STACK_CONTROL_BASE_URL = readFullStackControlBaseUrl();
 export const FULL_STACK_CONTROL_WS_URL = toFullStackControlWebSocketUrl(
@@ -123,6 +124,8 @@ export interface TwoAgentRunParticipant {
     readonly connection: string;
     readonly context: BrowserContext;
     readonly page: Page;
+    /** Absent only for a synthetic participant that never opened a real page (e.g. a unit-test double). */
+    readonly diagnostics?: PageDiagnosticsCapture;
 }
 
 export interface TwoAgentRun {
@@ -551,16 +554,20 @@ export async function openBrowserControlAgent(
         agentId: string;
         groupId: string;
         connection?: string;
+        /** Requests page-diagnostics capture from page creation; omitted for callers that don't read it. */
+        diagnosticsRole?: 'sender' | 'receiver';
     }>
 ): Promise<
     Readonly<{
         context: BrowserContext;
         page: Page;
         session: BrowserAuthSession;
+        diagnostics?: PageDiagnosticsCapture;
     }>
 > {
     const context = await browser.newContext();
     const page = await context.newPage();
+    const diagnostics = toPageDiagnosticsCapture(page, input);
     const query = new URLSearchParams({
         mode: 'control',
         workspace: 'black-box-runner',
@@ -597,8 +604,18 @@ export async function openBrowserControlAgent(
     return {
         context,
         page,
-        session: await readBrowserAuthSession(page)
+        session: await readBrowserAuthSession(page),
+        diagnostics
     };
+}
+
+function toPageDiagnosticsCapture(
+    page: Page,
+    input: Readonly<{ agentId: string; diagnosticsRole?: 'sender' | 'receiver'; }>
+): PageDiagnosticsCapture | undefined {
+    return input.diagnosticsRole === undefined
+        ? undefined
+        : startPageDiagnosticsCapture(page, { agentId: input.agentId, role: input.diagnosticsRole });
 }
 
 export async function createTwoAgentRun(
@@ -841,14 +858,16 @@ async function openTwoAgentParticipant(
         runId: input.runId,
         agentId,
         groupId: input.groupId,
-        connection
+        connection,
+        diagnosticsRole: input.role
     });
     return {
         agentId,
         actor: input.user.actor,
         connection,
         context: opened.context,
-        page: opened.page
+        page: opened.page,
+        diagnostics: opened.diagnostics
     };
 }
 

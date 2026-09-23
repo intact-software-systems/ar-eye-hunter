@@ -1,0 +1,33 @@
+{
+  "records": [
+    {
+      "agentId": "alm-sender-w0-fixture",
+      "role": "sender",
+      "atMs": 120,
+      "kind": "console-error",
+      "message": "Uncaught TypeError: failed to admit"
+    },
+    {
+      "agentId": "alm-receiver-w0-fixture",
+      "role": "receiver",
+      "atMs": 340,
+      "kind": "pageerror",
+      "message": "ReferenceError: rallar is not defined",
+      "stack": "ReferenceError: rallar is not defined\n at index.html:1:1"
+    },
+    {
+      "agentId": "alm-sender-w0-fixture",
+      "role": "sender",
+      "atMs": 900,
+      "kind": "console-warning",
+      "message": "Slow network request"
+    },
+    {
+      "role": "sender",
+      "atMs": 50,
+      "kind": "console-error",
+      "message": "missing agentId, so this one is skipped"
+    }
+  ],
+  "droppedCount": 2
+}

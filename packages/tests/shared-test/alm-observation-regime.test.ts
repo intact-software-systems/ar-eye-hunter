@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import {
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
@@ -159,7 +160,10 @@ function toDispatchClaimEvent(
     });
 }
 
-function toSyntheticRegime(events: readonly Record<string, unknown>[]): ALMObservationRegime {
+function toSyntheticRegime(
+    events: readonly Record<string, unknown>[],
+    pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile
+): ALMObservationRegime {
     return decodeALMObservationSnapshot({ runId: 'alm-synthetic', results: [], events }).fold(
         (issues) => {
             throw new Error(`synthetic snapshot did not decode: ${issues.join('; ')}`);
@@ -169,7 +173,8 @@ function toSyntheticRegime(events: readonly Record<string, unknown>[]): ALMObser
                 snapshot,
                 carrier: 'rtc',
                 scope: 'smoke',
-                cellOutcome: 'passed'
+                cellOutcome: 'passed',
+                pageDiagnosticsFile
             })
     );
 }
@@ -525,6 +530,94 @@ describe('createUnreadableALMObservationRegime', () => {
         expect(regime.carrier).toBe('rtc-with-ws-fallback');
         expect(regime.scope).toBe('full');
         expect(regime.scenarioSends).toEqual([]);
+    });
+});
+
+describe('page diagnostics on the regime', () => {
+    it('reports not-captured when the lane supplied no page diagnostics file', () => {
+        const regime = toSyntheticRegime(toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT));
+
+        expect(regime.pageDiagnostics).toEqual({ outcome: 'not-captured' });
+    });
+
+    it('reports the unreadable regime as not-captured too, absent a file', () => {
+        const regime = createUnreadableALMObservationRegime({
+            carrier: 'ws',
+            scope: 'smoke',
+            cellOutcome: 'failed',
+            snapshotIssues: ['snapshot is not an object']
+        });
+
+        expect(regime.pageDiagnostics).toEqual({ outcome: 'not-captured' });
+    });
+
+    it('reports the unreadable regime as captured when the lane did supply a file', () => {
+        const regime = createUnreadableALMObservationRegime({
+            carrier: 'ws',
+            scope: 'smoke',
+            cellOutcome: 'failed',
+            snapshotIssues: ['snapshot is not an object'],
+            pageDiagnosticsFile: { droppedCount: 0, records: [] }
+        });
+
+        expect(regime.pageDiagnostics).toEqual({
+            outcome: 'captured',
+            counts: { pageerror: 0, consoleError: 0, consoleWarning: 0 },
+            dropped: 0,
+            first: []
+        });
+    });
+
+    it('counts each kind, carries dropped, and orders the earliest records first', () => {
+        const pageDiagnosticsFile: ALMObservationPageDiagnosticsFile = {
+            droppedCount: 3,
+            records: [
+                { agentId: SENDER_AGENT_ID, role: 'sender', atMs: 500, kind: 'console-error', message: 'later' },
+                {
+                    agentId: RECEIVER_AGENT_ID,
+                    role: 'receiver',
+                    atMs: 100,
+                    kind: 'pageerror',
+                    message: 'earlier',
+                    stack: 'trace'
+                },
+                { agentId: SENDER_AGENT_ID, role: 'sender', atMs: 300, kind: 'console-warning', message: 'middle' }
+            ]
+        };
+
+        const regime = toSyntheticRegime(
+            toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            pageDiagnosticsFile
+        );
+
+        expect(regime.pageDiagnostics).toEqual({
+            outcome: 'captured',
+            counts: { pageerror: 1, consoleError: 1, consoleWarning: 1 },
+            dropped: 3,
+            first: [
+                pageDiagnosticsFile.records[1],
+                pageDiagnosticsFile.records[2],
+                pageDiagnosticsFile.records[0]
+            ]
+        });
+    });
+
+    it('bounds the earliest-records list at 20', () => {
+        const records = Array.from({ length: 25 }, (_unused, index) => ({
+            agentId: SENDER_AGENT_ID,
+            role: 'sender' as const,
+            atMs: index,
+            kind: 'console-error' as const,
+            message: `message-${index}`
+        }));
+
+        const regime = toSyntheticRegime(
+            toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            { records, droppedCount: 0 }
+        );
+
+        expect(regime.pageDiagnostics.outcome).toBe('captured');
+        expect(regime.pageDiagnostics.outcome === 'captured' ? regime.pageDiagnostics.first : []).toHaveLength(20);
     });
 });
 

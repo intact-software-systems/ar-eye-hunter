@@ -1,4 +1,8 @@
 import type {
+    ALMObservationPageDiagnosticRecord,
+    ALMObservationPageDiagnosticsFile
+} from './alm-observation-page-diagnostics.ts';
+import type {
     ALMObservationAgentRole,
     ALMObservationCommandResult,
     ALMObservationInboundClaim,
@@ -29,6 +33,8 @@ const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender
 const PENDING_INBOUND_OUTCOME = 'pending';
 const DISPATCH_LOCAL_PAYLOAD_KIND = 'dispatch-local';
 const SEND_CONTROL_PAYLOAD_KIND = 'send-control';
+/** Task 7b: bounds the cell JSON, not the raw file — the raw file already caps at 200 per page. */
+const ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT = 20;
 
 export type ALMObservationRegimeName = 'normal' | 'slow' | 'unclassified';
 
@@ -86,6 +92,19 @@ export type ALMObservationInboundDirection =
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
 
+/**
+ * The lane's raw `pageerror`/console capture, folded into the cell. `not-captured` means the lane
+ * did not supply the file at all (an older artifact), not that the page raised nothing.
+ */
+export type ALMObservationPageDiagnostics =
+    | Readonly<{
+        outcome: 'captured';
+        counts: Readonly<{ pageerror: number; consoleError: number; consoleWarning: number; }>;
+        dropped: number;
+        first: readonly ALMObservationPageDiagnosticRecord[];
+    }>
+    | Readonly<{ outcome: 'not-captured'; }>;
+
 export interface ALMObservationRegime {
     readonly runId: string;
     readonly carrier: string;
@@ -98,6 +117,7 @@ export interface ALMObservationRegime {
     readonly scenarioSends: readonly ALMObservationCommandResult[];
     readonly workPageRate: ALMObservationWorkPageRate;
     readonly inbound: readonly ALMObservationInboundDirection[];
+    readonly pageDiagnostics: ALMObservationPageDiagnostics;
     readonly snapshotIssues: readonly string[];
 }
 
@@ -106,6 +126,7 @@ export interface ALMObservationRegimeInput {
     readonly carrier: string;
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
 
 export interface UnreadableALMObservationRegimeInput {
@@ -113,6 +134,7 @@ export interface UnreadableALMObservationRegimeInput {
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
     readonly snapshotIssues: readonly string[];
+    readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
 
 interface ALMObservationPeerObservation {
@@ -136,6 +158,7 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         scenarioSends: input.snapshot.commandResults,
         workPageRate: computeWorkPageRate(input.snapshot.storageCounters),
         inbound: computeInboundDirections(input.snapshot),
+        pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         snapshotIssues: []
     };
 }
@@ -156,8 +179,36 @@ export function createUnreadableALMObservationRegime(
         scenarioSends: [],
         workPageRate: { outcome: 'too-few-readings', readingCount: 0 },
         inbound: [],
+        pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
         snapshotIssues: input.snapshotIssues
     };
+}
+
+/** `outcome: 'not-captured'` only when the lane supplied no file; a file with zero records is still `captured`. */
+function computePageDiagnostics(
+    file: ALMObservationPageDiagnosticsFile | undefined
+): ALMObservationPageDiagnostics {
+    if (file === undefined) {
+        return { outcome: 'not-captured' };
+    }
+    const ordered = [...file.records].sort((left, right) => left.atMs - right.atMs);
+    return {
+        outcome: 'captured',
+        counts: {
+            pageerror: countPageDiagnosticKind(ordered, 'pageerror'),
+            consoleError: countPageDiagnosticKind(ordered, 'console-error'),
+            consoleWarning: countPageDiagnosticKind(ordered, 'console-warning')
+        },
+        dropped: file.droppedCount,
+        first: ordered.slice(0, ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT)
+    };
+}
+
+function countPageDiagnosticKind(
+    records: readonly ALMObservationPageDiagnosticRecord[],
+    kind: ALMObservationPageDiagnosticRecord['kind']
+): number {
+    return records.filter((record) => record.kind === kind).length;
 }
 
 export function toALMObservationRegimeSummary(regime: ALMObservationRegime): string {

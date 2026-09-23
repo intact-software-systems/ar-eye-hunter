@@ -1223,6 +1223,82 @@ settled, not that the receipt moved.
       `git commit -am 'test(alm): pin acknowledgement admission under a transport hold'`, with the
       reading in the body. Then push the S2a branch (`claude/alm-s2-design`, the branch this plan executes on).
 
+### Task 7b: Page-error capture in the lane
+
+Per the maintainer's ruling (2026-09-23) that routed from R-S2a-7 (Task 7 Step 2's all-GREEN
+escalation): the hosted ACK loss is not in admission on either carrier, on either store, so it is lost
+before `admitIncomingMessage` on the sender's carrier, or in the capture — and the artifacts hold no
+console or page evidence at all to say which. This task adds that evidence. Harness and docs only; no
+product change.
+
+**Files:**
+
+- New: `tests/playwright/rallar-black-box/start-page-diagnostics-capture.ts` (attaches from page
+  creation), `tests/playwright/rallar-black-box/to-page-diagnostics-file.ts` (relocates the capture's
+  absolute timestamps against the cell's reference instant),
+  `packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts` (the raw
+  file's decoder).
+- Modify: `tests/playwright/rallar-black-box/full-stack-helpers.ts` (`openBrowserControlAgent` takes
+  an optional `diagnosticsRole` and returns the capture; `TwoAgentRunParticipant` carries it),
+  `tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts` (writes the raw file beside
+  the cell JSON and snapshot, and folds it into the regime),
+  `packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts` (the
+  `pageDiagnostics` block), `packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md`.
+- Test: `packages/tests/shared-test/alm-observation-page-diagnostics.test.ts` (new, the raw decoder),
+  `packages/tests/shared-test/alm-observation-regime.test.ts` (the `pageDiagnostics` block on the
+  regime).
+
+**The block shape**, `ALMObservationPageDiagnostics` on `ALMObservationRegime`:
+
+```ts
+export type ALMObservationPageDiagnostics =
+    | Readonly<{
+        outcome: 'captured';
+        counts: Readonly<{ pageerror: number; consoleError: number; consoleWarning: number; }>;
+        dropped: number;
+        first: readonly ALMObservationPageDiagnosticRecord[];
+    }>
+    | Readonly<{ outcome: 'not-captured'; }>;
+```
+
+`not-captured` only when the lane supplied no `-page-diagnostics.json` file at all (an artifact from
+before this task), never a guess about whether the page raised nothing. `first` is bounded to the
+earliest 20 records, sorted across both agent pages; the raw file itself already caps at 200 records
+per page and counts the rest as `dropped`.
+
+- [x] **Step 1: Capture from page creation, write the raw file.**
+      `startPageDiagnosticsCapture` attaches `page.on('pageerror')` and `page.on('console')` (levels
+      `error` and `warning` only) the moment `openBrowserControlAgent` creates the page, before its
+      login navigation, so a fault during connect setup is captured too. Each record is
+      `{ agentId, role, atEpochMs, kind, message, stack? }`, message and stack truncated to 1 000
+      characters, capped at 200 records per page with the rest counted in `droppedCount`.
+      `toPageDiagnosticsFile` relocates the two pages' records onto one `atMs` axis, against a
+      reference instant the spec chooses: the cell's first control event when the run's snapshot
+      decoded, else the earlier page's own creation. The spec writes the result beside the existing
+      `<carrier>-<scope>.json` and `<carrier>-<scope>-snapshot.json` as
+      `<carrier>-<scope>-page-diagnostics.json`, only when at least one agent page attached a capture.
+- [x] **Step 2: Decode the file into the cell JSON (RED first).** RED:
+      `packages/tests/shared-test/alm-observation-page-diagnostics.test.ts` against a fixture with a
+      few records (one missing its agent id, to prove a malformed record is skipped rather than
+      rejecting the file) and the reject-non-object case, plus
+      `alm-observation-regime.test.ts` asserting `pageDiagnostics` on `computeALMObservationRegime`
+      and `createUnreadableALMObservationRegime` — both `not-captured` absent a file, and `captured`
+      with counts, `dropped` and the earliest 20 records when one is supplied — all RED before
+      `decodeALMObservationPageDiagnosticsFile` and the `pageDiagnostics` field existed. GREEN after
+      `alm-observation-page-diagnostics.ts`'s decoder and `compute-alm-observation-regime.ts`'s
+      `computePageDiagnostics`. The spec decodes the file it is about to write through the same
+      decoder before folding it into the regime, so the cell JSON reads it through the contract a
+      later re-read of the artifact would use.
+      Commands: `npx vitest run packages/tests/shared-test/alm-observation-page-diagnostics.test.ts packages/tests/shared-test/alm-observation-regime.test.ts`,
+      `npx tsc -p packages/shared-test/tsconfig.json --noEmit`.
+- [x] **Step 3: Verify the lane writes it, document, and commit.**
+      `npm run test:rallar:full-stack:memory:alm` against a local memory `api-v1`; each cell's
+      `-page-diagnostics.json` exists and its cell JSON's `pageDiagnostics.outcome` reads `captured`
+      (a healthy local run may carry zero errors of every kind — that is a valid `captured` result,
+      not `not-captured`). `alm-observation-artifact.md` documents the new file and the block,
+      including that it captures page-level errors only and does not by itself prove where a frame
+      was lost. Commit: `test(alm): capture page errors into the observation artifact`.
+
 ### Task 8: The page regime in the observation artifact
 
 Per the maintainer's re-plan (2026-09-23). The outbound regime reads the cell's opening 20 s of
@@ -1684,6 +1760,13 @@ read and is cleared after it. The PR body reports each change and the run that c
   matrix `ACK_UNDER_HOLD_CASES` (12 cases per store). The WS opener fakes `Date`, `setTimeout`,
   `setInterval` and their clears, not every timer, because fake-indexeddb completes on `setImmediate`
   and E3's unarmed WS case otherwise never settled; this matches `ws-durable-owner-recovery.test.ts`.
+
+- **Maintainer ruling (2026-09-23, Task 7b).** Decided: build the harness-only addition R-S2a-7 routed
+  — sender/receiver `pageerror` and console capture in the ALM lane, folded into the observation
+  artifact as a required `pageDiagnostics` block — as its own task (7b), immediately after Task 7.
+  Why: R-S2a-7's escalation left the hosted ACK loss unattributed between the carrier and the
+  capture, and the artifacts carried no page-level evidence at all to narrow it further. Changed in
+  the plan: Task 7b added between Task 7 and Task 8.
 
 ## Not in this slice
 
