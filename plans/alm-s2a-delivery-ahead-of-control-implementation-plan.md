@@ -359,7 +359,7 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       then push `claude/alm-s2a-delivery-ahead-of-control`. Nothing else is pushed until this
       commit's `alm-conformance-lane-<sha>` artifact has uploaded, so its cells measure the drain
       as merged `main` runs it.
-- [ ] **Step 8: The hosted read (the D18 confirmation).** Download the artifact
+- [x] **Step 8: The hosted read (the D18 confirmation).** Download the artifact
       (`gh run download <run-id> -n alm-conformance-lane-<sha>`; run `gh` unsandboxed, a sandboxed
       `gh` fails TLS here). Record per cell `regime`, `perOperation.medianMs` and the receiver's
       `claimWaits`. Read red cells; if every cell is green, rerun up to twice, and if none reds read
@@ -373,7 +373,7 @@ next `rotation-alive`, which already stands for 64 rounds. Read together:
       nor D addresses that term, so stop and route the reading to the maintainer: a wake-on-admission
       change or shape B is a new decision; **(c)** neither term reaches twice the other — both
       matter; continue with Task 1 and Step 9 decides.
-- [ ] **Step 9: The RTT one-variable probe (diagnosis §6, alternative 1).** From the Task 0 commit,
+- [x] **Step 9: The RTT one-variable probe (diagnosis §6, alternative 1).** From the Task 0 commit,
       push a throwaway branch `claude/alm-s2a-probe-rtt-off` whose single change makes
       `registerBrowserRttEgress`'s `onHeartbeat` (`initialise-browser-middleware.ts:457-469`) return
       `Promise.resolve()` without enqueueing — a product-configuration variable, so a diagnostic run,
@@ -487,6 +487,22 @@ shape, no scheduling object.
       `git commit -am 'feat(alm): run page deliveries ahead of control sends inside an inbound batch'`
 
 ### Task 2: The cost lever Task 0 selected
+
+**Read on 2026-09-23.** Step 8 on the Task 0 commit alone (`c6ded1707`, probe PR #585, run
+35843670606): receiver `reservationWaitMedianMs` 7 302 / 6 223 / 7 795 ms against `intraBatchWaitMedianMs`
+645 / 105 / 124 ms (ws / rtc / fallback), `sendControlClaimMedianMs` 2 734 / 1 875 / 1 748 ms — rule (b).
+Step 9 with RTT heartbeats off (probe PR #586, run 35843674446): every cell passed in the normal regime
+(20.11 / 13.83 / 20.94 ms/op), receiver `sendControlClaimMedianMs` 778 / 796 / 730 ms (below 1 200) and
+reservation 1 904 / 1 729 / 2 008 ms — the RTT commits on the shared outbound lock are the hog, so the
+lever is **2D**. The maintainer (2026-09-23) chose 2D plus wake-on-admission on the condition that the wake
+builds on existing functionality with no new abstraction or layer. Reading the code for that condition
+(ruling R-S2a-6): the wake already exists — a committed ingress admission calls `commitWork()`
+(`al-inbound-message-runtime.ts:335`), which runs `restartScan()` and `ALWorkHandler.committed()` →
+`queueEngine.wake()` (`al-work-handler.ts:218-220`), and a wake landing during a batch is drained by one
+follow-up batch at that batch's end (`:168`). The reservation term is therefore the running batch's
+remaining duration, inflated by RTT-contended `send-control` claims; 2D shortens it, and preempting a
+running batch would be shape B. **Task 2 = 2D plus one pin** (Step 0 below) that the existing wake is
+reached from the ingress path and lands in the follow-up batch. Task 2C is recorded, not executed.
 
 Exactly one of 2C and 2D lands, per Task 0 Step 9; the PR body records the other as not chosen.
 
@@ -605,6 +621,13 @@ outbound admission (`:453-470` → `ws-queue-box-client-service.ts:449-465`) hol
   (`packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts:25-40`)
   receives an identical frame.
 
+- [ ] **Step 0: The existing wake is reached from ingress (pin).** In the inbound diagnostics or work
+      suite, over a real memory runtime with a batch held mid-run (the Task 3 test's held-queue seam),
+      admit one message through `admitIncomingMessage`; assert `queueEngine.wake()` was called once by
+      the admission (`ALWorkHandler.committed()` → `queueEngine.wake()`) and that the dispatch effect
+      runs in the follow-up batch the running batch schedules at its end, not a later round. No
+      production change: the pin proves R-S2a-6. If the pin is RED on any ingress path, stop and report.
+      Command: `npx vitest run packages/tests/shared/alm/inbound packages/tests/shared/alm/work`
 - [ ] **Step 1: A heartbeat costs no admission (RED).** In `browser-middleware-rtt.test.ts`, drive
       `registerBrowserRttEgress`'s heartbeat against a WS client over a counting IndexedDB observer
       and assert zero `al-admission` operations and one socket write; today it spends a full
