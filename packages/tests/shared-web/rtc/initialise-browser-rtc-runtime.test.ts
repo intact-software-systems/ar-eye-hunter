@@ -27,9 +27,7 @@ import {
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
-import type { OverlayInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
@@ -49,7 +47,7 @@ import {
     createNativeRtcConnectionFixture,
     installNativeRtcRuntime
 } from '../../shared/native-rtc-connection-fixture.ts';
-import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
+import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 
@@ -99,11 +97,11 @@ describe('browser RTC runtime composition', () => {
             });
             expect(service.readPeerConnectionAttemptBudgetDiagnostics().consumedCount).toBe(0);
 
-            const group = acceptedGroup(['self', 'startup-peer']);
+            const group = createAcceptedGroupSnapshotFixture(['self', 'startup-peer']);
             groupStateSnapshotsRepository.setGroupStateSnapshot(group);
             overlaysRepository.setAcceptedOverlayById(
                 toScopedOverlayId(group.group),
-                overlay(group, 1, ['startup-peer'])
+                createAcceptedOverlayFixture(group, 1, ['startup-peer'])
             );
             const manager = new WebRtcGroupManager(service, {
                 groupCache: groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
@@ -144,9 +142,9 @@ describe('browser RTC runtime composition', () => {
         onTestFinished(() => {
             vi.useRealTimers();
         });
-        const group = acceptedGroup(['self', 'receiver']);
+        const group = createAcceptedGroupSnapshotFixture(['self', 'receiver']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-        overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), overlay(group, 1, ['receiver']));
+        overlaysRepository.setAcceptedOverlayById(toScopedOverlayId(group.group), createAcceptedOverlayFixture(group, 1, ['receiver']));
         const nativeRuntime = installNativeRtcRuntime();
         const faults = createScriptedTransportFaultPort();
         const fault = {
@@ -216,11 +214,11 @@ describe('browser RTC runtime composition', () => {
     });
 
     it('routes multicast traffic through accepted rather than conflicting planned next hops', async () => {
-        const group = acceptedGroup(['self', 'accepted-peer', 'planned-peer']);
+        const group = createAcceptedGroupSnapshotFixture(['self', 'accepted-peer', 'planned-peer']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
         const overlayId = toScopedOverlayId(group.group);
-        overlaysRepository.setPlannedOverlayById(overlayId, overlay(group, 2, ['planned-peer']));
-        overlaysRepository.setAcceptedOverlayById(overlayId, overlay(group, 1, ['accepted-peer']));
+        overlaysRepository.setPlannedOverlayById(overlayId, createAcceptedOverlayFixture(group, 2, ['planned-peer']));
+        overlaysRepository.setAcceptedOverlayById(overlayId, createAcceptedOverlayFixture(group, 1, ['accepted-peer']));
         const nativeRuntime = installNativeRtcRuntime();
         const fixture = createNativeRtcConnectionFixture({
             sessionId: 'self',
@@ -312,50 +310,4 @@ async function receiveOffer(queueBox: WsQueueBoxClientService, peerId: string): 
     );
     const accepted = await queueBox.acceptIncomingMessage(message);
     expect(accepted.right).toEqual({ kind: 'admitted' });
-}
-
-function acceptedGroup(sessionIds: readonly string[]): GroupSnapshot {
-    const snapshot = createGroupSnapshotFixture({
-        applicationId: 'app-1',
-        workspaceId: 'workspace-1',
-        groupId: 'group-1',
-        sessionIds
-    });
-    const nowMs = Date.now();
-    return {
-        ...snapshot,
-        activeSessions: snapshot.activeSessions.map((session) => ({
-            ...session,
-            lastHeartbeatAtEpochMs: nowMs,
-            expiresAtEpochMs: nowMs + 60_000
-        })),
-        group: {
-            ...snapshot.group,
-            formationElectorate: snapshot.members.map((member) => member.principalId),
-            acceptedLayoutIdentity: {
-                groupRevision: snapshot.causalRevision.groupRevision,
-                presenceRevision: snapshot.causalRevision.presenceRevision,
-                version: 1,
-                state: 'active'
-            }
-        }
-    };
-}
-
-function overlay(group: GroupSnapshot, version: number, nextHopSessionIds: readonly string[]): OverlayInfo {
-    return {
-        sourceGroupStateCausalRevision: group.causalRevision,
-        provenance: 'server',
-        state: 'active',
-        overlayId: toScopedOverlayId(group.group),
-        groupRef: group.group,
-        topology: 'tree',
-        name: group.group.displayName,
-        createdByClientId: 'server',
-        createdAtEpochMs: 1,
-        nextHopSessionIds: [...nextHopSessionIds],
-        degreeLimit: 5,
-        overlayVersion: version,
-        updatedAtEpochMs: version
-    };
 }

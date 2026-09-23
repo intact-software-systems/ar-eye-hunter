@@ -1,3 +1,5 @@
+import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { ClientInstance, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../create-test-group.ts';
@@ -122,6 +124,57 @@ export function createGroupSnapshotFixture(
         ),
         memberCount: memberPrincipalIds.length,
         onlineMemberCount: input.sessionIds.length
+    };
+}
+
+/** A group in `group-1` whose sessions are live now and whose layout the server has accepted. */
+export function createAcceptedGroupSnapshotFixture(sessionIds: readonly string[]): GroupSnapshot {
+    const snapshot = createGroupSnapshotFixture({
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'group-1',
+        sessionIds
+    });
+    const nowMs = Date.now();
+    return {
+        ...snapshot,
+        activeSessions: snapshot.activeSessions.map((session) => ({
+            ...session,
+            lastHeartbeatAtEpochMs: nowMs,
+            expiresAtEpochMs: nowMs + 60_000
+        })),
+        group: {
+            ...snapshot.group,
+            formationElectorate: snapshot.members.map((member) => member.principalId),
+            acceptedLayoutIdentity: {
+                groupRevision: snapshot.causalRevision.groupRevision,
+                presenceRevision: snapshot.causalRevision.presenceRevision,
+                version: 1,
+                state: 'active'
+            }
+        }
+    };
+}
+
+export function createAcceptedOverlayFixture(
+    group: GroupSnapshot,
+    version: number,
+    nextHopSessionIds: readonly string[]
+): OverlayInfo {
+    return {
+        sourceGroupStateCausalRevision: group.causalRevision,
+        provenance: 'server',
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: group.group,
+        topology: 'tree',
+        name: group.group.displayName,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        nextHopSessionIds: [...nextHopSessionIds],
+        degreeLimit: 5,
+        overlayVersion: version,
+        updatedAtEpochMs: version
     };
 }
 

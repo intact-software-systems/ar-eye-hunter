@@ -1665,6 +1665,26 @@ read and is cleared after it. The PR body reports each change and the run that c
   Steps 1 and 3; Task 2's 2C sentences; the regime-constants bullet of Global Constraints; the
   Self-review.
 
+- **R-S2a-7 (Task 7: the ACK is not lost in admission).** Decided: skip Task 7 Step 3 and commit the
+  test as a pin, per Step 2's all-GREEN escalation. Reading: over a real memory runtime of each
+  carrier, the armed and the unarmed case alike read `outbound-answered` / `committed`, record the
+  ACK's `admission-outcome` (`control`), and the handle reads `acknowledged`, with the hold engaged
+  (RTC `drop` observations, WS `not-ready` observations) and no ACK frame asked of the fault port.
+  E1 (the submission's own `ack-timeout` retransmission under the held typeId, `attempts` 0 → 1
+  before the ACK), E2 (the lane's cancel of the held send) and E3 (the same matrix over fake-indexeddb
+  stores, in `acknowledgement-under-transport-hold-indexeddb.test.ts`) are GREEN each, and E1 with E2
+  together is GREEN on both stores. The witness does discriminate: a throw injected into
+  `ALOutboundRepairAdmission.acceptControlMessage` reads `outbound-threw` and turns the armed cases
+  RED. So the hosted ACK is lost before `admitIncomingMessage` on the sender's carrier, or in the
+  capture. Routed to the maintainer with the diagnosis' one harness-only addition, sender
+  `pageerror`/console capture in the lane, not built here. Why: no case reproduced, and the brief
+  forbids a fix without a RED. Changed in the plan: nothing beyond this entry. The pin widens the
+  brief's fixture by `readPendingAck` on `HoldSender` (E1 reads the receipt's `timeoutMs` and
+  `attempts`), a `HoldEscalation` third argument to `expectAcknowledgedUnderHold` and the shared case
+  matrix `ACK_UNDER_HOLD_CASES` (12 cases per store). The WS opener fakes `Date`, `setTimeout`,
+  `setInterval` and their clears, not every timer, because fake-indexeddb completes on `setImmediate`
+  and E3's unarmed WS case otherwise never settled; this matches `ws-durable-owner-recovery.test.ts`.
+
 ## Not in this slice
 
 - **S2b, one identity** (D20) and **S2c, receipted audiences** (D21–D26, D29). S2a touches no key
