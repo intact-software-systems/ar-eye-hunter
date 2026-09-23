@@ -331,8 +331,8 @@ describe('admission storage envelopes', () => {
         await expect(backend.list('version:', decodeVersion)).rejects.toMatchObject(corruption);
     });
 
-    it.each(['read', 'list'] as const)(
-        'does not let %s expiry cleanup delete a concurrent refresh',
+    it.each(['read', 'list', 'readWithin'] as const)(
+        'answers a %s from its snapshot and leaves a concurrently refreshed row to its writer',
         async (operation) => {
             const databaseName = `admission-expiry-race-${operation}-${crypto.randomUUID()}`;
             const backend = new IndexedDbAdmissionBackend({
@@ -365,13 +365,14 @@ describe('admission storage envelopes', () => {
                 return Reflect.apply(transactionImplementation, this, args);
             });
 
-            const operationResult = operation === 'read'
-                ? backend.read('version:refreshed', decodeVersion)
-                : backend.list('version:', decodeVersion);
+            const answers = {
+                read: () => backend.read('version:refreshed', decodeVersion),
+                list: () => backend.list('version:', decodeVersion),
+                readWithin: () => backend.readWithin((session) => session.read('version:refreshed', decodeVersion))
+            };
+            const expected = { read: undefined, list: [], readWithin: undefined };
 
-            await expect(operationResult).rejects.toMatchObject({
-                name: 'ALAdmissionBackendConflictError'
-            });
+            await expect(answers[operation]()).resolves.toEqual(expected[operation]);
             expect(refreshWritten).toBe(true);
             const database = await openIndexedDbAdmissionDatabase({
                 dbName: databaseName,

@@ -64,7 +64,10 @@ row, an observed effect row, and a moved supersedence observation — resolves a
 the same way: the guard throws `ALAdmissionBackendConflictError` inside the transaction so
 the backend aborts without writing, leaving every row at the revision and write token it
 already had, and the store catches it at its public boundary and returns the typed
-`'conflict'` result.
+`'conflict'` result. Only a write conflicts. A read chain's expiry eviction that finds its row
+moved by another writer leaves the row to that writer and answers from its snapshot (the inbound
+README's decision-surface section), so `ALOutboundControlAdmission.admit` never loses an
+acknowledgement to a throw out of `readControlAdmission` or its effect read.
 
 ## Canonical message storage
 

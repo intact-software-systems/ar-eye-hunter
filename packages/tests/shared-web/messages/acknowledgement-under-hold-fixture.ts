@@ -38,6 +38,7 @@ import { captureOutboundWorkRunnable } from '../../shared/alm/outbound-runtime-t
 import { createNativeRtcConnectionFixture, installNativeRtcRuntime } from '../../shared/native-rtc-connection-fixture.ts';
 import { TestWebSocket } from '../../shared/websocket/test-web-socket.ts';
 import { createAcceptedGroupSnapshotFixture, createAcceptedOverlayFixture } from '../authoritative-group-fixtures.ts';
+import { setNextAcksReadEvictionRaced } from './acks-read-eviction-race.ts';
 
 /** Queued turns `settle` runs; a count of turns, not a clock. */
 export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
@@ -46,6 +47,8 @@ export const ACK_UNDER_HOLD_SETTLE_TURNS = 20;
 export interface HoldSender {
     readonly carrier: 'rtc' | 'ws';
     readonly selfPeerId: string;
+    /** The carrier's outbound admission store namespace, which prefixes every row it keeps. */
+    readonly outboundAdmissionNamespace: string;
     readonly faults: ScriptedTransportFaultPort;
     /** `drop` on RTC, `not-ready` on WS; matches the scenario typeId only, as `toHeldFaultCommands` arms it. */
     readonly hold: ScriptedTransportFault;
@@ -72,13 +75,20 @@ export interface HoldSender {
 
 /**
  * A lane variable added on top of the hold, to the armed and the unarmed case alike: the submission's
- * own retransmission under the held typeId (`ack-timeout`), or the lane's cancel of the held send.
+ * own retransmission under the held typeId (`ack-timeout`), the lane's cancel of the held send, or,
+ * over IndexedDB only, an expired row in the ACK's read set that a concurrent chain evicts first
+ * (`expired-row-evicted`).
  */
-export type HoldEscalation = 'none' | 'ack-timeout' | 'cancel-held';
+export type HoldEscalation = 'none' | 'ack-timeout' | 'cancel-held' | 'expired-row-evicted';
 
 /** Every carrier, with the hold armed or not, under every lane variable. */
 export const ACK_UNDER_HOLD_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
     ([false, true] as const).flatMap((armed) => (['none', 'ack-timeout', 'cancel-held'] as const).map((escalation) => [carrier, armed, escalation] as const))
+);
+
+/** Every carrier, with the hold armed or not, while a concurrent chain evicts an expired row the ACK read. */
+export const ACK_UNDER_CONCURRENT_EVICTION_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
+    ([false, true] as const).map((armed) => [carrier, armed, 'expired-row-evicted'] as const)
 );
 
 /** Where an inbound ACK's admission stopped, read from the two spied hops: a value, never a throw. */
@@ -160,6 +170,7 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
             admit: (message) => manager.enqueueIfAbsent(message)
         }),
         selfPeerId: 'self',
+        outboundAdmissionNamespace: resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.namespace,
         hold: RTC_HOLD,
         createMessage: createRtcLifecycleMessages(group.group),
         cancel: (msgId) => void manager.cancel(msgId),
@@ -247,6 +258,7 @@ export async function openWsHoldSender(): Promise<HoldSender> {
             admit: (message) => service.enqueueOutboxIfAbsent(message)
         }),
         selfPeerId: sessionId,
+        outboundAdmissionNamespace: resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.namespace,
         hold: WS_HOLD,
         createMessage: (resourceId) => toWsHeldMessage(sessionId, resourceId),
         cancel: (msgId) => void service.cancelOutbox(msgId),
@@ -435,6 +447,9 @@ async function runHoldEscalation(
     }
     if (escalation === 'cancel-held') {
         sender.cancel(sent.held.id.msgId);
+    }
+    if (escalation === 'expired-row-evicted') {
+        await setNextAcksReadEvictionRaced(sender.outboundAdmissionNamespace, sent.submission.id.msgId);
     }
 }
 

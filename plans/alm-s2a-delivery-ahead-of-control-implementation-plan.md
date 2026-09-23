@@ -1570,6 +1570,152 @@ maintainer-visible and are listed as such in the PR body.**
       `git commit -am 'feat(alm): classify the page regime from the storage probe in the observation artifact'`,
       and push the S2a branch (`claude/alm-s2-design`).
 
+### Task 9: The ACK's control admission survives an expiry-cleanup conflict
+
+Per controller ruling R-S2a-8, under the maintainer's decision to fix the ACK-under-hold defect. The
+re-read of hosted run `25708b2e6` with page diagnostics (`.superpowers/s2a-reread-diagnosis.md` §0.1
+and §2) names the stop site that Task 7 could not. At 123.906 s the sender page logged `Callback
+onMessage failed ALAdmissionBackendConflictError: IndexedDB AL admission expiry cleanup conflicted`.
+The stack runs `ALOutboundControlAdmission.admit` → `readControlAdmission` →
+`IndexedDbAdmissionBackend.readWithin` → `removeExpiredIndexedDbAdmissionValues`. After a read chain
+finishes, `readWithin` evicts every row it read past its expiry. Each removal is guarded by the write
+token the chain read (`remove-if-write-token`), and the eviction threw
+`ALAdmissionBackendConflictError` when another writer had replaced or removed one of those rows in
+between (`indexed-db-admission-backend.ts:415-427`). `admit` does not catch a read's throw. The RTC
+data channel's `onMessage` catch logs the error and drops it (`qrtc-data-channel.ts:576-578`), so
+no `admission-outcome` is recorded and the send never reaches `acknowledged`. This is site C2 at the
+read (`al-outbound-control-admission.ts:279-303`). Task 7's pin stayed GREEN because its ACK read
+set held no expired row and no concurrent writer moved one.
+
+The fix goes where the throw starts. An expiry eviction is not the reader's write. The chain has
+already treated the expired row as absent. A row that another writer moved has also left the
+state this chain evicts. So the conflict belongs to no decision the chain made. The IndexedDB
+backend is the only backend whose read raises it: the in-memory backend deletes an expired row
+without a guard, and PostgreSQL does not evict on a read.
+
+**Files:**
+
+- Create: `packages/tests/shared-web/messages/acks-read-eviction-race.ts`. This is the seam. It
+  plants the submission's `acks` row already expired. It then lands a second chain's read of that row
+  between the ACK chain's snapshot and the ACK chain's eviction.
+- Modify: `packages/tests/shared-web/messages/acknowledgement-under-hold-fixture.ts`. `HoldSender`
+  gains `outboundAdmissionNamespace`. `HoldEscalation` gains `'expired-row-evicted'`. The file adds
+  `ACK_UNDER_CONCURRENT_EVICTION_CASES` and a `runHoldEscalation` branch.
+- Modify: `packages/tests/shared-web/messages/acknowledgement-under-transport-hold-indexeddb.test.ts`,
+  which gains a sibling `it.each`.
+- Modify: `packages/shared/alm/indexed-db-admission-backend.ts`: `removeExpiredIndexedDbAdmissionValues`
+  and the comment in `readWithin`.
+- Modify: `packages/tests/shared/alm/al-admission-backend.test.ts`. The eviction pin (`:334-397`)
+  now expects a value, and it gains a `readWithin` case.
+- Modify: `packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`. The ceiling
+  moves from 271 to 272 under the Global Constraints' next-whole-KiB rule.
+- Modify: `packages/shared/alm/inbound/README.md` (the decision-surface section) and
+  `packages/shared/alm/outbound/README.md` (the conflict paragraph).
+
+**Interfaces:**
+
+```ts
+// packages/tests/shared-web/messages/acknowledgement-under-hold-fixture.ts
+export interface HoldSender {
+    // ...
+    /** The carrier's outbound admission store namespace, which prefixes every row it keeps. */
+    readonly outboundAdmissionNamespace: string;
+}
+export type HoldEscalation = 'none' | 'ack-timeout' | 'cancel-held' | 'expired-row-evicted';
+export const ACK_UNDER_CONCURRENT_EVICTION_CASES; // carrier × armed, escalation 'expired-row-evicted'
+
+// packages/tests/shared-web/messages/acks-read-eviction-race.ts
+export async function setNextAcksReadEvictionRaced(namespace: string, msgId: string): Promise<void>;
+
+// packages/shared/alm/indexed-db-admission-backend.ts: no exported signature changes. The module-private
+// removeExpiredIndexedDbAdmissionValues(input): Promise<void> no longer throws when its guarded
+// write answers "not committed".
+```
+
+- [x] **Step 1: RED.** The sibling case runs `expectAcknowledgedUnderHold(sender, armed,
+      'expired-row-evicted')` over fake-indexeddb for both carriers, armed and unarmed. The escalation
+      first writes `<namespace>:control:acks:<submission msgId>` through a second
+      `IndexedDbAdmissionBackend` on the sender's database. The row is `{ kind: 'acks', values: [] }`
+      with `expireAtTimestamp` set to `Date.now() - 1`. This is the one key in the ACK's read set
+      whose loss cannot change the acknowledgement: `readControlHistory` reads it, and an absent
+      history reads as `values: []`. The escalation then arms the seam. Spies on
+      `IndexedDbAdmissionReadSession.prototype.read` and `IndexedDbAdmissionBackend.prototype.readWithin`
+      find the next chain whose session read that key. After that chain's callback returns and before
+      its eviction, the second backend's `read` of the key sees the row expired and evicts it. Both
+      chains and both evictions are the backend's own code, and no unit under test is mocked. An
+      `onTestFinished` guard fails the case if no chain read the key. Inverting the key match
+      confirms this: all four cases fail with `the eviction race never ran`. The assertion is the
+      Task 7 body unchanged:
+      `expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered' })`,
+      then the ACK's `admission-outcome` and `handle.lifecycle().state === 'acknowledged'`.
+
+      RED, before the fix. All 4 cases fail, the first time and on every run:
+
+      ```
+      AssertionError: expected { stop: 'outbound-threw', …(1) } to match object { stop: 'outbound-answered' }
+      Callback onMessage failed ALAdmissionBackendConflictError: IndexedDB AL admission expiry cleanup conflicted   (rtc)
+      Callback onMessage failed: ALAdmissionBackendConflictError: IndexedDB AL admission expiry cleanup conflicted  (ws)
+      ```
+
+      The stop value and the handle, read by a temporary probe that was removed before the commit:
+      `{"stop":"outbound-threw","reason":"ALAdmissionBackendConflictError: IndexedDB AL admission expiry
+      cleanup conflicted"}`. The handle stays at `transport-accepted`, and the ACK has no
+      `admission-outcome`. The result is the same for rtc and ws, armed and unarmed, and it is the
+      hosted record's signature. The hold is incidental, as the re-read said.
+      Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold-indexeddb.test.ts -t 'concurrent chain evicts'`
+- [x] **Step 2: The fix at the source, one change.** `removeExpiredIndexedDbAdmissionValues` awaits
+      the guarded write and no longer turns its "not committed" answer into
+      `ALAdmissionBackendConflictError`. A row that moved is left to the writer that moved it, or to
+      the next chain that reads it expired. `readWithin`, `read` and `list` answer from the snapshot
+      they read. The `readWithin` comment now reads "by the time its caller is answered the row is
+      gone, or another writer has moved it". Every other part stays as it was:
+      - Conflict remains a write's typed value. `write` still throws
+      `ALAdmissionBackendConflictError` from inside its transaction, and each store still catches it
+      at its boundary. So a stale snapshot is still caught by the control admission's own fence
+      (`hasCurrentControlFence`, and the per-row fence of the write phase). A caught conflict
+      becomes `pending-control`, which is replayed.
+      - The F2c fence contract is unchanged.
+      - Nothing new was added: no timer, queue, registry, or typed field.
+      - `ALOutboundControlAdmission.admit` is not edited.
+
+      One mechanism covers every call site that F2 left uncaught, because every one of them reaches
+      the throw through this eviction:
+      - `readControlAdmission` (`:287`);
+      - the effect read in `admit` (`:118-123`);
+      - `readPendingRetry` and `readRetryRecord` through `backend.read`;
+      - the inbound `readControlDecisionSurface`;
+      - every other `readWithin` decision surface.
+
+      `writeBrowserALRuntimeCleanup` has its own conflict throw. It belongs to the periodic browser
+      cleanup, which is not on an admission path, so it is left unchanged.
+      Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold-indexeddb.test.ts packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts packages/tests/shared/alm/al-admission-backend.test.ts`
+- [x] **Step 3: Verify.**
+      - The four RED cases are GREEN, and so is the whole Task 7 matrix: both carriers, memory and
+      IndexedDB, every escalation. That is 28 tests.
+      - The backend's eviction pin was renamed to `answers a %s from its snapshot and leaves a
+        concurrently refreshed row to its writer`. It expects `read` → `undefined`, `list` → `[]` and
+      `readWithin` → `undefined`, and the refresh stays intact. All three cases fail against the
+      unfixed backend.
+      - The operation-count pins are unchanged. `al-indexeddb-operation-counts.test.ts` passes 13/13
+      (10 `al-admission` / 15 `al-work` per default send, 6 + 2 inbound, release 1, and the idle
+      relay relays nothing). The eviction is not observed, so no count moves.
+      - The headless bundle measures 271.0087890625 KiB, up from 270.8486328125. The minified bundle
+      is 69 bytes smaller, but brotli compresses it less well. The ceiling moves from 271 to 272
+      with the figure recorded. The facade measures 213.1 KiB against its 214 ceiling.
+
+      Commands:
+
+      - `npx vitest run packages/tests/shared/alm packages/tests/shared-web/messages packages/tests/shared-web/websocket packages/tests/shared-web/rtc packages/tests/shared-web/al-runtime packages/tests/shared/transport-faults packages/tests/shared/qrtc-data-channel.test.ts packages/tests/shared/websocket/json-web-socket-client-faults.test.ts`
+      - `npx tsc -p packages/shared/tsconfig.json --noEmit`
+      - `node scripts/check-tests-typecheck.mjs`
+      - `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`
+      - `npm run check:repo-style:changed -- origin/main HEAD`
+      - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
+      - `npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
+      - `npx dprint check <touched files>`
+      - `npm run test:rallar:full-stack:memory:alm`, once. The three cells are recorded as in Task 5
+        Step 3.
+
 ### Task 6: Re-observe hosted under the regime rule, the PR, and the gates
 
 **Files:** none in production; the lane's artifacts and the pull request.
@@ -1790,6 +1936,14 @@ read and is cleared after it. The PR body reports each change and the run that c
   `ws.readyState` in `decideSubmissionReadiness` and never replaces the socket, so the ACK arrives
   on the same socket identity both guards compare. Inverting any one of the three guards turns the
   six WS or six RTC cases RED as `never-admitted`, so each guard is on the pin's path.
+  **Corrected by Task 9 (R-S2a-8).** The mechanism is found, and it is neither C3 nor a carrier
+  discard. It is C2 at the read. After the ACK's `readControlAdmission` read an expired row, its
+  `IndexedDbAdmissionBackend.readWithin` evicted that row under the write token it had read. Another
+  writer had already moved the row, so the eviction threw `ALAdmissionBackendConflictError` (`IndexedDB
+  AL admission expiry cleanup conflicted`) out of `admit`. The RTC `onMessage` catch dropped the
+  error. The reading above holds for the pin's interleavings, which had no expired row in the ACK's
+  read set. Its conclusion does not hold: "not lost in the sender's admission" was wrong. The hold
+  is incidental.
 
 - **Maintainer ruling (2026-09-23, Task 7b).** Decided: build the harness-only addition R-S2a-7 routed
   — sender/receiver `pageerror` and console capture in the ALM lane, folded into the observation
@@ -1797,6 +1951,29 @@ read and is cleared after it. The PR body reports each change and the run that c
   Why: R-S2a-7's escalation left the hosted ACK loss unattributed between the carrier and the
   capture, and the artifacts carried no page-level evidence at all to narrow it further. Changed in
   the plan: Task 7b added between Task 7 and Task 8.
+
+- **R-S2a-8 (Task 9: the ACK's control admission read throws an expiry-cleanup conflict).** Decided
+  by the controller, under the maintainer's decision to fix the ACK-under-hold defect: reproduce
+  first, then fix at the source.
+  - **Reproduction.** Task 7's IndexedDB pin gained a sibling case. In it, the submission's `acks` row
+    is expired, and a second chain evicts that row between the ACK chain's snapshot and the ACK
+    chain's eviction. The case reads `outbound-threw` with the hosted error, and the send stays at
+    `transport-accepted`. This holds on both carriers, armed and unarmed.
+  - **Fix.** The IndexedDB backend's read-side expiry eviction no longer turns its guarded write's
+    "not committed" into `ALAdmissionBackendConflictError`. The row is left to the writer that moved
+    it, and the read answers from its snapshot. `admit` was not given a catch for the read, and the
+    conflict was not made into `pending-control`.
+  - **Why.** The eviction is not part of the reader's decision: the reader already treated the row as
+    absent. The only conflict that can be the reader's is caught by its own write's fence, which
+    already returns a typed value. Fixing the backend also covers every other read surface, and
+    F2's second uncaught site (`admit`'s effect read) with it, so nothing new was added at the call
+    sites.
+  - **Changed in the plan:**
+    - Task 9 added after Task 8.
+    - R-S2a-7 corrected.
+    - The Self-review's Task 7 bullets now point at Task 9.
+    - The headless ceiling moves from 271 to 272, measured at 271.0087890625 KiB, under the Global
+      Constraints' next-whole-KiB rule.
 
 ## Not in this slice
 
@@ -1826,16 +2003,17 @@ read and is cleared after it. The PR body reports each change and the run that c
 - The re-plan (2026-09-23) and its coverage:
   - The hold-window ACK loss is covered by Task 7, which did not fix it. Steps 1–2 give the
     one-variable RED over both carriers' holds and a witness that names the stop site as a value; all
-    cases read GREEN, so Step 3 was skipped per the brief's all-GREEN escalation and the loss is
-    unfixed and unreproduced (R-S2a-7). Step 4 keeps the operation-count pins and both carriers' hold
-    and admission suites.
+    cases read GREEN, so Step 3 was skipped per the brief's all-GREEN escalation (R-S2a-7). Step 4
+    keeps the operation-count pins and both carriers' hold and admission suites. Task 9 reproduces
+    the loss from the hosted page record. The ACK chain's expiry eviction conflicts with a concurrent
+    eviction. Task 9 fixes the loss at the IndexedDB backend (R-S2a-8).
   - The page speed is covered by Task 8. The constants are derived from 24 hosted cells, the window
     skips start-up for a stated reason, and the "Classify before judging" rule makes the rtc cell's
     two regimes the verdict.
   - The re-read and the 2C rule are covered by Task 6's preface and Step 3.
   - No harness budget, lane constant or outbound threshold moves. Task 7 adds no timer, queue or
-    registry: its settle is a count of turns, and it fixed no site — C3 under slow storage remains a
-    candidate, unexercised by the pin.
+    registry: its settle is a count of turns, and it fixed no site. Task 9 adds none either. Its seam
+    orders two real chains, and its fix removes a throw.
 - Type consistency: `ALWorkUnreservedDue`, `toALInboundWorkEffectId`, `ALInboundDeferredEffect`,
   `ALMObservationInboundClaim`, `ALMObservationInboundClaimWaits`, `readALInboundRowEligibility`
   and the fixture's `acknowledged` are defined in Task 0 before Tasks 1 and 5 use them;

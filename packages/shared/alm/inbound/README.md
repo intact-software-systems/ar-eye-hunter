@@ -89,6 +89,18 @@ writes, which is why these reads stay outside the write that follows them, and t
 `requireOriginalObservations` still re-reads the whole observed surface inside the write —
 the snapshot makes the read cheap, the fence is what makes the commit conditional.
 
+A row the chain read past its expiry reads as absent. On IndexedDB, once the chain has read
+everything, `readWithin` evicts those rows in one readwrite, each removal guarded by the write
+token the chain read it at; the direct `read` and `list` evict the same way. If another writer
+replaced or removed one of those rows in between, for example a concurrent chain that evicted it
+first, the guard rolls the whole eviction back and the row is left to that writer or to the next
+chain that reads it expired. The guarded write answers that as not committed, and the eviction
+does not turn the answer into an error: the chain already answered from a snapshot in which the
+row was absent, and a conflict belongs only to a write that fences on what it read. A read
+surface therefore never throws `ALAdmissionBackendConflictError`, so the admission reading it —
+the outbound control admission of an ACK included — reaches its own commit and its own typed
+conflict.
+
 What makes that commit conditional: the backend records, for every key the write phase read or
 wrote, the revision and write token it observed there (or that the key was absent), and for every
 prefix it listed, the exact key set that listing returned. Before the transaction commits it
