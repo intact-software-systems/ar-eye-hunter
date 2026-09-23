@@ -996,52 +996,6 @@
             "timeoutMs": 2000
           },
           {
-            "kind": "messages.receipts",
-            "commandId": "alm-ws-delivery-lifecycle-sender-receipts-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-ws-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-ws-delivery-lifecycle-sender-assert-confirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
-            "operator": "equals",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-ws-delivery-lifecycle-sender-assert-unconfirmed-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
-            "operator": "equals",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "messages.cancel",
-            "commandId": "alm-ws-delivery-lifecycle-sender-cancel-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-ws-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-ws-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-cancel-1.value.submitted",
-            "operator": "equals",
-            "expected": true,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-ws-delivery-lifecycle-sender-assert-state-after-cancel-1",
-            "source": "resultCache.alm-ws-delivery-lifecycle-sender-cancel-1.value.state",
-            "operator": "matches",
-            "expected": "^(cancelled|transport-accepted)$",
-            "timeoutMs": 2000
-          },
-          {
             "kind": "fault.inject",
             "commandId": "alm-ws-delivery-lifecycle-sender-cancel-hold-ws",
             "faultId": "hold-ws-alm.conformance.ws.delivery-lifecycle",
@@ -1323,6 +1277,52 @@
             "timeoutMs": 2000
           },
           {
+            "kind": "messages.receipts",
+            "commandId": "alm-ws-delivery-lifecycle-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-lifecycle-sender-assert-confirmed-1",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-lifecycle-sender-assert-unconfirmed-1",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-ws-delivery-lifecycle-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-ws-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-cancel-1.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-ws-delivery-lifecycle-sender-assert-state-after-cancel-1",
+            "source": "resultCache.alm-ws-delivery-lifecycle-sender-cancel-1.value.state",
+            "operator": "matches",
+            "expected": "^(cancelled|transport-accepted)$",
+            "timeoutMs": 2000
+          },
+          {
             "kind": "stats",
             "commandId": "alm-ws-delivery-lifecycle-sender-stats",
             "timeoutMs": 3000
@@ -1597,74 +1597,28 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-observe-acknowledged-1",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-observe-transport-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-lifecycle-send-1",
             "state": [
-              "acknowledged"
+              "transport-accepted"
             ],
             "timeoutMs": 10000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-submitted-state-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-acknowledged-1.value.state",
-            "operator": "equals",
-            "expected": "acknowledged",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-transport-accepted-1.value.state",
+            "operator": "matches",
+            "expected": "^(transport-accepted|acknowledged)$",
             "timeoutMs": 2000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-submitted-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-acknowledged-1.value.submitted",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-transport-accepted-1.value.submitted",
             "operator": "equals",
             "expected": true,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "messages.receipts",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-receipts-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-rtc-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-confirmed-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
-            "operator": "gt",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-unconfirmed-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
-            "operator": "equals",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "messages.cancel",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-cancel-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-rtc-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-cancel-1.value.submitted",
-            "operator": "equals",
-            "expected": true,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-state-after-cancel-1",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-cancel-1.value.state",
-            "operator": "matches",
-            "expected": "^acknowledged$",
             "timeoutMs": 2000
           },
           {
@@ -1947,20 +1901,66 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-delivery-lifecycle-sender-observe-acknowledged-4",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-observe-transport-accepted-4",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-delivery-lifecycle-send-4",
             "state": [
-              "acknowledged"
+              "transport-accepted"
             ],
             "timeoutMs": 10000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-delivery-lifecycle-sender-assert-replacement-submitted-4",
-            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-acknowledged-4.value.submitted",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-observe-transport-accepted-4.value.submitted",
             "operator": "equals",
             "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-confirmed-1",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-unconfirmed-1",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-cancel-1.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-delivery-lifecycle-sender-assert-state-after-cancel-1",
+            "source": "resultCache.alm-rtc-delivery-lifecycle-sender-cancel-1.value.state",
+            "operator": "matches",
+            "expected": "^acknowledged$",
             "timeoutMs": 2000
           },
           {
@@ -2361,74 +2361,28 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-1",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-transport-accepted-1",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-1",
             "state": [
-              "acknowledged"
+              "transport-accepted"
             ],
             "timeoutMs": 10000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-submitted-state-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-1.value.state",
-            "operator": "equals",
-            "expected": "acknowledged",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-transport-accepted-1.value.state",
+            "operator": "matches",
+            "expected": "^(transport-accepted|acknowledged)$",
             "timeoutMs": 2000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-submitted-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-1.value.submitted",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-transport-accepted-1.value.submitted",
             "operator": "equals",
             "expected": true,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "messages.receipts",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-confirmed-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
-            "operator": "gt",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-unconfirmed-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
-            "operator": "equals",
-            "expected": 0,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "messages.cancel",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1",
-            "connection": "almConformanceSender",
-            "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-1",
-            "timeoutMs": 5000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1.value.submitted",
-            "operator": "equals",
-            "expected": true,
-            "timeoutMs": 2000
-          },
-          {
-            "kind": "assert",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-state-after-cancel-1",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1.value.state",
-            "operator": "matches",
-            "expected": "^acknowledged$",
             "timeoutMs": 2000
           },
           {
@@ -2759,20 +2713,66 @@
           },
           {
             "kind": "messages.observe",
-            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-4",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-transport-accepted-4",
             "connection": "almConformanceSender",
             "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-4",
             "state": [
-              "acknowledged"
+              "transport-accepted"
             ],
             "timeoutMs": 10000
           },
           {
             "kind": "assert",
             "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-replacement-submitted-4",
-            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-acknowledged-4.value.submitted",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-observe-transport-accepted-4.value.submitted",
             "operator": "equals",
             "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-confirmed-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1.value.confirmedHopPeerIds.length",
+            "operator": "gt",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-unconfirmed-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-receipts-1.value.unconfirmedHopPeerIds.length",
+            "operator": "equals",
+            "expected": 0,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.cancel",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-delivery-lifecycle-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-submitted-after-cancel-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-delivery-lifecycle-sender-assert-state-after-cancel-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-delivery-lifecycle-sender-cancel-1.value.state",
+            "operator": "matches",
+            "expected": "^acknowledged$",
             "timeoutMs": 2000
           },
           {

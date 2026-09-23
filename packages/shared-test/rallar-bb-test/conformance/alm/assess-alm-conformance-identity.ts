@@ -61,6 +61,9 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         ) {
             assessReceivedIdentity({ send, msgId, receiver, issues });
         }
+        if (send.payload.specimen === 'submission') {
+            assessAcknowledgedIdentity({ send, sender, issues });
+        }
     }
     issues.push(...assessAlmReloadIdentity(
         sender,
@@ -136,6 +139,31 @@ function assessReceivedIdentity({ send, msgId, receiver, issues }: ReceivedIdent
         !isSameJsonValue(payload.value, decodeJsonValue(send.payload))
     ) {
         issues.push(`${send.commandId}: receiver envelope does not match the actual generated message.`);
+    }
+}
+
+interface AcknowledgedIdentityInput {
+    readonly send: RallarBlackBoxTestMessagesSendCommand;
+    readonly sender: RecordedAlmConformanceParticipant;
+    readonly issues: string[];
+}
+
+/** D28: receipts are read from the same sender evidence, correlated afterwards by the send's handle. */
+function assessAcknowledgedIdentity({ send, sender, issues }: AcknowledgedIdentityInput): void {
+    if (send.carrier === 'ws' || !send.handleId) {
+        return;
+    }
+    const receipts = sender.participant.recipe.commands.find((command) =>
+        command.kind === 'messages.receipts' && command.handleId === send.handleId
+    );
+    const value = receipts ? sender.results.get(receipts.commandId!)?.value : undefined;
+    const confirmed = isJsonRecordValue(value) ? value.confirmedHopPeerIds : undefined;
+    const unconfirmed = isJsonRecordValue(value) ? value.unconfirmedHopPeerIds : undefined;
+    if (
+        !Array.isArray(confirmed) || confirmed.length === 0 ||
+        !Array.isArray(unconfirmed) || unconfirmed.length !== 0
+    ) {
+        issues.push(`${send.commandId}: sender receipts do not confirm an acknowledged hop.`);
     }
 }
 
