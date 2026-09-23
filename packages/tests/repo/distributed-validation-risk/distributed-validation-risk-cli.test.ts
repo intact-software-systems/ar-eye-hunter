@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
-const commandPath = path.join(repoRoot, 'scripts/distributed-validation-risk.mjs');
+const commandPath = path.join(repoRoot, 'scripts/hosted-rallar/distributed-validation-risk.mjs');
 
 describe('distributed validation risk command', () => {
     it('writes stable machine-readable output for an unrelated push', () => {

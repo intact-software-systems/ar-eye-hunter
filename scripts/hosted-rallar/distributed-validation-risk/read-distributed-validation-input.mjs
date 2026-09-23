@@ -1,4 +1,4 @@
-import { readChangedPathsBetweenRevisions } from '../repository-changes/read-git-changes.mjs';
+import { readChangedPathsBetweenRevisions } from '../../repository-changes/read-git-changes.mjs';
 
 export function readChangedPathRecords(repoRoot, base, head) {
     return {

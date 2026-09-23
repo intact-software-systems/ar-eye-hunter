@@ -38,7 +38,7 @@ RTC_TOPOLOGY_ENV_KEYS=(
 
 usage() {
 	cat <<'USAGE'
-Usage: scripts/hetzner/dispatch-distributed-recipe.sh <manifest.json> [options]
+Usage: scripts/hosted-rallar/dispatch-distributed-recipe.sh <manifest.json> [options]
 
 Options:
   --ref <ref>                    Git ref to dispatch. Default: main.

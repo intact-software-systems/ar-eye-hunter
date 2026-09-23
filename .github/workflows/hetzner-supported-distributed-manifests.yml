@@ -108,7 +108,7 @@ jobs:
             printf 'selected=false\nreason_code=governance-decision\n' >> "$GITHUB_OUTPUT"
             printf 'reason=Distributed validation not selected: authenticated governance decision.\n' >> "$GITHUB_OUTPUT"
           else
-            node scripts/distributed-validation-risk.mjs select \
+            node scripts/hosted-rallar/distributed-validation-risk.mjs select \
               --repo-root "$GITHUB_WORKSPACE" \
               --event-name "$EVENT_NAME" \
               --base "$BASE" \
@@ -135,7 +135,7 @@ jobs:
 
       - name: Reject topology-specific supported manifests
         run: |
-          node scripts/github-actions/validate-hetzner-shared-preparation.mjs \
+          node scripts/hosted-rallar/actions/validate-hetzner-shared-preparation.mjs \
             apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
             apps/rallar-black-box/manifests/hetzner/02-composite-evidence-2-agent.json \
             apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
@@ -222,7 +222,7 @@ jobs:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           RUN_RESULT: ${{ needs.run.result }}
         run: |
-          node scripts/distributed-validation-risk.mjs conclude \
+          node scripts/hosted-rallar/distributed-validation-risk.mjs conclude \
             --selected "$SELECTED" \
             --selection-result "$SELECTION_RESULT" \
             --preflight-result "$PREFLIGHT_RESULT" \

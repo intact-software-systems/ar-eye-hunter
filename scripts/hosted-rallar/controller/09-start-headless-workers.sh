@@ -189,7 +189,7 @@ write_worker_env_file() {
 	chmod 0600 "${tmp_env_file}"
 
 	cat >"${tmp_env_file}" <<EOF_ENV
-# Written by scripts/hetzner/controller/09-start-headless-workers.sh.
+# Written by scripts/hosted-rallar/controller/09-start-headless-workers.sh.
 # Contains credentials; keep this file root-readable only.
 EOF_ENV
 

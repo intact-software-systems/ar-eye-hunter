@@ -265,7 +265,7 @@ write_rallar_black_box_spa_env_file() {
 	tmp_env_file="$(mktemp "$(dirname "${env_file}")/.black-box-spa.env.XXXXXX")"
 	chmod 0644 "${tmp_env_file}"
 	{
-		printf '# Written by scripts/hetzner/controller/rallar-public-spa-env.sh.\n'
+		printf '# Written by scripts/hosted-rallar/controller/rallar-public-spa-env.sh.\n'
 		printf '# Public, non-secret values baked into the rallar-black-box SPA build.\n'
 		printf 'RALLAR_BLACK_BOX_SPA_URL=%s\n' "${RALLAR_BLACK_BOX_SPA_URL}"
 		printf 'RALLAR_BLACK_BOX_CONTROL_URL=%s\n' "${RALLAR_BLACK_BOX_CONTROL_URL}"

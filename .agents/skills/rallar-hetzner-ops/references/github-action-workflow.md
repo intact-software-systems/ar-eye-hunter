@@ -30,7 +30,7 @@ agree before dispatching on `main`.
 Preferred dispatch helper:
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
   --ref main
 ```
@@ -46,7 +46,7 @@ pre-provisioned users; the workflow input itself still defaults to `false` for
 manual compatibility.
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
   --ref main \
   --fast
@@ -56,7 +56,7 @@ If fast mode fails because the Playwright browser executable is missing, repair
 the browser cache once without redeploying apps:
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
   --ref main \
   --rollout-before-run false \

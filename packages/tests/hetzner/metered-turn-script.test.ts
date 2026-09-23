@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = path.resolve(__dirname, '../../..');
 const scriptPath = path.join(
     repoRoot,
-    'scripts/hetzner/controller/13-configure-metered-turn.sh'
+    'scripts/hosted-rallar/controller/13-configure-metered-turn.sh'
 );
 
 describe('configure Metered TURN Hetzner script', () => {
@@ -68,7 +68,7 @@ describe('configure Metered TURN Hetzner script', () => {
 
     it('keeps the optional Metered secret env file wired into future controller deployments', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
 

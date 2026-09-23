@@ -82,7 +82,7 @@ describe('risk-scoped supported Hetzner workflow', () => {
         expect(result.steps).toContainEqual(
             expect.objectContaining({
                 name: 'Conclude distributed validation',
-                run: expect.stringContaining('node scripts/distributed-validation-risk.mjs conclude')
+                run: expect.stringContaining('node scripts/hosted-rallar/distributed-validation-risk.mjs conclude')
             })
         );
     });

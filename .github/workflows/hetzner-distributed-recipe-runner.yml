@@ -297,7 +297,7 @@ jobs:
           manifest_path="${RUNNER_TEMP}/rallar-distributed-manifest.json"
           record_path="${RUNNER_TEMP}/rallar-manifest-materialization.json"
           echo "RALLAR_OPERATION_STAGE=manifest-materialization" | tee "${operation_log}"
-          node scripts/github-actions/materialize-hetzner-run-manifest.mjs \
+          node scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs \
             --source "${SOURCE_MANIFEST_PATH}" \
             --output "${manifest_path}" \
             --record-output "${record_path}" \
@@ -386,7 +386,7 @@ jobs:
           rm -rf "${rallar_script_dir}"
           mkdir -p "${rallar_script_dir}"
           REMOTE
-          scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
+          scp -i ~/.ssh/hetzner -r scripts/hosted-rallar/controller/. \
             "${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
             bash -s <<'REMOTE'
@@ -796,7 +796,7 @@ jobs:
           if [[ "${operation_finished_at}" == "unknown" ]]; then
             operation_finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fi
-          node scripts/github-actions/write-hetzner-operation-report.mjs \
+          node scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs \
             --log "${RUNNER_TEMP}/hetzner-operation.log" \
             --output-dir "${diagnostics_dir}" \
             --status "${operation_status}" \

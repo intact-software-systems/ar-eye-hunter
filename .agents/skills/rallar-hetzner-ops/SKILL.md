@@ -42,7 +42,7 @@ start, stop, install, or restart headless agents for that flow.
   mixed, or no-spawn agents, a blank override preserves the checked-in manifest
   `GroupRef`, including its application and workspace; workflow defaults must
   not rewrite that preserved scope.
-- Treat `scripts/hetzner/controller/*.sh` as the source of truth for VM service
+- Treat `scripts/hosted-rallar/controller/*.sh` as the source of truth for VM service
   management.
 - Read the GitHub **Hetzner operation diagnostics** summary and uploaded
   `operation-report.json` before distributed artifacts. If `recipeStarted` is

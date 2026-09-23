@@ -10,7 +10,7 @@ From your local machine:
 
 ```sh
 ssh root@api.rallar.intactss.com 'rm -rf ~/rallar-controller && mkdir -p ~/rallar-controller'
-scp -r scripts/hetzner/controller/. root@api.rallar.intactss.com:~/rallar-controller/
+scp -r scripts/hosted-rallar/controller/. root@api.rallar.intactss.com:~/rallar-controller/
 ```
 
 Then SSH to the VM:
@@ -375,7 +375,7 @@ it disabled for pre-provisioned or persistent auth users. When registration
 reports that the user already exists, the black-box auth flow falls back to a
 normal login with the same credentials.
 
-The `scripts/hetzner/dispatch-distributed-recipe.sh` helper defaults
+The `scripts/hosted-rallar/dispatch-distributed-recipe.sh` helper defaults
 `register_before_login=true` for Hetzner runs because the current controller API
 uses memory-backed auth. Pass `--register-before-login false` only when running
 against a persistent user database.

@@ -148,7 +148,7 @@ describe('Hetzner distributed recipe workflow', () => {
         const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-supported-manifests-'));
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/materialize-hetzner-run-manifest.mjs'
+            'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'
         );
 
         for (const [index, manifestPath] of supportedMainlineManifestPaths.entries()) {
@@ -213,7 +213,7 @@ describe('Hetzner distributed recipe workflow', () => {
         await writeFile(sourcePath, `${JSON.stringify(source, null, 2)}\n`);
 
         await execFileAsync('node', [
-            path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+            path.join(repoRoot, 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'),
             '--source',
             sourcePath,
             '--output',
@@ -261,7 +261,7 @@ describe('Hetzner distributed recipe workflow', () => {
         const sourceBefore = await readFile(sourcePath, 'utf8');
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/materialize-hetzner-run-manifest.mjs'
+            'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'
         );
 
         await execFileAsync('node', [
@@ -365,7 +365,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/materialize-hetzner-run-manifest.mjs'
+            'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'
         );
 
         const materialize = async (
@@ -458,7 +458,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         await expect(
             execFileAsync('node', [
-                path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+                path.join(repoRoot, 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'),
                 '--source',
                 sourcePath,
                 '--output',
@@ -491,7 +491,7 @@ describe('Hetzner distributed recipe workflow', () => {
         });
         await expect(
             execFileAsync('node', [
-                path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+                path.join(repoRoot, 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'),
                 '--source',
                 sourcePath,
                 '--output',
@@ -524,7 +524,7 @@ describe('Hetzner distributed recipe workflow', () => {
         });
         await expect(
             execFileAsync('node', [
-                path.join(repoRoot, 'scripts/github-actions/materialize-hetzner-run-manifest.mjs'),
+                path.join(repoRoot, 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'),
                 '--source',
                 sourcePath,
                 '--output',
@@ -658,7 +658,7 @@ describe('Hetzner distributed recipe workflow', () => {
         expect(workflow).toContain('operation_log="${RUNNER_TEMP}/hetzner-operation.log"');
         expect(workflow).toContain('operation_exit_code="${PIPESTATUS[0]}"');
         expect(workflow).toContain('name: Generate Hetzner operation diagnostics');
-        expect(workflow).toContain('node scripts/github-actions/write-hetzner-operation-report.mjs');
+        expect(workflow).toContain('node scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs');
         expect(workflow).toContain('cat "${diagnostics_dir}/summary.md" >> "${GITHUB_STEP_SUMMARY}"');
         expect(workflow).toContain('name: Upload Hetzner operation diagnostics');
         expect(workflow).toContain('if: always()');
@@ -668,7 +668,7 @@ describe('Hetzner distributed recipe workflow', () => {
     it('applies manifest-requested RTC topology env during distributed recipe rollout', async () => {
         const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -884,7 +884,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/validate-hetzner-shared-preparation.mjs'
+            'scripts/hosted-rallar/actions/validate-hetzner-shared-preparation.mjs'
         );
 
         await expect(
@@ -924,7 +924,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/write-hetzner-operation-report.mjs'
+            'scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs'
         );
         const materializationArguments = await writeOperationMaterializationFixture(tmp);
         await execFileAsync('node', [
@@ -1017,7 +1017,7 @@ describe('Hetzner distributed recipe workflow', () => {
         ] as const;
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/write-hetzner-operation-report.mjs'
+            'scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs'
         );
 
         for (const [stage, failureCategory, recipeStarted] of cases) {
@@ -1079,7 +1079,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
 
         await execFileAsync('node', [
-            path.join(repoRoot, 'scripts/github-actions/write-hetzner-operation-report.mjs'),
+            path.join(repoRoot, 'scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs'),
             '--log',
             logPath,
             '--output-dir',
@@ -1154,7 +1154,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         const scriptPath = path.join(
             repoRoot,
-            'scripts/github-actions/write-hetzner-operation-report.mjs'
+            'scripts/hosted-rallar/actions/write-hetzner-operation-report.mjs'
         );
         const materializationArguments = await writeOperationMaterializationFixture(tmp);
 
@@ -1210,7 +1210,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('encodes remote API path identifiers and separates safe artifact directory names', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -1232,7 +1232,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('rejects unsafe bundle filenames before writing extracted artifacts', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -1282,7 +1282,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('provides a provider-neutral wait script for externally started control agents', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/16-wait-for-control-agents.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/16-wait-for-control-agents.sh'),
             'utf8'
         );
 
@@ -1339,7 +1339,7 @@ describe('Hetzner distributed recipe workflow', () => {
     it('defaults to a TLS control URL for distributed-run admin API calls', async () => {
         const workflow = await readFile(path.join(repoRoot, distributedRunnerWorkflowPath), 'utf8');
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -1427,19 +1427,19 @@ describe('Hetzner distributed recipe workflow', () => {
             'utf8'
         );
         const startScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
         const statusScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/12-status-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/12-status-headless-workers.sh'),
             'utf8'
         );
         const installScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/rallar-playwright-install.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-playwright-install.sh'),
             'utf8'
         );
         const dispatchScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -1497,15 +1497,15 @@ describe('Hetzner distributed recipe workflow', () => {
             'utf8'
         );
         const startScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
         const statusScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/12-status-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/12-status-headless-workers.sh'),
             'utf8'
         );
         const dispatchScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -1536,11 +1536,11 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('uses a shared lock-aware Playwright browser installer from rollout and headless scripts', async () => {
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
         const headlessScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
 
@@ -1554,7 +1554,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('uses the shared Playwright installer during legacy controller bootstrap', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
 
@@ -1565,7 +1565,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('derives the headless browser page readiness timeout from the workflow readiness timeout', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
 
@@ -1584,7 +1584,7 @@ describe('Hetzner distributed recipe workflow', () => {
             'utf8'
         );
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
 
@@ -1631,7 +1631,7 @@ describe('Hetzner distributed recipe workflow', () => {
         await execFileAsync('git', ['commit', '-m', 'seed deno lock'], { cwd: checkoutDir });
         await writeFile(denoLock, 'dirty\n');
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh');
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
                 ...process.env,
@@ -1677,7 +1677,7 @@ describe('Hetzner distributed recipe workflow', () => {
         await writeFile(path.join(controlStateDir, 'control-snapshot.json.tmp-123'), '{}\n');
         await writeFile(path.join(playwrightTmpDir, 'LOCK'), 'profile\n');
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh');
         const rolloutScript = await readFile(scriptPath, 'utf8');
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -1714,7 +1714,7 @@ describe('Hetzner distributed recipe workflow', () => {
         const originDir = path.join(tmp, 'origin.git');
         const sourceDir = path.join(tmp, 'source');
         const checkoutDir = path.join(tmp, 'checkout');
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh');
         const rolloutScript = await readFile(scriptPath, 'utf8');
 
         await execFileAsync('git', ['init', '--bare', originDir]);
@@ -1752,11 +1752,11 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('warms Deno caches without mutating checked-in lockfiles', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -1802,15 +1802,15 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
         const installScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/01-install-runtime.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/01-install-runtime.sh'),
             'utf8'
         );
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -1841,7 +1841,7 @@ describe('Hetzner distributed recipe workflow', () => {
             )
         ]);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-apt-sources.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-apt-sources.sh');
         await execFileAsync('bash', [scriptPath], {
             env: {
                 ...process.env,
@@ -1869,7 +1869,7 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('accepts newer Deno versions while rejecting versions below the Hetzner minimum', async () => {
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/controller/rallar-deno-runtime.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-deno-runtime.sh');
 
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -1925,7 +1925,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -1949,7 +1949,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         await expect(
             execFileAsync('bash', [scriptPath], {
@@ -1981,7 +1981,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2007,7 +2007,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2040,7 +2040,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         await expect(
             execFileAsync('bash', [scriptPath], {
@@ -2111,7 +2111,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
         const { stdout } = await execFileAsync('bash', [scriptPath], {
@@ -2170,7 +2170,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
         await execFileAsync('bash', [scriptPath], {
@@ -2238,7 +2238,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
         await execFileAsync('bash', [scriptPath], {
@@ -2301,7 +2301,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
         await expect(
@@ -2386,7 +2386,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-playwright-install.sh'
+            'scripts/hosted-rallar/controller/rallar-playwright-install.sh'
         );
         const playwrightUser = process.env.USER || process.env.LOGNAME || 'root';
         await execFileAsync('bash', [scriptPath], {
@@ -2422,7 +2422,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/rallar-deployment-readiness.sh'
+            'scripts/hosted-rallar/controller/rallar-deployment-readiness.sh'
         );
         const { stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2548,7 +2548,7 @@ describe('Hetzner distributed recipe workflow', () => {
     it('exercises controller script helper behavior without contacting Hetzner', async () => {
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
 
         const { stdout } = await execFileAsync('bash', [scriptPath], {
@@ -2567,7 +2567,7 @@ describe('Hetzner distributed recipe workflow', () => {
     it('builds a non-empty distributed-run create request body from the manifest', async () => {
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
 
         const { stdout } = await execFileAsync('bash', [scriptPath], {
@@ -2589,7 +2589,7 @@ describe('Hetzner distributed recipe workflow', () => {
     it('validates the remote manifest against the worker and run environment', async () => {
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
         const manifestPath = path.join(
             repoRoot,
@@ -2650,7 +2650,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
         const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2682,7 +2682,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
         const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2734,7 +2734,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
         const scriptPath = path.join(
             repoRoot,
-            'scripts/hetzner/controller/14-run-distributed-recipe.sh'
+            'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'
         );
         const { stderr, stdout } = await execFileAsync('bash', [scriptPath], {
             env: {
@@ -2779,7 +2779,7 @@ describe('Hetzner distributed recipe workflow', () => {
 
     it('writes distributed-run POST snapshots through temp files before replacing evidence', async () => {
         const script = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/14-run-distributed-recipe.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/14-run-distributed-recipe.sh'),
             'utf8'
         );
 
@@ -2826,7 +2826,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         const { stdout } = await execFileAsync(
             'bash',
             [
@@ -2914,7 +2914,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         const { stdout } = await execFileAsync(
             'bash',
             [
@@ -2969,7 +2969,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         const { stdout } = await execFileAsync(
             'bash',
             [
@@ -3040,7 +3040,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         const { stdout } = await execFileAsync(
             'bash',
             [
@@ -3069,7 +3069,7 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('refuses topology-specific manifests when rollout is disabled', async () => {
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
         await expect(
             execFileAsync(
@@ -3115,7 +3115,7 @@ describe('Hetzner distributed recipe workflow', () => {
                 }
             })
         );
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
         await expect(
             execFileAsync(
@@ -3161,7 +3161,7 @@ describe('Hetzner distributed recipe workflow', () => {
                 }
             })
         );
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
         await expect(
             execFileAsync('bash', [scriptPath, manifestPath, '--run-id', 'invalid-topology'], {
@@ -3212,7 +3212,7 @@ describe('Hetzner distributed recipe workflow', () => {
                 }
             })
         );
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
 
         const { stdout } = await execFileAsync(
             'bash',
@@ -3252,7 +3252,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         const { stdout } = await execFileAsync(
             'bash',
             [
@@ -3289,7 +3289,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await expect(
             execFileAsync(
                 'bash',
@@ -3325,7 +3325,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await expect(
             execFileAsync(
                 'bash',
@@ -3361,7 +3361,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await expect(
             execFileAsync(
                 'bash',
@@ -3405,7 +3405,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await expect(
             execFileAsync(
                 'bash',
@@ -3429,7 +3429,7 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('refuses diagnostic manifests unless explicitly allowed', async () => {
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await expect(
             execFileAsync(
                 'bash',
@@ -3464,7 +3464,7 @@ describe('Hetzner distributed recipe workflow', () => {
         );
         await chmod(fakeGh, 0o755);
 
-        const scriptPath = path.join(repoRoot, 'scripts/hetzner/dispatch-distributed-recipe.sh');
+        const scriptPath = path.join(repoRoot, 'scripts/hosted-rallar/dispatch-distributed-recipe.sh');
         await execFileAsync(
             'bash',
             [
