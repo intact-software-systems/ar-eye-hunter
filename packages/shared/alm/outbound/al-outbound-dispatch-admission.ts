@@ -131,8 +131,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     /**
      * The dispatches of one sender under one queue slot, one lock and one version fence. When a member
      * settles before its write (it fails validation, finds its pending admission, has nothing to
-     * commit), or the store answers the group with anything but `committed`, every member commits
-     * again alone, one after another: a fresh read, compute and conflict handling, as a single send gets.
+     * commit), the store answers the group with anything but `committed`, or the group attempt throws,
+     * every member commits again alone, one after another: a fresh read, compute and conflict
+     * handling, as a single send gets. Each member keeps its own answer there.
      */
     async commitAll(
         dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
@@ -142,7 +143,9 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
         const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
         try {
-            const grouped = await this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members));
+            // A throw is a fallback signal too: each member meets its cause again alone, as its own.
+            const grouped = await this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members))
+                .catch(() => undefined);
             return grouped ?? await this.commitEachAlone(members);
         }
         finally {
@@ -187,14 +190,21 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
+    /**
+     * Every member commits, whatever an earlier one answered. A member whose single commit would throw
+     * does not stop the members after it: the first such throw is rethrown once every member ran, so
+     * the caller still sees it and the own write of each member has already landed.
+     */
     private async commitEachAlone(
         members: readonly ALOutboundGroupMember<TPrepared>[]
     ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[]> {
-        const results: ALOutboundDispatchAdmission.Result<TPrepared>[] = [];
+        const outcomes: Promise<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
         for (const { dispatch, phases } of members) {
-            results.push(await this.commitWithPhases(dispatch, phases));
+            const outcome = this.commitWithPhases(dispatch, phases);
+            outcomes.push(outcome);
+            await outcome.catch(() => undefined);
         }
-        return results;
+        return await Promise.all(outcomes);
     }
 
     /** The results of the group, or `undefined` when every member must commit alone instead. */

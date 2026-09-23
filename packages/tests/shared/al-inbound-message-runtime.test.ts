@@ -561,7 +561,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
     it('retries durable control effects after a transient send failure', async () => {
         vi.useFakeTimers({ toFake: ['Date'] });
 
-        let shouldFailFirstNack = true;
+        // The NACK fails in the round of the batch and again when its claim then sends it alone.
+        let nackFailuresLeft = 2;
         const attemptedControls: string[][] = [];
         const sentControls: ALMessage[] = [];
         const { runtime } = createInboundHarness(
@@ -569,8 +570,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
             {
                 sendControlMessages: async (msgs) => {
                     attemptedControls.push(msgs.map((msg) => msg.payload.typeId).sort());
-                    if (shouldFailFirstNack && msgs.some((msg) => parseALControlMessage(msg)?.type === 'nack')) {
-                        shouldFailFirstNack = false;
+                    if (nackFailuresLeft > 0 && msgs.some((msg) => parseALControlMessage(msg)?.type === 'nack')) {
+                        nackFailuresLeft -= 1;
                         throw new Error('temporary nack failure');
                     }
                     sentControls.push(...msgs);
@@ -583,9 +584,10 @@ describe('ALInboundMessageRuntime durable effects', () => {
             { kind: 'ws-client', peerId: 'peer-1' }
         );
 
-        // One batch sends both controls together, so the failure the send raised fails both claims.
-        await expect.poll(() => attemptedControls).toEqual([['al.control.nack.v1', 'al.control.repair.v1']]);
-        expect(sentControls).toEqual([]);
+        // The round carried both and failed; each claim then answered for its own message alone, so
+        // the repair went out and only the claim of the NACK waits for its retry.
+        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual(['al.control.repair.v1']);
+        expect(attemptedControls[0]).toEqual(['al.control.nack.v1', 'al.control.repair.v1']);
 
         vi.setSystemTime(Date.now() + 100);
 

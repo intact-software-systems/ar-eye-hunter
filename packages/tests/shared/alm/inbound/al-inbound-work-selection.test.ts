@@ -12,6 +12,7 @@ import type { ALInboundAdmittedDelivery } from '@shared/alm/inbound/al-inbound-a
 import { toALInboundPendingAdmissionId } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import {
     computeALInboundWorkEntry,
+    decodeALInboundWorkEntry,
     resolveALInboundWorkDueAtMs
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -44,7 +45,9 @@ import {
     createInboundTestRuntime,
     createInboundTestStores,
     INBOUND_TEST_SOURCE,
-    readInboundTestAdmission
+    readInboundTestAdmission,
+    type CreateInboundTestRuntimeInput,
+    type InboundTestRuntime
 } from '../inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_800_000_000_000;
@@ -193,29 +196,9 @@ describe('ALInboundWorkSelector claim order', () => {
     it.each(['memory', 'indexeddb'] as const)(
         'sends the acknowledgements of one batch in one control-send call over %s',
         async (storage) => {
-            const fixture = createInboundTestRuntime({
-                stores: createInboundTestStores({
-                    namespace: 'control-round',
-                    storage,
-                    observer: createPassThroughIndexedDbOperationObserver()
-                }),
-                effectWorkerId: 'al-inbound:control-round'
-            });
-            await fixture.runtime.ready();
-            const admissionStore = fixture.stores.admissionStore;
-            // Committed straight into the store, so no commit wakes a batch of its own: the rotation
-            // reaches NEW again in the rounds below, and the one batch that reads it claims all four rows.
-            for (const msgId of ['first-acknowledged', 'second-acknowledged']) {
-                const message = createInboundTestMessage({ msgId, acknowledged: true });
-                expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message)))
-                    .toBe('committed');
-            }
+            const fixture = await createControlRoundFixture(storage, {});
 
-            for (let round = 0; round < ROTATION_ROUND_LIMIT && fixture.sequence.length === 0; round += 1) {
-                await fixture.queueEngine.executeOnce();
-                // The engine pass that starts a batch does not await it: let it run.
-                await new Promise((resolve) => setTimeout(resolve, 0));
-            }
+            await runRotationUntilControlSent(fixture);
 
             await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'dispatched', 'control-sent']);
             expect(
@@ -223,6 +206,52 @@ describe('ALInboundWorkSelector claim order', () => {
             ).toEqual([['first-acknowledged', 'second-acknowledged']]);
         }
     );
+
+    it.each(['memory', 'indexeddb'] as const)(
+        'settles each control claim of a round on its own message when the round send throws over %s',
+        async (storage) => {
+            const fixture = await createControlRoundFixture(storage, {
+                failControlSend: (msg) => readAcknowledgedMsgId(msg) === 'second-acknowledged'
+            });
+
+            await runRotationUntilControlSent(fixture);
+
+            // The round refused as a whole; each claim then answers for its own message alone.
+            await expect.poll(async () => await readControlRowStatuses(fixture)).toEqual({
+                'first-acknowledged': EntityStatus.COMPLETED,
+                'second-acknowledged': EntityStatus.NON_RETRYABLE
+            });
+        }
+    );
+
+    it('sends each control of a batch alone once a commit restarted the scan mid-batch', async () => {
+        let releaseHeld: (() => void) | undefined;
+        const held = new Promise<void>((resolve) => {
+            releaseHeld = resolve;
+        });
+        let heldEntered = false;
+        const fixture = await createControlRoundFixture('memory', {
+            gateDispatch: async () => {
+                if (!heldEntered) {
+                    heldEntered = true;
+                    await held;
+                }
+            }
+        });
+
+        for (let round = 0; round < ROTATION_ROUND_LIMIT && !heldEntered; round += 1) {
+            await fixture.queueEngine.executeOnce();
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+        // A commit while the batch holds its first dispatch restarts the scan, which empties the
+        // claimed control sends of the batch: each of its control claims then sends alone.
+        await fixture.runtime.admitIncomingMessage(createInboundTestMessage({ msgId: 'late' }), INBOUND_TEST_SOURCE);
+        releaseHeld?.();
+
+        await expect.poll(() => fixture.controlSends.length).toBeGreaterThanOrEqual(2);
+        expect(fixture.controlSends.slice(0, 2).map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg))))
+            .toEqual([['first-acknowledged'], ['second-acknowledged']]);
+    });
 
     it(
         'pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running',
@@ -383,6 +412,57 @@ async function readFirstClaimingSelection(fixture: SelectorFixture) {
         }
     }
     throw new Error('The rotation scanned every status without claiming the seeded row');
+}
+
+/**
+ * Two acknowledged messages committed straight into the store, so no commit wakes a batch of its
+ * own: the rotation reaches NEW again, and the one batch that reads it claims all four rows.
+ */
+async function createControlRoundFixture(
+    storage: 'memory' | 'indexeddb',
+    ports: Pick<CreateInboundTestRuntimeInput, 'failControlSend' | 'gateDispatch'>
+): Promise<InboundTestRuntime> {
+    const fixture = createInboundTestRuntime({
+        stores: createInboundTestStores({
+            namespace: 'control-round',
+            storage,
+            observer: createPassThroughIndexedDbOperationObserver()
+        }),
+        effectWorkerId: 'al-inbound:control-round',
+        ...ports
+    });
+    await fixture.runtime.ready();
+    const admissionStore = fixture.stores.admissionStore;
+    for (const msgId of ['first-acknowledged', 'second-acknowledged']) {
+        const message = createInboundTestMessage({ msgId, acknowledged: true });
+        expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message)))
+            .toBe('committed');
+    }
+    return fixture;
+}
+
+async function runRotationUntilControlSent(fixture: InboundTestRuntime): Promise<void> {
+    for (let round = 0; round < ROTATION_ROUND_LIMIT && fixture.sequence.length === 0; round += 1) {
+        await fixture.queueEngine.executeOnce();
+        // The engine pass that starts a batch does not await it: let it run.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+}
+
+/** The queue status of each `send-control` row, by the message its acknowledgement names. */
+async function readControlRowStatuses(fixture: InboundTestRuntime): Promise<Record<string, string>> {
+    const statuses: Record<string, string> = {};
+    for (const key of await fixture.stores.workQueue.getAllKeys()) {
+        const entry = await fixture.stores.workQueue.getItem(key);
+        const payload = entry === undefined
+            ? undefined
+            : decodeALInboundWorkEntry(entry, fixture.stores.admissionStore.namespace).payload;
+        const acknowledged = payload?.kind === 'send-control' ? readAcknowledgedMsgId(payload.msg) : undefined;
+        if (entry !== undefined && acknowledged !== undefined) {
+            statuses[acknowledged] = entry.status;
+        }
+    }
+    return statuses;
 }
 
 function readAcknowledgedMsgId(msg: ALMessage): string | undefined {

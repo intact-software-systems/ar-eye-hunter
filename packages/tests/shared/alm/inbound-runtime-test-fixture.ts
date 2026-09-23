@@ -32,6 +32,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -131,6 +132,8 @@ export interface CreateInboundTestRuntimeInput {
     readonly readPendingAdmissionAuthority?: ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority'];
     /** Absent settles every dispatch immediately; a message this awaits holds that claim's batch open until it resolves. */
     readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
+    /** Absent sends every control; a call carrying a message this names throws, the way a transport refusal does. */
+    readonly failControlSend?: (msg: ALMessage) => boolean;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -162,6 +165,9 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         sendControlMessages: async (msgs) => {
             sequence.push('control-sent');
             controlSends.push(msgs);
+            if (msgs.some((msg) => input.failControlSend?.(msg) === true)) {
+                throw new NonRetryableException('The control transport refused this message');
+            }
         },
         diagnostics: (event) => diagnostics.push(event),
         effectWorkerId: input.effectWorkerId

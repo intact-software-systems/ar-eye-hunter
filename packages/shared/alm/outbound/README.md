@@ -149,13 +149,15 @@ telemetry that no conformance scenario holds or asserts on.
 
 `enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`
 takes one sender-queue slot and one browser lock for the group and reads, computes and validates each
-message exactly as a single send does. `commitBundles` then fences the sender version once, runs every
+member with the single-message decision. `commitBundles` then fences the sender version once, runs every
 bundle's own pending, effect, observation and identity fences, writes every bundle and bumps the version
-once. A member that settles before its write (it fails validation, finds its own pending admission, or
-has nothing to commit), a version that moved between the members' reads, two bundles writing one row, or
-any store answer other than `committed` sends every member back through the single-message commit, one
-after another. A retained pending admission that captured another message answers `failed` as a value.
-The RTC multicast manager applies its circuit breaker and its rate limiter once per group.
+once. The group falls back when a member settles before its write (it fails validation, finds its own
+pending admission, or has nothing to commit), when a version moved between the members' reads, when two
+bundles write one row, when the store answers anything but `committed`, or when the group attempt throws.
+Every member then goes through the single-message commit, one after another, and keeps its own answer:
+a planning refusal is that member's `failed` value, as a single send answers it, and a member whose
+single commit throws does not stop the members after it; the first such throw is rethrown once every
+member ran. The RTC multicast manager applies its circuit breaker and its rate limiter once per group.
 
 ## Read and failure boundaries
 

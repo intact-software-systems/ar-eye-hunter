@@ -184,15 +184,17 @@ committing ahead of the delivery it is only useful after. The sort reads the kin
 the eligibility read already filled, so it costs no operation and opens no transaction, and it
 is stable within a rank, so page order still decides among equals.
 
-A batch's `send-control` claims share one outbound admission. The selection records every
-`send-control` row the port reserved, with the envelope its eligibility read decoded
+A batch's `send-control` claims share one send. The selection records every `send-control` row
+the port reserved, with the envelope its eligibility read decoded
 ([`getClaimedControlSends`](./read-al-inbound-work-selection.ts)), in a fresh array per
-selection. The first of those claims to run hands the whole array to `sendControlMessages`,
-which each carrier commits as one outbound admission, and every other claim of that batch awaits
-the same send. The round is keyed by that array's identity, never by time, so a row retried in a
-later batch never joins a finished round. A restarted scan empties the array, and a claim it left
-out sends alone; the outbound admission is idempotent, so a message the round already carried is
-admitted once. A send that throws fails every claim of its round, and each retries from its own row.
+selection. The first of those claims to run hands the whole array to `sendControlMessages`, and
+every other claim of that batch awaits the same send. The browser carriers commit that array as one
+outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
+order. The round is keyed by that array's identity, never by time, so a row retried in a later
+batch never joins a finished round. A restarted scan empties the array, and a claim it left out
+sends alone. When the round's send throws, each of its claims sends its own message alone, so each
+claim settles on its own message: a message the round already admitted answers `duplicate`, and
+only the claim whose message throws again carries that failure.
 
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather

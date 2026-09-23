@@ -64,6 +64,14 @@ const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
+/** Rewrites the route of `bad-ack` only, which the admission read refuses as a changed authority. */
+const AUTHORITY_BREAKING_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => {
+    const plan = CONTROL_PLANNER(msg);
+    return msg.id.msgId === 'bad-ack'
+        ? { ...plan, msg: { ...plan.msg, route: { ...plan.msg.route, topicId: 'rewritten' } } }
+        : plan;
+};
+
 /**
  * What an admission that reaches its commit costs: the decision surface, then the write phase's own
  * snapshot, then the conditional write. The second readonly is not a duplicate of the first — a
@@ -287,22 +295,81 @@ describe('control sends committed as one outbound admission', () => {
         // single sends spend a snapshot, a fence snapshot and a write each.
         expect(recorded.modes().filter((mode) => mode === 'readwrite')).toEqual(['readwrite']);
     });
+
+    it.each(['memory', 'indexeddb'] as const)(
+        'admits the rest of a group whose one member fails its planning over %s',
+        async (storage) => {
+            const runtime = await createControlSendRuntime(storage, AUTHORITY_BREAKING_PLANNER);
+
+            const results = await runtime.enqueueAllIfAbsent([
+                createAcknowledgement('good-ack'),
+                createAcknowledgement('bad-ack')
+            ]);
+
+            // The answers two single sends give: the good one admitted, the bad one a failed value.
+            expect(results.map((result) => result.verdict)).toEqual([
+                { kind: 'admitted', durable: true, queuedAttempts: 1 },
+                { kind: 'failed', detail: 'Outbound planned message changes original authority or deadline' }
+            ]);
+        }
+    );
+
+    it.each(['memory', 'indexeddb'] as const)(
+        'commits every member alone before it rethrows the throw of an earlier one over %s',
+        async (storage) => {
+            const runtime = await createControlSendRuntime(storage, (msg) => {
+                if (msg.id.msgId === 'throwing-ack') {
+                    throw new Error('The planner is broken for this message');
+                }
+                return CONTROL_PLANNER(msg);
+            });
+
+            const good = createAcknowledgement('good-ack');
+
+            await expect(
+                runtime.enqueueAllIfAbsent([createAcknowledgement('throwing-ack'), good])
+            ).rejects.toThrow('The planner is broken for this message');
+
+            // The member after the throwing one was committed all the same: sending it again is a duplicate.
+            expect((await runtime.enqueueIfAbsent(good)).verdict.kind).toBe('duplicate');
+        }
+    );
+
+    it.each(['memory', 'indexeddb'] as const)(
+        'answers a newer and an older message of one supersedence key as serial sends do over %s',
+        async (storage) => {
+            const runtime = await createControlSendRuntime(storage, SUPERSEDING_PLANNER);
+            const results = await runtime.enqueueAllIfAbsent([
+                createOrderedOutboundMessage('superseding-newer', 2),
+                createOrderedOutboundMessage('superseding-older', 1)
+            ]);
+
+            // Both members write the one latest row of the key, so the group answers `conflict`
+            // and each message commits alone: the older one then reads the newer as latest.
+            expect(results.map((result) => result.verdict.kind)).toEqual(['admitted', 'superseded']);
+        }
+    );
 });
 
 /** The outbound owner of a receiver, ready, so the measured window holds the admission and nothing of start-up. */
 async function createControlSendRuntime(
-    storage: 'memory' | 'indexeddb'
+    storage: 'memory' | 'indexeddb',
+    planner: ALOutboundPlanner<OutboundTestPayload> = CONTROL_PLANNER
 ): Promise<ALOutboundMessageRuntime<OutboundTestPayload>> {
     const backend = storage === 'memory'
         ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
         : createTransactionBackend('control-sends');
     const runtime = createDefaultOutboundTestRuntime({
         stores: { admissionStore: createTransactionAdmissionStore(backend), workQueue: backend.workQueue },
-        planOutgoingMessage: CONTROL_PLANNER,
+        planOutgoingMessage: planner,
         sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
     });
     await runtime.ready();
     return runtime;
+}
+
+function createOrderedOutboundMessage(resourceId: string, seq: number): ALMessage {
+    return { ...createOutboundMessage(resourceId), ordering: { orderingKey: 'shared-topic', seq } };
 }
 
 function createAcknowledgement(msgId: string): ALMessage {
