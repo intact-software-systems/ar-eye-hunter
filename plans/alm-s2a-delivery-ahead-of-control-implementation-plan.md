@@ -816,12 +816,21 @@ the local lane run.
       the rtc cell's regime is the runner's verdict. A red counts only against a green baseline of
       the same regime, and `unclassified` is no evidence
       (`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:87-105`).
-- [ ] **Step 2: The full scope, for `delivery-reload`.** The Release Gate runs the smoke scope only
-      (`full-stack-alm-conformance.spec.ts:53,212`) and `delivery-reload` is tagged full
-      (`create-alm-conformance-recipes.ts:192-193`). Push the final head once more to a throwaway
-      branch `claude/alm-s2a-probe-full-scope` whose only change sets
-      `RALLAR_BLACK_BOX_ALM_SCOPE: full` in the observation job's `env` (`release-gate.yml:196-197`),
-      read its artifact under the same rule, and delete the branch. The PR never carries that line.
+- [ ] **Step 2: The full scope, for `delivery-reload` (ruling R-S2a-2, 2026-09-23).** The Release Gate
+      runs the smoke scope only (`full-stack-alm-conformance.spec.ts:53,212`) and `delivery-reload` is
+      tagged full (`create-alm-conformance-recipes.ts:192-193`). Give the observation job a scope input
+      instead of a throwaway branch: in `.github/workflows/release-gate.yml` add the reusable-workflow
+      input `alm_scope` (`type: string`, `required: false`, `default: 'smoke'`, description "ALM
+      conformance scope the observation job runs: smoke or full") beside `changed_repo_style_base`
+      (`:5-14`), and set `RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.alm_scope }}` in the
+      `alm-conformance-observation` job's `env` (`:196-197`); in `.github/workflows/branch-release-gate.yml`
+      pass `alm_scope: ${{ vars.RALLAR_BLACK_BOX_ALM_SCOPE || 'smoke' }}` in the `with:` block (`:108-113`).
+      The main-push deploy path keeps the default. The maintainer sets the repository variable
+      `RALLAR_BLACK_BOX_ALM_SCOPE` to `full` for S2a's read and clears it afterwards; the PR body records
+      which run carried the full read. If the full family is cut off by the job's `timeout-minutes: 30`
+      (`:194`), raise that one figure to the measured next multiple of ten and record it — it is a job
+      ceiling, not a harness budget. Command: `npm run test:repo-governance` after the workflow edit.
+      Read the full-scope artifact under the same regime rule as Step 1.
 - [ ] **Step 3: The acceptance (D31).** `delivery-lifecycle` (smoke and full) and `delivery-reload`
       (full) green on all three carriers in a regime with a same-regime green baseline. Record per
       cell `regime`, `perOperation.medianMs`, and the receiver's `sendControlClaimMedianMs` and
