@@ -12,6 +12,7 @@ import {
 
 import {
     createInitialALDeliveryLifecycle,
+    type ALDeliveryLifecycle,
     type ALDeliverySettlement
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALDeliveryLifecycle } from '@shared/alm/delivery/compute-al-delivery-lifecycle.ts';
@@ -259,51 +260,100 @@ describe('outbound admission verdict', () => {
         const admission = createTestOutboundDispatchAdmission(stores, (fact) => facts.push(fact));
         const old = createOutboundMessage('verdict-replaced');
         const replacement = createOutboundMessage('verdict-replacing');
-        const toCommit = (
-            msg: typeof old,
-            replacesMsgId: string | undefined,
-            intent: 'enqueue' | 'dequeue'
-        ): ALOutboundDispatchAdmission.Input<OutboundTestPayload> => ({
-            msg,
-            planner: () => ({
-                msg,
-                dropReasonCode: undefined,
-                persist: true,
-                preparedMessages: [],
-                supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId }
-            }),
-            intent,
-            phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
-            origin: intent === 'enqueue' ? 'send' : 'drain',
-            options: {}
-        });
 
-        expect((await admission.commit(toCommit(old, undefined, 'enqueue'))).committed).toBe(true);
-        expect((await admission.commit(toCommit(replacement, old.id.msgId, 'enqueue'))).committed).toBe(true);
+        expect((await admission.commit(toSupersedingCommit(old, undefined, 'enqueue'))).committed).toBe(true);
+        expect((await admission.commit(toSupersedingCommit(replacement, old.id.msgId, 'enqueue'))).committed).toBe(true);
         // The dequeue commit rewrites the predecessor's replacement row over a predecessor already superseded.
-        expect((await admission.commit(toCommit(replacement, old.id.msgId, 'dequeue'))).committed).toBe(true);
+        expect((await admission.commit(toSupersedingCommit(replacement, old.id.msgId, 'dequeue'))).committed).toBe(true);
 
-        expect(facts).toEqual([{
-            kind: 'superseded',
-            msgId: old.id.msgId,
-            replacementMsgId: replacement.id.msgId,
-            detail: 'A newer message replaced this one at its admission.'
-        }]);
-        const lifecycle = facts.reduce(
-            (previous, fact) => computeALDeliveryLifecycle(previous, { ...fact, carrier: 'ws', atMs: 0 } as ALDeliverySettlement),
-            createInitialALDeliveryLifecycle({
-                msgId: old.id.msgId,
-                typeId: old.payload.typeId,
-                ackMode: 'receiver',
-                expiresAtMs: undefined,
-                submittedAtMs: 0
-            })
-        );
+        expect(facts).toEqual([toSupersededFact(old, replacement)]);
+        const lifecycle = toSupersededLifecycle(old, facts);
+        expect(lifecycle.state).toBe('superseded');
+        expect(lifecycle.lateSettlementCount).toBe(0);
+        admission.dispose();
+    });
+
+    it('states nothing for an already superseded predecessor a later replacement names again', async () => {
+        const stores = createDefaultOutboundTestStores();
+        const facts: ALOutboundSettlementFact[] = [];
+        const admission = createTestOutboundDispatchAdmission(stores, (fact) => facts.push(fact));
+        const first = createOutboundMessage('verdict-first');
+        const second = createOutboundMessage('verdict-second');
+        const third = createOutboundMessage('verdict-third');
+
+        expect((await admission.commit(toSupersedingCommit(first, undefined, 'enqueue'))).committed).toBe(true);
+        expect((await admission.commit(toSupersedingCommit(second, undefined, 'enqueue'))).committed).toBe(true);
+        // `second` already replaced `first`; naming `first` again moves only the pointer off `second`.
+        expect((await admission.commit(toSupersedingCommit(third, first.id.msgId, 'enqueue'))).committed).toBe(true);
+
+        expect(facts).toEqual([toSupersededFact(first, second), toSupersededFact(second, third)]);
+        const lifecycle = toSupersededLifecycle(first, facts);
         expect(lifecycle.state).toBe('superseded');
         expect(lifecycle.lateSettlementCount).toBe(0);
         admission.dispose();
     });
 });
+
+type TestOutboundMessage = ReturnType<typeof createOutboundMessage>;
+
+function toSupersedingCommit(
+    msg: TestOutboundMessage,
+    replacesMsgId: string | undefined,
+    intent: 'enqueue' | 'dequeue'
+): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
+    return {
+        msg,
+        planner: () => ({
+            msg,
+            dropReasonCode: undefined,
+            persist: true,
+            preparedMessages: [],
+            supersedenceTracking: { enabled: true, algo: 'latest-wins', key: 'verdict-slot', replacesMsgId }
+        }),
+        intent,
+        phase: intent === 'enqueue' ? 'immediate' : 'dequeue',
+        origin: intent === 'enqueue' ? 'send' : 'drain',
+        options: {}
+    };
+}
+
+function toSupersededFact(predecessor: TestOutboundMessage, replacement: TestOutboundMessage): ALOutboundSettlementFact {
+    return {
+        kind: 'superseded',
+        msgId: predecessor.id.msgId,
+        replacementMsgId: replacement.id.msgId,
+        detail: 'A newer message replaced this one at its admission.'
+    };
+}
+
+/** The lifecycle a registry reduces for one message from the superseded facts its owner stated. */
+function toSupersededLifecycle(
+    message: TestOutboundMessage,
+    facts: readonly ALOutboundSettlementFact[]
+): ALDeliveryLifecycle {
+    const settlements = facts.flatMap((fact): ALDeliverySettlement[] =>
+        fact.kind === 'superseded' && fact.msgId === message.id.msgId
+            ? [{
+                kind: 'superseded',
+                msgId: fact.msgId,
+                carrier: 'ws',
+                atMs: 0,
+                replacementMsgId: fact.replacementMsgId,
+                detail: fact.detail
+            }]
+            : []
+    );
+    return settlements.reduce(
+        computeALDeliveryLifecycle,
+        createInitialALDeliveryLifecycle({
+            msgId: message.id.msgId,
+            typeId: message.payload.typeId,
+            ackMode: 'receiver',
+            expiresAtMs: undefined,
+            submittedAtMs: 0
+        })
+    );
+}
 
 function createTestOutboundDispatchAdmission(
     stores: ReturnType<typeof createDefaultOutboundTestStores>,

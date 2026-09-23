@@ -105,6 +105,8 @@ export interface ALOutboundSupersedenceReadState {
     readonly key?: string;
     readonly latest?: ALLatestSupersedenceValue;
     readonly replacement?: ALReplacementSupersedenceValue;
+    /** A named `replacesMsgId` predecessor's row; the backend returns it only while it is active. */
+    readonly replacesReplacement?: ALReplacementSupersedenceValue;
 }
 
 export interface ALOutboundMessageReadDto<TPrepared> {

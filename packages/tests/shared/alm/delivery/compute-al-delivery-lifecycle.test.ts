@@ -862,6 +862,7 @@ function createExpiringLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
 function toCancelledSettlement(): Extract<ALDeliverySettlement, Readonly<{ kind: 'cancelled'; }>> {
     return { kind: 'cancelled', msgId: MSG_ID, carrier: 'rtc', atMs: AT_MS };
 }
+
 function toQueuedLifecycle(ackMode: ALAckMode): ALDeliveryLifecycle {
     return computeALDeliveryLifecycle(
         createLifecycle(ackMode),

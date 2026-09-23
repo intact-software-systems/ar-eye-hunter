@@ -82,6 +82,8 @@ export type ALOutboundAdmissionMutation =
         kind: 'set-supersedence-replacement';
         msgId: string;
         value: ALReplacementSupersedenceValue;
+        /** The predecessor's row this admission read before writing; undefined when it read none. */
+        observed: ALReplacementSupersedenceValue | undefined;
     }>;
 
 export interface ALOutboundStateWrite {

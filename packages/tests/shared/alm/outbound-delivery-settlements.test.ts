@@ -442,6 +442,38 @@ it.each(BACKEND_KINDS)('drains the same work when the settlement sink throws ove
     expect(reported).toContain('AL outbound delivery settlement sink failed');
 });
 
+it.each(BACKEND_KINDS)('admits the replacement when the sink throws on its superseded settlement over %s', async (kind) => {
+    const stores = createStores(kind);
+    const reported: string[] = [];
+    vi.spyOn(console, 'error').mockImplementation((...entry) => {
+        reported.push(String(entry[0]));
+    });
+    const superseded: string[] = [];
+    const runtime = createDefaultOutboundTestRuntime({
+        stores,
+        queueEngine: new InboxOutboxEngine(),
+        settlements: (settlement) => {
+            if (settlement.kind === 'superseded') {
+                superseded.push(settlement.msgId);
+                throw new Error('Settlement sink failed');
+            }
+        },
+        planOutgoingMessage: planSupersedingSend(),
+        sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
+    });
+    const old = createOutboundMessage('msg-throwing-sink-old');
+    const replacement = createOutboundMessage('msg-throwing-sink-replacement');
+    await runtime.enqueueIfAbsent(old);
+
+    const admitted = await runtime.enqueueIfAbsent(replacement);
+
+    expect(superseded).toEqual([old.id.msgId]);
+    expect(admitted.verdict).toEqual({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    expect(await stores.admissionStore.isMessageSuperseded(old)).toBe(true);
+    expect(await stores.admissionStore.isMessageSuperseded(replacement)).toBe(false);
+    expect(reported).toEqual(['AL outbound delivery settlement sink failed']);
+});
+
 it.each(BACKEND_KINDS)('ends the attempt it started when the carrier throws over %s', async (kind) => {
     const settlements: ALDeliverySettlement[] = [];
     const stores = createStores(kind);

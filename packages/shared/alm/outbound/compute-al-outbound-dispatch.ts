@@ -278,16 +278,18 @@ function appendSupersedenceMutations<TPrepared>(
         mutations.push({
             kind: 'set-supersedence-replacement',
             msgId: replacement.msgId,
-            value: replacement.value
+            value: replacement.value,
+            observed: replacement.msgId === tracking.replacesMsgId ? read.supersedence.replacesReplacement : undefined
         });
     }
 }
 
 /**
- * The predecessors this commit newly marks replaced. Only the commit that moves the key's latest
- * pointer to the message supersedes anything: a later commit of the same message rewrites the
- * replacement rows over predecessors that were already superseded, and states nothing new. A
- * predecessor that is both the latest and the named `replacesMsgId` has its row written twice.
+ * The predecessors this commit newly marks replaced: the observed supersedence state against what the
+ * mutations write. Only the commit that moves the key's latest pointer to the message supersedes
+ * anything, and never a predecessor whose row it observed already replaced -- a later commit of the
+ * same message, or a named `replacesMsgId` another message already replaced, states nothing new.
+ * A predecessor that is both the latest and the named `replacesMsgId` has its row written twice.
  */
 export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
     const latest = bundle.mutations.find((mutation) => mutation.kind === 'set-supersedence-latest');
@@ -295,7 +297,7 @@ export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommit
         return [];
     }
     const replaced = bundle.mutations.flatMap((mutation) =>
-        mutation.kind === 'set-supersedence-replacement' ? [mutation.msgId] : []
+        mutation.kind === 'set-supersedence-replacement' && mutation.observed === undefined ? [mutation.msgId] : []
     );
     return [...new Set(replaced)];
 }
