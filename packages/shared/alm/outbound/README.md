@@ -127,6 +127,9 @@ straight to an open socket -- the same bytes `enqueueOutboxIfAbsent` sends today
 admission read, bundle, work row, or retry, and it never takes the sender/browser lock the
 table's entries share. A closed socket answers `'socket-closed'` rather than throwing; a lost
 heartbeat costs nothing because the next one, latest-value telemetry, simply replaces it.
+`sendLive` also bypasses the WS submission-readiness fault port, so a harness `not-ready` hold
+never delays an RTT heartbeat; that is acceptable only because the heartbeat is latest-value
+telemetry that no conformance scenario holds or asserts on.
 
 ## Read and failure boundaries
 
