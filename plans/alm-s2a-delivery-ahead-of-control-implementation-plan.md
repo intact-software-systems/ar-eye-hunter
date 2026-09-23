@@ -58,7 +58,8 @@ lever "D"; that lever is neither here, and Task 0's decision rule routes it to t
   `CONFORMANCE_DEADLINE_MS` 18 000 and the receiver window derived from it
   (`full-stack-alm-conformance.spec.ts:63`), `NON_EXPIRING_SEND_TIMEOUT_MS` 10 000 (`:125`),
   `EXPIRY_TTL_MS` 7 500 (`:137`), and the 3 000 ms observe class (`:131-132,894-898`). The regime
-  thresholds 30 and 35 ms per operation are constants, not knobs.
+  thresholds 30 and 35 ms per operation, and Task 8's page thresholds 20 and 50 ms per probe, are
+  constants, not knobs.
 - **No new timer, queue, coalescing window or registry.** The reorder is a sort of the list the batch
   already builds. Shape B (a separate delivery lane or rotation) was not chosen (D19) and is not
   built under any name.
@@ -506,9 +507,11 @@ builds on existing functionality with no new abstraction or layer. Reading the c
 follow-up batch at that batch's end (`:168`). The reservation term is therefore the running batch's
 remaining duration, inflated by RTT-contended `send-control` claims; 2D shortens it, and preempting a
 running batch would be shape B. **Task 2 = 2D plus one pin** (Step 0 below) that the existing wake is
-reached from the ingress path and lands in the follow-up batch. Task 2C is recorded, not executed.
+reached from the ingress path and lands in the follow-up batch. Task 2C is recorded, not executed,
+unless Task 6 Step 3's re-read rule selects it (maintainer ruling, 2026-09-23).
 
-Exactly one of 2C and 2D lands, per Task 0 Step 9; the PR body records the other as not chosen.
+2D landed per Task 0 Step 9. 2C lands only if Task 6 Step 3's re-read rule selects it; otherwise the PR
+body records it as not chosen.
 
 #### Task 2C: One outbound commit per batch for that batch's control sends
 
@@ -839,16 +842,678 @@ the local lane run.
 - [x] **Step 4: Commit.** `npx dprint check packages/shared/alm/inbound/README.md packages/shared/alm/outbound/README.md`,
       `git commit -am 'docs(alm): delivery-first inbound drain and superseded at admission'`
 
+### Task 7: The ACK admitted under a hold
+
+Per the maintainer's re-plan (2026-09-23) after the full-scope read of `7add928af`
+(`.superpowers/s2a-full-read-diagnosis.md` §3 and §5). The rtc and fallback reds are one failure: the
+submission's ACK leaves the receiver while the sender's `cancel-hold` is armed, the sender records no
+`admission-outcome` for it, and the handle expires at the browser's 30 s default TTL
+(`packages/shared-web/browser/messages/browser-rallar-message-sender.ts:87`), so `receipts-1` reads
+`expired` with no confirmed hop. Task 4 exposed it by no longer waiting for `acknowledged` before the
+hold is armed. The hold filters **outgoing** frames only: the port decides sends
+(`packages/shared/transport-faults/transport-fault-port.ts:97-117`), RTC consults it only on the send
+path (`packages/shared/webrtc/qrtc-data-channel.ts:315-318,370-390`) and WS only before an outbox
+submission (`packages/shared/services/ws-queue-box-client-service.ts:552-554`). An inbound frame
+reaches `dispatchDataChannelMessage` (`qrtc-data-channel.ts:515-532`) or `acceptIncomingMessage`
+(`ws-queue-box-client-service.ts:428-443`) with no port call. The lane's hold matches the scenario
+`typeId` only (`create-alm-conformance-recipes.ts:690-704`), and the submission shares that typeId
+with the held cancellation specimen. The artifacts could not name the mechanism. This task names it
+with one deterministic variable and fixes it at the site it names.
+
+**Where the ACK's admission can stop.** `admitIncomingMessage` records the `admission-outcome` only
+after `admitDecodedMessage` returns (`packages/shared/alm/inbound/al-inbound-message-runtime.ts:206-207`).
+A control's return first waits on the inbound control admission (`:359-360`) and then on the
+outbound owner (`:372-374`). On RTC that is `web-rtc-rx-streamer-service.ts:128-130` →
+`web-rtc-overlay-multicast-manager.ts:368-374`, and on WS it is `ws-queue-box-client-service.ts:239-241`.
+Both reach `ALOutboundMessageRuntime.acceptControlMessage` (`al-outbound-message-runtime.ts:463-475`),
+then `ALOutboundRepairAdmission.acceptControlMessage` (`al-outbound-repair-admission.ts:58-68`) and
+`ALOutboundControlAdmission.admit` (`control/al-outbound-control-admission.ts:106-137`). A throw on
+that chain skips the event. The RTC channel turns the throw into `console.error('Callback onMessage
+failed', …)` (`qrtc-data-channel.ts:576-578`). The recorded outcome is the inbound acceptance. An ACK
+for the sender's own message therefore reads `not-handled` / `control` whatever the outbound owner did
+(`:369-375`; `al-inbound-runtime-diagnostics.ts:192-195`). The event proves that the inbound half
+settled, not that the receipt moved.
+
+| Site                             | Where (under `packages/shared/`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | What the witness reads                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| C0 carrier discard               | the RTC `status.dc` guards (`webrtc/qrtc-data-channel.ts:519-521,543-545`); the streamer's peer guard (`services/web-rtc-rx-streamer-service.ts:166-168`); the WS socket-identity guard and the closed client (`services/ws-queue-box-client-service.ts:417-419,431-433`)                                                                                                                                                                                                                                                                                                  | `never-admitted`                                              |
+| C1 inbound control throws        | `ALInboundControlAdmission.admit` (`alm/inbound/control/al-inbound-control-admission.ts:70-86`): the provenance throw (`:139-144`), `commitBundle` (`:106`), `retainPendingControl` (`:118-128`)                                                                                                                                                                                                                                                                                                                                                                           | `inbound-threw`                                               |
+| C2 outbound control throws       | `ALOutboundControlAdmission.admit`: `readControlAdmission` (`alm/outbound/control/al-outbound-control-admission.ts:279-303`), `readEffects` (`:118-123`), the rethrow of a non-conflict error (`:157-162`), `retainPendingControl` (`:367-377`)                                                                                                                                                                                                                                                                                                                            | `outbound-threw`                                              |
+| C3 an await never settles        | `acceptControlMessage`'s `ready()` (`alm/outbound/al-outbound-message-runtime.ts:464`); the write serialization of `InMemoryAdmissionBackend.write` (`alm/al-admission-backend.ts:137-143`) or an IndexedDB readwrite queued behind an open read session (`alm/indexed-db-admission-backend.ts:210-233`)                                                                                                                                                                                                                                                                   | `inbound-unsettled` or `outbound-unsettled`                   |
+| C4 answered but not acknowledged | `rejected` by validation; `pending-control` whose replay never commits (the sender-wide fence, `alm/outbound/control/al-outbound-control-admission.ts:323-338`); `committed` over a receipt already gone, cleared after `maxAttempts` of retransmissions the same-typeId hold dropped (`alm/outbound/al-outbound-repair-admission.ts:181-184`) or expired (`alm/outbound/transition-al-outbound-pending-ack.ts:82-87`), so no `acknowledgement` is stated (`transition-al-outbound-pending-ack.ts:66-71`, `alm/outbound/compute-al-outbound-control-admission.ts:119-130`) | `outbound-answered` with the value, handle not `acknowledged` |
+
+**Files:**
+
+- Create: `packages/tests/shared-web/messages/acknowledgement-under-hold-fixture.ts` (the two sender
+  compositions, the witness, the scenario body) and
+  `packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts`
+- Modify: `packages/tests/shared-web/authoritative-group-fixtures.ts` gains
+  `createAcceptedGroupSnapshotFixture(sessionIds)` and
+  `createAcceptedOverlayFixture(group, version, nextHopSessionIds)`, moved from the private
+  `acceptedGroup` and `overlay` of `packages/tests/shared-web/rtc/initialise-browser-rtc-runtime.test.ts:317-361`,
+  which then imports them. No fixture is duplicated.
+- Modify at Step 3, only the site Step 2 names: `packages/shared/alm/inbound/control/al-inbound-control-admission.ts:70-86,131-155`,
+  `packages/shared/alm/outbound/control/al-outbound-control-admission.ts:106-163,279-303`,
+  `packages/shared/alm/al-admission-backend.ts:133-162` or
+  `packages/shared/alm/indexed-db-admission-backend.ts:179-233`, with that site's own suite, and
+  `packages/shared/alm/outbound/README.md` "Transport attempt settlement" when an outbound path changes.
+
+**Interfaces:**
+
+- Produces, `acknowledgement-under-hold-fixture.ts` (test-only):
+
+  ```ts
+  /** One sender page's carrier as the lane composes it, over memory stores, with a scripted hold. */
+  export interface HoldSender {
+      readonly carrier: 'rtc' | 'ws';
+      readonly selfPeerId: string;
+      readonly faults: ScriptedTransportFaultPort;
+      /** `drop` on RTC, `not-ready` on WS; matches the scenario typeId only, as `toHeldFaultCommands` arms it. */
+      readonly hold: ScriptedTransportFault;
+      readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
+      createMessage(resourceId: string): ALMessage;
+      /** Opens the registry handle and admits the message; the caller drains. */
+      send(message: ALMessage): Promise<RallarMessageHandle>;
+      cancel(msgId: string): void;
+      drain(): Promise<void>;
+      /** Moves the clock the retry schedule reads; never waits on it. */
+      advance(ms: number): Promise<void>;
+      /** Runs `ACK_UNDER_HOLD_SETTLE_TURNS` queued turns; a chain still pending afterwards is the C3 reading. */
+      settle(): Promise<void>;
+      /** Hands the frame to the carrier's own inbound path and does not await its admission. */
+      deliver(frame: ALMessage): void;
+      /** The typeId of every frame the fault port was asked about. */
+      readFaultedTypeIds(): readonly string[];
+  }
+
+  /** Where an inbound ACK's admission stopped, read from the two spied hops: a value, never a throw. */
+  export type ControlAdmissionStop =
+      | Readonly<{ stop: 'never-admitted'; }>
+      | Readonly<{ stop: 'inbound-threw'; reason: string; }>
+      | Readonly<{ stop: 'inbound-unsettled'; }>
+      | Readonly<{ stop: 'not-routed'; }>
+      | Readonly<{ stop: 'outbound-threw'; reason: string; }>
+      | Readonly<{ stop: 'outbound-unsettled'; }>
+      | Readonly<{ stop: 'outbound-answered'; result: ALOutboundControlAdmissionResult; }>;
+
+  export interface ControlAdmissionWitness {
+      readonly inbound: MockInstance<ALInboundMessageRuntime['admitIncomingMessage']>;
+      readonly outbound: MockInstance<
+          ALOutboundMessageRuntime<ALOutboundTransportMessage>['acceptControlMessage']
+      >;
+  }
+
+  export function openRtcHoldSender(): Promise<HoldSender>;
+  export function openWsHoldSender(): Promise<HoldSender>;
+  export function watchControlAdmission(): ControlAdmissionWitness;
+  export function readControlAdmissionStop(
+      witness: ControlAdmissionWitness,
+      ack: ALMessage
+  ): ControlAdmissionStop;
+  export function toReceiverAck(submission: ALMessage, selfPeerId: string): ALMessage;
+  export function expectAcknowledgedUnderHold(sender: HoldSender, armed: boolean): Promise<void>;
+  ```
+
+- Production: no new type up front. Step 3 changes only the site Step 2 names, and each fix answers
+  with a result arm that site already has (`rejected`, `pending-control`). No new outcome enters an
+  event or a public contract.
+
+- [ ] **Step 1: The ACK is admitted and acknowledged with the hold armed (RED).** Write the fixture
+      and the test. Neither imports `setup-browser-indexeddb.ts`. `isIndexedDbALRuntimeStoreSupported()`
+      is therefore false, and `configureBrowserALRuntimeStores` composes `InMemoryAdmissionBackend`
+      stores (`packages/shared-web/browser/al-runtime/browser-al-runtime-stores.ts:118-133`).
+
+      `openRtcHoldSender` composes the sender the way
+      `initialise-browser-rtc-runtime.test.ts:142-216` does:
+
+      - `vi.useFakeTimers({ toFake: ['Date'] })`, `configureTestCacheRepositories()` and
+        `configureBrowserALRuntimeStores('self', …)`.
+      - An accepted group and overlay with next hop `receiver`.
+      - `installNativeRtcRuntime()` and `createNativeRtcConnectionFixture(…, faultPort: faults)`, then
+        `ensurePeerConnectionStarted('receiver', true)`, `setConnected()` and the channels opened.
+      - `initialiseRtcOverlayMulticastManager({ qosProvider: undefined, outboundSettlements: (event) => registry.record(event), … })`.
+      - The inbound half that test leaves out: `initialiseRtcRxStreamer({ webRtcOverlayMulticastManager: manager, qboxEngine, clientData: { clientId: 'self', sessionId: 'self', isOnline: true }, inboundDiagnostics: (event) => diagnostics.push(event) })`,
+        then `streamer.addPeer(fixture.service.readPeer('receiver')!)`, as
+        `initialise-browser-middleware.ts:473` does.
+
+      The RTC `HoldSender` members:
+
+      - `hold` is `{ faultId: 'hold-rtc', carrier: 'rtc', action: 'drop', remaining: 'until-cleared', match: { typeId: 'alm.lifecycle', msgId: undefined, controlType: undefined } }`.
+      - `createMessage` is `newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, group.group, 'alm.lifecycle', { specimen: resourceId }, { ack: 'receiver', reliability: 'at-least-once', seq })`,
+        with `seq` counting up from 1.
+      - `advance` is `vi.setSystemTime(Date.now() + ms)`.
+      - `deliver` is `void channel.receive(JSON.stringify(frame))` (`native-rtc-connection-fixture.ts:148-150`).
+      - `cancel` is `manager.cancel(msgId)`.
+      - `readFaultedTypeIds` reads a `vi.spyOn(faults, 'decideSend')`.
+
+      `openWsHoldSender` composes the sender the way `ws-retained-work-fault.test.ts:117-153` does:
+      `vi.useFakeTimers()`, `vi.stubGlobal('WebSocket', TestWebSocket)`,
+      `new JsonWebSocketClient('ws://test', faults)`, then `createBrowserWebSocketQueueBox({ …, submissionReadinessFaultPort: faults, outboundSettlements: (event) => registry.record(event), inboundDiagnostics: (event) => diagnostics.push(event) })`,
+      and finally the native socket opened.
+
+      The WS `HoldSender` members:
+
+      - `hold` is the same shape with `carrier: 'ws'`, `action: 'not-ready'` and typeId `held.message`.
+      - `createMessage` is `{ ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, { ttlMs: 60_000 }), delivery: { reliability: 'at-least-once', ack: 'receiver' } }`,
+        the `:160-165` shape.
+      - `advance` is `vi.advanceTimersByTimeAsync(ms)`.
+      - `deliver` is `void service.acceptIncomingMessage(frame)`, which is all the socket callback
+        does (`ws-queue-box-client-service.ts:411-419`).
+      - `cancel` is `service.cancelOutbox(msgId)`.
+      - `readFaultedTypeIds` reads a `vi.spyOn(faults, 'decideSubmissionReadiness')`.
+
+      Both carriers share the rest:
+
+      - `settle` runs `ACK_UNDER_HOLD_SETTLE_TURNS = 20` turns. On RTC a turn is
+        `new Promise<void>((resolve) => setImmediate(resolve))`, and on WS it is
+        `vi.advanceTimersByTimeAsync(0)`. It is a count of turns, not a clock.
+      - `drain` is `captureOutboundWorkRunnable(qboxEngine)`.
+      - The registry is `new BrowserRallarDeliveryRegistry({ nowMs: Date.now, maxEntries: 10, retainTerminalMs: 60_000, cancel: () => {} })`.
+      - Every opener registers its teardown with `onTestFinished`.
+
+      The witness and the scenario body, one variable (`armed`):
+
+      ```ts
+      export function watchControlAdmission(): ControlAdmissionWitness {
+          return {
+              inbound: vi.spyOn(ALInboundMessageRuntime.prototype, 'admitIncomingMessage'),
+              outbound: vi.spyOn(ALOutboundMessageRuntime.prototype, 'acceptControlMessage')
+          };
+      }
+
+      export function readControlAdmissionStop(witness: ControlAdmissionWitness, ack: ALMessage): ControlAdmissionStop {
+          const inbound = readSettledCall(witness.inbound.mock, (value) => decodeALMessageValue(value).right?.id.msgId === ack.id.msgId);
+          const outbound = readSettledCall(witness.outbound.mock, (msg) => msg.id.msgId === ack.id.msgId);
+          if (inbound === undefined) {
+              return { stop: 'never-admitted' };
+          }
+          if (outbound === undefined) {
+              return toInboundStop(inbound);
+          }
+          switch (outbound.type) {
+              case 'rejected':
+                  return { stop: 'outbound-threw', reason: String(outbound.value) };
+              case 'incomplete':
+                  return { stop: 'outbound-unsettled' };
+              case 'fulfilled':
+                  return { stop: 'outbound-answered', result: outbound.value };
+          }
+      }
+
+      function toInboundStop(inbound: MockSettledResult<unknown>): ControlAdmissionStop {
+          switch (inbound.type) {
+              case 'rejected':
+                  return { stop: 'inbound-threw', reason: String(inbound.value) };
+              case 'incomplete':
+                  return { stop: 'inbound-unsettled' };
+              case 'fulfilled':
+                  return { stop: 'not-routed' };
+          }
+      }
+
+      function readSettledCall<TArgs extends unknown[], TValue>(
+          mock: MockContext<(...args: TArgs) => Promise<TValue>>,
+          matches: (first: TArgs[0]) => boolean
+      ): MockSettledResult<TValue> | undefined {
+          const index = mock.calls.findIndex(([first]) => matches(first));
+          return index < 0 ? undefined : mock.settledResults[index];
+      }
+
+      export function toReceiverAck(submission: ALMessage, selfPeerId: string): ALMessage {
+          return newALAckControlMessage(
+              { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: 'receiver', ts: Date.now() },
+              {
+                  ackedMsgId: submission.id.msgId,
+                  fromPeerId: 'receiver',
+                  toPeerId: selfPeerId,
+                  status: 'accepted',
+                  observedAtEpochMs: Date.now()
+              }
+          );
+      }
+
+      /** The submission is sent before the hold; a second send of its typeId is held while the ACK arrives. */
+      export async function expectAcknowledgedUnderHold(sender: HoldSender, armed: boolean): Promise<void> {
+          const witness = watchControlAdmission();
+          const submission = sender.createMessage('submission');
+          const handle = await sender.send(submission);
+          await sender.drain();
+          if (armed) {
+              sender.faults.inject(sender.hold);
+          }
+          await sender.send(sender.createMessage('held'));
+          await sender.drain();
+          await sender.advance(100);
+          const ack = toReceiverAck(submission, sender.selfPeerId);
+          const retried = sender.drain();
+          sender.deliver(ack);
+          await retried;
+          await sender.settle();
+          // One more batch: a conflicted control is retained as `admit-control` work, and its replay is the value path.
+          await sender.drain();
+          await sender.settle();
+
+          expect(sender.faults.getObservations().length > 0).toBe(armed);
+          expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered' });
+          expect(sender.diagnostics).toContainEqual(expect.objectContaining({
+              kind: 'admission-outcome',
+              msgId: ack.id.msgId,
+              typeId: AL_CONTROL_ACK_TYPE_ID,
+              reason: 'control'
+          }));
+          expect(handle.lifecycle().state).toBe('acknowledged');
+          expect(sender.readFaultedTypeIds()).not.toContain(AL_CONTROL_ACK_TYPE_ID);
+      }
+      ```
+
+      The test file:
+
+      ```ts
+      describe('an acknowledgement that arrives while a transport hold drops another send', () => {
+          afterEach(() => {
+              vi.restoreAllMocks();
+              vi.unstubAllGlobals();
+          });
+
+          it.each([
+              ['rtc', false],
+              ['rtc', true],
+              ['ws', false],
+              ['ws', true]
+          ] as const)('admits a %s ACK, records it and acknowledges the send (hold armed: %s)', async (carrier, armed) => {
+              const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+              await expectAcknowledgedUnderHold(sender, armed);
+          });
+      });
+      ```
+
+      Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts`
+      Expected: both unarmed cases GREEN, which shows the harness is sound. The RED is the armed case
+      of one or both carriers. Its first failing assertion is either the observation count, meaning
+      the hold never engaged, which is a fixture error to fix before reading anything, or the
+      `ControlAdmissionStop` diff that names the site. If both armed cases pass, record that and go
+      to Step 2's escalation. Never loosen or reorder an assertion to manufacture a RED.
+- [ ] **Step 2: Name the site.** Read the armed case's `ControlAdmissionStop` against the site table.
+
+      - `inbound-threw` and `outbound-threw` carry the error, and the `reason` and its stack name the
+        throw line.
+      - `inbound-unsettled` or `outbound-unsettled` (C3) needs one finer reading. Add, for this read
+        only, `vi.spyOn` on `ALInboundControlAdmission.prototype.admit`,
+        `ALOutboundControlAdmission.prototype.admit`, `InMemoryAdmissionBackend.prototype.readWithin`
+        and `InMemoryAdmissionBackend.prototype.write` (`IndexedDbAdmissionBackend.prototype` under
+        E3). The first `incomplete` entry of
+        `mock.settledResults`, in call order, names the await. When it is a `write`, the earlier
+        `write` still `incomplete` names the tail holder.
+      - `outbound-answered` with the handle not `acknowledged` (C4): the `result` says which arm.
+        `readPendingAck(submission.id.msgId)` on the carrier's outbound admission store, read before
+        `deliver`, says whether the receipt was already gone.
+      - `never-admitted` is C0.
+      - `not-routed` means `onControlMessage` never reached the outbound owner, because the runtime
+        or the manager was disposed (`al-inbound-message-runtime.ts:372`,
+        `web-rtc-overlay-multicast-manager.ts:369-371`).
+
+      The assertion that discriminates, and stays in the test after Step 3, is
+      `expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered' })`
+      together with the `acknowledged` state.
+
+      **If both armed cases are GREEN, escalate one variable at a time.** Each variable is added to
+      the armed and the unarmed case alike. Stop at the first RED.
+
+      - E1, the lane's shared typeId: before `deliver`, `advance` past the submission's
+        `ackTracking.timeoutMs` (read from `readPendingAck`) and `drain` until its `ack-timeout` claim
+        has run. The retransmission carries the scenario typeId, so the hold drops it as well.
+      - E2, the lane's `cancel-2`: `sender.cancel` the held send inside the hold, as
+        `toRetainedCancellationCommands` does (`create-alm-conformance-recipes.ts:533-554`).
+      - E3, the hosted pages' storage: a sibling
+        `acknowledgement-under-transport-hold-indexeddb.test.ts` imports
+        `../../setup-browser-indexeddb.ts` first and runs the same `it.each` through
+        `expectAcknowledgedUnderHold`. fake-indexeddb completes on queued turns, which the same bounded
+        `settle` runs. If the unarmed case does not settle there, raise that file's turn count until
+        it does. The unarmed case calibrates the count, never the armed one.
+
+      All armed cases still GREEN after E3 means the ACK is not lost in admission. It is lost before
+      `admitIncomingMessage` on the hosted carrier, or in the capture. Record the reading in the PR
+      body and under "Rulings during execution", skip Step 3, commit the test as a pin (Step 5), and
+      route to the maintainer with the one harness-only addition the diagnosis proposes: sender
+      `pageerror`/console capture in the lane. That addition is not built in this task.
+- [ ] **Step 3: The fix at the named site, as a value.** One row applies, and no other file changes.
+      In every row the fault port and both carriers' call sites keep their contract: they decide
+      outgoing frames only. `transport-fault-port.ts`, `qrtc-data-channel.ts:370-390` and
+      `ws-queue-box-client-service.ts:538-568` are not edited, and the `readFaultedTypeIds` pin stays.
+
+      | Site                                             | Fix                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Site suite (under `packages/tests/shared/alm/`)                                                          |
+      | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+      | C1 at the provenance throw (`:139-144`)          | `readControlAdmission` returns `Either<string, ALInboundControlAdmissionRead \| undefined>`, and the missing-provenance case is `Either.ofLeft('Retained inbound acknowledgement state has no message provenance')`. `admit` answers a left with its existing `{ kind: 'rejected', reason }` (`:38`). `admitControlMessage` already hands a rejected control to `onControlMessage` (`al-inbound-message-runtime.ts:369-374`), so the outbound owner still receives the ACK.                                                              | `inbound/al-inbound-control-admission.test.ts`: the same surface answers `rejected` and never throws      |
+      | C1 or C2 at a backend write                      | When the failure is the write's own transaction failing (not a decoder's `ALAdmissionCorruptionError`, which stays a throw and routes like C0), the backend that raised it answers it at its own boundary as `ALAdmissionBackendConflictError`, the one exception the Global Constraints let cross that boundary (`al-admission-backend.ts:133-162` or `indexed-db-admission-backend.ts:179-208`). The existing value path then carries it. Outbound: `writeControlAdmission` returns `false` (`:157-160`), `admit` retains `admit-control` work (`:135,:367-377`), and the outbound worker replays it (`:166-175`). Inbound: `commitControlAdmission` retains `pending-control` (`:114-115`). | `al-admission-backend.test.ts`, and `al-outbound-control-admission.test.ts` beside `answers pending-control for a backend conflict without an inner retry` (`:395`) |
+      | C2 at a read (`:118-123` or `:279-303`)          | The read returns an `Either`, and `admit` answers a left with `{ kind: 'rejected', reason }` (`ALOutboundControlAdmissionResult`, `:55-59`). It never throws.                                                                                                                                                                                                                                                                                                                                  | `al-outbound-control-admission.test.ts`                                                                  |
+      | C3 at the write tail                             | The earlier write that holds `writeTail` (`al-admission-backend.ts:137-143`), or an IndexedDB read session left open (`indexed-db-admission-backend.ts:210-233`), awaits non-storage work inside the write. Move that await before its `backend.write`, per the mutation doctrine's read outside the write, so a control write queues behind storage operations only. No queue or timer is added.                                                                                                                            | `al-admission-backend.test.ts`: a write whose predecessor is between storage steps still settles          |
+      | C0, C3 at `ready()`, C4, `not-routed`, any other | Stop and route to the maintainer with the reading. Each is a carrier or policy decision, not a control-admission fix: the carrier's discard guards, a bootstrap that never finishes, the sender-wide control fence, or the receipt's exhaustion and retention. The test still commits as a pin at Step 5.                                                                                                                                                                                    | —                                                                                                        |
+
+      Step 1's four cases turn GREEN, and the site suite's new case pins the value. Every added
+      function stays under 40 lines.
+      Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts packages/tests/shared/alm`
+- [ ] **Step 4: Verify.** Run the pins unchanged and name them in the commit message:
+
+      - `al-indexeddb-operation-counts.test.ts`: 10 `al-admission` / 15 `al-work` for one default send
+        (`:196-234`), 2 for one drained `dispatch-local` row (`:244-250`), 8 for one message admitted
+        and delivered (`:259-264`), the idle relay (`:266-282`) and one `work-release` per batch
+        (`:284-288`).
+      - Both control admission suites:
+        `packages/tests/shared/alm/inbound/al-inbound-control-admission.test.ts` and
+        `packages/tests/shared/alm/al-outbound-control-admission.test.ts`, plus
+        `outbound-control-version-candidate.test.ts` and `outbound-delivery-settlements.test.ts`.
+      - Both carriers' hold and admission suites: `packages/tests/shared-web/websocket`,
+        `packages/tests/shared-web/rtc`, `packages/tests/shared/transport-faults`,
+        `packages/tests/shared/qrtc-data-channel.test.ts` and
+        `packages/tests/shared/websocket/json-web-socket-client-faults.test.ts`.
+
+      Commands:
+
+      - `npx vitest run packages/tests/shared/alm packages/tests/shared-web/messages packages/tests/shared-web/websocket packages/tests/shared-web/rtc packages/tests/shared/transport-faults packages/tests/shared/qrtc-data-channel.test.ts packages/tests/shared/websocket/json-web-socket-client-faults.test.ts`
+      - `npx tsc -p packages/shared/tsconfig.json --noEmit`
+      - `npm run test:deno`, when a shared `packages/shared/alm` type changed
+      - `node scripts/check-tests-typecheck.mjs`
+      - `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`
+      - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
+      - `npm run test:rallar:full-stack:memory:alm`: three cells, each recorded as in Task 5 Step 3
+      - `npx dprint check <touched files>`
+- [ ] **Step 5: Commit and push.** Use
+      `git commit -am 'fix(alm): admit an acknowledgement that arrives while a transport hold drops another send'`
+      when Step 3 landed a fix. On a stop row or the all-GREEN escalation, use
+      `git commit -am 'test(alm): pin acknowledgement admission under a transport hold'`, with the
+      reading in the body. Then push the S2a branch (`claude/alm-s2-design`, the branch this plan executes on).
+
+### Task 8: The page regime in the observation artifact
+
+Per the maintainer's re-plan (2026-09-23). The outbound regime reads the cell's opening 20 s of
+`send`-origin admission reads. It scored F's rtc cell `normal` (16.61 ms/op) next to P's
+(13.83 ms/op), although F's page queued every storage read 2.5× longer and its constant-shape probe
+roughly 50× longer (`.superpowers/s2a-full-read-diagnosis.md` §0.2, §3 "Whole-cell medians overstate
+F", §4). Read literally, "both normal" would have blamed the change for a slower page. The outbound
+`readiness-probe` is one storage read of a fixed shape
+(`packages/shared/alm/work/al-work-handler.ts:100-116`;
+`packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md:173-182`). An `age-bound`
+probe is that read taken only because the memory aged out (`al-work-handler.ts:252`), so its
+duration is the time the read spent queued behind the page's other IndexedDB transactions. The
+artifact records none of it today: the snapshot decodes no `readiness-probe`
+(`packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts:128-147`).
+
+**Where the constants come from.** The corpus is 24 hosted cells from eight lane runs of the S2
+corpus. They are `6f6006cfe`, `f33dd8118`, `f870feaf4`, `8fc704552`, `fe718349c`, `c6ded1707`
+(Task 0), the RTT-off probe and `7add928af` (full), under `scratchpad/*lane*/alm-observation/`. The
+reading is the median `age-bound` probe `durationMs`, over both roles, from 20 s to 60 s after the
+run's first event.
+
+| Page | Count | Median band | Cells                                                         |
+| ---- | ----- | ----------- | ------------------------------------------------------------- |
+| fast | 6     | 1–3 ms      | the RTT-off probe (1 / 3 / 2) and `6f6006cfe` (2 / 1 / 3)     |
+| slow | 18    | 66.5–358 ms | every other cell: F 66.5 / 69 / 358, Task 0 113 / 199.5 / 315 |
+
+Samples number 26–43 per cell. The window starts where the outbound regime's opening window ends,
+because page start-up contends too. Over the opening 20 s the fast pages read 27.5 / 87 / 77 ms (the
+probe) and 6 / 44 / 63 ms (`6f6006cfe`), inside the slow band. The proposed thresholds sit in the
+gap: `normal` below 20 ms (about 6× the fast band's top of 3 ms) and `slow` at or above 50 ms (below
+the slow band's lowest cell, 66.5 ms). The band between them stays `unclassified`, as the outbound
+regime's 30–35 band does. **The two thresholds, the sample minimum and the window end are
+maintainer-visible and are listed as such in the PR body.**
+
+**Files:**
+
+- Modify: `packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts:4-16,91-101,128-147`
+  (plus one decoder after `toInboundClaim`, `:265-291`),
+  `packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts:12-26,89-102,125-169`,
+  `packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:18-22,42-99,101-126`,
+  `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md:173-182`
+- Test: `packages/tests/shared-test/alm-observation-regime.test.ts` (662 lines). Its builders sit
+  beside `toCommitPhaseEvent` (`:56-77`), the regime cases go in `describe('computeALMObservationRegime')`
+  (`:188-512`), the decoder case in `describe('decodeALMObservationSnapshot')` (`:531-662`), and the
+  summary pin is `:495-512`.
+
+**Interfaces:**
+
+- Produces, `alm-observation-snapshot.ts`:
+
+  ```ts
+  const READINESS_PROBE_DIAGNOSTIC_KIND = 'readiness-probe';
+
+  /** One outbound `readiness-probe`: a fixed-shape storage read, so its duration reads the page's storage queue. */
+  export interface ALMObservationReadinessProbe {
+      readonly atEpochMs: number;
+      readonly role: ALMObservationAgentRole;
+      /** `age-bound`, `own-commit`, `batch`, `retained-release`, `external-wake` or `no-memory`, as the topic emits it. */
+      readonly cause: string;
+      readonly durationMs: number;
+  }
+  ```
+
+  `ALMObservationSnapshot` gains one required array, `readinessProbes: readonly ALMObservationReadinessProbe[]`.
+
+- Produces, `compute-alm-observation-regime.ts`, the constants beside
+  `ALM_OBSERVATION_NORMAL_REGIME_MAX_MS_PER_OPERATION` (`:22-26`) with a JSDoc that carries the corpus
+  table above:
+
+  ```ts
+  export const ALM_OBSERVATION_NORMAL_PAGE_MAX_PROBE_MS = 20;
+  export const ALM_OBSERVATION_SLOW_PAGE_MIN_PROBE_MS = 50;
+  export const ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT = 10;
+  /** The page window opens where the opening window (`ALM_OBSERVATION_WINDOW_MS`) closes. */
+  export const ALM_OBSERVATION_PAGE_WINDOW_END_MS = 60_000;
+  export const ALM_OBSERVATION_STORAGE_PROBE_CAUSE = 'age-bound';
+
+  /** The page's storage queue, beside the admission chain `regime` reads; the two together are the runner's verdict. */
+  export type ALMObservationPageRegime =
+      | Readonly<{
+          outcome: 'measured';
+          storageProbeMedianMs: number;
+          sampleCount: number;
+          regime: ALMObservationRegimeName;
+      }>
+      | Readonly<{ outcome: 'unmeasured'; sampleCount: number; regime: 'unclassified'; }>;
+  ```
+
+  `ALMObservationRegime` (`:89-102`) gains the required `pageRegime: ALMObservationPageRegime`. The
+  vocabulary is `ALMObservationRegimeName`'s own (`:33`), so no second regime name exists.
+- Consumes: the private `computeMedian` and `toTwoDecimals` (`:359-370`), unchanged. The spec that
+  writes the file (`tests/playwright/rallar-black-box/full-stack-alm-conformance.spec.ts:233,248-251`)
+  only serialises the regime and is not edited.
+
+- [ ] **Step 1: The page regime is classified from the probes (RED first).** In
+      `alm-observation-regime.test.ts`, add beside `toCommitPhaseEvent`:
+
+      ```ts
+      function toReadinessProbeEvent(
+          atEpochMs: number,
+          agentId: string,
+          probe: Readonly<{ cause: string; durationMs: number; }>
+      ): Record<string, unknown> {
+          return {
+              kind: 'diagnostic',
+              atEpochMs,
+              agentId,
+              payload: {
+                  topic: 'rallar.browser.alm.outbound_diagnostics',
+                  payload: {
+                      data: { kind: 'readiness-probe', workerId: 'al-outbound:worker-1', readyAtMs: 'none', ...probe }
+                  }
+              }
+          };
+      }
+
+      /** `count` probes a second apart inside the page window; the anchor commit keeps the run's first event at 1 000. */
+      function toPageWindowProbes(durationMs: number, count: number, cause = 'age-bound'): readonly Record<string, unknown>[] {
+          return [
+              toCommitPhaseEvent(1_000, 12, 'send'),
+              ...Array.from({ length: count }, (_unused, index) =>
+                  toReadinessProbeEvent(
+                      1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1),
+                      index % 2 === 0 ? SENDER_AGENT_ID : RECEIVER_AGENT_ID,
+                      { cause, durationMs }
+                  ))
+          ];
+      }
+      ```
+
+      Then add these cases:
+
+      - Ten 2 ms probes read `{ outcome: 'measured', storageProbeMedianMs: 2, sampleCount: 10, regime: 'normal' }`.
+        Adding five 400 ms `age-bound` probes inside the opening window, five 400 ms `own-commit`
+        probes inside the page window, and five 400 ms probes after
+        `1_000 + ALM_OBSERVATION_PAGE_WINDOW_END_MS` leaves the reading unchanged.
+      - Ten 120 ms probes classify `slow`, and ten 30 ms probes classify `unclassified` with the
+        median measured.
+      - The edges, in the file's `classifies the two edges of the band` form (`:280-285`): 19.99 is
+        `normal`, 20 is `unclassified`, 49.99 is `unclassified` and 50 is `slow`.
+      - `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT - 1` probes read
+        `{ outcome: 'unmeasured', sampleCount: 9, regime: 'unclassified' }`.
+      - The two hosted fixtures keep their `regime` and read
+        `pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' }`, because
+        their trim dropped every probe.
+      - The decoder, in `describe('decodeALMObservationSnapshot')`, decodes a `readiness-probe` per
+        agent role, and skips one without a `cause` or a finite `durationMs` rather than rejecting
+        the snapshot.
+      - The summary pin (`:495-512`) becomes
+        `'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed page=unclassified (unmeasured, 0 probes)'`,
+        and the ws line ends the same way.
+
+      Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
+      Expected: the run fails at the type level first (`pageRegime` and the constants), then on the
+      assertions.
+- [ ] **Step 2: Decode, classify, and read the corpus.** In `alm-observation-snapshot.ts`:
+
+      - Add `readinessProbes: toTopicDiagnostics(diagnostics, OUTBOUND_DIAGNOSTICS_TOPIC).map(toReadinessProbe).filter(isPresent)`
+        to the snapshot literal (`:129-147`).
+      - Add `toReadinessProbe`, which answers `undefined` unless `kind` is
+        `READINESS_PROBE_DIAGNOSTIC_KIND` and both `cause` (`decodeText`) and `durationMs`
+        (`decodeFiniteNumber`) decode (the file's skip rule, `:110-114`). Its role comes from
+        `resolveALMObservationAgentRole`.
+
+      In `compute-alm-observation-regime.ts`:
+
+      ```ts
+      function computePageRegime(snapshot: ALMObservationSnapshot): ALMObservationPageRegime {
+          const windowStartEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS;
+          const windowEndEpochMs = snapshot.firstEventAtEpochMs + ALM_OBSERVATION_PAGE_WINDOW_END_MS;
+          const durations = snapshot.readinessProbes
+              .filter((probe) =>
+                  probe.cause === ALM_OBSERVATION_STORAGE_PROBE_CAUSE && probe.atEpochMs > windowStartEpochMs &&
+                  probe.atEpochMs <= windowEndEpochMs
+              )
+              .map((probe) => probe.durationMs);
+          if (durations.length < ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT) {
+              return { outcome: 'unmeasured', sampleCount: durations.length, regime: 'unclassified' };
+          }
+          const storageProbeMedianMs = toTwoDecimals(computeMedian(durations));
+          return {
+              outcome: 'measured',
+              storageProbeMedianMs,
+              sampleCount: durations.length,
+              regime: resolvePageRegimeName(storageProbeMedianMs)
+          };
+      }
+
+      function resolvePageRegimeName(storageProbeMedianMs: number): ALMObservationRegimeName {
+          if (storageProbeMedianMs < ALM_OBSERVATION_NORMAL_PAGE_MAX_PROBE_MS) {
+              return 'normal';
+          }
+          return storageProbeMedianMs >= ALM_OBSERVATION_SLOW_PAGE_MIN_PROBE_MS ? 'slow' : 'unclassified';
+      }
+      ```
+
+      - `computeALMObservationRegime` (`:125-141`) sets `pageRegime: computePageRegime(input.snapshot)`.
+      - `createUnreadableALMObservationRegime` (`:144-161`) sets
+        `pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' }`.
+      - `toALMObservationRegimeSummary` (`:163-169`) appends
+        ` page=${regime} (${storageProbeMedianMs} ms/probe over ${sampleCount})`, or
+        ` page=unclassified (unmeasured, ${sampleCount} probes)`, through a private
+        `toPageRegimeSummary`.
+
+      Every function stays under 40 lines. If the changed-style gate reports a worsened finding on
+      `compute-alm-observation-regime.ts` (370 lines today), move the page-regime constants,
+      `ALMObservationPageRegime`, `computePageRegime` and `resolvePageRegimeName` into a sibling
+      `compute-alm-observation-page-regime.ts` in this commit. No pin or disposition is added.
+
+      Then read the corpus with the shipped code, one throwaway script in `$TMPDIR`, never committed:
+
+      ```ts
+      // $TMPDIR/read-page-regimes.ts
+      import { readFileSync } from 'node:fs';
+      import { decodeALMObservationSnapshot } from '/Users/knuthelge/ProjectLocker/github/ar-eye-hunter/.claude/worktrees/alm-s2/packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+      import { computeALMObservationRegime } from '/Users/knuthelge/ProjectLocker/github/ar-eye-hunter/.claude/worktrees/alm-s2/packages/shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+
+      for (const file of process.argv.slice(2)) {
+          decodeALMObservationSnapshot(JSON.parse(readFileSync(file, 'utf8'))).fold(
+              (issues) => console.log(file, issues.join('; ')),
+              (snapshot) => {
+                  const regime = computeALMObservationRegime({ snapshot, carrier: 'read', scope: 'read', cellOutcome: 'passed' });
+                  console.log(file, regime.regime, JSON.stringify(regime.pageRegime));
+              }
+          );
+      }
+      ```
+
+      Command: `npx tsx $TMPDIR/read-page-regimes.ts $(find /private/tmp/claude-501/-Users-knuthelge-ProjectLocker-github-ar-eye-hunter/dbbbec19-0da0-4f14-a05d-3a007089fcf4/scratchpad -path '*lane*' -name '*-snapshot.json' -not -path '*/s2-diagnosis/*') $(find /private/tmp/claude-501/-Users-knuthelge-ProjectLocker-github-ar-eye-hunter/dbbbec19-0da0-4f14-a05d-3a007089fcf4/scratchpad/s2-diagnosis/f2c-lane-8fc704552 -name '*-snapshot.json')`,
+      over the diagnosis' scratchpad (`.superpowers/s2a-full-read-diagnosis.md:9`), with `8fc704552`
+      read from its `s2-diagnosis/f2c-lane-8fc704552/` copy. Expected: the corpus table above, with six `normal` and
+      eighteen `slow`. Any cell outside its row stops the step: report it rather than moving a
+      threshold.
+      Command: `npx vitest run packages/tests/shared-test/alm-observation-regime.test.ts`
+- [ ] **Step 3: The artifact document and "Classify before judging".** In `alm-observation-artifact.md`:
+
+      - The job-log example (`:18-22`) gains the `page=` suffix.
+      - "The regime file" (`:42-99`) gains a `pageRegime` bullet. It is the median `durationMs` of the
+        outbound `age-bound` `readiness-probe` events, over both roles, from `ALM_OBSERVATION_WINDOW_MS`
+        to `ALM_OBSERVATION_PAGE_WINDOW_END_MS` after the run's first event. It is `unmeasured` below
+        `ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT` samples. The bullet says why the probe reads the
+        page (a fixed-shape read, so its duration is queueing) and why the window skips start-up.
+      - "Reading a red" (`:101-126`) is rewritten with the page regime in it.
+
+      The rule text:
+
+      > **Classify before judging.** A run is `normal` only when its `regime` and its
+      > `pageRegime.regime` are both `normal`, and `slow` when either is `slow`. The `rtc` cell's two
+      > regimes together are the runner's verdict. A red counts only against a green baseline of the
+      > same carrier and scope whose two regimes match the red's. A red in a slow page regime,
+      > compared against a normal-page baseline, is a measurement of the runner, not a verdict on the
+      > change. That holds even when the outbound `regime` of both runs is `normal`: the page regime
+      > exists because the outbound regime scored `7add928af`'s page `normal`, whose probe took 141–210 ms, beside the RTT-off probe's page at 2–4 ms. An
+      > `unclassified` in either regime leaves the cell unattributed. Re-run it.
+
+      The page constants join the "constants, not tuning knobs" paragraph (`:125-126`), with the
+      corpus table. In `runtime-diagnostic-contract.md` the `readiness-probe` bullet (`:173-182`)
+      gains one sentence: the observation regime reads its `age-bound` probes as the page regime.
+      Command: `npx dprint check packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md`
+- [ ] **Step 4: Commit and push.** Run
+      `npx vitest run packages/tests/shared-test`, `node scripts/check-tests-typecheck.mjs`,
+      `npx tsc -p packages/shared-test/tsconfig.json --noEmit`, and `npx dprint check <touched files>`. Then commit with
+      `git commit -am 'feat(alm): classify the page regime from the storage probe in the observation artifact'`,
+      and push the S2a branch (`claude/alm-s2-design`).
+
 ### Task 6: Re-observe hosted under the regime rule, the PR, and the gates
 
 **Files:** none in production; the lane's artifacts and the pull request.
 
+**Re-read after Tasks 7 and 8 (maintainer ruling, 2026-09-23).** The first pass of Steps 1–3 ran on
+`7add928af` at full scope and was red on all three cells (`.superpowers/s2a-full-read-diagnosis.md`):
+
+- rtc and fallback lost the submission's ACK inside the sender's cancel-hold. Task 7 names that site
+  and fixes it.
+- ws failed `delivery-reload`, whose original was admitted behind an in-flight inbound batch.
+- Every cell ran on a slow page, and the outbound regime scored rtc `normal`. Task 8 classifies the
+  page.
+
+Steps 1–3 are re-run on the head that carries Tasks 7 and 8. Step 2's workflow input has landed
+(`.github/workflows/release-gate.yml:15-19,203`, `.github/workflows/branch-release-gate.yml:114`), so
+only its read re-runs. The repository variable `RALLAR_BLACK_BOX_ALM_SCOPE` stays `full` for that
+read and is cleared after it. The PR body reports each change and the run that carried the read.
+
 - [ ] **Step 1: Push, then classify before judging.** The Release Gate's non-blocking
-      `alm-conformance-observation` job (`.github/workflows/release-gate.yml:191-243`) uploads
-      `alm-conformance-lane-<sha>`. Read `regime` in every `alm-observation/<carrier>-smoke.json`;
-      the rtc cell's regime is the runner's verdict. A red counts only against a green baseline of
-      the same regime, and `unclassified` is no evidence
-      (`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:87-105`).
+      `alm-conformance-observation` job (`.github/workflows/release-gate.yml:196-249`) uploads
+      `alm-conformance-lane-<sha>`. Read `regime` and `pageRegime` in every
+      `alm-observation/<carrier>-<scope>.json`. The rtc cell's two regimes together are the runner's
+      verdict. A red counts only against a green baseline whose two regimes match, and `unclassified`
+      in either is no evidence. That is the "Classify before judging" rule Task 8 Step 3 writes into
+      "Reading a red" (`packages/shared-test/rallar-bb-test/docs/alm-observation-artifact.md:101-126`
+      before Task 8).
 - [ ] **Step 2: The full scope, for `delivery-reload` (ruling R-S2a-2, 2026-09-23).** The Release Gate
       runs the smoke scope only (`full-stack-alm-conformance.spec.ts:53,212`) and `delivery-reload` is
       tagged full (`create-alm-conformance-recipes.ts:192-193`). Give the observation job a scope input
@@ -865,12 +1530,25 @@ the local lane run.
       ceiling, not a harness budget. Command: `npm run test:repo-governance` after the workflow edit.
       Read the full-scope artifact under the same regime rule as Step 1.
 - [ ] **Step 3: The acceptance (D31).** `delivery-lifecycle` (smoke and full) and `delivery-reload`
-      (full) green on all three carriers in a regime with a same-regime green baseline. Record per
-      cell `regime`, `perOperation.medianMs`, and the receiver's `sendControlClaimMedianMs` and
-      `intraBatchWaitMedianMs` beside Task 0's reading and the diagnosis' bands (`send-control`
-      689–1 187 ms green; the 5.9 s intra-batch wait of `f33dd8118 / rtc`). Under shape A the
-      `send-control` median may stay red while the delivery arrives — that is the point (proposal
-      §5). F2c's inbound release median (525–908 ms) and pending share (6–11 %) stay unregressed. A
+      (full) green on all three carriers, in regimes that have a green baseline with the same two
+      regimes. Record per cell:
+
+      - `regime` with `perOperation.medianMs`
+      - `pageRegime.regime` with `storageProbeMedianMs` and `sampleCount`
+      - the receiver's `sendControlClaimMedianMs` and `intraBatchWaitMedianMs`
+
+      Set them beside Task 0's reading and the diagnosis' bands: `send-control` 689–1 187 ms green,
+      and the 5.9 s intra-batch wait of `f33dd8118 / rtc`. A cell whose record lacks either regime is
+      not accepted. **The 2C decision rule (maintainer, 2026-09-23)** applies to the re-read's rtc cell:
+
+      - `regime` and `pageRegime.regime` both `normal`, and the receiver `sendControlClaimMedianMs`
+        above 1 200 ms: execute Task 2C, reporting its file count first as 2C's preface asks.
+      - Both `normal`, and the median at or below 1 200 ms: 2C stays not chosen.
+      - The page regime `slow` or `unclassified`: the cell decides nothing. Rerun once, and if the
+        page is not `normal` again, route to the maintainer.
+
+      Under shape A the `send-control` median may stay red while the delivery arrives — that is the
+      point (proposal §5). F2c's inbound release median (525–908 ms) and pending share (6–11 %) stay unregressed. A
       red with no same-regime green baseline is not a verdict: rerun once; if it reds again, write the
       diagnosis as a session record and route it to the maintainer rather than tuning a budget or a
       threshold. Two iterations before the maintainer is asked again.
@@ -881,8 +1559,9 @@ the local lane run.
       and rollback: no schema-id move and no persisted shape; a revert restores page order and the
       drain-time `superseded`; under 2D a heartbeat is lost while the socket is closed; under 2C the
       RTC rate limiter counts one token per control group. Both bundle figures against their
-      budgets. `npm run pr:delivery -- status` decides the next action; `ready` and auto-merge are
-      not used.
+      budgets. The body also records Task 7's site reading, and lists Task 8's page constants (20 and
+      50 ms per probe, 10 samples, the 60 s window end) as maintainer-visible.
+      `npm run pr:delivery -- status` decides the next action; `ready` and auto-merge are not used.
 - [ ] **Step 5: The full local list on the final tree.** `npm run test:unit`; `npm run typecheck`;
       `deno task check` in `apps/api-v1`, `apps/rallar-black-box-control-server` and
       `apps/relic-hunter-server-v1`; `npm run test:deno` (not optional: Task 3 widens a shared
@@ -967,6 +1646,25 @@ the local lane run.
   final two sentences, on setting and clearing the variable and recording which run carried the full
   read.
 
+- **Maintainer ruling (2026-09-23, the re-plan after the full-scope read).** Decided: add Task 7 and
+  Task 8, then re-run Task 6 Steps 1–3.
+  - Task 7, the ACK admitted under a hold: a deterministic RED test over both carriers' holds, then
+    the fix at the control-admission site it names.
+  - Task 8, the storage-probe median as a page regime in the observation artifact, so that slow pages
+    are classified and the same-regime rule is applied honestly.
+  - Task 6 Steps 1–3 re-run on the head that carries them, with `RALLAR_BLACK_BOX_ALM_SCOPE` kept
+    `full` for that read and cleared after it.
+  - Task 2C only if that re-read, on a normal page regime, still shows the receiver `send-control`
+    median above 1 200 ms.
+
+  Why: the full-scope read of `7add928af` (`.superpowers/s2a-full-read-diagnosis.md`) showed two
+  things. The rtc and fallback reds are an ACK lost inside the sender's cancel-hold, which Task 4's
+  reordering exposed. The outbound regime also scored a slow page `normal`: rtc 16.61 ms/op, with an
+  `age-bound` probe of 141–210 ms against P's 2–4 ms. So P's large improvement was mostly a fast-page
+  draw, not the lever. Changed in the plan: Tasks 7 and 8 added before Task 6; Task 6's preface and
+  Steps 1 and 3; Task 2's 2C sentences; the regime-constants bullet of Global Constraints; the
+  Self-review.
+
 ## Not in this slice
 
 - **S2b, one identity** (D20) and **S2c, receipted audiences** (D21–D26, D29). S2a touches no key
@@ -992,18 +1690,38 @@ the local lane run.
   no budget changed → Global Constraints and Task 4 Step 2; no timer, queue or registry → Task 1's
   sort, 2C's array-identity round, Task 3's synchronous emission; no cognitive-load pin → Task 6
   Step 5; D18 before merge → Task 0 Steps 7–9.
+- The re-plan (2026-09-23) and its coverage:
+  - The hold-window ACK loss is covered by Task 7. Steps 1–2 give the one-variable RED over both
+    carriers' holds and a witness that names the stop site as a value. Step 3 fixes the site from a
+    written table in which every row keeps an existing result arm. Step 4 keeps the operation-count
+    pins and both carriers' hold and admission suites.
+  - The page speed is covered by Task 8. The constants are derived from 24 hosted cells, the window
+    skips start-up for a stated reason, and the "Classify before judging" rule makes the rtc cell's
+    two regimes the verdict.
+  - The re-read and the 2C rule are covered by Task 6's preface and Step 3.
+  - No harness budget, lane constant or outbound threshold moves. Task 7 adds no timer, queue or
+    registry: its settle is a count of turns, and its C3 fix moves an await rather than adding one.
 - Type consistency: `ALWorkUnreservedDue`, `toALInboundWorkEffectId`, `ALInboundDeferredEffect`,
   `ALMObservationInboundClaim`, `ALMObservationInboundClaimWaits`, `readALInboundRowEligibility`
   and the fixture's `acknowledged` are defined in Task 0 before Tasks 1 and 5 use them;
   `computeALInboundClaimOrder` and `InboundTestEffectCall` in Task 1 before 2C relies on the order;
   the `superseded` settlement arm in Task 3 before Task 4 relies on `observe-superseded-3` resolving
-  locally. No type is introduced twice and no alias renames one.
+  locally. `HoldSender`, `ControlAdmissionStop` and `ControlAdmissionWitness` are test-only and are
+  defined in Task 7's fixture before its test uses them. `ALMObservationReadinessProbe` (snapshot) is
+  defined before `ALMObservationPageRegime` (regime) reads it, and the page regime reuses
+  `ALMObservationRegimeName` rather than naming a second vocabulary. No type is introduced twice and
+  no alias renames one.
 - File size: every added function is under 40 lines, and Task 0 Step 2 splits the 49-line
   `readALInboundPageEligibility` rather than growing it. Near the 1 200-line backstop:
   `al-work-handler.test.ts` (1 186; two literals gain three fields, no test added),
   `al-inbound-effect-worker-lifecycle.test.ts` (1 156; untouched — Task 1's test lives in the
   259-line selection suite) and `create-alm-conformance-recipes.ts` (1 064; Task 4 moves commands
-  and adds one short function).
+  and adds one short function). Task 8 widens `compute-alm-observation-regime.ts` (370 lines; about
+  +45, with a sibling-file split named in Step 2 if the changed-style gate objects),
+  `alm-observation-snapshot.ts` (351; about +25) and `alm-observation-regime.test.ts` (662; about
+  +90). Task 7's fixture is a new file of about 200 lines whose functions stay under 40 lines.
 - Placeholder scan: every step names files with line ranges, the symbol, the test code or exact
-  edit, and the command. The one branch point, 2C or 2D, is decided by a numeric rule (Task 0
-  Step 9), and both branches are written out.
+  edit, and the command. The branch points each have a written rule:
+  - 2C or 2D is decided by Task 0 Step 9, and 2C is decided again by Task 6 Step 3's re-read rule.
+  - Task 7's fix is picked from the site table at Step 3. Each site has a written fix or a written
+    stop-and-route, and the all-GREEN escalation is written out.
