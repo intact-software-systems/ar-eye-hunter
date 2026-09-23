@@ -501,9 +501,10 @@ resolves before any drain-shape change is trusted (diagnosis §6).
    `batchStarted − dueAt` dominates (round scheduling, the ranked alternative).
 2. Dispatch-first ordering inside the batch (shape A, D19): `dispatch-local` effects are claimed
    ahead of `send-control` effects in the same batch's reservation list, so a caller's delivery
-   latency stops including a control commit it never depended on; C (keep RTT probes off the
-   contended outbound commit lock) or D (wake the next round on admission rather than poll) is
-   layered on top per Task 0's reading, never in place of it.
+   latency stops including a control commit it never depended on; C (one outbound commit per batch
+   for that batch's control sends) or D (RTT probe commits kept off the durable AL commit path and
+   its shared lock) is layered on top per Task 0's reading, never in place of it; a reading that
+   points at round scheduling instead goes back to the maintainer.
 3. `superseded` settles synchronously at the replacement's admission (D27), instead of waiting for
    the outbound drain to next attempt the superseded send — the change that fixes the diagnosis's
    C-class failure at `observe-superseded-3` directly.
