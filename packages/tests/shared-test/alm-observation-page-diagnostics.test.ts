@@ -3,14 +3,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { decodeALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
+import {
+    decodeALMObservationPageDiagnosticsFile,
+    type ALMObservationPageDiagnosticsFile
+} from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');
 const SAMPLE_FIXTURE = 'alm-observation-page-diagnostics-sample.json';
 
-function readFixture(fixtureName: string): unknown {
-    return JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'));
+function readPageDiagnosticsFixture(fixtureName: string): ALMObservationPageDiagnosticsFile {
+    const value: unknown = JSON.parse(readFileSync(path.join(fixtureRoot, fixtureName), 'utf8'));
+    return decodeALMObservationPageDiagnosticsFile(value).fold(
+        (issues) => {
+            throw new Error(`${fixtureName} did not decode: ${issues.join('; ')}`);
+        },
+        (file) => file
+    );
 }
 
 describe('decodeALMObservationPageDiagnosticsFile', () => {
@@ -28,17 +37,16 @@ describe('decodeALMObservationPageDiagnosticsFile', () => {
     });
 
     it('decodes a fixture with a few records and skips the one missing an agent id', () => {
-        const decoded = decodeALMObservationPageDiagnosticsFile(readFixture(SAMPLE_FIXTURE));
+        const decoded = readPageDiagnosticsFixture(SAMPLE_FIXTURE);
 
-        expect(decoded.left).toBeUndefined();
-        expect(decoded.right?.droppedCount).toBe(2);
-        expect(decoded.right?.records).toHaveLength(3);
-        expect(decoded.right?.records.map((record) => record.kind)).toEqual([
+        expect(decoded.droppedCount).toBe(2);
+        expect(decoded.records).toHaveLength(3);
+        expect(decoded.records.map((record) => record.kind)).toEqual([
             'console-error',
             'pageerror',
             'console-warning'
         ]);
-        expect(decoded.right?.records[1]).toEqual({
+        expect(decoded.records[1]).toEqual({
             agentId: 'alm-receiver-w0-fixture',
             role: 'receiver',
             atMs: 340,
