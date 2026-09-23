@@ -121,6 +121,13 @@ transport action and does not confirm the logical audience.
 | `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached message (by ordering track when the hint names missing sequences), applies repair policy, and commits a fresh dispatch through dispatch admission.                                                          | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                        |
 | Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.        | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim. |
 
+An RTT heartbeat is not one of these entries.
+[`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it
+straight to an open socket -- the same bytes `enqueueOutboxIfAbsent` sends today -- with no
+admission read, bundle, work row, or retry, and it never takes the sender/browser lock the
+table's entries share. A closed socket answers `'socket-closed'` rather than throwing; a lost
+heartbeat costs nothing because the next one, latest-value telemetry, simply replaces it.
+
 ## Read and failure boundaries
 
 [`al-outbound-admission-validation.ts`](./admission/al-outbound-admission-validation.ts)
@@ -176,8 +183,22 @@ current reservation's attempt, preserving earlier failed attempts. It records ne
 adaptive success nor adaptive failure. Real attempt failures retain their normal
 retry budget. Readiness rechecks are bounded by the original message deadline, and
 settlement at or after that deadline completes physical work without sending or creating
-an acknowledgement. Cancellation and supersedence also end the attempt. Submission
+an acknowledgement. Cancellation ends the attempt directly. Submission
 remains separate from receiver acknowledgement and application completion.
+
+A replacement's own admission commit states `superseded` for every predecessor it newly
+marks replaced -- one `ALDeliverySettlement` per predecessor, from
+[`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)'s
+`emitSupersededSettlements`, before that commit call returns to its caller. Only the commit
+that moves the key's latest-supersedence pointer states it; a later commit of the same
+message, or a predecessor the admission observed already replaced, states nothing again. By
+the time a superseded predecessor's own queued work next runs, the lifecycle this settlement
+named is already terminal, so its own attempt-time and dequeue-time supersedence checks
+(`admissionStore.isMessageSuperseded`, read fresh in both `writeAttemptedSend` and
+`readDequeuedAdmissionOutcome`) add nothing new: dequeue completes the claim without sending
+and without a settlement of its own, and a `send-prepared` attempt still states its own
+`attempt-settled` (`outcome: 'superseded'`) but only as late evidence on a lifecycle a terminal
+settlement already closed.
 
 The RTC Promise executor captures its resolver synchronously before `sendJson`
 registers the callback. Native completion invokes it after queue mutation. This is

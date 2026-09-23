@@ -12,6 +12,11 @@ on:
         required: false
         default: ''
         type: string
+      alm_scope:
+        description: 'ALM conformance scope the observation job runs: smoke or full'
+        required: false
+        default: 'smoke'
+        type: string
 
 permissions:
   contents: read
@@ -195,6 +200,7 @@ jobs:
     continue-on-error: true
     env:
       RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
+      RALLAR_BLACK_BOX_ALM_SCOPE: ${{ inputs.alm_scope }}
 
     steps:
       - name: Checkout repo
