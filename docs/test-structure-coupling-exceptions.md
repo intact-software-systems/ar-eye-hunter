@@ -110,6 +110,21 @@ moved or changed test.
       }
     },
     {
+      "id": "alm-ingress-wake-reaches-followup-batch",
+      "domain": "ALM inbound work handler wake-on-admission",
+      "owner": "Rallar shared maintainers",
+      "summary": "A committed ingress admission reaches the work handler's existing engine wake even while a batch it started is still running, and the newly admitted row is drained by that batch's own follow-up round rather than a later engine tick (S2a ruling R-S2a-6).",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running",
+      "coverageRelation": "The test holds a first admission's dispatch open behind a gate, admits a second message while that batch is still running, counts the queueEngine.wake spy across both admissions, then releases the gate and proves the second message dispatches without the test ever starting or ticking the engine itself.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "InboxOutboxEngine.wake called by ALWorkHandler.committed()",
+        "observableEffect": "Each of the two admissions' own commits calls wake exactly once, including the admission that lands while a batch is already running.",
+        "requiredConstraint": "wake must be reached from every ingress admission's own commit, not only from a batch's own completion, or a commit landing mid-batch could go unnoticed until an unrelated engine tick.",
+        "failureRationale": "Without the per-admission wake count, a regression that dropped the mid-batch wake call would still let the second message dispatch eventually through the follow-up batch's own completion wake, hiding the exact regression this pin exists to catch."
+      }
+    },
+    {
       "id": "alm-invalid-queue-candidate-no-transaction",
       "domain": "ALM atomic IndexedDB admission",
       "owner": "Rallar shared maintainers",
@@ -5979,6 +5994,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The one outer commit invocation forbids an inner optimistic retry. The same test separately proves durable pending ownership, restart replay and final delivery; the bound competing write is fixture input, not another runtime call.",
       "semanticCoverage": "packages/tests/shared/al-inbound-message-runtime.test.ts#retains a stale optimistic write for fresh admission after runtime restart"
+    },
+    {
+      "id": "test-structure-coupling-0942a87639fec715",
+      "path": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-ingress-wake-reaches-followup-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The count-of-one after the held admission's own commit is the only witness that admitting inbound work reaches the engine wake through ALWorkHandler.committed(), not merely through the batch it starts.",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running"
+    },
+    {
+      "id": "test-structure-coupling-425d655aa28cc0d0",
+      "path": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "alm-ingress-wake-reaches-followup-batch",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared maintainers",
+      "rationale": "The count-of-two after a second admission lands while the first batch is still running its held claim proves that admission's own commit reaches the same wake too, even though the running batch cannot claim the new row until its own follow-up round.",
+      "semanticCoverage": "packages/tests/shared/alm/inbound/al-inbound-work-selection.test.ts#pin: a commit reaches the engine wake, and lands in the follow-up batch of one already running"
     },
     {
       "id": "test-structure-coupling-3cf15c4dbe54dee4",
