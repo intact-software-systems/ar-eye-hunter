@@ -562,17 +562,18 @@ describe('ALInboundMessageRuntime durable effects', () => {
         vi.useFakeTimers({ toFake: ['Date'] });
 
         let shouldFailFirstNack = true;
+        const attemptedControls: string[][] = [];
         const sentControls: ALMessage[] = [];
         const { runtime } = createInboundHarness(
             createDefaultInMemoryALInboundRuntimeStores(),
             {
-                sendControlMessage: async (msg) => {
-                    const parsed = parseALControlMessage(msg);
-                    if (parsed?.type === 'nack' && shouldFailFirstNack) {
+                sendControlMessages: async (msgs) => {
+                    attemptedControls.push(msgs.map((msg) => msg.payload.typeId).sort());
+                    if (shouldFailFirstNack && msgs.some((msg) => parseALControlMessage(msg)?.type === 'nack')) {
                         shouldFailFirstNack = false;
                         throw new Error('temporary nack failure');
                     }
-                    sentControls.push(msg);
+                    sentControls.push(...msgs);
                 }
             }
         );
@@ -582,9 +583,9 @@ describe('ALInboundMessageRuntime durable effects', () => {
             { kind: 'ws-client', peerId: 'peer-1' }
         );
 
-        await expect.poll(() => sentControls.map((msg) => msg.payload.typeId)).toEqual([
-            'al.control.repair.v1'
-        ]);
+        // One batch sends both controls together, so the failure the send raised fails both claims.
+        await expect.poll(() => attemptedControls).toEqual([['al.control.nack.v1', 'al.control.repair.v1']]);
+        expect(sentControls).toEqual([]);
 
         vi.setSystemTime(Date.now() + 100);
 
@@ -728,7 +729,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const runtime1 = createInboundHarness(
             stores,
             {
-                sendControlMessage: async () => {
+                sendControlMessages: async () => {
                     throw new Error('offline');
                 }
             }
@@ -761,7 +762,7 @@ describe('ALInboundMessageRuntime durable effects', () => {
         const runtime1 = createInboundHarness(
             stores,
             {
-                sendControlMessage: async () => {
+                sendControlMessages: async () => {
                     throw new Error('upstream offline');
                 },
                 forwardMessage: async (msg) => {
@@ -812,7 +813,7 @@ interface InboundHarnessOverrides {
         entry: ResourceEntry,
         plan?: ALMessageHandlingPlan
     ) => Promise<void>;
-    readonly sendControlMessage?: (msg: ALMessage) => Promise<void>;
+    readonly sendControlMessages?: (msgs: readonly ALMessage[]) => Promise<void>;
     readonly forwardMessage?: (
         msg: ALMessage,
         fromPeerId: string,
@@ -858,8 +859,8 @@ function createInboundHarness(
         ) => {
             dispatchedTexts.push(toDeliveredMessageText(entry));
         }),
-        sendControlMessage: overrides.sendControlMessage ?? (async (msg) => {
-            controlMessages.push(msg);
+        sendControlMessages: overrides.sendControlMessages ?? (async (msgs) => {
+            controlMessages.push(...msgs);
         }),
         onControlMessage: async (_msg, acceptance) => {
             controlAcceptances.push(acceptance);

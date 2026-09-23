@@ -262,8 +262,8 @@ function createRuntime(stores: ALInboundRuntimeStores, received: string[], contr
         dispatchInboxEntry: async (entry) => {
             received.push(decodePersistedALMessage(entry.resource).route.resourceId);
         },
-        sendControlMessage: async (message) => {
-            controls.push(message);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });

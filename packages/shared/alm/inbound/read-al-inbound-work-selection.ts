@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ResourceInboxWorkPage } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
@@ -26,6 +27,12 @@ const SCAN_START = { cursor: null, statusIndex: 0, nextReadyAtMs: undefined } as
 
 export const AL_INBOUND_WORK_PAGE_SIZE = 16;
 
+/** One `send-control` row the current selection reserved, with the envelope its eligibility read decoded. */
+export interface ALInboundClaimedControlSend {
+    readonly effectId: string;
+    readonly msg: ALMessage;
+}
+
 interface ALInboundWorkScan {
     readonly cursor: ResourceInboxWorkPage.Cursor | null;
     readonly statusIndex: number;
@@ -53,6 +60,8 @@ interface ALInboundWorkSelection {
     readonly claimableEffects: ReadonlyMap<ResourceEntryKeyString, ALInboundDeferredEffect>;
     /** The durable kind the read decoded for each claimable row, by queue slot: the batch's own run-order key. */
     readonly effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>;
+    /** The decoded envelope of every claimable `send-control` row, by queue slot. */
+    readonly controlSends: ReadonlyMap<ResourceEntryKeyString, ALInboundClaimedControlSend>;
     readonly scan: ALInboundWorkScan;
     /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
     readonly readyNow: boolean;
@@ -76,6 +85,7 @@ interface ALInboundClaimedSelection {
     readonly selection: ALWorkReadySelection;
     readonly observations: ReadonlyMap<string, ALInboundDeliveryObservation>;
     readonly unreservedDue: readonly ALInboundDeferredEffect[];
+    readonly controlSends: readonly ALInboundClaimedControlSend[];
 }
 
 /** One row's eligibility surface, under the queue slot it was read for, so a claim can be matched to it. */
@@ -94,6 +104,7 @@ interface ALInboundPageEligibility extends
         | 'deferred'
         | 'claimableEffects'
         | 'effectKinds'
+        | 'controlSends'
     > {
     /** The earliest time a row this page passed over becomes claimable. */
     readonly readyAtMs: number | undefined;
@@ -143,6 +154,11 @@ export interface ALInboundWorkSelector {
      * appear here.
      */
     getUnreservedDue(): readonly ALInboundDeferredEffect[];
+    /**
+     * The `send-control` rows the selection of this batch reserved, in run order. Every selection returns a
+     * fresh array, so its identity names the batch; a restarted scan replaces it with an empty one.
+     */
+    getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
     /** A commit writes new work behind the rotation; the next page read starts over. */
     restartScan(): void;
 }
@@ -174,6 +190,7 @@ async function readALInboundWorkSelection(
         deferred: eligibility.deferred,
         claimableEffects: eligibility.claimableEffects,
         effectKinds: eligibility.effectKinds,
+        controlSends: eligibility.controlSends,
         readyNow: claimableNow || continueScan,
         scan: {
             cursor: page.nextCursor,
@@ -201,6 +218,7 @@ async function readALInboundPageEligibility(
         deferred: [],
         claimableEffects: new Map(),
         effectKinds: new Map(),
+        controlSends: new Map(),
         readyAtMs: undefined
     };
     for (const entry of entries) {
@@ -240,14 +258,18 @@ function computeALInboundPageEligibilityWithRow(
         return { ...page, deferred: [...page.deferred, due] };
     }
     const key = toKeyAsString(entry.key);
+    const payload = row.effect.payload;
     return {
         ...page,
         claimable: [...page.claimable, entry],
         claimableEffects: new Map(page.claimableEffects).set(key, due),
-        effectKinds: new Map(page.effectKinds).set(key, row.effect.payload.kind),
+        effectKinds: new Map(page.effectKinds).set(key, payload.kind),
         observations: row.observed === undefined
             ? page.observations
-            : new Map(page.observations).set(row.effect.effectId, { key, observed: row.observed })
+            : new Map(page.observations).set(row.effect.effectId, { key, observed: row.observed }),
+        controlSends: payload.kind === 'send-control'
+            ? new Map(page.controlSends).set(key, { effectId: row.effect.effectId, msg: payload.msg })
+            : page.controlSends
     };
 }
 
@@ -292,19 +314,23 @@ export function createALInboundWorkSelector(
     const page = createALInboundRotationPage(dependencies);
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
     let unreservedDue: readonly ALInboundDeferredEffect[] = [];
+    let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
         readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
         selectReady: async (port, pageSize) => {
             const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
             claimedObservations = claimed.observations;
             unreservedDue = claimed.unreservedDue;
+            claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
         getUnreservedDue: () => unreservedDue,
+        getClaimedControlSends: () => claimedControlSends,
         restartScan: () => {
             page.restartScan();
             claimedObservations = new Map();
+            claimedControlSends = [];
         }
     };
 }
@@ -354,9 +380,10 @@ async function readALInboundClaimedSelection(
     const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
     const claimedAtMs = nowMs();
     const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
+    const ordered = computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds);
     return {
         selection: {
-            claims: computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds),
+            claims: ordered,
             nextReadyAtMs: selection.nextReadyAtMs,
             selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
             claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
@@ -365,7 +392,8 @@ async function readALInboundClaimedSelection(
             )
         },
         observations: toClaimedALInboundObservations(selection.observations, claimedKeys),
-        unreservedDue: [...selection.deferred, ...toUnreservedClaimableDue(selection, claimedKeys)]
+        unreservedDue: [...selection.deferred, ...toUnreservedClaimableDue(selection, claimedKeys)],
+        controlSends: ordered.flatMap((claim) => selection.controlSends.get(toKeyAsString(claim.entry.key)) ?? [])
     };
 }
 

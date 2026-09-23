@@ -315,8 +315,8 @@ function createInboundTestRuntime(
         dispatchInboxEntry: async (entry) => {
             deliveredMessageIds.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async (msg) => {
-            controls.push(msg);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });

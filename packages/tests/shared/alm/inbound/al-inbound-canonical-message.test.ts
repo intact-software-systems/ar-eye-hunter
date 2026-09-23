@@ -286,7 +286,7 @@ function createCanonicalRuntime(): CanonicalRuntimeFixture {
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {},
+        sendControlMessages: async () => {},
         forwardMessage: async (outgoing) => {
             forwarded.push(outgoing.id.msgId);
         },

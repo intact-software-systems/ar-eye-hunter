@@ -56,11 +56,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
 
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The read-side expiry eviction that no longer throws a conflict measures 271.0087890625 KiB
-        // with this exact harness (69 minified bytes smaller than the 270.8486328125 KiB it replaced,
-        // which brotli compresses less well). The preauthorized next whole-KiB ceiling is 272; all
-        // operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(272);
+        // Committing the control sends of one inbound batch as one outbound admission measures
+        // 272.267578125 KiB with this exact harness. The preauthorized next whole-KiB ceiling is 273;
+        // all operator dependency exclusions above remain enforced.
+        expect(result.brotliKiB).toBeLessThan(273);
     });
 });
 

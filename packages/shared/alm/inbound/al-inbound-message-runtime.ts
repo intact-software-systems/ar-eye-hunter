@@ -3,6 +3,7 @@ import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
@@ -40,6 +41,7 @@ import {
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
+    type ALInboundClaimedControlSend,
     type ALInboundWorkSelector
 } from './read-al-inbound-work-selection.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
@@ -91,7 +93,8 @@ export namespace ALInboundMessageRuntime {
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the supplied dispatcher is ready for every local message. */
         readonly canDispatchMessage?: (msg: ALMessage) => boolean;
-        readonly sendControlMessage: (msg: ALMessage) => Promise<void>;
+        /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
+        readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
         readonly forwardMessage?: (
             msg: ALMessage,
@@ -128,6 +131,7 @@ export class ALInboundMessageRuntime {
     private latestDeferred: readonly ALInboundDeferredEffect[] = [];
     /** The effects the running batch has started, in run order: only this owner holds them decoded. */
     private batchRunOrder: ALInboundBatchRunOrder | undefined;
+    private controlRound: ALInboundControlSendRound | undefined;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -452,10 +456,44 @@ export class ALInboundMessageRuntime {
             }
             return replayed.outcome;
         }
+        if (payload.kind === 'send-control') {
+            return await this.sendControlInRound(effect, payload.msg);
+        }
         return {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
     }
+
+    /**
+     * The first control claim of a batch sends every control message that batch reserved, and the
+     * rest await that one send. The round is the array the selection returned, so a retried row in a later
+     * batch never joins a finished round, and a claim a restarted scan left out of the array sends
+     * alone: the outbound admission is idempotent, so a message already in the round admits once.
+     */
+    private async sendControlInRound(effect: ALPersistedInboundEffect, msg: ALMessage): Promise<ALWorkOutcome> {
+        if (this.disposed) {
+            return { status: 'retry' };
+        }
+        if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
+            throw new NonRetryableException('Inbound work expired before delivery');
+        }
+        const sends = this.workSelector.getClaimedControlSends();
+        if (!sends.some((send) => send.effectId === effect.effectId)) {
+            await this.dependencies.sendControlMessages([msg]);
+            return { status: 'completed' };
+        }
+        if (this.controlRound?.sends !== sends) {
+            this.controlRound = { sends, sent: this.dependencies.sendControlMessages(sends.map((send) => send.msg)) };
+        }
+        await this.controlRound.sent;
+        return { status: 'completed' };
+    }
+}
+
+/** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
+interface ALInboundControlSendRound {
+    readonly sends: readonly ALInboundClaimedControlSend[];
+    readonly sent: Promise<void>;
 }
 
 /** One settled claim's measurements, so the event that reports them is built from one input. */

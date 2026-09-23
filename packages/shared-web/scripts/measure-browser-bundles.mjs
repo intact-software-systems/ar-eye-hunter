@@ -28,12 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // A superseded send settled at its replacement's admission measures 213.04296875 KiB. The
-        // maintainer-approved next whole-KiB ceiling is 214.
+        // Committing the control sends of one inbound batch as one outbound admission measures
+        // 214.2705078125 KiB. The maintainer-approved next whole-KiB ceiling is 215.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 214
+        brotliBudgetKiB: 215
     },
     {
         label: 'browser/rallar-core.ts',

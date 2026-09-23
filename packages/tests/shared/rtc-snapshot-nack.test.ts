@@ -133,8 +133,8 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async (control) => {
-            controls.push(control);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });

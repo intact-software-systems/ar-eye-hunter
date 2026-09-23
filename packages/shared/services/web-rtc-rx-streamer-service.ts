@@ -122,8 +122,8 @@ export class WebRtcRxStreamerService {
                 dispatchInboxEntry: async (entry, plan) => {
                     return await this.dispatchInboxEntry(entry, plan);
                 },
-                sendControlMessage: async (msg) => {
-                    await this.multicast.enqueueIfAbsent(msg);
+                sendControlMessages: async (msgs) => {
+                    await this.multicast.enqueueAllIfAbsent(msgs);
                 },
                 onControlMessage: async (msg) => {
                     await this.multicast.acceptControlMessage(msg);

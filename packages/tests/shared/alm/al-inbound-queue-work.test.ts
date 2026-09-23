@@ -54,7 +54,7 @@ it('terminalizes a malformed reservation without starving independent timeout re
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {},
+        sendControlMessages: async () => {},
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
@@ -117,7 +117,7 @@ it('retries durable local delivery after restart with a single admission work ow
                     throw new Error('Application temporarily unavailable');
                 }
             },
-            sendControlMessage: async () => {},
+            sendControlMessages: async () => {},
             diagnostics: undefined
         });
     const first = createRuntime();
@@ -177,7 +177,7 @@ it.each(['completed', 'retry', 'non-retryable'] as const)(
                         throw new Error('Application temporarily unavailable');
                     }
                 },
-                sendControlMessage: async () => {},
+                sendControlMessages: async () => {},
                 diagnostics: undefined
             });
         const initial = createRuntime();
@@ -246,7 +246,7 @@ it.each([
         forwardMessage: async (incoming) => {
             deliveries.push(`forward:${incoming.id.msgId}`);
         },
-        sendControlMessage: async () => {},
+        sendControlMessages: async () => {},
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
@@ -296,7 +296,7 @@ it('retains predecessor completion through the longest admitted deadline across 
             dispatchInboxEntry: async (entry) => {
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async () => {},
+            sendControlMessages: async () => {},
             diagnostics: undefined
         });
     const initial = createRuntime();
@@ -354,8 +354,8 @@ it.each(['before-delivery', 'during-delivery'] as const)('does not reconstruct l
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             await backend.write(async (tx) => await tx.remove(progressKey));
         },
-        sendControlMessage: async (control) => {
-            controls.push(control);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });
@@ -429,7 +429,7 @@ it.each(['volatile', 'local-inbox'] as const)('keeps one buffered work owner acr
             }
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {},
+        sendControlMessages: async () => {},
         diagnostics: undefined
     });
     onTestFinished(() => runtime.dispose());
@@ -499,8 +499,8 @@ it.each(['FAILED', 'NON_RETRYABLE', 'expired', 'missing', 'malformed'] as const)
                 }
                 delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
             },
-            sendControlMessage: async (control) => {
-                controls.push(control);
+            sendControlMessages: async (messages) => {
+                controls.push(...messages);
             },
             diagnostics: undefined
         });
@@ -589,7 +589,7 @@ it('keeps waiting ordered work unclaimed and drains all 256 messages after resta
                 }
                 delivered.push(decodePersistedALMessage(entry.resource).ordering!.seq!);
             },
-            sendControlMessage: async () => {},
+            sendControlMessages: async () => {},
             diagnostics: undefined
         });
         onTestFinished(() => runtime.dispose());

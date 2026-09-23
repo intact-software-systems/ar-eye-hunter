@@ -35,7 +35,6 @@ export function createInboundTestDispatch(
         dispatchInboxEntry: async (entry) => {
             dispatched.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async () => {},
         clock: { nowMs },
         effectPreparation: INBOUND_TEST_EFFECT_PREPARATION
     });

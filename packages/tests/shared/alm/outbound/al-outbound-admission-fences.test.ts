@@ -4,10 +4,14 @@ import {
     describe,
     expect,
     it,
+    onTestFinished,
     vi
 } from 'vitest';
 
-import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
+import {
+    createTestALOutboundControlAdmission,
+    createTestALOutboundWorkPort
+} from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     newALAckControlMessage,
@@ -38,6 +42,7 @@ import {
     captureALOutboundCreationExpiry,
     toALOutboundMessageReference
 } from '@shared/alm/outbound/al-outbound-canonical-message.ts';
+import { ALOutboundDispatchAdmission } from '@shared/alm/outbound/al-outbound-dispatch-admission.ts';
 import { computeALOutboundWorkEntry } from '@shared/alm/outbound/al-outbound-work-entry.ts';
 import { computeALOutboundDispatch } from '@shared/alm/outbound/compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmission } from '@shared/alm/outbound/control/al-outbound-control-admission.ts';
@@ -45,6 +50,7 @@ import { toALOutboundEffectId } from '@shared/alm/outbound/to-al-outbound-effect
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { readIndexedDbRequest } from '@shared/persistence/indexed-db-request.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
 import { PSqlAdmissionWorkBackend } from '@shared-server/al-runtime/postgres/p-sql-admission-work-backend.ts';
 
@@ -204,6 +210,28 @@ describe.each(['memory', 'indexeddb', 'pglite'] as const)('outbound admission fe
 
         expect(await fixture.readAdmissionState()).toBe(before);
     });
+
+    it('commits each message alone when the sender version moves between a group\'s reads and its write', async () => {
+        const fixture = await createFenceFixture(storage);
+        const admission = createFenceDispatchAdmission(fixture);
+        const commitBundles = fixture.store.commitBundles.bind(fixture.store);
+        const groupCommit = vi.spyOn(fixture.store, 'commitBundles').mockImplementationOnce(async (bundles) => {
+            // Another send of the same sender commits after the group read its version.
+            const interleaved = await computeOutboundTestAdmission(fixture.store, createOutboundMessage('interleaved'));
+            expect(await commitBundles([interleaved])).toBe('committed');
+            return await commitBundles(bundles);
+        });
+
+        const results = await admission.commitAll(
+            ['group-first', 'group-second'].map((resourceId) => toFenceSendDispatch(createOutboundMessage(resourceId)))
+        );
+
+        expect(await groupCommit.mock.results[0]?.value).toBe('conflict');
+        expect(results.map((result) => result.computed.verdict.kind)).toEqual(['admitted', 'admitted']);
+        for (const result of results) {
+            expect(await fixture.store.hasSentMessageAdmission(result.computed.msg!.id.msgId)).toBe(true);
+        }
+    });
 });
 
 async function createFenceFixture(storage: FenceStorage): Promise<FenceFixture> {
@@ -321,6 +349,42 @@ function toDeliveredAck(message: ALMessage): ALMessage {
         status: 'delivered',
         observedAtEpochMs: Date.now()
     });
+}
+
+/** The dispatch admission alone: the reads, fences and fallback of a group, without the work engine of an owner. */
+function createFenceDispatchAdmission(fixture: FenceFixture): ALOutboundDispatchAdmission<OutboundTestPayload> {
+    const admission = new ALOutboundDispatchAdmission<OutboundTestPayload>({
+        admissionStore: fixture.store,
+        workPort: createTestALOutboundWorkPort({
+            admissionStore: fixture.store,
+            workQueue: fixture.backend.workQueue,
+            nowMs: Date.now
+        }),
+        toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
+        decodePreparedMessage: decodeOutboundTestPayload,
+        clock: { nowMs: Date.now },
+        browserLocks: undefined,
+        diagnostics: undefined,
+        settlements: () => {}
+    });
+    onTestFinished(() => admission.dispose());
+    return admission;
+}
+
+function toFenceSendDispatch(msg: ALMessage): ALOutboundDispatchAdmission.Input<OutboundTestPayload> {
+    return {
+        msg,
+        planner: (planned) => ({
+            msg: planned,
+            dropReasonCode: undefined,
+            persist: true,
+            preparedMessages: [{ text: planned.id.msgId }]
+        }),
+        intent: 'enqueue',
+        phase: 'immediate',
+        origin: 'send',
+        options: { explicitPlan: false }
+    };
 }
 
 function createFenceControlAdmission(fixture: FenceFixture): ALOutboundControlAdmission<OutboundTestPayload> {

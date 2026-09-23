@@ -329,8 +329,8 @@ function runtimeDependencies(stores: ALInboundRuntimeStores, delivered: ALMessag
         dispatchInboxEntry: async (entry: ResourceEntry) => {
             delivered.push(decodePersistedALMessage(entry.resource));
         },
-        sendControlMessage: async (msg) => {
-            controls.push(msg);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     };

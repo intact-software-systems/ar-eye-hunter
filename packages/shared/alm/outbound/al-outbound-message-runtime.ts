@@ -463,13 +463,32 @@ export class ALOutboundMessageRuntime<TPrepared> {
             origin: 'send',
             options: { explicitPlan: dispatchPlan !== undefined }
         });
-        return {
-            verdict: computed.verdict,
-            message: computed.msg ?? msg,
-            entry: computed.entries[0],
-            entries: computed.entries,
-            reason: computed.reason
-        };
+        return ALOutboundMessageRuntime.toEnqueueResult(computed, msg);
+    }
+
+    /** The messages of one sender admitted as one commit, each planned as `enqueueIfAbsent` plans it; one result per message, in order. */
+    async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
+        if (this.disposed) {
+            return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
+        }
+
+        await this.ready();
+        if (this.disposed) {
+            return msgs.map((msg) => ALOutboundMessageRuntime.toDisposedEnqueueResult(msg));
+        }
+
+        const results = await this.dispatchAdmission.commitAll(msgs.map((msg) => ({
+            msg,
+            planner: this.dependencies.planOutgoingMessage,
+            intent: 'enqueue' as const,
+            phase: 'immediate' as const,
+            origin: 'send' as const,
+            options: { explicitPlan: false }
+        })));
+        if (results.some((result) => ALOutboundMessageRuntime.hasWrittenWork(result))) {
+            this.work.committed();
+        }
+        return results.map((result, index) => ALOutboundMessageRuntime.toEnqueueResult(result.computed, msgs[index]!));
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
@@ -491,11 +510,28 @@ export class ALOutboundMessageRuntime<TPrepared> {
     ): Promise<ALOutboundComputedDto<TPrepared>> {
         const result = await this.dispatchAdmission.commit(dispatch);
 
-        if (result.committed || result.computed.verdict.kind === 'pending') {
+        if (ALOutboundMessageRuntime.hasWrittenWork(result)) {
             this.work.committed();
         }
 
         return result.computed;
+    }
+
+    private static hasWrittenWork<TPrepared>(result: ALOutboundDispatchAdmission.Result<TPrepared>): boolean {
+        return result.committed || result.computed.verdict.kind === 'pending';
+    }
+
+    private static toEnqueueResult<TPrepared>(
+        computed: ALOutboundComputedDto<TPrepared>,
+        msg: ALMessage
+    ): ALOutboundEnqueueResult {
+        return {
+            verdict: computed.verdict,
+            message: computed.msg ?? msg,
+            entry: computed.entries[0],
+            entries: computed.entries,
+            reason: computed.reason
+        };
     }
 
     private static toDisposedEnqueueResult(msg: ALMessage): ALOutboundEnqueueResult {

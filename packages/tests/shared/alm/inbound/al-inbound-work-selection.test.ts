@@ -2,7 +2,8 @@ import '../../../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
-import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
@@ -42,7 +43,8 @@ import {
     createInboundTestMessage,
     createInboundTestRuntime,
     createInboundTestStores,
-    INBOUND_TEST_SOURCE
+    INBOUND_TEST_SOURCE,
+    readInboundTestAdmission
 } from '../inbound-runtime-test-fixture.ts';
 
 const NOW_MS = 1_800_000_000_000;
@@ -55,6 +57,8 @@ const RESERVATION_MS = 4;
 const DUE_SINCE_MS = 250;
 /** The rotation walks NEW and RETRY before it scans RESERVED, so a row there is three rounds away. */
 const SCAN_STATUS_COUNT = 3;
+/** Rounds a drain needs at worst: the rotation walks three statuses before it scans NEW again. */
+const ROTATION_ROUND_LIMIT = 16;
 
 afterEach(() => {
     vi.restoreAllMocks();
@@ -183,6 +187,40 @@ describe('ALInboundWorkSelector claim order', () => {
             // One commit, one batch: both rows are on the page that batch reads, and today
             // the `ack:` key sorts ahead of the `dispatch:` key.
             await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'control-sent']);
+        }
+    );
+
+    it.each(['memory', 'indexeddb'] as const)(
+        'sends the acknowledgements of one batch in one control-send call over %s',
+        async (storage) => {
+            const fixture = createInboundTestRuntime({
+                stores: createInboundTestStores({
+                    namespace: 'control-round',
+                    storage,
+                    observer: createPassThroughIndexedDbOperationObserver()
+                }),
+                effectWorkerId: 'al-inbound:control-round'
+            });
+            await fixture.runtime.ready();
+            const admissionStore = fixture.stores.admissionStore;
+            // Committed straight into the store, so no commit wakes a batch of its own: the rotation
+            // reaches NEW again in the rounds below, and the one batch that reads it claims all four rows.
+            for (const msgId of ['first-acknowledged', 'second-acknowledged']) {
+                const message = createInboundTestMessage({ msgId, acknowledged: true });
+                expect(await admissionStore.commitBundle(await readInboundTestAdmission(admissionStore, message)))
+                    .toBe('committed');
+            }
+
+            for (let round = 0; round < ROTATION_ROUND_LIMIT && fixture.sequence.length === 0; round += 1) {
+                await fixture.queueEngine.executeOnce();
+                // The engine pass that starts a batch does not await it: let it run.
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
+
+            await expect.poll(() => fixture.sequence).toEqual(['dispatched', 'dispatched', 'control-sent']);
+            expect(
+                fixture.controlSends.map((sends) => sends.map((msg) => readAcknowledgedMsgId(msg)))
+            ).toEqual([['first-acknowledged', 'second-acknowledged']]);
         }
     );
 
@@ -345,6 +383,11 @@ async function readFirstClaimingSelection(fixture: SelectorFixture) {
         }
     }
     throw new Error('The rotation scanned every status without claiming the seeded row');
+}
+
+function readAcknowledgedMsgId(msg: ALMessage): string | undefined {
+    const control = parseALControlMessage(msg);
+    return control?.type === 'ack' ? control.payload.ackedMsgId : undefined;
 }
 
 /** A bare claim keyed by `resourceId`, so a rank test can name and re-identify it by that alone. */

@@ -8,7 +8,7 @@ import { decodePersistedALMessage } from '../../../al-contracts/al-message-persi
 import type { ALReadyable } from '../../../al-contracts/al-runtime.ts';
 import { PersistenceWriteExpiredError } from '../../../persistence/persistence-write-deadline.ts';
 import { hasSameResourceEntryValue } from '../../../queuebox/resource-entry-observations.ts';
-import type { ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
+import { toKeyAsString, type ResourceEntry } from '../../../queuebox/ResourceEntry.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type {
     ALAdmissionReadSession,
@@ -53,7 +53,8 @@ import type { ALOutboundComputeIntent } from '../compute-al-outbound-dispatch.ts
 import { ALOutboundControlAdmission } from '../control/al-outbound-control-admission.ts';
 import {
     ALOutboundAdmissionEffectStore,
-    type ALOutboundEffectCandidate
+    type ALOutboundEffectCandidate,
+    type ALOutboundEffectObservation
 } from './al-outbound-admission-effect-store.ts';
 import { toALOutboundVersionKey } from './al-outbound-admission-keys.ts';
 import {
@@ -90,6 +91,11 @@ export interface ALOutboundOutgoingReadInput<TPrepared> {
     readonly planner: ALOutboundPlanner<TPrepared>;
     readonly observedCanonicalEntry: ResourceEntry | undefined;
     readonly intent: ALOutboundComputeIntent;
+}
+
+interface ALOutboundCommitObservation<TPrepared> {
+    readonly effects: readonly ALOutboundEffectObservation<TPrepared>[];
+    readonly canonicalWrites: readonly ALOutboundCanonicalFactWrite[];
 }
 
 interface ALOutboundCommitCandidate<TPrepared> {
@@ -271,6 +277,11 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
         bundle: ALOutboundCommitBundle<TPrepared>
     ) => Promise<'committed' | 'conflict' | 'expired'>;
 
+    /** Commits bundles decided against one read of the version of one sender under one version fence. */
+    readonly commitBundles: (
+        bundles: readonly ALOutboundCommitBundle<TPrepared>[]
+    ) => Promise<'committed' | 'conflict' | 'expired'>;
+
     readonly retainPendingAdmission: (
         input: RetainALOutboundPendingAdmissionInput<TPrepared>
     ) => Promise<'pending' | 'conflict' | 'expired'>;
@@ -399,7 +410,21 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     async commitBundle(bundle: ALOutboundCommitBundle<TPrepared>): Promise<'committed' | 'conflict' | 'expired'> {
-        if (bundle.mutations.length === 0 && bundle.durableEffects.length === 0) {
+        return await this.commitBundles([bundle]);
+    }
+
+    /**
+     * Bundles decided against one read of the version of one sender commit as one: one snapshot, one
+     * write that fences that version once and the own rows of every bundle, and one version bump. Two
+     * bundles that write the same row were each decided without the write of the other, which sequential
+     * commits never are, so that group answers `conflict` before it writes.
+     */
+    async commitBundles(
+        bundles: readonly ALOutboundCommitBundle<TPrepared>[]
+    ): Promise<'committed' | 'conflict' | 'expired'> {
+        assertALOutboundBundleGroup(bundles);
+        const writing = bundles.filter((bundle) => bundle.mutations.length > 0 || bundle.durableEffects.length > 0);
+        if (writing.length === 0) {
             return 'committed';
         }
 
@@ -409,19 +434,37 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         // Joining two reads costs this callback a microtask turn that handing the session straight
         // to a chain does not, which is a budget a settled batch is measured in -- spend it here,
         // where the commit is what the caller is waiting for, and nowhere on the read path.
-        const observed = await this.backend.readWithin(async (session) => ({
-            effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
-            canonicalWrites: await this.readCanonicalWrites(session, bundle)
-        }));
+        const observed = await this.backend.readWithin(async (session) => {
+            const reads: ALOutboundCommitObservation<TPrepared>[] = [];
+            for (const bundle of writing) {
+                reads.push({
+                    effects: await this.effectStore.readEffects(session, bundle.durableEffects, bundle.canonicalEntry),
+                    canonicalWrites: await this.readCanonicalWrites(session, bundle)
+                });
+            }
+            return reads;
+        });
+        const candidates = writing.map((bundle, index) => this.computeCommitCandidate(bundle, observed[index]!, nowMs));
+        if (this.hasExpiredWork(candidates)) {
+            return 'expired';
+        }
+        if (hasSharedALOutboundGroupWrite(candidates)) {
+            return 'conflict';
+        }
+        return await this.writeCommit(candidates);
+    }
+
+    private computeCommitCandidate(
+        bundle: ALOutboundCommitBundle<TPrepared>,
+        observed: ALOutboundCommitObservation<TPrepared>,
+        nowMs: number
+    ): ALOutboundCommitCandidate<TPrepared> {
         const effects = this.effectStore.computeEffects(observed.effects, nowMs);
         const issues = this.effectStore.validateEffects(effects);
         if (issues.length > 0) {
             throw new TypeError(issues.map((issue) => issue.message).join('; '));
         }
-        if (this.hasExpiredWork(bundle.canonicalEntry, effects)) {
-            return 'expired';
-        }
-        return await this.writeCommit({
+        return {
             bundle,
             effects,
             executionExpiresAtMs: bundle.canonicalEntry?.audit.expiryTs.epochMilliseconds ??
@@ -431,7 +474,7 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             canonicalWrites: observed.canonicalWrites,
             mutations: this.mutations.computeStateWrites(bundle.mutations, nowMs),
             versionExpireAt: nowMs + this.retention.versionTtlMs
-        });
+        };
     }
 
     private async readCanonicalWrites(
@@ -453,31 +496,33 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         });
     }
 
+    /** `candidates` is one non-empty group: every bundle shares the sender and the version it expects. */
     private async writeCommit(
-        candidate: ALOutboundCommitCandidate<TPrepared>
+        candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
     ): Promise<'committed' | 'conflict' | 'expired'> {
-        const { bundle, effects, mutations, canonicalWrites, versionExpireAt } = candidate;
+        const { bundle, versionExpireAt } = candidates[0]!;
         const version = { senderId: bundle.senderId, version: (bundle.expectedVersion ?? 0) + 1 };
         const versionKey = toALOutboundVersionKey(this.namespace, bundle.senderId);
+        const canonicalWrites = candidates.flatMap((candidate) => candidate.canonicalWrites);
         try {
             return await this.backend.write(async (tx) => {
                 // A deadline the reads above already crossed answers before any fence: the message is
                 // dead, so its caller must stop rather than recompute the bundle a conflict invites.
-                if (this.hasExpiredWork(bundle.canonicalEntry, effects)) {
+                if (this.hasExpiredWork(candidates)) {
                     return 'expired';
                 }
-                await this.assertCurrentCommitFence(tx, candidate);
+                await this.assertCurrentCommitFence(tx, candidates);
                 if (
-                    this.hasExpiredWork(bundle.canonicalEntry, effects) ||
+                    this.hasExpiredWork(candidates) ||
                     await writeALOutboundCanonicalFacts(tx, canonicalWrites, this.nowMs) === 'expired'
                 ) {
                     return 'expired';
                 }
-                this.effectStore.writeEffects(tx, effects);
-                await this.mutations.writeStateWrites(tx, mutations);
+                this.effectStore.writeEffects(tx, candidates.flatMap((candidate) => candidate.effects));
+                await this.mutations.writeStateWrites(tx, candidates.flatMap((candidate) => candidate.mutations));
                 await tx.set(versionKey, version, versionExpireAt);
                 return 'committed';
-            }, candidate.executionExpiresAtMs);
+            }, computeALOutboundGroupExecutionExpiry(candidates));
         }
         catch (error) {
             if (error instanceof PersistenceWriteExpiredError) {
@@ -490,30 +535,40 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
         }
     }
 
-    private hasExpiredWork(
-        canonicalEntry: ResourceEntry | undefined,
-        effects: readonly ALOutboundEffectCandidate<TPrepared>[]
-    ): boolean {
+    private hasExpiredWork(candidates: readonly ALOutboundCommitCandidate<TPrepared>[]): boolean {
         const eligibilityAtMs = this.nowMs();
-        return (canonicalEntry !== undefined &&
-            canonicalEntry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs) ||
-            effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs);
+        return candidates.some(({ bundle, effects }) =>
+            (bundle.canonicalEntry !== undefined &&
+                bundle.canonicalEntry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs) ||
+            effects.some((effect) => effect.entry.audit.expiryTs.epochMilliseconds <= eligibilityAtMs)
+        );
     }
 
     /**
-     * Every fence the commit owes, re-read inside the write: the sender version, the pending-admission
-     * row, every observed effect row, the shared supersedence observation, and message identity. One
-     * function owns the throw, so every fence leaves the write the same way.
+     * Every fence the commit owes, re-read inside the write: the one sender version of the group, then
+     * the fences of each bundle. One function owns the version throw, and the bundle fences throw the
+     * same way, so every fence leaves the write alike.
      */
     private async assertCurrentCommitFence(
+        tx: ALAdmissionWorkWriteContext,
+        candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
+    ): Promise<void> {
+        const { senderId, expectedVersion } = candidates[0]!.bundle;
+        const current = await this.reads.readClientRecord(tx, senderId);
+        if (current?.version !== expectedVersion) {
+            throw new ALAdmissionBackendConflictError('Outbound sender version changed');
+        }
+        for (const candidate of candidates) {
+            await this.assertCurrentBundleFence(tx, candidate);
+        }
+    }
+
+    /** One bundle's pending-admission row, observed effect rows, shared supersedence observation and message identity. */
+    private async assertCurrentBundleFence(
         tx: ALAdmissionWorkWriteContext,
         candidate: ALOutboundCommitCandidate<TPrepared>
     ): Promise<void> {
         const { bundle, effects, mutations } = candidate;
-        const current = await this.reads.readClientRecord(tx, bundle.senderId);
-        if (current?.version !== bundle.expectedVersion) {
-            throw new ALAdmissionBackendConflictError('Outbound sender version changed');
-        }
         if (bundle.pendingAdmission) {
             const pending = await tx.readWork(bundle.pendingAdmission.key);
             if (!pending || !hasSameResourceEntryValue(pending, bundle.pendingAdmission)) {
@@ -543,4 +598,43 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
             decodePrepared: this.decodePrepared
         }, input);
     }
+}
+
+/** Every bundle of one group was decided against the same read of the version of one sender. */
+function assertALOutboundBundleGroup<TPrepared>(bundles: readonly ALOutboundCommitBundle<TPrepared>[]): void {
+    const [first] = bundles;
+    if (
+        first !== undefined &&
+        bundles.some((bundle) => bundle.senderId !== first.senderId || bundle.expectedVersion !== first.expectedVersion)
+    ) {
+        throw new TypeError('An outbound bundle group must share one sender and one expected version');
+    }
+}
+
+function hasSharedALOutboundGroupWrite<TPrepared>(
+    candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
+): boolean {
+    const written = new Set<string>();
+    for (const candidate of candidates) {
+        const keys = new Set([
+            ...candidate.mutations.map((write) => write.key),
+            ...candidate.effects.map((effect) => toKeyAsString(effect.entry.key)),
+            ...candidate.canonicalWrites.map((write) => toKeyAsString(write.entry.key))
+        ]);
+        if ([...keys].some((key) => written.has(key))) {
+            return true;
+        }
+        keys.forEach((key) => written.add(key));
+    }
+    return false;
+}
+
+/** The earliest deadline the work of any bundle carries; `null` when none of them carries one. */
+function computeALOutboundGroupExecutionExpiry<TPrepared>(
+    candidates: readonly ALOutboundCommitCandidate<TPrepared>[]
+): number | null {
+    const deadlines = candidates.flatMap((candidate) =>
+        candidate.executionExpiresAtMs === null ? [] : [candidate.executionExpiresAtMs]
+    );
+    return deadlines.length > 0 ? Math.min(...deadlines) : null;
 }

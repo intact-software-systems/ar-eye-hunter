@@ -247,8 +247,8 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
                 await this.callback.onMessage(message, entry);
                 this.delivered.push(message.id.msgId);
             },
-            sendControlMessage: async (message) => {
-                this.controls.push(message);
+            sendControlMessages: async (messages) => {
+                this.controls.push(...messages);
             },
             diagnostics: undefined
         });

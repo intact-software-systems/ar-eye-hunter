@@ -361,8 +361,8 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         forwardMessage: async (message) => {
             forwarded.push(message.id.msgId);
         },
-        sendControlMessage: async (message) => {
-            controls.push(message);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });

@@ -229,7 +229,11 @@ export class WsQueueBoxServerService {
                 this.planIncomingMessage(message, fromPeerId, runtime),
             canDispatchMessage: (message) => this.hasInboxConsumer(message),
             dispatchInboxEntry: (entry, plan, source) => this.dispatchInboxEntry(entry, plan, source),
-            sendControlMessage: (message) => this.sendControlMessage(message),
+            sendControlMessages: async (messages) => {
+                for (const message of messages) {
+                    await this.sendControlMessage(message);
+                }
+            },
             onControlMessage: async (message) => {
                 await this.outboundRuntime.acceptControlMessage(message);
             },

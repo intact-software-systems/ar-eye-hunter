@@ -3,6 +3,7 @@ import '../../../setup-browser-indexeddb.ts';
 import { Temporal } from '@js-temporal/polyfill';
 import {
     afterEach,
+    describe,
     expect,
     it,
     vi
@@ -11,6 +12,8 @@ import {
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
+import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
@@ -19,11 +22,13 @@ import {
     type ALOutboundAdmissionStore,
     type ALOutboundPlanner
 } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
+import type { ALOutboundMessageRuntime } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
     computeOutboundTestAdmission,
+    createDefaultOutboundTestRuntime,
     createOutboundMessage
 } from '../outbound-runtime-test-fixture.ts';
 import { decodeOutboundTestPayload, type OutboundTestPayload } from '../outbound-test-payload.ts';
@@ -51,6 +56,14 @@ const SEND_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
     preparedMessages: [{ text: msg.id.msgId }]
 });
 
+/** Stamps the deadline the QoS normalization of a transport gives a control message, as the planners of both carriers do. */
+const CONTROL_PLANNER: ALOutboundPlanner<OutboundTestPayload> = (msg) => ({
+    msg: { ...msg, constraints: { ...msg.constraints, expiresAtMs: msg.id.ts + 30_000 } },
+    dropReasonCode: undefined,
+    persist: true,
+    preparedMessages: [{ text: msg.id.msgId }]
+});
+
 /**
  * What an admission that reaches its commit costs: the decision surface, then the write phase's own
  * snapshot, then the conditional write. The second readonly is not a duplicate of the first — a
@@ -65,7 +78,15 @@ interface AdmissionTransactionFixture {
 }
 
 async function createAdmissionFixture(name: string): Promise<AdmissionTransactionFixture> {
-    const backend = new IndexedDbAdmissionBackend({
+    const backend = createTransactionBackend(name);
+    const store = createTransactionAdmissionStore(backend);
+    // Opening the database is the fixture's cost, never the read chain's.
+    await store.ready();
+    return { store, backend };
+}
+
+function createTransactionBackend(name: string): IndexedDbAdmissionBackend {
+    return new IndexedDbAdmissionBackend({
         schemaId: AL_ADMISSION_SCHEMA_ID,
         onStorageReset: () => {},
         dbName: `${TRANSACTION_NAMESPACE}-${name}-${crypto.randomUUID()}`,
@@ -74,7 +95,10 @@ async function createAdmissionFixture(name: string): Promise<AdmissionTransactio
         newWriteToken: crypto.randomUUID.bind(crypto),
         observer: createPassThroughIndexedDbOperationObserver()
     });
-    const store = createALOutboundAdmissionStore({
+}
+
+function createTransactionAdmissionStore(backend: ALAdmissionWorkBackend): ALOutboundAdmissionStore<OutboundTestPayload> {
+    return createALOutboundAdmissionStore({
         nowMs: Date.now,
         canonicalScope: TRANSACTION_NAMESPACE,
         decodePrepared: decodeOutboundTestPayload,
@@ -83,9 +107,6 @@ async function createAdmissionFixture(name: string): Promise<AdmissionTransactio
         supersedenceTrackTtlMs: 60_000,
         retention: normalizeALRuntimeStoreRetention()
     });
-    // Opening the database is the fixture's cost, never the read chain's.
-    await store.ready();
-    return { store, backend };
 }
 
 async function admitOutboundMessage(
@@ -239,3 +260,60 @@ it('leaves an expired work row where a session read found it, for the queue swee
     expect(await backend.workQueue.cleanupAsync()).toEqual({ deleted: 1, saturated: false });
     expect(await backend.workQueue.getItem(expired.key)).toBeUndefined();
 });
+
+describe('control sends committed as one outbound admission', () => {
+    it.each(['memory', 'indexeddb'] as const)('admits two acknowledgements from one sender over %s', async (storage) => {
+        const runtime = await createControlSendRuntime(storage);
+
+        const results = await runtime.enqueueAllIfAbsent([
+            createAcknowledgement('first-ack'),
+            createAcknowledgement('second-ack')
+        ]);
+
+        expect(results.map((result) => result.verdict)).toEqual([
+            { kind: 'admitted', durable: true, queuedAttempts: 1 },
+            { kind: 'admitted', durable: true, queuedAttempts: 1 }
+        ]);
+        expect(results.map((result) => result.message.id.msgId)).toEqual(['first-ack', 'second-ack']);
+    });
+
+    it('writes two acknowledgements from one sender in one readwrite transaction', async () => {
+        const runtime = await createControlSendRuntime('indexeddb');
+
+        const recorded = recordIndexedDbTransactions();
+        await runtime.enqueueAllIfAbsent([createAcknowledgement('first-ack'), createAcknowledgement('second-ack')]);
+
+        // Two decision reads, then one snapshot, one fence snapshot and one write for the pair: two
+        // single sends spend a snapshot, a fence snapshot and a write each.
+        expect(recorded.modes().filter((mode) => mode === 'readwrite')).toEqual(['readwrite']);
+    });
+});
+
+/** The outbound owner of a receiver, ready, so the measured window holds the admission and nothing of start-up. */
+async function createControlSendRuntime(
+    storage: 'memory' | 'indexeddb'
+): Promise<ALOutboundMessageRuntime<OutboundTestPayload>> {
+    const backend = storage === 'memory'
+        ? new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now)
+        : createTransactionBackend('control-sends');
+    const runtime = createDefaultOutboundTestRuntime({
+        stores: { admissionStore: createTransactionAdmissionStore(backend), workQueue: backend.workQueue },
+        planOutgoingMessage: CONTROL_PLANNER,
+        sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+    });
+    await runtime.ready();
+    return runtime;
+}
+
+function createAcknowledgement(msgId: string): ALMessage {
+    return newALAckControlMessage(
+        { v: 2, msgId, senderId: 'receiver', ts: Date.now() },
+        {
+            fromPeerId: 'receiver',
+            toPeerId: 'sender',
+            ackedMsgId: `${msgId}-target`,
+            status: 'delivered',
+            observedAtEpochMs: Date.now()
+        }
+    );
+}

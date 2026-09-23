@@ -114,6 +114,8 @@ export interface InboundTestRuntime {
     readonly delivered: readonly string[];
     /** One entry per port call in run order, so a batch's dispatch-before-control order is visible. */
     readonly sequence: readonly InboundTestEffectCall[];
+    /** The control messages of each control-send call, so the sends one call carried stay together. */
+    readonly controlSends: readonly (readonly ALMessage[])[];
 }
 
 export interface CreateInboundTestRuntimeInput {
@@ -137,6 +139,7 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const delivered: string[] = [];
     const sequence: InboundTestEffectCall[] = [];
+    const controlSends: (readonly ALMessage[])[] = [];
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -156,14 +159,15 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
             sequence.push('dispatched');
             return input.dispatchOutcome;
         },
-        sendControlMessage: async () => {
+        sendControlMessages: async (msgs) => {
             sequence.push('control-sent');
+            controlSends.push(msgs);
         },
         diagnostics: (event) => diagnostics.push(event),
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, sequence };
+    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, sequence, controlSends };
 }
 
 export interface InboundTestMessageInput {
