@@ -46,9 +46,12 @@ export type ALInboundRuntimeDiagnosticsEvent =
         releaseDurationMs: number;
         /** How long the earliest claimed row had been due when the batch started. */
         queueWaitMs: number;
-        /** The instant every claim of this batch measures its `batchStartedAtMs` from. */
+        /**
+         * When the batch's run loop started, after its selection and reservation: every claim's
+         * `batchStartedAtMs`. `durationMs` and `queueWaitMs` run from the batch's own earlier start.
+         */
         startedAtMs: number;
-        /** The effects this batch ran, in run order. */
+        /** The batch's run order; each id is also a `claim-settled.effectId` unless that claim threw. */
         claimedEffectIds: readonly string[];
         /** Due rows this batch's page saw and did not run, oldest first. */
         deferred: readonly ALInboundDeferredEffect[];
@@ -72,9 +75,10 @@ export type ALInboundRuntimeDiagnosticsEvent =
         /** Processing attempts the row has spent, this claim included. */
         attempts: number;
         outcome: ALWorkOutcome['status'];
-        /** How long the row had been due when the batch that claimed it started: `batchStartedAtMs − dueAtMs`. */
+        /** How long the row had been due when its batch's run loop started: `batchStartedAtMs − dueAtMs`. */
         queueWaitMs: number;
         dueAtMs: number;
+        /** When the batch's run loop started, after its selection and reservation and before its first claim. */
         batchStartedAtMs: number;
         /** When this claim's own work began, so `startedAtMs − batchStartedAtMs` is its wait behind earlier claims. */
         startedAtMs: number;

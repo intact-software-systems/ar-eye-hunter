@@ -51,8 +51,9 @@ export interface ALWorkHandlerDependencies {
         pageSize: number
     ) => Promise<ALWorkReadySelection>;
     /**
-     * Runs one claim. The batch's own start comes with it, so an owner that reports per-claim
-     * timing measures the wait against the same moment the batch diagnostics below do.
+     * Runs one claim. The instant the batch's run loop started comes with it -- after the selection
+     * and the reservation, before the first claim runs -- so an owner that reports per-claim timing
+     * measures the wait behind earlier claims against the same moment the batch diagnostics do.
      */
     readonly runClaim: (claim: ALWorkClaim, batchStartedAtMs: number) => Promise<ALWorkAttemptResult>;
     readonly diagnostics: ((event: ALWorkDiagnostics) => void) | undefined;
@@ -84,7 +85,11 @@ export interface ALWorkBatchDiagnostics {
     readonly releaseDurationMs: number;
     /** How long the earliest claimed row had been due when the batch started; zero when it claimed none. */
     readonly queueWaitMs: number;
-    /** The instant every claim of this batch receives as `batchStartedAtMs`. */
+    /**
+     * The instant the run loop started, after the selection and the reservation: what every claim of
+     * this batch receives as `batchStartedAtMs`. `durationMs` and `queueWaitMs` run from the batch's
+     * own earlier start.
+     */
     readonly startedAtMs: number;
 }
 
@@ -136,6 +141,12 @@ interface ALWorkCounts {
     completedCount: number;
     rescheduledCount: number;
     rejectedCount: number;
+}
+
+/** The selection a batch claimed from, and the instant its run loop started over those claims. */
+interface ALWorkClaimedRun {
+    readonly selection: ALWorkReadySelection;
+    readonly runStartedAtMs: number;
 }
 
 /** What a running batch has accumulated: its outcome counts and the two phases the handler itself times. */
@@ -326,10 +337,10 @@ export class ALWorkHandler {
             releaseDurationMs: 0
         };
         const releases: ALWorkRelease[] = [...await this.finalizeExhaustedWork(progress)];
-        let selection: ALWorkReadySelection | undefined;
+        let run: ALWorkClaimedRun | undefined;
         try {
             if (!this.shutdown.signal.aborted) {
-                selection = await this.runClaimedWork(releases, startedAtMs, progress);
+                run = await this.runClaimedWork(releases, progress);
             }
         }
         finally {
@@ -337,43 +348,45 @@ export class ALWorkHandler {
             // throws must not leave them waiting for their leases to expire.
             await this.flushReleases(releases, progress);
         }
-        if (selection === undefined) {
+        if (run === undefined) {
             return progress;
         }
-        queueEngine.wakeAt(workerId, selection.nextReadyAtMs);
-        this.reportBatch(selection, startedAtMs, progress);
+        queueEngine.wakeAt(workerId, run.selection.nextReadyAtMs);
+        this.reportBatch(run, startedAtMs, progress);
         return progress;
     }
 
     /**
-     * The selection this batch claimed from, or nothing once disposal ended the batch mid-claim,
-     * which leaves the wake and the diagnostics to whichever batch resumes.
+     * The selection this batch claimed from and the instant its run loop started, or nothing once
+     * disposal ended the batch mid-claim, which leaves the wake and the diagnostics to whichever batch
+     * resumes.
      */
     private async runClaimedWork(
         releases: ALWorkRelease[],
-        batchStartedAtMs: number,
         progress: ALWorkBatchProgress
-    ): Promise<ALWorkReadySelection | undefined> {
-        const { port, pageSize, selectReady } = this.dependencies;
+    ): Promise<ALWorkClaimedRun | undefined> {
+        const { clock, port, pageSize, selectReady } = this.dependencies;
         const selection = await selectReady(port, pageSize);
         progress.claimedCount = selection.claims.length;
+        const runStartedAtMs = clock.nowMs();
         for (const claim of selection.claims) {
             if (this.shutdown.signal.aborted) {
                 return undefined;
             }
-            const release = await this.runOne(claim, batchStartedAtMs, progress);
+            const release = await this.runOne(claim, runStartedAtMs, progress);
             if (release !== undefined) {
                 releases.push(release);
             }
         }
-        return selection;
+        return { selection, runStartedAtMs };
     }
 
     private reportBatch(
-        selection: ALWorkReadySelection,
+        run: ALWorkClaimedRun,
         startedAtMs: number,
         progress: ALWorkBatchProgress
     ): void {
+        const { selection, runStartedAtMs } = run;
         const { clock, workerId, diagnostics } = this.dependencies;
         diagnostics?.({
             kind: 'work-batch',
@@ -383,7 +396,7 @@ export class ALWorkHandler {
             selectionDurationMs: selection.selectionDurationMs,
             claimDurationMs: selection.claimDurationMs,
             queueWaitMs: computeALWorkQueueWaitMs(selection.earliestDueAtMs, startedAtMs),
-            startedAtMs
+            startedAtMs: runStartedAtMs
         });
     }
 

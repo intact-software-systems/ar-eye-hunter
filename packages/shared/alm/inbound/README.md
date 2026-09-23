@@ -191,7 +191,9 @@ decoded and a claim that throws are counted by the drain and named by no event; 
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
 `longestRoundMs` so one crawling scan is not averaged away by the rest. A delivery's wait
 splits at three instants every `claim-settled` carries — when its row became due, when its
-batch started and when the claim itself started — and the drain names the effects it ran in
+batch's run loop started (after that batch's selection and reservation) and when the claim
+itself started, so the second half is the serialization behind earlier claims of the run loop
+alone — and the drain names the effects it ran in
 run order (`claimedEffectIds`, recorded by this owner as it runs them). The due rows a round
 saw and did not run ride on the events that already exist, never on one of their own: a
 round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them

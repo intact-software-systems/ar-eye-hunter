@@ -57,9 +57,13 @@ export interface ALMObservationInboundPhases {
 }
 
 export interface ALMObservationInboundClaimWaits {
-    /** Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: waiting for a round to reserve the row. */
+    /**
+     * Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: from due to the run
+     * loop of the batch that ran the claim -- the wait for a round, plus that batch's selection and
+     * reservation.
+     */
     readonly reservationWaitMedianMs: number;
-    /** Median `startedAtMs − batchStartedAtMs` over the same claims: waiting behind earlier claims of the same batch. */
+    /** Median `startedAtMs − batchStartedAtMs` over the same claims: the serialization behind earlier claims of the run loop. */
     readonly intraBatchWaitMedianMs: number;
     readonly dispatchClaimCount: number;
     /** Median `durationMs` over this role's `send-control` claims. */

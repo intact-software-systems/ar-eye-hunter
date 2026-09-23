@@ -83,13 +83,18 @@ records what the runner was doing while the cell ran:
     from a session script.
   - `claimWaits` — the delivery wait split at its two instants, from the `claim-settled` events on
     that direction: `reservationWaitMedianMs`, the median `batchStartedAtMs − dueAtMs` over the
-    `dispatch-local` claims (waiting for a round to reserve the row), and `intraBatchWaitMedianMs`,
-    the median `startedAtMs − batchStartedAtMs` over the same claims (waiting behind earlier claims of
-    the same batch), over `dispatchClaimCount` claims; and `sendControlClaimMedianMs`, the median
+    `dispatch-local` claims — from due to the run-loop start of the batch that ran the claim: the
+    wait for a round to take the row plus that batch's own selection and reservation, which the
+    `phases` medians carry for subtracting — and `intraBatchWaitMedianMs`, the median
+    `startedAtMs − batchStartedAtMs` over the same claims, the serialization behind earlier claims in
+    the same run loop and nothing else, over `dispatchClaimCount` claims; and `sendControlClaimMedianMs`, the median
     `durationMs` of the `send-control` claims, over `sendControlClaimCount`. Whole-cell medians, like
     `phases`; every figure is `0` with a count of `0` when the direction ran no such claim, and a
     `claim-settled` event missing `durationMs`, `dueAtMs`, `batchStartedAtMs` or `startedAtMs` (one
-    emitted before the three instants existed) is skipped rather than counted.
+    emitted before the three instants existed) is skipped rather than counted. `dueAtMs` is read from
+    the reserved entry, and a reservation clears a retried row's retry stamp, so a claim of a row that
+    had been retried reports its wait from when the row was written, not from its latest retry due
+    time; a `reservationWaitMedianMs` over retried rows is an upper bound.
 - `cellOutcome` — `passed` or `failed`, including a soft-assertion failure.
 - `snapshotIssues` — non-empty only when the control snapshot could not be decoded at all.
 

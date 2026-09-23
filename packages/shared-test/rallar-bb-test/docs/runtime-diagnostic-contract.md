@@ -257,14 +257,19 @@ independent of any connection. The event's `data` is the event itself:
   none of its own and reports a `selectionDurationMs` near zero. That page read
   is reported nowhere on this topic — it is the cost the suppressed probe event
   would have carried, and a reader must not mistake its absence for a fast round
-- `effect-drain` also carries `startedAtMs`, the instant every claim of the
-  batch receives as its `batchStartedAtMs`; `claimedEffectIds`, the effect ids
-  the batch ran, in run order, recorded by the inbound owner as it runs each
-  claim (a claim whose row could not be decoded is absent, the same ceiling
-  `claim-settled` follows); and `deferred`, the due rows the batch's page saw and
-  did not run, as `{ effectId, dueAtMs }`, oldest first — held back by their
-  eligibility read, or cleared by it and left unreserved by the port. A row a
-  live lease holds is not due, so a batch's own rows never read as deferred
+- `effect-drain` also carries `startedAtMs`, the instant the batch's run loop
+  started — after its exhaustion sweep, its selection and its reservation, before
+  its first claim ran — which every claim of the batch receives as its
+  `batchStartedAtMs`. It is not the start `durationMs` and `queueWaitMs` are
+  measured from: those run from the batch's own earlier start. `claimedEffectIds`
+  is the batch's run order: the effect id of every claim the batch ran, in the
+  order it ran them, recorded by the inbound owner as it starts each claim. Every
+  id in it also appears as a `claim-settled.effectId`, unless that claim threw
+  before it settled; a claim whose row could not be decoded has no id and appears
+  in neither. `deferred` lists the due rows the batch's page saw and did not
+  run, as `{ effectId, dueAtMs }`, oldest first — held back by their eligibility
+  read, or cleared by it and left unreserved by the port. A row a live lease
+  holds is not due, so a batch's own rows never read as deferred
 - `claim-settled` carries `msgId`, `typeId`, `payloadKind`, `durationMs`,
   `attempts`, `outcome` and `queueWaitMs`: one event for each claim a drain ran,
   so a delivery can be followed from its own `admission-outcome` to the claim
@@ -277,12 +282,18 @@ independent of any connection. The event's `data` is the event itself:
 - `claim-settled` also carries `effectId`, `subjectMsgId`, `dueAtMs`,
   `batchStartedAtMs` and `startedAtMs`. `effectId` is the claimed row's own
   effect id, the join key to the `effect-drain.claimedEffectIds` of its batch.
-  `dueAtMs` is when the row became due, `batchStartedAtMs` when its batch started
-  and `startedAtMs` when this claim's own work began, so a delivery's wait splits
-  into `batchStartedAtMs − dueAtMs` (waiting for a round to reserve the row) and
-  `startedAtMs − batchStartedAtMs` (waiting behind earlier claims of the same
-  batch). `queueWaitMs` is now exactly `batchStartedAtMs − dueAtMs` of the same
-  event, floored at zero, so the two can never disagree
+  `dueAtMs` is when the row became due, `batchStartedAtMs` when its batch's run
+  loop started (after the batch's selection and reservation) and `startedAtMs`
+  when this claim's own work began, so a delivery's wait splits into
+  `batchStartedAtMs − dueAtMs` — everything from due to the run loop: waiting for
+  a round to take the row, plus that batch's own selection and reservation, which
+  its `effect-drain` reports as `selectionDurationMs` and `claimDurationMs` for a
+  reader to subtract — and `startedAtMs − batchStartedAtMs`, the serialization
+  behind earlier claims in the same run loop and nothing else. `queueWaitMs` is
+  now exactly `batchStartedAtMs − dueAtMs` of the same event, floored at zero, so
+  the two can never disagree; it therefore exceeds the `effect-drain`'s own
+  `queueWaitMs`, which stops at the batch's earlier start, by that batch's sweep,
+  selection and reservation
 - `subjectMsgId` is the message the effect acts on: a control's acknowledged,
   nacked or repaired message (`ackedMsgId` or `msgId` of its payload), a retained
   or delivered message's own id, and `null` for `release-buffered`. It is the

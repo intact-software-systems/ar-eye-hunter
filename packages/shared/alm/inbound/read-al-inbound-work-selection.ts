@@ -93,16 +93,6 @@ interface ALInboundPageEligibility
     readonly readyAtMs: number | undefined;
 }
 
-/** The lists one page's eligibility read fills, row by row. */
-interface ALInboundPageEligibilityDraft {
-    readonly claimable: ResourceEntry[];
-    readonly observations: Map<string, ALInboundClaimableObservation>;
-    readonly unleasedReservations: ALWorkClaim[];
-    readonly deferred: ALInboundDeferredEffect[];
-    readonly claimableEffects: Map<ResourceEntryKeyString, ALInboundDeferredEffect>;
-    readyAtMs: number | undefined;
-}
-
 /** What one row's eligibility read decided, before the page folds it into its lists. */
 type ALInboundRowEligibility =
     | Readonly<{ kind: 'not-due'; readyAtMs: number; }>
@@ -197,7 +187,7 @@ async function readALInboundPageEligibility(
     input: ALInboundWorkSelectionReadInput,
     delivery: ALInboundAdmittedDelivery
 ): Promise<ALInboundPageEligibility> {
-    const page: ALInboundPageEligibilityDraft = {
+    let page: ALInboundPageEligibility = {
         claimable: [],
         observations: new Map(),
         unleasedReservations: [],
@@ -210,42 +200,46 @@ async function readALInboundPageEligibility(
             continue;
         }
         try {
-            addALInboundRowEligibility(page, entry, await readALInboundRowEligibility(entry, input, delivery));
+            const row = await readALInboundRowEligibility(entry, input, delivery);
+            page = computeALInboundPageEligibilityWithRow(page, entry, row);
         }
         catch (error) {
             if (!(error instanceof ALAdmissionCorruptionError) && !(error instanceof NonRetryableException)) {
                 throw error;
             }
-            if (entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined) {
-                page.unleasedReservations.push(toUnleasedALWorkClaim(entry, input.nowMs));
-            }
-            else {
-                page.claimable.push(entry);
-            }
+            page = entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined
+                ? {
+                    ...page,
+                    unleasedReservations: [...page.unleasedReservations, toUnleasedALWorkClaim(entry, input.nowMs)]
+                }
+                : { ...page, claimable: [...page.claimable, entry] };
         }
     }
     return page;
 }
 
-function addALInboundRowEligibility(
-    page: ALInboundPageEligibilityDraft,
+/** The page with one more row's decision in it: a page holds at most one page size of rows. */
+function computeALInboundPageEligibilityWithRow(
+    page: ALInboundPageEligibility,
     entry: ResourceEntry,
     row: ALInboundRowEligibility
-): void {
+): ALInboundPageEligibility {
     if (row.kind === 'not-due') {
-        page.readyAtMs = resolveALInboundScannedReadyAtMs(entry, row.readyAtMs, page.readyAtMs);
-        return;
+        return { ...page, readyAtMs: resolveALInboundScannedReadyAtMs(entry, row.readyAtMs, page.readyAtMs) };
     }
     const due = { effectId: row.effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(entry) };
     if (row.kind === 'deferred') {
-        page.deferred.push(due);
-        return;
+        return { ...page, deferred: [...page.deferred, due] };
     }
-    page.claimable.push(entry);
-    page.claimableEffects.set(toKeyAsString(entry.key), due);
-    if (row.observed !== undefined) {
-        page.observations.set(row.effect.effectId, { key: toKeyAsString(entry.key), observed: row.observed });
-    }
+    const key = toKeyAsString(entry.key);
+    return {
+        ...page,
+        claimable: [...page.claimable, entry],
+        claimableEffects: new Map(page.claimableEffects).set(key, due),
+        observations: row.observed === undefined
+            ? page.observations
+            : new Map(page.observations).set(row.effect.effectId, { key, observed: row.observed })
+    };
 }
 
 /** A retained admission is claimable as soon as it is due; every other effect asks its delivery. */
