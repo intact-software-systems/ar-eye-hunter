@@ -222,7 +222,8 @@ describe('outbound message expiry', () => {
             clock,
             controlAdmission: store.createControlAdmission(workPort, clock, () => {}),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
-            planRepairMessage: undefined
+            planRepairMessage: undefined,
+            diagnostics: undefined
         });
         vi.setSystemTime(1_050);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();

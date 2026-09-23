@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { AL_CONTROL_ACK_TYPE_ID, newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -22,6 +23,7 @@ afterEach(() => {
 
 type CommitPhasesEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'commit-phases'; }>;
 type SenderQueueWaitEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'sender-queue-wait'; }>;
+type ControlAdmissionEvent = Extract<ALOutboundRuntimeDiagnosticsEvent, { kind: 'control-admission'; }>;
 
 /** The admission read chain a first send walks: client record, stored message, canonical pair, control. */
 const FIRST_SEND_READ_OPERATIONS = 9;
@@ -54,6 +56,12 @@ function commitPhasesOf(
     diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]
 ): readonly CommitPhasesEvent[] {
     return diagnostics.filter((event): event is CommitPhasesEvent => event.kind === 'commit-phases');
+}
+
+function controlAdmissionsOf(
+    diagnostics: readonly ALOutboundRuntimeDiagnosticsEvent[]
+): readonly ControlAdmissionEvent[] {
+    return diagnostics.filter((event): event is ControlAdmissionEvent => event.kind === 'control-admission');
 }
 
 function senderQueueWaitsOf(
@@ -175,3 +183,43 @@ it('names the origin a queued send waited behind', async () => {
     ]);
     runtime.dispose();
 });
+
+it.each(['memory', 'indexeddb'] as const)(
+    'records the control admission verdict every carrier discards, with a rejection\'s reason, over %s',
+    async (kind) => {
+        const diagnostics: ALOutboundRuntimeDiagnosticsEvent[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            stores: createStores(kind),
+            diagnostics: (event) => diagnostics.push(event),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: true,
+                preparedMessages: [{ kind: 'send' }],
+                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'] }
+            }),
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
+        });
+        const message = createOutboundMessage('msg-control-verdict');
+        await runtime.enqueueIfAbsent(message);
+
+        for (const fromPeerId of ['peer-1', 'peer-2']) {
+            await runtime.acceptControlMessage(newALAckControlMessage(
+                { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
+                { ackedMsgId: message.id.msgId, fromPeerId, toPeerId: 'self', status: 'accepted', observedAtEpochMs: 1 }
+            ));
+        }
+
+        const verdict = { kind: 'control-admission', typeId: AL_CONTROL_ACK_TYPE_ID, targetMsgId: message.id.msgId };
+        expect(controlAdmissionsOf(diagnostics)).toEqual([
+            { ...verdict, msgId: 'control-peer-1', outcome: 'committed', reason: 'none' },
+            {
+                ...verdict,
+                msgId: 'control-peer-2',
+                outcome: 'rejected',
+                reason: 'AL acknowledgement sender has no pending outbound obligation'
+            }
+        ]);
+        runtime.dispose();
+    }
+);

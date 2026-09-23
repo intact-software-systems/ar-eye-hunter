@@ -16,8 +16,10 @@ import type {
 import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
-    ALOutboundRepairRequest
+    ALOutboundRepairRequest,
+    ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
+import { controlTargetMsgId } from './compute-al-outbound-control-admission.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -26,6 +28,7 @@ import type {
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
+    toALOutboundAckRetryScheduleEndTimestamp,
     toALOutboundPendingAckExpireAtTimestamp
 } from './transition-al-outbound-pending-ack.ts';
 
@@ -41,6 +44,7 @@ export namespace ALOutboundRepairAdmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
     }
 }
 
@@ -57,14 +61,39 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALControlMessage(msg);
-        if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
+        if (decoded.left) {
             return { kind: 'not-handled' };
         }
-        const admitted = await this.dependencies.controlAdmission.admit(msg);
+        const control = decoded.right!;
+        const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
+            ? await this.dependencies.controlAdmission.admit(msg)
+            : { kind: 'not-handled' };
+        this.emitControlAdmission(msg, control, admitted);
         if (admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
         }
         return admitted;
+    }
+
+    /** Every carrier discards this verdict, so the diagnostics sink is the only place it is kept. */
+    private emitControlAdmission(
+        msg: ALMessage,
+        control: ALParsedControlMessage,
+        admitted: ALOutboundControlAdmissionResult
+    ): void {
+        try {
+            this.dependencies.diagnostics?.({
+                kind: 'control-admission',
+                msgId: msg.id.msgId,
+                typeId: msg.payload.typeId,
+                targetMsgId: controlTargetMsgId(control),
+                outcome: admitted.kind,
+                reason: admitted.kind === 'rejected' ? admitted.reason : 'none'
+            });
+        }
+        catch (error) {
+            console.error('AL outbound runtime diagnostics sink failed', error);
+        }
     }
 
     /** A retained control admission owes the same post-commit retry schedule the direct path writes. */
@@ -180,7 +209,6 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
         if (pending.attempts >= pending.maxAttempts) {
             console.warn(`Ack timeout exceeded retry budget for message ${msgId}`);
-            await this.commitClearPendingAck(msg, pending, read.clientRecord?.version);
             return;
         }
 
@@ -205,7 +233,11 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return {
             senderId: msg.id.senderId,
             expectedVersion,
-            mutations: [{ kind: 'set-pending-ack', snapshot: pending }],
+            mutations: [{
+                kind: 'set-pending-ack',
+                snapshot: pending,
+                expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending, resolveALMessageExpireAtMs(msg))
+            }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending),
                 {
@@ -289,7 +321,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                 pending.deadlineAtMs
             ]),
             retryAtMs: pending.deadlineAtMs,
-            expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending),
+            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending),
             payload: {
                 kind: 'ack-timeout',
                 msgId: pending.msgId

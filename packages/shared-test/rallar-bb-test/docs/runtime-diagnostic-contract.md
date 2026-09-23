@@ -135,10 +135,12 @@ the sink — independent of any connection, so it observes admission work for
 every session the page opens. The event's `data` is the event itself:
 
 - `kind`: `sender-queue-wait`, `browser-lock-wait`, `browser-lock-hold`,
-  `commit-phases`, `effect-drain`, or `readiness-probe`
-- `durationMs`: how long that phase took, on every kind but `commit-phases`,
-  which splits its own into the two halves below. On `readiness-probe` it is
-  not a phase of a commit at all but what that owner's storage read cost
+  `commit-phases`, `effect-drain`, `readiness-probe`, or `control-admission`
+- `durationMs`: how long that phase took, on every kind but `commit-phases`
+  and `control-admission`: `commit-phases` splits its own into the two halves
+  below, and `control-admission` is a verdict, not a phase. On
+  `readiness-probe` it is not a phase of a commit at all but what that owner's
+  storage read cost
 - `origin`: which call path asked for the commit — `send` for a caller's own
   `enqueueIfAbsent`, `drain` for the work batch's pending-admission and
   dequeue commits, `repair` for retransmission. It is on all four
@@ -188,6 +190,23 @@ every session the page opens. The event's `data` is the event itself:
   Admission Diagnostics** below). The ALM observation artifact reads this
   bullet's `age-bound` probes as the page's storage-queue regime (`pageRegime`,
   `alm-observation-artifact.md`)
+
+- `control-admission` carries `msgId`, `typeId`, `targetMsgId`, `outcome` and
+  `reason`: one event for every inbound ACK, NACK or repair control the
+  outbound owner decides, recorded when it decides it. Every carrier discards
+  that verdict: the inbound topic's `admission-outcome` for the same control
+  reads `not-handled`/`control` whatever the outbound owner answered, so this
+  event is the only record of it. `msgId` is the control's own id, the join key
+  to that `admission-outcome`, and `targetMsgId` is the sent message it
+  answers. `outcome` is `committed`, `pending-control` (a conflict retained as
+  `admit-control` work, which the outbound drain replays), `rejected`, or
+  `not-handled` (the control's repair authority failed). `reason` is the
+  rejection's reasons, or `none` for every other outcome — for an ACK whose
+  receipt is gone it reads `AL acknowledgement sender has no pending outbound
+  obligation`. A control's replay reports nothing here; its commit is visible
+  as the acknowledgement settlement on the send's handle. It is one event per
+  control frame the page receives, the same cadence as `admission-outcome`,
+  and rides the page's batched diagnostics like every other kind
 
 Together they separate a page that reads storage more often because it is less
 blocked from one that reads it more often because more wakes reach more owners:

@@ -181,6 +181,17 @@ export type ALOutboundRuntimeDiagnosticsEvent =
         commitOutcome: ALOutboundCommitBundleOutcome;
     }>
     | Readonly<{
+        kind: 'control-admission';
+        /** The control message's own id: the join key to the inbound `admission-outcome` that routed it. */
+        msgId: string;
+        typeId: string;
+        /** The outbound message this control answers. */
+        targetMsgId: string;
+        outcome: ALOutboundControlAdmissionResult['kind'];
+        /** The rejection's reasons, or `none` for every other outcome. */
+        reason: string;
+    }>
+    | Readonly<{
         kind: 'effect-drain';
         workerId: string;
         durationMs: number;
@@ -354,7 +365,8 @@ export class ALOutboundMessageRuntime<TPrepared> {
             controlAdmission,
             clock: dependencies.clock,
             planOutgoingMessage: dependencies.planOutgoingMessage,
-            planRepairMessage: dependencies.planRepairMessage
+            planRepairMessage: dependencies.planRepairMessage,
+            diagnostics: dependencies.diagnostics
         });
         this.repairRetransmission = new ALOutboundRepairRetransmission({
             admissionStore: dependencies.admissionStore,

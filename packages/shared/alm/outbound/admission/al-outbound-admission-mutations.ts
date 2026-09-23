@@ -16,7 +16,7 @@ import type {
     ALReplacementSupersedenceValue
 } from '../../compute-al-supersedence-observation.ts';
 import type { ALOutboundMessageReference } from '../al-outbound-canonical-message.ts';
-import { toALOutboundPendingAckExpireAtTimestamp } from '../transition-al-outbound-pending-ack.ts';
+import { toALOutboundAckRetryScheduleEndTimestamp } from '../transition-al-outbound-pending-ack.ts';
 import {
     toALOutboundMessageOwnerKey,
     toALOutboundOrderingMessageKey,
@@ -260,7 +260,7 @@ export class ALOutboundAdmissionMutations {
                 key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
                 value: mutation.snapshot,
                 expireAtTimestamp: mutation.expireAtTimestamp ??
-                    toALOutboundPendingAckExpireAtTimestamp(mutation.snapshot),
+                    toALOutboundAckRetryScheduleEndTimestamp(mutation.snapshot),
                 supersedenceGuard: undefined
             };
     }

@@ -16,6 +16,7 @@ import type { ALOutboundDispatchPhase, ALOutboundDispatchPlan } from './al-outbo
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
+    toALOutboundAckRetryScheduleEndTimestamp,
     toALOutboundPendingAckExpireAtTimestamp,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
@@ -329,7 +330,11 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
         return;
     }
 
-    mutations.push({ kind: 'set-pending-ack', snapshot: pending });
+    mutations.push({
+        kind: 'set-pending-ack',
+        snapshot: pending,
+        expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending, resolveALMessageExpireAtMs(read.msg))
+    });
     durableEffects.push({
         effectId: toALOutboundEffectId([
             'ack-timeout',
@@ -338,7 +343,7 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
             pending.deadlineAtMs
         ]),
         retryAtMs: pending.deadlineAtMs,
-        expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending),
+        expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending),
         payload: { kind: 'ack-timeout', msgId: pending.msgId }
     });
 }

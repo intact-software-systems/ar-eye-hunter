@@ -80,7 +80,7 @@ export function computeALOutboundControlAdmission(
         removeRepairAttempt: terminal || pending.kind === 'remove' ||
             (pending.kind === 'set' && isALOutboundReceiptComplete(pending.value)),
         receiptExpireAtTimestamp: pending.kind === 'set' && !isALOutboundReceiptComplete(pending.value)
-            ? toALOutboundPendingAckExpireAtTimestamp(pending.value)
+            ? toALOutboundPendingAckExpireAtTimestamp(pending.value, read.sent?.reference.expiresAtMs)
             : Math.max(
                 read.sent?.reference.expiresAtMs ?? 0,
                 toExpireAtTimestampFromNow(retention.durableEffectTtlMs, read.nowMs)

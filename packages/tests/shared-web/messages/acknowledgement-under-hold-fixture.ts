@@ -77,9 +77,17 @@ export interface HoldSender {
  * A lane variable added on top of the hold, to the armed and the unarmed case alike: the submission's
  * own retransmission under the held typeId (`ack-timeout`), the lane's cancel of the held send, or,
  * over IndexedDB only, an expired row in the ACK's read set that a concurrent chain evicts first
- * (`expired-row-evicted`).
+ * (`expired-row-evicted`). The three `ack-*-retry-schedule` / `ack-after-retries-exhausted` variables
+ * move the ACK's arrival against the receipt's retry schedule, always inside the message deadline.
  */
-export type HoldEscalation = 'none' | 'ack-timeout' | 'cancel-held' | 'expired-row-evicted';
+export type HoldEscalation =
+    | 'none'
+    | 'ack-timeout'
+    | 'cancel-held'
+    | 'expired-row-evicted'
+    | 'ack-inside-retry-schedule'
+    | 'ack-after-retry-schedule'
+    | 'ack-after-retries-exhausted';
 
 /** Every carrier, with the hold armed or not, under every lane variable. */
 export const ACK_UNDER_HOLD_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
@@ -89,6 +97,18 @@ export const ACK_UNDER_HOLD_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =
 /** Every carrier, with the hold armed or not, while a concurrent chain evicts an expired row the ACK read. */
 export const ACK_UNDER_CONCURRENT_EVICTION_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
     ([false, true] as const).map((armed) => [carrier, armed, 'expired-row-evicted'] as const)
+);
+
+/**
+ * Every carrier, with the hold armed or not, as the ACK arrives just before the retry schedule ends,
+ * after it ended with no retry claimed, or after every retry ran; each inside the message deadline.
+ */
+export const ACK_AGAINST_RETRY_SCHEDULE_CASES = (['rtc', 'ws'] as const).flatMap((carrier) =>
+    ([false, true] as const).flatMap((armed) =>
+        (['ack-inside-retry-schedule', 'ack-after-retry-schedule', 'ack-after-retries-exhausted'] as const).map((
+            escalation
+        ) => [carrier, armed, escalation] as const)
+    )
 );
 
 /** Where an inbound ACK's admission stopped, read from the two spied hops: a value, never a throw. */
@@ -181,14 +201,17 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     };
 }
 
-/** The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in sequence. */
+/**
+ * The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in
+ * sequence, with the browser sender's default 30 s deadline.
+ */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string) => ALMessage {
     let seq = 0;
     return (resourceId) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq });
+        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs: 30_000 });
     };
 }
 
@@ -417,6 +440,7 @@ export async function expectAcknowledgedUnderHold(
     await sender.advance(100);
     await runHoldEscalation(sender, escalation, { submission, held });
     const ack = toReceiverAck(submission, sender.selfPeerId);
+    expect(handle.lifecycle().expiresAtMs).toBeGreaterThan(Date.now());
     const retried = sender.drain();
     sender.deliver(ack);
     await retried;
@@ -426,7 +450,11 @@ export async function expectAcknowledgedUnderHold(
     await sender.settle();
 
     expect(sender.faults.getObservations().length > 0).toBe(armed);
-    expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered' });
+    // A conflict with a concurrent ack-timeout claim answers `pending-control`, and its replay acknowledges.
+    expect(readControlAdmissionStop(witness, ack)).toEqual({
+        stop: 'outbound-answered',
+        result: { kind: expect.stringMatching(/^(committed|pending-control)$/) }
+    });
     expect(sender.diagnostics).toContainEqual(expect.objectContaining({
         kind: 'admission-outcome',
         msgId: ack.id.msgId,
@@ -437,19 +465,78 @@ export async function expectAcknowledgedUnderHold(
     expect(sender.readFaultedTypeIds()).not.toContain(AL_CONTROL_ACK_TYPE_ID);
 }
 
+/** Without an ACK inside the deadline the send ends `expired`, and an ACK after it is refused. */
+export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<void> {
+    const witness = watchControlAdmission();
+    const submission = sender.createMessage('submission');
+    const handle = await sender.send(submission);
+    await sender.drain();
+    await runAckTimeoutClaimsToExhaustion(sender, submission.id.msgId);
+    const deadlineMs = handle.lifecycle().expiresAtMs;
+    if (deadlineMs === undefined) {
+        throw new Error(`No deadline for ${submission.id.msgId}`);
+    }
+    await sender.advance(deadlineMs - Date.now() + 1);
+    await sender.drain();
+    const ack = toReceiverAck(submission, sender.selfPeerId);
+    sender.deliver(ack);
+    await sender.settle();
+
+    expect(readControlAdmissionStop(witness, ack)).toMatchObject({ stop: 'outbound-answered', result: { kind: 'rejected' } });
+    expect(await sender.readPendingAck(submission.id.msgId)).toBeUndefined();
+    expect(handle.lifecycle()).toMatchObject({ state: 'expired', evidence: { confirmedHopPeerIds: [] } });
+}
+
 async function runHoldEscalation(
     sender: HoldSender,
     escalation: HoldEscalation,
     sent: Readonly<{ submission: ALMessage; held: ALMessage; }>
 ): Promise<void> {
-    if (escalation === 'ack-timeout') {
-        await runAckTimeoutClaim(sender, sent.submission.id.msgId);
+    const msgId = sent.submission.id.msgId;
+    switch (escalation) {
+        case 'none':
+            return;
+        case 'ack-timeout':
+            return await runAckTimeoutClaim(sender, msgId);
+        case 'cancel-held':
+            return sender.cancel(sent.held.id.msgId);
+        case 'expired-row-evicted':
+            return await setNextAcksReadEvictionRaced(sender.outboundAdmissionNamespace, msgId);
+        case 'ack-inside-retry-schedule':
+            return await advanceToRetryScheduleEnd(sender, await readRetryScheduleEndMs(sender, msgId), -1_000);
+        case 'ack-after-retry-schedule':
+            return await advanceToRetryScheduleEnd(sender, await readRetryScheduleEndMs(sender, msgId), 2_000);
+        case 'ack-after-retries-exhausted': {
+            const endMs = await readRetryScheduleEndMs(sender, msgId);
+            await runAckTimeoutClaimsToExhaustion(sender, msgId);
+            return await advanceToRetryScheduleEnd(sender, endMs, 2_000);
+        }
     }
-    if (escalation === 'cancel-held') {
-        sender.cancel(sent.held.id.msgId);
+}
+
+/** The receipt's retry schedule ends when its last `ack-timeout` window closes: one timeout per attempt left. */
+async function readRetryScheduleEndMs(sender: HoldSender, msgId: string): Promise<number> {
+    const pending = await sender.readPendingAck(msgId);
+    if (pending === undefined) {
+        throw new Error(`No pending receipt for ${msgId}`);
     }
-    if (escalation === 'expired-row-evicted') {
-        await setNextAcksReadEvictionRaced(sender.outboundAdmissionNamespace, sent.submission.id.msgId);
+    return pending.deadlineAtMs + pending.timeoutMs * (pending.maxAttempts - pending.attempts + 1);
+}
+
+async function advanceToRetryScheduleEnd(sender: HoldSender, endMs: number, offsetMs: number): Promise<void> {
+    await sender.advance(Math.max(0, endMs + offsetMs - Date.now()));
+}
+
+/** Every `ack-timeout` claim the budget allows runs, and the one after it finds the budget spent. */
+async function runAckTimeoutClaimsToExhaustion(sender: HoldSender, msgId: string): Promise<void> {
+    const before = await sender.readPendingAck(msgId);
+    if (before === undefined) {
+        throw new Error(`No pending receipt for ${msgId}`);
+    }
+    for (let claim = 0; claim <= before.maxAttempts; claim += 1) {
+        await sender.advance(before.timeoutMs + 1);
+        await sender.drain();
+        await sender.settle();
     }
 }
 

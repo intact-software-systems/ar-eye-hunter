@@ -3,9 +3,11 @@ import '../../setup-browser-indexeddb.ts';
 import { afterEach, describe, it, vi } from 'vitest';
 
 import {
+    ACK_AGAINST_RETRY_SCHEDULE_CASES,
     ACK_UNDER_CONCURRENT_EVICTION_CASES,
     ACK_UNDER_HOLD_CASES,
     expectAcknowledgedUnderHold,
+    expectExpiredPastTheDeadline,
     openRtcHoldSender,
     openWsHoldSender
 } from './acknowledgement-under-hold-fixture.ts';
@@ -31,4 +33,17 @@ describe('an acknowledgement that arrives while a transport hold drops another s
             await expectAcknowledgedUnderHold(sender, armed, escalation);
         }
     );
+
+    it.each(ACK_AGAINST_RETRY_SCHEDULE_CASES)(
+        'acknowledges a %s send whose ACK arrives inside the message deadline (hold armed: %s, lane variable: %s)',
+        async (carrier, armed, escalation) => {
+            const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+            await expectAcknowledgedUnderHold(sender, armed, escalation);
+        }
+    );
+
+    it.each(['rtc', 'ws'] as const)('ends a %s send expired when no ACK arrives inside the message deadline', async (carrier) => {
+        const sender = carrier === 'rtc' ? await openRtcHoldSender() : await openWsHoldSender();
+        await expectExpiredPastTheDeadline(sender);
+    });
 });

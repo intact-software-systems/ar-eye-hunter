@@ -1716,6 +1716,174 @@ export async function setNextAcksReadEvictionRaced(namespace: string, msgId: str
       - `npm run test:rallar:full-stack:memory:alm`, once. The three cells are recorded as in Task 5
         Step 3.
 
+### Task 10: A late acknowledgement inside the deadline acknowledges
+
+Per controller ruling R-S2a-9, under the maintainer's decision of 2026-09-23. The re-read of hosted run
+35895320587 at `ce6b1737b` (`.superpowers/s2a-reread-2-diagnosis.md`) shows the sender admitting the
+receiver's ACK (`not-handled`/`control`, no throw) 0.3–5.6 s after the receiver sent it. That is
+inside the send's 30 s deadline, yet the handle never gains a confirmed hop and reads `expired` at
+`receipts-1`. The pending-ACK receipt the ACK completes against lived about 10 s from the admission
+read: the row's expiry was the end of its retry schedule, `deadlineAtMs + timeoutMs × (maxAttempts −
+attempts + 1)` (2 s + 3 × 2 s at the browser's `at-least-once` defaults). Spending the retry budget
+also deleted it (`retryPendingAck` → `commitClearPendingAck`). The ACK arrived at least 3.8 s (rtc)
+and 7.1 s (fallback) after that, so `validateALOutboundControlAdmission` refused it with `AL
+acknowledgement sender has no pending outbound obligation`. The RTC streamer's `onControlMessage`
+discarded that verdict unlogged.
+
+The fix separates "no more retries" from "the obligation ended". The receipt row lives until the
+message's own deadline, never shorter than its retry schedule. The `ack-timeout` effect rows keep
+the schedule's end. A spent budget stops scheduling and deletes nothing. The ACK therefore finds its
+receipt and commits the normal `acknowledgement` settlement, and `expired` at the deadline stays the
+terminal state when no ACK comes.
+
+**Files:**
+
+- Modify: `packages/shared/alm/outbound/transition-al-outbound-pending-ack.ts`. The old expiry
+  function is renamed `toALOutboundAckRetryScheduleEndTimestamp` and is now the schedule's end.
+  `toALOutboundPendingAckExpireAtTimestamp(snapshot, messageExpiresAtMs)` is the receipt row's
+  expiry: the later of the schedule's end and the message deadline.
+- Modify: `packages/shared/alm/outbound/compute-al-outbound-dispatch.ts` and
+  `al-outbound-repair-admission.ts`. Both pass the receipt row's expiry on `set-pending-ack`, with the
+  deadline taken from `resolveALMessageExpireAtMs(msg)`. The `ack-timeout` effect keeps the schedule's
+  end. In `retryPendingAck`, a spent budget warns and returns instead of calling
+  `commitClearPendingAck`.
+- Modify: `packages/shared/alm/outbound/compute-al-outbound-control-admission.ts`. A partial receipt's
+  expiry uses the sent message's `reference.expiresAtMs`.
+- Modify: `packages/shared/alm/outbound/admission/al-outbound-admission-mutations.ts`. The default
+  expiry of a `set-pending-ack` that names none is the schedule's end.
+- Modify: `packages/shared/alm/outbound/al-outbound-message-runtime.ts` (the diagnostics union, the
+  repair admission's wiring), `al-outbound-repair-admission.ts` (the `diagnostics` dependency and
+  `emitControlAdmission`), and `packages/tests/shared/alm/al-outbound-message-expiry.test.ts` (the new
+  dependency).
+- Modify: `packages/tests/shared-web/messages/acknowledgement-under-hold-fixture.ts`. It gains three
+  `HoldEscalation` values, `ACK_AGAINST_RETRY_SCHEDULE_CASES` and `expectExpiredPastTheDeadline`. The
+  RTC scenario message carries the browser sender's 30 s `ttlMs`. The stop assertion now names the
+  outbound result.
+- Modify: `acknowledgement-under-transport-hold-indexeddb.test.ts` and
+  `acknowledgement-under-transport-hold.test.ts`, which each gain two `it.each`.
+- Modify: `packages/tests/shared/alm/outbound-commit-phase-diagnostics.test.ts`, which gains the
+  `control-admission` pin.
+- Modify: `packages/shared/alm/outbound/README.md` (the `ack-timeout` row and the obligation's
+  lifetime) and `packages/shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md` (the
+  `control-admission` kind).
+
+**Interfaces:**
+
+```ts
+// packages/shared/alm/outbound/transition-al-outbound-pending-ack.ts
+export function toALOutboundAckRetryScheduleEndTimestamp(snapshot: ALOutboundPendingAckSnapshot): number;
+export function toALOutboundPendingAckExpireAtTimestamp(
+    snapshot: ALOutboundPendingAckSnapshot,
+    messageExpiresAtMs: number | undefined
+): number;
+
+// packages/shared/alm/outbound/al-outbound-message-runtime.ts: ALOutboundRuntimeDiagnosticsEvent gains
+| Readonly<{
+    kind: 'control-admission';
+    msgId: string; // the control's own id
+    typeId: string;
+    targetMsgId: string; // the sent message it answers
+    outcome: ALOutboundControlAdmissionResult['kind'];
+    reason: string; // the rejection's reasons, or 'none'
+}>;
+
+// packages/shared/alm/outbound/al-outbound-repair-admission.ts
+ALOutboundRepairAdmission.Dependencies.diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+
+// packages/tests/shared-web/messages/acknowledgement-under-hold-fixture.ts
+export type HoldEscalation = /* ... */ | 'ack-inside-retry-schedule' | 'ack-after-retry-schedule'
+    | 'ack-after-retries-exhausted';
+export const ACK_AGAINST_RETRY_SCHEDULE_CASES; // carrier × armed × the three
+export async function expectExpiredPastTheDeadline(sender: HoldSender): Promise<void>;
+```
+
+- [x] **Step 1: RED (advanced clock).** `expectAcknowledgedUnderHold` runs three new lane variables
+      on both carriers, armed and unarmed, over memory and fake-indexeddb stores. The schedule's end is
+      read from the receipt before any retry (`deadlineAtMs + timeoutMs × (maxAttempts − attempts + 1)`,
+      10 s after the admission read at the defaults):
+      - `ack-inside-retry-schedule`: the clock stops 1 s before the end. This is today's positive
+      case, GREEN before and after the fix.
+      - `ack-after-retry-schedule`: the clock moves 2 s past the end with no retry claimed. This is
+      the hosted geometry.
+      - `ack-after-retries-exhausted`: each `ack-timeout` claim runs, one per timeout, until the budget
+      is spent. Then the clock moves 2 s past the end.
+
+      Every case asserts `handle.lifecycle().expiresAtMs > Date.now()` before the ACK is delivered, so
+      the ACK is always inside the deadline. The stop assertion names the outbound result:
+      `expect(readControlAdmissionStop(witness, ack)).toEqual({ stop: 'outbound-answered', result: {
+      kind: expect.stringMatching(/^(committed|pending-control)$/) } })`. After it come the ACK's
+      `admission-outcome` and `handle.lifecycle().state === 'acknowledged'`. `pending-control` is
+      accepted because in memory an `ack-timeout` claim in the same drain can conflict with the ACK's
+      commit, and the replay then acknowledges.
+
+      RED against `ce6b1737b`'s product code: 16 failed and 40 passed. The failures are the two
+      "after" variables × rtc/ws × armed/unarmed × memory/IndexedDB. The result is the same on every
+      run:
+
+      ```
+      AssertionError: expected { stop: 'outbound-answered', …(1) } to deeply equal { stop: 'outbound-answered', …(1) }
+          "result": {
+      -     "kind": StringMatching /^(committed|pending-control)$/,
+      +     "kind": "rejected",
+      +     "reason": "AL acknowledgement sender has no pending outbound obligation",
+      ```
+
+      With the stop assertion weakened to the Task 7 form, the same cases fail on
+      `expected 'transport-accepted' to be 'acknowledged'`: the ACK is admitted inbound, refused
+      outbound, and the hop lists stay empty. The `ack-inside-retry-schedule` cases and the whole Task
+      7/9 matrix stay GREEN. The negative pin `expectExpiredPastTheDeadline` sends with no ACK, spends
+      the budget, and moves past the deadline. It asserts that a late ACK is then `rejected`, that the
+      receipt is gone, and that the handle reads `expired` with no confirmed hop. It is GREEN before
+      and after the fix.
+      Command: `npx vitest run packages/tests/shared-web/messages/acknowledgement-under-transport-hold-indexeddb.test.ts packages/tests/shared-web/messages/acknowledgement-under-transport-hold.test.ts`
+- [x] **Step 2: The fix at the source, one mechanism.** The receipt row's expiry becomes
+      `max(schedule end, message deadline)`, and a spent retry budget stops scheduling without
+      deleting the receipt. The row an ACK completes against is the obligation, and it must outlive
+      the retransmission schedule, while the `ack-timeout` rows are what carry that schedule. So
+      moving only the row's expiry, and removing only the exhaustion delete, ends retries exactly
+      where they ended before and keeps the obligation to the deadline. Both halves are needed:
+      restoring only the exhaustion delete turns the four `ack-after-retries-exhausted` IndexedDB
+      cases RED again with the same refusal. Every other part stays as it was:
+      - No timer, queue, registry, or row kind was added, and no key changed.
+      - Conflict stays a value.
+      - The settlement is still emitted synchronously in `admit`.
+      - The operation-count pins are unchanged, because the row is written under the same key in the
+      same transaction with only a later expiry.
+
+      One side effect: a gap NACK or repair control from an expected multicast peer is authorized
+      against the receipt until the deadline, where before it was authorized only until the
+      schedule's end.
+- [x] **Step 3: The diagnostic.** `ALOutboundRepairAdmission.acceptControlMessage` emits a
+      `control-admission` event through the outbound diagnostics sink for every control it decodes.
+      The event carries the control's `msgId` and `typeId`, the `targetMsgId` it answers, the
+      `outcome`, and the rejection's `reason` (or `none`). A throwing sink is caught and logged, as
+      `ALOutboundDispatchAdmission.emitDiagnostics` does. There is one event per control frame, the
+      same cadence as the inbound `admission-outcome`, and it rides the page's batched diagnostics.
+      The contract doc documents it. It is pinned over memory and IndexedDB: a first ACK reads
+      `committed`/`none`, and an unexpected peer's ACK reads `rejected`/`AL acknowledgement sender has
+      no pending outbound obligation`.
+      Command: `npx vitest run packages/tests/shared/alm/outbound-commit-phase-diagnostics.test.ts`
+- [x] **Step 4: Verify.**
+      - Every RED case is GREEN, and so is the whole Task 7/9 matrix: 56 tests.
+      - The broad sweep passes. The 10 failures in three `shared-test` files bind loopback ports and
+      pass unsandboxed.
+      - `al-indexeddb-operation-counts.test.ts` passes 13/13, unchanged: 10 / 15 per default send, 6
+      + 2 inbound, release 1, and the idle relay relays nothing.
+      - Bundles: the facade is 213.2 KiB against 214, and headless is 271.083 KiB against 272. No
+      ceiling moved.
+
+      Commands:
+
+      - `npx vitest run packages/tests/shared/alm packages/tests/shared-web/messages packages/tests/shared-web/websocket packages/tests/shared-web/rtc packages/tests/shared-web/al-runtime packages/tests/shared/transport-faults packages/tests/shared/qrtc-data-channel.test.ts packages/tests/shared/websocket/json-web-socket-client-faults.test.ts packages/tests/shared/al-outbound-message-runtime.test.ts packages/tests/shared-test packages/tests/shared/services`
+      - `npx tsc -p packages/shared/tsconfig.json --noEmit`
+      - `node scripts/check-tests-typecheck.mjs`
+      - `npm run check:repo-style:changed -- origin/main HEAD`
+      - `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`
+      - `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`
+      - `npx vitest run packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts`
+      - `npx dprint check <touched files>`
+      - `npm run test:rallar:full-stack:memory:alm`, once.
+
 ### Task 6: Re-observe hosted under the regime rule, the PR, and the gates
 
 **Files:** none in production; the lane's artifacts and the pull request.
@@ -1974,6 +2142,24 @@ read and is cleared after it. The PR body reports each change and the run that c
     - The Self-review's Task 7 bullets now point at Task 9.
     - The headless ceiling moves from 271 to 272, measured at 271.0087890625 KiB, under the Global
       Constraints' next-whole-KiB rule.
+
+- **R-S2a-9 (Task 10: a late acknowledgement inside the deadline acknowledges).** Decided by the
+  controller, under the maintainer's decision of 2026-09-23: reproduce first on an advanced clock,
+  then fix at the source.
+  - **Reproduction.** The Task 7/9 pin gained three clock variables. With the ACK 2 s past the
+    receipt's retry schedule, and with or without the retries run, the outbound admission answers
+    `rejected: AL acknowledgement sender has no pending outbound obligation`, and the handle stays
+    `transport-accepted`. This holds on both carriers, armed and unarmed, over both stores. An ACK 1
+    s before the schedule's end acknowledges.
+  - **Fix.** The receipt row's expiry is the message deadline, never shorter than the retry schedule.
+    The `ack-timeout` rows keep the schedule's end, and a spent budget schedules nothing and deletes
+    nothing.
+  - **Why.** The receipt is the obligation an ACK completes against, and the `ack-timeout` rows are
+    the retransmission schedule. The two lifetimes were one number, so ending the retries ended the
+    obligation.
+  - **Diagnostic.** The outbound verdict that every carrier discarded is now the `control-admission`
+    outbound diagnostic.
+  - **Changed in the plan:** Task 10 added after Task 9.
 
 ## Not in this slice
 
