@@ -3,6 +3,7 @@ import { expect, onTestFinished, vi, type MockInstance, type MockSettledResult }
 import {
     configureBrowserALRuntimeStores,
     resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores,
     resolveBrowserWsClientALOutboundRuntimeStores
 } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
@@ -253,6 +254,7 @@ function openRtcSenderOwners(runtime: HoldSenderRuntime, service: WebRtcConnecti
         webRtcOverlayMulticastManager: manager,
         qboxEngine: runtime.engine,
         clientData: { clientId: 'self', sessionId: 'self', isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores('self'),
         inboundDiagnostics: (event) => runtime.diagnostics.push(event)
     });
     streamer.addPeer(service.readPeer('receiver')!);
@@ -316,6 +318,7 @@ async function connectWsQueueBox(runtime: HoldSenderRuntime, sessionId: string) 
         qboxEngine: runtime.engine,
         socket: new JsonWebSocketClient('ws://test', runtime.faults),
         clientData: { clientId: sessionId, sessionId, isOnline: true },
+        inboundStores: resolveBrowserSessionALInboundRuntimeStores(sessionId),
         connectTimeoutMs: 0
     });
     await vi.advanceTimersByTimeAsync(0);

@@ -1,10 +1,8 @@
-import {
-    resolveBrowserWsClientALInboundRuntimeStores,
-    resolveBrowserWsClientALOutboundRuntimeStores
-} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import { resolveBrowserWsClientALOutboundRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import type { ALQosInputProvider } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliverySettlementSink } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '@shared/alm/inbound/al-inbound-runtime-diagnostics.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ClientInfo } from '@shared/api/api-config.ts';
@@ -32,6 +30,7 @@ export namespace CreateBrowserWebSocketQueueBox {
         readonly qboxEngine: InboxOutboxEngine;
         readonly socket: JsonWebSocketClient;
         readonly clientData: ClientInfo;
+        readonly inboundStores: ALInboundRuntimeStores;
         readonly signal?: AbortSignal;
         readonly connectTimeoutMs: number;
         readonly newConnectionRequestId: (() => string) | undefined;
@@ -77,7 +76,7 @@ function createBrowserWebSocketQueueBoxService(
         outbox: outboundStores.workQueue,
         socket,
         sessionId: clientData.sessionId,
-        inboundStores: resolveBrowserWsClientALInboundRuntimeStores(clientData.sessionId),
+        inboundStores: input.inboundStores,
         outboundStores,
         outboundDiagnostics: input.outboundDiagnostics,
         outboundSettlements: input.outboundSettlements,

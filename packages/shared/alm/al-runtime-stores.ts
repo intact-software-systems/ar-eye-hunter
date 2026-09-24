@@ -31,6 +31,8 @@ export interface CreateInMemoryALRuntimeStoresInput {
     readonly nowMs: () => number;
     readonly namespace: string;
     readonly canonicalScope?: string;
+    /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
+    readonly inboundBackend?: ALAdmissionWorkBackend;
     readonly outboundBackend?: ALAdmissionWorkBackend;
     readonly orderingTrackTtlMs: number;
     readonly supersedenceTrackTtlMs: number;
@@ -60,6 +62,8 @@ export interface CreateDefaultALRuntimeStoresInput {
     readonly nowMs?: () => number;
     readonly namespace?: string;
     readonly canonicalScope?: string;
+    /** Absent, each inbound resolve builds its own backend; present, every resolve shares it. */
+    readonly inboundBackend?: ALAdmissionWorkBackend;
     readonly outboundBackend?: ALAdmissionWorkBackend;
     readonly dbName?: string;
     readonly orderingTrackTtlMs?: number;
@@ -76,12 +80,13 @@ const DEFAULT_INDEXED_DB_NAME = 'rallar-al-runtime';
 export function createInMemoryALInboundRuntimeStores(
     input: CreateInMemoryALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    const backend = new InMemoryAdmissionBackend(
-        createInMemoryALAdmissionState(
-            new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
-        ),
-        input.nowMs
-    );
+    const backend = input.inboundBackend ??
+        new InMemoryAdmissionBackend(
+            createInMemoryALAdmissionState(
+                new InMemoryQueueBox(undefined, () => Temporal.Instant.fromEpochMilliseconds(input.nowMs()))
+            ),
+            input.nowMs
+        );
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
@@ -122,15 +127,16 @@ export function createInMemoryALOutboundRuntimeStores<TPrepared>(
 export function createIndexedDbALInboundRuntimeStores(
     input: CreateIndexedDbALRuntimeStoresInput
 ): ALInboundRuntimeStores {
-    const backend = new IndexedDbAdmissionBackend({
-        dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
-        storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-        nowMs: input.nowMs,
-        newWriteToken: crypto.randomUUID.bind(crypto),
-        observer: input.observer,
-        schemaId: input.schemaId,
-        onStorageReset: input.onStorageReset
-    });
+    const backend = input.inboundBackend ??
+        new IndexedDbAdmissionBackend({
+            dbName: input.dbName ?? DEFAULT_INDEXED_DB_NAME,
+            storeName: IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
+            nowMs: input.nowMs,
+            newWriteToken: crypto.randomUUID.bind(crypto),
+            observer: input.observer,
+            schemaId: input.schemaId,
+            onStorageReset: input.onStorageReset
+        });
     return {
         admissionStore: createALInboundAdmissionStore({
             nowMs: input.nowMs,
@@ -212,6 +218,7 @@ function toDefaultInMemoryInput(
         nowMs: options.nowMs ?? Date.now,
         namespace: options.namespace ?? DEFAULT_NAMESPACE,
         canonicalScope: options.canonicalScope,
+        inboundBackend: options.inboundBackend,
         outboundBackend: options.outboundBackend,
         orderingTrackTtlMs: options.orderingTrackTtlMs ?? 5 * 60_000,
         supersedenceTrackTtlMs: options.supersedenceTrackTtlMs ?? 5 * 60_000,

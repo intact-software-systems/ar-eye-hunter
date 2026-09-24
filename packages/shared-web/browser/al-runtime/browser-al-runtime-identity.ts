@@ -9,16 +9,18 @@ export const BROWSER_AL_RUNTIME_DB_NAME = 'ar-eye-hunter-al-runtime';
 export const BROWSER_AL_RUNTIME_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 export const BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX = 'browser:';
 
+/** One inbound admission store per browser session, whichever carrier delivered the message (S2b). */
+export function toBrowserSessionALInboundRuntimeStoreId(
+    sessionId: string
+): ALRuntimeStoreId<ALOutboundTransportMessage> {
+    return toALRuntimeStoreId(`browser-session-inbound:${sessionId}`);
+}
+
+/** WS outbound only since S2b. */
 export function toBrowserWsClientALRuntimeStoreId(
     sessionId: string
 ): ALRuntimeStoreId<ALOutboundTransportMessage> {
     return toALRuntimeStoreId(`browser-ws-client:${sessionId}`);
-}
-
-export function toBrowserRtcRxALRuntimeStoreId(
-    sessionId: string
-): ALRuntimeStoreId<ALOutboundTransportMessage> {
-    return toALRuntimeStoreId(`browser-rtc-rx:${sessionId}`);
 }
 
 export function toBrowserRtcOverlayALRuntimeStoreId(
@@ -35,8 +37,8 @@ export function toBrowserSessionALRuntimeEntryKeyPrefixes(
     sessionId: string
 ): readonly string[] {
     return [
+        toBrowserALRuntimeEntryKeyPrefix(toBrowserSessionALInboundRuntimeStoreId(sessionId)),
         toBrowserALRuntimeEntryKeyPrefix(toBrowserWsClientALRuntimeStoreId(sessionId)),
-        toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId)),
         toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcOverlayALRuntimeStoreId(sessionId))
     ];
 }
@@ -46,19 +48,13 @@ export function toBrowserALRuntimeNamespace(name: string): string {
     return `${BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX}${name}`;
 }
 
-/**
- * Every AL_INBOUND/AL_OUTBOUND work namespace one browser session can own, inbound and outbound
- * alike — a store that only owns one direction simply never has rows under its other namespace.
- */
+/** Every AL_INBOUND/AL_OUTBOUND work namespace one browser session owns: one inbound, two outbound. */
 export function toBrowserSessionALRuntimeWorkNamespaces(
     sessionId: string
 ): readonly string[] {
     return [
-        toBrowserWsClientALRuntimeStoreId(sessionId),
-        toBrowserRtcRxALRuntimeStoreId(sessionId),
-        toBrowserRtcOverlayALRuntimeStoreId(sessionId)
-    ].flatMap((storeId) => {
-        const namespace = toBrowserALRuntimeNamespace(storeId);
-        return [`${namespace}:inbound:admission`, `${namespace}:outbound:admission`];
-    });
+        `${toBrowserALRuntimeNamespace(toBrowserSessionALInboundRuntimeStoreId(sessionId))}:inbound:admission`,
+        `${toBrowserALRuntimeNamespace(toBrowserWsClientALRuntimeStoreId(sessionId))}:outbound:admission`,
+        `${toBrowserALRuntimeNamespace(toBrowserRtcOverlayALRuntimeStoreId(sessionId))}:outbound:admission`
+    ];
 }

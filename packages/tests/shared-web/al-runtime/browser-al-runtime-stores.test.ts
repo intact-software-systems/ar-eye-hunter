@@ -15,7 +15,7 @@ import {
     BROWSER_AL_RUNTIME_STORE_NAME,
     toBrowserALRuntimeEntryKeyPrefix,
     toBrowserRtcOverlayALRuntimeStoreId,
-    toBrowserRtcRxALRuntimeStoreId,
+    toBrowserSessionALInboundRuntimeStoreId,
     toBrowserWsClientALRuntimeStoreId
 } from '@shared-web/browser/al-runtime/browser-al-runtime-identity.ts';
 import {
@@ -369,17 +369,17 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const targetWsAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(targetSessionId).admissionStore;
         const targetOverlayAdmissionStore = resolveBrowserRtcOverlayALOutboundRuntimeStores(targetSessionId).admissionStore;
         const otherAdmissionStore = resolveBrowserWsClientALOutboundRuntimeStores(otherSessionId).admissionStore;
-        const targetRtcRxKey = `${
+        const targetInboundKey = `${
             toBrowserALRuntimeEntryKeyPrefix(
-                toBrowserRtcRxALRuntimeStoreId(targetSessionId)
+                toBrowserSessionALInboundRuntimeStoreId(targetSessionId)
             )
-        }inbound:admission:target-rx`;
+        }inbound:admission:target-inbound`;
 
         await persistSentMessage(targetWsAdmissionStore, 'target-ws');
         await persistSentMessage(targetOverlayAdmissionStore, 'target-overlay');
         await putRawBrowserALRuntimeEntry({
-            key: targetRtcRxKey,
-            value: { value: 'target-rx' },
+            key: targetInboundKey,
+            value: { value: 'target-inbound' },
             expireAtTimestamp: Date.now() + 60_000,
             writeToken: crypto.randomUUID(),
             revision: 1
@@ -389,8 +389,8 @@ describe('Browser AL runtime IndexedDB stores', () => {
         const targetWsSentPrefix = toBrowserOutboundSentPrefix(
             toBrowserWsClientALRuntimeStoreId(targetSessionId)
         );
-        const targetRtcRxPrefix = toBrowserALRuntimeEntryKeyPrefix(
-            toBrowserRtcRxALRuntimeStoreId(targetSessionId)
+        const targetInboundPrefix = toBrowserALRuntimeEntryKeyPrefix(
+            toBrowserSessionALInboundRuntimeStoreId(targetSessionId)
         );
         const targetOverlaySentPrefix = toBrowserOutboundSentPrefix(
             toBrowserRtcOverlayALRuntimeStoreId(targetSessionId)
@@ -406,7 +406,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
         expect(result.scanned).toBe(11);
         expect(result.deleted).toBe(11);
         expect(await readBrowserALRuntimeEntryKeys(targetWsSentPrefix)).toEqual([]);
-        expect(await readBrowserALRuntimeEntryKeys(targetRtcRxPrefix)).toEqual([]);
+        expect(await readBrowserALRuntimeEntryKeys(targetInboundPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(targetOverlaySentPrefix)).toEqual([]);
         expect(await readBrowserALRuntimeEntryKeys(otherSentPrefix)).toEqual([
             `${otherSentPrefix}:other-ws`
@@ -415,7 +415,7 @@ describe('Browser AL runtime IndexedDB stores', () => {
 
     it('does not delete a generic persistence row refreshed after cleanup reads it', async () => {
         const sessionId = `cleanup-race-${crypto.randomUUID()}`;
-        const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId))}inbound:admission`;
+        const keyPrefix = `${toBrowserALRuntimeEntryKeyPrefix(toBrowserSessionALInboundRuntimeStoreId(sessionId))}inbound:admission`;
         const key = `${keyPrefix}:refreshed`;
         configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
         await resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.ready();

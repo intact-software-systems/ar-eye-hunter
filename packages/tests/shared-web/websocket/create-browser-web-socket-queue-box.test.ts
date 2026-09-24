@@ -7,7 +7,10 @@ import {
     vi
 } from 'vitest';
 
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
+import {
+    configureBrowserALRuntimeStores,
+    resolveBrowserSessionALInboundRuntimeStores
+} from '@shared-web/browser/al-runtime/browser-al-runtime-stores.ts';
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -56,6 +59,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             connectTimeoutMs: 25,
             signal: controller.signal
         });
@@ -104,6 +108,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             connectTimeoutMs,
             signal: controller.signal
         });
@@ -140,6 +145,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             connectTimeoutMs: 0,
             signal: controller.signal
         });
@@ -190,6 +196,7 @@ describe('createBrowserWebSocketQueueBox', () => {
             qboxEngine,
             socket,
             clientData,
+            inboundStores: resolveBrowserSessionALInboundRuntimeStores(clientData.sessionId),
             connectTimeoutMs,
             signal: controller.signal
         });
