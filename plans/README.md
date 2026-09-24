@@ -15,6 +15,9 @@ completion record here.
 - A written multi-slice spec, when one is useful, lives at
   `plans/active/<topic>.md`. The pull request remains the delivery record.
   There is no index of those files.
+- The ALM design set stays at `playground/alm/`. It is current work. The
+  snapshot readers in `playground/alm/tools/` belong to the hosted lifecycle
+  diagnosis beside those documents.
 
 ## Tooling kept beside the prose
 

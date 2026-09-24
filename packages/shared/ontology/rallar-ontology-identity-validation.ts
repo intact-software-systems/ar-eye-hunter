@@ -8,7 +8,7 @@ const ontologySeriesPattern = /^(?:domain|realtime|code-standards)$/u;
 const repositoryTargetRoots = new Set(
     (
         '.agents .codex-plugin .github .run .superpowers .vscode apps docs examples packages plans ' +
-        'projects scripts tests .gitignore AGENTS.md ' +
+        'playground projects scripts tests .gitignore AGENTS.md ' +
         'README.md deno.json deno.lock docker-compose.yml dprint.json no-js-files-outside-dist.sh ' +
         'package-lock.json package.json tsconfig.json vitest.config.ts'
     ).split(' ')

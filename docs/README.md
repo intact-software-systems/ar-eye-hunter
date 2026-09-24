@@ -4,8 +4,10 @@ Start with the product, then the architecture, then the guide for the job.
 Package and app notes stay next to the code they describe. This index links to
 them. It does not copy them.
 
-Historical implementation plans are not product documentation. `plans/README.md`
-says where a written plan belongs.
+Historical implementation plans are not product documentation.
+[plans/README.md](../plans/README.md) says where a written plan belongs. The ALM
+design that is still underway lives in `playground/alm/`, starting at
+`playground/alm/alm-improvement-plan.md`.
 
 ## Product
 
