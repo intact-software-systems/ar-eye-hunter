@@ -17,7 +17,6 @@ import { decodeALAdmissionNumber, decodeALAdmissionSupersedenceValue } from '../
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
-import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../ALStoreRetention.ts';
 import type { ALOrderingAcceptance } from '../compute-al-ordering-observation.ts';
 import {
     type ALLatestSupersedenceValue,
@@ -412,7 +411,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     async readIncomingMessage(input: ReadALInboundMessageInput): Promise<ALInboundAdmissionRead> {
         const { msg, prePlan } = input;
         return await this.backend.readWithin(async (session): Promise<ALInboundAdmissionRead> => {
-            const messageOwner = await this.readStoredMessageOwner(session, msg.id.msgId, msg.id.senderId);
+            const messageOwner = await readALInboundMessageOwner({
+                database: session,
+                namespace: this.namespace,
+                msgId: msg.id.msgId,
+                senderId: msg.id.senderId
+            });
             const dedupExpiresAt = await session.read(this.toDedupKey(prePlan.dedupKey), decodeALAdmissionNumber);
             const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
@@ -618,7 +622,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         transaction: ALAdmissionWriteContext,
         observed: ALInboundAdmissionObservations
     ): Promise<void> {
-        const messageOwner = await this.readStoredMessageOwner(transaction, observed.msgId, observed.senderId);
+        const messageOwner = await readALInboundMessageOwner({
+            database: transaction,
+            namespace: this.namespace,
+            msgId: observed.msgId,
+            senderId: observed.senderId
+        });
         const { pendingAck, acks } = await readStoredAcknowledgements({
             database: transaction,
             namespace: this.namespace,
@@ -765,7 +774,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         msg: ALMessage
     ): Promise<ALInboundMessageOwner> {
         const ownerKey = toALInboundMessageOwnerKey(this.namespace, msg.id.msgId, msg.id.senderId);
-        const owner = await this.readStoredMessageOwner(database, msg.id.msgId, msg.id.senderId);
+        const owner = await readALInboundMessageOwner({
+            database,
+            namespace: this.namespace,
+            msgId: msg.id.msgId,
+            senderId: msg.id.senderId
+        });
         if (owner === undefined) {
             throw new ALAdmissionCorruptionError(
                 ownerKey,
@@ -777,14 +791,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
         return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, ack));
-    }
-
-    private async readStoredMessageOwner(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        msgId: string,
-        senderId: string
-    ): Promise<ALInboundMessageOwner | undefined> {
-        return await readALInboundMessageOwner({ database, namespace: this.namespace, msgId, senderId });
     }
 
     private toDedupKey(dedupKey: string): string {

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { AL_DELIVERY_CARRIERS } from '../../al-contracts/al-control-value-codec.ts';
 import { isALControlTypeId } from '../../al-contracts/al-control.ts';
 import { decodeALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALInboundPendingAdmissionId, toALInboundPendingControlId } from './al-inbound-pending-admission.ts';
@@ -38,8 +39,6 @@ import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
-
-const AL_INBOUND_WORK_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
 
 export interface ALInboundDurableEffectWrite {
     readonly entry: ResourceEntry;
@@ -165,7 +164,7 @@ export function assertALInboundWorkCarrier(effect: ALPersistedInboundEffect, car
 
 /** Both carriers' rows share one store and one key space; only the type says whose runtime claims one. */
 function decodeALInboundWorkCarrier(entry: ResourceEntry, namespace: string): ALDeliveryCarrier {
-    const carrier = AL_INBOUND_WORK_CARRIERS.find((candidate) =>
+    const carrier = AL_DELIVERY_CARRIERS.find((candidate) =>
         entry.typeId === toALInboundWorkType(namespace, candidate)
     );
     if (carrier === undefined) {

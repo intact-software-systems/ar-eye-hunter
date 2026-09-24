@@ -29,7 +29,7 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         toPeerId: decodeControlIdentifier(record.toPeerId, 'ACK receiver identity'),
         status: decodeAckStatus(record.status),
         observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time'),
-        carrier: decodeControlCarrier(record.carrier, 'ACK carrier')
+        carrier: decodeALDeliveryCarrier(record.carrier, 'ACK carrier')
     };
 }
 
@@ -86,7 +86,7 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
             'pending ACK acknowledged peer identity'
         ),
         ...decodeOptionalNumber(record, 'expireAtTimestamp', 'pending ACK expiry'),
-        carrier: decodeControlCarrier(record.carrier, 'pending ACK carrier')
+        carrier: decodeALDeliveryCarrier(record.carrier, 'pending ACK carrier')
     };
 }
 
@@ -223,12 +223,16 @@ function decodeAckStatus(value: unknown): ALAckStatus {
     return value;
 }
 
-function decodeControlCarrier(value: unknown, label: string): ALDeliveryCarrier {
+/** The one carrier decoder for every persisted or wire `ALDeliveryCarrier` value. */
+export function decodeALDeliveryCarrier(value: unknown, label: string): ALDeliveryCarrier {
     if (value !== 'rtc' && value !== 'ws') {
         throw new TypeError(`${label} is invalid`);
     }
     return value;
 }
+
+/** The one enumeration of `ALDeliveryCarrier` values, for a decoder that must find the matching one. */
+export const AL_DELIVERY_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
 
 function decodeNackReason(value: unknown): ALNackReason {
     if (

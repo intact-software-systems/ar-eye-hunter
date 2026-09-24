@@ -79,15 +79,33 @@ existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
 
-**The deploy window.** The WS server's PostgreSQL control rows written
-before this change — `pending` and `acks` rows, `admit-control` retained
-payloads with no `carrier`, and old-format `AL_INBOUND:<fnv1a64(namespace)>`
-work rows with no carrier segment — are undecodable or unclaimed by the new
-runtime until their TTL passes: at most 30 minutes for the control rows, or
-longer for a `pending` row whose own message TTL outlives that window. An
-ACK sent by a page still running the old build is refused as malformed until
-that page reloads; the refusal is symmetric, in that an old-build page also
-refuses an ACK carrying the new field.
+**The deploy window.** No row kind this change touches lacks an expiry, so
+nothing the WS server's PostgreSQL store holds from before the deploy stays
+undecodable or unclaimed forever — but the window is longer than "30
+minutes" for two of the four row kinds:
+
+- `pending` and `acks` control rows, and carrier-less `admit-control`
+  retained payloads, are undecodable for their control TTL — 30 minutes by
+  default (`controlHistoryTtlMs`/`controlPendingTtlMs`) — except that a
+  `pending` row whose own message TTL outlives 30 minutes stays undecodable
+  for that longer message TTL instead.
+- A buffered-slot row written by the old build carries no `carrier` and is
+  undecodable for the message's own TTL, or 60 minutes by default
+  (`bufferedMessageTtlMs`/`repositoryTtlMs`) when the message has none. Until
+  it expires, every later admission on that same ordered track calls
+  `readOrderingState`, which lists and decodes every buffered slot of the
+  track, so the whole track stalls on `ALAdmissionCorruptionError` — not only
+  the one message the slot buffered. Past expiry, the row keeps throwing
+  until the runtime-state expiry worker sweeps it, because the PostgreSQL
+  prefix read decodes a row before it applies the expiry filter.
+- Old-format `AL_INBOUND:<fnv1a64(namespace)>` work rows with no carrier
+  segment are simply unclaimed by either runtime until they expire.
+
+An ACK sent by a page still running the old build is refused as malformed
+until that page reloads — this is not bounded by the row TTL, since the
+page itself, not a stored row, is what is out of date. The refusal is
+symmetric: an old-build page also refuses a new-build ACK carrying the new
+field, until it reloads.
 
 ## Admission and invocation paths
 

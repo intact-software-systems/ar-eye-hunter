@@ -1,5 +1,6 @@
 import {
     decodeALAckPayload,
+    decodeALDeliveryCarrier,
     decodeALNackPayload,
     decodeALPendingAckSnapshot,
     decodeALRepairPayload
@@ -26,10 +27,7 @@ export function decodeALAdmissionString(value: unknown): string {
 }
 
 export function decodeALAdmissionCarrier(value: unknown): ALDeliveryCarrier {
-    if (typeof value !== 'string' || (value !== 'rtc' && value !== 'ws')) {
-        throw new TypeError('Stored admission carrier is invalid');
-    }
-    return value;
+    return decodeALDeliveryCarrier(value, 'Stored admission carrier');
 }
 
 export function decodeALAdmissionNumber(value: unknown): number {

@@ -596,6 +596,22 @@ absence-window sum grew from 289 s on `main` to 326 s at this head, against its 
 `recommendedTerminalTimeoutSeconds`; the manifest is non-mainline and outside the supported-manifests
 matrix, so this is recorded, not gated.
 
+**The deploy-window disclosure (D33), completed.** D33 accepted an undecodable window on the
+condition that it is stated; the first statement understated both its scope and its bound. No row
+kind this change touches lacks an expiry, so nothing stays undecodable or unclaimed forever, but two
+of the four affected row kinds run longer than the "30 minutes" D33 names: `pending`/`acks` control
+rows and carrier-less `admit-control` payloads are undecodable for their control TTL (30 minutes by
+default, or the message's own TTL for a `pending` row whose message outlives that); old-format
+`AL_INBOUND:<fnv1a64(namespace)>` work rows are simply unclaimed until they expire; and a
+pre-deploy buffered-slot row, missing the now-required `carrier`, is undecodable for the message's
+TTL or 60 minutes by default — during which every later admission on that same ordered track throws
+`ALAdmissionCorruptionError`, because `readOrderingState` decodes every buffered slot of the track,
+not only the one the slot buffered, and the row keeps throwing past its own expiry until the
+runtime-state expiry worker sweeps it. An ACK from a page still on the old build is refused as
+malformed until that page reloads, and the refusal is symmetric. See
+[`packages/shared/alm/inbound/README.md`](../../packages/shared/alm/inbound/README.md#store-identity-and-carrier-partition)
+"The deploy window" for the full statement.
+
 ### Release 3, Slice 2: outcomes
 
 - **S2 One identity and receipted audiences.** S2a and S2b are concrete above; S2c carries the
