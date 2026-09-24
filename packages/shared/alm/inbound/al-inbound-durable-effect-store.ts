@@ -8,11 +8,7 @@ import type {
     ALAdmissionWorkBackend,
     ALAdmissionWorkWriteContext
 } from '../al-admission-work-backend.ts';
-import type {
-    ALInboundDeliveryPredecessor,
-    ALInboundDurableEffectWrite,
-    ALInboundOrderedDeliveryRead
-} from './al-inbound-admission-store.ts';
+import type { ALInboundDeliveryPredecessor, ALInboundOrderedDeliveryRead } from './al-inbound-admission-store.ts';
 import { decodeALInboundDeliveryProgress, decodeALInboundOrderingSnapshot } from './al-inbound-ordering-validation.ts';
 import {
     assertALInboundDeliveryOwner,
@@ -22,7 +18,8 @@ import {
 } from './al-inbound-ordering-validation.ts';
 import {
     decodeALInboundWorkEntry,
-    toALInboundWorkKey
+    toALInboundWorkKey,
+    type ALInboundDurableEffectWrite
 } from './al-inbound-work-entry.ts';
 
 export namespace ALInboundDurableEffectStore {

@@ -228,6 +228,7 @@ class GroupDeltaReceiver implements StateCacheInboxSource {
             options: { scope: SCOPE }
         });
         this.inbound = new ALInboundMessageRuntime({
+            carrier: 'ws',
             ...createDefaultALInboundRuntimeResources({
                 selfPeerId: 'alice-session',
                 toInboxEntry: (message) => QueueBoxUtilities.toResourceEntryFromMsg(message, 'group-delta-inbox')

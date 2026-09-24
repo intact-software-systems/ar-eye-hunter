@@ -277,6 +277,7 @@ function createDefaultInboundRuntime(
     controlMessages: ALMessage[] = []
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'ws',
         selfPeerId: 'self',
 
         stores: stores.runtimeStores,

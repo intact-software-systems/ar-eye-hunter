@@ -230,6 +230,7 @@ export class WsQueueBoxClientService {
         return new ALInboundMessageRuntime(
             {
                 ...resources,
+                carrier: 'ws',
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),

@@ -215,6 +215,7 @@ async function admitInboundWorkload(): Promise<void> {
         namespace: INBOUND_NAMESPACE
     });
     const runtime = new ALInboundMessageRuntime({
+        carrier: 'ws',
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: SELF_PEER_ID,
             toInboxEntry: (incoming) => QueueBoxUtilities.toResourceEntryFromMsg(incoming, 'inbox'),
@@ -263,7 +264,7 @@ async function settleInboundWork(
     workQueue: QueueBoxResourceEntryRepository,
     namespace: string
 ): Promise<void> {
-    const typeId = toALInboundWorkType(namespace);
+    const typeId = toALInboundWorkType(namespace, 'ws');
     for (let attempt = 0; attempt < INBOUND_SETTLE_ATTEMPT_LIMIT; attempt += 1) {
         if (!await hasPendingInboundWork(workQueue, typeId)) {
             return;

@@ -61,6 +61,7 @@ function createFixture() {
         admissionStore,
         workQueue: state.workQueue,
         control: createTestALInboundControlAdmission({
+            carrier: 'ws',
             ...stores,
             nowMs: Date.now,
             newControlId: () => 'generated-control'
@@ -194,7 +195,7 @@ async function readRetainedWork(
     workQueue: QueueBoxResourceEntryRepository
 ) {
     const page = await workQueue.readWorkPage({
-        typeId: toALInboundWorkType(admissionStore.namespace),
+        typeId: toALInboundWorkType(admissionStore.namespace, 'ws'),
         status: EntityStatus.NEW,
         maxToRead: 10,
         cursor: null

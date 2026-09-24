@@ -350,6 +350,7 @@ function createReplayFixture(relay: boolean, stores = createDefaultInMemoryALInb
         });
     const engine = new InboxOutboxEngine();
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'rtc',
         selfPeerId: 'receiver',
         stores,
         queueEngine: engine,

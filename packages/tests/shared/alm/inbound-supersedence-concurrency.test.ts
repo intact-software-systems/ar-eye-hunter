@@ -267,7 +267,7 @@ function readEffectFacts(nowMs: number) {
 
 async function completeEffects(stores: ALInboundRuntimeStores): Promise<string[]> {
     const namespace = stores.admissionStore.namespace;
-    const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+    const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now });
     const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
     const deliveries: string[] = [];
     for (const claim of await port.claim({ maxCount: 10, observedEntries: page.entries })) {

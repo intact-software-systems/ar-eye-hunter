@@ -126,7 +126,7 @@ describe('PSql admission optimistic retry', () => {
         expect(controls).toEqual([]);
         expect((await readIncoming(store, msg, Date.now())).dedupExpiresAt).toBeUndefined();
         const page = await stores.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(store.namespace),
+            typeId: toALInboundWorkType(store.namespace, 'ws'),
             status: EntityStatus.NEW,
             maxToRead: 2,
             cursor: null
@@ -300,6 +300,7 @@ function createInboundTestRuntime(
     controls: ALMessage[]
 ): ALInboundMessageRuntime {
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'ws',
         selfPeerId: 'self',
         stores,
         planIncomingMessage: (msg, source, observations) =>

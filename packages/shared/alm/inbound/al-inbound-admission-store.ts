@@ -14,7 +14,6 @@ import {
     PersistenceWriteExpiredError,
     requireLivePersistenceWrite
 } from '../../persistence/persistence-write-deadline.ts';
-import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
@@ -58,6 +57,7 @@ import {
     decodeALInboundMessageOwner,
     toALInboundMessageOwnerKey
 } from './al-inbound-source-validation.ts';
+import type { ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import type { ALInboundPendingControl } from './control/al-inbound-control-admission.ts';
 
 export type PendingControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: 'pending'; }>>;
@@ -311,23 +311,6 @@ export type ALInboundDurableEffect =
         trackKey: string;
         seq: number;
     }>;
-
-export interface ALInboundDurableEffectWrite {
-    readonly entry: ResourceEntry;
-    readonly effectId: string;
-    readonly payload: ALInboundDurableEffect;
-    readonly expireAtTimestamp: number;
-}
-
-export interface ALPersistedInboundEffect {
-    readonly effectId: string;
-    readonly payload: ALInboundDurableEffect;
-    readonly entry: ResourceEntry;
-    readonly attempts: number;
-    readonly retryAtMs: number;
-    readonly leaseUntilMs: number | undefined;
-    readonly expireAtTimestamp: number;
-}
 
 export interface ALInboundCommitBundle {
     /** Original data-admission eligibility; null identifies later control/finalization bookkeeping. */

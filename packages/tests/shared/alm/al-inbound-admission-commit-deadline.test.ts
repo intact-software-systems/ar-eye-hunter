@@ -45,6 +45,7 @@ it.each(['entry', 'observation', 'mutation'] as const)('uses original D after aw
             const admission = new ALInboundMessageAdmission({
                 admissionStore: store,
                 workPort: createTestALInboundWorkPort({
+                    carrier: 'rtc',
                     admissionStore: store,
                     workQueue: state.workQueue,
                     nowMs: Date.now

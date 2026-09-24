@@ -27,6 +27,7 @@ import {
     computeALInboundBufferedReleaseSupersedenceAcceptance,
     computeALInboundOrderingAcceptance
 } from '../al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
     type ALInboundEffectFacts
@@ -134,7 +135,11 @@ export function computeALInboundAdmission(
 ): ALInboundCommitBundle {
     const finalRead = computeALInboundMessageRead(input.read, input.plan);
     const changes = computeALInboundAdmissionChanges(finalRead, input.canForward);
-    return prepareALInboundCommitBundle({ ...changes, facts: input.facts });
+    return prepareALInboundCommitBundle({
+        ...changes,
+        carrier: toALDeliveryCarrier(finalRead.source),
+        facts: input.facts
+    });
 }
 
 function computeALInboundAdmissionChanges(
@@ -197,6 +202,7 @@ export function computeALInboundBufferedRelease(
     const bundle = prepareALInboundCommitBundle({
         read,
         facts,
+        carrier: toALDeliveryCarrier(read.source),
         mutations: [
             {
                 kind: 'set-msg-owner',

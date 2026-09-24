@@ -47,6 +47,7 @@ afterEach(() => {
 
 function createRuntime(input: InboundDiagnosticsFixtureInput): InboundTestRuntime {
     return createInboundTestRuntime({
+        carrier: 'rtc',
         stores: createInboundTestStores({
             namespace: DIAGNOSTICS_NAMESPACE,
             storage: input.kind,

@@ -13,6 +13,7 @@ import { toALInboundMessageWithDeadline } from './al-inbound-message-deadline.ts
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 import { toALInboundPendingAdmissionId, type ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import { computeALInboundPlanningObservations } from './al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
@@ -145,7 +146,8 @@ export class ALInboundMessageAdmission {
             effectId: toALInboundPendingAdmissionId(pending.msg),
             payload: pending,
             observedAtMs: clock.nowMs(),
-            expireAtTimestamp: deadline
+            expireAtTimestamp: deadline,
+            carrier: toALDeliveryCarrier(pending.source)
         });
         decodeALInboundWorkEntry(work.entry, admissionStore.namespace);
         const observed = await this.dependencies.workPort.retainIfAbsent(work.entry);

@@ -503,6 +503,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
     return {
         admissionStore: stores.admissionStore,
         workQueue: stores.workQueue,
+        carrier: 'ws',
         planIncomingMessage,
         dispatchInboxEntry: async () => {},
         sendControlMessages: async () => {},

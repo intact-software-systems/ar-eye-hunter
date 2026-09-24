@@ -7,6 +7,7 @@ import { NonRetryableException } from '../../queuebox/resource-inbox/create-defa
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import {
     AL_WORK_PROBE_EVERY_ROUND,
     ALWorkHandler,
@@ -14,11 +15,7 @@ import {
     type ALWorkDiagnostics
 } from '../work/al-work-handler.ts';
 import { createALWorkQueuePort, type ALWorkClaim, type ALWorkOutcome } from '../work/al-work-queue-port.ts';
-import type {
-    ALInboundAdmissionStore,
-    ALInboundPlanner,
-    ALPersistedInboundEffect
-} from './al-inbound-admission-store.ts';
+import type { ALInboundAdmissionStore, ALInboundPlanner } from './al-inbound-admission-store.ts';
 import { ALInboundAdmittedDelivery } from './al-inbound-admitted-delivery.ts';
 import { ALInboundMessageAdmission } from './al-inbound-message-admission.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
@@ -30,9 +27,10 @@ import {
 } from './al-inbound-runtime-diagnostics.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
-    decodeALInboundWorkEntry,
+    decodeALInboundWorkClaim,
     resolveALInboundWorkDueAtMs,
-    toALInboundWorkType
+    toALInboundWorkType,
+    type ALPersistedInboundEffect
 } from './al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from './control/al-inbound-control-admission.ts';
 import {
@@ -83,6 +81,8 @@ export namespace ALInboundMessageRuntime {
     }
 
     export interface Dependencies extends Resources {
+        /** The carrier this runtime admits from and delivers on; it claims only that carrier's work rows. */
+        readonly carrier: ALDeliveryCarrier;
         readonly planIncomingMessage: ALInboundPlanner;
         /** Rechecks asynchronous ingress authority before pending data enters conditional admission. */
         readonly readPendingAdmissionAuthority?: (msg: ALMessage, source: Source) => Promise<PendingAuthority>;
@@ -142,7 +142,7 @@ export class ALInboundMessageRuntime {
         this.readyPromise = this.admissionStore.ready();
         const workPort = createALWorkQueuePort({
             queue: dependencies.workQueue,
-            workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace)]),
+            workTypes: new Set([toALInboundWorkType(this.admissionStore.namespace, dependencies.carrier)]),
             leaseMs: AL_INBOUND_WORK_LEASE_MS,
             nowMs: () => dependencies.clock.nowMs(),
             random: dependencies.random
@@ -153,7 +153,8 @@ export class ALInboundMessageRuntime {
             port: workPort,
             clock: dependencies.clock,
             newControlId: dependencies.effectPreparation.newControlId,
-            retention: this.admissionStore.retention
+            retention: this.admissionStore.retention,
+            carrier: dependencies.carrier
         });
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
         this.workSelector = createALInboundWorkSelector({
@@ -391,7 +392,12 @@ export class ALInboundMessageRuntime {
      * cannot be decoded, and a claim that throws, name no payload here; the batch still counts them.
      */
     private async runInboundClaim(claim: ALWorkClaim, batchStartedAtMs: number): Promise<ALWorkOutcome> {
-        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+        const claimed = decodeALInboundWorkClaim(claim.entry, this.admissionStore.namespace, this.dependencies.carrier);
+        if (claimed.left) {
+            // The port reserves this carrier's type alone; a row of the other goes straight back to its own runtime.
+            return { status: 'not-ready', readyAtMs: this.dependencies.clock.nowMs() };
+        }
+        const effect = claimed.right!;
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
         const startedAtMs = this.dependencies.clock.nowMs();
         const outcome = await this.runInboundEffect(effect);

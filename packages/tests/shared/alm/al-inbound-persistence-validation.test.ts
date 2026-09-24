@@ -13,7 +13,6 @@ import {
 } from '@shared/alm/al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '@shared/alm/al-admission-decoder.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
-import type { ALPersistedInboundEffect } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionObservations,
@@ -24,8 +23,12 @@ import {
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import {
     computeALInboundWorkEntry,
+    decodeALInboundWorkClaim,
     decodeALInboundWorkEntry,
-    toALInboundWorkKey
+    toALInboundWorkKey,
+    toALInboundWorkType,
+    validateALInboundWorkWrites,
+    type ALPersistedInboundEffect
 } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import type { ALWorkQueuePort } from '@shared/alm/work/al-work-queue-port.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -66,8 +69,9 @@ function createFixture() {
         backend,
         store,
         workQueue: state.workQueue,
-        port: createTestALInboundWorkPort({ ...stores, nowMs: Date.now }),
+        port: createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now }),
         control: createTestALInboundControlAdmission({
+            carrier: 'ws',
             ...stores,
             nowMs: Date.now,
             newControlId: () => 'generated-control'
@@ -124,6 +128,7 @@ async function writeCanonicalMessage(transaction: ALAdmissionWriteContext, candi
 
 function createWork(effectId = 'effect', payload: ALInboundDurableEffect = { kind: 'release-buffered', trackKey: 'track', seq: 2 }) {
     return computeALInboundWorkEntry({
+        carrier: 'ws',
         namespace: 'inbound',
         effectId,
         payload,
@@ -534,6 +539,30 @@ describe('inbound admission persisted values', () => {
         await workQueue.enqueue(entry);
         expect(await claimWork(port, store.namespace)).toEqual([]);
         expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
+    });
+
+    it('decodes the carrier a row\'s type names, and hands a claim of the other carrier back as a value', () => {
+        const work = createWork();
+
+        expect(decodeALInboundWorkEntry(work.entry, 'inbound').carrier).toBe('ws');
+        expect(decodeALInboundWorkClaim(work.entry, 'inbound', 'ws').right?.effectId).toBe('effect');
+        expect(decodeALInboundWorkClaim(work.entry, 'inbound', 'rtc').left).toEqual({ kind: 'foreign-carrier', carrier: 'ws' });
+    });
+
+    it('rejects queued work whose type names no carrier of its namespace', () => {
+        const entry = { ...createWork().entry, typeId: toALInboundWorkType('other-scope', 'ws') };
+
+        expect(() => decodeALInboundWorkEntry(entry, 'inbound')).toThrow(ALAdmissionCorruptionError);
+    });
+
+    it('refuses a durable effect write whose carrier differs from the type its entry names', () => {
+        const work = createWork();
+
+        expect(validateALInboundWorkWrites([work], 'inbound').right).toEqual([work]);
+        expect(validateALInboundWorkWrites([{ ...work, carrier: 'rtc' }], 'inbound').left).toEqual({
+            code: 'malformed',
+            message: 'Inbound admission work differs from its computed value'
+        });
     });
 
     it('rolls back earlier admission writes when the existing durable effect is corrupt', async () => {

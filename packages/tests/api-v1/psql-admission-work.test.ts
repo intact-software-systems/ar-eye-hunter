@@ -177,6 +177,7 @@ describe('PostgreSQL inbound admission', () => {
             ]
         });
         const admitted = await createTestALInboundControlAdmission({
+            carrier: 'ws',
             admissionStore: store,
             workQueue: backend.workQueue,
             nowMs: Date.now,

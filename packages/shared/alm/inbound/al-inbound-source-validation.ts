@@ -3,6 +3,7 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALInboundControlOwnerIndex, ALInboundMessageOwner } from './al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
 
@@ -10,6 +11,17 @@ export const AL_INBOUND_PROVENANCE_LIMITS = {
     /** Bounds one durable provenance row without imposing the AL wire collection limit on a room audience. */
     frozenAudienceBytes: 1024 * 1024
 } as const;
+
+/** The carrier an admitted source arrived on, and so the runtime whose work rows it owns. */
+export function toALDeliveryCarrier(source: ALInboundMessageRuntime.Source): ALDeliveryCarrier {
+    switch (source.kind) {
+        case 'rtc-peer':
+            return 'rtc';
+        case 'ws-client':
+        case 'trusted-server':
+            return 'ws';
+    }
+}
 
 export function decodeALInboundSource(value: unknown): ALInboundMessageRuntime.Source {
     const source = decodeALAdmissionRecord(value, ['kind'], ['peerId', 'groupRecipientPeerIds']);

@@ -13,11 +13,11 @@ import type {
     ALInboundAdmissionObservations,
     ALInboundCommitBundle,
     ALInboundControlOwnerIndex,
-    ALInboundDurableEffectWrite,
     ALInboundMessageOwner,
     PendingControlValue
 } from '../al-inbound-admission-store.ts';
-import { computeALInboundWorkEntry } from '../al-inbound-work-entry.ts';
+import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
+import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingAckPayload } from '../transition-al-pending-ack.ts';
 
 export interface ALInboundControlAdmissionRead {
@@ -134,6 +134,8 @@ function computeCompletedAcknowledgementWork(
             retention.durableEffectTtlMs,
             read.nowMs
         ),
+        // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
+        carrier: toALDeliveryCarrier(read.owner.source),
         payload: {
             kind: 'send-control',
             msg: newALAckControlMessage(

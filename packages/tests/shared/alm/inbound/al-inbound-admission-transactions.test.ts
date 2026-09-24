@@ -282,7 +282,7 @@ it('reads a delivery surface in 1 readonly transaction', async () => {
 it('commits the acknowledgement its control owner index resolves to a tracked message', async () => {
     const stores = await createAdmissionFixture();
     const message = await seedAcknowledgeableMessage(stores.admissionStore);
-    const control = createTestALInboundControlAdmission({ ...stores, nowMs: Date.now, newControlId: () => 'control' });
+    const control = createTestALInboundControlAdmission({ carrier: 'ws', ...stores, nowMs: Date.now, newControlId: () => 'control' });
 
     expect((await control.admit(newAcknowledgement(message))).kind).toBe('committed');
 });
@@ -290,7 +290,7 @@ it('commits the acknowledgement its control owner index resolves to a tracked me
 it('admits a control message in 1 surface, 1 fence and 1 write', async () => {
     const stores = await createAdmissionFixture();
     const message = await seedAcknowledgeableMessage(stores.admissionStore);
-    const control = createTestALInboundControlAdmission({ ...stores, nowMs: Date.now, newControlId: () => 'control' });
+    const control = createTestALInboundControlAdmission({ carrier: 'ws', ...stores, nowMs: Date.now, newControlId: () => 'control' });
     const ack = newAcknowledgement(message);
 
     const recorded = recordIndexedDbTransactions();

@@ -115,6 +115,7 @@ export class WebRtcRxStreamerService {
         this.inboundRuntime = new ALInboundMessageRuntime(
             {
                 ...dependencies.inboundRuntime,
+                carrier: 'rtc',
                 planIncomingMessage: (msg, source, observations) => {
                     return this.multicast.planIncomingMessage(msg, source, observations);
                 },

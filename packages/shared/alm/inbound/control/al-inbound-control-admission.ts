@@ -4,6 +4,7 @@ import { decodeALControlMessage } from '../../../al-contracts/al-control.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type { ALInboundAdmissionStore } from '../al-inbound-admission-store.ts';
 import type { ALInboundMessageRuntime } from '../al-inbound-message-runtime.ts';
@@ -24,6 +25,8 @@ export interface ALInboundControlAdmissionDependencies {
     readonly clock: ALInboundMessageRuntime.Clock;
     readonly newControlId: () => string;
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    /** The carrier controls reach this admission on, so a retained control replays on the same runtime. */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export type ALInboundControlAdmissionResult =
@@ -58,6 +61,7 @@ export class ALInboundControlAdmission {
     private readonly clock: ALInboundMessageRuntime.Clock;
     private readonly newControlId: () => string;
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly carrier: ALDeliveryCarrier;
 
     constructor(dependencies: ALInboundControlAdmissionDependencies) {
         this.admissionStore = dependencies.admissionStore;
@@ -65,6 +69,7 @@ export class ALInboundControlAdmission {
         this.clock = dependencies.clock;
         this.newControlId = dependencies.newControlId;
         this.retention = dependencies.retention;
+        this.carrier = dependencies.carrier;
     }
 
     async admit(msg: ALMessage): Promise<ALInboundControlAdmissionResult> {
@@ -122,7 +127,8 @@ export class ALInboundControlAdmission {
             effectId: toALInboundPendingControlId(msg),
             payload: { kind: 'admit-control', msg, expiresAtMs },
             observedAtMs: nowMs,
-            expireAtTimestamp: expiresAtMs
+            expireAtTimestamp: expiresAtMs,
+            carrier: this.carrier
         });
         await this.port.retainIfAbsent(work.entry);
     }

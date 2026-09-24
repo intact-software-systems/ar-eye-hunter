@@ -56,7 +56,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(message, 'peer-1');
 
         const rejectedPage = await fixture.stores.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
+            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.NON_RETRYABLE,
             maxToRead: 10,
             cursor: null
@@ -151,7 +151,7 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         await fixture.receive(message, 'peer-1');
 
         const retryPage = await fixture.stores.workQueue.readWorkPage({
-            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace),
+            typeId: toALInboundWorkType(fixture.stores.admissionStore.namespace, 'rtc'),
             status: EntityStatus.RETRY,
             maxToRead: 10,
             cursor: null

@@ -13,6 +13,7 @@ import {
     computeALInboundBufferedReleasePlanningObservations,
     computeALInboundPredecessorReadiness
 } from './al-inbound-planner-snapshot.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import {
     prepareALInboundCommitBundle,
     readALInboundEffectFacts
@@ -138,6 +139,7 @@ export class ALInboundOrderedDelivery {
         const computed = prepareALInboundCommitBundle({
             read,
             facts,
+            carrier: toALDeliveryCarrier(read.source),
             mutations: [],
             effects: [{
                 effectId: `resync:${encodeURIComponent(msg.id.senderId)}:${encodeURIComponent(msg.id.msgId)}`,

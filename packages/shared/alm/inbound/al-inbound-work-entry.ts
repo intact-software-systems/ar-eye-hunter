@@ -31,15 +31,40 @@ import {
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
-import type {
-    ALInboundDurableEffect,
-    ALInboundDurableEffectWrite,
-    ALPersistedInboundEffect
-} from './al-inbound-admission-store.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALInboundDurableEffect } from './al-inbound-admission-store.ts';
 import { decodeALDeadlinedMessage } from './al-inbound-message-deadline.ts';
 import { decodeALInboundPlan } from './decode-al-inbound-plan.ts';
 
 export const AL_INBOUND_WORK_LEASE_MS = 10_000;
+
+const AL_INBOUND_WORK_CARRIERS: readonly ALDeliveryCarrier[] = ['rtc', 'ws'];
+
+export interface ALInboundDurableEffectWrite {
+    readonly entry: ResourceEntry;
+    readonly effectId: string;
+    readonly payload: ALInboundDurableEffect;
+    readonly expireAtTimestamp: number;
+    /** Whose runtime claims the row: the carrier its admitted message, or that message's owner, arrived on. */
+    readonly carrier: ALDeliveryCarrier;
+}
+
+export interface ALPersistedInboundEffect {
+    readonly effectId: string;
+    readonly payload: ALInboundDurableEffect;
+    readonly entry: ResourceEntry;
+    readonly attempts: number;
+    readonly retryAtMs: number;
+    readonly leaseUntilMs: number | undefined;
+    readonly expireAtTimestamp: number;
+    readonly carrier: ALDeliveryCarrier;
+}
+
+/** A claimed row the other carrier's runtime owns: never corruption, and never this claimant's to run. */
+export interface ALInboundForeignCarrierWork {
+    readonly kind: 'foreign-carrier';
+    readonly carrier: ALDeliveryCarrier;
+}
 
 export interface ALInboundWorkEntryInput {
     readonly namespace: string;
@@ -47,10 +72,12 @@ export interface ALInboundWorkEntryInput {
     readonly payload: ALInboundDurableEffect;
     readonly observedAtMs: number;
     readonly expireAtTimestamp: number;
+    readonly carrier: ALDeliveryCarrier;
 }
 
-export function toALInboundWorkType(namespace: string): string {
-    return `AL_INBOUND:${fnv1a64(namespace)}`;
+/** The QueueBox type is the claim partition: each carrier's runtime reserves only its own type. */
+export function toALInboundWorkType(namespace: string, carrier: ALDeliveryCarrier): string {
+    return `AL_INBOUND:${carrier}:${fnv1a64(namespace)}`;
 }
 
 export function toALInboundWorkKey(namespace: string, effectId: string): Key {
@@ -68,9 +95,10 @@ export function computeALInboundWorkEntry(input: ALInboundWorkEntryInput): ALInb
         effectId: input.effectId,
         payload: input.payload,
         expireAtTimestamp: input.expireAtTimestamp,
+        carrier: input.carrier,
         entry: {
             key: toALInboundWorkKey(input.namespace, input.effectId),
-            typeId: toALInboundWorkType(input.namespace),
+            typeId: toALInboundWorkType(input.namespace, input.carrier),
             resource: JSON.stringify({
                 namespace: input.namespace,
                 effectId: input.effectId,
@@ -98,10 +126,8 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
         if (stored.namespace !== namespace || effectId.length === 0) {
             throw new TypeError('Inbound work identity differs from its admission scope');
         }
-        if (
-            entry.typeId !== toALInboundWorkType(namespace) ||
-            !isKeysEqual(entry.key, toALInboundWorkKey(namespace, effectId))
-        ) {
+        const carrier = decodeALInboundWorkCarrier(entry, namespace);
+        if (!isKeysEqual(entry.key, toALInboundWorkKey(namespace, effectId))) {
             throw new TypeError('Inbound work identity differs from its queue slot');
         }
         const payload = decodeInboundDurableEffect(stored.payload);
@@ -123,12 +149,36 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
             attempts: entry.dequeueAudit.attempts,
             retryAtMs: resolveALInboundWorkDueAtMs(entry),
             expireAtTimestamp: Number(entry.audit.expiryTs.epochMilliseconds),
-            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined
+            leaseUntilMs: entry.status === EntityStatus.RESERVED ? resolveALInboundWorkReadyAt(entry) : undefined,
+            carrier
         };
     }
     catch (error) {
         throw new ALAdmissionCorruptionError(JSON.stringify(entry.key), toError(error));
     }
+}
+
+/** A claim decodes as this runtime's only when its row's type names the claiming carrier. */
+export function decodeALInboundWorkClaim(
+    entry: ResourceEntry,
+    namespace: string,
+    carrier: ALDeliveryCarrier
+): Either<ALInboundForeignCarrierWork, ALPersistedInboundEffect> {
+    const effect = decodeALInboundWorkEntry(entry, namespace);
+    return effect.carrier === carrier
+        ? Either.ofRight(effect)
+        : Either.ofLeft({ kind: 'foreign-carrier', carrier: effect.carrier });
+}
+
+/** Both carriers' rows share one store and one key space; only the type says whose runtime claims one. */
+function decodeALInboundWorkCarrier(entry: ResourceEntry, namespace: string): ALDeliveryCarrier {
+    const carrier = AL_INBOUND_WORK_CARRIERS.find((candidate) =>
+        entry.typeId === toALInboundWorkType(namespace, candidate)
+    );
+    if (carrier === undefined) {
+        throw new TypeError('Inbound work type names no carrier of its admission scope');
+    }
+    return carrier;
 }
 
 /** When the row is next claimable: the lease end while it is reserved, and its own due time otherwise. */
@@ -237,7 +287,8 @@ export function validateALInboundWorkWrites(
         try {
             const stored = decodeALInboundWorkEntry(effect.entry, namespace);
             if (
-                stored.effectId !== effect.effectId || !jsonEquals(stored.payload, effect.payload) ||
+                stored.effectId !== effect.effectId || stored.carrier !== effect.carrier ||
+                !jsonEquals(stored.payload, effect.payload) ||
                 stored.expireAtTimestamp !== effect.expireAtTimestamp || effect.entry.status !== EntityStatus.NEW ||
                 effect.entry.dequeueAudit.attempts !== 0 || effect.entry.dequeueAudit.startTs !== undefined ||
                 effect.entry.dequeueAudit.endTs !== undefined

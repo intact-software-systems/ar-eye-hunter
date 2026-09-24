@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AL_INBOUND_WORK_LEASE_MS, toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import { ALInboundControlAdmission } from '@shared/alm/inbound/control/al-inbound-control-admission.ts';
@@ -5,6 +6,8 @@ import { createALWorkQueuePort, type ALWorkQueuePort } from '@shared/alm/work/al
 
 export interface TestALInboundWorkPortInput extends ALInboundRuntimeStores {
     readonly nowMs: () => number;
+    /** The carrier whose rows the port claims, as the runtime of that carrier would. */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export interface TestALInboundControlAdmissionInput extends TestALInboundWorkPortInput {
@@ -19,7 +22,7 @@ export interface TestALInboundControlAdmissionInput extends TestALInboundWorkPor
 export function createTestALInboundWorkPort(input: TestALInboundWorkPortInput): ALWorkQueuePort {
     return createALWorkQueuePort({
         queue: input.workQueue,
-        workTypes: new Set([toALInboundWorkType(input.admissionStore.namespace)]),
+        workTypes: new Set([toALInboundWorkType(input.admissionStore.namespace, input.carrier)]),
         leaseMs: AL_INBOUND_WORK_LEASE_MS,
         nowMs: input.nowMs,
         random: () => 0.5
@@ -34,6 +37,7 @@ export function createTestALInboundControlAdmission(
         port: createTestALInboundWorkPort(input),
         clock: { nowMs: input.nowMs },
         newControlId: input.newControlId,
-        retention: input.admissionStore.retention
+        retention: input.admissionStore.retention,
+        carrier: input.carrier
     });
 }

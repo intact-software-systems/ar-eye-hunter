@@ -7,17 +7,17 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
     ALInboundCommitBundle,
     ALInboundDurableEffect,
-    ALInboundDurableEffectWrite,
     ALInboundMessageReadDto
 } from './al-inbound-admission-store.ts';
 import type { ALInboundEffectIntent } from './al-inbound-effect-intent.ts';
 import type { ALInboundOrderedDeliverySnapshot } from './al-inbound-ordering-validation.ts';
-import { computeALInboundWorkEntry } from './al-inbound-work-entry.ts';
+import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 
 export interface ALInboundEffectPreparationDependencies {
     readonly newControlId: () => string;
@@ -35,6 +35,8 @@ export interface PrepareALInboundCommitBundleInput {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
     readonly mutations: readonly ALInboundAdmissionMutation[];
     readonly effects: readonly ALInboundEffectIntent[];
+    /** Every effect of one bundle follows the one message it admits, so they share that message's carrier. */
+    readonly carrier: ALDeliveryCarrier;
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -79,7 +81,8 @@ export function prepareALInboundCommitBundle(
             observedAtMs: facts.observedAtEpochMs,
             effectId,
             expireAtTimestamp,
-            payload
+            payload,
+            carrier: input.carrier
         });
     });
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);

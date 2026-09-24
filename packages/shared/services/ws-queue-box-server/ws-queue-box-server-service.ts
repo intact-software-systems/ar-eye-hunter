@@ -224,6 +224,7 @@ export class WsQueueBoxServerService {
     ): ALInboundMessageRuntime {
         return new ALInboundMessageRuntime({
             ...dependencies.inboundRuntime,
+            carrier: 'ws',
             readPendingAdmissionAuthority: (message, source) => this.readPendingAdmissionAuthority(message, source),
             planIncomingMessage: (message, fromPeerId, runtime) =>
                 this.planIncomingMessage(message, fromPeerId, runtime),

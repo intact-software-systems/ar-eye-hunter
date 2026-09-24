@@ -187,6 +187,7 @@ describe('IndexedDB AL runtime stores', () => {
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = createDefaultALInboundMessageRuntime({
+            carrier: 'ws',
             selfPeerId: 'self',
 
             stores: createDefaultIndexedDbALInboundRuntimeStores({
@@ -271,7 +272,7 @@ describe('IndexedDB AL runtime stores', () => {
         runtime.dispose();
         pausedClaims.mockRestore();
 
-        const port = createTestALInboundWorkPort({ ...stores, nowMs: Date.now });
+        const port = createTestALInboundWorkPort({ carrier: 'ws', ...stores, nowMs: Date.now });
         const page = await port.readPage({ status: EntityStatus.NEW, maxToRead: 10, cursor: null });
         const claimed = (await port.claim({ maxCount: 10, observedEntries: page.entries }))
             .map((claim) => decodeALInboundWorkEntry(claim.entry, stores.admissionStore.namespace));
@@ -749,6 +750,7 @@ interface IndexedDbInboundFixtureInput {
 function createDefaultInboundRuntime(input: IndexedDbInboundFixtureInput) {
     const { dbName, namespace, dispatchedMsgIds } = input;
     const runtime = createDefaultALInboundMessageRuntime({
+        carrier: 'ws',
         selfPeerId: 'self',
 
         stores: input.stores ?? createDefaultIndexedDbALInboundRuntimeStores({
@@ -919,6 +921,7 @@ async function readInboundAdmission(store: ALInboundAdmissionStore, msg: ALMessa
 
 function createInboundControlAdmission(stores: ALInboundRuntimeStores): ALInboundControlAdmission {
     return createTestALInboundControlAdmission({
+        carrier: 'ws',
         ...stores,
         nowMs: Date.now,
         newControlId: () => 'generated-control'
