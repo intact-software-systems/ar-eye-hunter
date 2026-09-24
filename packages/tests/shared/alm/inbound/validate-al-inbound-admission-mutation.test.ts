@@ -33,7 +33,26 @@ function toBundle(): ALInboundCommitBundle {
     };
 }
 
-function toAcksMutation(value: unknown): ALInboundAdmissionMutation {
+/**
+ * The narrowest shape the two corruption cases below need: a stored ACK entry with its `carrier`
+ * loosened to an optional plain string, so a literal that omits it or carries an unrecognised value
+ * still type-checks as a fixture, while a real `AcksControlValue` cannot hold either.
+ */
+interface StoredAckEntryFixture {
+    readonly ackedMsgId: string;
+    readonly fromPeerId: string;
+    readonly toPeerId: string;
+    readonly status: string;
+    readonly observedAtEpochMs: number;
+    readonly carrier?: string;
+}
+
+interface AcksControlValueFixture {
+    readonly kind: 'acks';
+    readonly values: readonly StoredAckEntryFixture[];
+}
+
+function toAcksMutation(value: AcksControlValueFixture): ALInboundAdmissionMutation {
     return {
         kind: 'set-control-acks',
         msgId: MSG_ID,
