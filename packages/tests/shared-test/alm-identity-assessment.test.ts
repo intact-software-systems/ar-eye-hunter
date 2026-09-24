@@ -29,6 +29,35 @@ describe('ALM recipe identity assessment', () => {
         expect(assessAlmConformanceIdentity(new IdentityTranscript('lifecycle').input())).toEqual([]);
     });
 
+    it('accepts generated rtc lifecycle evidence with a filled submission receipts result', () => {
+        expect(assessAlmConformanceIdentity(new IdentityTranscript('lifecycle', 'rtc').input())).toEqual([]);
+    });
+
+    it('rejects the same rtc evidence when the submission receipts confirm no hop', () => {
+        const transcript = new IdentityTranscript('lifecycle', 'rtc');
+        const sender = transcript.sender;
+        const send = sender.command('messages.send');
+        const receipts = sender.command('messages.receipts');
+        sender.replaceResult({
+            ...sender.result(receipts),
+            value: { handleId: receipts.handleId, confirmedHopPeerIds: [], unconfirmedHopPeerIds: [] }
+        });
+        const issues = assessAlmConformanceIdentity(transcript.input());
+        expect(issues).not.toEqual([]);
+        expect(issues.some((issue) => issue.startsWith(`${send.commandId}:`))).toBe(true);
+    });
+
+    it('does not require a confirmed submission hop over ws', () => {
+        const transcript = new IdentityTranscript('lifecycle', 'ws');
+        const sender = transcript.sender;
+        const receipts = sender.command('messages.receipts');
+        sender.replaceResult({
+            ...sender.result(receipts),
+            value: { handleId: receipts.handleId, confirmedHopPeerIds: [], unconfirmedHopPeerIds: [] }
+        });
+        expect(assessAlmConformanceIdentity(transcript.input())).toEqual([]);
+    });
+
     it.each(['wrong-id', 'wrong-transport', 'failed-child', 'missing-child', 'duplicate-child', 'compacted', 'wrong-agent', 'wrong-run'] as const)(
         'rejects lifecycle %s behind a successful outer envelope',
         (defect) => {
@@ -526,6 +555,9 @@ function transcriptValue({ command, role, document, sender }: TranscriptValueInp
             enqueued: true,
             submitted: false
         };
+    }
+    if (command.kind === 'messages.receipts') {
+        return { handleId: command.handleId, confirmedHopPeerIds: ['peer'], unconfirmedHopPeerIds: [] };
     }
     if (command.kind === 'wait' && command.absent !== true) {
         const sent = sender.commands.find((candidate) =>

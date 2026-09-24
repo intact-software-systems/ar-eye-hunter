@@ -28,7 +28,9 @@ describe('ALM lifecycle recipe evidence', () => {
             expect(replaceable).toHaveLength(2);
             expect(replaceable.map((command) => ({ ack: command.ack, seq: command.seq, orderingKey: command.orderingKey })))
                 .toEqual([{ ack: 'receiver', seq: undefined, orderingKey: undefined }, { ack: 'receiver', seq: undefined, orderingKey: undefined }]);
-            expectReplacementSubmittedAfterRelease(scenario!.sender.commands, carrier);
+            expectReplacementSubmittedAfterRelease(scenario!.sender.commands);
+            expectNoSingleAcknowledgedObserve(scenario!.sender.commands);
+            expectReceiptsAfterSupersedeRelease(scenario!.sender.commands);
             const replacement = scenario!.receiver.commands.find((command) => command.commandId?.endsWith('receive-replacement'));
             const old = scenario!.receiver.commands.find((command) => command.commandId?.endsWith('absent-old'));
             expect(replacement?.kind).toBe('wait');
@@ -67,14 +69,25 @@ describe('ALM lifecycle recipe evidence', () => {
 });
 
 function expectReplacementSubmittedAfterRelease(
-    commands: readonly RallarBlackBoxTestCommand[],
-    carrier: LifecycleCarrier
+    commands: readonly RallarBlackBoxTestCommand[]
 ): void {
-    const submittedState = carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
     const releaseIndex = commands.findLastIndex((command) => command.commandId?.includes('supersede-release-'));
-    const submittedIndex = commands.findIndex((command) => command.commandId?.endsWith(`observe-${submittedState}-4`));
+    const submittedIndex = commands.findIndex((command) => command.commandId?.endsWith('observe-transport-accepted-4'));
     expect(commands[submittedIndex]?.kind).toBe('messages.observe');
     expect(submittedIndex).toBeGreaterThan(releaseIndex);
+}
+
+/** D28: the sender no longer polls a single-state `acknowledged` wait after the send. */
+function expectNoSingleAcknowledgedObserve(commands: readonly RallarBlackBoxTestCommand[]): void {
+    const observes = commands.filter((command) => command.kind === 'messages.observe');
+    expect(observes.some((command) => command.state.length === 1 && command.state[0] === 'acknowledged')).toBe(false);
+}
+
+function expectReceiptsAfterSupersedeRelease(commands: readonly RallarBlackBoxTestCommand[]): void {
+    const releaseIndex = commands.findLastIndex((command) => command.commandId?.includes('supersede-release-'));
+    const receiptsIndex = commands.findIndex((command) => command.commandId?.endsWith('receipts-1'));
+    expect(commands[receiptsIndex]?.kind).toBe('messages.receipts');
+    expect(receiptsIndex).toBeGreaterThan(releaseIndex);
 }
 
 async function expectPayloadWaitRejects(

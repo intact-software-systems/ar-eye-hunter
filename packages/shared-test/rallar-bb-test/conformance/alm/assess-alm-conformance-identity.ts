@@ -61,6 +61,9 @@ export function assessAlmConformanceIdentity(input: AlmConformanceIdentityInput)
         ) {
             assessReceivedIdentity({ send, msgId, receiver, issues });
         }
+        if (send.payload.specimen === 'submission') {
+            assessAcknowledgedIdentity({ send, sender, issues });
+        }
     }
     issues.push(...assessAlmReloadIdentity(
         sender,
@@ -139,11 +142,47 @@ function assessReceivedIdentity({ send, msgId, receiver, issues }: ReceivedIdent
     }
 }
 
+interface AcknowledgedIdentityInput {
+    readonly send: RallarBlackBoxTestMessagesSendCommand;
+    readonly sender: RecordedAlmConformanceParticipant;
+    readonly issues: string[];
+}
+
+/** D28: receipts are read from the same sender evidence, correlated afterwards by the send's handle. */
+function assessAcknowledgedIdentity({ send, sender, issues }: AcknowledgedIdentityInput): void {
+    if (send.carrier === 'ws' || !send.handleId) {
+        return;
+    }
+    const receipts = sender.participant.recipe.commands.find((command) =>
+        command.kind === 'messages.receipts' && command.handleId === send.handleId
+    );
+    const value = receipts ? sender.results.get(receipts.commandId!)?.value : undefined;
+    const confirmed = isJsonRecordValue(value) ? value.confirmedHopPeerIds : undefined;
+    const unconfirmed = isJsonRecordValue(value) ? value.unconfirmedHopPeerIds : undefined;
+    if (
+        !Array.isArray(confirmed) || confirmed.length === 0 ||
+        !Array.isArray(unconfirmed) || unconfirmed.length !== 0
+    ) {
+        issues.push(`${send.commandId}: sender receipts do not confirm an acknowledged hop.`);
+    }
+}
+
+interface AlmIdentitySendPayload {
+    readonly marker: 'delivery-lifecycle' | 'delivery-reload';
+    readonly specimen?: 'submission' | 'cancellation' | 'supersedence';
+    readonly revision?: 'old' | 'replacement';
+}
+
 function isIdentitySend(
     command: RallarBlackBoxTestCommand
-): command is RallarBlackBoxTestMessagesSendCommand & {
-    readonly payload: Record<string, unknown>;
-} {
-    return command.kind === 'messages.send' && isJsonRecordValue(command.payload) &&
-        (command.payload.marker === 'delivery-lifecycle' || command.payload.marker === 'delivery-reload');
+): command is RallarBlackBoxTestMessagesSendCommand & { readonly payload: AlmIdentitySendPayload; } {
+    return command.kind === 'messages.send' && isAlmIdentitySendPayload(command.payload);
+}
+
+function isAlmIdentitySendPayload(value: unknown): value is AlmIdentitySendPayload {
+    return isJsonRecordValue(value) &&
+        (value.marker === 'delivery-lifecycle' || value.marker === 'delivery-reload') &&
+        (value.specimen === undefined || value.specimen === 'submission' || value.specimen === 'cancellation' ||
+            value.specimen === 'supersedence') &&
+        (value.revision === undefined || value.revision === 'old' || value.revision === 'replacement');
 }

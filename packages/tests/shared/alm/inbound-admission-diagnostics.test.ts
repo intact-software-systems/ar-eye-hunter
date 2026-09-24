@@ -148,12 +148,41 @@ it.each(['memory', 'indexeddb'] as const)(
             outcome: 'completed'
         }]);
 
-        // The batch's phases account for the claim it ran, and both read the same row's own wait.
+        // The batch's phases account for the claim it ran. Both read the same row's own wait, the
+        // claim to its batch's run loop and the drain to the batch's own earlier start, so the
+        // claim's is the longer by the batch's selection and reservation.
         const drain = claimed[0]!;
         expect(settled[0]?.durationMs).toBeLessThanOrEqual(drain.runDurationMs);
-        expect(settled[0]?.queueWaitMs).toBe(drain.queueWaitMs);
+        expect(settled[0]?.batchStartedAtMs).toBe(drain.startedAtMs);
+        expect(settled[0]?.queueWaitMs).toBeGreaterThanOrEqual(drain.queueWaitMs);
         expect(drain.selectionDurationMs + drain.claimDurationMs + drain.runDurationMs + drain.releaseDurationMs)
             .toBeLessThanOrEqual(drain.durationMs);
+    }
+);
+
+it.each(['memory', 'indexeddb'] as const)(
+    'splits a delivery wait into its reservation and intra-batch halves over %s',
+    async (kind) => {
+        const { runtime, diagnostics, delivered } = createRuntime({ kind });
+        const message = createInboundTestMessage({ msgId: 'split-wait', acknowledged: true });
+
+        await runtime.ready();
+        await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+        await expect.poll(() => delivered).toEqual(['dispatched']);
+        await expect.poll(() => claimsOf(diagnostics).length).toBeGreaterThanOrEqual(2);
+        const dispatch = claimsOf(diagnostics).find((claim) => claim.payloadKind === 'dispatch-local')!;
+        const control = claimsOf(diagnostics).find((claim) => claim.payloadKind === 'send-control')!;
+        const drain = drainsOf(diagnostics).find((event) => event.startedAtMs === dispatch.batchStartedAtMs)!;
+        expect(dispatch.effectId).toBe(`dispatch:${INBOUND_TEST_SENDER_PEER_ID}:${message.id.msgId}`);
+        expect(dispatch.subjectMsgId).toBe(message.id.msgId);
+        expect(control.subjectMsgId).toBe(message.id.msgId);
+        expect(control.msgId).not.toBe(message.id.msgId);
+        expect(dispatch.dueAtMs).toBeLessThanOrEqual(dispatch.batchStartedAtMs);
+        expect(dispatch.startedAtMs).toBeGreaterThanOrEqual(dispatch.batchStartedAtMs);
+        expect(dispatch.queueWaitMs).toBe(Math.max(0, dispatch.batchStartedAtMs - dispatch.dueAtMs));
+        // The dispatch runs ahead of its own ACK: page deliveries rank before control sends.
+        expect(drain.claimedEffectIds).toEqual([dispatch.effectId, control.effectId]);
+        expect(drain.deferred).toEqual([]);
     }
 );
 
@@ -266,6 +295,52 @@ it.each(['memory', 'indexeddb'] as const)(
         // while the consumer is missing, and a batch that touched nothing reports nothing.
         expect(rotationsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
         expect(delivered).toEqual([]);
+        expect(drainsOf(diagnostics)).toEqual([]);
+    },
+    30_000
+);
+
+it('names a cleared row the port left unreserved in the drain that ran without it', async () => {
+    const { runtime, stores, diagnostics, delivered } = createRuntime({ kind: 'memory' });
+    const message = createInboundTestMessage({ msgId: 'port-unreserved', acknowledged: true });
+    const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
+    // The port reserves one observed row per batch, as when another owner took the rest first.
+    vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation((input) =>
+        reserveEntries({ ...input, observedEntries: input.observedEntries?.slice(0, 1) })
+    );
+
+    await runtime.ready();
+    await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+    await expect.poll(() => drainsOf(diagnostics).length).toBeGreaterThanOrEqual(1);
+
+    // The admission's commit ran one batch; the port reserved only the ACK row the page sorted first.
+    // Both rows were written by the one admission at one instant, so they share a due time.
+    const [control] = claimsOf(diagnostics);
+    const [controlDrain] = drainsOf(diagnostics);
+    expect(control?.payloadKind).toBe('send-control');
+    expect(controlDrain?.claimedEffectIds).toEqual([control?.effectId]);
+    expect(controlDrain?.deferred).toEqual([{
+        effectId: `dispatch:${INBOUND_TEST_SENDER_PEER_ID}:${message.id.msgId}`,
+        dueAtMs: control?.dueAtMs
+    }]);
+    expect(delivered).toEqual([]);
+});
+
+it.each(['memory', 'indexeddb'] as const)(
+    'names the due row its rounds held back on the liveness event rather than one of its own over %s',
+    async (kind) => {
+        const { runtime, diagnostics, queueEngine } = createRuntime({ kind, canDispatchMessage: () => false });
+        const message = createInboundTestMessage({ msgId: 'deferred-witness' });
+
+        await runtime.ready();
+        await runtime.admitIncomingMessage(message, { kind: 'rtc-peer', peerId: INBOUND_TEST_SENDER_PEER_ID });
+        await runRotationUntilAlive(queueEngine, diagnostics);
+
+        const rotation = rotationsOf(diagnostics)[0]!;
+        expect(rotation.deferredRoundCount).toBeGreaterThan(0);
+        expect(rotation.latestDeferred.map((deferred) => deferred.effectId)).toContain(
+            `dispatch:${INBOUND_TEST_SENDER_PEER_ID}:${message.id.msgId}`
+        );
         expect(drainsOf(diagnostics)).toEqual([]);
     },
     30_000

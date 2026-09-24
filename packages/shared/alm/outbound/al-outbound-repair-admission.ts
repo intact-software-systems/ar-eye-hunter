@@ -11,13 +11,16 @@ import type { ALWorkOutcome } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
     ALOutboundCommitBundle,
-    ALOutboundDurableEffectWrite
+    ALOutboundDurableEffectWrite,
+    ALOutboundVersionedClientRecord
 } from './admission/al-outbound-admission-store.ts';
 import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
-    ALOutboundRepairRequest
+    ALOutboundRepairRequest,
+    ALOutboundRuntimeDiagnosticsSink
 } from './al-outbound-message-runtime.ts';
+import { controlTargetMsgId } from './compute-al-outbound-control-admission.ts';
 import type {
     ALOutboundControlAdmission,
     ALOutboundControlAdmissionResult,
@@ -26,7 +29,7 @@ import type {
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import {
     isALOutboundReceiptComplete,
-    toALOutboundPendingAckExpireAtTimestamp
+    toALOutboundAckRetryScheduleEndTimestamp
 } from './transition-al-outbound-pending-ack.ts';
 
 export namespace ALOutboundRepairAdmission {
@@ -41,6 +44,14 @@ export namespace ALOutboundRepairAdmission {
                 request: ALOutboundRepairRequest
             ) => Promise<ALOutboundDispatchPlan<TPrepared> | undefined>)
             | undefined;
+        readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+    }
+
+    /** A receipt the `ack-timeout` schedule retries, with the message deadline that ends it. */
+    export interface RetriedReceipt {
+        readonly msg: ALMessage;
+        readonly pending: ALOutboundPendingAckSnapshot;
+        readonly messageExpiresAtMs: number;
     }
 }
 
@@ -57,14 +68,39 @@ export class ALOutboundRepairAdmission<TPrepared> {
 
     async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
         const decoded = decodeALControlMessage(msg);
-        if (decoded.left || !await this.hasCurrentRepairAuthority(decoded.right!)) {
+        if (decoded.left) {
             return { kind: 'not-handled' };
         }
-        const admitted = await this.dependencies.controlAdmission.admit(msg);
+        const control = decoded.right!;
+        const admitted: ALOutboundControlAdmissionResult = await this.hasCurrentRepairAuthority(control)
+            ? await this.dependencies.controlAdmission.admit(msg)
+            : { kind: 'not-handled' };
+        this.emitControlAdmission(msg, control, admitted);
         if (admitted.kind === 'committed') {
             await this.scheduleNotYetInSyncRetryIfRequired(msg);
         }
         return admitted;
+    }
+
+    /** Every carrier discards this verdict, so the diagnostics sink is the only place it is kept. */
+    private emitControlAdmission(
+        msg: ALMessage,
+        control: ALParsedControlMessage,
+        admitted: ALOutboundControlAdmissionResult
+    ): void {
+        try {
+            this.dependencies.diagnostics?.({
+                kind: 'control-admission',
+                msgId: msg.id.msgId,
+                typeId: msg.payload.typeId,
+                targetMsgId: controlTargetMsgId(control),
+                outcome: admitted.kind,
+                reason: admitted.kind === 'rejected' ? admitted.reason : 'none'
+            });
+        }
+        catch (error) {
+            console.error('AL outbound runtime diagnostics sink failed', error);
+        }
     }
 
     /** A retained control admission owes the same post-commit retry schedule the direct path writes. */
@@ -153,25 +189,16 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const read = await this.admissionStore.readRepairMessage(msgId, this.dependencies.planOutgoingMessage);
         const pending = read.pendingAck;
         const msg = read.sentSnapshot?.msg;
+        const messageExpiresAtMs = read.storedMessage?.reference.expiresAtMs;
         if (!pending) {
             return;
         }
-        if (!msg) {
-            if (read.clientRecord) {
-                const status = await this.admissionStore.commitBundle({
-                    senderId: read.clientRecord.senderId,
-                    expectedVersion: read.clientRecord.version,
-                    mutations: [{ kind: 'delete-pending-ack', msgId }, { kind: 'delete-repair-attempt', msgId }],
-                    durableEffects: []
-                });
-                if (status === 'conflict') {
-                    throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
-                }
-            }
+        if (!msg || messageExpiresAtMs === undefined) {
+            await this.commitOrphanedReceiptCleanup(msgId, read.clientRecord);
             return;
         }
         if (pending.deadlineAtMs > this.readNowMs()) {
-            await this.persistNextAckTimeout(msg, pending, read.clientRecord?.version);
+            await this.persistNextAckTimeout({ msg, pending, messageExpiresAtMs }, read.clientRecord?.version);
             return;
         }
         if (isALOutboundReceiptComplete(pending)) {
@@ -180,7 +207,6 @@ export class ALOutboundRepairAdmission<TPrepared> {
         }
         if (pending.attempts >= pending.maxAttempts) {
             console.warn(`Ack timeout exceeded retry budget for message ${msgId}`);
-            await this.commitClearPendingAck(msg, pending, read.clientRecord?.version);
             return;
         }
 
@@ -189,25 +215,47 @@ export class ALOutboundRepairAdmission<TPrepared> {
             attempts: pending.attempts + 1,
             deadlineAtMs: this.readNowMs() + pending.timeoutMs
         };
-        const bundle = this.toAckTimeoutRepairBundle(msg, nextPending, read.clientRecord?.version);
+        const bundle = this.toAckTimeoutRepairBundle(
+            { msg, pending: nextPending, messageExpiresAtMs },
+            read.clientRecord?.version
+        );
         const status = await this.admissionStore.commitBundle(bundle);
         if (status === 'conflict') {
             throw new RetryableConflictError('Outbound ack timeout commit conflict');
         }
     }
 
+    /** A receipt whose message is gone has nothing left to retry. */
+    private async commitOrphanedReceiptCleanup(
+        msgId: string,
+        clientRecord: ALOutboundVersionedClientRecord | undefined
+    ): Promise<void> {
+        if (!clientRecord) {
+            return;
+        }
+        const status = await this.admissionStore.commitBundle({
+            senderId: clientRecord.senderId,
+            expectedVersion: clientRecord.version,
+            mutations: [{ kind: 'delete-pending-ack', msgId }, { kind: 'delete-repair-attempt', msgId }],
+            durableEffects: []
+        });
+        if (status === 'conflict') {
+            throw new RetryableConflictError('Expired outbound acknowledgement cleanup commit conflict');
+        }
+    }
+
     private toAckTimeoutRepairBundle(
-        msg: ALMessage,
-        pending: ALOutboundPendingAckSnapshot,
+        receipt: ALOutboundRepairAdmission.RetriedReceipt,
         expectedVersion: number | undefined
     ): ALOutboundCommitBundle<TPrepared> {
+        const { msg, pending, messageExpiresAtMs } = receipt;
         const failedPeerIds = pending.expectedPeerIds.filter((peerId) => !pending.ackedPeerIds.includes(peerId));
         return {
             senderId: msg.id.senderId,
             expectedVersion,
-            mutations: [{ kind: 'set-pending-ack', snapshot: pending }],
+            mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
             durableEffects: [
-                this.toAckTimeoutEffect(pending),
+                this.toAckTimeoutEffect(pending, messageExpiresAtMs),
                 {
                     effectId: toALOutboundEffectId([
                         'repair-hint',
@@ -228,16 +276,15 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     private async persistNextAckTimeout(
-        msg: ALMessage,
-        pending: ALOutboundPendingAckSnapshot,
+        receipt: ALOutboundRepairAdmission.RetriedReceipt,
         expectedVersion?: number
     ): Promise<void> {
         const status = await this.admissionStore.commitBundle({
-            senderId: msg.id.senderId,
+            senderId: receipt.msg.id.senderId,
             expectedVersion,
             mutations: [],
             durableEffects: [
-                this.toAckTimeoutEffect(pending)
+                this.toAckTimeoutEffect(receipt.pending, receipt.messageExpiresAtMs)
             ]
         });
         if (status === 'conflict') {
@@ -279,7 +326,8 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     private toAckTimeoutEffect(
-        pending: ALOutboundPendingAckSnapshot
+        pending: ALOutboundPendingAckSnapshot,
+        messageExpiresAtMs: number
     ): ALOutboundDurableEffectWrite<TPrepared> {
         return {
             effectId: toALOutboundEffectId([
@@ -289,7 +337,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
                 pending.deadlineAtMs
             ]),
             retryAtMs: pending.deadlineAtMs,
-            expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending),
+            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
             payload: {
                 kind: 'ack-timeout',
                 msgId: pending.msgId

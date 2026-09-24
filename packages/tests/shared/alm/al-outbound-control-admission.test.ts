@@ -83,7 +83,8 @@ describe('outbound control admission identity', () => {
                         maxAttempts: 3,
                         attempts: 0,
                         deadlineAtMs: Date.now() + 2_000
-                    }
+                    },
+                    expireAtTimestamp: Date.now() + 30_000
                 }]
             });
             const id: ALMessage['id'] = { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() };
@@ -572,7 +573,8 @@ async function seedObligation(
                     maxAttempts: 3,
                     attempts: 0,
                     deadlineAtMs: Date.now() + 2000
-                }
+                },
+                expireAtTimestamp: Date.now() + 30_000
             }
         ],
         durableEffects: []

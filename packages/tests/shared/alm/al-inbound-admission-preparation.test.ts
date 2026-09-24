@@ -62,8 +62,8 @@ describe('inbound admission preparation boundary', () => {
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             ...createRuntimeDependencies(stores),
-            sendControlMessage: async (message) => {
-                controls.push(message);
+            sendControlMessages: async (messages) => {
+                controls.push(...messages);
             },
             diagnostics: undefined
         });
@@ -388,8 +388,8 @@ describe('inbound admission preparation boundary', () => {
         const controls: ALMessage[] = [];
         const runtime = new ALInboundMessageRuntime({
             ...createRuntimeDependencies(stores),
-            sendControlMessage: async (message) => {
-                controls.push(message);
+            sendControlMessages: async (messages) => {
+                controls.push(...messages);
             },
             diagnostics: undefined
         });
@@ -415,11 +415,13 @@ describe('inbound admission preparation boundary', () => {
         vi.setSystemTime(1_800_000_000_000);
         const stores = createDefaultInMemoryALInboundRuntimeStores();
         const controls: ALMessage[] = [];
+        let sendCalls = 0;
         const runtime = new ALInboundMessageRuntime({
             ...createRuntimeDependencies(stores),
-            sendControlMessage: async (message) => {
-                controls.push(message);
-                if (controls.length === 1) {
+            sendControlMessages: async (messages) => {
+                controls.push(...messages);
+                sendCalls += 1;
+                if (sendCalls === 1) {
                     throw new Error('Temporary control transport failure');
                 }
             },
@@ -503,7 +505,7 @@ function createRuntimeDependencies(stores: ALInboundRuntimeStores): ALInboundMes
         workQueue: stores.workQueue,
         planIncomingMessage,
         dispatchInboxEntry: async () => {},
-        sendControlMessage: async () => {},
+        sendControlMessages: async () => {},
         effectPreparation: createPreparationDependencies(),
         effectWorkerId: 'test-worker',
         clock: { nowMs: () => Date.now() },

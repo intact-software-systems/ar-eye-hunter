@@ -1,3 +1,4 @@
+import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import type { ResourceInboxWorkPage } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import {
@@ -9,10 +10,12 @@ import {
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALWorkReadySelection } from '../work/al-work-handler.ts';
 import type { ALWorkClaim, ALWorkQueuePort } from '../work/al-work-queue-port.ts';
+import type { ALInboundDurableEffect, ALPersistedInboundEffect } from './al-inbound-admission-store.ts';
 import type {
     ALInboundAdmittedDelivery,
     ALInboundDeliveryObservation
 } from './al-inbound-admitted-delivery.ts';
+import type { ALInboundDeferredEffect } from './al-inbound-runtime-diagnostics.ts';
 import {
     decodeALInboundWorkEntry,
     resolveALInboundWorkDueAtMs,
@@ -23,6 +26,12 @@ const SCAN_STATUSES = [EntityStatus.NEW, EntityStatus.RETRY, EntityStatus.RESERV
 const SCAN_START = { cursor: null, statusIndex: 0, nextReadyAtMs: undefined } as const;
 
 export const AL_INBOUND_WORK_PAGE_SIZE = 16;
+
+/** One `send-control` row the current selection reserved, with the envelope its eligibility read decoded. */
+export interface ALInboundClaimedControlSend {
+    readonly effectId: string;
+    readonly msg: ALMessage;
+}
 
 interface ALInboundWorkScan {
     readonly cursor: ResourceInboxWorkPage.Cursor | null;
@@ -45,6 +54,14 @@ interface ALInboundWorkSelection {
     readonly observations: ReadonlyMap<string, ALInboundClaimableObservation>;
     /** Reservations without a lease start: timeout reservation can never reach them, so they are released as observed. */
     readonly unleasedReservations: readonly ALWorkClaim[];
+    /** Due rows the eligibility read held back, in observation order: work the page saw and did not clear. */
+    readonly deferred: readonly ALInboundDeferredEffect[];
+    /** Every decoded row the read cleared, by queue slot, so one the port leaves unreserved can still be named. */
+    readonly claimableEffects: ReadonlyMap<ResourceEntryKeyString, ALInboundDeferredEffect>;
+    /** The durable kind the read decoded for each claimable row, by queue slot: the batch's own run-order key. */
+    readonly effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>;
+    /** The decoded envelope of every claimable `send-control` row, by queue slot. */
+    readonly controlSends: ReadonlyMap<ResourceEntryKeyString, ALInboundClaimedControlSend>;
     readonly scan: ALInboundWorkScan;
     /** Claimable work, or a rotation that still owes a page: one status never hides work on the next. */
     readonly readyNow: boolean;
@@ -67,6 +84,8 @@ interface ReadALInboundClaimedSelectionInput {
 interface ALInboundClaimedSelection {
     readonly selection: ALWorkReadySelection;
     readonly observations: ReadonlyMap<string, ALInboundDeliveryObservation>;
+    readonly unreservedDue: readonly ALInboundDeferredEffect[];
+    readonly controlSends: readonly ALInboundClaimedControlSend[];
 }
 
 /** One row's eligibility surface, under the queue slot it was read for, so a claim can be matched to it. */
@@ -76,11 +95,30 @@ interface ALInboundClaimableObservation {
 }
 
 /** What the eligibility read decided about one page, before the port reserves anything from it. */
-interface ALInboundPageEligibility
-    extends Pick<ALInboundWorkSelection, 'claimable' | 'observations' | 'unleasedReservations'> {
+interface ALInboundPageEligibility extends
+    Pick<
+        ALInboundWorkSelection,
+        | 'claimable'
+        | 'observations'
+        | 'unleasedReservations'
+        | 'deferred'
+        | 'claimableEffects'
+        | 'effectKinds'
+        | 'controlSends'
+    > {
     /** The earliest time a row this page passed over becomes claimable. */
     readonly readyAtMs: number | undefined;
 }
+
+/** What one row's eligibility read decided, before the page folds it into its lists. */
+type ALInboundRowEligibility =
+    | Readonly<{ kind: 'not-due'; readyAtMs: number; }>
+    | Readonly<{
+        kind: 'claimable';
+        effect: ALPersistedInboundEffect;
+        observed: ALInboundDeliveryObservation | undefined;
+    }>
+    | Readonly<{ kind: 'deferred'; effect: ALPersistedInboundEffect; }>;
 
 /** The held page and the scan position it advanced: what the probe reads and the batch then claims from. */
 interface ALInboundRotationPage {
@@ -110,6 +148,17 @@ export interface ALInboundWorkSelector {
      * page or a restarted scan replaces this one.
      */
     getDeliveryObservation(effectId: string): ALInboundDeliveryObservation | undefined;
+    /**
+     * The due rows the last batch's page saw and did not hand it: held back by eligibility, or left
+     * unreserved by the port. A row reserved by a live lease is not due, so a batch's own rows never
+     * appear here.
+     */
+    getUnreservedDue(): readonly ALInboundDeferredEffect[];
+    /**
+     * The `send-control` rows the selection of this batch reserved, in run order. Every selection returns a
+     * fresh array, so its identity names the batch; a restarted scan replaces it with an empty one.
+     */
+    getClaimedControlSends(): readonly ALInboundClaimedControlSend[];
     /** A commit writes new work behind the rotation; the next page read starts over. */
     restartScan(): void;
 }
@@ -138,6 +187,10 @@ async function readALInboundWorkSelection(
         claimable: eligibility.claimable,
         observations: eligibility.observations,
         unleasedReservations: eligibility.unleasedReservations,
+        deferred: eligibility.deferred,
+        claimableEffects: eligibility.claimableEffects,
+        effectKinds: eligibility.effectKinds,
+        controlSends: eligibility.controlSends,
         readyNow: claimableNow || continueScan,
         scan: {
             cursor: page.nextCursor,
@@ -158,49 +211,86 @@ async function readALInboundPageEligibility(
     input: ALInboundWorkSelectionReadInput,
     delivery: ALInboundAdmittedDelivery
 ): Promise<ALInboundPageEligibility> {
-    const claimable: ResourceEntry[] = [];
-    const observations = new Map<string, ALInboundClaimableObservation>();
-    const unleasedReservations: ALWorkClaim[] = [];
-    let readyAtMs: number | undefined;
+    let page: ALInboundPageEligibility = {
+        claimable: [],
+        observations: new Map(),
+        unleasedReservations: [],
+        deferred: [],
+        claimableEffects: new Map(),
+        effectKinds: new Map(),
+        controlSends: new Map(),
+        readyAtMs: undefined
+    };
     for (const entry of entries) {
         if (entry.audit.expiryTs.epochMilliseconds <= input.nowMs) {
             continue;
         }
         try {
-            const readyAt = resolveALInboundWorkReadyAt(entry);
-            if (readyAt > input.nowMs) {
-                readyAtMs = resolveALInboundScannedReadyAtMs(entry, readyAt, readyAtMs);
-                continue;
-            }
-            const effect = decodeALInboundWorkEntry(entry, input.namespace);
-            if (effect.payload.kind === 'admit-message') {
-                claimable.push(entry);
-                continue;
-            }
-            const readiness = await delivery.readReadiness(effect, input.nowMs);
-            if (readiness.ready) {
-                claimable.push(entry);
-                if (readiness.observed !== undefined) {
-                    observations.set(effect.effectId, {
-                        key: toKeyAsString(entry.key),
-                        observed: readiness.observed
-                    });
-                }
-            }
+            const row = await readALInboundRowEligibility(entry, input, delivery);
+            page = computeALInboundPageEligibilityWithRow(page, entry, row);
         }
         catch (error) {
             if (!(error instanceof ALAdmissionCorruptionError) && !(error instanceof NonRetryableException)) {
                 throw error;
             }
-            if (entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined) {
-                unleasedReservations.push(toUnleasedALWorkClaim(entry, input.nowMs));
-            }
-            else {
-                claimable.push(entry);
-            }
+            page = entry.status === EntityStatus.RESERVED && entry.dequeueAudit.startTs === undefined
+                ? {
+                    ...page,
+                    unleasedReservations: [...page.unleasedReservations, toUnleasedALWorkClaim(entry, input.nowMs)]
+                }
+                : { ...page, claimable: [...page.claimable, entry] };
         }
     }
-    return { claimable, observations, unleasedReservations, readyAtMs };
+    return page;
+}
+
+/** The page with one more row's decision in it: a page holds at most one page size of rows. */
+function computeALInboundPageEligibilityWithRow(
+    page: ALInboundPageEligibility,
+    entry: ResourceEntry,
+    row: ALInboundRowEligibility
+): ALInboundPageEligibility {
+    if (row.kind === 'not-due') {
+        return { ...page, readyAtMs: resolveALInboundScannedReadyAtMs(entry, row.readyAtMs, page.readyAtMs) };
+    }
+    const due = { effectId: row.effect.effectId, dueAtMs: resolveALInboundWorkDueAtMs(entry) };
+    if (row.kind === 'deferred') {
+        return { ...page, deferred: [...page.deferred, due] };
+    }
+    const key = toKeyAsString(entry.key);
+    const payload = row.effect.payload;
+    return {
+        ...page,
+        claimable: [...page.claimable, entry],
+        claimableEffects: new Map(page.claimableEffects).set(key, due),
+        effectKinds: new Map(page.effectKinds).set(key, payload.kind),
+        observations: row.observed === undefined
+            ? page.observations
+            : new Map(page.observations).set(row.effect.effectId, { key, observed: row.observed }),
+        controlSends: payload.kind === 'send-control'
+            ? new Map(page.controlSends).set(key, { effectId: row.effect.effectId, msg: payload.msg })
+            : page.controlSends
+    };
+}
+
+/** A retained admission is claimable as soon as it is due; every other effect asks its delivery. */
+async function readALInboundRowEligibility(
+    entry: ResourceEntry,
+    input: ALInboundWorkSelectionReadInput,
+    delivery: ALInboundAdmittedDelivery
+): Promise<ALInboundRowEligibility> {
+    const readyAt = resolveALInboundWorkReadyAt(entry);
+    if (readyAt > input.nowMs) {
+        return { kind: 'not-due', readyAtMs: readyAt };
+    }
+    const effect = decodeALInboundWorkEntry(entry, input.namespace);
+    if (effect.payload.kind === 'admit-message') {
+        return { kind: 'claimable', effect, observed: undefined };
+    }
+    const readiness = await delivery.readReadiness(effect, input.nowMs);
+    return readiness.ready
+        ? { kind: 'claimable', effect, observed: readiness.observed }
+        : { kind: 'deferred', effect };
 }
 
 /** A row that expires before it is ready can never be claimed, so it advertises nothing. */
@@ -223,17 +313,24 @@ export function createALInboundWorkSelector(
 ): ALInboundWorkSelector {
     const page = createALInboundRotationPage(dependencies);
     let claimedObservations: ReadonlyMap<string, ALInboundDeliveryObservation> = new Map();
+    let unreservedDue: readonly ALInboundDeferredEffect[] = [];
+    let claimedControlSends: readonly ALInboundClaimedControlSend[] = [];
     return {
         readNextReadyAtMs: (port) => readALInboundNextReadyAtMs(page, port, dependencies.nowMs),
         selectReady: async (port, pageSize) => {
             const claimed = await readALInboundClaimedSelection({ page, port, pageSize, nowMs: dependencies.nowMs });
             claimedObservations = claimed.observations;
+            unreservedDue = claimed.unreservedDue;
+            claimedControlSends = claimed.controlSends;
             return claimed.selection;
         },
         getDeliveryObservation: (effectId) => claimedObservations.get(effectId),
+        getUnreservedDue: () => unreservedDue,
+        getClaimedControlSends: () => claimedControlSends,
         restartScan: () => {
             page.restartScan();
             claimedObservations = new Map();
+            claimedControlSends = [];
         }
     };
 }
@@ -283,9 +380,10 @@ async function readALInboundClaimedSelection(
     const claims = await port.claim({ maxCount: pageSize, observedEntries: selection.claimable });
     const claimedAtMs = nowMs();
     const claimedKeys = new Set(claims.map((claim) => toKeyAsString(claim.entry.key)));
+    const ordered = computeALInboundClaimOrder([...selection.unleasedReservations, ...claims], selection.effectKinds);
     return {
         selection: {
-            claims: [...selection.unleasedReservations, ...claims],
+            claims: ordered,
             nextReadyAtMs: selection.nextReadyAtMs,
             selectionDurationMs: Math.max(0, claimStartedAtMs - selectionStartedAtMs),
             claimDurationMs: Math.max(0, claimedAtMs - claimStartedAtMs),
@@ -293,8 +391,41 @@ async function readALInboundClaimedSelection(
                 toClaimedALInboundEntries(selection, claimedKeys)
             )
         },
-        observations: toClaimedALInboundObservations(selection.observations, claimedKeys)
+        observations: toClaimedALInboundObservations(selection.observations, claimedKeys),
+        unreservedDue: [...selection.deferred, ...toUnreservedClaimableDue(selection, claimedKeys)],
+        controlSends: ordered.flatMap((claim) => selection.controlSends.get(toKeyAsString(claim.entry.key)) ?? [])
     };
+}
+
+/**
+ * The batch's run order: page deliveries first, then admission replays and rows whose kind the
+ * page never decoded, then control sends and forwards. Stable within each rank, so page order
+ * still decides among equals.
+ */
+export function computeALInboundClaimOrder(
+    claims: readonly ALWorkClaim[],
+    effectKinds: ReadonlyMap<ResourceEntryKeyString, ALInboundDurableEffect['kind']>
+): readonly ALWorkClaim[] {
+    return [...claims].sort((left, right) =>
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(left.entry.key))) -
+        toALInboundClaimRank(effectKinds.get(toKeyAsString(right.entry.key)))
+    );
+}
+
+/** A row whose kind never decoded ranks with the admission replays: both are read again before delivery. */
+function toALInboundClaimRank(kind: ALInboundDurableEffect['kind'] | undefined): 0 | 1 | 2 {
+    switch (kind) {
+        case 'dispatch-local':
+        case 'release-buffered':
+            return 0;
+        case 'admit-control':
+        case 'admit-message':
+        case undefined:
+            return 1;
+        case 'forward-message':
+        case 'send-control':
+            return 2;
+    }
 }
 
 /**
@@ -310,6 +441,16 @@ function toClaimedALInboundEntries(
         ...selection.unleasedReservations.map((claim) => claim.entry),
         ...selection.claimable.filter((entry) => claimedKeys.has(toKeyAsString(entry.key)))
     ];
+}
+
+/** A row the page cleared that the port did not reserve: due, seen, and handed to no batch. */
+function toUnreservedClaimableDue(
+    selection: ALInboundWorkSelection,
+    claimedKeys: ReadonlySet<ResourceEntryKeyString>
+): readonly ALInboundDeferredEffect[] {
+    return [...selection.claimableEffects]
+        .filter(([key]) => !claimedKeys.has(key))
+        .map(([, due]) => due);
 }
 
 /** The earliest of those rows' own due times, which is the wait the batch reports. */

@@ -1,12 +1,12 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import { jsonEquals } from '../../repository/state-utils.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
 import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionStore,
+    ALOutboundCommitBundle,
     ALOutboundPreparedMessageDecoder
 } from './admission/al-outbound-admission-store.ts';
 import { captureALOutboundPolicy } from './admission/al-outbound-admission-validation.ts';
@@ -19,16 +19,16 @@ import type {
     ALOutboundDispatchPlan,
     ALOutboundMessageRuntime,
     ALOutboundRuntimeDiagnosticsEvent,
-    ALOutboundRuntimeDiagnosticsSink
+    ALOutboundRuntimeDiagnosticsSink,
+    ALOutboundSettlementEmitter
 } from './al-outbound-message-runtime.ts';
-import { toALOutboundPendingAdmissionId } from './al-outbound-pending-admission.ts';
 import {
-    decodeALOutboundWorkEntry,
-    isPendingALOutboundWork,
-    toALOutboundWorkKey
-} from './al-outbound-work-entry.ts';
+    readALOutboundPendingDispatch,
+    type ALOutboundPendingDispatchVerdict
+} from './al-outbound-pending-admission.ts';
 import {
     computeALOutboundDispatch,
+    toALOutboundSupersededMsgIds,
     type ALOutboundCommitDispatchOptions,
     type ALOutboundComputedDto,
     type ALOutboundComputeIntent,
@@ -78,7 +78,26 @@ export namespace ALOutboundDispatchAdmission {
         readonly clock: ALOutboundMessageRuntime.Clock;
         readonly browserLocks: ALOutboundMessageRuntime.BrowserLocks | undefined;
         readonly diagnostics: ALOutboundRuntimeDiagnosticsSink | undefined;
+        readonly settlements: ALOutboundSettlementEmitter;
     }
+}
+
+/** What one dispatch decided before its write: a result already, or a bundle its commit writes. */
+type ALOutboundDispatchDecision<TPrepared> =
+    | Readonly<{ kind: 'settled'; result: ALOutboundDispatchAdmission.Result<TPrepared>; }>
+    | ALOutboundCommitDecision<TPrepared>;
+
+interface ALOutboundCommitDecision<TPrepared> {
+    readonly kind: 'commit';
+    readonly input: ComputeALOutboundDispatchInput<TPrepared>;
+    readonly computed: ALOutboundComputedDto<TPrepared>;
+    readonly bundle: ALOutboundCommitBundle<TPrepared>;
+}
+
+/** One dispatch of a group, with the phases its one `commit-phases` event reports. */
+interface ALOutboundGroupMember<TPrepared> {
+    readonly dispatch: ALOutboundDispatchAdmission.Input<TPrepared>;
+    readonly phases: ALOutboundCommitPhases;
 }
 
 /** Owns the sender-serialized optimistic read/compute/commit boundary, before durable effects run. */
@@ -100,7 +119,46 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     async commit(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        const phases = new ALOutboundCommitPhases({
+        const phases = this.createCommitPhases(dispatch);
+        try {
+            return await this.commitWithPhases(dispatch, phases);
+        }
+        finally {
+            this.emitDiagnostics(phases.toEvent());
+        }
+    }
+
+    /**
+     * The dispatches of one sender under one queue slot, one lock and one version fence. When a member
+     * settles before its write (it fails validation, finds its pending admission, has nothing to
+     * commit), the store answers the group with anything but `committed`, or the group attempt throws,
+     * every member commits again alone, one after another: a fresh read, compute and conflict
+     * handling, as a single send gets. Each member keeps its own answer there.
+     */
+    async commitAll(
+        dispatches: readonly ALOutboundDispatchAdmission.Input<TPrepared>[]
+    ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[]> {
+        if (dispatches.length < 2) {
+            return await Promise.all(dispatches.map((dispatch) => this.commit(dispatch)));
+        }
+        const members = dispatches.map((dispatch) => ({ dispatch, phases: this.createCommitPhases(dispatch) }));
+        try {
+            const grouped = await this.withSenderCommitQueue(dispatches[0]!, () => this.commitGroupOnce(members))
+                .catch((error) => {
+                    console.warn('AL outbound group commit threw; its members commit alone', error);
+                    return undefined;
+                });
+            return grouped ?? await this.commitEachAlone(members);
+        }
+        finally {
+            for (const { phases } of members) {
+                this.emitDiagnostics(phases.toEvent());
+            }
+        }
+    }
+
+    private createCommitPhases(dispatch: ALOutboundDispatchAdmission.Input<TPrepared>): ALOutboundCommitPhases {
+        return new ALOutboundCommitPhases({
             senderId: dispatch.msg.id.senderId,
             msgId: dispatch.msg.id.msgId,
             typeId: dispatch.msg.payload.typeId,
@@ -108,6 +166,12 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             nowMs: () => this.readNowMs(),
             getReadOperationCount: () => this.admissionStore.getReadOperationCount()
         });
+    }
+
+    private async commitWithPhases(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
         try {
             return await this.withSenderCommitQueue(
                 dispatch,
@@ -126,27 +190,103 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 committed: false
             };
         }
-        finally {
-            this.emitDiagnostics(phases.toEvent());
+    }
+
+    /**
+     * Every member commits, whatever an earlier one answered. A member whose single commit would throw
+     * does not stop the members after it: the first such throw is rethrown once every member ran, so
+     * the caller still sees it and the own write of each member has already landed. The caller owes
+     * the owner its wake for those writes on the rethrow too.
+     */
+    private async commitEachAlone(
+        members: readonly ALOutboundGroupMember<TPrepared>[]
+    ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[]> {
+        const outcomes: Promise<ALOutboundDispatchAdmission.Result<TPrepared>>[] = [];
+        for (const { dispatch, phases } of members) {
+            const outcome = this.commitWithPhases(dispatch, phases);
+            outcomes.push(outcome);
+            await outcome.catch(() => undefined);
         }
+        return await Promise.all(outcomes);
+    }
+
+    /** The results of the group, or `undefined` when every member must commit alone instead. */
+    private async commitGroupOnce(
+        members: readonly ALOutboundGroupMember<TPrepared>[]
+    ): Promise<readonly ALOutboundDispatchAdmission.Result<TPrepared>[] | undefined> {
+        const decisions = await this.readGroupDecisions(members);
+        if (decisions === undefined || !hasOneALOutboundSenderVersion(decisions)) {
+            return undefined;
+        }
+        const written = this.admissionStore.commitBundles(decisions.map((decision) => decision.bundle));
+        const statuses = await Promise.all(members.map(({ phases }) => phases.withCommitPhase(() => written)));
+        if (statuses.some((status) => status !== 'committed')) {
+            return undefined;
+        }
+        return decisions.map((decision, index) => {
+            const result = this.toCommitResult('committed', {
+                computed: decision.computed,
+                msg: decision.input.read.msg,
+                intent: members[index]!.dispatch.intent
+            });
+            this.emitSupersededSettlements(result);
+            return result;
+        });
+    }
+
+    /** Every decision of the group, read under its lock; `undefined` once one of them settles before a write. */
+    private async readGroupDecisions(
+        members: readonly ALOutboundGroupMember<TPrepared>[]
+    ): Promise<readonly ALOutboundCommitDecision<TPrepared>[] | undefined> {
+        const decisions: ALOutboundCommitDecision<TPrepared>[] = [];
+        for (const { dispatch, phases } of members) {
+            const decision = await this.readDispatchDecision(dispatch, phases);
+            if (decision.kind === 'settled') {
+                return undefined;
+            }
+            decisions.push(decision);
+        }
+        return decisions;
     }
 
     private async commitDispatchOnce(
         dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
         phases: ALOutboundCommitPhases
     ): Promise<ALOutboundDispatchAdmission.Result<TPrepared>> {
-        if (this.disposed) {
-            return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
+        const decision = await this.readDispatchDecision(dispatch, phases);
+        if (decision.kind === 'settled') {
+            return decision.result;
         }
 
+        const { input, computed, bundle } = decision;
+        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
+        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
+            return await this.retainPendingDispatch(input, computed);
+        }
+        if (status === 'conflict' && dispatch.options.pendingAdmission) {
+            throw new RetryableConflictError('Outbound pending admission commit conflict');
+        }
+        const result = this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
+        this.emitSupersededSettlements(result);
+        return result;
+    }
+
+    /** Everything one dispatch decides before its write: the read, its retained pending admission, compute and validate. */
+    private async readDispatchDecision(
+        dispatch: ALOutboundDispatchAdmission.Input<TPrepared>,
+        phases: ALOutboundCommitPhases
+    ): Promise<ALOutboundDispatchDecision<TPrepared>> {
+        if (this.disposed) {
+            return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
+        }
         const input = await phases.withReadPhase(() => this.readDispatch(dispatch));
-        if (this.disposed) {
-            return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
-        }
-
         const pending = await phases.withReadPhase(() => this.readPendingDispatch(input));
         if (pending) {
-            return pending;
+            return toALOutboundSettledDecision(pending.verdict, {
+                msg: input.read.msg,
+                entries: pending.entries,
+                reason: pending.reason
+            });
         }
 
         const computed = computeALOutboundDispatch(input);
@@ -156,31 +296,49 @@ export class ALOutboundDispatchAdmission<TPrepared> {
             if (dispatch.intent !== 'enqueue') {
                 throw new NonRetryableException(reason);
             }
-            return {
-                computed: toALOutboundVerdictComputed(
-                    { kind: 'failed', detail: reason },
-                    { msg: input.read.msg, reason, entries: [] }
-                ),
-                committed: false
-            };
+            return toALOutboundSettledDecision({ kind: 'failed', detail: reason }, {
+                msg: input.read.msg,
+                reason,
+                entries: []
+            });
         }
         this.logDispatchDecision(computed, input.read.plan);
-        const bundle = computed.bundle;
-        if (!bundle) {
-            return { computed, committed: false };
+        if (!computed.bundle) {
+            return { kind: 'settled', result: { computed, committed: false } };
         }
         if (this.disposed) {
-            return { computed: ALOutboundDispatchAdmission.toDisposedComputed(), committed: false };
+            return { kind: 'settled', result: ALOutboundDispatchAdmission.toDisposedResult() };
         }
+        return { kind: 'commit', input, computed, bundle: computed.bundle };
+    }
 
-        const status = await phases.withCommitPhase(() => this.admissionStore.commitBundle(bundle));
-        if (status === 'conflict' && dispatch.intent === 'enqueue' && !dispatch.options.pendingAdmission) {
-            return await this.retainPendingDispatch(input, computed);
+    private async readPendingDispatch(
+        input: ComputeALOutboundDispatchInput<TPrepared>
+    ): Promise<ALOutboundPendingDispatchVerdict | undefined> {
+        return await readALOutboundPendingDispatch({
+            namespace: this.admissionStore.namespace,
+            canonicalScope: this.admissionStore.canonicalScope,
+            workPort: this.dependencies.workPort,
+            decodePrepared: this.dependencies.decodePreparedMessage,
+            nowMs: () => this.readNowMs(),
+            dispatch: input
+        });
+    }
+
+    /** Stated from the replacement's own commit, so the predecessor never waits on its next attempt. */
+    private emitSupersededSettlements(result: ALOutboundDispatchAdmission.Result<TPrepared>): void {
+        const { bundle, msg } = result.computed;
+        if (!result.committed || !bundle || !msg) {
+            return;
         }
-        if (status === 'conflict' && dispatch.options.pendingAdmission) {
-            throw new RetryableConflictError('Outbound pending admission commit conflict');
+        for (const msgId of toALOutboundSupersededMsgIds(bundle)) {
+            this.dependencies.settlements({
+                kind: 'superseded',
+                msgId,
+                replacementMsgId: msg.id.msgId,
+                detail: 'A newer message replaced this one at its admission.'
+            });
         }
-        return this.toCommitResult(status, { computed, msg: input.read.msg, intent: dispatch.intent });
     }
 
     private async retainPendingDispatch(
@@ -213,50 +371,6 @@ export class ALOutboundDispatchAdmission<TPrepared> {
                 { kind: 'pending' },
                 { msg: input.read.msg, entries: [canonicalEntry] }
             ),
-            committed: false
-        };
-    }
-
-    private async readPendingDispatch(
-        input: ComputeALOutboundDispatchInput<TPrepared>
-    ): Promise<ALOutboundDispatchAdmission.Result<TPrepared> | undefined> {
-        if (
-            input.intent !== 'enqueue' || input.options.pendingAdmission || !input.read.canonicalEntry ||
-            input.read.sentSnapshot
-        ) {
-            return undefined;
-        }
-        const reference = toALOutboundMessageReference(
-            this.admissionStore.canonicalScope,
-            input.outboxEntry,
-            input.read.msg
-        );
-        const key = toALOutboundWorkKey(this.admissionStore.namespace, toALOutboundPendingAdmissionId(reference));
-        const entry = await this.dependencies.workPort.readEntry(key);
-        if (!entry || reference.expiresAtMs <= this.readNowMs()) {
-            return undefined;
-        }
-        const pending = decodeALOutboundWorkEntry(entry, this.admissionStore.namespace, {
-            decodePrepared: this.dependencies.decodePreparedMessage,
-            message: input.read.msg
-        }).payload;
-        if (
-            pending.kind !== 'admit-message' || !jsonEquals(pending.message, reference) ||
-            (input.options.explicitPlan && (!jsonEquals(pending.policy, captureALOutboundPolicy(input.read.plan)) ||
-                !jsonEquals(pending.preparedMessages, input.read.plan.preparedMessages)))
-        ) {
-            throw new NonRetryableException('Pending outbound admission differs from the supplied captured plan');
-        }
-        const reason = isPendingALOutboundWork(entry) ? undefined : 'Pending admission has already terminated';
-        const verdict: ALDeliveryAdmissionVerdict = reason === undefined
-            ? { kind: 'pending' }
-            : { kind: 'skipped', reason: 'pending-terminated', detail: reason };
-        return {
-            computed: toALOutboundVerdictComputed(verdict, {
-                msg: input.read.msg,
-                entries: [input.outboxEntry],
-                reason
-            }),
             committed: false
         };
     }
@@ -312,12 +426,15 @@ export class ALOutboundDispatchAdmission<TPrepared> {
         }
     }
 
-    private static toDisposedComputed<TPrepared>(): ALOutboundComputedDto<TPrepared> {
+    private static toDisposedResult<TPrepared>(): ALOutboundDispatchAdmission.Result<TPrepared> {
         const reason = 'Outbound runtime is disposed.';
-        return toALOutboundVerdictComputed(
-            { kind: 'skipped', reason: 'disposed', detail: reason },
-            { reason, entries: [] }
-        );
+        return {
+            computed: toALOutboundVerdictComputed(
+                { kind: 'skipped', reason: 'disposed', detail: reason },
+                { reason, entries: [] }
+            ),
+            committed: false
+        };
     }
 
     private async readDispatch(
@@ -453,9 +570,24 @@ export class ALOutboundDispatchAdmission<TPrepared> {
     }
 }
 
+function toALOutboundSettledDecision<TPrepared>(
+    verdict: ALDeliveryAdmissionVerdict,
+    fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
+): ALOutboundDispatchDecision<TPrepared> {
+    return { kind: 'settled', result: { computed: toALOutboundVerdictComputed(verdict, fields), committed: false } };
+}
+
 function toALOutboundVerdictComputed<TPrepared>(
     verdict: ALDeliveryAdmissionVerdict,
     fields: Readonly<{ msg?: ALMessage; reason?: string; entries: readonly ResourceEntry[]; }>
 ): ALOutboundComputedDto<TPrepared> {
     return { ...fields, verdict };
+}
+
+/** Members read the version of the sender one after another, so a version that moved between them splits the group. */
+function hasOneALOutboundSenderVersion<TPrepared>(decisions: readonly ALOutboundCommitDecision<TPrepared>[]): boolean {
+    const [first] = decisions;
+    return decisions.every(({ bundle }) =>
+        bundle.senderId === first?.bundle.senderId && bundle.expectedVersion === first.bundle.expectedVersion
+    );
 }

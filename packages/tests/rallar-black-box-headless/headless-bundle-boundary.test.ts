@@ -56,10 +56,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
 
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The batched work release -- one disposition per entry, one flush per batch -- measures
-        // 270.01953125 KiB with this exact harness. The preauthorized next whole-KiB ceiling is 271;
+        // Committing the control sends of one inbound batch as one outbound admission measures
+        // 272.267578125 KiB with this exact harness. The preauthorized next whole-KiB ceiling is 273;
         // all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(271);
+        expect(result.brotliKiB).toBeLessThan(273);
     });
 });
 

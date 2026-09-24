@@ -351,7 +351,8 @@ function toDeliveryLifecycleSenderCommands(sender: AlmConformanceStepInput): rea
     return [
         ...toSubmissionSpecimenCommands(sender),
         ...toRetainedCancellationCommands(sender),
-        ...toSupersedenceCommands(sender)
+        ...toSupersedenceCommands(sender),
+        ...toSubmissionReceiptCommands(sender)
     ];
 }
 
@@ -447,9 +448,15 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
     };
 }
 
+/**
+ * D28: the receiver's own wait is the local receipt for the submission, so the sender only proves
+ * carrier-level submission here; `toSubmissionReceiptCommands` reads the sender's receipts and
+ * releases the handle afterwards, once the whole scenario has elapsed.
+ */
 function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const state = sender.input.carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
+    const state = 'transport-accepted';
     const observation = `observe-${state}-1`;
+    const isWs = sender.input.carrier === 'ws';
     return [
         toSendCommand({
             ...sender,
@@ -463,8 +470,8 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
             name: 'assert-submitted-state-1',
             resultName: observation,
             field: 'state',
-            operator: 'equals',
-            expected: state
+            operator: isWs ? 'equals' : 'matches',
+            expected: isWs ? state : '^(transport-accepted|acknowledged)$'
         }),
         toResultAssertion({
             step: sender,
@@ -473,7 +480,13 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
             field: 'submitted',
             operator: 'equals',
             expected: true
-        }),
+        })
+    ];
+}
+
+/** Receipts and the handle's release are read after the whole scenario, per D28. */
+function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    return [
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
             step: sender,
@@ -576,7 +589,7 @@ function toSupersedenceCommands(sender: AlmConformanceStepInput): readonly Ralla
  * sender stays up until the replacement is actually submitted.
  */
 function toReplacementSubmittedCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
-    const state = sender.input.carrier === 'ws' ? 'transport-accepted' : 'acknowledged';
+    const state = 'transport-accepted';
     const observation = `observe-${state}-4`;
     return [
         toObserveCommand({ ...sender, index: 4, state }),

@@ -212,7 +212,9 @@ describe('outbound message expiry', () => {
                     deadlineAtMs: 1_050,
                     attempts: 0,
                     maxAttempts: 1
-                }
+                },
+                // A receipt that outlives its message, as a row written before Task 10 could.
+                expireAtTimestamp: 1_100
             }]
         });
         const clock = { nowMs: Date.now };
@@ -222,7 +224,8 @@ describe('outbound message expiry', () => {
             clock,
             controlAdmission: store.createControlAdmission(workPort, clock, () => {}),
             planOutgoingMessage: (msg) => ({ msg, dropReasonCode: undefined, persist: false, preparedMessages: [] }),
-            planRepairMessage: undefined
+            planRepairMessage: undefined,
+            diagnostics: undefined
         });
         vi.setSystemTime(1_050);
         expect(await store.readSentMessage(message.id.msgId)).toBeUndefined();

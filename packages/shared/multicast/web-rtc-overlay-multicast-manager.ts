@@ -195,32 +195,36 @@ export class WebRtcOverlayMulticastManager {
     }
 
     async enqueueIfAbsent(msg: ALMessage): Promise<ALOutboundEnqueueResult> {
+        const [result] = await this.enqueueAllIfAbsent([msg]);
+        return result!;
+    }
+
+    /** One circuit-breaker call and one rate-limiter token for the whole group, whose messages commit as one. */
+    async enqueueAllIfAbsent(msgs: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.disposed) {
-            return WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg);
+            return msgs.map((msg) => WebRtcOverlayMulticastManager.toDisposedEnqueueResult(msg));
         }
 
-        const either = await CircuitBreaker.tryToExecute<ALOutboundEnqueueResult>(
+        const either = await CircuitBreaker.tryToExecute<readonly ALOutboundEnqueueResult[]>(
             this.circuitBreaker,
             () => {
-                return RateLimiter.tryToExecuteOrDefault<ALOutboundEnqueueResult>(
+                return RateLimiter.tryToExecuteOrDefault<readonly ALOutboundEnqueueResult[]>(
                     this.rateLimiter,
-                    () => this.outboundRuntime.enqueueIfAbsent(msg),
-                    WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
-                        kind: 'unroutable',
-                        reason: 'rate-limited',
-                        detail: 'RTC enqueue rate limit exceeded'
-                    })
+                    () => this.outboundRuntime.enqueueAllIfAbsent(msgs),
+                    msgs.map((msg) =>
+                        WebRtcOverlayMulticastManager.toProtectedEnqueueResult(msg, {
+                            kind: 'unroutable',
+                            reason: 'rate-limited',
+                            detail: 'RTC enqueue rate limit exceeded'
+                        })
+                    )
                 );
             },
-            WebRtcOverlayMulticastManager.isSuccessfulProtectedEnqueueResult
+            (results) => results.every(WebRtcOverlayMulticastManager.isSuccessfulProtectedEnqueueResult)
         );
 
         return either.fold(
-            (error) =>
-                WebRtcOverlayMulticastManager.toCircuitBreakerResult(
-                    msg,
-                    error
-                ),
+            (error) => msgs.map((msg) => WebRtcOverlayMulticastManager.toCircuitBreakerResult(msg, error)),
             (value) => value
         );
     }

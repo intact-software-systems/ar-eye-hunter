@@ -42,6 +42,20 @@ question.
 | D15 | `RallarGameSendResult` converges on the handle; `rallar.realtime` stays the volatile lane without a handle.                                                                                                                                                                                                                                                                                                                                 |
 | D16 | S1 starts from `main` in parallel with F2c (the inbound fence and batched releases); F2c merges first and S1 merges `main` in before its final gate.                                                                                                                                                                                                                                                                                        |
 | D17 | F2c replaces the IndexedDB admission backend's store-global revision compare-and-set with per-row revisions validated over the attempt's read and write sets, bumps the ALM schema id with the ordinary reset-on-mismatch (no migration, no fallback), and batches the releases of one work batch through a per-entry disposition; retained-claim releases stay serial and the app-level fence's ordering scan stays as it is (2026-09-22). |
+| D18 | S2 splits into three sequential PRs, S2a (drain) then S2b (identity) then S2c (receipts); S2a merges only after the hosted one-variable drain confirmation (2026-09-23).                                                                                                                                                                                                                                                                    |
+| D19 | S2a's drain uses shape A, dispatch-first ordering inside the batch, now; C or D is decided by Task 0's reading; B is not chosen (2026-09-23).                                                                                                                                                                                                                                                                                               |
+| D20 | S2b merges the two inbound stores into one per session, with carrier a field on the control and ACK rows rather than a second store (2026-09-23).                                                                                                                                                                                                                                                                                           |
+| D21 | S2c's ACK payload takes a wire version bump (`al.control.ack.v2`) with no dual-decode window, rather than additive fields (2026-09-23).                                                                                                                                                                                                                                                                                                     |
+| D22 | `receiver` becomes a fourth `ALAckAlgo` value, distinct from `hop`, so the conformance matrix row closes honestly (2026-09-23).                                                                                                                                                                                                                                                                                                             |
+| D23 | Broadcast-ACK aggregation state lives in memory for `live-only` channels and durably through AppInbox for durable channels (2026-09-23).                                                                                                                                                                                                                                                                                                    |
+| D24 | WS `seq` and `orderingKey` are client-assigned, not server-issued (2026-09-23).                                                                                                                                                                                                                                                                                                                                                             |
+| D25 | Missing-recipient retry goes through the relay tree, narrowed by the frozen audience, rather than point-to-point (2026-09-23).                                                                                                                                                                                                                                                                                                              |
+| D26 | The frozen audience is pinned on the existing `GroupSnapshot.group.snapshotVersion`, not a separate audience version (2026-09-23).                                                                                                                                                                                                                                                                                                          |
+| D27 | A replacement's admission settles its superseded predecessor synchronously, in the same commit, in S2a — rather than waiting on the outbound drain's next attempt (2026-09-23).                                                                                                                                                                                                                                                             |
+| D28 | Hosted lifecycle recipes observe receipts on the receiver, where they are local, and correlate afterwards; no recipe polls `acknowledged` across pages (2026-09-23).                                                                                                                                                                                                                                                                        |
+| D29 | S2c's acceptance needs a third agent role (`AlmConformanceRole`) and a three-agent Hetzner catalog entry beside the existing two-agent one (2026-09-23).                                                                                                                                                                                                                                                                                    |
+| D30 | The three moving pins under S2b (`al-storage-snapshot.test.ts`, `al-indexeddb-operation-counts.test.ts`, `inbound/al-inbound-admission-transactions.test.ts`) are named, not pre-declared with counts; the implementation measures and records each (2026-09-23).                                                                                                                                                                           |
+| D31 | S2a's acceptance is both S1 hosted scenarios, `delivery-lifecycle` and `delivery-reload`, running green in a regime with a same-regime green baseline (2026-09-23).                                                                                                                                                                                                                                                                         |
 
 ### Standing direction
 
@@ -207,12 +221,12 @@ stall segment is uninstrumented on the server side.
 
 ## Release map
 
-Fourteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
-not on each other. Release 2, F2b and S1 are delivered. F2c (the per-row fence and batched releases, F2b's ruling
-R20 reframed by D17) is the concrete horizon: its plan is
-`plans/alm-f2c-per-row-fence-batched-releases-implementation-plan.md`, arguing from the section below.
-S2 follows it as the next concrete slice once F2c merges; S3 and later releases are named by outcome
-with exit evidence.
+Sixteen PRs in six releases. Releases 2 and 3 are serial. Releases 4 to 7 depend on release 3 and
+not on each other. Release 2, F2b, S1 and F2c are delivered. S2 splits into three PRs, S2a, S2b and
+S2c (D18), with S2a the concrete horizon: its plan is
+`plans/alm-s2a-delivery-ahead-of-control-implementation-plan.md`, arguing from the section below and
+from `playground/alm/alm-s2-hosted-lifecycle-diagnosis.md`. S2b and S2c follow it in order; S3 and
+later releases are named by outcome with exit evidence.
 
 | Release       | PR                                                    | Size   | Completion criteria served |
 | ------------- | ----------------------------------------------------- | ------ | -------------------------- |
@@ -221,7 +235,9 @@ with exit evidence.
 | 3 Slice 2     | F2b The inbound owner on slow storage                 | small  | 1 (lane), 5                |
 | 3 Slice 2     | F2c The inbound fence and batched releases            | small  | 1 (lane), 5                |
 | 3 Slice 2     | S1 Delivery lifecycle and handle                      | large  | 3, 9                       |
-| 3 Slice 2     | S2 One identity and receipted audiences               | large  | 1, 3, 6, 9                 |
+| 3 Slice 2     | S2a Delivery ahead of control                         | small  | 1 (lane)                   |
+| 3 Slice 2     | S2b One identity                                      | medium | 5, 9                       |
+| 3 Slice 2     | S2c Receipted audiences                               | large  | 1, 3, 6, 9                 |
 | 3 Slice 2     | S3 Defaults, fallback, volatile path, consumer proofs | medium | 3, 4                       |
 | 4 Arbitration | R1 Shared-key proof and range repair                  | medium | 8                          |
 | 4 Arbitration | R2 Membership fencing                                 | medium | 6                          |
@@ -449,15 +465,75 @@ pending share and release-phase median per cell read from the repo-owned snapsho
 77 % / 4.0 s slow-regime figures; no harness budget changed; no new cognitive-load pin. The lane's
 return to `test:ci` stays the maintainer's decision.
 
+### Release 3, S2a: delivery ahead of control
+
+**Outcome:** the receiver's inbound drain stops charging a caller-observed delivery for the cost of
+the `send-control` effects riding in the same batch, so the two open S1 hosted reds
+(`delivery-lifecycle`, `delivery-reload`) run green without a new scheduler, queue, or registry.
+
+**Owners:** [alm/inbound](../../packages/shared/alm/inbound/) (the drain's claim ordering and commit
+bundle), [alm/outbound](../../packages/shared/alm/outbound/) (the synchronous `superseded`
+settlement), the observation snapshot and `create-alm-conformance-recipes.ts` in
+[rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
+`plans/alm-s2a-delivery-ahead-of-control-implementation-plan.md`; diagnosis:
+[alm-s2-hosted-lifecycle-diagnosis.md](alm-s2-hosted-lifecycle-diagnosis.md); design:
+[alm-s2-design-proposal.md](alm-s2-design-proposal.md) (decisions D18–D31).
+
+**What the diagnosis found:** the hosted `delivery-lifecycle` failures trace to one mechanism, not
+three — the receiver's inbound effect drain is a single serial batch that interleaves
+`send-control` effects, each performing its own outbound AL IndexedDB commit, with the
+`dispatch-local` page delivery the caller is actually waiting for; `dispatch-local` claims cost
+0–501 ms in every cell while `send-control` claims cost 689–18 115 ms, and the failing step is a
+monotone function of that `send-control` median across all twelve hosted cells
+(diagnosis §2.6, §4.7, §6). The three total-loss cells ran only two drains in the observation
+window, and the admission landed after the second batch's claim set was already fixed, so the
+message waited for a round that never started. The existing `queueWaitMs` field collapses the
+reservation wait and the intra-batch wait into one number, which is exactly the ambiguity Task 0
+resolves before any drain-shape change is trusted (diagnosis §6).
+
+**Changes:**
+
+1. Task 0, confirming instrumentation: split `queueWaitMs` into `dueAtMs → batchStartedAtMs` and
+   `batchStartedAtMs → claimStartedAtMs`, plus the ordered list of `effectId`s the batch reserved,
+   batched into the existing `effect-drain` payload rather than relayed per claim — the diagnostics
+   relay is a known per-op cost in the Playwright lane. One hosted `rtc` re-run reads whether
+   `claimStarted − batchStarted` dominates (intra-batch serialization, the primary hypothesis) or
+   `batchStarted − dueAt` dominates (round scheduling, the ranked alternative).
+2. Dispatch-first ordering inside the batch (shape A, D19): `dispatch-local` effects are claimed
+   ahead of `send-control` effects in the same batch's reservation list, so a caller's delivery
+   latency stops including a control commit it never depended on; C (one outbound commit per batch
+   for that batch's control sends) or D (RTT probe commits kept off the durable AL commit path and
+   its shared lock) is layered on top per Task 0's reading, never in place of it; a reading that
+   points at round scheduling instead goes back to the maintainer.
+3. `superseded` settles synchronously at the replacement's admission (D27), instead of waiting for
+   the outbound drain to next attempt the superseded send — the change that fixes the diagnosis's
+   C-class failure at `observe-superseded-3` directly.
+4. The lifecycle recipes observe receipts on the receiver, where they are local, and correlate
+   afterwards instead of polling `acknowledged` across pages (D28); the artifact analysis' `typeId`
+   filter, which hides every `dispatch-local` page dispatch today, is removed so the split from
+   Task 0 is visible in the corpus.
+
+**Acceptance:** `delivery-lifecycle` and `delivery-reload` green hosted on both S1 scenarios, in a
+regime with a same-regime green baseline (D31); the receiver's `send-control` claim cost and
+dispatch latency read from the inbound block against the diagnosis's 0.7–1.2 s green band and the
+7–23 s drain cycles it explains; no harness budget changed; no new timer, queue, or registry; no new
+`file.cognitive-load` pin; the lane's return to `test:ci` stays the maintainer's decision.
+
 ### Release 3, Slice 2: outcomes
 
-- **S2 One identity and receipted audiences.** Session-logical inbound namespace for dedup,
-  ordering, supersedence, and message-owner keys; carrier-tagged control and ACK histories only.
-  The logical audience is frozen at admission from the channel's addressed sessions and the
-  identified room snapshot. ACKs carry origin and logical recipient; relays forward far ACKs toward
-  the origin; the WS server aggregates broadcast ACKs and routes them to the origin connection.
-  `receiver` is a logical ACK algorithm distinct from `hop`. Retry targets only missing recipients.
-  Incompatible browser schema; reset via F2. API recipe for the server path. **Carried in from F2 (PR #559, maintainer-approved 2026-09-11):** an RTC message a receiver admits as `pending` (`not-yet-in-sync`) is retained until its snapshot refresh lands or the message expires, instead of being discarded, and the sender's `not-yet-in-sync` retry fires on the NACK — on the hosted runner the receiver rejected a message whose sender sat at the same snapshot version, dropped it, and the retry never ran (diagnoses `alm-observation-04f0f70a1` and `-902fa30a7` in the F2 session record; the inbound `admission-outcome` event now names the denial).
+- **S2 One identity and receipted audiences.** S2b and S2c carry the outcome below; S2a is concrete
+  above. Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
+  keys; carrier-tagged control and ACK histories only. The logical audience is frozen at admission
+  from the channel's addressed sessions and the identified room snapshot. ACKs carry origin and
+  logical recipient; relays forward far ACKs toward the origin; the WS server aggregates broadcast
+  ACKs and routes them to the origin connection. `receiver` is a logical ACK algorithm distinct from
+  `hop`. Retry targets only missing recipients. Incompatible browser schema; reset via F2. API
+  recipe for the server path. **Carried in from F2:** the `not-yet-in-sync` retention — an RTC
+  message a receiver admits as `pending` is retained until its snapshot refresh lands or the message
+  expires, instead of being discarded, and the sender's `not-yet-in-sync` retry fires on the NACK —
+  is already implemented on both sides
+  (`packages/shared/alm/inbound/al-inbound-effect-intent.ts`,
+  `packages/shared/alm/outbound/al-outbound-repair-admission.ts`); S2b owes it a scenario, not code.
 - **S3 Defaults, fallback, volatile path, consumer proofs.** Purpose at the channel with the D2
   default; carrier-aware capabilities installed in the browser composition; one memory and one
   IndexedDB backend per carrier runtime with each channel routed to one; fallback on a declared
@@ -653,3 +729,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
   under `plans/`; F2c named as its own slice beside it.
 - 2026-09-22: S1 delivered (merged as `f82c64e23`); the shared IndexedDB revision scalar found while
   grounding F2c and settled as D17; F2c moved into the concrete horizon with its plan under `plans/`.
+- 2026-09-23: the hosted delivery-lifecycle intermittent diagnosed
+  (playground/alm/alm-s2-hosted-lifecycle-diagnosis.md); the S2 design questions settled as D18–D31
+  and folded into the proposal; S2 split into S2a/S2b/S2c with S2a in the concrete horizon.

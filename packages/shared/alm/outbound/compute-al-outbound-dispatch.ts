@@ -16,7 +16,7 @@ import type { ALOutboundDispatchPhase, ALOutboundDispatchPlan } from './al-outbo
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 import { toALOutboundPreparedFingerprint } from './to-al-outbound-prepared-fingerprint.ts';
 import {
-    toALOutboundPendingAckExpireAtTimestamp,
+    toALOutboundAckRetryScheduleEndTimestamp,
     trackALOutboundPendingAckSnapshot
 } from './transition-al-outbound-pending-ack.ts';
 
@@ -71,7 +71,12 @@ export function computeALOutboundDispatch<TPrepared>(
     // Captured before the ack-timeout effect (if any) is appended below: only `send-prepared` counts.
     const queuedAttempts = durableEffects.length;
     if (read.plan.preparedMessages.length > 0) {
-        appendAckTrackingMutationsAndEffects(mutations, durableEffects, read);
+        const ackTracking = computeAckTrackingWrites(
+            read,
+            toALOutboundMessageReference(read.canonicalScope, canonicalEntry, read.msg).expiresAtMs
+        );
+        mutations.push(...ackTracking.mutations);
+        durableEffects.push(...ackTracking.durableEffects);
     }
 
     const verdict = computeALOutboundRouteVerdict(read, awaitPhysicalDispatch || read.plan.persist, queuedAttempts);
@@ -278,19 +283,42 @@ function appendSupersedenceMutations<TPrepared>(
         mutations.push({
             kind: 'set-supersedence-replacement',
             msgId: replacement.msgId,
-            value: replacement.value
+            value: replacement.value,
+            observed: replacement.msgId === tracking.replacesMsgId ? read.supersedence.replacesReplacement : undefined
         });
     }
 }
 
-function appendAckTrackingMutationsAndEffects<TPrepared>(
-    mutations: ALOutboundAdmissionMutation[],
-    durableEffects: ALOutboundDurableEffectWrite<TPrepared>[],
-    read: ALOutboundMessageReadDto<TPrepared>
-): void {
+/**
+ * The predecessors this commit newly marks replaced: the observed supersedence state against what the
+ * mutations write. Only the commit that moves the key's latest pointer to the message supersedes
+ * anything, and never a predecessor whose row it observed already replaced -- a later commit of the
+ * same message, or a named `replacesMsgId` another message already replaced, states nothing new.
+ * A predecessor that is both the latest and the named `replacesMsgId` has its row written twice.
+ */
+export function toALOutboundSupersededMsgIds<TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>): readonly string[] {
+    const latest = bundle.mutations.find((mutation) => mutation.kind === 'set-supersedence-latest');
+    if (!latest || latest.expected?.latestMsgId === latest.value.latestMsgId) {
+        return [];
+    }
+    const replaced = bundle.mutations.flatMap((mutation) =>
+        mutation.kind === 'set-supersedence-replacement' && mutation.observed === undefined ? [mutation.msgId] : []
+    );
+    return [...new Set(replaced)];
+}
+
+interface ALOutboundAckTrackingWrites<TPrepared> {
+    readonly mutations: readonly ALOutboundAdmissionMutation[];
+    readonly durableEffects: readonly ALOutboundDurableEffectWrite<TPrepared>[];
+}
+
+function computeAckTrackingWrites<TPrepared>(
+    read: ALOutboundMessageReadDto<TPrepared>,
+    messageExpiresAtMs: number
+): ALOutboundAckTrackingWrites<TPrepared> {
     const tracking = read.plan.ackTracking;
     if (!tracking?.enabled || tracking.expectedPeerIds.length === 0 || tracking.timeoutMs <= 0) {
-        return;
+        return { mutations: [], durableEffects: [] };
     }
 
     const pending = trackALOutboundPendingAckSnapshot({
@@ -301,27 +329,31 @@ function appendAckTrackingMutationsAndEffects<TPrepared>(
         nowMs: read.nowMs
     });
     if (!pending) {
-        if (read.pendingAck) {
-            mutations.push(
-                { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
-                { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
-            );
-        }
-        return;
+        return {
+            mutations: read.pendingAck
+                ? [
+                    { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
+                    { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
+                ]
+                : [],
+            durableEffects: []
+        };
     }
 
-    mutations.push({ kind: 'set-pending-ack', snapshot: pending });
-    durableEffects.push({
-        effectId: toALOutboundEffectId([
-            'ack-timeout',
-            pending.msgId,
-            pending.attempts + 1,
-            pending.deadlineAtMs
-        ]),
-        retryAtMs: pending.deadlineAtMs,
-        expireAtTimestamp: toALOutboundPendingAckExpireAtTimestamp(pending),
-        payload: { kind: 'ack-timeout', msgId: pending.msgId }
-    });
+    return {
+        mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+        durableEffects: [{
+            effectId: toALOutboundEffectId([
+                'ack-timeout',
+                pending.msgId,
+                pending.attempts + 1,
+                pending.deadlineAtMs
+            ]),
+            retryAtMs: pending.deadlineAtMs,
+            expireAtTimestamp: toALOutboundAckRetryScheduleEndTimestamp(pending, messageExpiresAtMs),
+            payload: { kind: 'ack-timeout', msgId: pending.msgId }
+        }]
+    };
 }
 
 function toSentMessageMutation<TPrepared>(

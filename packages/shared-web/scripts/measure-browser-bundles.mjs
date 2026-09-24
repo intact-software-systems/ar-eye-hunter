@@ -28,12 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // The batched work release -- one disposition per entry, one flush per batch -- measures
-        // 212.298828125 KiB. The maintainer-approved next whole-KiB ceiling is 213.
+        // Committing the control sends of one inbound batch as one outbound admission measures
+        // 214.2705078125 KiB. The maintainer-approved next whole-KiB ceiling is 215.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 213
+        brotliBudgetKiB: 215
     },
     {
         label: 'browser/rallar-core.ts',

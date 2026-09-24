@@ -2,7 +2,12 @@ import { onTestFinished, vi } from 'vitest';
 
 import { createTestALInboundWorkPort } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { planALMessageHandling, type ALMessageHandlingPlan } from '@shared/al-contracts/al-policy.ts';
+import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import {
+    planALMessageHandling,
+    type ALMessageHandlingPlan,
+    type ALQosPolicyRequest
+} from '@shared/al-contracts/al-policy.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import type { ALAdmissionWorkBackend } from '@shared/alm/al-admission-work-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
@@ -27,6 +32,7 @@ import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-back
 import { AL_ADMISSION_SCHEMA_ID } from '@shared/alm/open-indexed-db-admission-database.ts';
 import type { IndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/indexed-db-string-persistence-provider.ts';
+import { NonRetryableException } from '@shared/queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { QueueBoxUtilities } from '@shared/services/queue-box-utilities.ts';
 
@@ -98,6 +104,8 @@ export function createInboundTestStores(input: CreateInboundTestStoresInput): AL
     return createInboundTestBackendStores(input).stores;
 }
 
+export type InboundTestEffectCall = 'dispatched' | 'control-sent';
+
 export interface InboundTestRuntime {
     readonly runtime: ALInboundMessageRuntime;
     readonly stores: ALInboundRuntimeStores;
@@ -105,6 +113,10 @@ export interface InboundTestRuntime {
     readonly diagnostics: readonly ALInboundRuntimeDiagnosticsEvent[];
     /** One entry per dispatched message, so an absent delivery reads as an empty list. */
     readonly delivered: readonly string[];
+    /** One entry per port call in run order, so a batch's dispatch-before-control order is visible. */
+    readonly sequence: readonly InboundTestEffectCall[];
+    /** The control messages of each control-send call, so the sends one call carried stay together. */
+    readonly controlSends: readonly (readonly ALMessage[])[];
 }
 
 export interface CreateInboundTestRuntimeInput {
@@ -118,6 +130,10 @@ export interface CreateInboundTestRuntimeInput {
     readonly dispatchOutcome?: 'completed' | 'retry';
     /** Absent leaves a retained admission's replay authorized by the source it captured. */
     readonly readPendingAdmissionAuthority?: ALInboundMessageRuntime.Dependencies['readPendingAdmissionAuthority'];
+    /** Absent settles every dispatch immediately; a message this awaits holds that claim's batch open until it resolves. */
+    readonly gateDispatch?: (msg: ALMessage) => Promise<void>;
+    /** Absent sends every control; a call carrying a message this names throws, the way a transport refusal does. */
+    readonly failControlSend?: (msg: ALMessage) => boolean;
 }
 
 /** The runtime never owns its engine here: a test drives every round it runs beyond a commit's own. */
@@ -125,6 +141,8 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
     const queueEngine = new InboxOutboxEngine();
     const diagnostics: ALInboundRuntimeDiagnosticsEvent[] = [];
     const delivered: string[] = [];
+    const sequence: InboundTestEffectCall[] = [];
+    const controlSends: (readonly ALMessage[])[] = [];
     const runtime = new ALInboundMessageRuntime({
         ...createDefaultALInboundRuntimeResources({
             selfPeerId: INBOUND_TEST_SELF_PEER_ID,
@@ -138,16 +156,24 @@ export function createInboundTestRuntime(input: CreateInboundTestRuntimeInput): 
         },
         canDispatchMessage: input.canDispatchMessage,
         readPendingAdmissionAuthority: input.readPendingAdmissionAuthority,
-        dispatchInboxEntry: async () => {
+        dispatchInboxEntry: async (entry) => {
+            await input.gateDispatch?.(decodePersistedALMessage(entry.resource));
             delivered.push('dispatched');
+            sequence.push('dispatched');
             return input.dispatchOutcome;
         },
-        sendControlMessage: async () => {},
+        sendControlMessages: async (msgs) => {
+            sequence.push('control-sent');
+            controlSends.push(msgs);
+            if (msgs.some((msg) => input.failControlSend?.(msg) === true)) {
+                throw new NonRetryableException('The control transport refused this message');
+            }
+        },
         diagnostics: (event) => diagnostics.push(event),
         effectWorkerId: input.effectWorkerId
     });
     onTestFinished(() => runtime.dispose());
-    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered };
+    return { runtime, stores: input.stores, queueEngine, diagnostics, delivered, sequence, controlSends };
 }
 
 export interface InboundTestMessageInput {
@@ -156,6 +182,8 @@ export interface InboundTestMessageInput {
     readonly seq?: number;
     /** Absent leaves the message untracked, so its admission reads no supersedence pair. */
     readonly supersedenceKey?: string;
+    /** Absent leaves the message unacknowledged, so its admission writes no `send-control` row. */
+    readonly acknowledged?: boolean;
 }
 
 export function createInboundTestMessage(input: InboundTestMessageInput): ALMessage {
@@ -165,12 +193,7 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
         INBOUND_TEST_SELF_PEER_ID,
         'chat.private-text.v1',
         { text: input.msgId },
-        {
-            ttlMs: 60_000,
-            qos: input.supersedenceKey === undefined ? undefined : {
-                supersedence: { algo: 'latest-wins', opts: { supersedenceKey: input.supersedenceKey } }
-            }
-        }
+        { ttlMs: 60_000, qos: toInboundTestQos(input) }
     );
     return {
         ...message,
@@ -178,6 +201,18 @@ export function createInboundTestMessage(input: InboundTestMessageInput): ALMess
         ordering: input.seq === undefined
             ? undefined
             : { orderingKey: INBOUND_TEST_ORDERING_KEY, seq: input.seq }
+    };
+}
+
+function toInboundTestQos(input: InboundTestMessageInput): ALQosPolicyRequest | undefined {
+    if (input.supersedenceKey === undefined && input.acknowledged !== true) {
+        return undefined;
+    }
+    return {
+        ...(input.supersedenceKey === undefined ? {} : {
+            supersedence: { algo: 'latest-wins', opts: { supersedenceKey: input.supersedenceKey } }
+        }),
+        ...(input.acknowledged === true ? { ack: { algo: 'hop' } } : {})
     };
 }
 

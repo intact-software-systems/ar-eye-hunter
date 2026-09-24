@@ -174,6 +174,7 @@ describe('ALWorkHandler', () => {
     it('splits one batch into its selection, its reservation, its claims and their releases', async () => {
         const diagnosticsEvents: ALWorkDiagnostics[] = [];
         const claims = [toFakeALWorkClaim('phase-1'), toFakeALWorkClaim('phase-2')];
+        const receivedBatchStarts: number[] = [];
         let nowMs = PHASE_BATCH_START_MS;
         const port: ALWorkQueuePort = {
             ...fakePort({ claims: [], onRelease: () => {} }),
@@ -200,7 +201,8 @@ describe('ALWorkHandler', () => {
                     earliestDueAtMs: PHASE_BATCH_START_MS - PHASE_QUEUE_WAIT_MS
                 };
             },
-            runClaim: async () => {
+            runClaim: async (_claim, batchStartedAtMs) => {
+                receivedBatchStarts.push(batchStartedAtMs);
                 nowMs += PHASE_RUN_MS;
                 return { status: 'completed' };
             },
@@ -209,6 +211,10 @@ describe('ALWorkHandler', () => {
 
         await handler.ready();
 
+        // Every claim measures its wait from the run loop's start, after the selection and the
+        // reservation: the first claim waits behind nothing, the second behind the first alone.
+        const runLoopStartedAtMs = PHASE_BATCH_START_MS + PHASE_SELECTION_MS + PHASE_CLAIM_MS;
+        expect(receivedBatchStarts).toEqual([runLoopStartedAtMs, runLoopStartedAtMs]);
         // Two claims run, so a per-claim phase is visibly doubled while the one flush that released
         // them both is not.
         expect(diagnosticsEvents.filter((event) => event.kind === 'work-batch')).toEqual([{
@@ -223,7 +229,8 @@ describe('ALWorkHandler', () => {
             claimDurationMs: PHASE_CLAIM_MS,
             runDurationMs: 2 * PHASE_RUN_MS,
             releaseDurationMs: PHASE_RELEASE_MS,
-            queueWaitMs: PHASE_QUEUE_WAIT_MS
+            queueWaitMs: PHASE_QUEUE_WAIT_MS,
+            startedAtMs: runLoopStartedAtMs
         }]);
 
         handler.dispose();
@@ -267,7 +274,8 @@ describe('ALWorkHandler', () => {
             claimDurationMs: 0,
             runDurationMs: 0,
             releaseDurationMs: PHASE_RELEASE_MS,
-            queueWaitMs: 0
+            queueWaitMs: 0,
+            startedAtMs: PHASE_BATCH_START_MS
         }]);
 
         handler.dispose();

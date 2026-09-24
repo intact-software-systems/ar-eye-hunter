@@ -11,6 +11,10 @@ import {
     ALM_CONFORMANCE_CARRIERS,
     type AlmConformanceCarrier
 } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-conformance-carriers.ts';
+import {
+    decodeALMObservationPageDiagnosticsFile,
+    type ALMObservationPageDiagnosticsFile
+} from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
 import { assessAlmConformanceIdentity } from '../../../packages/shared-test/rallar-bb-test/conformance/alm/assess-alm-conformance-identity.ts';
 import {
@@ -34,6 +38,8 @@ import {
     type RecipePairOutcome,
     type TwoAgentRun
 } from './full-stack-helpers.ts';
+import type { PageDiagnosticsCapture } from './start-page-diagnostics-capture.ts';
+import { toPageDiagnosticsFile, type PageDiagnosticsFile } from './to-page-diagnostics-file.ts';
 
 interface ObservationCell {
     readonly run: TwoAgentRun;
@@ -47,6 +53,8 @@ interface ObservationFiles {
     readonly carrier: AlmConformanceCarrier;
     readonly regime: ALMObservationRegime;
     readonly snapshot: ControlRunSnapshot;
+    /** Undefined only when neither agent page ever attached a diagnostics capture. */
+    readonly pageDiagnosticsFile: PageDiagnosticsFile | undefined;
 }
 
 const config = readFullStackConfig();
@@ -220,12 +228,19 @@ async function recordObservation(
 ): Promise<void> {
     try {
         const snapshot = await cell.run.readSnapshot();
-        const regime = toObservationRegime(snapshot, cell.carrier, cell.cellOutcome);
+        const pageDiagnosticsFile = toRunPageDiagnosticsFile(cell.run, snapshot);
+        const regime = toObservationRegime({
+            snapshot,
+            carrier: cell.carrier,
+            cellOutcome: cell.cellOutcome,
+            pageDiagnosticsFile: toDecodedPageDiagnosticsFile(pageDiagnosticsFile)
+        });
         await writeObservationFiles({
             testInfo: cell.testInfo,
             carrier: cell.carrier,
             regime,
-            snapshot
+            snapshot,
+            pageDiagnosticsFile
         });
         if (cell.cellOutcome === 'failed') {
             await attachRunSnapshot(snapshot, cell.testInfo, `alm-${cell.carrier}-${scope}.json`);
@@ -242,14 +257,57 @@ async function recordObservation(
 }
 
 function toObservationRegime(
-    snapshot: ControlRunSnapshot,
-    carrier: AlmConformanceCarrier,
-    cellOutcome: ALMObservationCellOutcome
+    input: Readonly<{
+        snapshot: ControlRunSnapshot;
+        carrier: AlmConformanceCarrier;
+        cellOutcome: ALMObservationCellOutcome;
+        pageDiagnosticsFile: ALMObservationPageDiagnosticsFile | undefined;
+    }>
 ): ALMObservationRegime {
-    return decodeALMObservationSnapshot(snapshot).fold(
-        (snapshotIssues) => createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues }),
-        (decoded) => computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome })
+    const { carrier, cellOutcome, pageDiagnosticsFile } = input;
+    return decodeALMObservationSnapshot(input.snapshot).fold(
+        (snapshotIssues) =>
+            createUnreadableALMObservationRegime({ carrier, scope, cellOutcome, snapshotIssues, pageDiagnosticsFile }),
+        (decoded) =>
+            computeALMObservationRegime({ snapshot: decoded, carrier, scope, cellOutcome, pageDiagnosticsFile })
     );
+}
+
+/** `undefined` only for a run whose participants never opened a real page (never happens on this lane). */
+function toRunPageDiagnosticsFile(
+    run: TwoAgentRun,
+    snapshot: ControlRunSnapshot
+): PageDiagnosticsFile | undefined {
+    const captures = [run.sender.diagnostics, run.receiver.diagnostics].filter(isPresentCapture);
+    return captures.length === 0
+        ? undefined
+        : toPageDiagnosticsFile(captures, toPageDiagnosticsReferenceEpochMs(snapshot, captures));
+}
+
+/** The cell's first control event when the snapshot decoded, else the earliest page's own creation. */
+function toPageDiagnosticsReferenceEpochMs(
+    snapshot: ControlRunSnapshot,
+    captures: readonly PageDiagnosticsCapture[]
+): number {
+    return decodeALMObservationSnapshot(snapshot).fold(
+        () => Math.min(...captures.map((capture) => capture.pageCreatedAtEpochMs)),
+        (decoded) => decoded.firstEventAtEpochMs
+    );
+}
+
+function isPresentCapture(
+    value: PageDiagnosticsCapture | undefined
+): value is PageDiagnosticsCapture {
+    return value !== undefined;
+}
+
+/** Decodes the file the lane is about to write, so the cell JSON reads it through the same contract a later re-read would. */
+function toDecodedPageDiagnosticsFile(
+    raw: PageDiagnosticsFile | undefined
+): ALMObservationPageDiagnosticsFile | undefined {
+    return raw === undefined
+        ? undefined
+        : decodeALMObservationPageDiagnosticsFile(raw).fold(() => undefined, (decoded) => decoded);
 }
 
 async function writeObservationFiles(
@@ -271,6 +329,13 @@ async function writeObservationFiles(
         toJsonText(observation.snapshot),
         'utf8'
     );
+    if (observation.pageDiagnosticsFile !== undefined) {
+        await writeFile(
+            path.join(directory, `${fileName}-page-diagnostics.json`),
+            toJsonText(observation.pageDiagnosticsFile),
+            'utf8'
+        );
+    }
 }
 
 /** An unsuffixed name would let a retried cell overwrite the first attempt's regime and snapshot. */
@@ -294,6 +359,6 @@ function toCellOutcome(testInfo: TestInfo, scenarioFailed: boolean): ALMObservat
     return scenarioFailed || testInfo.errors.length > 0 ? 'failed' : 'passed';
 }
 
-function toJsonText(value: ALMObservationRegime | ControlRunSnapshot): string {
+function toJsonText(value: ALMObservationRegime | ControlRunSnapshot | PageDiagnosticsFile): string {
     return JSON.stringify(value, null, 2);
 }

@@ -7,9 +7,14 @@ import { Either } from '../../resilience/Either.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import type { ALAdmissionWorkBackend } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
+import type { ALDeliveryAdmissionVerdict } from '../delivery/al-delivery-lifecycle.ts';
+import type { ALWorkQueuePort } from '../work/al-work-queue-port.ts';
 import type { ALOutboundPreparedMessageDecoder } from './admission/al-outbound-admission-store.ts';
-import type { ALOutboundCapturedPolicy } from './admission/al-outbound-admission-validation.ts';
-import type { ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
+import {
+    captureALOutboundPolicy,
+    type ALOutboundCapturedPolicy
+} from './admission/al-outbound-admission-validation.ts';
+import { toALOutboundMessageReference, type ALOutboundMessageReference } from './al-outbound-canonical-message.ts';
 import {
     readALOutboundCanonicalWrites,
     writeALOutboundCanonicalFacts,
@@ -18,8 +23,10 @@ import {
 import {
     computeALOutboundWorkEntry,
     decodeALOutboundWorkEntry,
-    isPendingALOutboundWork
+    isPendingALOutboundWork,
+    toALOutboundWorkKey
 } from './al-outbound-work-entry.ts';
+import type { ComputeALOutboundDispatchInput } from './compute-al-outbound-dispatch.ts';
 import { toALOutboundEffectId } from './to-al-outbound-effect-id.ts';
 
 export interface ALOutboundPendingAdmission<TPrepared> {
@@ -43,11 +50,69 @@ export function toALOutboundPendingControlId(msg: ALMessage): string {
     return toALOutboundEffectId(['admit-control', msg.id.senderId, msg.id.msgId, msg.payload.typeId]);
 }
 
+export interface ReadALOutboundPendingDispatchInput<TPrepared> {
+    readonly namespace: string;
+    readonly canonicalScope: string;
+    readonly workPort: ALWorkQueuePort;
+    readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+    readonly nowMs: () => number;
+    readonly dispatch: ComputeALOutboundDispatchInput<TPrepared>;
+}
+
+/** What a first send decides from the pending admission retained for its own message. */
+export interface ALOutboundPendingDispatchVerdict {
+    readonly verdict: ALDeliveryAdmissionVerdict;
+    readonly entries: readonly ResourceEntry[];
+    readonly reason: string | undefined;
+}
+
 export interface ALOutboundPendingAdmissionStorage<TPrepared> {
     readonly backend: ALAdmissionWorkBackend;
     readonly namespace: string;
     readonly nowMs: () => number;
     readonly decodePrepared: ALOutboundPreparedMessageDecoder<TPrepared>;
+}
+
+/**
+ * A first send that finds the pending admission retained for its own message answers from it rather
+ * than committing again: `pending` while the row waits, `skipped` once it terminated, and `failed`
+ * when the retained admission captured another message or, for an explicit plan, another policy.
+ */
+export async function readALOutboundPendingDispatch<TPrepared>(
+    input: ReadALOutboundPendingDispatchInput<TPrepared>
+): Promise<ALOutboundPendingDispatchVerdict | undefined> {
+    const { read, options, outboxEntry } = input.dispatch;
+    if (input.dispatch.intent !== 'enqueue' || options.pendingAdmission || !read.canonicalEntry || read.sentSnapshot) {
+        return undefined;
+    }
+    const reference = toALOutboundMessageReference(input.canonicalScope, outboxEntry, read.msg);
+    const entry = await input.workPort.readEntry(
+        toALOutboundWorkKey(input.namespace, toALOutboundPendingAdmissionId(reference))
+    );
+    if (!entry || reference.expiresAtMs <= input.nowMs()) {
+        return undefined;
+    }
+    const pending = decodeALOutboundWorkEntry(entry, input.namespace, {
+        decodePrepared: input.decodePrepared,
+        message: read.msg
+    }).payload;
+    if (
+        pending.kind !== 'admit-message' || !jsonEquals(pending.message, reference) ||
+        (options.explicitPlan && (!jsonEquals(pending.policy, captureALOutboundPolicy(read.plan)) ||
+            !jsonEquals(pending.preparedMessages, read.plan.preparedMessages)))
+    ) {
+        const reason = 'Pending outbound admission differs from the supplied captured plan';
+        return { verdict: { kind: 'failed', detail: reason }, entries: [], reason };
+    }
+    if (isPendingALOutboundWork(entry)) {
+        return { verdict: { kind: 'pending' }, entries: [outboxEntry], reason: undefined };
+    }
+    const reason = 'Pending admission has already terminated';
+    return {
+        verdict: { kind: 'skipped', reason: 'pending-terminated', detail: reason },
+        entries: [outboxEntry],
+        reason
+    };
 }
 
 /** This queue-only write owns a failed first admission; it never writes admission metadata. */

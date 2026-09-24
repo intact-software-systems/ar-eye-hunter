@@ -18,7 +18,8 @@ import type {
 } from '../../al-runtime-state-stores.ts';
 import {
     acceptALSupersedenceObservation,
-    computeALSupersedenceObservation
+    computeALSupersedenceObservation,
+    type ALReplacementSupersedenceValue
 } from '../../compute-al-supersedence-observation.ts';
 import {
     captureALOutboundCreationExpiry,
@@ -69,6 +70,14 @@ export interface CreateALOutboundAdmissionReadsInput {
  * runs against one caller-owned read session, so a session that is a store snapshot serves the whole
  * surface, and the same chain runs inside an open write when a fence has to re-read it.
  */
+/** One supersedence read: the key's pointer, the message's own row, and a named predecessor's row. */
+export interface ALOutboundSupersedenceReadInput {
+    readonly key: string | undefined;
+    readonly msgId: string;
+    /** Undefined skips that read: only an admission, which rewrites the predecessor's row, compares it. */
+    readonly replacesMsgId: string | undefined;
+}
+
 export class ALOutboundAdmissionReads<TPrepared> {
     private readOperationCount = 0;
     private readonly nowMs: () => number;
@@ -115,7 +124,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         });
         const plan = this.readDispatchPlan(input, canonical, stored);
         const supersedenceInput = toALOutboundSupersedenceInput(msg, plan);
-        const supersedence = await this.readSupersedenceState(session, supersedenceInput?.key, msg.id.msgId);
+        const supersedence = await this.readSupersedenceState(session, {
+            key: supersedenceInput?.key,
+            msgId: msg.id.msgId,
+            replacesMsgId: supersedenceInput?.replacesMsgId
+        });
 
         return {
             kind: 'outgoing',
@@ -174,6 +187,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             msgId,
             nowMs: this.nowMs(),
             clientRecord,
+            storedMessage: stored,
             sentSnapshot,
             ...await this.readControlTracking(session, msgId),
             plan
@@ -185,7 +199,11 @@ export class ALOutboundAdmissionReads<TPrepared> {
         if (!tracking?.enabled || !tracking.key) {
             return false;
         }
-        const read = await this.readSupersedenceState(session, tracking.key, msg.id.msgId);
+        const read = await this.readSupersedenceState(session, {
+            key: tracking.key,
+            msgId: msg.id.msgId,
+            replacesMsgId: undefined
+        });
         return computeALSupersedenceObservation({
             supersedence: {
                 key: tracking.key,
@@ -294,25 +312,35 @@ export class ALOutboundAdmissionReads<TPrepared> {
 
     async readSupersedenceState(
         session: ALAdmissionReadSession,
-        key: string | undefined,
-        msgId: string
+        input: ALOutboundSupersedenceReadInput
     ): Promise<ALOutboundSupersedenceReadState> {
+        const { key, msgId, replacesMsgId } = input;
         if (!key) {
             return {};
         }
-        const [latest, replacement] = await Promise.all([
+        const [latest, replacement, replacesReplacement] = await Promise.all([
             this.readValue(
                 session,
                 toALOutboundSupersedenceLatestKey(this.namespace, key),
                 (value) => decodeALAdmissionSupersedenceValue(value, 'latest')
             ),
-            this.readValue(
-                session,
-                toALOutboundSupersedenceReplacementKey(this.namespace, msgId),
-                (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
-            )
+            this.readReplacementSupersedence(session, msgId),
+            replacesMsgId === undefined || replacesMsgId === msgId
+                ? undefined
+                : this.readReplacementSupersedence(session, replacesMsgId)
         ]);
-        return { key, latest, replacement };
+        return { key, latest, replacement, replacesReplacement };
+    }
+
+    private async readReplacementSupersedence(
+        session: ALAdmissionReadSession,
+        msgId: string
+    ): Promise<ALReplacementSupersedenceValue | undefined> {
+        return await this.readValue(
+            session,
+            toALOutboundSupersedenceReplacementKey(this.namespace, msgId),
+            (value) => decodeALAdmissionSupersedenceValue(value, 'replacement')
+        );
     }
 
     private readDispatchPlan(

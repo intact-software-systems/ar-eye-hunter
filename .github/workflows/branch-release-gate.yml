@@ -111,6 +111,7 @@ jobs:
       # changed-range checks cannot pass on that one commit. The label passes an empty base,
       # which is the same configuration the main-push deploy path already uses.
       changed_repo_style_base: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changed-gates') && '' || github.event.pull_request.base.sha }}
+      alm_scope: ${{ vars.RALLAR_BLACK_BOX_ALM_SCOPE || 'smoke' }}
 
   publish-validation-evidence:
     name: Publish validation evidence

@@ -24,7 +24,6 @@ export namespace ALInboundAdmittedDelivery {
             | 'planIncomingMessage'
             | 'dispatchInboxEntry'
             | 'canDispatchMessage'
-            | 'sendControlMessage'
             | 'forwardMessage'
             | 'clock'
             | 'effectPreparation'
@@ -180,8 +179,9 @@ export class ALInboundAdmittedDelivery {
                     effect.expireAtTimestamp
                 );
             case 'send-control':
-                await this.dependencies.sendControlMessage(effect.payload.msg);
-                return 'completed';
+                throw new NonRetryableException(
+                    'A control send runs in the control round of its batch, not in delivery'
+                );
             case 'forward-message':
                 return await this.forwardAdmittedMessage(
                     observed ?? await this.readStoredDeliveryObservation(effect.payload.message, nowMs),

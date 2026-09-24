@@ -294,8 +294,8 @@ function createDefaultInboundRuntime(
             const msg = decodePersistedALMessage(entry.resource);
             dispatchedMsgIds.push(msg.id.msgId);
         },
-        sendControlMessage: async (msg) => {
-            controlMessages.push(msg);
+        sendControlMessages: async (messages) => {
+            controlMessages.push(...messages);
         },
         diagnostics: undefined
     });

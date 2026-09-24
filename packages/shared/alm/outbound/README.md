@@ -64,7 +64,10 @@ row, an observed effect row, and a moved supersedence observation — resolves a
 the same way: the guard throws `ALAdmissionBackendConflictError` inside the transaction so
 the backend aborts without writing, leaving every row at the revision and write token it
 already had, and the store catches it at its public boundary and returns the typed
-`'conflict'` result.
+`'conflict'` result. Only a write conflicts. A read chain's expiry eviction that finds its row
+moved by another writer leaves the row to that writer and answers from its snapshot (the inbound
+README's decision-surface section), so `ALOutboundControlAdmission.admit` never loses an
+acknowledgement to a throw out of `readControlAdmission` or its effect read.
 
 ## Canonical message storage
 
@@ -113,13 +116,49 @@ transport action and does not confirm the logical audience.
 | Entry                        | Decision and durable result                                                                                                                                                                                                                             | After commit                                                                                                                                                                                                      |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `enqueueIfAbsent`            | Dispatch admission reads validated state and computes a bundle. Its commit compares sender versions and original supersedence observations, then writes admission state and QueueBox work atomically.                                                   | The runtime wakes the existing worker after commit, outside admission's sender/browser lock.                                                                                                                      |
+| `enqueueAllIfAbsent`         | One sender's messages read, computed and validated as `enqueueIfAbsent` does, then one `commitBundles` write under one version fence (see Grouped control sends below).                                                                                 | The runtime wakes the existing worker once for the group; each message still reports its own `commit-phases` event.                                                                                               |
 | `acceptControlMessage`       | Repair admission checks that this scope owns the control, then `ALOutboundControlAdmission` validates identity, control history, and pending receipts and commits control state and repair work together.                                               | The runtime wakes the existing worker; repair admission schedules a not-yet-in-sync retry when the committed control is a not-yet-in-sync NACK.                                                                   |
 | `admit-message` work         | `ALOutboundMessageEffects` reads pending admission authority, rechecks the retained deadline, and commits the retained policy through dispatch admission.                                                                                               | The claim completes. Rejected or expired authority completes without admitting; a not-ready authority reschedules with its own delay.                                                                             |
 | `dequeue-message` work       | A foreign queue row this owner admits: `ALOutboundMessageEffects` rereads the message, drops it when superseded, and commits a dispatch plan.                                                                                                           | Circuit-open resilience reschedules; `no-route` retries; expired, superseded and skipped complete; an admitted plan completes and runs the configured `afterDequeueAdmission` port.                               |
 | `send-prepared` work         | `ALOutboundMessageEffects` rechecks supersedence, receipt completion, deadline, and abort before calling the transport.                                                                                                                                 | An immediate outcome completes or reschedules; a queued native send is retained until the transport settles it.                                                                                                   |
-| `ack-timeout` work           | Repair admission rereads the receipt snapshot. Before the deadline it recommits the next timeout; at it, it charges one attempt and commits the next timeout plus a `repair-hint`, or clears the receipt when the receipt is complete or out of budget. | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                  |
+| `ack-timeout` work           | Repair admission rereads the receipt snapshot. Before the deadline it recommits the next timeout; at it, it charges one attempt and commits the next timeout plus a `repair-hint`, clears a complete receipt, and out of budget schedules nothing more. | New work is available to the existing engine; the schedule never sends directly.                                                                                                                                  |
 | `repair-hint` / `nack-retry` | Repair retransmission reresolves the cached message (by ordering track when the hint names missing sequences), applies repair policy, and commits a fresh dispatch through dispatch admission.                                                          | New work is available to the existing engine; retransmission does not recursively invoke the work handler.                                                                                                        |
 | Startup / scheduled wakeup   | `ALWorkQueuePort.claim` reserves; `ALOutboundAdmissionEffectStore` then decodes and validates the claimed row (`readWorkSnapshot`, `validateObservedWork`). Malformed work becomes `NON_RETRYABLE`; valid claims remain independently available.        | One batch runs at a time and its claims run in order; a commit landing behind a batch earns one follow-up batch. QueueBox compares the exact reservation on release, so an old worker cannot alter a newer claim. |
+
+The receipt an acknowledgement completes against is an obligation that expires exactly at the
+message's deadline, however early or late its retry schedule ends. The `ack-timeout` rows expire
+when the schedule ends or at the deadline, whichever comes first, and spending the budget stops
+retransmission without deleting the receipt. So an ACK that arrives after the last retry but inside
+the deadline still commits and states its `acknowledgement` settlement, and an ACK at or after the
+deadline is refused. The receipt is gone by then, and control admission's validation refuses an
+ACK whose deadline has passed even if a receipt is still read. Every carrier discards `acceptControlMessage`'s answer, so repair
+admission records it as the `control-admission` outbound diagnostic (outcome, and a rejection's
+reasons) for every control it decides.
+
+An RTT heartbeat is not one of these entries.
+[`WsQueueBoxClientService.sendLive`](../../services/ws-queue-box-client-service.ts) writes it
+straight to an open socket -- the same bytes `enqueueOutboxIfAbsent` sends today -- with no
+admission read, bundle, work row, or retry, and it never takes the sender/browser lock the
+table's entries share. A closed socket answers `'socket-closed'` rather than throwing; a lost
+heartbeat costs nothing because the next one, latest-value telemetry, simply replaces it.
+`sendLive` also bypasses the WS submission-readiness fault port, so a harness `not-ready` hold
+never delays an RTT heartbeat; that is acceptable only because the heartbeat is latest-value
+telemetry that no conformance scenario holds or asserts on.
+
+### Grouped control sends
+
+`enqueueAllIfAbsent` admits one sender's messages as one group. `ALOutboundDispatchAdmission.commitAll`
+takes one sender-queue slot and one browser lock for the group and reads, computes and validates each
+member with the single-message decision. `commitBundles` then fences the sender version once, runs every
+bundle's own pending, effect, observation and identity fences, writes every bundle and bumps the version
+once. The group falls back when a member settles before its write (it fails validation, finds its own
+pending admission, or has nothing to commit), when a version moved between the members' reads, when two
+bundles write one row, when the store answers anything but `committed`, or when the group attempt throws.
+Every member then goes through the single-message commit, one after another, and keeps its own answer:
+a planning refusal is that member's `failed` value, as a single send answers it, and a member whose
+single commit throws does not stop the members after it; the first such throw is rethrown once every
+member ran, and the runtime wakes the owner for the members that landed before it rethrows. The RTC
+multicast manager applies its circuit breaker and its rate limiter once per group.
 
 ## Read and failure boundaries
 
@@ -176,8 +215,22 @@ current reservation's attempt, preserving earlier failed attempts. It records ne
 adaptive success nor adaptive failure. Real attempt failures retain their normal
 retry budget. Readiness rechecks are bounded by the original message deadline, and
 settlement at or after that deadline completes physical work without sending or creating
-an acknowledgement. Cancellation and supersedence also end the attempt. Submission
+an acknowledgement. Cancellation ends the attempt directly. Submission
 remains separate from receiver acknowledgement and application completion.
+
+A replacement's own admission commit states `superseded` for every predecessor it newly
+marks replaced -- one `ALDeliverySettlement` per predecessor, from
+[`ALOutboundDispatchAdmission`](./al-outbound-dispatch-admission.ts)'s
+`emitSupersededSettlements`, before that commit call returns to its caller. Only the commit
+that moves the key's latest-supersedence pointer states it; a later commit of the same
+message, or a predecessor the admission observed already replaced, states nothing again. By
+the time a superseded predecessor's own queued work next runs, the lifecycle this settlement
+named is already terminal, so its own attempt-time and dequeue-time supersedence checks
+(`admissionStore.isMessageSuperseded`, read fresh in both `writeAttemptedSend` and
+`readDequeuedAdmissionOutcome`) add nothing new: dequeue completes the claim without sending
+and without a settlement of its own, and a `send-prepared` attempt still states its own
+`attempt-settled` (`outcome: 'superseded'`) but only as late evidence on a lifecycle a terminal
+settlement already closed.
 
 The RTC Promise executor captures its resolver synchronously before `sendJson`
 registers the callback. Native completion invokes it after queue mutation. This is

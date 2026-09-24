@@ -207,8 +207,8 @@ function createFixture() {
         dispatchInboxEntry: async (entry) => {
             delivered.push(decodePersistedALMessage(entry.resource).id.msgId);
         },
-        sendControlMessage: async (message) => {
-            controls.push(message);
+        sendControlMessages: async (messages) => {
+            controls.push(...messages);
         },
         diagnostics: undefined
     });

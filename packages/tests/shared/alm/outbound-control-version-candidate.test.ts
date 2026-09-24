@@ -1,5 +1,5 @@
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -60,6 +60,57 @@ describe('outbound control version candidate', () => {
         expect(validateALOutboundControlAdmission({ ...candidate, nextVersion: { senderId: 'self', version: 9 } })).toContainEqual(
             expect.objectContaining({ code: 'malformed' })
         );
+    });
+
+    it('refuses an acknowledgement past its message deadline even while its receipt is still retained', async () => {
+        const backend = new InMemoryAdmissionBackend(createInMemoryALAdmissionState(), Date.now);
+        const store = createALOutboundAdmissionStore({
+            nowMs: Date.now,
+            canonicalScope: 'control-deadline',
+            decodePrepared: decodeOutboundTestPayload,
+            backend,
+            namespace: 'control-deadline',
+            retention: normalizeALRuntimeStoreRetention(),
+            supersedenceTrackTtlMs: 60_000
+        });
+        const message = createOutboundMessage('control-deadline');
+        await store.commitBundle(await computeOutboundTestAdmission(store, message));
+        const sent = await backend.read(`control-deadline:sent:${message.id.msgId}`, (value) => decodeALOutboundSentMessage(value, message.id.msgId));
+        if (!sent) {
+            throw new Error('Expected admitted compact sent fact');
+        }
+        const ack = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
+            ackedMsgId: message.id.msgId,
+            fromPeerId: 'peer-1',
+            toPeerId: 'self',
+            status: 'accepted',
+            observedAtEpochMs: 1_000
+        });
+        const readAt = (nowMs: number): ALControlAdmissionRead => ({
+            parsed: parseALControlMessage(ack)!,
+            targetMsgId: message.id.msgId,
+            nowMs,
+            owner: 'self',
+            ownerVersion: { senderId: 'self', version: 1 },
+            sent,
+            pending: {
+                msgId: message.id.msgId,
+                expectedPeerIds: ['peer-1'],
+                ackedPeerIds: [],
+                timeoutMs: 2_000,
+                maxAttempts: 3,
+                attempts: 3,
+                deadlineAtMs: nowMs - 1
+            },
+            history: { kind: 'acks', values: [] }
+        });
+        const retention = normalizeALRuntimeStoreRetention();
+        const deadlineMs = sent.reference.expiresAtMs;
+
+        expect(validateALOutboundControlAdmission(computeALOutboundControlAdmission(readAt(deadlineMs - 1), retention))).toEqual([]);
+        expect(validateALOutboundControlAdmission(computeALOutboundControlAdmission(readAt(deadlineMs), retention))).toEqual([
+            { code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' }
+        ]);
     });
 
     it('rejects a changed owner version before installing control history and accepts a fresh observation', async () => {

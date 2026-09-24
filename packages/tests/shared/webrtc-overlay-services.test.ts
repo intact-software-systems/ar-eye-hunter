@@ -714,12 +714,15 @@ describe('WebRtc overlay services', () => {
         });
         onTestFinished(() => manager.dispose());
         const refusedDetail = 'Outbound candidate failed validation';
-        const enqueueSpy = vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueIfAbsent').mockImplementation(async (msg) => ({
-            verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
-            message: msg,
-            entries: [],
-            reason: refusedDetail
-        }));
+        const enqueueSpy = vi.spyOn(ALOutboundMessageRuntime.prototype, 'enqueueAllIfAbsent').mockImplementation(
+            async (msgs) =>
+                msgs.map((msg) => ({
+                    verdict: { kind: 'refused', reason: 'malformed', detail: refusedDetail },
+                    message: msg,
+                    entries: [],
+                    reason: refusedDetail
+                }))
+        );
         onTestFinished(() => enqueueSpy.mockRestore());
 
         // Two refused results are needed to pass the single-failure policy threshold.

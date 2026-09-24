@@ -3,7 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
+import type { ALMObservationPageDiagnosticsFile } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-page-diagnostics.ts';
 import { decodeALMObservationSnapshot } from '../../shared-test/rallar-bb-test/conformance/alm/alm-observation-snapshot.ts';
+import {
+    ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT,
+    ALM_OBSERVATION_PAGE_WINDOW_END_MS
+} from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-page-regime.ts';
 import {
     ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT,
     ALM_OBSERVATION_WINDOW_MS,
@@ -13,6 +18,7 @@ import {
     type ALMObservationCellOutcome,
     type ALMObservationRegime
 } from '../../shared-test/rallar-bb-test/conformance/alm/compute-alm-observation-regime.ts';
+import type { RallarBlackBoxTestRecord } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixtureRoot = path.join(repoRoot, 'packages/tests/shared-test/fixtures/rallar-bb-test');
@@ -30,6 +36,13 @@ const SENDER_AGENT_ID = 'alm-sender-w0-synthetic';
 const RECEIVER_AGENT_ID = 'alm-receiver-w0-synthetic';
 const SYNTHETIC_OUTBOUND_AGENT_ID = SENDER_AGENT_ID;
 const INBOUND_WORKER_ID = 'al-inbound:worker-1';
+const NO_CLAIM_WAITS = {
+    reservationWaitMedianMs: 0,
+    intraBatchWaitMedianMs: 0,
+    dispatchClaimCount: 0,
+    sendControlClaimMedianMs: 0,
+    sendControlClaimCount: 0
+};
 
 function readFixtureRegime(
     fixtureName: string,
@@ -50,7 +63,7 @@ function toCommitPhaseEvent(
     atEpochMs: number,
     msPerOperation: number,
     origin: string
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -69,11 +82,46 @@ function toCommitPhaseEvent(
     };
 }
 
+function toReadinessProbeEvent(
+    atEpochMs: number,
+    agentId: string,
+    probe: Readonly<{ cause: string; durationMs: number; }>
+): RallarBlackBoxTestRecord {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.outbound_diagnostics',
+            payload: {
+                data: { kind: 'readiness-probe', workerId: 'al-outbound:worker-1', readyAtMs: 'none', ...probe }
+            }
+        }
+    };
+}
+
+/** `count` probes a second apart inside the page window; the anchor commit keeps the run's first event at 1 000. */
+function toPageWindowProbes(
+    durationMs: number,
+    count: number,
+    cause = 'age-bound'
+): readonly RallarBlackBoxTestRecord[] {
+    return [
+        toCommitPhaseEvent(1_000, 12, 'send'),
+        ...Array.from({ length: count }, (_unused, index) =>
+            toReadinessProbeEvent(
+                1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1),
+                index % 2 === 0 ? SENDER_AGENT_ID : RECEIVER_AGENT_ID,
+                { cause, durationMs }
+            ))
+    ];
+}
+
 function toInboundOutcomeEvent(
     atEpochMs: number,
     agentId: string,
     outcome: string
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -98,7 +146,7 @@ function toInboundDrainEvent(
         releaseDurationMs: number;
         queueWaitMs: number;
     }>
-): Record<string, unknown> {
+): RallarBlackBoxTestRecord {
     return {
         kind: 'diagnostic',
         atEpochMs,
@@ -112,7 +160,50 @@ function toInboundDrainEvent(
     };
 }
 
-function toSyntheticRegime(events: readonly Record<string, unknown>[]): ALMObservationRegime {
+function toInboundClaimEvent(
+    atEpochMs: number,
+    agentId: string,
+    claim: Readonly<{
+        payloadKind: string;
+        durationMs: number;
+        dueAtMs: number;
+        batchStartedAtMs: number;
+        startedAtMs: number;
+    }>
+): RallarBlackBoxTestRecord {
+    return {
+        kind: 'diagnostic',
+        atEpochMs,
+        agentId,
+        payload: {
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: { kind: 'claim-settled', workerId: INBOUND_WORKER_ID, ...claim }
+            }
+        }
+    };
+}
+
+/** A `dispatch-local` claim whose two wait halves are the given figures, after a batch that started at 10 000. */
+function toDispatchClaimEvent(
+    atEpochMs: number,
+    reservationWaitMs: number,
+    intraBatchWaitMs: number
+): RallarBlackBoxTestRecord {
+    const batchStartedAtMs = 10_000;
+    return toInboundClaimEvent(atEpochMs, RECEIVER_AGENT_ID, {
+        payloadKind: 'dispatch-local',
+        durationMs: 5,
+        dueAtMs: batchStartedAtMs - reservationWaitMs,
+        batchStartedAtMs,
+        startedAtMs: batchStartedAtMs + intraBatchWaitMs
+    });
+}
+
+function toSyntheticRegime(
+    events: readonly RallarBlackBoxTestRecord[],
+    pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile
+): ALMObservationRegime {
     return decodeALMObservationSnapshot({ runId: 'alm-synthetic', results: [], events }).fold(
         (issues) => {
             throw new Error(`synthetic snapshot did not decode: ${issues.join('; ')}`);
@@ -122,7 +213,8 @@ function toSyntheticRegime(events: readonly Record<string, unknown>[]): ALMObser
                 snapshot,
                 carrier: 'rtc',
                 scope: 'smoke',
-                cellOutcome: 'passed'
+                cellOutcome: 'passed',
+                pageDiagnosticsFile
             })
     );
 }
@@ -131,7 +223,7 @@ function toEvenlySpacedCommitPhases(
     msPerOperation: number,
     count: number,
     origin = 'send'
-): readonly Record<string, unknown>[] {
+): readonly RallarBlackBoxTestRecord[] {
     return Array.from(
         { length: count },
         (_unused, index) => toCommitPhaseEvent(1_000 + index * 100, msPerOperation, origin)
@@ -155,6 +247,7 @@ describe('computeALMObservationRegime', () => {
         expect(regime.windowMs).toBe(ALM_OBSERVATION_WINDOW_MS);
         expect(regime.snapshotIssues).toEqual([]);
         expect(regime.inbound).toEqual([]);
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
     it('reports both peers ready and the work-page rate for the green hosted run', () => {
@@ -205,6 +298,7 @@ describe('computeALMObservationRegime', () => {
         });
         expect(regime.cellOutcome).toBe('failed');
         expect(regime.inbound).toEqual([]);
+        expect(regime.pageRegime).toEqual({ outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' });
     });
 
     it('names the failing step code and the never-ready peers of the red hosted run', () => {
@@ -235,6 +329,64 @@ describe('computeALMObservationRegime', () => {
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(30, 7)).regime).toBe('unclassified');
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(34.99, 7)).regime).toBe('unclassified');
         expect(toSyntheticRegime(toEvenlySpacedCommitPhases(35, 7)).regime).toBe('slow');
+    });
+
+    it('classifies the page from the median age-bound probe, unmoved by probes outside its window or cause', () => {
+        const regime = toSyntheticRegime([
+            ...toPageWindowProbes(2, 10),
+            ...Array.from({ length: 5 }, (_unused, index) => toReadinessProbeEvent(1_000 + index, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 400 })),
+            ...Array.from({ length: 5 }, (_unused, index) =>
+                toReadinessProbeEvent(
+                    1_000 + ALM_OBSERVATION_WINDOW_MS + 1_000 * (index + 1),
+                    RECEIVER_AGENT_ID,
+                    { cause: 'own-commit', durationMs: 400 }
+                )),
+            ...Array.from({ length: 5 }, (_unused, index) =>
+                toReadinessProbeEvent(
+                    1_000 + ALM_OBSERVATION_PAGE_WINDOW_END_MS + 1_000 * (index + 1),
+                    SENDER_AGENT_ID,
+                    { cause: 'age-bound', durationMs: 400 }
+                ))
+        ]);
+
+        expect(regime.pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 2,
+            sampleCount: 10,
+            regime: 'normal'
+        });
+    });
+
+    it('classifies the page as slow at 120 ms and unclassified in the band at 30 ms', () => {
+        expect(toSyntheticRegime(toPageWindowProbes(120, 10)).pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 120,
+            sampleCount: 10,
+            regime: 'slow'
+        });
+        expect(toSyntheticRegime(toPageWindowProbes(30, 10)).pageRegime).toEqual({
+            outcome: 'measured',
+            storageProbeMedianMs: 30,
+            sampleCount: 10,
+            regime: 'unclassified'
+        });
+    });
+
+    it('classifies the two edges of the page band', () => {
+        expect(toSyntheticRegime(toPageWindowProbes(19.99, 10)).pageRegime.regime).toBe('normal');
+        expect(toSyntheticRegime(toPageWindowProbes(20, 10)).pageRegime.regime).toBe('unclassified');
+        expect(toSyntheticRegime(toPageWindowProbes(49.99, 10)).pageRegime.regime).toBe('unclassified');
+        expect(toSyntheticRegime(toPageWindowProbes(50, 10)).pageRegime.regime).toBe('slow');
+    });
+
+    it('refuses to classify the page from fewer probes than the minimum', () => {
+        const regime = toSyntheticRegime(toPageWindowProbes(2, ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT - 1));
+
+        expect(regime.pageRegime).toEqual({
+            outcome: 'unmeasured',
+            sampleCount: ALM_OBSERVATION_MIN_STORAGE_PROBE_COUNT - 1,
+            regime: 'unclassified'
+        });
     });
 
     it('refuses to classify fewer commit phases than the minimum', () => {
@@ -325,7 +477,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 5,
                     drainMedianMs: 150,
                     drainCount: 2
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             {
                 role: 'receiver',
@@ -339,10 +492,48 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 15,
                     drainMedianMs: 350,
                     drainCount: 2
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'unattributed', outcome: 'no-events' }
         ]);
+    });
+
+    it('splits the receiver\'s delivery wait into its reservation and intra-batch halves', () => {
+        const regime = toSyntheticRegime([
+            ...toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            toInboundOutcomeEvent(1_000, SENDER_AGENT_ID, 'committed'),
+            toDispatchClaimEvent(1_001, 100, 4_000),
+            toDispatchClaimEvent(1_002, 200, 5_000),
+            toDispatchClaimEvent(1_003, 300, 6_000),
+            toInboundClaimEvent(1_004, RECEIVER_AGENT_ID, {
+                payloadKind: 'send-control',
+                durationMs: 3_000,
+                dueAtMs: 9_000,
+                batchStartedAtMs: 10_000,
+                startedAtMs: 10_000
+            }),
+            toInboundClaimEvent(1_005, RECEIVER_AGENT_ID, {
+                payloadKind: 'send-control',
+                durationMs: 5_000,
+                dueAtMs: 9_000,
+                batchStartedAtMs: 10_000,
+                startedAtMs: 13_000
+            })
+        ]);
+
+        const claimWaitsOf = (role: string) => {
+            const direction = regime.inbound.find((candidate) => candidate.role === role);
+            return direction?.outcome === 'measured' ? direction.claimWaits : undefined;
+        };
+        expect(claimWaitsOf('receiver')).toEqual({
+            reservationWaitMedianMs: 200,
+            intraBatchWaitMedianMs: 5_000,
+            dispatchClaimCount: 3,
+            sendControlClaimMedianMs: 4_000,
+            sendControlClaimCount: 2
+        });
+        expect(claimWaitsOf('sender')).toEqual(NO_CLAIM_WAITS);
     });
 
     it('reports a measured direction with zero drain medians when a role has outcomes but no drains', () => {
@@ -364,7 +555,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 0,
                     drainMedianMs: 0,
                     drainCount: 0
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -397,7 +589,8 @@ describe('computeALMObservationRegime', () => {
                     queueWaitMedianMs: 3,
                     drainMedianMs: 100,
                     drainCount: 1
-                }
+                },
+                claimWaits: NO_CLAIM_WAITS
             },
             { role: 'receiver', outcome: 'no-events' },
             { role: 'unattributed', outcome: 'no-events' }
@@ -406,7 +599,8 @@ describe('computeALMObservationRegime', () => {
 
     it('summarizes a cell in one line for the job log', () => {
         expect(toALMObservationRegimeSummary(readFixtureRegime(SLOW_FIXTURE, 'failed'))).toBe(
-            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed'
+            'ALM observation rtc-smoke: regime=slow perOperation=36 ms/op over 7 commits outcome=failed ' +
+                'page=unclassified (unmeasured, 0 probes)'
         );
         expect(
             toALMObservationRegimeSummary(
@@ -418,8 +612,15 @@ describe('computeALMObservationRegime', () => {
                 })
             )
         ).toBe(
-            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed'
+            'ALM observation ws-smoke: regime=unclassified perOperation=unmeasured (0 commits) outcome=failed ' +
+                'page=unclassified (unmeasured, 0 probes)'
         );
+    });
+
+    it('summarizes a measured page regime with its median and sample count', () => {
+        const regime = toSyntheticRegime(toPageWindowProbes(2, 10));
+
+        expect(toALMObservationRegimeSummary(regime)).toContain('page=normal (2 ms/probe over 10)');
     });
 });
 
@@ -437,6 +638,94 @@ describe('createUnreadableALMObservationRegime', () => {
         expect(regime.carrier).toBe('rtc-with-ws-fallback');
         expect(regime.scope).toBe('full');
         expect(regime.scenarioSends).toEqual([]);
+    });
+});
+
+describe('page diagnostics on the regime', () => {
+    it('reports not-captured when the lane supplied no page diagnostics file', () => {
+        const regime = toSyntheticRegime(toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT));
+
+        expect(regime.pageDiagnostics).toEqual({ outcome: 'not-captured' });
+    });
+
+    it('reports the unreadable regime as not-captured too, absent a file', () => {
+        const regime = createUnreadableALMObservationRegime({
+            carrier: 'ws',
+            scope: 'smoke',
+            cellOutcome: 'failed',
+            snapshotIssues: ['snapshot is not an object']
+        });
+
+        expect(regime.pageDiagnostics).toEqual({ outcome: 'not-captured' });
+    });
+
+    it('reports the unreadable regime as captured when the lane did supply a file', () => {
+        const regime = createUnreadableALMObservationRegime({
+            carrier: 'ws',
+            scope: 'smoke',
+            cellOutcome: 'failed',
+            snapshotIssues: ['snapshot is not an object'],
+            pageDiagnosticsFile: { droppedCount: 0, records: [] }
+        });
+
+        expect(regime.pageDiagnostics).toEqual({
+            outcome: 'captured',
+            counts: { pageerror: 0, consoleError: 0, consoleWarning: 0 },
+            dropped: 0,
+            first: []
+        });
+    });
+
+    it('counts each kind, carries dropped, and orders the earliest records first', () => {
+        const pageDiagnosticsFile: ALMObservationPageDiagnosticsFile = {
+            droppedCount: 3,
+            records: [
+                { agentId: SENDER_AGENT_ID, role: 'sender', atMs: 500, kind: 'console-error', message: 'later' },
+                {
+                    agentId: RECEIVER_AGENT_ID,
+                    role: 'receiver',
+                    atMs: 100,
+                    kind: 'pageerror',
+                    message: 'earlier',
+                    stack: 'trace'
+                },
+                { agentId: SENDER_AGENT_ID, role: 'sender', atMs: 300, kind: 'console-warning', message: 'middle' }
+            ]
+        };
+
+        const regime = toSyntheticRegime(
+            toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            pageDiagnosticsFile
+        );
+
+        expect(regime.pageDiagnostics).toEqual({
+            outcome: 'captured',
+            counts: { pageerror: 1, consoleError: 1, consoleWarning: 1 },
+            dropped: 3,
+            first: [
+                pageDiagnosticsFile.records[1],
+                pageDiagnosticsFile.records[2],
+                pageDiagnosticsFile.records[0]
+            ]
+        });
+    });
+
+    it('bounds the earliest-records list at 20', () => {
+        const records = Array.from({ length: 25 }, (_unused, index) => ({
+            agentId: SENDER_AGENT_ID,
+            role: 'sender' as const,
+            atMs: index,
+            kind: 'console-error' as const,
+            message: `message-${index}`
+        }));
+
+        const regime = toSyntheticRegime(
+            toEvenlySpacedCommitPhases(12, ALM_OBSERVATION_MIN_COMMIT_PHASE_COUNT),
+            { records, droppedCount: 0 }
+        );
+
+        expect(regime.pageDiagnostics.outcome).toBe('captured');
+        expect(regime.pageDiagnostics.outcome === 'captured' ? regime.pageDiagnostics.first : []).toHaveLength(20);
     });
 });
 
@@ -516,6 +805,72 @@ describe('decodeALMObservationSnapshot', () => {
             'sender',
             'receiver',
             'receiver'
+        ]);
+    });
+
+    it('decodes a claim-settled event and skips one missing a wait instant', () => {
+        // A claim emitted before the wait instants existed: it names no batch start.
+        const legacyClaim = {
+            kind: 'diagnostic',
+            atEpochMs: 1_002,
+            agentId: RECEIVER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'claim-settled',
+                        workerId: INBOUND_WORKER_ID,
+                        payloadKind: 'dispatch-local',
+                        durationMs: 5,
+                        dueAtMs: 1,
+                        startedAtMs: 3
+                    }
+                }
+            }
+        };
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-claims',
+            results: [],
+            events: [toDispatchClaimEvent(1_001, 100, 4_000), legacyClaim]
+        });
+
+        expect(decoded.right?.inboundClaims).toEqual([{
+            atEpochMs: 1_001,
+            role: 'receiver',
+            workerId: INBOUND_WORKER_ID,
+            payloadKind: 'dispatch-local',
+            durationMs: 5,
+            dueAtMs: 9_900,
+            batchStartedAtMs: 10_000,
+            startedAtMs: 14_000
+        }]);
+    });
+
+    it('decodes a readiness-probe per agent role and skips one missing a cause or a finite duration', () => {
+        const missingCause = {
+            kind: 'diagnostic',
+            atEpochMs: 1_002,
+            agentId: SENDER_AGENT_ID,
+            payload: {
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payload: {
+                    data: { kind: 'readiness-probe', workerId: 'al-outbound:worker-1', readyAtMs: 'none', durationMs: 12 }
+                }
+            }
+        };
+        const decoded = decodeALMObservationSnapshot({
+            runId: 'alm-probes',
+            results: [],
+            events: [
+                toReadinessProbeEvent(1_000, SENDER_AGENT_ID, { cause: 'age-bound', durationMs: 12 }),
+                toReadinessProbeEvent(1_001, RECEIVER_AGENT_ID, { cause: 'own-commit', durationMs: 8 }),
+                missingCause
+            ]
+        });
+
+        expect(decoded.right?.readinessProbes).toEqual([
+            { atEpochMs: 1_000, role: 'sender', cause: 'age-bound', durationMs: 12 },
+            { atEpochMs: 1_001, role: 'receiver', cause: 'own-commit', durationMs: 8 }
         ]);
     });
 

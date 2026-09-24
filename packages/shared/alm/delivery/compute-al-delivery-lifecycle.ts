@@ -33,6 +33,8 @@ export function computeALDeliveryLifecycle(
             return toReasonedLifecycle(previous, 'failed', settlement.detail);
         case 'expired':
             return toReasonedLifecycle(previous, 'expired', settlement.detail);
+        case 'superseded':
+            return toReasonedLifecycle(previous, 'superseded', settlement.detail);
         case 'cancelled':
             return toReasonedLifecycle(previous, 'cancelled', 'Cancelled by the sender.');
     }

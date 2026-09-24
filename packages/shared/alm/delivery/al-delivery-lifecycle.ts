@@ -127,6 +127,15 @@ export type ALDeliverySettlement =
         atMs: number;
         detail: string;
     }>
+    /** A newer message's admission replaced this one; stated from the replacement's commit, never by an attempt. */
+    | Readonly<{
+        kind: 'superseded';
+        msgId: string;
+        carrier: ALDeliveryCarrier;
+        atMs: number;
+        replacementMsgId: string;
+        detail: string;
+    }>
     | Readonly<{ kind: 'cancelled'; msgId: string; carrier: ALDeliveryCarrier; atMs: number; }>;
 
 export type ALDeliverySettlementSink = (settlement: ALDeliverySettlement) => void;

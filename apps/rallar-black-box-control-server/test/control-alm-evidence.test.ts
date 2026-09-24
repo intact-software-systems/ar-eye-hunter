@@ -3,7 +3,12 @@ import { assert, assertEquals } from '@std/assert';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
-import type { RallarBlackBoxTestRecipe, RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestMessagesObserveResultValue,
+    RallarBlackBoxTestMessagesReceiptsCommand,
+    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestResult
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { isJsonRecordValue } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 
 import { createAlmConformance2AgentEntry } from '../../rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
@@ -299,6 +304,8 @@ function resultEnvelope(
                                     }
                                 }
                             }
+                            : command.kind === 'messages.receipts'
+                            ? toReceiptsFabricatedValue(command, recipe)
                             : {}
                     };
                 })
@@ -306,4 +313,27 @@ function resultEnvelope(
             : {}
     };
     return { kind: 'result', protocolVersion: 1, runId: envelope.runId, agentId: envelope.agentId!, commandId: envelope.commandId, ok: true, result };
+}
+
+/**
+ * D28: the sender's receipts are read after the whole scenario and correlated by handle id
+ * (`assessAcknowledgedIdentity`). This mirrors what a real non-ws submission's receiver hop
+ * actually confirms, so the fabricated evidence stays truthful rather than merely satisfying it.
+ */
+function toReceiptsFabricatedValue(
+    command: RallarBlackBoxTestMessagesReceiptsCommand,
+    recipe: RallarBlackBoxTestRecipe
+): RallarBlackBoxTestMessagesObserveResultValue {
+    const send = recipe.commands.find((candidate) => candidate.kind === 'messages.send' && candidate.handleId === command.handleId);
+    const confirmedOverNonWs = send?.kind === 'messages.send' && send.carrier !== 'ws';
+    return {
+        handleId: command.handleId,
+        state: 'transport-accepted',
+        submitted: true,
+        enqueued: true,
+        confirmedHopPeerIds: confirmedOverNonWs ? ['peer'] : [],
+        unconfirmedHopPeerIds: [],
+        attempts: 1,
+        reason: undefined
+    };
 }

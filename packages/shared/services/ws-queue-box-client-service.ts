@@ -233,8 +233,8 @@ export class WsQueueBoxClientService {
                 planIncomingMessage: (msg, source, observations) => this.planIncomingMessage(msg, source, observations),
                 canDispatchMessage: (message) => this.hasInboxConsumer(message),
                 dispatchInboxEntry: async (entry, plan) => await this.dispatchInboxEntry(entry, plan),
-                sendControlMessage: async (msg) => {
-                    await this.enqueueOutboxIfAbsent(msg);
+                sendControlMessages: async (msgs) => {
+                    await this.enqueueOutboxAllIfAbsent(msgs);
                 },
                 onControlMessage: async (msg) => {
                     await this.outboundRuntime.acceptControlMessage(msg);
@@ -447,21 +447,40 @@ export class WsQueueBoxClientService {
     }
 
     async enqueueOutboxIfAbsent(message: ALMessage): Promise<ALOutboundEnqueueResult> {
+        const [result] = await this.enqueueOutboxAllIfAbsent([message]);
+        return result!;
+    }
+
+    /** The messages of one sender admitted as one outbound commit; one result per message, in order. */
+    async enqueueOutboxAllIfAbsent(messages: readonly ALMessage[]): Promise<readonly ALOutboundEnqueueResult[]> {
         if (this.closed) {
             const verdict: ALDeliveryAdmissionVerdict = {
                 kind: 'skipped',
                 reason: 'disposed',
                 detail: 'WS queue-box client is closed.'
             };
-            return {
+            return messages.map((message) => ({
                 verdict,
                 message,
                 entries: [],
                 reason: verdict.detail
-            };
+            }));
         }
 
-        return await this.outboundRuntime.enqueueIfAbsent(message);
+        return await this.outboundRuntime.enqueueAllIfAbsent(messages);
+    }
+
+    /**
+     * One message straight to an open socket: no admission, work row or retry. Only for latest-value
+     * telemetry a newer message replaces, so a dropped send costs nothing worth recovering.
+     */
+    sendLive(message: ALMessage): 'sent' | 'socket-closed' {
+        if (!this.isSocketOpen()) {
+            return 'socket-closed';
+        }
+        const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, WsQueueBoxClientService.OUTBOX_ENQUEUE_TYPE);
+        this.socket.sendAsJsonString(entry.resource);
+        return 'sent';
     }
 
     private hasInboxConsumer(message: ALMessage): boolean {

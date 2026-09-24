@@ -89,6 +89,18 @@ writes, which is why these reads stay outside the write that follows them, and t
 `requireOriginalObservations` still re-reads the whole observed surface inside the write —
 the snapshot makes the read cheap, the fence is what makes the commit conditional.
 
+A row the chain read past its expiry reads as absent. On IndexedDB, once the chain has read
+everything, `readWithin` evicts those rows in one readwrite, each removal guarded by the write
+token the chain read it at; the direct `read` and `list` evict the same way. If another writer
+replaced or removed one of those rows in between, for example a concurrent chain that evicted it
+first, the guard rolls the whole eviction back and the row is left to that writer or to the next
+chain that reads it expired. The guarded write answers that as not committed, and the eviction
+does not turn the answer into an error: the chain already answered from a snapshot in which the
+row was absent, and a conflict belongs only to a write that fences on what it read. A read
+surface therefore never throws `ALAdmissionBackendConflictError`, so the admission reading it —
+the outbound control admission of an ACK included — reaches its own commit and its own typed
+conflict.
+
 What makes that commit conditional: the backend records, for every key the write phase read or
 wrote, the revision and write token it observed there (or that the key was absent), and for every
 prefix it listed, the exact key set that listing returned. Before the transaction commits it
@@ -163,6 +175,32 @@ as the page: every expiry, against a fresh clock reading, and an ordered message
 predecessor, which can land inside the claim window. A claim that carries no observation
 reads the surface for itself.
 
+A batch runs the page's claims in rank order rather than page order:
+[`computeALInboundClaimOrder`](./read-al-inbound-work-selection.ts) puts `dispatch-local` and
+`release-buffered` first, then admission replays and rows whose kind the page never decoded,
+then `send-control` and `forward-message` last. Page order is key order, and an ACK's key can
+sort before the dispatch it acknowledges; running deliveries first keeps such an ACK from
+committing ahead of the delivery it is only useful after. The sort reads the kind from the map
+the eligibility read already filled, so it costs no operation and opens no transaction, and it
+is stable within a rank, so page order still decides among equals.
+
+A batch's `send-control` claims share one send. The selection records every `send-control` row
+the port reserved, with the envelope its eligibility read decoded
+([`getClaimedControlSends`](./read-al-inbound-work-selection.ts)), in a fresh array per
+selection. The first of those claims to run hands the whole array to `sendControlMessages`, and
+every other claim of that batch awaits the same send. The browser carriers commit that array as one
+outbound admission (`enqueueAllIfAbsent`); the WS server sends its messages one after another, in
+order. The round is keyed by that array's identity, never by time, so a row retried in a later
+batch never joins a finished round. A restarted scan empties the array, and a claim it left out
+sends alone. When the round's send throws, each of its claims sends its own message alone, so each
+claim settles on its own message. That path serves the WS client, whose grouped admission rethrows
+a member's storage throw once every member ran: a message the round already admitted then answers
+`duplicate`, and only the claim whose message throws again carries that failure. On RTC the round
+does not throw, because the multicast manager's circuit breaker answers a throw as `failed` values,
+as it answered a single send's throw before grouping. The WS server makes no admission; a
+synchronous throw there would send the messages before it a second time, which receivers drop by
+message id.
+
 The rotation reads a page on every engine round, and that read is what advances its
 scan position, so the worker is constructed with `AL_WORK_PROBE_EVERY_ROUND` rather
 than the remembered readiness the outbound owners use: a remembered answer would skip
@@ -189,7 +227,18 @@ claimed had been due (`queueWaitMs`); one `claim-settled` for each claim that ra
 outcome, with that claim's own duration, attempts, outcome and wait — a row that cannot be
 decoded and a claim that throws are counted by the drain and named by no event; and
 `rotation-alive` once per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` empty rounds, carrying
-`longestRoundMs` so one crawling scan is not averaged away by the rest. No
+`longestRoundMs` so one crawling scan is not averaged away by the rest. Each `claim-settled`
+also carries `effectId` (the claimed row's own key), `subjectMsgId` (the message the effect
+acts on) and the three instants a delivery's wait splits at — `dueAtMs`, when its row became
+due; `batchStartedAtMs`, when its batch's run loop started, after that batch's selection and
+reservation; and `startedAtMs`, when the claim itself started — so the reservation half
+(`batchStartedAtMs − dueAtMs`) and the intra-batch half (`startedAtMs − batchStartedAtMs`, the
+serialization behind earlier claims of the run loop alone) are each named rather than left for
+a reader to subtract. `effect-drain` carries the matching `startedAtMs` and names the effects it
+ran in run order (`claimedEffectIds`, recorded by this owner as it runs them). The due rows a round
+saw and did not run ride on the events that already exist, never on one of their own: a
+round that ran claims lists them in its `effect-drain.deferred`, and empty rounds fold them
+into the next `rotation-alive` (`deferredRoundCount`, `latestDeferred`). No
 `readiness-probe` reaches the inbound topic. The field-by-field contract is in
 [`runtime-diagnostic-contract.md`](../../../shared-test/rallar-bb-test/docs/runtime-diagnostic-contract.md).
 

@@ -79,11 +79,16 @@ export function acceptALOutboundPendingAckSnapshot(
     return { ...input.current, ackedPeerIds: [...ackedPeerIds] };
 }
 
-export function toALOutboundPendingAckExpireAtTimestamp(
-    snapshot: ALOutboundPendingAckSnapshot
+/**
+ * When the last `ack-timeout` window closes, never past the message deadline: no retransmission is
+ * scheduled after it. The receipt itself expires at the deadline, however early this schedule ends.
+ */
+export function toALOutboundAckRetryScheduleEndTimestamp(
+    snapshot: ALOutboundPendingAckSnapshot,
+    messageExpiresAtMs: number
 ): number {
     const remainingTimeoutWindows = Math.max(1, snapshot.maxAttempts - snapshot.attempts + 1);
-    return snapshot.deadlineAtMs + snapshot.timeoutMs * remainingTimeoutWindows;
+    return Math.min(snapshot.deadlineAtMs + snapshot.timeoutMs * remainingTimeoutWindows, messageExpiresAtMs);
 }
 
 export function isALOutboundReceiptComplete(

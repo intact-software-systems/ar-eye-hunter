@@ -3,6 +3,7 @@ import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
+import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { InboxOutboxEngine } from '../../services/InboxOutboxEngine.ts';
@@ -24,6 +25,7 @@ import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.t
 import {
     toALInboundAdmissionDiagnostics,
     toALInboundClaimIdentity,
+    type ALInboundDeferredEffect,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
 import {
@@ -39,6 +41,7 @@ import {
 import {
     AL_INBOUND_WORK_PAGE_SIZE,
     createALInboundWorkSelector,
+    type ALInboundClaimedControlSend,
     type ALInboundWorkSelector
 } from './read-al-inbound-work-selection.ts';
 import { validateALInboundMessage } from './validate-al-inbound-message.ts';
@@ -90,7 +93,8 @@ export namespace ALInboundMessageRuntime {
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the supplied dispatcher is ready for every local message. */
         readonly canDispatchMessage?: (msg: ALMessage) => boolean;
-        readonly sendControlMessage: (msg: ALMessage) => Promise<void>;
+        /** Sends the control messages of one batch as one outbound admission, or a single one alone. */
+        readonly sendControlMessages: (msgs: readonly ALMessage[]) => Promise<void>;
         readonly onControlMessage?: (msg: ALMessage, acceptance: ALControlAcceptance) => Promise<void>;
         readonly forwardMessage?: (
             msg: ALMessage,
@@ -123,6 +127,11 @@ export class ALInboundMessageRuntime {
     private emptyRoundCount = 0;
     private emptyRoundsFromMs: number | undefined;
     private longestEmptyRoundMs = 0;
+    private deferredRoundCount = 0;
+    private latestDeferred: readonly ALInboundDeferredEffect[] = [];
+    /** The effects the running batch has started, in run order: only this owner holds them decoded. */
+    private batchRunOrder: ALInboundBatchRunOrder | undefined;
+    private controlRound: ALInboundControlSendRound | undefined;
     private disposed = false;
 
     private readonly dependencies: ALInboundMessageRuntime.Dependencies;
@@ -226,6 +235,8 @@ export class ALInboundMessageRuntime {
      * `rotation-alive` below is what keeps a silent rotation distinguishable from a stopped one.
      */
     private recordWorkBatch(event: ALWorkBatchDiagnostics): void {
+        const runOrder = this.batchRunOrder;
+        this.batchRunOrder = undefined;
         if (event.claimedCount === 0 && event.rejectedCount === 0) {
             this.recordEmptyRotationRound(event);
             return;
@@ -242,7 +253,10 @@ export class ALInboundMessageRuntime {
             claimDurationMs: event.claimDurationMs,
             runDurationMs: event.runDurationMs,
             releaseDurationMs: event.releaseDurationMs,
-            queueWaitMs: event.queueWaitMs
+            queueWaitMs: event.queueWaitMs,
+            startedAtMs: event.startedAtMs,
+            claimedEffectIds: runOrder?.batchStartedAtMs === event.startedAtMs ? runOrder.effectIds : [],
+            deferred: toOldestFirstALInboundDeferredEffects(this.workSelector.getUnreservedDue())
         });
     }
 
@@ -250,13 +264,20 @@ export class ALInboundMessageRuntime {
      * Suppressing the empty rounds left the rotation itself unobservable: a committed admission that
      * no drain follows reads the same whether no consumer is registered for its typeId or the
      * rotation stopped running. One event per `AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS` of them says
-     * which, and carries the wall time they spanned so a slowed rotation reads as a long gap.
+     * which, and carries the wall time they spanned so a slowed rotation reads as a long gap. A due row
+     * those rounds held back rides on the same event rather than one of its own, because one event per
+     * round is exactly the relay cost the suppression removed.
      */
     private recordEmptyRotationRound(event: ALWorkBatchDiagnostics): void {
         const nowMs = this.dependencies.clock.nowMs();
         this.emptyRoundCount += 1;
         this.emptyRoundsFromMs ??= nowMs - event.durationMs;
         this.longestEmptyRoundMs = Math.max(this.longestEmptyRoundMs, event.durationMs);
+        const unreservedDue = this.workSelector.getUnreservedDue();
+        if (unreservedDue.length > 0) {
+            this.deferredRoundCount += 1;
+            this.latestDeferred = toOldestFirstALInboundDeferredEffects(unreservedDue);
+        }
         if (this.emptyRoundCount < AL_INBOUND_ROTATION_ALIVE_EVERY_ROUNDS) {
             return;
         }
@@ -265,11 +286,15 @@ export class ALInboundMessageRuntime {
             workerId: event.workerId,
             emptyRoundCount: this.emptyRoundCount,
             durationMs: Math.max(0, nowMs - this.emptyRoundsFromMs),
-            longestRoundMs: this.longestEmptyRoundMs
+            longestRoundMs: this.longestEmptyRoundMs,
+            deferredRoundCount: this.deferredRoundCount,
+            latestDeferred: this.latestDeferred
         });
         this.emptyRoundCount = 0;
         this.emptyRoundsFromMs = undefined;
         this.longestEmptyRoundMs = 0;
+        this.deferredRoundCount = 0;
+        this.latestDeferred = [];
     }
 
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
@@ -367,6 +392,7 @@ export class ALInboundMessageRuntime {
      */
     private async runInboundClaim(claim: ALWorkClaim, batchStartedAtMs: number): Promise<ALWorkOutcome> {
         const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+        this.recordClaimStarted(batchStartedAtMs, effect.effectId);
         const startedAtMs = this.dependencies.clock.nowMs();
         const outcome = await this.runInboundEffect(effect);
         this.recordClaimSettled({
@@ -374,24 +400,35 @@ export class ALInboundMessageRuntime {
             effect,
             outcome,
             durationMs: Math.max(0, this.dependencies.clock.nowMs() - startedAtMs),
-            batchStartedAtMs
+            batchStartedAtMs,
+            startedAtMs
         });
         return outcome;
     }
 
+    /** A batch runs its claims one after another under one start, so a new start is a new batch. */
+    private recordClaimStarted(batchStartedAtMs: number, effectId: string): void {
+        if (this.batchRunOrder?.batchStartedAtMs !== batchStartedAtMs) {
+            this.batchRunOrder = { batchStartedAtMs, effectIds: [] };
+        }
+        this.batchRunOrder.effectIds.push(effectId);
+    }
+
     private recordClaimSettled(settled: ALInboundClaimSettlement): void {
+        const dueAtMs = resolveALInboundWorkDueAtMs(settled.claim.entry);
         this.dependencies.diagnostics?.({
             kind: 'claim-settled',
             workerId: this.dependencies.effectWorkerId,
+            effectId: settled.effect.effectId,
             ...toALInboundClaimIdentity(settled.effect.payload),
             payloadKind: settled.effect.payload.kind,
             durationMs: settled.durationMs,
             attempts: settled.claim.attempts,
             outcome: settled.outcome.status,
-            queueWaitMs: Math.max(
-                0,
-                settled.batchStartedAtMs - resolveALInboundWorkDueAtMs(settled.claim.entry)
-            )
+            queueWaitMs: Math.max(0, settled.batchStartedAtMs - dueAtMs),
+            dueAtMs,
+            batchStartedAtMs: settled.batchStartedAtMs,
+            startedAtMs: settled.startedAtMs
         });
     }
 
@@ -419,10 +456,51 @@ export class ALInboundMessageRuntime {
             }
             return replayed.outcome;
         }
+        if (payload.kind === 'send-control') {
+            return await this.sendControlInRound(effect, payload.msg);
+        }
         return {
             status: await this.delivery.deliver(effect, this.workSelector.getDeliveryObservation(effect.effectId))
         };
     }
+
+    /**
+     * The first control claim of a batch sends every control message that batch reserved, and the
+     * rest await that one send. The round is the array the selection returned, so a retried row in a later
+     * batch never joins a finished round, and a claim a restarted scan left out of the array sends
+     * alone. A round that throws sends the message of each claim alone too, so each claim settles on its
+     * own message: the outbound admission is idempotent, so a message the round already admitted
+     * answers `duplicate`.
+     */
+    private async sendControlInRound(effect: ALPersistedInboundEffect, msg: ALMessage): Promise<ALWorkOutcome> {
+        if (this.disposed) {
+            return { status: 'retry' };
+        }
+        if (effect.expireAtTimestamp <= this.dependencies.clock.nowMs()) {
+            throw new NonRetryableException('Inbound work expired before delivery');
+        }
+        const sends = this.workSelector.getClaimedControlSends();
+        if (!sends.some((send) => send.effectId === effect.effectId)) {
+            await this.dependencies.sendControlMessages([msg]);
+            return { status: 'completed' };
+        }
+        if (this.controlRound?.sends !== sends) {
+            this.controlRound = { sends, sent: this.dependencies.sendControlMessages(sends.map((send) => send.msg)) };
+        }
+        try {
+            await this.controlRound.sent;
+        }
+        catch {
+            await this.dependencies.sendControlMessages([msg]);
+        }
+        return { status: 'completed' };
+    }
+}
+
+/** The one grouped send the control claims of a batch share, keyed by the array their selection returned. */
+interface ALInboundControlSendRound {
+    readonly sends: readonly ALInboundClaimedControlSend[];
+    readonly sent: Promise<void>;
 }
 
 /** One settled claim's measurements, so the event that reports them is built from one input. */
@@ -432,6 +510,18 @@ interface ALInboundClaimSettlement {
     readonly outcome: ALWorkOutcome;
     readonly durationMs: number;
     readonly batchStartedAtMs: number;
+    readonly startedAtMs: number;
+}
+
+interface ALInboundBatchRunOrder {
+    readonly batchStartedAtMs: number;
+    readonly effectIds: string[];
+}
+
+function toOldestFirstALInboundDeferredEffects(
+    deferred: readonly ALInboundDeferredEffect[]
+): readonly ALInboundDeferredEffect[] {
+    return [...deferred].sort((left, right) => left.dueAtMs - right.dueAtMs);
 }
 
 function toALInboundReplayOutcome(

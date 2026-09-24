@@ -1,12 +1,23 @@
 import type {
+    ALMObservationPageDiagnosticRecord,
+    ALMObservationPageDiagnosticsFile
+} from './alm-observation-page-diagnostics.ts';
+import type {
     ALMObservationAgentRole,
     ALMObservationCommandResult,
+    ALMObservationInboundClaim,
     ALMObservationInboundDrain,
     ALMObservationInboundOutcome,
     ALMObservationRtcLifecycle,
     ALMObservationSnapshot,
     ALMObservationStorageCounters
 } from './alm-observation-snapshot.ts';
+import {
+    computeMedian,
+    computePageRegime,
+    toTwoDecimals,
+    type ALMObservationPageRegime
+} from './compute-alm-observation-page-regime.ts';
 
 /**
  * Seven hosted observation runs (2026-09-10/11) separate a runner that completes the lane from one
@@ -26,6 +37,10 @@ export const ALM_OBSERVATION_COMMIT_ORIGIN = 'send';
 
 const ALM_OBSERVATION_AGENT_ROLES: readonly ALMObservationAgentRole[] = ['sender', 'receiver', 'unattributed'];
 const PENDING_INBOUND_OUTCOME = 'pending';
+const DISPATCH_LOCAL_PAYLOAD_KIND = 'dispatch-local';
+const SEND_CONTROL_PAYLOAD_KIND = 'send-control';
+/** Task 7b: bounds the cell JSON, not the raw file — the raw file already caps at 200 per page. */
+const ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT = 20;
 
 export type ALMObservationRegimeName = 'normal' | 'slow' | 'unclassified';
 
@@ -53,6 +68,21 @@ export interface ALMObservationInboundPhases {
     readonly drainCount: number;
 }
 
+export interface ALMObservationInboundClaimWaits {
+    /**
+     * Median `batchStartedAtMs − dueAtMs` over this role's `dispatch-local` claims: from due to the run
+     * loop of the batch that ran the claim -- the wait for a round, plus that batch's selection and
+     * reservation.
+     */
+    readonly reservationWaitMedianMs: number;
+    /** Median `startedAtMs − batchStartedAtMs` over the same claims: the serialization behind earlier claims of the run loop. */
+    readonly intraBatchWaitMedianMs: number;
+    readonly dispatchClaimCount: number;
+    /** Median `durationMs` over this role's `send-control` claims. */
+    readonly sendControlClaimMedianMs: number;
+    readonly sendControlClaimCount: number;
+}
+
 /** A `pendingSharePercent` over zero `admission-outcome` events is not a measurement. */
 export type ALMObservationInboundPendingShare =
     | Readonly<{ outcome: 'measured'; pendingSharePercent: number; outcomeCount: number; }>
@@ -64,8 +94,22 @@ export type ALMObservationInboundDirection =
         outcome: 'measured';
         pendingShare: ALMObservationInboundPendingShare;
         phases: ALMObservationInboundPhases;
+        claimWaits: ALMObservationInboundClaimWaits;
     }>
     | Readonly<{ role: ALMObservationAgentRole; outcome: 'no-events'; }>;
+
+/**
+ * The lane's raw `pageerror`/console capture, folded into the cell. `not-captured` means the lane
+ * did not supply the file at all (an older artifact), not that the page raised nothing.
+ */
+export type ALMObservationPageDiagnostics =
+    | Readonly<{
+        outcome: 'captured';
+        counts: Readonly<{ pageerror: number; consoleError: number; consoleWarning: number; }>;
+        dropped: number;
+        first: readonly ALMObservationPageDiagnosticRecord[];
+    }>
+    | Readonly<{ outcome: 'not-captured'; }>;
 
 export interface ALMObservationRegime {
     readonly runId: string;
@@ -79,6 +123,8 @@ export interface ALMObservationRegime {
     readonly scenarioSends: readonly ALMObservationCommandResult[];
     readonly workPageRate: ALMObservationWorkPageRate;
     readonly inbound: readonly ALMObservationInboundDirection[];
+    readonly pageDiagnostics: ALMObservationPageDiagnostics;
+    readonly pageRegime: ALMObservationPageRegime;
     readonly snapshotIssues: readonly string[];
 }
 
@@ -87,6 +133,7 @@ export interface ALMObservationRegimeInput {
     readonly carrier: string;
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
+    readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
 
 export interface UnreadableALMObservationRegimeInput {
@@ -94,6 +141,7 @@ export interface UnreadableALMObservationRegimeInput {
     readonly scope: string;
     readonly cellOutcome: ALMObservationCellOutcome;
     readonly snapshotIssues: readonly string[];
+    readonly pageDiagnosticsFile?: ALMObservationPageDiagnosticsFile;
 }
 
 interface ALMObservationPeerObservation {
@@ -117,6 +165,8 @@ export function computeALMObservationRegime(input: ALMObservationRegimeInput): A
         scenarioSends: input.snapshot.commandResults,
         workPageRate: computeWorkPageRate(input.snapshot.storageCounters),
         inbound: computeInboundDirections(input.snapshot),
+        pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
+        pageRegime: computePageRegime(input.snapshot, input.snapshot.firstEventAtEpochMs + ALM_OBSERVATION_WINDOW_MS),
         snapshotIssues: []
     };
 }
@@ -137,8 +187,37 @@ export function createUnreadableALMObservationRegime(
         scenarioSends: [],
         workPageRate: { outcome: 'too-few-readings', readingCount: 0 },
         inbound: [],
+        pageDiagnostics: computePageDiagnostics(input.pageDiagnosticsFile),
+        pageRegime: { outcome: 'unmeasured', sampleCount: 0, regime: 'unclassified' },
         snapshotIssues: input.snapshotIssues
     };
+}
+
+/** `outcome: 'not-captured'` only when the lane supplied no file; a file with zero records is still `captured`. */
+function computePageDiagnostics(
+    file: ALMObservationPageDiagnosticsFile | undefined
+): ALMObservationPageDiagnostics {
+    if (file === undefined) {
+        return { outcome: 'not-captured' };
+    }
+    const ordered = [...file.records].sort((left, right) => left.atMs - right.atMs);
+    return {
+        outcome: 'captured',
+        counts: {
+            pageerror: countPageDiagnosticKind(ordered, 'pageerror'),
+            consoleError: countPageDiagnosticKind(ordered, 'console-error'),
+            consoleWarning: countPageDiagnosticKind(ordered, 'console-warning')
+        },
+        dropped: file.droppedCount,
+        first: ordered.slice(0, ALM_OBSERVATION_PAGE_DIAGNOSTICS_FIRST_LIMIT)
+    };
+}
+
+function countPageDiagnosticKind(
+    records: readonly ALMObservationPageDiagnosticRecord[],
+    kind: ALMObservationPageDiagnosticRecord['kind']
+): number {
+    return records.filter((record) => record.kind === kind).length;
 }
 
 export function toALMObservationRegimeSummary(regime: ALMObservationRegime): string {
@@ -146,7 +225,13 @@ export function toALMObservationRegimeSummary(regime: ALMObservationRegime): str
         ? `${regime.perOperation.medianMs} ms/op over ${regime.perOperation.sampleCount} commits`
         : `unmeasured (${regime.perOperation.sampleCount} commits)`;
     return `ALM observation ${regime.carrier}-${regime.scope}: regime=${regime.regime} ` +
-        `perOperation=${perOperation} outcome=${regime.cellOutcome}`;
+        `perOperation=${perOperation} outcome=${regime.cellOutcome} ${toPageRegimeSummary(regime.pageRegime)}`;
+}
+
+function toPageRegimeSummary(pageRegime: ALMObservationPageRegime): string {
+    return pageRegime.outcome === 'measured'
+        ? `page=${pageRegime.regime} (${pageRegime.storageProbeMedianMs} ms/probe over ${pageRegime.sampleCount})`
+        : `page=unclassified (unmeasured, ${pageRegime.sampleCount} probes)`;
 }
 
 function computePerOperationCost(snapshot: ALMObservationSnapshot): ALMObservationPerOperation {
@@ -256,30 +341,41 @@ function computeWorkPageRate(
  * fixed order, because the block reads the receiver whether or not the sender happened to emit too.
  */
 function computeInboundDirections(snapshot: ALMObservationSnapshot): readonly ALMObservationInboundDirection[] {
-    if (snapshot.inboundOutcomes.length === 0 && snapshot.inboundDrains.length === 0) {
+    if (
+        snapshot.inboundOutcomes.length === 0 && snapshot.inboundDrains.length === 0 &&
+        snapshot.inboundClaims.length === 0
+    ) {
         return [];
     }
     return ALM_OBSERVATION_AGENT_ROLES.map((role) =>
-        toInboundDirection(
-            role,
-            snapshot.inboundOutcomes.filter((outcome) => outcome.role === role),
-            snapshot.inboundDrains.filter((drain) => drain.role === role)
-        )
+        toInboundDirection(role, {
+            outcomes: snapshot.inboundOutcomes.filter((outcome) => outcome.role === role),
+            drains: snapshot.inboundDrains.filter((drain) => drain.role === role),
+            claims: snapshot.inboundClaims.filter((claim) => claim.role === role)
+        })
     );
+}
+
+/** One role's share of the inbound events. */
+interface ALMObservationInboundRoleEvents {
+    readonly outcomes: readonly ALMObservationInboundOutcome[];
+    readonly drains: readonly ALMObservationInboundDrain[];
+    readonly claims: readonly ALMObservationInboundClaim[];
 }
 
 function toInboundDirection(
     role: ALMObservationAgentRole,
-    outcomes: readonly ALMObservationInboundOutcome[],
-    drains: readonly ALMObservationInboundDrain[]
+    events: ALMObservationInboundRoleEvents
 ): ALMObservationInboundDirection {
-    return outcomes.length === 0 && drains.length === 0
+    const { outcomes, drains, claims } = events;
+    return outcomes.length === 0 && drains.length === 0 && claims.length === 0
         ? { role, outcome: 'no-events' }
         : {
             role,
             outcome: 'measured',
             pendingShare: computeInboundPendingShare(outcomes),
-            phases: computeInboundPhases(drains)
+            phases: computeInboundPhases(drains),
+            claimWaits: computeInboundClaimWaits(claims)
         };
 }
 
@@ -309,16 +405,18 @@ function computeInboundPhases(drains: readonly ALMObservationInboundDrain[]): AL
     };
 }
 
-/** Zero for an empty series rather than `NaN`, so a role with outcomes but no drains still reports. */
-function computeMedian(values: readonly number[]): number {
-    if (values.length === 0) {
-        return 0;
-    }
-    const sorted = [...values].sort((left, right) => left - right);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function toTwoDecimals(value: number): number {
-    return Math.round(value * 100) / 100;
+function computeInboundClaimWaits(claims: readonly ALMObservationInboundClaim[]): ALMObservationInboundClaimWaits {
+    const dispatches = claims.filter((claim) => claim.payloadKind === DISPATCH_LOCAL_PAYLOAD_KIND);
+    const sendControls = claims.filter((claim) => claim.payloadKind === SEND_CONTROL_PAYLOAD_KIND);
+    return {
+        reservationWaitMedianMs: toTwoDecimals(
+            computeMedian(dispatches.map((claim) => claim.batchStartedAtMs - claim.dueAtMs))
+        ),
+        intraBatchWaitMedianMs: toTwoDecimals(
+            computeMedian(dispatches.map((claim) => claim.startedAtMs - claim.batchStartedAtMs))
+        ),
+        dispatchClaimCount: dispatches.length,
+        sendControlClaimMedianMs: toTwoDecimals(computeMedian(sendControls.map((claim) => claim.durationMs))),
+        sendControlClaimCount: sendControls.length
+    };
 }

@@ -104,7 +104,8 @@ export class IndexedDbAdmissionBackend implements ALAdmissionWorkBackend {
             const result = await read(session);
             session.close();
             // A chain that read past an expiry evicts what it saw, once, after it has read
-            // everything: the row is gone by the time its caller is answered, as it always was.
+            // everything: by the time its caller is answered the row is gone, or another writer
+            // has moved it.
             const expired = session.takeExpiredRows();
             if (expired !== undefined) {
                 await removeExpiredIndexedDbAdmissionValues({
@@ -411,18 +412,20 @@ interface RemoveExpiredIndexedDbAdmissionValuesInput {
     readonly storeName: string;
 }
 
-/** Every removal here is write-token guarded, so a row replaced since the read conflicts on its own. */
+/**
+ * Every removal is write-token guarded, so a row another writer replaced or removed since the read
+ * belongs to that writer: the guard rolls this eviction back, and the next chain that reads a row
+ * past its expiry evicts it. The reader already answered from a snapshot in which the row was
+ * absent, so a row that moved is never the reader's conflict and never reaches its caller.
+ */
 async function removeExpiredIndexedDbAdmissionValues(
     input: RemoveExpiredIndexedDbAdmissionValuesInput
 ): Promise<void> {
-    const committed = await writeIndexedDbAdmissionMutations({
+    await writeIndexedDbAdmissionMutations({
         queueMutations: [],
         db: input.db,
         storeName: input.storeName,
         fence: EMPTY_INDEXED_DB_ADMISSION_FENCE,
         mutations: input.removals
     });
-    if (!committed) {
-        throw new ALAdmissionBackendConflictError('IndexedDB AL admission expiry cleanup conflicted');
-    }
 }
