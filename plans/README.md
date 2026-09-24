@@ -18,6 +18,11 @@ completion record here.
 - The ALM design set stays at `playground/alm/`. It is current work. The
   snapshot readers in `playground/alm/tools/` belong to the hosted lifecycle
   diagnosis beside those documents.
+- `docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`
+  stays because pull request
+  [#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566)
+  still edits it. The committed-work design and implementation plan for that
+  pull request stay on the pull request branch.
 
 ## Tooling kept beside the prose
 

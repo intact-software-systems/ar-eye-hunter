@@ -7,7 +7,12 @@ them. It does not copy them.
 Historical implementation plans are not product documentation.
 [plans/README.md](../plans/README.md) says where a written plan belongs. The ALM
 design that is still underway lives in `playground/alm/`, starting at
-`playground/alm/alm-improvement-plan.md`.
+`playground/alm/alm-improvement-plan.md`. Open pull request
+[#566](https://github.com/intact-software-systems/ar-eye-hunter/pull/566) still
+edits
+`docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md`.
+The ALM committed-work design and implementation plan for that pull request
+exist only on its branch.
 
 ## Product
 
