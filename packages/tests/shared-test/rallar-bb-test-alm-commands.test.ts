@@ -11,6 +11,7 @@ import { createRallarBlackBoxBrowserTestRuntime } from '../../shared-test/rallar
 import {
     RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
     type RallarBlackBoxTestEvent,
+    type RallarBlackBoxTestJsonValue,
     type RallarBlackBoxTestRecord,
     type RallarBlackBoxTestState
 } from '../../shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
@@ -285,6 +286,56 @@ describe('ALM recipe commands', () => {
             expect(formatJsonSchemaValidationErrors(schemaResult.errors)).toContain(
                 'messages.send requires carrier, unless it is a replay naming replayOnCarrier.'
             );
+        }
+    });
+
+    it('accepts a snapshot floor in either form and refuses a floor naming both, neither, or a non-positive integer', () => {
+        const send = (minSnapshotVersion: RallarBlackBoxTestJsonValue) => ({
+            kind: 'messages.send',
+            commandId: 'send-floor',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            minSnapshotVersion
+        });
+        for (const floor of [{ absolute: 999_999 }, { aboveCurrentBy: 1 }]) {
+            const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-floor', send(floor)));
+            expect(schemaResult.ok, schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)).toBe(true);
+            expect(validateRallarBlackBoxTestCommand(send(floor)).ok).toBe(true);
+        }
+        const path = 'messages.send.minSnapshotVersion';
+        for (
+            const [floor, message] of [
+                [{ absolute: 1, aboveCurrentBy: 1 }, `${path} must name exactly one of absolute, aboveCurrentBy.`],
+                [{}, `${path} must name exactly one of absolute, aboveCurrentBy.`],
+                [{ absolute: 0 }, `${path}.absolute must be >= 1.`],
+                [{ aboveCurrentBy: 1.5 }, `${path}.aboveCurrentBy must be an integer.`],
+                [{ below: 1 }, `${path} has unsupported field: below.`],
+                [3, `${path} must be an object.`]
+            ] as const
+        ) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-floor', send(floor))).ok, JSON.stringify(floor))
+                .toBe(false);
+            const refused = validateRallarBlackBoxTestCommand(send(floor));
+            expect(refused.ok, JSON.stringify(floor)).toBe(false);
+            if (!refused.ok) {
+                expect(refused.messages).toContain(message);
+            }
+        }
+    });
+
+    it('refuses a snapshot floor on a replay', () => {
+        const refused = validateRallarBlackBoxTestCommand({
+            kind: 'messages.send',
+            commandId: 'send-replay-with-floor',
+            minSnapshotVersion: { aboveCurrentBy: 1 },
+            replayOnCarrier: { handleId: 'h1', carrier: 'ws' }
+        });
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(refused.messages).toEqual([
+                'messages.send.minSnapshotVersion is not allowed on a replay; a replay names only connection and replayOnCarrier.'
+            ]);
         }
     });
 

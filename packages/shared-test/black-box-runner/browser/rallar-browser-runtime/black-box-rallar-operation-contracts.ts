@@ -287,7 +287,14 @@ export interface BlackBoxRallarMessageSendInput {
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
     readonly handleId: string;
+    /** Absent, the product stamps the sender's own room version. */
+    readonly minSnapshotVersion: BlackBoxRallarMessageSnapshotFloor | undefined;
 }
+
+/** A harness floor: `aboveCurrentBy` resolves against the sender's room version at send time. */
+export type BlackBoxRallarMessageSnapshotFloor =
+    | Readonly<{ absolute: number; }>
+    | Readonly<{ aboveCurrentBy: number; }>;
 
 export interface BlackBoxRallarMessageReplayTarget {
     readonly handleId: string;

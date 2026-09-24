@@ -255,6 +255,22 @@ describe('Rallar message send', () => {
         expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls[0][0].targets).not.toHaveProperty('groupId');
     });
 
+    it('stamps a typed send\'s stated floor on the room target, and the sender\'s own version without one', async () => {
+        mockGroupSnapshot(withSnapshotVersion(createGroupSnapshot('room-1', ['session-1', 'peer-1']), 7));
+        const channel = createFacade().messages.room({
+            typeId: 'chat.message.v1',
+            roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
+        });
+
+        await channel.send({ text: 'stated floor' }, { strategy: 'rtc', minSnapshotVersion: 42 });
+        await channel.send({ text: 'sender floor' }, { strategy: 'rtc' });
+
+        expect(rtcRxStreamer.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message.targets)).toMatchObject([
+            { mode: 'multicast', minSnapshotVersion: 42 },
+            { mode: 'multicast', minSnapshotVersion: 7 }
+        ]);
+    });
+
     it('uses roomRef scope for cached snapshotVersion on RTC room sends', async () => {
         const workspaceA = withSnapshotVersion(
             createGroupSnapshot(

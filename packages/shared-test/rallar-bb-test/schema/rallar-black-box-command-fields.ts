@@ -105,6 +105,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'orderingKey',
             'seq',
             'handleId',
+            'minSnapshotVersion',
             'replayOnCarrier'
         ]
     },
@@ -242,7 +243,8 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     httpResponse: { required: [], optional: ['body', 'maxBodyChars', 'acceptedStatusCodes'] },
     faultMatch: { required: [], optional: ['controlType', 'typeId', 'msgId'] },
     faultDelayAction: { required: ['delayMs'], optional: [] },
-    messagesReplay: { required: ['handleId', 'carrier'], optional: [] }
+    messagesReplay: { required: ['handleId', 'carrier'], optional: [] },
+    messagesSnapshotFloor: { required: [], optional: ['absolute', 'aboveCurrentBy'] }
 } as const satisfies Readonly<Record<string, RallarBlackBoxCommandFieldSet>>;
 
 type RallarBlackBoxCommandObjectFields = typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS;

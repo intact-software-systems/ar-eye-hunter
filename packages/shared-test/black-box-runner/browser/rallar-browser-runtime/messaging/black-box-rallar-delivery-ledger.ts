@@ -5,6 +5,7 @@ import {
     type ALDeliveryLifecycle,
     type ALDeliveryUnroutableReason
 } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type { BlackBoxRallarRuntimeDiagnostics } from '../black-box-rallar-diagnostics.ts';
 import type {
@@ -87,7 +88,8 @@ export class BlackBoxRallarDeliveryLedger {
             roomId: config.roomId,
             roomRef
         });
-        const handle = await channel.send(send.payload, toTypedSendOptions(send));
+        const minSnapshotVersion = this.#resolveSnapshotFloor(send, roomRef);
+        const handle = await channel.send(send.payload, { ...toTypedSendOptions(send), ...minSnapshotVersion });
         this.#deliveryMsgIds.set(send.handleId, handle.msgId);
         this.#dropEvictedDeliveries();
         const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });
@@ -119,6 +121,30 @@ export class BlackBoxRallarDeliveryLedger {
             verdict: verdict.kind,
             reason: 'detail' in verdict ? verdict.detail : undefined
         };
+    }
+
+    /** `aboveCurrentBy` reads the version the product would stamp by itself, so the floor sits just past it. */
+    #resolveSnapshotFloor(
+        send: BlackBoxRallarMessageSendInput,
+        roomRef: GroupRef | undefined
+    ): Readonly<{ minSnapshotVersion?: number; }> {
+        const floor = send.minSnapshotVersion;
+        if (floor === undefined) {
+            return {};
+        }
+        if ('absolute' in floor) {
+            return { minSnapshotVersion: floor.absolute };
+        }
+        const current = roomRef === undefined
+            ? undefined
+            : this.#input.deliveries.resolveRoomMinSnapshotVersion(roomRef);
+        if (current === undefined) {
+            throw new TypeError(
+                'messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; ' +
+                    `${roomRef?.groupId ?? 'the send'} has none cached.`
+            );
+        }
+        return { minSnapshotVersion: current + floor.aboveCurrentBy };
     }
 
     readReceipts = async (

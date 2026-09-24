@@ -44,6 +44,8 @@ class GeneratedAlmPorts {
     private absence: { duration: number; release: () => void; } | undefined;
     private entered = Promise.withResolvers<void>();
     private holdNextSleep = false;
+    /** A send one past the receiver's snapshot, admitted once the sender advances the group version. */
+    private awaitingAdvance: PortMessage | undefined;
     private readonly replacesDocument: boolean;
 
     constructor(replacesDocument: boolean) {
@@ -99,6 +101,10 @@ class GeneratedAlmPorts {
         const session = { clientId: role, sessionId: `${role}-stored-session` };
         switch (command.kind) {
             case 'http.request':
+                if (this.awaitingAdvance && command.commandId?.endsWith('-advance-group')) {
+                    this.deliver(this.awaitingAdvance);
+                    this.awaitingAdvance = undefined;
+                }
                 return { status: 'ok', value: { status: 200 } };
             case 'rtc.connect':
                 this.deliverRecoveredOriginals(role);
@@ -200,7 +206,12 @@ class GeneratedAlmPorts {
                 }
             }
         }
-        if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
+        const floor = command.minSnapshotVersion;
+        if (floor !== undefined) {
+            this.refuseNotYetInSync(message);
+            this.awaitingAdvance = 'aboveCurrentBy' in floor ? message : undefined;
+        }
+        else if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
             this.deliver(message);
         }
         return {
@@ -213,6 +224,25 @@ class GeneratedAlmPorts {
                 reason: rejected ? 'Payload exceeds fixture carrier limit' : undefined
             }
         };
+    }
+
+    /** The receiver's snapshot is below the send's floor: it refuses the copy over RTC and writes nothing. */
+    private refuseNotYetInSync(message: PortMessage): void {
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: message.msgId,
+                    typeId: message.command.typeId,
+                    carrier: 'rtc',
+                    outcome: 'rejected',
+                    reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
+                }
+            }
+        });
     }
 
     /** The receiver's one inbound identity refuses the replayed copy as a duplicate, so nothing more is delivered. */

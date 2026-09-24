@@ -118,6 +118,8 @@ export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOp
 /** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
 export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
     replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
+    /** The floor the product stamps on a room send that states none: the sender's cached room version. */
+    resolveRoomMinSnapshotVersion(roomRef: GroupRef): number | undefined;
 }
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
@@ -205,7 +207,8 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
                     ...replay,
                     sessionId: session.connection.session()?.sessionId,
                     context: session.session.readMiddleware()
-                })
+                }),
+            resolveRoomMinSnapshotVersion: (roomRef) => state.roomStateStore.resolveRoomMinSnapshotVersion(roomRef)
         }
     });
 }

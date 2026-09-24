@@ -10,7 +10,8 @@ export const RALLAR_BLACK_BOX_ALM_COMMAND_CAPABILITIES: readonly Omit<
         title: 'Send ALM Message',
         description:
             'Sends an ALM-addressed message over ws, rtc, or rtc-with-ws-fallback and returns delivery status. ' +
-            'A replay names only replayOnCarrier (and connection): a harness capability the product never ' +
+            'minSnapshotVersion states a room snapshot floor, absolute or aboveCurrentBy the sender\'s version at ' +
+            'send time. A replay names only replayOnCarrier (and connection): a harness capability the product never ' +
             'exercises, it re-admits the envelope an earlier handle\'s first carrier captured on the other carrier, ' +
             'opens no handle, and returns that admission verdict.',
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],

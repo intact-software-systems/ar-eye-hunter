@@ -93,7 +93,28 @@ function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord):
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
-        ...validateNumberField(command, 'seq', path)
+        ...validateNumberField(command, 'seq', path),
+        ...validateMessagesSnapshotFloorField(command)
+    ];
+}
+
+function validateMessagesSnapshotFloorField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const floor = command.minSnapshotVersion;
+    const path = 'messages.send.minSnapshotVersion';
+    if (floor === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(floor)) {
+        return [toControlCommandIssue(`${path} must be an object.`)];
+    }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesSnapshotFloor;
+    const named = fields.optional.filter((field) => floor[field] !== undefined);
+    return [
+        ...validateAllowedFields(floor, fields, path),
+        ...(named.length === 1
+            ? []
+            : [toControlCommandIssue(`${path} must name exactly one of ${fields.optional.join(', ')}.`)]),
+        ...named.flatMap((key) => validateIntegerField({ record: floor, key, path, minimum: 1 }))
     ];
 }
 

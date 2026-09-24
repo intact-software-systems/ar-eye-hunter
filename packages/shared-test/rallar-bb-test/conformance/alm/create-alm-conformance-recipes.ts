@@ -4,6 +4,7 @@ import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestMessagesReceivedCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
@@ -30,6 +31,7 @@ export interface AlmConformanceScenario {
         | 'delivery-baseline'
         | 'delivery-lifecycle'
         | 'delivery-reload'
+        | 'not-yet-in-sync'
         | 'ordering-resync';
     /** Every recipe, command, handle and type id the pair mints derives from it; distinct per recipe pair. */
     readonly scenarioKey: string;
@@ -65,6 +67,7 @@ interface AlmConformanceSendDelivery {
     readonly reliability?: 'at-least-once';
     readonly orderingKey?: string;
     readonly seq?: number;
+    readonly minSnapshotVersion?: RallarBlackBoxTestMessagesSendCommand['minSnapshotVersion'];
 }
 
 interface AlmConformanceSendInput extends AlmConformanceMessageStepInput {
@@ -119,12 +122,19 @@ interface AlmConformanceScenarioDefinition {
 const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
-/** `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. */
+/**
+ * `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. So does
+ * `not-yet-in-sync`: the receiver checks a room send's snapshot floor at RTC ingress.
+ */
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 /** The only cell that connects both transports, so one envelope can reach the receiver over each. */
 const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
 const CROSS_CARRIER_ORDERS = ['rtc-then-ws', 'ws-then-rtc'] as const;
-const CROSS_CARRIER_TTL_MS = 30_000;
+const NOT_YET_IN_SYNC_VARIANTS = ['delivered-after-refresh', 'expires'] as const;
+/** The browser's default lifetime, stated so the send outlives the whole scenario window. */
+const NON_EXPIRING_TTL_MS = 30_000;
+/** A floor no group reaches within a run, so the receiver refuses every copy until the message expires. */
+const UNREACHABLE_SNAPSHOT_VERSION = 999_999;
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 const ENSURE_TIMEOUT_MS = 5_000;
@@ -227,6 +237,14 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
         toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
         toReceiverCommands: (receiver: AlmConformanceStepInput) =>
             toCrossCarrierDuplicateReceiverCommands(receiver, order)
+    })),
+    ...NOT_YET_IN_SYNC_VARIANTS.map((variant) => ({
+        scenarioId: 'not-yet-in-sync' as const,
+        scenarioKey: `not-yet-in-sync-${variant}`,
+        tags: FULL_TAGS,
+        carriers: RTC_CARRIERS,
+        toSenderCommands: (sender: AlmConformanceStepInput) => toNotYetInSyncSenderCommands(sender, variant),
+        toReceiverCommands: (receiver: AlmConformanceStepInput) => toNotYetInSyncReceiverCommands(receiver, variant)
     }))
 ];
 
@@ -784,7 +802,7 @@ function toCrossCarrierDuplicateSenderCommands(
         ...sender,
         index: 1,
         payload: { marker: sender.scenarioId, order },
-        delivery: { ack: 'receiver', ttlMs: CROSS_CARRIER_TTL_MS, commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS }
+        delivery: { ack: 'receiver', ttlMs: NON_EXPIRING_TTL_MS, commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS }
     });
     return [
         { ...firstSend, carrier: first },
@@ -836,11 +854,16 @@ function toCrossCarrierDuplicateReceiverCommands(
             ...arrivals,
             toAdmissionOutcomeWait(receiver, {
                 name: 'duplicate-outcome-ws',
-                contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"'
+                contains: '"carrier":"ws","outcome":"not-handled","reason":"duplicate"',
+                timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
             })
         ];
     }
-    const latest = toAdmissionOutcomeWait(receiver, { name: 'duplicate-outcome-latest', contains: '"carrier":"' });
+    const latest = toAdmissionOutcomeWait(receiver, {
+        name: 'duplicate-outcome-latest',
+        contains: '"carrier":"',
+        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, receiver.input.deadlineMs)
+    });
     return [
         ...arrivals,
         latest,
@@ -863,7 +886,7 @@ function toCrossCarrierDuplicateReceiverCommands(
  */
 function toAdmissionOutcomeWait(
     step: AlmConformanceStepInput,
-    outcome: Readonly<{ name: string; contains: string; }>
+    outcome: Readonly<{ name: string; contains: string; timeoutMs: number; }>
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'wait',
@@ -874,8 +897,79 @@ function toAdmissionOutcomeWait(
             payloadPath: 'data',
             contains: `"typeId":"${toScenarioTypeId(step)}",${outcome.contains}`
         },
-        timeoutMs: toBudgetMs(ASSERT_TIMEOUT_MS, step.input.deadlineMs)
+        timeoutMs: outcome.timeoutMs
     };
+}
+
+/**
+ * A send above the receiver's room snapshot. The receiver refuses it at admission and writes nothing; its NACK
+ * schedules the sender's retries (D35). `delivered-after-refresh` states a floor one past the sender's own version
+ * and then advances the group, so a later copy is admitted; the sender proves only its own hop evidence (D28).
+ * `expires` states a floor no group reaches, so every copy is refused until the message expires.
+ */
+function toNotYetInSyncSenderCommands(
+    sender: AlmConformanceStepInput,
+    variant: (typeof NOT_YET_IN_SYNC_VARIANTS)[number]
+): readonly RallarBlackBoxTestCommand[] {
+    const expires = variant === 'expires';
+    const send = toSendCommand({
+        ...sender,
+        index: 1,
+        payload: { marker: sender.scenarioId, variant },
+        delivery: {
+            ack: 'receiver',
+            reliability: 'at-least-once',
+            ...(expires
+                ? { ttlMs: EXPIRY_TTL_MS, minSnapshotVersion: { absolute: UNREACHABLE_SNAPSHOT_VERSION } }
+                : {
+                    ttlMs: NON_EXPIRING_TTL_MS,
+                    commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS,
+                    minSnapshotVersion: { aboveCurrentBy: 1 }
+                })
+        }
+    });
+    const state = expires ? 'expired' : 'transport-accepted';
+    return [
+        send,
+        ...toAdmissionCommands({ ...sender, index: 1 }),
+        ...(expires ? [] : [toActiveMemberCommand(sender, 'advance')]),
+        toObserveCommand({ ...sender, index: 1, state }),
+        toResultAssertion({
+            step: sender,
+            name: `assert-${state}-1`,
+            resultName: `observe-${state}-1`,
+            field: 'state',
+            operator: 'matches',
+            expected: expires ? '^expired$' : '^(transport-accepted|acknowledged)$'
+        })
+    ];
+}
+
+/**
+ * The refusal comes first: over RTC, with the receiver's own not-yet-in-sync reason. Then one delivery, or absence
+ * for the rest of the message's lifetime and past it.
+ */
+function toNotYetInSyncReceiverCommands(
+    receiver: AlmConformanceStepInput,
+    variant: (typeof NOT_YET_IN_SYNC_VARIANTS)[number]
+): readonly RallarBlackBoxTestCommand[] {
+    const refusal = toAdmissionOutcomeWait(receiver, {
+        name: 'not-yet-in-sync-outcome',
+        contains: '"carrier":"rtc","outcome":"rejected","reason":"not-yet-in-sync',
+        timeoutMs: receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+    });
+    if (variant === 'delivered-after-refresh') {
+        return [refusal, toReceivedCommand({ ...receiver, index: 1, count: 1, absent: false })];
+    }
+    const windowMs = EXPIRY_TTL_MS + MINIMUM_POST_EXPIRY_OBSERVATION_MS;
+    return [
+        refusal,
+        {
+            ...toReceivedCommand({ ...receiver, index: 1, count: 1, absent: true }),
+            windowMs,
+            timeoutMs: windowMs + RESPONSE_MARGIN_MS
+        }
+    ];
 }
 
 /** The typed receiver subscribes to both transports, so a second delivery of one message counts as two. */
@@ -916,7 +1010,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
         },
         commands: [
             toEnsureGroupCommand(recipe),
-            toEnsureMemberCommand(recipe),
+            toActiveMemberCommand(recipe, 'member'),
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
@@ -953,22 +1047,30 @@ function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlackBoxTest
     };
 }
 
-function toEnsureMemberCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+/**
+ * The prologue's `member` PUT makes the client an active member; `not-yet-in-sync` repeats it under its own
+ * request id (`advance`) to move the group version past the send's floor.
+ */
+function toActiveMemberCommand(
+    step: AlmConformanceStepInput,
+    operation: 'member' | 'advance'
+): RallarBlackBoxTestCommand {
     const group = step.input.group;
     return {
         kind: 'http.request',
-        commandId: toCommandId(step, 'ensure-member'),
+        commandId: toCommandId(step, operation === 'member' ? 'ensure-member' : 'advance-group'),
         timeoutMs: toBudgetMs(ENSURE_TIMEOUT_MS, step.input.deadlineMs),
         metadata: {
-            purpose: 'Ensure the logged-in browser client is an active group member ' +
-                'before the ALM carrier connects.',
+            purpose: operation === 'member'
+                ? 'Ensure the logged-in browser client is an active group member before the ALM carrier connects.'
+                : 'Advance the group version past the not-yet-in-sync send\'s snapshot floor.',
             idempotent: true,
             group: toRoomRef(group)
         },
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, 'member')}`,
+                `/requests/${toEnsureRequestId(step, operation)}`,
             body: {
                 status: 'active'
             }
@@ -1134,7 +1236,7 @@ function toSendAssertCommand(assertion: AlmConformanceAssertInput): RallarBlackB
  * Positive observation starts before the sender's prologue, so it also owns the complete
  * non-expiring send budget. Absence proof retains the requested evidence deadline.
  */
-function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBoxTestCommand {
+function toReceivedCommand(received: AlmConformanceReceivedInput): RallarBlackBoxTestMessagesReceivedCommand {
     const timeoutMs = received.input.deadlineMs + (received.absent ? 0 : NON_EXPIRING_SEND_TIMEOUT_MS);
     return {
         kind: 'messages.received',
@@ -1190,7 +1292,7 @@ function toSendHandleId(step: AlmConformanceMessageStepInput): string {
 
 function toEnsureRequestId(
     step: AlmConformanceStepInput,
-    operation: 'group' | 'member'
+    operation: 'group' | 'member' | 'advance'
 ): string {
     return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
         `-${step.role}-${operation}`;

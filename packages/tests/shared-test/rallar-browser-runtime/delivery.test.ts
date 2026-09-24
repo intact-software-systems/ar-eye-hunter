@@ -364,6 +364,30 @@ it('replays a handle\'s envelope on the named carrier and reports that admission
         .rejects.toThrow('messages.send names carrier, payload beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
+it('stamps an absolute floor as given and resolves aboveCurrentBy against the sender\'s current room version', async () => {
+    const runtime = await loadRuntime();
+    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(12);
+    await runtime.connect(connection);
+    const rtcSend = { ...send, carrier: 'rtc' };
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-absolute', minSnapshotVersion: { absolute: 999_999 } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-above', minSnapshotVersion: { aboveCurrentBy: 1 } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-default' });
+
+    expect(facade.records.typedSends.map(([, options]) => options?.minSnapshotVersion)).toEqual([999_999, 13, undefined]);
+    expect(facade.behavior.resolveRoomMinSnapshotVersion).toHaveBeenCalledWith(
+        expect.objectContaining({ applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' })
+    );
+    facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(undefined);
+    await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-uncached', minSnapshotVersion: { aboveCurrentBy: 1 } }))
+        .rejects.toThrow('messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; room-1 has none cached.');
+    await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-both', minSnapshotVersion: { absolute: 1, aboveCurrentBy: 1 } }))
+        .rejects.toThrow('messages.send.minSnapshotVersion must name exactly one of absolute or aboveCurrentBy, as a positive integer.');
+    expect(facade.records.typedSends).toHaveLength(3);
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-above', carrier: 'ws' } };
+    await expect(runtime.sendMessage({ ...replay, minSnapshotVersion: { absolute: 1 } }))
+        .rejects.toThrow('messages.send names minSnapshotVersion beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {
     const runtime = await loadRuntime();
     const delivery = openDelivery({ kind: 'admitted', durable: false, queuedAttempts: 0 });

@@ -310,6 +310,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         orderingKey?: string;
         seq?: number;
         handleId?: string;
+        /** A harness floor, resolved to an absolute one at send time; absent, the product stamps the sender's version. */
+        minSnapshotVersion?: Readonly<{ absolute: number; }> | Readonly<{ aboveCurrentBy: number; }>;
     }>;
 
 /**

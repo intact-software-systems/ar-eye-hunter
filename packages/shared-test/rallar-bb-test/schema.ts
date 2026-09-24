@@ -423,6 +423,15 @@ const messagesReplaySchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_
     handleId: stringSchema,
     carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier }
 });
+/** Exactly one form: `absolute`, or `aboveCurrentBy` the sender's room version at send time. */
+const messagesSnapshotFloorSchema: JsonSchema = {
+    oneOf: RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesSnapshotFloor.optional.map((field) => ({
+        type: 'object',
+        required: [field],
+        properties: { [field]: { type: 'integer', minimum: 1 } },
+        additionalProperties: false
+    }))
+};
 const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
     controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
     typeId: stringSchema,
@@ -590,6 +599,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         orderingKey: stringSchema,
         seq: numberSchema,
         handleId: stringSchema,
+        minSnapshotVersion: messagesSnapshotFloorSchema,
         replayOnCarrier: messagesReplaySchema
     })),
     'messages.observe': strictCommandSchema('messages.observe', {

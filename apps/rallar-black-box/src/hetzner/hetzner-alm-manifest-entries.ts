@@ -44,8 +44,8 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (bounded rejection, deadline expiry, delivery ' +
-            'baseline, lifecycle, durable reload, ordering resync, and the cross-carrier duplicate) across ws, rtc, ' +
-            'and rtc-with-ws-fallback carriers.',
+            'baseline, lifecycle, durable reload, ordering resync, the cross-carrier duplicate, and not-yet-in-sync) ' +
+            'across ws, rtc, and rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender'),
@@ -113,7 +113,10 @@ function toAlmConformanceCombinedRecipe(
     };
 }
 
-/** One ready scoped connection observes early frames while independent roles finish their absence windows. */
+/**
+ * One ready scoped connection observes early frames while independent roles finish their absence windows. Only a
+ * scenario's prologue requests are dropped for the shared one; a request inside a scenario is one of its steps.
+ */
 function toAlmConformanceCombinedCommands(
     scenarios: readonly AlmConformanceScenario[],
     role: 'sender' | 'receiver'
@@ -133,7 +136,8 @@ function toAlmConformanceCombinedCommands(
         ...scenarios.flatMap((scenario) => {
             const commands = scenario[role].commands;
             const initialConnect = commands.find((command) => command.kind === 'rtc.connect');
-            return commands.filter((command) => command.kind !== 'http.request' && command !== initialConnect)
+            const prologueEnd = initialConnect === undefined ? -1 : commands.indexOf(initialConnect);
+            return commands.filter((command, index) => index > prologueEnd)
                 .map((command) =>
                     command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command
                 );

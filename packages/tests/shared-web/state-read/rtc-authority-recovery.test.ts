@@ -542,7 +542,10 @@ function createGeneratedSendLedger(sender: NativeAuthorityEndpoint): BlackBoxRal
     return new BlackBoxRallarDeliveryLedger({
         deliveries: {
             getHandle: (msgId) => browserDeliveryComposition.deliveries.getHandle(msgId),
-            replayCapturedMessage: () => Promise.reject(new Error('This fixture never replays a message.'))
+            replayCapturedMessage: () => Promise.reject(new Error('This fixture never replays a message.')),
+            resolveRoomMinSnapshotVersion: () => {
+                throw new Error('This fixture never states a snapshot floor.');
+            }
         },
         typedChannels: new BlackBoxRallarTypedChannels({ messages: facade.messages, resources, diagnostics }),
         resources,

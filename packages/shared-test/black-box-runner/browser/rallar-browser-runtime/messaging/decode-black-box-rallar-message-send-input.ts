@@ -4,7 +4,8 @@ import { Either } from '@shared/resilience/Either.ts';
 import type {
     BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
-    BlackBoxRallarMessageSendInput
+    BlackBoxRallarMessageSendInput,
+    BlackBoxRallarMessageSnapshotFloor
 } from '../black-box-rallar-operation-contracts.ts';
 import {
     decodeBlackBoxCommandNumber,
@@ -21,7 +22,10 @@ type MessageSendIdentity = Pick<
     'timeoutMs' | 'connection' | 'carrier' | 'typeId' | 'handleId'
 >;
 
-type MessageSendOptions = Pick<BlackBoxRallarMessageSendInput, 'roomRef' | 'scope' | 'reliability' | 'ack'>;
+type MessageSendOptions = Pick<
+    BlackBoxRallarMessageSendInput,
+    'roomRef' | 'scope' | 'reliability' | 'ack' | 'minSnapshotVersion'
+>;
 
 const MESSAGE_CARRIERS: readonly BlackBoxRallarMessageSendInput['carrier'][] = ['ws', 'rtc', 'rtc-with-ws-fallback'];
 const MESSAGE_SCOPES: readonly NonNullable<BlackBoxRallarMessageSendInput['scope']>[] = ['room', 'world', 'all'];
@@ -43,7 +47,8 @@ const REPLAY_REFUSED_FIELDS = [
     'ttlMs',
     'orderingKey',
     'seq',
-    'handleId'
+    'handleId',
+    'minSnapshotVersion'
 ] as const;
 
 type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
@@ -134,6 +139,7 @@ function decodeMessageSendOptions(
     const reliability = record.reliability ?? undefined;
     const knownScope = MESSAGE_SCOPES.find((candidate) => candidate === scope);
     const knownReliability = MESSAGE_RELIABILITIES.find((candidate) => candidate === reliability);
+    const minSnapshotVersion = decodeMessageSnapshotFloor(record.minSnapshotVersion);
     return decodeBlackBoxCommandRouting(record).flatMap(
         (issue) => Either.ofLeft(issue),
         (routing) => {
@@ -143,9 +149,31 @@ function decodeMessageSendOptions(
             if (reliability !== undefined && knownReliability === undefined) {
                 return Either.ofLeft({ message: 'messages.send.reliability must be best-effort or at-least-once.' });
             }
-            return Either.ofRight({ ...routing, scope: knownScope, reliability: knownReliability });
+            if (minSnapshotVersion !== undefined && 'message' in minSnapshotVersion) {
+                return Either.ofLeft(minSnapshotVersion);
+            }
+            return Either.ofRight({ ...routing, scope: knownScope, reliability: knownReliability, minSnapshotVersion });
         }
     );
+}
+
+/** Absent, the send states no floor of its own. */
+function decodeMessageSnapshotFloor(
+    value: unknown
+): BlackBoxRallarMessageSnapshotFloor | BlackBoxRallarInputIssue | undefined {
+    if (value === undefined) {
+        return undefined;
+    }
+    const floor = isBlackBoxCommandRecord(value) ? value : {};
+    const keys = Object.keys(floor);
+    const amount = floor.absolute ?? floor.aboveCurrentBy;
+    if (keys.length !== 1 || typeof amount !== 'number' || !Number.isInteger(amount) || amount < 1) {
+        return {
+            message: 'messages.send.minSnapshotVersion must name exactly one of absolute or aboveCurrentBy, as a ' +
+                'positive integer.'
+        };
+    }
+    return keys[0] === 'absolute' ? { absolute: amount } : { aboveCurrentBy: amount };
 }
 
 function decodeMessageReplayTarget(
