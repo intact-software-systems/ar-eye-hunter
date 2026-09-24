@@ -679,7 +679,96 @@ git commit -m "test(alm): the not-yet-in-sync scenario (delivered after refresh,
 
 ---
 
+### Task 7: The WS server routes a WS-carried room multicast (maintainer ruling, 2026-09-25)
+
+**Why.** Task 4 found that the api-v1 WS server admits a room `multicast` envelope arriving over WS
+(the shape `createRtcMessage` produces and the product's `rtc-with-ws-fallback` sends after an
+`unroutable` RTC verdict) but never routes it: `WsQueueBoxServerService.planIncomingMessage`
+(`ws-queue-box-server-service.ts:467-493`) passes the resolved room recipients as
+`groupMemberPeerIds`, so `isLogicalRecipient` (`al-contracts/al-policy.ts:745-761`) says the server
+is not a recipient of a multicast (it is not a member), local delivery stays off, and api-v1 sets
+`forwardsRoomScopedMessages: false` (`create-rallar-middleware-infrastructure.ts:47`) because the
+router owns room fanout — so the router's `onAnyInboxMessageDo` hook (`rallar-server-ws-router.ts:104-110`)
+never sees the message. A `broadcast` works because `isLogicalRecipient` counts the server unless it
+is in `exceptPeerIds`. The maintainer ruled the fix into S2b.
+
+**Files:**
+
+- Modify: `packages/shared/services/ws-queue-box-server/ws-queue-box-server-service.ts:467-493`
+  (`planIncomingMessage`: the server is the logical recipient of a room multicast the authorizer
+  admitted — the `ws-client` source carries `groupRecipientPeerIds` exactly when it did)
+- Modify: `packages/shared-server/rallar-system/websocket/router/publish-rallar-server-ws-message.ts:82`
+  (the `multicast` arm excludes the origin `message.id.senderId`; an RTC overlay never sends the
+  origin its own multicast) and, if the durable branch resolves the origin too,
+  `packages/shared-server/rallar-system/websocket/targets/resolve-ws-group-target.ts:21-45`
+- Modify: `packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts`
+  and `apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts` (the rtc-then-ws pair's
+  named-red texts and its Hetzner exclusion go; delivered-after-refresh keeps its exclusion), the
+  regenerated manifest, `packages/shared/alm/inbound/README.md`, the harness docs
+  (`schema-and-capabilities.md`, `alm-observation-artifact.md`), the roadmap's S2b section
+- Test: `packages/tests/shared-server/websocket/ws-room-live-fanout.test.ts` and
+  `ws-room-authority-delivery.test.ts` (over `ws-room-test-runtime.ts`), `apps/api-v1/test/services/`
+  (Deno, the room fanout tests), `packages/tests/shared-test/alm-conformance-recipes.test.ts`,
+  `packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`
+
+**Interfaces:**
+
+- Produces: a room `multicast` envelope admitted from a `ws-client` source with `groupRecipientPeerIds`
+  is delivered to the server's inbox (local delivery enabled) and routed by the router to the
+  admitted live sessions except the origin — on the live-only branch through
+  `publishRallarServerWsMessage`, on the durable branch through the WS outbox with the same
+  recipient set. No new option, flag or abstraction; `forwardsRoomScopedMessages` stays `false` in
+  api-v1 (the router still owns fanout).
+- Consumes: Task 4's `cross-carrier-duplicate` rtc-then-ws pair, whose receiver-side `duplicate`
+  wait now passes.
+
+- [ ] **Step 1: RED — the server routes a WS-carried multicast to the other members, not the
+      origin.** In `ws-room-live-fanout.test.ts` (live-only channel) and `ws-room-authority-delivery.test.ts`
+      (durable channel): members `a`, `b`, `c` connected and authorized; `a` sends a room envelope with
+      `targets: { mode: 'multicast', groupRef }` and `forwarding.overlayId` (build it the way
+      `createRtcMessage` does — find the builder in `browser-rallar-message-sender.ts:285-312` and reuse
+      `newALMulticastMessage`); assert `b` and `c` each receive it once and `a` does not; on the
+      durable branch assert WS_OUTBOX rows for `b` and `c` only. Expected today: FAIL — nothing is
+      published (the router's `route` is never called) and, once local delivery is on, `a` receives
+      its own message back. Run: `npx vitest run packages/tests/shared-server/websocket/ws-room-live-fanout.test.ts packages/tests/shared-server/websocket/ws-room-authority-delivery.test.ts`.
+- [ ] **Step 2: The server is the recipient.** In `planIncomingMessage`, when `message.targets?.mode
+      === 'multicast'` and `frozenRecipients !== undefined` (the authorizer admitted it), the planning
+      context's `groupMemberPeerIds` includes `this.name` so `isLogicalRecipient` is true and local
+      delivery is enabled; `connectedPeerIds`/`overlayNeighborPeerIds` are unchanged (forwarding stays
+      off). One expression, no branch elsewhere; measure the file's cognitive load (84, warn) before
+      and after and record it — if it moves, put the recipient decision in a small pure function in a
+      new sibling file (`ws-queue-box-server-inbound-recipients.ts`) called from the same place.
+- [ ] **Step 3: No echo to the origin.** `publishRallarServerWsMessage`'s `multicast` arm returns
+      `liveSessionIds` minus `message.id.senderId`; the durable branch's recipient resolution excludes
+      the origin the same way (check `resolveWsGroupTargetRecipients` and `resolveInboundRecipients`
+      — the origin must not appear in either; if `resolveInboundRecipients` already omits it, say so).
+- [ ] **Step 4: GREEN**, then the scenario. `npx vitest run packages/tests/shared-server/websocket
+      apps/api-v1/test` is not one root — run the shared-server tests with Vitest and the api-v1
+      room tests with `cd apps/api-v1 && deno task test` (report the fanout suites' lines). Then the
+      local lane full scope over the fallback carrier: `RALLAR_BLACK_BOX_ALM_SCOPE=full
+      RALLAR_BLACK_BOX_ALM_CARRIERS=rtc-with-ws-fallback npm run -s test:rallar:full-stack:memory:alm`
+      — rtc-then-ws must now pass at `duplicate-outcome-ws` (the receiver sees `not-handled/duplicate`
+      for the marker's msgId on carrier `ws`); the only remaining red is delivered-after-refresh
+      `received-1`. Remove the rtc-then-ws Hetzner exclusion (keep delivered-after-refresh's),
+      regenerate the manifest, update the pins. Correct every text that called rtc-then-ws a named
+      red (recipe comment, `schema-and-capabilities.md`, `alm-observation-artifact.md`, the inbound
+      README, the roadmap's S2b "What execution found" item (a) becomes "fixed in Task 7").
+- [ ] **Step 5: Verify and commit.** `npx dprint check <touched files>`, `npx tsc -p
+      packages/shared/tsconfig.json --noEmit`, `npx tsc -p packages/shared-server/tsconfig.json --noEmit`,
+      `node scripts/check-tests-typecheck.mjs`, `npm run -s check:repo-style:changed -- origin/main HEAD`
+      (PASS), `node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`, the three
+      `deno task check`, `npm run test:deno`, `npm run -s test:repo-governance`, and — because the WS
+      server's control/room path changed — `npm run test:api-v1:black-box:postgres:medium-scale`
+      against the running test database (never weaken its constants). Commit:
+      `feat(ws-server): route a WS-carried room multicast to the admitted members, never the origin`.
+
 ## Rulings during execution
+
+- **R-S2b-1 (Task 7 added).** Maintainer ruling, 2026-09-25, on the S2b hand-off: "Add the server
+  routing to S2b as a task". Task 4's finding (the api-v1 WS server admits but never routes a
+  WS-carried room multicast, so the product's RTC→WS fallback of a room message is dropped) is fixed
+  in this slice as Task 7 above; the rtc-then-ws duplicate pair stops being a named red.
+  - **Changed in the plan:** Task 7 added after Task 6; Task 6's acceptance re-reads on the Task 7 head.
 
 (Empty at planning time. The executor records controller and maintainer rulings here as R-S2b-n, with
 "Changed in the plan" lines, exactly as the S2a plan did.)
