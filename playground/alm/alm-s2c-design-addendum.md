@@ -3,8 +3,9 @@
 Status: proposal addendum, 2026-09-24. Written after S2a merged (`4c4634841`) from a code survey of
 merged `main` (`.superpowers/s2c-survey.md` in the planning worktree; every anchor below was verified
 there). It sits beside [alm-s2-design-proposal.md](alm-s2-design-proposal.md) §2.3 and the maintainer's
-decisions D21–D26, D28, D29 (roadmap decision table). The S2c implementation plan is written after the
-questions in section 3 are answered; section 4 sketches its tasks so the answers can be sized.
+decisions D21–D26, D28, D29 (roadmap decision table). The questions in section 3 were settled on 2026-09-24 (D37–D47); the
+plans are `plans/alm-s2c-i-receipt-contract-and-server-path-implementation-plan.md` and
+`plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md`.
 
 ## 1. Corrections to the proposal's inputs
 
@@ -68,9 +69,11 @@ questions in section 3 are answered; section 4 sketches its tasks so the answers
   `seq`/`orderingKey` options) as well as `RallarWsSendInput` and `sendWs`; the harness already passes both
   fields through for every carrier and `sendWs` drops them.
 
-## 3. Questions the decisions leave open (with recommendations)
+## 3. Questions the decisions left open — settled 2026-09-24 as D37–D47
 
-Numbered S2c-1..10. Each names the code that makes the question real and the answer the plan would take.
+Numbered S2c-1..10. Each names the code that made the question real and the answer the maintainer
+settled (every recommendation was taken; the roadmap decision table carries them as D37–D46, and the
+two-PR split as D47).
 
 1. **Live-only aggregation across a cluster (D23).** In-memory aggregation cannot see an ACK that lands on
    another instance, nor reach an origin socket there, without a `WS_OUTBOX` row or a wider pub/sub
@@ -157,5 +160,5 @@ Numbered S2c-1..10. Each names the code that makes the question real and the ans
 Size: large under D6's cutover allowance — the survey's file table lists 60+ files across `al-contracts`,
 `alm/inbound`, `alm/outbound`, `multicast`, `services`, `shared-server` websocket and al-runtime,
 `shared-web` messages, `shared-test` conformance and Hetzner, `apps/api-v1` tests and the
-`ar-eye-hunter-v1` director path. Two PRs (contract + server path, then audience + evidence + roles) is a
-reasonable split if the maintainer prefers smaller reviews; the addendum does not presume it.
+`ar-eye-hunter-v1` director path. D47: two PRs — S2c-i (tasks 1, 2, 4, 5, 6 above: contract, modes, keys, the server path, ordering) and
+S2c-ii (tasks 3, 7, 8, 9, 10: audience, evidence, roles, the consumer proof, docs).

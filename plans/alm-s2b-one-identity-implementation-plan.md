@@ -22,18 +22,18 @@ database resets on mismatch. Two harness fields on `messages.send` make the two 
 dprint; the black-box recipe generator in `packages/shared-test/rallar-bb-test/conformance/alm/`.
 
 **Spec:** [playground/alm/alm-improvement-plan.md](../playground/alm/alm-improvement-plan.md), section
-"Release 3, Slice 2: outcomes" (the S2 paragraph) and decisions D3, D8, D17, D18, D20, D30 in its decision
+"Release 3, S2b: one identity" and decisions D3, D8, D17, D18, D20, D30, D32–D36 in its decision
 table; the shapes are [playground/alm/alm-s2-design-proposal.md](../playground/alm/alm-s2-design-proposal.md)
 §1.2, §1.4, §2.2, §4 (decisions 3 and 13), §5 "S2b" and §6 "S2b". The code survey this plan argues from is
 `.superpowers/s2b-survey.md` in the executing worktree (git-ignored; its findings are restated here where
 a task depends on them). S2b starts from merged `main` `4c4634841` (S2a, PR #583) and precedes S2c
 (D18).
 
-## Decisions this plan takes, for the maintainer to confirm before Task 1
+## Decisions settled with the maintainer (2026-09-24, roadmap D32–D36)
 
 The proposal and D18–D31 settle the merged store, the schema bump and the measured pins. The survey
-found four things they do not settle. Each is decided below with the plan's recommendation; a different
-answer changes the named tasks and nothing else.
+found five things they did not settle; the maintainer settled each as recorded below (the decision
+number is the roadmap's).
 
 - **S2b-1 — two runtimes over one store, carrier-partitioned work types (shape A).** Each
   `ALInboundMessageRuntime` claims exactly one QueueBox work type
@@ -48,7 +48,7 @@ answer changes the named tasks and nothing else.
   session-logical so dedup and owner rows are shared. Shape B (one runtime per session with
   carrier-dispatching ports) moves the runtime out of both services into the middleware, needs the RTC
   ports bound after construction — which collides with visible construction — and rewrites the
-  standalone test construction of `WsQueueBoxClientService`. Recommended: **A**.
+  standalone test construction of `WsQueueBoxClientService`. Decided: **A** (D32).
 - **S2b-2 — the carrier field is required on the shared control value, and the server's ≤ 30-minute
   decode window is accepted under D3.** `ALControlPersistenceValue` and `decodeALAdmissionControlValue`
   (`al-contracts/al-control.ts:94-98`, `al-admission-value-validation.ts:46-92`) are shared with the
@@ -60,8 +60,8 @@ answer changes the named tasks and nothing else.
   field and states the deploy-time window in the PR body; the decoder's failure stays the typed
   `ALAdmissionCorruptionError` it already is. The alternatives — an optional field (rejected by the
   required-fields rule, absence has no domain meaning) or a browser-only wrapper row (a second control
-  value shape the outbound store would then not share) — are not taken. Recommended: **required field,
-  window accepted**.
+  value shape the outbound store would then not share) — are not taken. Decided: **required field,
+  window accepted** (D33).
 - **S2b-3 — two harness fields on `messages.send`, in this slice.** The product never sends one logical
   message over both carriers (fallback happens only when the first carrier refuses admission,
   `browser-rallar-message-dispatch.ts:145-154`), and the generator cannot express a snapshot floor
@@ -69,7 +69,7 @@ answer changes the named tasks and nothing else.
   `rtc-rallar-browser-not-yet-in-sync.json` over `rtc.send`). Task 4 adds `replayOnCarrier` (submit the
   same envelope of an earlier handle to the named carrier) and Task 5 adds `minSnapshotVersion` with a
   relative form (`{ aboveCurrentBy: 1 }`), both as harness capabilities under the black-box control
-  protocol, never as product behaviour. Recommended: **both fields, here**.
+  protocol, never as product behaviour. Decided: **both fields, here** (D34).
 - **S2b-4 — acceptance wording follows the code.** (a) The storage reset cannot be observed in the
   conformance lane (agents run in fresh Playwright contexts, so no database ever mismatches); the
   evidence is the unit reset test with the previous schema id. (b) At admission a `not-yet-in-sync`
@@ -78,12 +78,12 @@ answer changes the named tasks and nothing else.
   durable retention covers rows already admitted whose re-plan regressed. The scenario therefore
   proves NACK → sender retry → delivery after the snapshot advances, and NACK → expiry → absence; it
   does not claim a durable receiver-side retention at admission. (c) The three named pins may read
-  "unchanged, measured" (D30). Recommended: **as stated**.
+  "unchanged, measured" (D30). Decided: **as stated** (D35).
 - **S2b-5 — the ws-client scope becomes outbound-only.** `browser-ws-client:<sid>` also names the WS
   outbound store. The inbound side moves to the new session inbound id; the outbound id, its keys and
   its tests do not move. `toBrowserWsClientALRuntimeStoreId` keeps its name and gains the doc line "WS
   outbound only since S2b"; `toBrowserRtcRxALRuntimeStoreId` is deleted with its last consumer.
-  Recommended: **as stated**.
+  Decided: **as stated** (D36).
 
 ## Global Constraints
 
@@ -701,5 +701,4 @@ git commit -m "test(alm): the not-yet-in-sync scenario (delivered after refresh,
   `toBrowserSessionALInboundRuntimeStoreId` are defined in Task 1 and consumed by Task 1's middleware
   change only; `admit(msg, source)` is Task 3's signature, used by Task 3's tests; the two harness
   fields are optional by domain meaning and stated so.
-- **Open decisions** S2b-1..5 are recorded at the top and must be confirmed before Task 1; every task
-  is written for the recommended answers.
+- **Decisions** S2b-1..5 are settled as D32–D36; every task is written for them.
