@@ -1,4 +1,18 @@
-# Rallar Kit
+# Rallar
+
+Rallar is a browser-first realtime platform for room-based applications:
+authentication, rooms, WebSocket events, WebRTC data channels, local and server
+data, collaborative CRDT documents, and server-authoritative game matches.
+Black Box is the operator console for proving those behaviors with recipes.
+
+- [Product](docs/product.md) — subproducts and what the platform is for.
+- [Architecture](docs/architecture.md) — choices and the alternatives they refuse.
+- [Documentation index](docs/README.md)
+- [Quickstart](docs/rallar-quickstart-and-recipes.md)
+- [Examples](examples/README.md)
+- [Production deployment](docs/production-deployment.md)
+
+People changing the repository start at [AGENTS.md](AGENTS.md).
 
 ## Common Commands
 

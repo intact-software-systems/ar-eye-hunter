@@ -357,7 +357,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         const runbook = await readFile(
             path.join(
                 repoRoot,
-                'plans/github-actions-rallar-black-box-headless-runbook.md'
+                'docs/github-actions-black-box-headless-runbook.md'
             ),
             'utf8'
         );

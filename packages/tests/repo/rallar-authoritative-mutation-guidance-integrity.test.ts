@@ -32,7 +32,7 @@ const currentAppInboxGuidancePaths = [
     'docs/rallar-convergent-state-and-rtc-topology.md',
     'docs/rallar-crdt-guide.md',
     'docs/rallar-crdt-production-hardening-runbook.md',
-    'docs/README.md'
+    'docs/architecture.md'
 ] as const;
 const canonicalSnapshotOrderingGuidancePaths = [
     canonicalServiceWritingPath,
@@ -46,7 +46,7 @@ const postCommitAudienceGuidancePaths = [
 ] as const;
 const repositoryReadGuidancePaths = [
     'apps/api-v1/README.md',
-    'docs/README.md',
+    'docs/architecture.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-crdt-guide.md',
     'docs/rallar-crdt-production-hardening-runbook.md'

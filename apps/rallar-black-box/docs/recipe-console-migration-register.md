@@ -5,7 +5,7 @@ Recipe Console cutover are qualified through `4f04228` and `aec6e57`; all
 legacy workflow rows remain visible, deep-linkable, operational, and unretired
 Evidence/status date: 2026-07-14
 
-This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md). Iteration status, binding decisions, baseline validation, and risks live in the [SPA reimplementation plan](../../../playground/rallar-black-box-spa-reimplementation-plan.md).
+This register is the source of truth for surface-by-surface strangler status, compatibility aliases, mount policy, state ownership, cutover proof, rollback, and audit evidence. Product intent and Ready-State traceability live in the [Recipe Console product spec](./recipe-console-product-spec.md).
 
 Iteration 12 changes the default experience selection; it does not retire or
 hide a legacy workflow row. `Consolidated` describes navigation that already
@@ -492,9 +492,7 @@ saved-filter, confirmation UI, URL, browser, and exit proofs remain open.
 
 Repository truth confirms that the current Tune view is still the seeded
 `high-latency-rtc` preview and consumes neither retained artifact nor root
-control evidence. The tests-first
-[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-tuning-lab-implementation-plan.md)
-binds the replacement to additive shared-test ownership for performance,
+control evidence. The replacement is bound to additive shared-test ownership for performance,
 exact recipe-knob inventory, clone-only validated candidate patches, tuning
 hints, and the existing public `compareDistributedRuns(...)` behavior. Recipe
 Console will compose those deterministic results from the one retained Analyze
@@ -599,10 +597,8 @@ inactive UI is unmounted and only the bounded root hook retains artifact bytes.
 Independent contract, UI/browser, and control/live audits confirmed that the
 approved Monitor composition is still backed entirely by a synthetic failed
 seed and ignores the live distributed-run identity already preserved by Execute
-and the v1 URL. The tests-first
-[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-monitor-workflow-implementation-plan.md)
-therefore scoped replacement of only that seeded Recipe Console ownership with
-the existing root control query and shared deterministic monitor/report/verdict
+and the v1 URL. That replacement covers only the seeded Recipe Console ownership,
+using the existing root control query and shared deterministic monitor/report/verdict
 derivations.
 The focused baseline passes 83/83 tests plus app typecheck.
 
@@ -748,9 +744,7 @@ that availability.
 
 Authoritative contract and UI audits found that the current Execute surface
 mixes the live Iteration 3 control board with seeded targets and preview-only
-Stage/Start state. The tests-first
-[implementation plan](../../../docs/superpowers/plans/2026-07-12-rallar-recipe-console-execute-workflow-implementation-plan.md)
-therefore replaces that target/action plane with shared-fixture catalog facts,
+Stage/Start state. The replacement uses shared-fixture catalog facts,
 fresh recipe-aware target derivation, validated manifest/resolution truth, and
 credential-aware Resolve/Create/Stage/Start/Cancel/Refresh/Export operations.
 Manual Start will remain disabled until authoritative state is `ready`, and
@@ -909,9 +903,7 @@ remains until Iteration 12.
 
 Direction A, **Signal Ledger**, is the approved Recipe Console visual and
 interaction contract. Four concept states are checked in under
-`docs/recipe-console-concepts/**`; the executable design contract is
-`../../../docs/superpowers/specs/2026-07-11-rallar-recipe-console-signal-ledger-design.md`.
-The concepts govern visual composition while repository fixtures and
+`docs/recipe-console-concepts/**`. The concepts govern visual composition while repository fixtures and
 deterministic derivations govern product data. The exit checkpoint below and
 the [fidelity ledger](./recipe-console-iteration-2-fidelity-ledger.md) now hold
 the implementation, CSS isolation, lazy-chunk, URL/history, accessibility,

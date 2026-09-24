@@ -95,6 +95,9 @@ limit.
 - After completing skill preflight, inspect the existing code and relevant
   `examples/**` before editing; Rallar package docs can lag behind active
   package work.
+- Current product and architecture live in `docs/product.md` and
+  `docs/architecture.md`. `docs/README.md` indexes them. Historical plans are
+  not product truth.
 - TypeScript type design optimizes for human comprehension: one canonical name
   per type, and never introduce local or exported aliases that merely rename or
   shorten an existing named type. Preserve meaningful qualification such as

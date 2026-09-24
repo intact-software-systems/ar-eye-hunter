@@ -4,13 +4,8 @@ These scripts preserve the reusable shared-server harnesses created during the
 July 2026 runtime performance validation pass. They are intended to make the
 measured findings repeatable without checking in generated benchmark artifacts.
 
-The background reports live in:
-
-- `playground/rallar-static-performance-audit-2026-07-02.md`
-- `playground/rallar-runtime-performance-validation-plan-2026-07-02.md`
-- `playground/rallar-runtime-performance-validation-report-2026-07-02.md`
-
-API-v1 state-write harnesses live under `apps/api-v1/scripts/perf/`.
+The July 2026 audit reports are git history. These scripts are the repeatable
+harness. API-v1 state-write harnesses live under `apps/api-v1/scripts/perf/`.
 
 ## Motivation
 
@@ -45,16 +40,16 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 
 ## Scripts
 
-| File                            | Purpose                                                                                                                                                                           |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runtime-validation-bench.ts`   | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
-| `summarize-runtime-results.mjs` | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
-| `seed-perf-db.sql`              | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
-| `explain-perf-db.sql`           | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
-| `seed-perf-db-sparse-queue.sql` | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
-| `client-list-fanout-bench.ts`   | Client snapshot fanout/pagination workload.                                                                                                                                       |
-| `group-list-fanout-bench.ts`    | Group snapshot fanout/pagination workload.                                                                                                                                        |
-| `counting-runtime-state-repository.ts` | In-memory counting runtime-state repository shared by the group list fanout harness and its unit test.                                                                     |
+| File                                   | Purpose                                                                                                                                                                           |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime-validation-bench.ts`          | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
+| `summarize-runtime-results.mjs`        | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
+| `seed-perf-db.sql`                     | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
+| `explain-perf-db.sql`                  | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
+| `seed-perf-db-sparse-queue.sql`        | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
+| `client-list-fanout-bench.ts`          | Client snapshot fanout/pagination workload.                                                                                                                                       |
+| `group-list-fanout-bench.ts`           | Group snapshot fanout/pagination workload.                                                                                                                                        |
+| `counting-runtime-state-repository.ts` | In-memory counting runtime-state repository shared by the group list fanout harness and its unit test.                                                                            |
 
 ## RTC/WebRTC benchmark package
 

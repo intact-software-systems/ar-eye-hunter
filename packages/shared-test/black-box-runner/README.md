@@ -37,8 +37,8 @@ convergence gates are recipes in `tests/api-v1/`, registered in
 
 The runner owns recipe execution and artifacts; the black-box control
 protocol and distributed-run contracts live in `../rallar-bb-test/`. Recipes
-assert liveness and contracts; storm quantities are captured, never judged,
-and baseline interpretation lives in `playground/rtc-design/baselines/`.
+assert liveness and contracts. Storm quantities are captured in the run
+artifacts and are not judged by the runner.
 
 ## Recipe execution and observations
 
