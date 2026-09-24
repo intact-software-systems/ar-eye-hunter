@@ -580,7 +580,21 @@ different carriers in both orders with exactly one page dispatch; the reset prov
 (the conformance lane runs fresh browser contexts, so it never observes one); a `not-yet-in-sync`
 reason on an `alm.conformance.*` typeId in the corpus; the three named pins measured and recorded
 (D30), one default send and one admission unchanged; the hosted full-scope read green against S2a's
-both-normal baseline; no harness constant changed. The five plan-level decisions are settled as D32–D36 (2026-09-24).
+both-normal baseline; no harness constant changed. D32–D36 are settled (2026-09-24).
+
+**What execution found (2026-09-24):** S2b's execution (PR #588) recorded three product/harness gaps
+for the maintainer, beyond the plan: (a) the api-v1 WS server admits a WS-carried multicast room
+envelope but never routes it, so the product's own RTC→WS fallback may be silently dropped —
+`cross-carrier-duplicate` `rtc-then-ws` is a named red until that is fixed; (b) no plain-member write
+advances `GroupSnapshot.group.snapshotVersion`, so `not-yet-in-sync` `delivered-after-refresh` is a
+named red until a version-advancing write exists; (c) the sender's `not-yet-in-sync` retry is one
+retry about 2.5–3 s after the first refusal, because the second NACK's control admission is rejected
+as already admitted — recorded, not diagnosed. The conformance catalog's growth also crossed a
+per-cell lane ceiling, not a scenario budget: `CARRIER_TEST_TIMEOUT_MS` moved from 300 s to 360 s for
+the `rtc-with-ws-fallback` full-scope cell (measured 4.8–5.3 min). Hetzner manifest 18's receiver
+absence-window sum grew from 289 s on `main` to 326 s at this head, against its 300 s
+`recommendedTerminalTimeoutSeconds`; the manifest is non-mainline and outside the supported-manifests
+matrix, so this is recorded, not gated.
 
 ### Release 3, Slice 2: outcomes
 
@@ -804,3 +818,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-24: S2a delivered (merged as `4c4634841`); S2b moved into the concrete horizon with its plan
   under `plans/`; the S2c code survey recorded as an addendum; the sixteen open questions settled with
   the maintainer as D32–D47; the S2c-i and S2c-ii plans written under `plans/`.
+- 2026-09-24: S2b executed on `claude/alm-s2b-one-identity` (PR #588); the three product/harness gaps
+  (WS-carried multicast room routing, no plain-member snapshot-version advance, the one-retry
+  `not-yet-in-sync` timing) recorded for the maintainer.

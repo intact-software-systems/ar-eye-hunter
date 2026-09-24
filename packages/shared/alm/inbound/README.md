@@ -30,6 +30,65 @@ not invoke admission or delivery. Storage readiness precedes the first work scan
 Disposal prevents further local work and unregisters the task. A runtime-owned
 engine stops; a supplied shared engine remains available to its other tasks.
 
+## Store identity and carrier partition
+
+One inbound admission store exists per browser session, keyed
+`browser-session-inbound:<sessionId>` and resolved once, in the browser's
+composition root
+([`initialiseMiddleware`](../../../shared-web/browser/connection/initialise-browser-middleware.ts)),
+by
+[`resolveBrowserSessionALInboundRuntimeStores`](../../../shared-web/browser/al-runtime/browser-al-runtime-stores.ts).
+That one resolved store is injected as a required dependency into both
+carrier services — the WS client's `WsQueueBoxClientService` and RTC's
+`WebRtcRxStreamerService` — and neither resolves its own.
+
+Every stored key stays session-logical: dedup, message-owner, ordering,
+supersedence, and control rows are shared across carriers, because a given
+message and its control history are one identity no matter which carrier
+delivered them.
+
+What is partitioned per carrier is which QueueBox work rows a runtime may
+claim. [`toALInboundWorkType`](./al-inbound-work-entry.ts) types a work row
+`AL_INBOUND:<carrier>:<fnv1a64(namespace)>`, so each inbound runtime — RTC or
+WS — reserves only its own carrier's type and re-plans, delivers, sends
+control, and forwards only on its own carrier. One data-admission commit
+bundle carries one carrier — the arriving message's own — on every ordinary
+effect it writes (dispatch, forward, ack, nack, repair). The one exception is
+a buffered release: the buffered slot records the carrier the buffered
+message itself arrived on, and its `release-buffered` row is written under
+that slot's carrier, never the releasing message's, so the buffered
+message's own runtime is the one that re-plans and dispatches it. When a
+releasable slot has already vanished, its confirmation-only row falls back
+to the releasing read's carrier, because there is no slot carrier left to
+read and the row dispatches nothing.
+
+The control and ACK row family — `pending`, `acks`, and the owner index — is
+carrier-tagged too, and lives in its own file,
+[`inbound/control/al-inbound-control-rows.ts`](./control/al-inbound-control-rows.ts):
+`pending.carrier` is the data message's own arrival carrier, and each entry
+in `acks` carries the carrier that ACK itself arrived on, independent of the
+message's carrier.
+[`ALInboundControlAdmission.admit(msg, source)`](./control/al-inbound-control-admission.ts)
+takes the arrival source, from which its carrier is derived. A message's
+pending admission retained concurrently over both carriers is a value
+outcome, not a thrown corruption: the retained row keeps the first arrival's
+source and carrier.
+
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2b'`. An
+existing browser database at a different schema identity is deleted and
+recreated once, as described under
+["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
+
+**The deploy window.** The WS server's PostgreSQL control rows written
+before this change — `pending` and `acks` rows, `admit-control` retained
+payloads with no `carrier`, and old-format `AL_INBOUND:<fnv1a64(namespace)>`
+work rows with no carrier segment — are undecodable or unclaimed by the new
+runtime until their TTL passes: at most 30 minutes for the control rows, or
+longer for a `pending` row whose own message TTL outlives that window. An
+ACK sent by a page still running the old build is refused as malformed until
+that page reloads; the refusal is symmetric, in that an old-build page also
+refuses an ACK carrying the new field.
+
 ## Admission and invocation paths
 
 | Entry                           | Decision and durable result                                                                                                                                                                                                                                                                                                                                                                                                                                | Subsequent execution                                                                                                                                                                                                                                       |
