@@ -1,9 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type {
-    ALAckPayload,
-    ALControlPersistenceValue,
-    ALPendingAckSnapshot
-} from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALPendingAckSnapshot } from '../../al-contracts/al-control.ts';
 import type { ALMessageHandlingPlan, ALMessagePlanningObservations } from '../../al-contracts/al-policy.ts';
 import type {
     ALOrderingTrackSnapshot,
@@ -17,11 +13,7 @@ import {
 import { jsonEquals } from '../../repository/state-utils.ts';
 import { type ALAdmissionBackend, type ALAdmissionWriteContext } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
-import {
-    decodeALAdmissionControlValue,
-    decodeALAdmissionNumber,
-    decodeALAdmissionSupersedenceValue
-} from '../al-admission-value-validation.ts';
+import { decodeALAdmissionNumber, decodeALAdmissionSupersedenceValue } from '../al-admission-value-validation.ts';
 import type { ALAdmissionWorkBackend, ALAdmissionWorkWriteContext } from '../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../ALAdmissionBackendConflictError.ts';
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../ALStoreRetention.ts';
@@ -52,16 +44,17 @@ import {
 } from './al-inbound-ordering-validation.ts';
 import type { ALInboundPendingAdmission } from './al-inbound-pending-admission.ts';
 import type { ALInboundPlannerSnapshot } from './al-inbound-planner-snapshot.ts';
-import {
-    decodeALInboundControlOwnerIndex,
-    decodeALInboundMessageOwner,
-    toALInboundMessageOwnerKey
-} from './al-inbound-source-validation.ts';
+import { readALInboundMessageOwner, toALInboundMessageOwnerKey } from './al-inbound-source-validation.ts';
 import type { ALInboundDurableEffectWrite } from './al-inbound-work-entry.ts';
 import type { ALInboundPendingControl } from './control/al-inbound-control-admission.ts';
-
-export type PendingControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: 'pending'; }>>;
-export type AcksControlValue = Extract<ALControlPersistenceValue, Readonly<{ kind: 'acks'; }>>;
+import {
+    applyALInboundControlMutation,
+    readControlDecisionSurface,
+    readStoredAcknowledgements,
+    readStoredControlOwnerIndex,
+    type AcksControlValue,
+    type PendingControlValue
+} from './control/al-inbound-control-rows.ts';
 
 export interface ALInboundMessageOwner {
     readonly msgId: string;
@@ -424,8 +417,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             const ordering = await this.readOrderingState(session, toALOrderingTrackKey(msg));
             const supersedence = await this.readSupersedenceState(session, prePlan.supersedence.key, msg.id.msgId);
             const deliveryProgress = await this.readDeliveryProgress(session, ordering.trackKey);
-            const { pendingAck, acks } = await this.readStoredAcknowledgements(session, msg.id.msgId, msg.id.senderId);
-            const controlOwners = await this.readStoredControlOwnerIndex(session, msg.id.msgId);
+            const { pendingAck, acks } = await readStoredAcknowledgements({
+                database: session,
+                namespace: this.namespace,
+                msgId: msg.id.msgId,
+                senderId: msg.id.senderId
+            });
+            const controlOwners = await readStoredControlOwnerIndex(session, this.namespace, msg.id.msgId);
             return toALInboundAdmissionRead({
                 namespace: this.namespace,
                 request: input,
@@ -487,8 +485,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
             const messageOwner = await this.readMessageOwner(session, snapshot.msg);
             const deliveryProgress = await this.readDeliveryProgress(session, trackKey);
             const supersedence = await this.readSupersedenceState(session, snapshot.plan.supersedence.key, msgId);
-            const { pendingAck, acks } = await this.readStoredAcknowledgements(session, msgId, senderId);
-            const controlOwners = await this.readStoredControlOwnerIndex(session, msgId);
+            const { pendingAck, acks } = await readStoredAcknowledgements({
+                database: session,
+                namespace: this.namespace,
+                msgId,
+                senderId
+            });
+            const controlOwners = await readStoredControlOwnerIndex(session, this.namespace, msgId);
             return toALInboundBufferedReleaseReadDto({
                 namespace: this.namespace,
                 nowMs,
@@ -616,12 +619,13 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         observed: ALInboundAdmissionObservations
     ): Promise<void> {
         const messageOwner = await this.readStoredMessageOwner(transaction, observed.msgId, observed.senderId);
-        const { pendingAck, acks } = await this.readStoredAcknowledgements(
-            transaction,
-            observed.msgId,
-            observed.senderId
-        );
-        const controlOwners = await this.readStoredControlOwnerIndex(transaction, observed.msgId);
+        const { pendingAck, acks } = await readStoredAcknowledgements({
+            database: transaction,
+            namespace: this.namespace,
+            msgId: observed.msgId,
+            senderId: observed.senderId
+        });
+        const controlOwners = await readStoredControlOwnerIndex(transaction, this.namespace, observed.msgId);
         const supersedence = await this.readSupersedenceState(transaction, observed.supersedence.key, observed.msgId);
         const dedup = observed.dedup === undefined ? undefined : {
             key: observed.dedup.key,
@@ -737,23 +741,10 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
                     mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
             case 'set-control-acks':
-                return await tx.set(
-                    toALInboundControlAcksKey(this.namespace, mutation.msgId, mutation.senderId),
-                    mutation.value,
-                    mutation.expireAtTimestamp
-                );
             case 'set-control-pending':
-                return await tx.set(
-                    toALInboundControlPendingKey(this.namespace, mutation.msgId, mutation.senderId),
-                    mutation.value,
-                    mutation.expireAtTimestamp
-                );
             case 'delete-control-pending':
-                return await tx.remove(toALInboundControlPendingKey(this.namespace, mutation.msgId, mutation.senderId));
-            case 'set-control-owners': {
-                const controlOwnerKey = this.toControlOwnerIndexKey(mutation.msgId);
-                return await tx.set(controlOwnerKey, mutation.value, mutation.expireAtTimestamp);
-            }
+            case 'set-control-owners':
+                return await applyALInboundControlMutation(tx, this.namespace, mutation);
             case 'set-buffered':
                 return await tx.set(
                     this.toBufferedKey(mutation.snapshot.trackKey, mutation.snapshot.seq),
@@ -785,26 +776,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
     }
 
     async readControlDecisionSurface(ack: ALAckPayload): Promise<ALInboundControlDecisionSurface | undefined> {
-        return await this.backend.readWithin(async (session) => {
-            const controlOwners = await this.readStoredControlOwnerIndex(session, ack.ackedMsgId);
-            if (controlOwners === undefined) {
-                return undefined;
-            }
-            const senderId = resolveALInboundAcknowledgedSenderId(controlOwners, ack.fromPeerId);
-            if (senderId === undefined) {
-                return undefined;
-            }
-            const messageOwner = await this.readStoredMessageOwner(session, ack.ackedMsgId, senderId);
-            const { pendingAck, acks } = await this.readStoredAcknowledgements(session, ack.ackedMsgId, senderId);
-            return { senderId, controlOwners, messageOwner, pendingAck, acks };
-        });
-    }
-
-    private async readStoredControlOwnerIndex(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        msgId: string
-    ): Promise<ALInboundControlOwnerIndex | undefined> {
-        return await database.read(this.toControlOwnerIndexKey(msgId), decodeALInboundControlOwnerIndex);
+        return await this.backend.readWithin((session) => readControlDecisionSurface(session, this.namespace, ack));
     }
 
     private async readStoredMessageOwner(
@@ -812,32 +784,7 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
         msgId: string,
         senderId: string
     ): Promise<ALInboundMessageOwner | undefined> {
-        return await database.read(
-            toALInboundMessageOwnerKey(this.namespace, msgId, senderId),
-            (value, key) =>
-                decodeALInboundMessageOwner(value, {
-                    key,
-                    namespace: this.namespace,
-                    expectedMsgId: msgId,
-                    expectedSenderId: senderId
-                })
-        );
-    }
-
-    private async readStoredAcknowledgements(
-        database: Pick<ALAdmissionBackend, 'read'>,
-        msgId: string,
-        senderId: string
-    ): Promise<Pick<ALInboundAdmissionObservations, 'pendingAck' | 'acks'>> {
-        const pendingAck = (await database.read(
-            toALInboundControlPendingKey(this.namespace, msgId, senderId),
-            (value) => decodeALAdmissionControlValue(value, msgId, 'pending')
-        ))?.value;
-        const acks = (await database.read(
-            toALInboundControlAcksKey(this.namespace, msgId, senderId),
-            (value) => decodeALAdmissionControlValue(value, msgId, 'acks')
-        ))?.values ?? [];
-        return { pendingAck, acks };
+        return await readALInboundMessageOwner({ database, namespace: this.namespace, msgId, senderId });
     }
 
     private toDedupKey(dedupKey: string): string {
@@ -854,10 +801,6 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 
     private toSupersedenceReplacementKey(msgId: string): string {
         return `${this.namespace}:supersedence:replacement:${msgId}`;
-    }
-
-    private toControlOwnerIndexKey(msgId: string): string {
-        return `${this.namespace}:control:owners:${encodeURIComponent(msgId)}`;
     }
 
     private toBufferedKey(trackKey: string, seq: number): string {
@@ -971,28 +914,4 @@ function toALInboundBufferedReleaseReadDto(
         controlOwners,
         retention: observed.retention
     };
-}
-
-/**
- * Which original sender an acknowledging peer is tracked under. An overflowed index retains no
- * entries, and a peer that could acknowledge same-ID messages from several senders names none, so
- * both resolve to no sender at all and leave the rest of the surface unread.
- */
-function resolveALInboundAcknowledgedSenderId(
-    controlOwners: ALInboundControlOwnerIndex,
-    fromPeerId: string
-): string | undefined {
-    if (controlOwners.ambiguous) {
-        return undefined;
-    }
-    return controlOwners.values.find((value) => value.peerId === fromPeerId)?.senderId ?? undefined;
-}
-
-/** The acknowledgement rows one message owns, under the namespace the store was opened with. */
-export function toALInboundControlAcksKey(namespace: string, msgId: string, senderId: string): string {
-    return `${namespace}:control:acks:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
-}
-
-export function toALInboundControlPendingKey(namespace: string, msgId: string, senderId: string): string {
-    return `${namespace}:control:pending:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
 }

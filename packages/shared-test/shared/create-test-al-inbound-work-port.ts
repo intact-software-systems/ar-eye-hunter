@@ -37,7 +37,6 @@ export function createTestALInboundControlAdmission(
         port: createTestALInboundWorkPort(input),
         clock: { nowMs: input.nowMs },
         newControlId: input.newControlId,
-        retention: input.admissionStore.retention,
-        carrier: input.carrier
+        retention: input.admissionStore.retention
     });
 }

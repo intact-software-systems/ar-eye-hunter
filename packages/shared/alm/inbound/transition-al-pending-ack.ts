@@ -3,6 +3,7 @@ import type {
     ALCompletedPendingAck,
     ALPendingAckSnapshot
 } from '../../al-contracts/al-control.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 
 export interface TrackALPendingAckSnapshotInput {
     readonly msgId: string;
@@ -12,6 +13,7 @@ export interface TrackALPendingAckSnapshotInput {
     readonly expectedFromPeerIds: readonly string[];
     readonly localReady: boolean;
     readonly expireAtTimestamp: number | undefined;
+    readonly carrier: ALDeliveryCarrier;
 }
 
 export interface MarkALPendingAckLocalReadySnapshotInput {
@@ -53,7 +55,8 @@ export function trackALPendingAckSnapshot(
         localReady: (input.current?.localReady ?? false) || input.localReady,
         expectedFromPeerIds: [...expectedFromPeerIds],
         ackedFromPeerIds: [...ackedFromPeerIds],
-        ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp })
+        ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),
+        carrier: input.carrier
     });
 }
 
@@ -71,7 +74,8 @@ export function markALPendingAckLocalReadySnapshot(
         toPeerId: input.current.toPeerId,
         expectedFromPeerIds: input.current.expectedFromPeerIds,
         localReady: true,
-        expireAtTimestamp: input.current.expireAtTimestamp
+        expireAtTimestamp: input.current.expireAtTimestamp,
+        carrier: input.current.carrier
     });
 }
 
@@ -97,7 +101,8 @@ export function acceptALPendingAckPayload(
         toPeerId: input.current.toPeerId,
         expectedFromPeerIds: input.current.expectedFromPeerIds,
         localReady: input.current.localReady,
-        expireAtTimestamp: input.current.expireAtTimestamp
+        expireAtTimestamp: input.current.expireAtTimestamp,
+        carrier: input.current.carrier
     });
 }
 

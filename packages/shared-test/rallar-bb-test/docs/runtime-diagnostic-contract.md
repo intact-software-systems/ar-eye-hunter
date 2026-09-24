@@ -234,10 +234,12 @@ independent of any connection. The event's `data` is the event itself:
 - `workerId`: the inbound work owner (`al-inbound:<uuid>`) the event belongs
   to, on every kind. One page runs a WS inbound owner and an RTC inbound
   owner, so this says which lane an event came from
-- `admission-outcome` carries `msgId`, `typeId`, `outcome` and `reason` for
-  every message that reached ingress with a decodable identity — one event per
-  `admitIncomingMessage` call. A value that never decoded has no identity to
-  report and emits nothing
+- `admission-outcome` carries `msgId`, `typeId`, `carrier`, `outcome` and
+  `reason` for every message that reached ingress with a decodable identity —
+  one event per `admitIncomingMessage` call. A value that never decoded has no
+  identity to report and emits nothing
+- `carrier` is the carrier the message arrived on, `rtc` or `ws`, read from its
+  ingress source: `rtc-peer` is `rtc`, `ws-client` and `trusted-server` are `ws`
 - `outcome` is where the message stopped: `committed` (admitted, or a control
   the runtime handled — the only ending that leaves durable work behind),
   `pending` (held for an asynchronous authority recheck), `unauthorized`

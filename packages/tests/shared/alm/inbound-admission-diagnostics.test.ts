@@ -107,6 +107,7 @@ it.each(['memory', 'indexeddb'] as const)(
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
             typeId: 'chat.private-text.v1',
+            carrier: 'rtc',
             outcome: 'committed',
             reason: 'admitted'
         }]);
@@ -268,6 +269,7 @@ it.each(['memory', 'indexeddb'] as const)(
             workerId: DIAGNOSTICS_WORKER_ID,
             msgId: message.id.msgId,
             typeId: 'chat.private-text.v1',
+            carrier: 'rtc',
             outcome: 'unauthorized',
             reason: 'unauthorized'
         }]);

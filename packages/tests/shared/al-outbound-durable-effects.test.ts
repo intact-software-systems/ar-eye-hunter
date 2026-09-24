@@ -341,7 +341,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultOutboundTestStores();
         const msg = createOutboundMessage('msg-ack-during-timeout');
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
         let acceptedAckDuringTimeout = false;
         const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
@@ -356,7 +356,8 @@ describe('AL outbound durable effect lifecycle', () => {
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',
-                            observedAtEpochMs: 1
+                            observedAtEpochMs: 1,
+                            carrier: 'ws'
                         }
                     )
                 );
@@ -423,7 +424,7 @@ describe('AL outbound durable effect lifecycle', () => {
         const sent: Array<OutboundTestPayload> = [];
         const stores = createDefaultOutboundTestStores();
         const msg = createOutboundMessage('msg-conflict-recompute');
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
         const commitBundle = stores.admissionStore.commitBundle.bind(stores.admissionStore);
         let rejectedFirstCommit = false;
         vi.spyOn(stores.admissionStore, 'commitBundle').mockImplementation(async (bundle) => {
@@ -443,7 +444,8 @@ describe('AL outbound durable effect lifecycle', () => {
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',
-                            observedAtEpochMs: 1
+                            observedAtEpochMs: 1,
+                            carrier: 'ws'
                         }
                     )
                 )

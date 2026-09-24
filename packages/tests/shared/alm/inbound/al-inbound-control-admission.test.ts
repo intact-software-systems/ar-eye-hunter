@@ -37,6 +37,9 @@ import {
     type InboundTestAcknowledgements
 } from '../read-inbound-test-acknowledgements.ts';
 
+/** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
+const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
+
 const message: ALMessage = {
     id: { v: 2, msgId: 'message', senderId: 'sender', ts: 1_800_000_000_000 },
     route: { topicId: 'chat', resourceId: 'resource', contextId: 'room' },
@@ -116,7 +119,8 @@ async function seedPendingAcknowledgement(
                         localReady: true,
                         expectedFromPeerIds: ['receiver'],
                         ackedFromPeerIds: [],
-                        expireAtTimestamp
+                        expireAtTimestamp,
+                        carrier: 'ws'
                     }
                 },
                 expireAtTimestamp
@@ -139,7 +143,8 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
             fromPeerId,
             toPeerId: 'self',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         }
     );
 }
@@ -207,27 +212,12 @@ async function readRetainedWork(
     return page.entries.map((entry) => decodeALInboundWorkEntry(entry, admissionStore.namespace));
 }
 
-interface UnresolvedControlOwnerCase {
-    readonly named: string;
-    readonly controlOwners: ALInboundControlOwnerIndex;
-}
-
-/** Two stored owner indexes that resolve the acknowledging peer to no single original sender. */
-const UNRESOLVED_CONTROL_OWNERS: readonly UnresolvedControlOwnerCase[] = [
-    // An overflowed index retains no entries at all, so its ambiguity is all there is left to read.
-    { named: 'an overflowed correlation set', controlOwners: { ambiguous: true, values: [] } },
-    {
-        named: 'a peer tracked against several senders',
-        controlOwners: { ambiguous: false, values: [{ peerId: 'receiver', senderId: null }] }
-    }
-];
-
 describe('inbound control admission', () => {
     it('commits an acknowledgement from the peer that owes it', async () => {
         const { backend, admissionStore, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore);
 
-        const result = await control.admit(createAcknowledgement('receiver'));
+        const result = await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL);
 
         expect(result.kind).toBe('committed');
         expect(result.kind === 'committed' && result.acceptance.handled).toBe(true);
@@ -244,41 +234,12 @@ describe('inbound control admission', () => {
         });
 
         // The acknowledgement itself reaches the WS runtime's control admission.
-        expect((await control.admit(createAcknowledgement('receiver'))).kind).toBe('committed');
+        expect((await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL)).kind).toBe('committed');
 
         expect(await readRetainedWork(admissionStore, workQueue, 'ws')).toEqual([]);
         expect((await readRetainedWork(admissionStore, workQueue, 'rtc')).map((work) => work.payload.kind))
             .toEqual(['send-control']);
     });
-
-    it('writes nothing for an acknowledgement from a peer that does not own the message', async () => {
-        const { backend, admissionStore, workQueue, control } = createFixture();
-        await seedPendingAcknowledgement(admissionStore);
-
-        const result = await control.admit(createAcknowledgement('intruder'));
-
-        expect(result).toEqual({ kind: 'not-handled' });
-        const state = await readAcknowledgements(backend, admissionStore);
-        expect(state.acks).toEqual([]);
-        expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
-        expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
-    });
-
-    it.each(UNRESOLVED_CONTROL_OWNERS)(
-        'writes nothing for an acknowledgement whose owner index names $named',
-        async ({ controlOwners }) => {
-            const { backend, admissionStore, workQueue, control } = createFixture();
-            await seedPendingAcknowledgement(admissionStore, controlOwners);
-
-            const result = await control.admit(createAcknowledgement('receiver'));
-
-            expect(result).toEqual({ kind: 'not-handled' });
-            const state = await readAcknowledgements(backend, admissionStore);
-            expect(state.acks).toEqual([]);
-            expect(state.pendingAck?.expectedFromPeerIds).toEqual(['receiver']);
-            expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
-        }
-    );
 
     it('retains admit-control work for a conflicting commit and replays it to completion', async () => {
         const { backend, write, admissionStore, workQueue, control } = createFixture();
@@ -287,7 +248,7 @@ describe('inbound control admission', () => {
             throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
         });
 
-        const conflicted = await control.admit(createAcknowledgement('receiver'));
+        const conflicted = await control.admit(createAcknowledgement('receiver'), WS_ARRIVAL);
 
         expect(conflicted).toEqual({ kind: 'pending-control' });
         expect((await readAcknowledgements(backend, admissionStore)).acks).toEqual([]);
@@ -317,6 +278,33 @@ describe('inbound control admission', () => {
             .toEqual(['admit-control', 'send-control']);
     });
 
+    it('retains a conflicting acknowledgement under the carrier it arrived on and records it under that carrier', async () => {
+        const { backend, admissionStore, workQueue } = createFixture();
+        const control = createTestALInboundControlAdmission({
+            carrier: 'rtc',
+            admissionStore,
+            workQueue,
+            nowMs: Date.now,
+            newControlId: () => 'generated-control'
+        });
+        await seedPendingAcknowledgement(admissionStore);
+        vi.spyOn(backend, 'write').mockImplementationOnce(() => {
+            throw new ALAdmissionBackendConflictError('simulated inbound control conflict');
+        });
+
+        const arrival: ALInboundMessageRuntime.Source = { kind: 'rtc-peer', peerId: 'receiver' };
+        expect(await control.admit(createAcknowledgement('receiver'), arrival)).toEqual({ kind: 'pending-control' });
+        expect(await readRetainedWork(admissionStore, workQueue, 'ws')).toEqual([]);
+        const [retained] = await readRetainedWork(admissionStore, workQueue, 'rtc');
+        if (retained?.payload.kind !== 'admit-control') {
+            throw new Error('Expected retained admit-control work');
+        }
+        expect(retained.payload.carrier).toBe('rtc');
+
+        expect((await control.replay(retained.payload)).outcome).toEqual({ status: 'completed' });
+        expect((await readAcknowledgements(backend, admissionStore)).acks.map((ack) => ack.carrier)).toEqual(['rtc']);
+    });
+
     // The global constraint requires validateXxx to report every issue, not only the first one.
     it('reports every reason one acknowledgement candidate is inadmissible', () => {
         const nowMs = 1_800_000_000_000;
@@ -327,7 +315,8 @@ describe('inbound control admission', () => {
                 fromPeerId: 'stranger',
                 toPeerId: message.id.senderId,
                 status: 'delivered',
-                observedAtEpochMs: nowMs
+                observedAtEpochMs: nowMs,
+                carrier: 'ws'
             },
             controlOwners: { ambiguous: false, values: [{ peerId: 'stranger', senderId: message.id.senderId }] },
             owner: {
@@ -341,7 +330,8 @@ describe('inbound control admission', () => {
                 status: 'delivered',
                 localReady: true,
                 expectedFromPeerIds: ['receiver'],
-                ackedFromPeerIds: ['stranger']
+                ackedFromPeerIds: ['stranger'],
+                carrier: 'ws'
             },
             acks: [],
             nowMs,

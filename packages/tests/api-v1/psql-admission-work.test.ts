@@ -163,7 +163,8 @@ describe('PostgreSQL inbound admission', () => {
                             status: 'subtree-complete',
                             localReady: false,
                             expectedFromPeerIds: ['peer-2'],
-                            ackedFromPeerIds: []
+                            ackedFromPeerIds: [],
+                            carrier: 'ws'
                         }
                     },
                     expireAtTimestamp
@@ -190,9 +191,11 @@ describe('PostgreSQL inbound admission', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
-            )
+            ),
+            { kind: 'ws-client', peerId: 'peer-2' }
         );
 
         expect(admitted).toMatchObject({ kind: 'committed', acceptance: { handled: true } });
@@ -299,7 +302,8 @@ describe('PostgreSQL outbound admission', () => {
         const control = createTestALOutboundControlAdmission({
             admissionStore: store,
             workQueue: backend.workQueue,
-            nowMs: Date.now
+            nowMs: Date.now,
+            carrier: 'ws'
         });
         const msg = createOutboundMessage('msg-outbound-ack');
 
@@ -332,7 +336,8 @@ describe('PostgreSQL outbound admission', () => {
                     fromPeerId: 'peer-1',
                     toPeerId: 'self',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
             )
         );

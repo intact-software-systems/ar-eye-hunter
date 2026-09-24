@@ -233,7 +233,8 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
                 fromPeerId,
                 toPeerId: 'self',
                 status: 'accepted',
-                observedAtEpochMs: 1
+                observedAtEpochMs: 1,
+                carrier: 'ws'
             }
         ));
         expect(admitted.kind).toBe('committed');

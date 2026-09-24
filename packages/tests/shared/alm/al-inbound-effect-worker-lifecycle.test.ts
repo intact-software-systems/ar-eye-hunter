@@ -519,7 +519,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -537,7 +538,8 @@ describe('inbound durable effect worker lifecycle', () => {
             fromPeerId: 'sender',
             toPeerId: 'receiver',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         });
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
@@ -583,7 +585,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -603,7 +606,8 @@ describe('inbound durable effect worker lifecycle', () => {
             fromPeerId: 'sender',
             toPeerId: 'receiver',
             status: 'accepted',
-            observedAtEpochMs: 1
+            observedAtEpochMs: 1,
+            carrier: 'ws'
         });
 
         const acceptance = await runtime.admitIncomingMessage(ack, { kind: 'ws-client', peerId: 'sender' });
@@ -652,7 +656,8 @@ describe('inbound durable effect worker lifecycle', () => {
                     fromPeerId: 'receiver',
                     toPeerId: 'sender',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 })
             }
         });
@@ -1120,7 +1125,8 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage): Reso
         fromPeerId: 'sender',
         toPeerId: 'receiver',
         status: 'accepted',
-        observedAtEpochMs: 1
+        observedAtEpochMs: 1,
+        carrier: 'ws'
     });
     return computeALInboundWorkEntry({
         carrier: 'ws',
@@ -1128,7 +1134,7 @@ function toRetainedControlAdmission(namespace: string, tracked: ALMessage): Reso
         effectId: toALInboundPendingControlId(ack),
         observedAtMs: Date.now(),
         expireAtTimestamp: expiresAtMs,
-        payload: { kind: 'admit-control', msg: ack, expiresAtMs }
+        payload: { kind: 'admit-control', msg: ack, carrier: 'ws', expiresAtMs }
     }).entry;
 }
 
@@ -1161,7 +1167,8 @@ async function seedTrackedAcknowledgement(
                     localReady: true,
                     expectedFromPeerIds: [...expectedFromPeerIds],
                     ackedFromPeerIds: [],
-                    expireAtTimestamp
+                    expireAtTimestamp,
+                    carrier: 'ws'
                 }
             },
             expireAtTimestamp

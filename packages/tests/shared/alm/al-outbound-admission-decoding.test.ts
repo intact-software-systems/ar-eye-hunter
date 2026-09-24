@@ -514,7 +514,7 @@ async function scheduleNotYetInSyncRetry(
     admission: ReturnType<typeof createAdmission>,
     msgId: string
 ) {
-    const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now });
+    const control = createTestALOutboundControlAdmission({ ...admission.stores, nowMs: Date.now, carrier: 'ws' });
     return await control.scheduleNotYetInSyncRetry({
         senderId: 'sender',
         expectedVersion: undefined,

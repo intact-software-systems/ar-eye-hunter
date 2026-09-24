@@ -27,6 +27,7 @@ import { Either } from '../../resilience/Either.ts';
 import { toError } from '../../resilience/to-error.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
+    decodeALAdmissionCarrier,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
@@ -133,8 +134,11 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
         ) {
             throw new TypeError('Pending inbound admission identity or deadline differs from its queue observation');
         }
-        if (payload.kind === 'admit-control' && effectId !== toALInboundPendingControlId(payload.msg)) {
-            throw new TypeError('Pending inbound control identity differs from its queue observation');
+        if (
+            payload.kind === 'admit-control' &&
+            (effectId !== toALInboundPendingControlId(payload.msg) || payload.carrier !== carrier)
+        ) {
+            throw new TypeError('Pending inbound control identity or carrier differs from its queue observation');
         }
         return {
             effectId,
@@ -203,6 +207,7 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
         'trackKey',
         'seq',
         'source',
+        'carrier',
         'expiresAtMs'
     ]);
     switch (effect.kind) {
@@ -223,13 +228,18 @@ function decodeInboundDurableEffect(value: PersistedALValue): ALInboundDurableEf
             return { kind: effect.kind, message: decodeALInboundMessageReference(effect.message) };
         }
         case 'admit-control': {
-            decodeALAdmissionRecord(effect, ['kind', 'msg', 'expiresAtMs']);
+            decodeALAdmissionRecord(effect, ['kind', 'msg', 'carrier', 'expiresAtMs']);
             const msg = decodePersistedALMessageValue(effect.msg);
             const validated = decodeALControlMessage(msg);
             if (validated.left) {
                 throw new TypeError(validated.left.message);
             }
-            return { kind: effect.kind, msg, expiresAtMs: decodeALAdmissionNumber(effect.expiresAtMs) };
+            return {
+                kind: effect.kind,
+                msg,
+                carrier: decodeALAdmissionCarrier(effect.carrier),
+                expiresAtMs: decodeALAdmissionNumber(effect.expiresAtMs)
+            };
         }
         case 'send-control': {
             decodeALAdmissionRecord(effect, ['kind', 'msg']);

@@ -354,7 +354,8 @@ describe('IndexedDB AL runtime stores', () => {
                                 status: 'subtree-complete',
                                 localReady: false,
                                 expectedFromPeerIds: ['peer-2', 'peer-3'],
-                                ackedFromPeerIds: []
+                                ackedFromPeerIds: [],
+                                carrier: 'ws'
                             }
                         },
                         expireAtTimestamp: Date.now() + 20
@@ -383,9 +384,11 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'accepted',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
                 }
-            )
+            ),
+            { kind: 'trusted-server' }
         );
 
         const source = { kind: 'ws-client' as const, peerId: 'peer-1' };
@@ -409,9 +412,11 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId: 'peer-3',
                     toPeerId: 'self',
                     status: 'accepted',
-                    observedAtEpochMs: 2
+                    observedAtEpochMs: 2,
+                    carrier: 'ws'
                 }
-            )
+            ),
+            { kind: 'trusted-server' }
         )).resolves.toEqual({ kind: 'not-handled' });
 
         const afterReadAtMs = Date.now();
@@ -478,7 +483,7 @@ describe('IndexedDB AL runtime stores', () => {
             })
         ).toBe('committed');
 
-        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now }).admit(
+        await createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' }).admit(
             newALNackControlMessage(
                 { v: 2, msgId: 'control-gap', ts: 1, senderId: 'peer-1' },
                 {
@@ -664,7 +669,7 @@ describe('IndexedDB AL runtime stores', () => {
         const admissionStore = stores.admissionStore;
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
         let acceptedAckDuringTimeout = false;
-        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
         const reserveEntries = stores.workQueue.reserveEntries.bind(stores.workQueue);
         vi.spyOn(stores.workQueue, 'reserveEntries').mockImplementation(async (input) => {
             const reserved = await reserveEntries(input);
@@ -681,7 +686,8 @@ describe('IndexedDB AL runtime stores', () => {
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',
-                            observedAtEpochMs: 1
+                            observedAtEpochMs: 1,
+                            carrier: 'ws'
                         }
                     )
                 );

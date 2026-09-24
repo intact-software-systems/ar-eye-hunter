@@ -1,3 +1,4 @@
+import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import {
     decodeALAdmissionArray,
     decodeALAdmissionRecord,
@@ -81,6 +82,25 @@ export interface ALInboundMessageOwnerSlot {
 
 export function toALInboundMessageOwnerKey(namespace: string, msgId: string, senderId: string): string {
     return `${namespace}:msg-owner:${encodeURIComponent(msgId)}:${encodeURIComponent(senderId)}`;
+}
+
+/** One message's rows under the original sender they are tracked for, read from one session. */
+export interface ALInboundMessageRowsRead {
+    readonly database: Pick<ALAdmissionBackend, 'read'>;
+    readonly namespace: string;
+    readonly msgId: string;
+    readonly senderId: string;
+}
+
+export async function readALInboundMessageOwner(
+    read: ALInboundMessageRowsRead
+): Promise<ALInboundMessageOwner | undefined> {
+    const { namespace, msgId, senderId } = read;
+    return await read.database.read(
+        toALInboundMessageOwnerKey(namespace, msgId, senderId),
+        (value, key) =>
+            decodeALInboundMessageOwner(value, { key, namespace, expectedMsgId: msgId, expectedSenderId: senderId })
+    );
 }
 
 export function decodeALInboundMessageOwner(value: unknown, slot: ALInboundMessageOwnerSlot): ALInboundMessageOwner {

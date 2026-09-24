@@ -194,7 +194,8 @@ describe('PSql admission optimistic retry', () => {
         const control = createTestALOutboundControlAdmission({
             admissionStore: store,
             workQueue: backend.workQueue,
-            nowMs: Date.now
+            nowMs: Date.now,
+            carrier: 'ws'
         });
 
         await expect(control.scheduleNotYetInSyncRetry({

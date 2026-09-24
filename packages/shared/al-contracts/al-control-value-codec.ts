@@ -1,3 +1,4 @@
+import type { ALDeliveryCarrier } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type {
     ALAckPayload,
     ALAckStatus,
@@ -15,7 +16,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         'fromPeerId',
         'toPeerId',
         'status',
-        'observedAtEpochMs'
+        'observedAtEpochMs',
+        'carrier'
     ]);
     return {
         ackedMsgId: decodeControlIdentifier(
@@ -26,7 +28,8 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         fromPeerId: decodeControlIdentifier(record.fromPeerId, 'ACK sender identity'),
         toPeerId: decodeControlIdentifier(record.toPeerId, 'ACK receiver identity'),
         status: decodeAckStatus(record.status),
-        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time')
+        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time'),
+        carrier: decodeControlCarrier(record.carrier, 'ACK carrier')
     };
 }
 
@@ -64,7 +67,7 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
 export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot {
     const record = decodeControlRecord(
         value,
-        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds'],
+        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
         ['expireAtTimestamp']
     );
     if (typeof record.localReady !== 'boolean') {
@@ -82,7 +85,8 @@ export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot
             record.ackedFromPeerIds,
             'pending ACK acknowledged peer identity'
         ),
-        ...decodeOptionalNumber(record, 'expireAtTimestamp', 'pending ACK expiry')
+        ...decodeOptionalNumber(record, 'expireAtTimestamp', 'pending ACK expiry'),
+        carrier: decodeControlCarrier(record.carrier, 'pending ACK carrier')
     };
 }
 
@@ -215,6 +219,13 @@ function readControlArrayEntries(value: unknown, limit: number, label: string): 
 function decodeAckStatus(value: unknown): ALAckStatus {
     if (value !== 'accepted' && value !== 'delivered' && value !== 'forwarded' && value !== 'subtree-complete') {
         throw new TypeError('Control ACK status is invalid');
+    }
+    return value;
+}
+
+function decodeControlCarrier(value: unknown, label: string): ALDeliveryCarrier {
+    if (value !== 'rtc' && value !== 'ws') {
+        throw new TypeError(`${label} is invalid`);
     }
     return value;
 }

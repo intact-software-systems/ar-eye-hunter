@@ -9,19 +9,19 @@ import { AL_MESSAGE_RESOURCE_LIMITS } from '../../../al-contracts/al-message-res
 import type { NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
 import { resolveExpireAtTimestampWithFallback, toExpireAtTimestampFromNow } from '../../ALStoreRetention.ts';
 import type {
-    AcksControlValue,
     ALInboundAdmissionObservations,
     ALInboundCommitBundle,
     ALInboundControlOwnerIndex,
-    ALInboundMessageOwner,
-    PendingControlValue
+    ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingAckPayload } from '../transition-al-pending-ack.ts';
+import type { AcksControlValue, PendingControlValue } from './al-inbound-control-rows.ts';
 
 export interface ALInboundControlAdmissionRead {
     readonly namespace: string;
+    /** The acknowledgement as this store received it, stamped with the carrier it arrived on. */
     readonly ack: ALAckPayload;
     readonly controlOwners: ALInboundControlOwnerIndex;
     readonly owner: ALInboundMessageOwner;
@@ -125,6 +125,8 @@ function computeCompletedAcknowledgementWork(
     completed: ALCompletedPendingAck,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): ALInboundDurableEffectWrite {
+    // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
+    const carrier = toALDeliveryCarrier(read.owner.source);
     return computeALInboundWorkEntry({
         namespace: read.namespace,
         observedAtMs: read.nowMs,
@@ -134,8 +136,7 @@ function computeCompletedAcknowledgementWork(
             retention.durableEffectTtlMs,
             read.nowMs
         ),
-        // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
-        carrier: toALDeliveryCarrier(read.owner.source),
+        carrier,
         payload: {
             kind: 'send-control',
             msg: newALAckControlMessage(
@@ -145,7 +146,8 @@ function computeCompletedAcknowledgementWork(
                     toPeerId: completed.toPeerId,
                     ackedMsgId: completed.msgId,
                     status: completed.status,
-                    observedAtEpochMs: read.nowMs
+                    observedAtEpochMs: read.nowMs,
+                    carrier
                 }
             )
         }

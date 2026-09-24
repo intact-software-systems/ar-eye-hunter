@@ -255,7 +255,8 @@ function computeIncomingAcknowledgements(
         toPeerId: plan.ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
-        expireAtTimestamp
+        expireAtTimestamp,
+        carrier: toALDeliveryCarrier(read.source)
     });
     const changes = toAckTransitionChanges(transition, {
         msgId: read.msg.id.msgId,

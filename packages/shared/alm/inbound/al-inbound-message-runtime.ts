@@ -25,6 +25,7 @@ import {
     type ALInboundDeferredEffect,
     type ALInboundRuntimeDiagnosticsSink
 } from './al-inbound-runtime-diagnostics.ts';
+import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
     assertALInboundWorkCarrier,
@@ -154,8 +155,7 @@ export class ALInboundMessageRuntime {
             port: workPort,
             clock: dependencies.clock,
             newControlId: dependencies.effectPreparation.newControlId,
-            retention: this.admissionStore.retention,
-            carrier: dependencies.carrier
+            retention: this.admissionStore.retention
         });
         this.delivery = new ALInboundAdmittedDelivery(dependencies);
         this.workSelector = createALInboundWorkSelector({
@@ -210,7 +210,7 @@ export class ALInboundMessageRuntime {
         }
         const msg = decoded.right!;
         const admitted = await this.admitDecodedMessage(msg, source, planIncomingMessage);
-        this.recordAdmissionOutcome(msg, admitted);
+        this.recordAdmissionOutcome(msg, source, admitted);
         return admitted;
     }
 
@@ -302,6 +302,7 @@ export class ALInboundMessageRuntime {
     /** A value that never decoded has no identity to record; every identity that does gets one event. */
     private recordAdmissionOutcome(
         msg: ALMessage,
+        source: ALInboundMessageRuntime.Source,
         admitted: Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>
     ): void {
         this.dependencies.diagnostics?.({
@@ -309,6 +310,7 @@ export class ALInboundMessageRuntime {
             workerId: this.dependencies.effectWorkerId,
             msgId: msg.id.msgId,
             typeId: msg.payload.typeId,
+            carrier: toALDeliveryCarrier(source),
             ...toALInboundAdmissionDiagnostics(admitted)
         });
     }
@@ -327,7 +329,7 @@ export class ALInboundMessageRuntime {
             return Either.ofRight({ kind: 'disposed' });
         }
         if (isALControlTypeId(msg.payload.typeId)) {
-            return Either.ofRight(await this.admitControlMessage(msg));
+            return Either.ofRight(await this.admitControlMessage(msg, source));
         }
         const attempt = await this.admission.attempt(msg, source, planIncomingMessage);
         if (attempt.left) {
@@ -362,8 +364,11 @@ export class ALInboundMessageRuntime {
         return acceptance;
     }
 
-    private async admitControlMessage(msg: ALMessage): Promise<ALInboundMessageRuntime.Acceptance> {
-        const admitted = await this.controlAdmission.admit(msg);
+    private async admitControlMessage(
+        msg: ALMessage,
+        source: ALInboundMessageRuntime.Source
+    ): Promise<ALInboundMessageRuntime.Acceptance> {
+        const admitted = await this.controlAdmission.admit(msg, source);
         // A control the runtime does not handle or rejects, and one whose commit wrote no work row,
         // have nothing for the worker to claim; only retained work and a written row announce one.
         if (admitted.kind === 'pending-control' || (admitted.kind === 'committed' && admitted.wroteWork)) {

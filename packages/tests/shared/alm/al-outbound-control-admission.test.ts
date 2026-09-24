@@ -91,7 +91,7 @@ describe('outbound control admission identity', () => {
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
             const accepted = type === 'ack'
-                ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered' })
+                ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered', carrier: 'ws' })
                 : type === 'nack'
                 ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
@@ -176,6 +176,30 @@ describe('outbound control admission identity', () => {
         expect([...state.data]).toEqual(acceptedState);
     });
 
+    it('records an acknowledgement under the carrier it reached this owner on, whatever its sender named', async () => {
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const ack = newALAckControlMessage(
+            { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() },
+            {
+                ackedMsgId: 'message',
+                fromPeerId: 'receiver',
+                toPeerId: 'sender',
+                status: 'delivered',
+                observedAtEpochMs: Date.now(),
+                carrier: 'rtc'
+            }
+        );
+
+        expect(await control.admit(ack)).toEqual({ kind: 'committed' });
+        const history = decodeALAdmissionControlValue(
+            state.data.get('outbound-control:control:acks:message')?.value,
+            'message',
+            'acks'
+        );
+        expect(history.values.map((recorded) => recorded.carrier)).toEqual(['ws']);
+    });
+
     it.each(['nack', 'repair'] as const)('does not let an unrelated peer create %s work for a tracked message', async (type) => {
         const { admissionStore, workQueue, control, state } = createFixture();
         await seedDirectObligation(admissionStore);
@@ -192,7 +216,7 @@ describe('outbound control admission identity', () => {
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
             { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
-            { fromPeerId: 'receiver', toPeerId: 'other-sender', ackedMsgId: 'message', status: 'delivered', observedAtEpochMs: 1 }
+            { fromPeerId: 'receiver', toPeerId: 'other-sender', ackedMsgId: 'message', status: 'delivered', observedAtEpochMs: 1, carrier: 'ws' }
         );
 
         expect((await control.admit(ack)).kind).toBe('rejected');
@@ -284,14 +308,16 @@ describe('outbound control admission identity', () => {
                 fromPeerId,
                 toPeerId: 'sender',
                 status: 'delivered' as const,
-                observedAtEpochMs
+                observedAtEpochMs,
+                carrier: 'ws' as const
             })),
             {
                 ackedMsgId: 'message',
                 fromPeerId: 'peer-0',
                 toPeerId: 'sender',
                 status: 'accepted' as const,
-                observedAtEpochMs: 256
+                observedAtEpochMs: 256,
+                carrier: 'ws' as const
             }
         ];
         const key = 'outbound-control:control:acks:message';
@@ -428,7 +454,8 @@ function createFixture() {
         control: createTestALOutboundControlAdmission({
             admissionStore,
             workQueue: state.workQueue,
-            nowMs: Date.now
+            nowMs: Date.now,
+            carrier: 'ws'
         })
     };
 }
@@ -629,7 +656,7 @@ function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'recei
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':
-            return newALAckControlMessage(id, { ...common, ackedMsgId: 'message', status: 'delivered' });
+            return newALAckControlMessage(id, { ...common, ackedMsgId: 'message', status: 'delivered', carrier: 'ws' });
         case 'nack':
             return newALNackControlMessage(id, { ...common, msgId: 'message', reason: 'gap' });
         case 'repair':

@@ -328,6 +328,7 @@ it('records an AL inbound admission diagnostics event into the agent event log',
         workerId: 'al-inbound:worker-1',
         msgId: 'msg-7',
         typeId: 'alm.conformance.delivery-baseline',
+        carrier: 'rtc',
         outcome: 'unauthorized',
         reason: 'unauthorized'
     });
@@ -341,6 +342,7 @@ it('records an AL inbound admission diagnostics event into the agent event log',
                 workerId: 'al-inbound:worker-1',
                 msgId: 'msg-7',
                 typeId: 'alm.conformance.delivery-baseline',
+                carrier: 'rtc',
                 outcome: 'unauthorized',
                 reason: 'unauthorized'
             }

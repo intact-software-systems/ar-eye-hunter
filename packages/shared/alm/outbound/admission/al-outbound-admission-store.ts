@@ -27,7 +27,6 @@ import type {
     ALReplacementSupersedenceValue,
     ALSupersedenceAcceptance
 } from '../../compute-al-supersedence-observation.ts';
-import type { ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import {
     captureALOutboundCreationExpiry,
     type ALOutboundMessageReference
@@ -40,9 +39,7 @@ import {
 import type {
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
-    ALOutboundMessageRuntime,
-    ALOutboundRepairTrigger,
-    ALOutboundSettlementEmitter
+    ALOutboundRepairTrigger
 } from '../al-outbound-message-runtime.ts';
 import {
     retainALOutboundPendingAdmission,
@@ -50,7 +47,10 @@ import {
     type RetainALOutboundPendingAdmissionInput
 } from '../al-outbound-pending-admission.ts';
 import type { ALOutboundComputeIntent } from '../compute-al-outbound-dispatch.ts';
-import { ALOutboundControlAdmission } from '../control/al-outbound-control-admission.ts';
+import {
+    ALOutboundControlAdmission,
+    type CreateALOutboundControlAdmissionInput
+} from '../control/al-outbound-control-admission.ts';
 import {
     ALOutboundAdmissionEffectStore,
     type ALOutboundEffectCandidate,
@@ -288,9 +288,7 @@ export interface ALOutboundAdmissionStore<TPrepared> extends ALReadyable {
 
     /** The control-admission owner of this scope; the port carries the control it must replay. */
     readonly createControlAdmission: (
-        port: ALWorkQueuePort,
-        clock: ALOutboundMessageRuntime.Clock,
-        settlements: ALOutboundSettlementEmitter
+        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
     ) => ALOutboundControlAdmission<TPrepared>;
 }
 
@@ -348,19 +346,15 @@ class ProviderBackedALOutboundAdmissionStore<TPrepared> implements ALOutboundAdm
     }
 
     createControlAdmission(
-        port: ALWorkQueuePort,
-        clock: ALOutboundMessageRuntime.Clock,
-        settlements: ALOutboundSettlementEmitter
+        owner: Pick<CreateALOutboundControlAdmissionInput<TPrepared>, 'port' | 'clock' | 'settlements' | 'carrier'>
     ): ALOutboundControlAdmission<TPrepared> {
         return new ALOutboundControlAdmission({
-            clock,
-            settlements,
+            ...owner,
             backend: this.backend,
             effectStore: this.effectStore,
             reads: this.reads,
             namespace: this.namespace,
-            retention: this.retention,
-            port
+            retention: this.retention
         });
     }
 

@@ -12,6 +12,7 @@ import type {
 } from '../../al-admission-work-backend.ts';
 import { ALAdmissionBackendConflictError } from '../../ALAdmissionBackendConflictError.ts';
 import { toExpireAtTimestampFromNow, type NormalizedALRuntimeStoreRetentionConfig } from '../../ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '../../delivery/al-delivery-lifecycle.ts';
 import type { ALWorkOutcome, ALWorkQueuePort } from '../../work/al-work-queue-port.ts';
 import type {
     ALOutboundAdmissionEffectStore,
@@ -79,6 +80,8 @@ export interface CreateALOutboundControlAdmissionInput<TPrepared> {
     readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     readonly port: ALWorkQueuePort;
     readonly settlements: ALOutboundSettlementEmitter;
+    /** The carrier controls reach this owner on; every acknowledgement it records is stamped with it. */
+    readonly carrier: ALDeliveryCarrier;
 }
 
 /** One conditional control admission per call; a conflict becomes retained work the outbound worker replays. */
@@ -91,6 +94,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
     private readonly port: ALWorkQueuePort;
     private readonly settlements: ALOutboundSettlementEmitter;
+    private readonly carrier: ALDeliveryCarrier;
 
     constructor(input: CreateALOutboundControlAdmissionInput<TPrepared>) {
         this.clock = input.clock;
@@ -101,6 +105,7 @@ export class ALOutboundControlAdmission<TPrepared> {
         this.retention = input.retention;
         this.port = input.port;
         this.settlements = input.settlements;
+        this.carrier = input.carrier;
     }
 
     async admit(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
@@ -291,6 +296,7 @@ export class ALOutboundControlAdmission<TPrepared> {
             );
             return {
                 parsed,
+                carrier: this.carrier,
                 targetMsgId,
                 nowMs,
                 owner,

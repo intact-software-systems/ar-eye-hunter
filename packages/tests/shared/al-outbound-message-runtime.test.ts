@@ -239,7 +239,8 @@ describe('ALOutboundMessageRuntime', () => {
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
-                observedAtEpochMs: 1
+                observedAtEpochMs: 1,
+                carrier: 'ws'
             }
         ));
         const afterAck = await admissionStore.readOutgoingMessage({ msg: nextMessage, planner: plan, observedCanonicalEntry: undefined, intent: 'enqueue' });
@@ -260,7 +261,8 @@ describe('ALOutboundMessageRuntime', () => {
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
-                observedAtEpochMs: 2
+                observedAtEpochMs: 2,
+                carrier: 'ws'
             }
         ));
         const afterLateAck = await admissionStore.readOutgoingMessage({
@@ -1240,7 +1242,8 @@ describe('ALOutboundMessageRuntime', () => {
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
-                observedAtEpochMs: 1
+                observedAtEpochMs: 1,
+                carrier: 'ws'
             }
         ));
         sendCompleted.resolve();

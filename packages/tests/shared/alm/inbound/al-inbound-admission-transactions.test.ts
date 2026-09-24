@@ -14,7 +14,7 @@ import { toALOrderingTrackKey } from '@shared/al-contracts/al-runtime.ts';
 import type { ALInboundAdmissionStore } from '@shared/alm/inbound/al-inbound-admission-store.ts';
 import { toALInboundMessageReference } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import type { ALInboundMessageAdmission } from '@shared/alm/inbound/al-inbound-message-admission.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
+import type { ALInboundMessageRuntime, ALInboundRuntimeStores } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundPendingAdmission } from '@shared/alm/inbound/al-inbound-pending-admission.ts';
 import { createPassThroughIndexedDbOperationObserver } from '@shared/persistence/indexed-db-operation-observer.ts';
 
@@ -43,6 +43,8 @@ afterEach(() => {
 const TRANSACTION_NAMESPACE = 'inbound-admission-transactions';
 const SUPERSEDENCE_KEY = 'shared-topic';
 const ACKNOWLEDGING_PEER_ID = 'downstream';
+/** Every acknowledgement here reaches the WS runtime of a browser, which receives it from the server. */
+const WS_ARRIVAL: ALInboundMessageRuntime.Source = { kind: 'trusted-server' };
 
 /**
  * One readonly session per decision surface. Each surface below opened between 3 and 12 transactions
@@ -156,7 +158,8 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                         localReady: true,
                         expectedFromPeerIds: [ACKNOWLEDGING_PEER_ID],
                         ackedFromPeerIds: [],
-                        expireAtTimestamp
+                        expireAtTimestamp,
+                        carrier: 'ws'
                     }
                 },
                 expireAtTimestamp
@@ -183,7 +186,8 @@ function newAcknowledgement(message: ALMessage): ALMessage {
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
             status: 'delivered',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            carrier: 'ws'
         }
     );
 }
@@ -284,7 +288,7 @@ it('commits the acknowledgement its control owner index resolves to a tracked me
     const message = await seedAcknowledgeableMessage(stores.admissionStore);
     const control = createTestALInboundControlAdmission({ carrier: 'ws', ...stores, nowMs: Date.now, newControlId: () => 'control' });
 
-    expect((await control.admit(newAcknowledgement(message))).kind).toBe('committed');
+    expect((await control.admit(newAcknowledgement(message), WS_ARRIVAL)).kind).toBe('committed');
 });
 
 it('admits a control message in 1 surface, 1 fence and 1 write', async () => {
@@ -294,7 +298,7 @@ it('admits a control message in 1 surface, 1 fence and 1 write', async () => {
     const ack = newAcknowledgement(message);
 
     const recorded = recordIndexedDbTransactions();
-    await control.admit(ack);
+    await control.admit(ack, WS_ARRIVAL);
 
     expect(recorded.modes(), 'ALInboundControlAdmission.admit').toEqual(COMMITTING_CONTROL_ADMISSION);
 });

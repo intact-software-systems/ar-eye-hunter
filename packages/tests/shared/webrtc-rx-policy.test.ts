@@ -345,7 +345,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
                 status: 'delivered',
-                observedAtEpochMs: Date.now()
+                observedAtEpochMs: Date.now(),
+                carrier: 'rtc'
             }),
             'peer-2'
         );
@@ -357,7 +358,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
                 status: 'delivered',
-                observedAtEpochMs: Date.now()
+                observedAtEpochMs: Date.now(),
+                carrier: 'rtc'
             }),
             'peer-3'
         );

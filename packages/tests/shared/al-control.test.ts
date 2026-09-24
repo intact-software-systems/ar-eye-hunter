@@ -27,7 +27,8 @@ const ack: ALAckPayload = {
     fromPeerId: 'sender',
     toPeerId: 'receiver',
     status: 'delivered',
-    observedAtEpochMs: 12
+    observedAtEpochMs: 12,
+    carrier: 'ws'
 };
 const nack: ALNackPayload = {
     msgId: 'msg-1',

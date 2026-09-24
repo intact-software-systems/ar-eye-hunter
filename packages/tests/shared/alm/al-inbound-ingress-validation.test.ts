@@ -68,7 +68,7 @@ describe('AL inbound canonical validation', () => {
         const nowMs = Date.now();
         const control = newALAckControlMessage(
             { v: 2, msgId: 'receipt', senderId: 'sender', ts: nowMs },
-            { ackedMsgId: 'unknown', fromPeerId: 'sender', toPeerId: 'receiver', status: 'delivered', observedAtEpochMs: nowMs }
+            { ackedMsgId: 'unknown', fromPeerId: 'sender', toPeerId: 'receiver', status: 'delivered', observedAtEpochMs: nowMs, carrier: 'rtc' }
         );
         try {
             for (let attempt = 0; attempt < 3; attempt++) {

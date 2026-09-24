@@ -193,7 +193,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                         fromPeerId: 'peer-1',
                         toPeerId: 'self',
                         status: 'delivered',
-                        observedAtEpochMs: 0
+                        observedAtEpochMs: 0,
+                        carrier: 'ws'
                     }
                 )
             );

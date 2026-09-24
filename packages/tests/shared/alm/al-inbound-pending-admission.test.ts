@@ -190,7 +190,8 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
         fromPeerId: 'sender',
         toPeerId: 'receiver',
         status: 'delivered',
-        observedAtEpochMs: Date.now()
+        observedAtEpochMs: Date.now(),
+        carrier: 'rtc'
     });
     const source = { kind: 'rtc-peer' as const, peerId: 'sender' };
     const malformed = await runtime.admitIncomingMessage({}, { kind: 'trusted-server' });

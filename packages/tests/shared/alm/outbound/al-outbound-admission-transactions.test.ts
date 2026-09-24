@@ -234,7 +234,8 @@ it('reads a control decision surface from one readonly transaction before its wr
     const control = createTestALOutboundControlAdmission({
         admissionStore: store,
         workQueue: backend.workQueue,
-        nowMs: Date.now
+        nowMs: Date.now,
+        carrier: 'ws'
     });
     const ack = newALAckControlMessage(
         { v: 2, msgId: `${message.id.msgId}-ack`, senderId: 'peer-1', ts: Date.now() },
@@ -243,7 +244,8 @@ it('reads a control decision surface from one readonly transaction before its wr
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
             status: 'delivered',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            carrier: 'ws'
         }
     );
 
@@ -409,7 +411,8 @@ function createAcknowledgement(msgId: string): ALMessage {
             toPeerId: 'sender',
             ackedMsgId: `${msgId}-target`,
             status: 'delivered',
-            observedAtEpochMs: Date.now()
+            observedAtEpochMs: Date.now(),
+            carrier: 'ws'
         }
     );
 }

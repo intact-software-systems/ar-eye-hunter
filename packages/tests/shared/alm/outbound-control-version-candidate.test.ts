@@ -45,6 +45,7 @@ describe('outbound control version candidate', () => {
         });
         const read = freezeValues<ALControlAdmissionRead>({
             parsed: parseALControlMessage(control)!,
+            carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
             owner: 'self',
@@ -84,10 +85,12 @@ describe('outbound control version candidate', () => {
             fromPeerId: 'peer-1',
             toPeerId: 'self',
             status: 'accepted',
-            observedAtEpochMs: 1_000
+            observedAtEpochMs: 1_000,
+            carrier: 'ws'
         });
         const readAt = (nowMs: number): ALControlAdmissionRead => ({
             parsed: parseALControlMessage(ack)!,
+            carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs,
             owner: 'self',
@@ -128,7 +131,8 @@ describe('outbound control version candidate', () => {
         const controlAdmission = createTestALOutboundControlAdmission({
             admissionStore: store,
             workQueue: backend.workQueue,
-            nowMs: Date.now
+            nowMs: Date.now,
+            carrier: 'ws'
         });
         const message = createOutboundMessage('control-version-race');
         await store.commitBundle(await computeOutboundTestAdmission(store, message));

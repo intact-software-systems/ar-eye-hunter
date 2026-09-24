@@ -27,11 +27,12 @@ describe('RTC message diagnostic receipts', () => {
         try {
             const stores = resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId);
             const { admissionStore } = stores;
-            const controlAdmission = admissionStore.createControlAdmission(
-                createOutboundWorkPort(stores.workQueue, admissionStore.namespace),
-                { nowMs: Date.now },
-                () => {}
-            );
+            const controlAdmission = admissionStore.createControlAdmission({
+                port: createOutboundWorkPort(stores.workQueue, admissionStore.namespace),
+                clock: { nowMs: Date.now },
+                settlements: () => {},
+                carrier: 'rtc'
+            });
             expect(await readBlackBoxRtcMessageNacks(sessionId, 'attempted')).toEqual([]);
             await admitAttemptedMessage(admissionStore, sessionId);
             const sentBefore = await admissionStore.readSentMessage('attempted');
