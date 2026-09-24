@@ -519,10 +519,61 @@ dispatch latency read from the inbound block against the diagnosis's 0.7–1.2 s
 7–23 s drain cycles it explains; no harness budget changed; no new timer, queue, or registry; no new
 `file.cognitive-load` pin; the lane's return to `test:ci` stays the maintainer's decision.
 
+### Release 3, S2b: one identity
+
+**Outcome:** one logical message has one inbound identity per browser session whatever carried it —
+an RTC-then-WS or WS-then-RTC arrival deduplicates instead of delivering twice — the control and ACK
+history rows say which carrier each entry arrived on, the browser database resets once on the schema
+move, and the `not-yet-in-sync` behaviour carried in from F2 has a conformance scenario.
+
+**Owners:** [shared-web/browser/al-runtime](../../packages/shared-web/browser/al-runtime/) (the session
+inbound store id and the composition root), [alm/inbound](../../packages/shared/alm/inbound/) (the
+carrier-partitioned work types, the carrier-tagged control rows), `al-contracts/al-control.ts` (the
+shared control values), and the generator plus two `messages.send` fields in
+[rallar-bb-test](../../packages/shared-test/rallar-bb-test/). Plan:
+`plans/alm-s2b-one-identity-implementation-plan.md`; design:
+[alm-s2-design-proposal.md](alm-s2-design-proposal.md) §2.2 (decisions D20, D30).
+
+**What the code survey found (2026-09-24):** the two inbound runtimes cannot share one QueueBox work
+type — each re-plans stored rows with its own carrier's planner (only the RTC planner applies room
+authority), delivers to its own consumers, sends control on its own outbound, and the WS runtime
+exists before the RTC one — so the merged store needs carrier-partitioned work types; the store
+registry builds a new store on every resolve, so the composition root must resolve once and inject;
+the inbound store and its control value types are shared with the WS server's PostgreSQL backend,
+which has no schema id and no reset; and neither new scenario is expressible without a same-envelope
+replay on the other carrier and a snapshot floor on `messages.send`.
+
+**Changes:**
+
+1. One inbound admission store per session (`browser-session-inbound:<sid>`), resolved once in the
+   middleware and injected into both carrier services; the rtc-rx inbound scope is deleted; the
+   ws-client scope becomes outbound-only; `AL_ADMISSION_SCHEMA_ID` moves to `rallar-alm-2026-09-s2b`
+   and the reset is proven against the f2c id.
+2. Each inbound runtime claims only the work rows whose QueueBox type names its carrier
+   (`AL_INBOUND:<carrier>:<fnv(namespace)>`); every effect intent names its carrier; keys stay
+   session-logical so dedup, owner, ordering and supersedence unify.
+3. `carrier` is a required field on every `pending` (the data message's carrier) and `acks` entry (the
+   ACK's arrival carrier); the control row family moves out of `al-inbound-admission-store.ts`;
+   control admission takes the arrival source; `admission-outcome` reports the carrier.
+4. Harness: `messages.send` gains `replayOnCarrier` and `minSnapshotVersion` (absolute or
+   `aboveCurrentBy`); the `cross-carrier-duplicate` scenario in both orders and the `not-yet-in-sync`
+   scenario (delivered after the refresh; expires undelivered).
+
+**Acceptance:** one `committed/admitted` and one `not-handled/duplicate` for the same `msgId` on
+different carriers in both orders with exactly one page dispatch; the reset proven by the unit test
+(the conformance lane runs fresh browser contexts, so it never observes one); a `not-yet-in-sync`
+reason on an `alm.conformance.*` typeId in the corpus; the three named pins measured and recorded
+(D30), one default send and one admission unchanged; the hosted full-scope read green against S2a's
+both-normal baseline; no harness constant changed. Five plan-level decisions (two runtimes over one
+store with carrier-partitioned work types; the required carrier field with the server's ≤ 30-minute
+decode window accepted under D3; the two harness fields in this slice; acceptance wording following
+the code; the ws-client scope outbound-only) are confirmed by the maintainer before Task 1.
+
 ### Release 3, Slice 2: outcomes
 
-- **S2 One identity and receipted audiences.** S2b and S2c carry the outcome below; S2a is concrete
-  above. Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
+- **S2 One identity and receipted audiences.** S2a and S2b are concrete above; S2c carries the
+  outcome below, with the code survey's corrections and ten open questions in
+  [alm-s2c-design-addendum.md](alm-s2c-design-addendum.md). Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
   keys; carrier-tagged control and ACK histories only. The logical audience is frozen at admission
   from the channel's addressed sessions and the identified room snapshot. ACKs carry origin and
   logical recipient; relays forward far ACKs toward the origin; the WS server aggregates broadcast
@@ -732,3 +783,6 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
 - 2026-09-23: the hosted delivery-lifecycle intermittent diagnosed
   (playground/alm/alm-s2-hosted-lifecycle-diagnosis.md); the S2 design questions settled as D18–D31
   and folded into the proposal; S2 split into S2a/S2b/S2c with S2a in the concrete horizon.
+- 2026-09-24: S2a delivered (merged as `4c4634841`); S2b moved into the concrete horizon with its plan
+  under `plans/` and five plan-level decisions for the maintainer; the S2c code survey recorded as an
+  addendum with ten open questions ahead of its plan.
