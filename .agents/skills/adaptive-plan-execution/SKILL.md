@@ -96,6 +96,22 @@ active slice.
 6. Finish only after affected validation, code/structure review, production-legacy review, and the
    live PR delivery state support the claimed outcome.
 
+## Obsolete plans
+
+The pull request that finishes a written plan deletes that plan file before merge, and removes any
+line in `plans/README.md` or `docs/README.md` that names it as current work. Git history is the
+archive. After GitHub reports the pull request merged, do not return to delete the file.
+
+A later agent may delete a plan only when all three are true:
+
+- The outcomes the plan names are already in the tree, or in a merged pull request.
+- No open pull request still modifies that path.
+- `plans/README.md` and `docs/README.md` do not name it as current work.
+
+If any check fails, leave the file. `plans/backlog.md`, `plans/policy.json`, `plans/*.closure.json`,
+and `plans/repo-style-lineages/` are not plans to delete. A filename that contains "plan" is not
+evidence that the file is obsolete.
+
 ## Pull-request state comes first
 
 Run `npm run pr:delivery -- status` before broad final validation and whenever the next delivery

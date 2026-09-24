@@ -24,6 +24,19 @@ completion record here.
   still edits it. The committed-work design and implementation plan for that
   pull request stay on the pull request branch.
 
+## When a plan is finished
+
+The pull request that finishes a written plan deletes that plan file before merge, and removes the
+keep-set line above that names it. Git history is the archive. After the pull request has merged,
+that deletion is no longer part of the work.
+
+A later deletion is allowed only when the outcomes are already in the tree or in a merged pull
+request, no open pull request still modifies the path, and neither this file nor `docs/README.md`
+names the plan as current work. If one of those checks fails, leave the file.
+
+The keep-set is the ALM design and the RTC baseline plan named above. `plans/backlog.md` and the
+tooling files below are not plans to delete.
+
 ## Tooling kept beside the prose
 
 These files are checker and governance inputs. They are not product plans:

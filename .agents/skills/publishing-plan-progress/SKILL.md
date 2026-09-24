@@ -49,8 +49,11 @@ immediate administrator merge.
   own the merge without more human governance.
 - Without an independent reviewer, report `AWAIT_REVIEW_OR_ADMIN_MERGE`. An authorized
   administrator may intentionally merge through GitHub without first disabling auto-merge.
+- When the pull request finishes a written plan, delete that plan file in the pull request, and
+  remove any line in `plans/README.md` or `docs/README.md` that names it as current work, before
+  running `npm run pr:delivery -- ready`.
 - `DONE` permits no post-merge governance work. Do not archive a plan, write a receipt, refresh
-  evidence, or create a closure commit.
+  evidence, or create a closure commit. Do not return after merge to delete the plan file.
 
 ## Follow-up issue handoff
 
