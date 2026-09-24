@@ -3,7 +3,7 @@ import {
     expect,
     it
 } from 'vitest';
-import { isValidPersistedResult, validateReceiptResultBindings } from '../../../../../scripts/perf/api-v1-state-write-result-binding.mjs';
+import { isValidPersistedResult, validateReceiptResultBindings } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-result-binding.mjs';
 import {
     binding,
     durableResult,

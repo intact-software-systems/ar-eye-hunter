@@ -54,7 +54,7 @@ import {
 
 import { parseGroupTopologyRegressionReasons } from './pool-group-topology-state-write-position-balanced-results.mjs';
 
-import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import {
     stateWriteProductionPhaseDuration,
     type StateWriteSqlMetrics

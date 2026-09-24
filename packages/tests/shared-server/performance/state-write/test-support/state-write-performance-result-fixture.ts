@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/api-v1-state-write-outbox-contract.mjs';
+import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-contract.mjs';
 
 export type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
 

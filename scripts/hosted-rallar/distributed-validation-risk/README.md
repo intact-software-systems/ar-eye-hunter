@@ -4,29 +4,29 @@
 {
   "version": 1,
   "entry": {
-    "path": "scripts/distributed-validation-risk.mjs",
+    "path": "scripts/hosted-rallar/distributed-validation-risk.mjs",
     "symbol": "runDistributedValidationRiskCommand"
   },
   "results": [
     {
-      "path": "scripts/distributed-validation-risk/distributed-validation-risk.mjs",
+      "path": "scripts/hosted-rallar/distributed-validation-risk/distributed-validation-risk.mjs",
       "symbol": "classifyDistributedValidationRisk"
     },
     {
-      "path": "scripts/distributed-validation-risk/distributed-validation-result.mjs",
+      "path": "scripts/hosted-rallar/distributed-validation-risk/distributed-validation-result.mjs",
       "symbol": "validateDistributedValidationResult"
     }
   ],
   "failures": [
     {
-      "path": "scripts/distributed-validation-risk.mjs",
+      "path": "scripts/hosted-rallar/distributed-validation-risk.mjs",
       "symbol": "toError"
     }
   ]
 }
 ```
 
-[scripts/distributed-validation-risk.mjs#runDistributedValidationRiskCommand](../distributed-validation-risk.mjs#runDistributedValidationRiskCommand)
+[scripts/hosted-rallar/distributed-validation-risk.mjs#runDistributedValidationRiskCommand](../distributed-validation-risk.mjs#runDistributedValidationRiskCommand)
 is the only command entry. It exposes two direct operations:
 
 - `select` reads the exact Git range, then calls

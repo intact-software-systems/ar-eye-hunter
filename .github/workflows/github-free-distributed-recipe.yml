@@ -222,7 +222,7 @@ jobs:
             exit 1
           fi
 
-          plan_json="$(node scripts/github-actions/plan-github-free-headless-matrix.mjs \
+          plan_json="$(node scripts/hosted-rallar/actions/plan-github-free-headless-matrix.mjs \
             --target-agent-count="${TARGET_AGENT_COUNT}" \
             --agents-per-job="${AGENTS_PER_JOB}" \
             --max-parallel-jobs="${MAX_PARALLEL_JOBS}" \

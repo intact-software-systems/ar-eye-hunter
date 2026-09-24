@@ -3,13 +3,13 @@ import {
     expect,
     it
 } from 'vitest';
-import { compareNumber } from '../../../../../scripts/perf/api-v1-state-write-artifact-validation.mjs';
+import { compareNumber } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-artifact-validation.mjs';
 import {
     compareStateWriteArtifacts,
     validateStateWriteArtifact
-} from '../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { deriveAttempts } from '../../../../../scripts/perf/validate-state-write-attempt-evidence.mjs';
-import { deriveFinalDurableCorrectness } from '../../../../../scripts/perf/validate-state-write-durable-evidence.mjs';
+} from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
+import { deriveAttempts } from '../../../../../apps/api-v1/scripts/perf/validate-state-write-attempt-evidence.mjs';
+import { deriveFinalDurableCorrectness } from '../../../../../apps/api-v1/scripts/perf/validate-state-write-durable-evidence.mjs';
 import {
     createDefaultStateWritePerformanceArtifact,
     type StateWritePerformanceSample

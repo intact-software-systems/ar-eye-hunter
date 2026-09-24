@@ -6,7 +6,7 @@ import {
     applyGroupStateServerStructurePerformancePolicy,
     compareGroupStateServerStructurePerformance,
     validateGroupStateServerStructureEvidence
-} from '../../../../../scripts/perf/compare-group-state-server-structure-performance.mjs';
+} from '../../../../../apps/api-v1/scripts/perf/compare-group-state-server-structure-performance.mjs';
 import {
     createStateWritePerformanceArtifact,
     refreshStateWritePerformanceWorkload,

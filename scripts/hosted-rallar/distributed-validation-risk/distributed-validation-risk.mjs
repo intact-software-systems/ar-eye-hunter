@@ -248,8 +248,9 @@ function isDeploymentRunnerPath(changedPath) {
     return (
         deploymentWorkflowPaths.has(changedPath) ||
         changedPath.startsWith('.github/workflows/hetzner-') ||
-        isWithin(changedPath, 'scripts/hetzner') ||
-        /^scripts\/github-actions\/[^/]*hetzner[^/]*$/u.test(changedPath) ||
+        isWithin(changedPath, 'scripts/hosted-rallar/controller') ||
+        changedPath === 'scripts/hosted-rallar/dispatch-distributed-recipe.sh' ||
+        /^scripts\/hosted-rallar\/actions\/[^/]*hetzner[^/]*$/u.test(changedPath) ||
         isWithin(changedPath, 'apps/rallar-black-box/manifests/hetzner')
     );
 }

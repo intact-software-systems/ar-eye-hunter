@@ -91,7 +91,7 @@ Recommended first run after the manifests are merged to `main`, or whenever the
 controller VM should be redeployed from the selected ref:
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
   --ref main
 ```
@@ -106,7 +106,7 @@ For faster iteration after a successful deploy of the same ref, skip rollout,
 Playwright install, and `npm ci`:
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/03-rtc-smoke-2-agent.json \
   --ref main \
   --fast
@@ -116,7 +116,7 @@ If a fast run reports a missing Playwright browser executable, repair the
 browser cache once without redeploying the apps:
 
 ```sh
-scripts/hetzner/dispatch-distributed-recipe.sh \
+scripts/hosted-rallar/dispatch-distributed-recipe.sh \
   apps/rallar-black-box/manifests/hetzner/01-health-2-agent.json \
   --ref main \
   --rollout-before-run false \
@@ -206,7 +206,7 @@ RALLAR_BLACK_BOX_CONTROL_TOKEN
 
 ## Remote Execution
 
-The workflow copies `scripts/hetzner/controller` and the manifest to the VM,
+The workflow copies `scripts/hosted-rallar/controller` and the manifest to the VM,
 then runs:
 
 ```text

@@ -4,7 +4,7 @@ import {
     it,
     vi
 } from 'vitest';
-import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
@@ -17,19 +17,19 @@ import {
     readScopedGroupCommandIdentity,
     readValidatedGroupReceiptIdentity,
     type ScopedGroupCommandExpectation
-} from '../../../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
-import { computeProductionOutboxEvidence } from '../../../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
-import { computeProductionOutboxExpectations } from '../../../../../scripts/perf/api-v1-state-write-outbox-expectations.ts';
-import { createProductionOutboxRepository } from '../../../../../scripts/perf/api-v1-state-write-outbox-repository.ts';
+} from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
+import { computeProductionOutboxEvidence } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-evidence.ts';
+import { computeProductionOutboxExpectations } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-expectations.ts';
+import { createProductionOutboxRepository } from '../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-repository.ts';
 
-import { classifyBenchmarkSql } from '../../../../../scripts/perf/create-instrumented-state-write-sql.ts';
+import { classifyBenchmarkSql } from '../../../../../apps/api-v1/scripts/perf/create-instrumented-state-write-sql.ts';
 import {
     readStateWriteAppInboxIdentity,
     toStateWriteAppInboxExpectations
-} from '../../../../../scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
-import { STATE_WRITE_REASONS } from '../../../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
+} from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-app-inbox-evidence.ts';
+import { STATE_WRITE_REASONS } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
-import { parseBenchmarkOptions } from '../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
+import { parseBenchmarkOptions } from '../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
 import {
     createDefaultStateWritePerformanceArtifact,
     refreshStateWritePerformanceWorkload,

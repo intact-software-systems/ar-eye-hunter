@@ -47,7 +47,7 @@ import { RtcTopologyOutboxWriter } from '@shared-server/rallar-system/topology/m
 import { createGroupTopologyRuntimeOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-runtime-owners.ts';
 import type { Sql } from 'postgres';
 
-import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
+import { toApiV1PostgresClient } from '../../src/db/api-v1-database-lifecycle.ts';
 import { createInstrumentedStateWriteSql, type StateWriteSqlMetrics } from './create-instrumented-state-write-sql.ts';
 
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';

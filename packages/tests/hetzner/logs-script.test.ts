@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const execFileAsync = promisify(execFile);
-const logsScriptPath = path.join(repoRoot, 'scripts/hetzner/controller/15-logs.sh');
+const logsScriptPath = path.join(repoRoot, 'scripts/hosted-rallar/controller/15-logs.sh');
 
 const runDry = async (args: readonly string[] = []) => {
     const { stdout } = await execFileAsync('bash', [logsScriptPath, ...args], {

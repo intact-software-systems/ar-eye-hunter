@@ -43,7 +43,7 @@ export const reviewedDispositions = Object.freeze([
     // fields. Its malformed-artifact test deliberately crosses that same
     // JSON boundary and checks exact validation/comparison diagnostics.
     Object.freeze({
-        path: 'scripts/perf/api-v1-state-write-result-binding.mjs',
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-result-binding.mjs',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
@@ -429,7 +429,7 @@ export const reviewedDispositions = Object.freeze([
         symbol: undefined
     }),
     Object.freeze({
-        path: 'scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-group-receipt-evidence.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
@@ -629,27 +629,27 @@ export const reviewedDispositions = Object.freeze([
     // still reports semantic mismatches. The benchmark retains an opaque
     // rejected promise reason rethrown after its existing drain settles.
     Object.freeze({
-        path: 'scripts/perf/api-v1-state-write-artifact-validation.mjs',
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-artifact-validation.mjs',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     Object.freeze({
-        path: 'scripts/perf/compare-api-v1-state-write-results.mjs',
+        path: 'apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     Object.freeze({
-        path: 'scripts/perf/validate-state-write-attempt-evidence.mjs',
+        path: 'apps/api-v1/scripts/perf/validate-state-write-attempt-evidence.mjs',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     Object.freeze({
-        path: 'scripts/perf/validate-state-write-durable-evidence.mjs',
+        path: 'apps/api-v1/scripts/perf/validate-state-write-durable-evidence.mjs',
         rule: 'boundary.unknown',
         symbol: undefined
     }),
     Object.freeze({
-        path: 'scripts/perf/api-v1-state-write-concurrency-bench.ts',
+        path: 'apps/api-v1/scripts/perf/api-v1-state-write-concurrency-bench.ts',
         rule: 'boundary.unknown',
         symbol: undefined
     }),

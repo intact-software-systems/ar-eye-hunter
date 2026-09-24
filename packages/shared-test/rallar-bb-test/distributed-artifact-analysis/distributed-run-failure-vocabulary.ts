@@ -50,8 +50,11 @@ const VERIFICATION_COMMANDS: ReadonlyMap<string, string> = new Map([
         '`npx vitest run packages/tests/shared-test/rallar-bb-test-group-assertion-conformance.test.ts`'
     ],
     ['RTC/TURN', LIVE_RTC_VERIFICATION],
-    ['API/CORS/auth', '`./scripts/hetzner/controller/03-smoke-controller.sh` on the controller VM'],
-    ['headless agent readiness', '`./scripts/hetzner/controller/12-status-headless-workers.sh` on the controller VM']
+    ['API/CORS/auth', '`./scripts/hosted-rallar/controller/03-smoke-controller.sh` on the controller VM'],
+    [
+        'headless agent readiness',
+        '`./scripts/hosted-rallar/controller/12-status-headless-workers.sh` on the controller VM'
+    ]
 ]);
 
 export function toAffectedAgents(agentId: string | undefined): readonly string[] {

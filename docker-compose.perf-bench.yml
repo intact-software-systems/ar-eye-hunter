@@ -4,7 +4,7 @@
 # convenient — unpinned tag, autovacuum on, no resource reservation — and those
 # are exactly the properties that make benchmark medians drift between runs.
 # This file is the controlled counterpart, and every value below is pinned
-# because scripts/perf/validate-api-v1-state-write-environment.mjs compares it
+# because apps/api-v1/scripts/perf/validate-api-v1-state-write-environment.mjs compares it
 # for exact equality.
 #
 # Port 5433 so it can coexist with the dev container, and no named volume so a

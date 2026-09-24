@@ -7,7 +7,7 @@ import {
 import {
     classifyDistributedValidationRisk,
     decodeGitChangedPathRecords
-} from '../../../../scripts/distributed-validation-risk/distributed-validation-risk.mjs';
+} from '../../../../scripts/hosted-rallar/distributed-validation-risk/distributed-validation-risk.mjs';
 
 describe('distributed validation risk classification', () => {
     it.each([
@@ -189,7 +189,11 @@ describe('distributed validation risk classification', () => {
         },
         {
             family: 'deployment-runner',
-            path: 'scripts/hetzner/controller/08-rollout-controller.sh'
+            path: 'scripts/hosted-rallar/controller/08-rollout-controller.sh'
+        },
+        {
+            family: 'deployment-runner',
+            path: 'scripts/hosted-rallar/actions/materialize-hetzner-run-manifest.mjs'
         }
     ])('selects $family for $path', ({ family, path: changedPath }) => {
         const result = classifyDistributedValidationRisk({
@@ -211,7 +215,9 @@ describe('distributed validation risk classification', () => {
         'packages/shared-test/docs/unrelated-guide.md',
         'packages/shared-web/browser/app-data.ts',
         '.github/workflows/release-gate.yml',
-        'docs/operator-guide.md'
+        'docs/operator-guide.md',
+        'scripts/hosted-rallar/actions/plan-github-free-headless-matrix.mjs',
+        'scripts/hosted-rallar/distributed-validation-risk.mjs'
     ])('keeps unrelated path %s cheap', (changedPath) => {
         const result = classifyDistributedValidationRisk({
             eventName: 'push',
@@ -263,7 +269,7 @@ describe('distributed validation risk classification', () => {
         const deleted = classifyDistributedValidationRisk({
             eventName: 'push',
             changedPathRecords: [
-                { status: 'D', paths: ['scripts/hetzner/controller/08-rollout-controller.sh'] }
+                { status: 'D', paths: ['scripts/hosted-rallar/controller/08-rollout-controller.sh'] }
             ]
         });
         const copied = classifyDistributedValidationRisk({
@@ -279,7 +285,7 @@ describe('distributed validation risk classification', () => {
             ]
         });
 
-        expect(deleted.riskPaths).toEqual(['scripts/hetzner/controller/08-rollout-controller.sh']);
+        expect(deleted.riskPaths).toEqual(['scripts/hosted-rallar/controller/08-rollout-controller.sh']);
         expect(copied.riskPaths).toEqual(['apps/rallar-black-box-headless/src/copied-main.ts']);
         expect(deleted.selected).toBe(true);
         expect(copied.selected).toBe(true);

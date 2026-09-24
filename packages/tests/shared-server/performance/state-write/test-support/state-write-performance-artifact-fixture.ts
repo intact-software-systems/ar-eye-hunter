@@ -1,10 +1,10 @@
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
-import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../scripts/perf/api-v1-state-write-outbox-contract.mjs';
+import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../../../../apps/api-v1/scripts/perf/api-v1-state-write-outbox-contract.mjs';
 import {
     STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
     validateStateWriteArtifact
-} from '../../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import type { StateWriteBenchmarkRegressionReason } from '../../../../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
+} from '../../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
+import type { StateWriteBenchmarkRegressionReason } from '../../../../../../apps/api-v1/scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts';
 import {
     binding,
     durableResult,

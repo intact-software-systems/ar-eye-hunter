@@ -12,7 +12,7 @@ const execFileAsync = promisify(execFile);
 describe('Hetzner SPA public env wiring', () => {
     it('provides a shared helper that maps public Rallar env to Vite SPA env', async () => {
         const helper = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-public-spa-env.sh'),
             'utf8'
         );
 
@@ -30,11 +30,11 @@ describe('Hetzner SPA public env wiring', () => {
 
     it('uses the shared helper for initial deploy and controlled rollout builds', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -49,11 +49,11 @@ describe('Hetzner SPA public env wiring', () => {
 
     it('preserves a stable API auth credential secret across deploys and rollouts', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -71,15 +71,15 @@ describe('Hetzner SPA public env wiring', () => {
 
     it('writes and preserves only the canonical API-v1 controller profile and allowlist', async () => {
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
         const statusScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/07-status-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/07-status-controller.sh'),
             'utf8'
         );
 
@@ -130,7 +130,7 @@ describe('Hetzner SPA public env wiring', () => {
 
         const result = await execFileAsync(
             'bash',
-            [path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh')],
+            [path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh')],
             {
                 cwd: repoRoot,
                 env: {
@@ -158,7 +158,7 @@ describe('Hetzner SPA public env wiring', () => {
         const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
         const rolloutScript = path.join(
             repoRoot,
-            'scripts/hetzner/controller/08-rollout-controller.sh'
+            'scripts/hosted-rallar/controller/08-rollout-controller.sh'
         );
         const optionalOverrides = {
             RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS: 'operations-admin',
@@ -202,7 +202,7 @@ describe('Hetzner SPA public env wiring', () => {
 
     it('serves nested SPA entry points before falling back to the operator index', async () => {
         const helper = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-public-spa-env.sh'),
             'utf8'
         );
 
@@ -212,11 +212,11 @@ describe('Hetzner SPA public env wiring', () => {
     it('uses the control-server Deno config for Hetzner cache warming and systemd start', async () => {
         const controlConfig = await readFile(controlServerConfigPath, 'utf8');
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 
@@ -237,7 +237,7 @@ describe('Hetzner SPA public env wiring', () => {
             'utf8'
         );
         const startScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/09-start-headless-workers.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/09-start-headless-workers.sh'),
             'utf8'
         );
 
@@ -310,15 +310,15 @@ describe('Hetzner SPA public env wiring', () => {
 
     it('keeps public SPA origin allowed for API CORS and control-server browser requests', async () => {
         const helper = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/rallar-public-spa-env.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/rallar-public-spa-env.sh'),
             'utf8'
         );
         const deployScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/02-deploy-controller.sh'),
             'utf8'
         );
         const rolloutScript = await readFile(
-            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            path.join(repoRoot, 'scripts/hosted-rallar/controller/08-rollout-controller.sh'),
             'utf8'
         );
 

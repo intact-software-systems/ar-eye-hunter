@@ -117,7 +117,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         const result = spawnSync(
             process.execPath,
             [
-                'scripts/github-actions/plan-github-free-headless-matrix.mjs',
+                'scripts/hosted-rallar/actions/plan-github-free-headless-matrix.mjs',
                 '--target-agent-count=50',
                 '--agents-per-job=3',
                 '--max-parallel-jobs=17',
@@ -151,7 +151,7 @@ describe('GitHub Free distributed recipe workflow', () => {
         const unsafe = spawnSync(
             process.execPath,
             [
-                'scripts/github-actions/plan-github-free-headless-matrix.mjs',
+                'scripts/hosted-rallar/actions/plan-github-free-headless-matrix.mjs',
                 '--target-agent-count=20',
                 '--agents-per-job=1',
                 '--max-parallel-jobs=20',

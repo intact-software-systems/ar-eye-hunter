@@ -4,9 +4,9 @@ import { access, link, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { validateStateWriteArtifact } from '../../../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { poolApiV1StateWriteResults, poolApiV1StateWriteResultsForPositions } from '../../../../../scripts/perf/pool-api-v1-state-write-results.mjs';
-import { writeApiV1StateWritePooledResults } from '../../../../../scripts/perf/write-api-v1-state-write-pooled-results.mjs';
+import { validateStateWriteArtifact } from '../../../../../apps/api-v1/scripts/perf/compare-api-v1-state-write-results.mjs';
+import { poolApiV1StateWriteResults, poolApiV1StateWriteResultsForPositions } from '../../../../../apps/api-v1/scripts/perf/pool-api-v1-state-write-results.mjs';
+import { writeApiV1StateWritePooledResults } from '../../../../../apps/api-v1/scripts/perf/write-api-v1-state-write-pooled-results.mjs';
 import {
     createStateWritePerformanceArtifact,
     decodeStateWritePerformanceArtifact,

@@ -208,7 +208,7 @@ jobs:
           rm -rf "${rallar_script_dir}"
           mkdir -p "${rallar_script_dir}"
           REMOTE
-          scp -i ~/.ssh/hetzner -r scripts/hetzner/controller/. \
+          scp -i ~/.ssh/hetzner -r scripts/hosted-rallar/controller/. \
             "${HETZNER_USER}@${HETZNER_HOST}:~/rallar-controller/"
           ssh -i ~/.ssh/hetzner "${HETZNER_USER}@${HETZNER_HOST}" \
             bash -s <<'REMOTE'

@@ -11,7 +11,7 @@ on:
       - 'packages/shared-server/**'
       - 'packages/shared-test/black-box-runner/**'
       - 'packages/tests/shared-test/**'
-      - 'scripts/perf/api-v1-state-snapshot-read-bench.ts'
+      - 'apps/api-v1/scripts/perf/api-v1-state-snapshot-read-bench.ts'
 
 permissions:
   contents: read
