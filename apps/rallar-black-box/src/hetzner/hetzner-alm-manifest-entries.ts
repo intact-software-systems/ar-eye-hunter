@@ -141,12 +141,13 @@ function toAlmConformanceCombinedCommands(
         ...prologue,
         ...scenarios.flatMap((scenario) => {
             const commands = scenario[role].commands;
-            const initialConnect = commands.find((command) => command.kind === 'rtc.connect');
-            const prologueEnd = initialConnect === undefined ? -1 : commands.indexOf(initialConnect);
-            return commands.filter((command, index) => index > prologueEnd)
-                .map((command) =>
-                    command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command
-                );
+            const scenarioConnectAt = commands.findIndex((command) => command.kind === 'rtc.connect');
+            if (scenarioConnectAt < 0) {
+                throw new Error(`Generated ALM recipe ${scenario[role].recipeId} has no rtc.connect prologue.`);
+            }
+            return commands.slice(scenarioConnectAt + 1).map((command) =>
+                command.kind === 'rtc.connect' ? toCombinedAlmConnect(command, rtcConnect.readiness) : command
+            );
         })
     ];
 }

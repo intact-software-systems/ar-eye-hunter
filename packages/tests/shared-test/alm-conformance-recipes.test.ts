@@ -312,7 +312,7 @@ describe('alm-conformance recipe family', () => {
         expect(recipeIds('ws')).toEqual([]);
     });
 
-    it('sends above the snapshot, advances the group version, and never polls the handle for acknowledged', () => {
+    it('sends above the snapshot with no in-scenario request, and never polls the handle for acknowledged', () => {
         const [delivered, expires] = createAlmConformanceRecipes(toConformanceInput('rtc'))
             .filter((scenario) => scenario.scenarioId === 'not-yet-in-sync');
         const commandsOf = (scenario: AlmConformanceScenario | undefined) => scenario?.sender.commands ?? [];
@@ -327,24 +327,18 @@ describe('alm-conformance recipe family', () => {
             reliability: 'at-least-once',
             ttlMs: 30_000
         });
-        const sendIndex = commandsOf(delivered).findIndex((command) => command.kind === 'messages.send');
-        const advance = commandsOf(delivered).findIndex((command) =>
-            command.commandId === 'alm-rtc-not-yet-in-sync-delivered-after-refresh-sender-advance-group'
-        );
-        expect(advance).toBeGreaterThan(sendIndex);
-        expect(commandsOf(delivered)[advance]).toMatchObject({
-            kind: 'http.request',
-            request: {
-                method: 'PUT',
-                path: expect.stringMatching(/\/groups\/room-alm\/members\/\{auth\.clientId\}\/requests\/.+-advance$/),
-                body: { status: 'active' }
-            }
-        });
+        // Ruling (e): no plain-member write advances the snapshot version, so the variant carries no advance step.
+        for (const scenario of [delivered, expires]) {
+            const requests = commandsOf(scenario).filter((command) => command.kind === 'http.request').map((command) => command.commandId);
+            expect(requests).toEqual([
+                `alm-rtc-${scenario?.scenarioKey}-sender-ensure-group`,
+                `alm-rtc-${scenario?.scenarioKey}-sender-ensure-member`
+            ]);
+        }
         expect(observedOf(delivered)).toEqual([AL_DELIVERY_ADMITTED_STATES, ['transport-accepted']]);
 
         expect(sendOf(expires)).toMatchObject({ carrier: 'rtc', minSnapshotVersion: { absolute: 999_999 }, ack: 'receiver', ttlMs: 7_500 });
         expect(observedOf(expires)).toEqual([AL_DELIVERY_ADMITTED_STATES, ['expired']]);
-        expect(commandsOf(expires).some((command) => command.kind === 'http.request' && command.commandId?.endsWith('advance-group'))).toBe(false);
     });
 
     it('waits for the receiver\'s not-yet-in-sync refusal over RTC, then for one delivery or for absence past expiry', () => {

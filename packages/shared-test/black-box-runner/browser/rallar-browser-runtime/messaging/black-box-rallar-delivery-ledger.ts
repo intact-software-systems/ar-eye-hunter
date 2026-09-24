@@ -79,6 +79,7 @@ export class BlackBoxRallarDeliveryLedger {
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const roomRef = blackBoxRallarRoomRefOf(config, { roomRef: send.roomRef });
+        const snapshotFloorOption = this.#resolveSnapshotFloor(send, roomRef);
         const channel = this.#input.typedChannels.open(config, { typeId: send.typeId, topicId: send.topicId, roomRef });
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_started', {
             handleId: send.handleId,
@@ -88,8 +89,7 @@ export class BlackBoxRallarDeliveryLedger {
             roomId: config.roomId,
             roomRef
         });
-        const minSnapshotVersion = this.#resolveSnapshotFloor(send, roomRef);
-        const handle = await channel.send(send.payload, { ...toTypedSendOptions(send), ...minSnapshotVersion });
+        const handle = await channel.send(send.payload, { ...toTypedSendOptions(send), ...snapshotFloorOption });
         this.#deliveryMsgIds.set(send.handleId, handle.msgId);
         this.#dropEvictedDeliveries();
         const outcome = await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES, timeoutMs: send.timeoutMs });

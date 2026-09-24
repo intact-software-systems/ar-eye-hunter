@@ -903,10 +903,10 @@ function toAdmissionOutcomeWait(
 
 /**
  * A send above the receiver's room snapshot. The receiver refuses it at admission and writes nothing; its NACK
- * schedules the sender's retries (D35). `delivered-after-refresh` states a floor one past the sender's own version
- * and then advances the group, so a later copy is admitted; the sender proves only its own hop evidence (D28). It
- * reads red at the receiver's `received-1`: no plain-member write advances the snapshot version, so the advance is a
- * no-op. `expires` states a floor no group reaches, so every copy is refused until the message expires.
+ * schedules the sender's retries (D35). `delivered-after-refresh` states a floor one past the sender's own version,
+ * so it proves NACK → retry → delivery once the group version advances; the sender proves only its own hop evidence
+ * (D28). Today no plain-member write advances that version, so the variant is a named red at the receiver's
+ * `received-1` (ruling e). `expires` states a floor no group reaches, so every copy is refused until it expires.
  */
 function toNotYetInSyncSenderCommands(
     sender: AlmConformanceStepInput,
@@ -933,7 +933,6 @@ function toNotYetInSyncSenderCommands(
     return [
         send,
         ...toAdmissionCommands({ ...sender, index: 1 }),
-        ...(expires ? [] : [toActiveMemberCommand(sender, 'advance')]),
         toObserveCommand({ ...sender, index: 1, state }),
         toResultAssertion({
             step: sender,
@@ -1011,7 +1010,7 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
         },
         commands: [
             toEnsureGroupCommand(recipe),
-            toActiveMemberCommand(recipe, 'member'),
+            toEnsureMemberCommand(recipe),
             toConnectCommand(recipe),
             ...toConnectedStorageCountersCommands(recipe),
             ...recipe.commands,
@@ -1048,30 +1047,22 @@ function toEnsureGroupCommand(step: AlmConformanceStepInput): RallarBlackBoxTest
     };
 }
 
-/**
- * The prologue's `member` PUT makes the client an active member; `not-yet-in-sync` repeats it under its own
- * request id (`advance`) to move the group version past the send's floor.
- */
-function toActiveMemberCommand(
-    step: AlmConformanceStepInput,
-    operation: 'member' | 'advance'
-): RallarBlackBoxTestCommand {
+function toEnsureMemberCommand(step: AlmConformanceStepInput): RallarBlackBoxTestCommand {
     const group = step.input.group;
     return {
         kind: 'http.request',
-        commandId: toCommandId(step, operation === 'member' ? 'ensure-member' : 'advance-group'),
+        commandId: toCommandId(step, 'ensure-member'),
         timeoutMs: toBudgetMs(ENSURE_TIMEOUT_MS, step.input.deadlineMs),
         metadata: {
-            purpose: operation === 'member'
-                ? 'Ensure the logged-in browser client is an active group member before the ALM carrier connects.'
-                : 'Advance the group version past the not-yet-in-sync send\'s snapshot floor.',
+            purpose: 'Ensure the logged-in browser client is an active group member ' +
+                'before the ALM carrier connects.',
             idempotent: true,
             group: toRoomRef(group)
         },
         request: {
             method: 'PUT',
             path: `${toStatePrefix(group)}/groups/${group.groupId}/members/{auth.clientId}` +
-                `/requests/${toEnsureRequestId(step, operation)}`,
+                `/requests/${toEnsureRequestId(step, 'member')}`,
             body: {
                 status: 'active'
             }
@@ -1293,7 +1284,7 @@ function toSendHandleId(step: AlmConformanceMessageStepInput): string {
 
 function toEnsureRequestId(
     step: AlmConformanceStepInput,
-    operation: 'group' | 'member' | 'advance'
+    operation: 'group' | 'member'
 ): string {
     return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
         `-${step.role}-${operation}`;

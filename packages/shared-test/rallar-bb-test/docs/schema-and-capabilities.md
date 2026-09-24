@@ -164,20 +164,20 @@ A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
 `scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
-`minSnapshotVersion` are each refused beside it, by the control validator and by the page, because the
-replayed envelope already fixes them. It is a harness capability, not a product
-path: the product falls back to its second carrier only after an `unroutable`
-verdict, so one logical message never reaches both. The page reads the envelope
-the earlier handle's first carrier captured and admits that same envelope through
-the named carrier's own admission call, the one a fallback makes. It returns
-`{ handleId, msgId, carrier, verdict, reason? }`: the named handle, that carrier's
-admission verdict (`admitted`, `duplicate`, …) and the verdict's detail when it
-has one. The sender's two outbounds keep separate sent rows, so the replay reads
-`admitted`. A replay opens no handle of its own, but the replay carrier's
-settlements land on the earlier handle, so a later `messages.receipts` for it is
-not first-carrier evidence. A replay the page cannot perform (no connected
-session, or the capturing carrier no longer retains the envelope) fails with
-`RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
+`minSnapshotVersion` are each refused beside it, by the control validator and by
+the page, because the replayed envelope already fixes them. It is a harness
+capability, not a product path: the product falls back to its second carrier only
+after an `unroutable` verdict, so one logical message never reaches both. The page
+reads the envelope the earlier handle's first carrier captured and admits that
+same envelope through the named carrier's own admission call, the one a fallback
+makes. It returns `{ handleId, msgId, carrier, verdict, reason? }`: the named
+handle, that carrier's admission verdict (`admitted`, `duplicate`, …) and the
+verdict's detail when it has one. The sender's two outbounds keep separate sent
+rows, so the replay reads `admitted`. A replay opens no handle of its own, but the
+replay carrier's settlements land on the earlier handle, so a later
+`messages.receipts` for it is not first-carrier evidence. A replay the page cannot
+perform (no connected session, or the capturing carrier no longer retains the
+envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
@@ -187,19 +187,20 @@ routes a WS-carried multicast room envelope, so the Hetzner two-agent manifest
 withholds that order.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
-`rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own RTC
-`admission-outcome` refusing the send as `rejected` with a reason starting
+`rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own
+RTC `admission-outcome` refusing the send as `rejected` with a reason starting
 `not-yet-in-sync`; that refusal writes no rows, sends the sender a NACK and
 refreshes the receiver's room once. `delivered-after-refresh` states
-`{ aboveCurrentBy: 1 }`, then re-issues the prologue's active-member PUT under
-its own request id to advance the group version, and its receiver waits to
-receive the message once; the sender proves only its own `transport-accepted`.
-It reads red at the receiver's `received-1` because no plain-member write
-advances the snapshot version: the active-member PUT is a no-op for an active
-member, and a presence write moves only the presence revision. The Hetzner
-two-agent manifest withholds it for that reason. `expires` states `{ absolute: 999999 }` with the 7.5 s expiry lifetime; the
-receiver proves absence for the rest of that lifetime and past it, and the sender
-observes `expired`.
+`{ aboveCurrentBy: 1 }` and its receiver waits to receive the message once, so
+it proves NACK → retry → delivery once the group version advances; the sender
+proves only its own `transport-accepted`. Today no plain-member write advances
+that version (the active-member PUT is a no-op for an active member, and a
+presence write moves only the presence revision), so the variant carries no
+advance step and is a named red at the receiver's `received-1`. The Hetzner
+two-agent manifest withholds it for that reason. `expires` states
+`{ absolute: 999999 }` with the 7.5 s expiry lifetime; the receiver proves
+absence for the rest of that lifetime and past it, and the sender observes
+`expired`.
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads
 its current lifecycle without waiting. The shared states are `submitted`,

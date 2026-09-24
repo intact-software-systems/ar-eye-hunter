@@ -380,6 +380,7 @@ it('stamps an absolute floor as given and resolves aboveCurrentBy against the se
     facade.behavior.resolveRoomMinSnapshotVersion.mockReturnValue(undefined);
     await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-uncached', minSnapshotVersion: { aboveCurrentBy: 1 } }))
         .rejects.toThrow('messages.send.minSnapshotVersion.aboveCurrentBy needs the sender\'s room snapshot version; room-1 has none cached.');
+    expect(events.some((event) => JSON.stringify(event).includes('h-uncached')), 'a refused floor leaves no send_started').toBe(false);
     await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-both', minSnapshotVersion: { absolute: 1, aboveCurrentBy: 1 } }))
         .rejects.toThrow('messages.send.minSnapshotVersion must name exactly one of absolute or aboveCurrentBy, as a positive integer.');
     expect(facade.records.typedSends).toHaveLength(3);
