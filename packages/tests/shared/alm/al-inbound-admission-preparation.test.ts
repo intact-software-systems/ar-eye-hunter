@@ -133,6 +133,7 @@ describe('inbound admission preparation boundary', () => {
                 seq: 1,
                 msg: message,
                 plan: prepared.plan,
+                carrier: 'ws' as const,
                 ownerRetainUntilMs: prepared.read.nowMs + prepared.read.retention.msgOwnerTtlMs
             },
             supersedence: {},

@@ -14,12 +14,20 @@ import {
 } from '../al-contracts/al-message-persistence/persisted-al-value-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../al-contracts/al-message-resource-limits.ts';
 import type { ALSupersedencePersistenceValue } from '../al-contracts/al-runtime.ts';
+import type { ALDeliveryCarrier } from './delivery/al-delivery-lifecycle.ts';
 
 import type { ALOutboundVersionedClientRecord } from './outbound/admission/al-outbound-admission-store.ts';
 
 export function decodeALAdmissionString(value: unknown): string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError('Stored admission identifier is invalid');
+    }
+    return value;
+}
+
+export function decodeALAdmissionCarrier(value: unknown): ALDeliveryCarrier {
+    if (typeof value !== 'string' || (value !== 'rtc' && value !== 'ws')) {
+        throw new TypeError('Stored admission carrier is invalid');
     }
     return value;
 }

@@ -10,11 +10,13 @@ import {
 import type { ALAdmissionDecoder } from '@shared/alm/al-admission-decoder.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import {
     createALInboundAdmissionStore,
     type ALInboundAdmissionStore,
     type ALInboundControlOwnerIndex
 } from '@shared/alm/inbound/al-inbound-admission-store.ts';
+import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import {
     decodeALInboundWorkEntry,
     toALInboundWorkType
@@ -76,10 +78,11 @@ const TRACKED_CONTROL_OWNERS: ALInboundControlOwnerIndex = {
 
 async function seedPendingAcknowledgement(
     admissionStore: ALInboundAdmissionStore,
-    controlOwners: ALInboundControlOwnerIndex = TRACKED_CONTROL_OWNERS
+    controlOwners: ALInboundControlOwnerIndex = TRACKED_CONTROL_OWNERS,
+    /** Absent seeds a message that arrived from its sender over WS. */
+    source: ALInboundMessageRuntime.Source = { kind: 'ws-client', peerId: message.id.senderId }
 ): Promise<void> {
     const expireAtTimestamp = Date.now() + 60_000;
-    const source = { kind: 'ws-client' as const, peerId: message.id.senderId };
     const nowMs = Date.now();
     const read = await admissionStore.readIncomingMessage({
         msg: message,
@@ -192,10 +195,11 @@ async function readAcknowledgements(
 
 async function readRetainedWork(
     admissionStore: ALInboundAdmissionStore,
-    workQueue: QueueBoxResourceEntryRepository
+    workQueue: QueueBoxResourceEntryRepository,
+    carrier: ALDeliveryCarrier = 'ws'
 ) {
     const page = await workQueue.readWorkPage({
-        typeId: toALInboundWorkType(admissionStore.namespace, 'ws'),
+        typeId: toALInboundWorkType(admissionStore.namespace, carrier),
         status: EntityStatus.NEW,
         maxToRead: 10,
         cursor: null
@@ -230,6 +234,21 @@ describe('inbound control admission', () => {
         const state = await readAcknowledgements(backend, admissionStore);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
+    });
+
+    it('writes the ACK it relays upstream under the carrier the acknowledged message arrived on', async () => {
+        const { admissionStore, workQueue, control } = createFixture();
+        await seedPendingAcknowledgement(admissionStore, TRACKED_CONTROL_OWNERS, {
+            kind: 'rtc-peer',
+            peerId: message.id.senderId
+        });
+
+        // The acknowledgement itself reaches the WS runtime's control admission.
+        expect((await control.admit(createAcknowledgement('receiver'))).kind).toBe('committed');
+
+        expect(await readRetainedWork(admissionStore, workQueue, 'ws')).toEqual([]);
+        expect((await readRetainedWork(admissionStore, workQueue, 'rtc')).map((work) => work.payload.kind))
+            .toEqual(['send-control']);
     });
 
     it('writes nothing for an acknowledgement from a peer that does not own the message', async () => {

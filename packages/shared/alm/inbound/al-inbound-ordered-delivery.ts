@@ -139,11 +139,11 @@ export class ALInboundOrderedDelivery {
         const computed = prepareALInboundCommitBundle({
             read,
             facts,
-            carrier: toALDeliveryCarrier(read.source),
             mutations: [],
             effects: [{
                 effectId: `resync:${encodeURIComponent(msg.id.senderId)}:${encodeURIComponent(msg.id.msgId)}`,
                 expireAtTimestamp: read.nowMs + read.retention.durableEffectTtlMs,
+                carrier: toALDeliveryCarrier(read.source),
                 payload: {
                     kind: 'send-nack',
                     toPeerId: read.source.kind === 'trusted-server' ? msg.id.senderId : read.source.peerId,

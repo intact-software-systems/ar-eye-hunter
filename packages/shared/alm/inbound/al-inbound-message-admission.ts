@@ -152,10 +152,15 @@ export class ALInboundMessageAdmission {
         decodeALInboundWorkEntry(work.entry, admissionStore.namespace);
         const observed = await this.dependencies.workPort.retainIfAbsent(work.entry);
         const stored = decodeALInboundWorkEntry(observed, admissionStore.namespace);
-        if (!jsonEquals(stored.payload, pending) || stored.expireAtTimestamp !== deadline) {
+        // One message retained by an earlier arrival, over either carrier, is this same pending admission:
+        // the row keeps that first arrival's source, and only a different message or deadline is corrupt.
+        if (
+            stored.payload.kind !== 'admit-message' || !jsonEquals(stored.payload.msg, pending.msg) ||
+            stored.expireAtTimestamp !== deadline
+        ) {
             throw new ALAdmissionCorruptionError(
                 JSON.stringify(observed.key),
-                new TypeError('Pending inbound admission differs from its immutable message or source')
+                new TypeError('Pending inbound admission differs from its immutable message')
             );
         }
         if (deadline <= clock.nowMs()) {

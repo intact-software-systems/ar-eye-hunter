@@ -27,7 +27,8 @@ import {
 } from './al-inbound-runtime-diagnostics.ts';
 import {
     AL_INBOUND_WORK_LEASE_MS,
-    decodeALInboundWorkClaim,
+    assertALInboundWorkCarrier,
+    decodeALInboundWorkEntry,
     resolveALInboundWorkDueAtMs,
     toALInboundWorkType,
     type ALPersistedInboundEffect
@@ -392,12 +393,8 @@ export class ALInboundMessageRuntime {
      * cannot be decoded, and a claim that throws, name no payload here; the batch still counts them.
      */
     private async runInboundClaim(claim: ALWorkClaim, batchStartedAtMs: number): Promise<ALWorkOutcome> {
-        const claimed = decodeALInboundWorkClaim(claim.entry, this.admissionStore.namespace, this.dependencies.carrier);
-        if (claimed.left) {
-            // The port reserves this carrier's type alone; a row of the other goes straight back to its own runtime.
-            return { status: 'not-ready', readyAtMs: this.dependencies.clock.nowMs() };
-        }
-        const effect = claimed.right!;
+        const effect = decodeALInboundWorkEntry(claim.entry, this.admissionStore.namespace);
+        assertALInboundWorkCarrier(effect, this.dependencies.carrier);
         this.recordClaimStarted(batchStartedAtMs, effect.effectId);
         const startedAtMs = this.dependencies.clock.nowMs();
         const outcome = await this.runInboundEffect(effect);

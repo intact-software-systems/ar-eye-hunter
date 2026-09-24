@@ -23,7 +23,6 @@ import {
 import { readALInboundStoredMessage } from '@shared/alm/inbound/al-inbound-canonical-message.ts';
 import {
     computeALInboundWorkEntry,
-    decodeALInboundWorkClaim,
     decodeALInboundWorkEntry,
     toALInboundWorkKey,
     toALInboundWorkType,
@@ -109,7 +108,8 @@ function createBufferedSnapshot() {
         trackKey: toALOrderingTrackKey(message)!,
         seq: 2,
         message: toMessageReference(message),
-        plan: planMessage(message)
+        plan: planMessage(message),
+        carrier: 'ws' as const
     };
 }
 
@@ -539,14 +539,6 @@ describe('inbound admission persisted values', () => {
         await workQueue.enqueue(entry);
         expect(await claimWork(port, store.namespace)).toEqual([]);
         expect(await workQueue.getItem(entry.key)).toMatchObject({ status: EntityStatus.NON_RETRYABLE });
-    });
-
-    it('decodes the carrier a row\'s type names, and hands a claim of the other carrier back as a value', () => {
-        const work = createWork();
-
-        expect(decodeALInboundWorkEntry(work.entry, 'inbound').carrier).toBe('ws');
-        expect(decodeALInboundWorkClaim(work.entry, 'inbound', 'ws').right?.effectId).toBe('effect');
-        expect(decodeALInboundWorkClaim(work.entry, 'inbound', 'rtc').left).toEqual({ kind: 'foreign-carrier', carrier: 'ws' });
     });
 
     it('rejects queued work whose type names no carrier of its namespace', () => {

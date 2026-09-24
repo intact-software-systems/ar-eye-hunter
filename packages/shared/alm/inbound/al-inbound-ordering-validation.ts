@@ -6,11 +6,13 @@ import type { ALAdmissionBackend } from '../al-admission-backend.ts';
 import { ALAdmissionCorruptionError } from '../al-admission-decoder.ts';
 import {
     decodeALAdmissionArray,
+    decodeALAdmissionCarrier,
     decodeALAdmissionNumber,
     decodeALAdmissionRecord,
     decodeALAdmissionString
 } from '../al-admission-value-validation.ts';
 import type { ALBufferedOrderedMessageSnapshot } from '../al-runtime-state-stores.ts';
+import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundCommitBundle,
     ALInboundDeliveryProgress,
@@ -30,6 +32,8 @@ export interface ALInboundDeliveryOwner {
 }
 
 export interface ALInboundOrderedDeliverySnapshot extends ALBufferedOrderedMessageSnapshot {
+    /** The carrier the buffered message arrived on: its release is claimed and dispatched by that runtime. */
+    readonly carrier: ALDeliveryCarrier;
     readonly delivery?: ALInboundDeliveryOwner;
 }
 
@@ -44,6 +48,7 @@ export interface ALStoredInboundBufferedSnapshot {
     readonly seq: number;
     readonly message: ALInboundMessageReference;
     readonly plan: ALMessageHandlingPlan;
+    readonly carrier: ALDeliveryCarrier;
     readonly delivery?: ALInboundDeliveryOwner;
 }
 
@@ -83,6 +88,7 @@ export function toALStoredInboundBufferedSnapshot(
         seq: snapshot.seq,
         message: toALInboundMessageReference(snapshot.msg),
         plan: snapshot.plan,
+        carrier: snapshot.carrier,
         ...(snapshot.delivery === undefined ? {} : { delivery: snapshot.delivery })
     };
 }
@@ -91,11 +97,12 @@ export function decodeALInboundBufferedSnapshot(
     value: unknown,
     slot: ALInboundBufferedSlot
 ): ALStoredInboundBufferedSnapshot {
-    const snapshot = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'message', 'plan'], ['delivery']);
+    const snapshot = decodeALAdmissionRecord(value, ['trackKey', 'seq', 'message', 'plan', 'carrier'], ['delivery']);
     const trackKey = decodeALAdmissionString(snapshot.trackKey);
     const seq = decodeALAdmissionNumber(snapshot.seq);
     const message = decodeALInboundMessageReference(snapshot.message);
     const plan = decodeALInboundPlan(snapshot.plan);
+    const carrier = decodeALAdmissionCarrier(snapshot.carrier);
     if (trackKey !== slot.trackKey || slot.key !== `${slot.prefix}${seq}`) {
         throw new TypeError('Persisted buffered message does not match its ordering slot');
     }
@@ -106,10 +113,17 @@ export function decodeALInboundBufferedSnapshot(
         throw new TypeError('Persisted buffered plan does not match its sequence');
     }
     if (snapshot.delivery === undefined) {
-        return { trackKey, seq, message, plan };
+        return { trackKey, seq, message, plan, carrier };
     }
     const delivery = decodeALAdmissionRecord(snapshot.delivery, ['effectId']);
-    return { trackKey, seq, message, plan, delivery: { effectId: decodeALAdmissionString(delivery.effectId) } };
+    return {
+        trackKey,
+        seq,
+        message,
+        plan,
+        carrier,
+        delivery: { effectId: decodeALAdmissionString(delivery.effectId) }
+    };
 }
 
 export interface ReadALInboundBufferedMessageInput {
@@ -138,6 +152,7 @@ export async function readALInboundBufferedMessage(
         seq: stored.seq,
         msg: owner.msg,
         plan: stored.plan,
+        carrier: stored.carrier,
         ownerRetainUntilMs: owner.retainUntilMs,
         ...(stored.delivery === undefined ? {} : { delivery: stored.delivery })
     };

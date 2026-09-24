@@ -45,7 +45,7 @@ export interface ALInboundDurableEffectWrite {
     readonly effectId: string;
     readonly payload: ALInboundDurableEffect;
     readonly expireAtTimestamp: number;
-    /** Whose runtime claims the row: the carrier its admitted message, or that message's owner, arrived on. */
+    /** Whose runtime claims the row: the carrier the message the effect acts on arrived on. */
     readonly carrier: ALDeliveryCarrier;
 }
 
@@ -57,12 +57,6 @@ export interface ALPersistedInboundEffect {
     readonly retryAtMs: number;
     readonly leaseUntilMs: number | undefined;
     readonly expireAtTimestamp: number;
-    readonly carrier: ALDeliveryCarrier;
-}
-
-/** A claimed row the other carrier's runtime owns: never corruption, and never this claimant's to run. */
-export interface ALInboundForeignCarrierWork {
-    readonly kind: 'foreign-carrier';
     readonly carrier: ALDeliveryCarrier;
 }
 
@@ -158,16 +152,11 @@ export function decodeALInboundWorkEntry(entry: ResourceEntry, namespace: string
     }
 }
 
-/** A claim decodes as this runtime's only when its row's type names the claiming carrier. */
-export function decodeALInboundWorkClaim(
-    entry: ResourceEntry,
-    namespace: string,
-    carrier: ALDeliveryCarrier
-): Either<ALInboundForeignCarrierWork, ALPersistedInboundEffect> {
-    const effect = decodeALInboundWorkEntry(entry, namespace);
-    return effect.carrier === carrier
-        ? Either.ofRight(effect)
-        : Either.ofLeft({ kind: 'foreign-carrier', carrier: effect.carrier });
+/** The port reserves its own carrier's type alone, so a claim of the other carrier means that contract broke. */
+export function assertALInboundWorkCarrier(effect: ALPersistedInboundEffect, carrier: ALDeliveryCarrier): void {
+    if (effect.carrier !== carrier) {
+        throw new TypeError(`Inbound ${effect.carrier} work reached the ${carrier} runtime's claim`);
+    }
 }
 
 /** Both carriers' rows share one store and one key space; only the type says whose runtime claims one. */

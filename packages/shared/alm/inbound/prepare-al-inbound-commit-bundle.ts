@@ -7,7 +7,6 @@ import {
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import type { ALOrderingObservation } from '../../al-contracts/al-runtime.ts';
 import type { ResourceEntry } from '../../queuebox/ResourceEntry.ts';
-import type { ALDeliveryCarrier } from '../delivery/al-delivery-lifecycle.ts';
 import type {
     ALInboundAdmissionMutation,
     ALInboundBufferedReleaseReadDto,
@@ -35,8 +34,6 @@ export interface PrepareALInboundCommitBundleInput {
     readonly read: ALInboundMessageReadDto | ALInboundBufferedReleaseReadDto;
     readonly mutations: readonly ALInboundAdmissionMutation[];
     readonly effects: readonly ALInboundEffectIntent[];
-    /** Every effect of one bundle follows the one message it admits, so they share that message's carrier. */
-    readonly carrier: ALDeliveryCarrier;
     readonly facts: ALInboundEffectFacts;
 }
 
@@ -82,7 +79,7 @@ export function prepareALInboundCommitBundle(
             effectId,
             expireAtTimestamp,
             payload,
-            carrier: input.carrier
+            carrier: effect.carrier
         });
     });
     const deliveryMutations = computeDeliveryOwnerMutations(input, durableEffects);
@@ -251,6 +248,7 @@ function toDeliveryOwnerMutation(
             seq: snapshot.seq,
             msg: snapshot.msg,
             plan: snapshot.plan,
+            carrier: snapshot.carrier,
             delivery: { effectId: effect.effectId }
         },
         expireAtTimestamp
