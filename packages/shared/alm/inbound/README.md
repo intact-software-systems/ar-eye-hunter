@@ -217,9 +217,12 @@ to come round to it.
 Pending replay uses the currently configured planner. The WS server additionally
 supplies `readPendingAdmissionAuthority`, which calls its existing asynchronous
 authority owner before admission. Current authorized recipients intersect the
-captured recipients. Revocation retires pending work without admission metadata or
-receipts. Temporary authority catch-up uses the existing `RETRY`/future `nextTs`
-path with `reason: 'not-ready'`, preserving the processing attempt count.
+captured recipients. An admitted room multicast counts the server among its group
+members, so the server delivers it locally to the topic router, which owns the
+room's fanout; the server never forwards it. Revocation retires pending work
+without admission metadata or receipts. Temporary authority catch-up uses the
+existing `RETRY`/future `nextTs` path with `reason: 'not-ready'`, preserving the
+processing attempt count.
 
 The deadline is captured before pending retention and checked again after awaited
 authority reads. Changed policy, restart, and retry cannot extend it. Conditional

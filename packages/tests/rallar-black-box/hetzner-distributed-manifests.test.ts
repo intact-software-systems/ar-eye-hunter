@@ -1080,9 +1080,9 @@ describe('Hetzner distributed manifest catalog', () => {
 
         const commandIds = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .map((command) => command.commandId ?? '');
-        // Only ws-then-rtc runs on Hetzner: api-v1 does not route a WS-carried multicast room envelope (PR #588).
+        // Both cross-carrier orders run on Hetzner: api-v1 routes a WS-carried multicast room envelope (Task 7, R-S2b-1).
         expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-ws-then-rtc'))).toBe(true);
-        expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-rtc-then-ws'))).toBe(false);
+        expect(commandIds).toContain('alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-duplicate-outcome-ws');
         // delivered-after-refresh is withheld: no plain-member write advances the snapshot version.
         expect(commandIds.some((commandId) => commandId.includes('not-yet-in-sync-delivered-after-refresh'))).toBe(false);
         for (const carrier of ['rtc', 'rtc-with-ws-fallback']) {

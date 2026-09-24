@@ -585,7 +585,7 @@ both-normal baseline; no harness constant changed. D32–D36 are settled (2026-0
 **What execution found (2026-09-24):** S2b's execution (PR #588) recorded three product/harness gaps
 for the maintainer, beyond the plan: (a) the api-v1 WS server admits a WS-carried multicast room
 envelope but never routes it, so the product's own RTC→WS fallback may be silently dropped —
-`cross-carrier-duplicate` `rtc-then-ws` is a named red until that is fixed; (b) no plain-member write
+fixed in Task 7 (R-S2b-1); (b) no plain-member write
 advances `GroupSnapshot.group.snapshotVersion`, so `not-yet-in-sync` `delivered-after-refresh` is a
 named red until a version-advancing write exists; (c) the sender's `not-yet-in-sync` retry is one
 retry about 2.5–3 s after the first refusal, because the second NACK's control admission is rejected

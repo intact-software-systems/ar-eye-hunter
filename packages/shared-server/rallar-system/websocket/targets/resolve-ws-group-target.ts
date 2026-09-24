@@ -91,8 +91,10 @@ function resolveLiveGroupSessions(
     snapshot: GroupSnapshot
 ): readonly WsServerResolvedRecipient[] {
     const nowEpochMs = input.options.now?.() ?? Date.now();
+    const originSessionId = input.message.targets?.mode === 'multicast' ? input.message.id.senderId : undefined;
     return snapshot.activeSessions
         .filter((session) =>
+            session.sessionId !== originSessionId &&
             isGroupSnapshotSessionLive(session, nowEpochMs) &&
             input.webSocketServer.connections.get(session.sessionId)?.isOpen
         )

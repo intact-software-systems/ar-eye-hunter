@@ -181,10 +181,11 @@ envelope) fails with `RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE`.
 
 The `cross-carrier-duplicate` conformance scenario replays in both orders over
 `rtc-with-ws-fallback`, and its receiver waits for the `admission-outcome` that
-refuses the second copy as `not-handled`/`duplicate`. `ws-then-rtc` proves that
-refusal today. `rtc-then-ws` asserts it and reads red until the api-v1 WS server
-routes a WS-carried multicast room envelope, so the Hetzner two-agent manifest
-withholds that order.
+refuses the second copy as `not-handled`/`duplicate`. Both orders prove that
+refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
+envelope, which the api-v1 WS server routes to the room's other members, so the
+receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
+orders.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own

@@ -789,9 +789,7 @@ function toOrderingResyncSenderCommands(
  * `unroutable` verdict): the replay reuses the first handle's captured envelope on the other carrier.
  * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
  * acknowledgement (D28). The receiver's count proves the second copy was not delivered twice, and its
- * duplicate-outcome wait proves the second copy arrived and was refused: ws-then-rtc proves that
- * today; rtc-then-ws asserts it and reads red until the api-v1 WS server routes a WS-carried
- * multicast room envelope.
+ * duplicate-outcome wait proves the second copy arrived and was refused, in both orders.
  */
 function toCrossCarrierDuplicateSenderCommands(
     sender: AlmConformanceStepInput,

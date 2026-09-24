@@ -577,22 +577,26 @@ describe('createWsServerTargetResolver state sync routing', () => {
         ).toEqual(['session-a']);
     });
 
-    it('routes multicast targets using target groupRef', () => {
+    it('routes multicast targets using target groupRef and never back to their origin', () => {
         configureTestCacheRepositories();
 
         const webSocketServer = new JsonWebSocketServer();
         addOpenConnection(webSocketServer, 'session-a');
         addOpenConnection(webSocketServer, 'session-b');
+        addOpenConnection(webSocketServer, 'session-c');
         const workspaceB = createGroupSnapshot({
             groupId: 'shared-room',
             applicationId: 'app-1',
             workspaceId: 'workspace-b',
-            members: [{ principalId: 'bob', sessionId: 'session-b', status: 'active' }],
+            members: [
+                { principalId: 'bob', sessionId: 'session-b', status: 'active' },
+                { principalId: 'carol', sessionId: 'session-c', status: 'active' }
+            ],
             snapshotVersion: 1
         });
         const message = {
             ...newALMulticastMessage(
-                'session-b',
+                'session-c',
                 newALEventRoute('room.chat', 'shared-room', 'msg-1'),
                 workspaceB.group,
                 'chat.message.v1',
