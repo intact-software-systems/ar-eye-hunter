@@ -585,8 +585,13 @@ both-normal baseline; no harness constant changed. The five plan-level decisions
 ### Release 3, Slice 2: outcomes
 
 - **S2 One identity and receipted audiences.** S2a and S2b are concrete above; S2c carries the
-  outcome below, with the code survey's corrections and ten open questions in
-  [alm-s2c-design-addendum.md](alm-s2c-design-addendum.md). Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
+  outcome below and lands as two PRs (D47): `plans/alm-s2c-i-receipt-contract-and-server-path-implementation-plan.md`
+  (ACK v2, `receiver`, logical receipt keys, the WS server's admission, aggregation and outbox-row
+  routing, client-assigned WS ordering) and
+  `plans/alm-s2c-ii-frozen-audience-evidence-and-roles-implementation-plan.md` (the frozen audience
+  on both carriers, retry to missing recipients through the tree, logical evidence, the third role
+  and three-agent runs, the consumer proof); the code survey's corrections and the settled questions
+  D37–D47 are in [alm-s2c-design-addendum.md](alm-s2c-design-addendum.md). Session-logical inbound namespace for dedup, ordering, supersedence, and message-owner
   keys; carrier-tagged control and ACK histories only. The logical audience is frozen at admission
   from the channel's addressed sessions and the identified room snapshot. ACKs carry origin and
   logical recipient; relays forward far ACKs toward the origin; the WS server aggregates broadcast
@@ -798,4 +803,4 @@ and leave the rest outcome-shaped. Do not add pull request status prose to this 
   and folded into the proposal; S2 split into S2a/S2b/S2c with S2a in the concrete horizon.
 - 2026-09-24: S2a delivered (merged as `4c4634841`); S2b moved into the concrete horizon with its plan
   under `plans/`; the S2c code survey recorded as an addendum; the sixteen open questions settled with
-  the maintainer as D32–D47 (S2c lands as S2c-i and S2c-ii).
+  the maintainer as D32–D47; the S2c-i and S2c-ii plans written under `plans/`.
