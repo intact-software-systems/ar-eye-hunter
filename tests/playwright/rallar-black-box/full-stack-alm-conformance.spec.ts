@@ -151,9 +151,9 @@ async function runAlmConformanceScenarios(
             expect.soft(senderNavigations, 'reload replaces the actual sender main-frame document once').toBe(1);
             expect.soft(receiverNavigations, 'receiver retains its document and subscriptions').toBe(0);
         }
-        expect.soft(outcome.receiver.ok, `${scenario.scenarioId} receiver: ${outcome.receiver.summary}`)
+        expect.soft(outcome.receiver.ok, `${scenario.scenarioKey} receiver: ${outcome.receiver.summary}`)
             .toBe(true);
-        expect.soft(outcome.sender.ok, `${scenario.scenarioId} sender: ${outcome.sender.summary}`)
+        expect.soft(outcome.sender.ok, `${scenario.scenarioKey} sender: ${outcome.sender.summary}`)
             .toBe(true);
         if (scenario.scenarioId === 'delivery-lifecycle' || reload) {
             await assertScenarioIdentity(run, scenario, outcome);

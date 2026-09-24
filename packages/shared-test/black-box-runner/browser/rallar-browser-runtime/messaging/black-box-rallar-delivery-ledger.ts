@@ -12,6 +12,8 @@ import type {
     BlackBoxRallarDeliveryHandleInput,
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDeliveryObserveInput,
+    BlackBoxRallarMessageReplayDiagnostics,
+    BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarMessageSendInput
 } from '../black-box-rallar-operation-contracts.ts';
@@ -63,7 +65,14 @@ export class BlackBoxRallarDeliveryLedger {
         this.#input = input;
     }
 
-    sendMessage = async (send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> => {
+    sendMessage = async (
+        send: BlackBoxRallarMessageSendInput
+    ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics> =>
+        send.replayOnCarrier === undefined
+            ? await this.#sendNewMessage(send)
+            : await this.#replayMessage(send.replayOnCarrier);
+
+    async #sendNewMessage(send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> {
         const config = this.#input.requireConfig();
         const lease = this.#input.resources.lease();
         this.#input.resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
@@ -91,7 +100,19 @@ export class BlackBoxRallarDeliveryLedger {
         };
         this.#input.diagnostics.emitDiagnostic(config, 'rallar.browser.messages.send_completed', diagnostics);
         return diagnostics;
-    };
+    }
+
+    /** Re-admits the envelope an earlier send captured; the replay opens no handle of its own. */
+    async #replayMessage(replay: BlackBoxRallarMessageReplayTarget): Promise<BlackBoxRallarMessageReplayDiagnostics> {
+        const lease = this.#input.resources.lease();
+        const msgId = this.#deliveryMsgIds.get(replay.handleId);
+        if (msgId === undefined) {
+            throw new TypeError(`messages.send.replayOnCarrier names no retained handle ${replay.handleId}.`);
+        }
+        const verdict = await this.#input.deliveries.replayCapturedMessage({ msgId, carrier: replay.carrier });
+        this.#input.resources.assertCurrent(lease, 'Rallar replay completed after the runtime closed.');
+        return { handleId: replay.handleId, msgId, carrier: replay.carrier, verdict: verdict.kind };
+    }
 
     readReceipts = async (
         { handleId }: BlackBoxRallarDeliveryHandleInput

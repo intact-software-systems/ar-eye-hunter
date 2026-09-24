@@ -2,6 +2,7 @@ import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type { ALOutboundEnqueueResult } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { RallarValidationIssue } from '@shared/api/rallar-validation.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 
@@ -131,15 +132,24 @@ export class BrowserRallarMessageDispatch {
             };
         }
         try {
-            return carrier === 'rtc'
-                ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message)
-                : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
+            return await writeCarrierOutboxAdmission(context, carrier, message);
         }
         catch (caught) {
             const error = toError(caught);
             return { message, verdict: { kind: 'failed', detail: error.message } };
         }
     }
+}
+
+/** One carrier's own outbound admission of an envelope: the call a first send and its fallback both make. */
+export async function writeCarrierOutboxAdmission(
+    context: ApiMiddleware,
+    carrier: ALDeliveryCarrier,
+    message: ALMessage
+): Promise<ALOutboundEnqueueResult> {
+    return carrier === 'rtc'
+        ? await context.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(message)
+        : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 
 function computeFallbackDisposition(
@@ -153,7 +163,7 @@ function computeFallbackDisposition(
     return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
 }
 
-function wakeQueueBoxEngineIfQueued(
+export function wakeQueueBoxEngineIfQueued(
     engine: ApiMiddleware['middleware']['qboxEngine'],
     result: CapturedMessageAdmission
 ): void {

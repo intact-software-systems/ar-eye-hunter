@@ -13,7 +13,7 @@ import type {
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
 import { requireBlackBoxRallarInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/decode-black-box-rallar-command-input.ts';
-import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-messaging-input.ts';
+import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
 import { createSpaBrowserRallarRuntime } from '@shared-test/rallar-bb-test/browser-rallar-runtime-bridge.ts';
 import type { RallarBlackBoxBrowserTestRuntime } from '@shared-test/rallar-bb-test/browser/browser-command-contracts.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
@@ -333,6 +333,25 @@ it('projects a durable admission as enqueued and a queued admission as queued', 
     await runtime.sendMessage(send);
 
     expect(await runtime.readReceipts(query)).toMatchObject({ state: 'queued', enqueued: true, backpressured: false });
+});
+
+it('replays a handle\'s envelope on the named carrier and reports that admission\'s verdict, opening no handle', async () => {
+    const runtime = await loadRuntime();
+    const delivery = openDelivery({ kind: 'admitted', durable: true, queuedAttempts: 1 });
+    facade.behavior.typedSend.mockResolvedValue(delivery.handle);
+    await runtime.connect(connection);
+    await runtime.sendMessage({ ...send, carrier: 'rtc' });
+    facade.behavior.replayCapturedMessage.mockResolvedValueOnce({ kind: 'duplicate' });
+
+    const replay = { ...send, handleId: 'h-replay', replayOnCarrier: { handleId: 'h-1', carrier: 'ws' } };
+    expect(await runtime.sendMessage(replay)).toEqual({ handleId: 'h-1', msgId: delivery.msgId, carrier: 'ws', verdict: 'duplicate' });
+    expect(facade.behavior.replayCapturedMessage).toHaveBeenCalledWith({ msgId: delivery.msgId, carrier: 'ws' });
+    expect(facade.records.typedSends).toHaveLength(1);
+    expect(await runtime.readReceipts({ ...query, handleId: 'h-replay' })).toMatchObject({ state: 'unobservable' });
+    await expect(runtime.sendMessage({ ...replay, replayOnCarrier: { handleId: 'h-unknown', carrier: 'ws' } }))
+        .rejects.toThrow('messages.send.replayOnCarrier names no retained handle h-unknown.');
+    await expect(runtime.sendMessage({ ...replay, replayOnCarrier: { handleId: 'h-1', carrier: 'quic' } }))
+        .rejects.toThrow('messages.send.replayOnCarrier must name a handleId and a ws or rtc carrier.');
 });
 
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {

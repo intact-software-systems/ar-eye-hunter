@@ -419,6 +419,10 @@ const messagesReliabilitySchema: JsonSchema = {
 };
 const messagesScopeSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesScope };
 const messagesAckSchema: JsonSchema = { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesAck };
+const messagesReplaySchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesReplay, {
+    handleId: stringSchema,
+    carrier: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier }
+});
 const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
     controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
     typeId: stringSchema,
@@ -570,7 +574,8 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         ttlMs: { type: 'integer', minimum: 0 },
         orderingKey: stringSchema,
         seq: numberSchema,
-        handleId: stringSchema
+        handleId: stringSchema,
+        replayOnCarrier: messagesReplaySchema
     }),
     'messages.observe': strictCommandSchema('messages.observe', {
         connection: stringSchema,

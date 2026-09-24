@@ -13,7 +13,11 @@ import type {
 } from '@shared-web/browser/rallar.ts';
 import type { RallarRoomLayout } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
-import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupActivationCondition } from '@shared/api/group-lifecycle/activation-status/compute-group-activation-condition.ts';
 import type { GroupLayoutIdentity } from '@shared/api/group-lifecycle/group-layout-identity.ts';
@@ -283,6 +287,21 @@ export interface BlackBoxRallarMessageSendInput {
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
     readonly handleId: string;
+    /** Absent for an ordinary send; present, the send re-admits the named handle's captured envelope. */
+    readonly replayOnCarrier: BlackBoxRallarMessageReplayTarget | undefined;
+}
+
+export interface BlackBoxRallarMessageReplayTarget {
+    readonly handleId: string;
+    readonly carrier: ALDeliveryCarrier;
+}
+
+/** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
+export interface BlackBoxRallarMessageReplayDiagnostics {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
 }
 
 export interface BlackBoxRallarMessageSendDiagnostics {

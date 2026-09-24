@@ -180,6 +180,9 @@ class GeneratedAlmPorts {
     }
 
     private send(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
+        if (command.replayOnCarrier) {
+            return this.replay(command.replayOnCarrier);
+        }
         assert(isJsonRecordValue(command.payload));
         const rejected = command.payload.marker === 'bounded-rejection';
         const message: PortMessage = {
@@ -211,6 +214,18 @@ class GeneratedAlmPorts {
                 status: rejected ? 'rejected' : 'accepted',
                 reason: rejected ? 'Payload exceeds fixture carrier limit' : undefined
             }
+        };
+    }
+
+    /** The receiver's one inbound identity answers the replayed copy as a duplicate, so nothing more arrives. */
+    private replay(
+        replay: NonNullable<RallarBlackBoxTestMessagesSendCommand['replayOnCarrier']>
+    ): RallarBlackBoxTestCommandOutcome {
+        const original = this.handles.get(replay.handleId);
+        assert(original);
+        return {
+            status: 'ok',
+            value: { handleId: replay.handleId, msgId: original.msgId, carrier: replay.carrier, verdict: 'admitted' }
         };
     }
 

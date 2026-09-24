@@ -142,10 +142,22 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq` and `handleId`. It returns
-`{ handleId, msgId, carrier, status, reason? }`. `handleId` defaults to the
-command's own `commandId`, and every later delivery command addresses the send
-through that handle. Supersedence (`key`) and unicast targeting (`toPeerId`) are
+`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
+`replayOnCarrier`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`handleId` defaults to the command's own `commandId`, and every later delivery
+command addresses the send through that handle.
+
+`replayOnCarrier: { handleId, carrier }` (`carrier` is `ws` or `rtc`) is a harness
+capability, not a product path: the product falls back to its second carrier only
+after an `unroutable` verdict, so one logical message never reaches both. A send
+that names it opens no message and no handle. It reads the envelope the other
+carrier's outbound captured for the earlier handle and admits that same envelope
+through the named carrier's own admission call, the one a fallback makes, then
+returns `{ handleId, msgId, carrier, verdict }` with that carrier's admission
+verdict (`admitted`, `duplicate`, …). The sender's two outbounds keep separate
+sent rows, so the replay reads `admitted`; the receiver's shared inbound store is
+what answers the second copy as a duplicate. The `cross-carrier-duplicate`
+conformance scenario uses it in both orders over `rtc-with-ws-fallback`. Supersedence (`key`) and unicast targeting (`toPeerId`) are
 not part of this release; naming either one fails recipe validation.
 
 `messages.observe` waits on the in-page message handle; `messages.receipts` reads

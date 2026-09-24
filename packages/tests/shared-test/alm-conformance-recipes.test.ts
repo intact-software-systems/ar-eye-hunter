@@ -102,14 +102,14 @@ describe('alm-conformance recipe family', () => {
         }
     });
 
-    it('scopes every matched field of a scenario to that scenario typeId', () => {
+    it('scopes every matched field of a recipe pair to that pair\'s typeId', () => {
         for (const carrier of ALM_CONFORMANCE_CARRIERS) {
             for (const scenario of createAlmConformanceRecipes(toConformanceInput(carrier))) {
                 const routed = toRecipes([scenario])
                     .flatMap((recipe) => recipe.commands.flatMap(toRoutedTypeIds));
 
                 expect(routed.length).toBeGreaterThan(0);
-                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${carrier}.${scenario.scenarioId}`]));
+                expect(new Set(routed)).toEqual(new Set([`alm.conformance.${carrier}.${scenario.scenarioKey}`]));
             }
         }
     });
@@ -167,6 +167,11 @@ describe('alm-conformance recipe family', () => {
                 .map((scenario) => scenario.scenarioId)
         ).toEqual(['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle']);
         expect(
+            createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+                .filter((scenario) => !scenario.tags.includes('smoke'))
+                .map((scenario) => scenario.scenarioId)
+        ).toEqual(['delivery-reload', 'ordering-resync', 'cross-carrier-duplicate', 'cross-carrier-duplicate']);
+        expect(
             createAlmConformanceRecipes(toConformanceInput('rtc')).map((scenario) => scenario.tags)
         ).toEqual([
             ['smoke', 'full'],
@@ -176,6 +181,54 @@ describe('alm-conformance recipe family', () => {
             ['full'],
             ['full']
         ]);
+    });
+
+    it('runs the cross-carrier duplicate in both orders over the fallback carrier only, in the full scope', () => {
+        const recipeIds = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            toRecipes(
+                createAlmConformanceRecipes(toConformanceInput(carrier))
+                    .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate')
+                    .filter((scenario) => !scenario.tags.includes('smoke'))
+            ).map((recipe) => recipe.recipeId);
+
+        expect(recipeIds('rtc-with-ws-fallback')).toEqual([
+            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender',
+            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver',
+            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender',
+            'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver'
+        ]);
+        expect(recipeIds('rtc')).toEqual([]);
+        expect(recipeIds('ws')).toEqual([]);
+    });
+
+    it('replays each order\'s first send on the other carrier and never polls the replayed handle', () => {
+        const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
+        const sendsOf = (scenario: AlmConformanceScenario | undefined) =>
+            (scenario?.sender.commands ?? []).flatMap((command) =>
+                command.kind === 'messages.send'
+                    ? [{ carrier: command.carrier, replayOnCarrier: command.replayOnCarrier, handleId: command.handleId }]
+                    : []
+            );
+
+        expect(sendsOf(rtcThenWs)).toEqual([
+            { carrier: 'rtc', replayOnCarrier: undefined, handleId: 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1' },
+            {
+                carrier: 'ws',
+                replayOnCarrier: { handleId: 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1', carrier: 'ws' },
+                handleId: undefined
+            }
+        ]);
+        expect(sendsOf(wsThenRtc).map((send) => [send.carrier, send.replayOnCarrier?.carrier])).toEqual([
+            ['ws', undefined],
+            ['rtc', 'rtc']
+        ]);
+        for (const scenario of [rtcThenWs, wsThenRtc]) {
+            const observed = (scenario?.sender.commands ?? []).flatMap((command) => command.kind === 'messages.observe' ? command.state : []);
+            expect(observed).not.toContain('acknowledged');
+            expect(scenario?.receiver.commands.filter((command) => command.kind === 'messages.received'))
+                .toMatchObject([{ count: 1, absent: false }, { count: 2, absent: true }]);
+        }
     });
 
     it.each([0, 1])('requires positive storage evidence in the delivery baseline when the counter is %i', async (total) => {

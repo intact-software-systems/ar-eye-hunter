@@ -4,6 +4,7 @@ import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestJsonValue,
+    RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestRecipe,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestRtcConnectCommand
@@ -24,11 +25,14 @@ export interface CreateAlmConformanceRecipesInput {
 export interface AlmConformanceScenario {
     readonly scenarioId:
         | 'bounded-rejection'
+        | 'cross-carrier-duplicate'
         | 'deadline-expiry'
         | 'delivery-baseline'
         | 'delivery-lifecycle'
         | 'delivery-reload'
         | 'ordering-resync';
+    /** Every recipe, command, handle and type id the pair mints derives from it; distinct per recipe pair. */
+    readonly scenarioKey: string;
     readonly sender: RallarBlackBoxTestRecipe;
     readonly receiver: RallarBlackBoxTestRecipe;
     readonly tags: readonly ('smoke' | 'full')[];
@@ -41,6 +45,7 @@ type AlmConformanceFaultCarrier = 'ws' | 'rtc';
 interface AlmConformanceStepInput {
     readonly input: CreateAlmConformanceRecipesInput;
     readonly scenarioId: AlmConformanceScenario['scenarioId'];
+    readonly scenarioKey: string;
     readonly role: AlmConformanceRole;
 }
 
@@ -104,6 +109,7 @@ interface AlmConformanceResultAssertionInput {
 
 interface AlmConformanceScenarioDefinition {
     readonly scenarioId: AlmConformanceScenario['scenarioId'];
+    readonly scenarioKey: string;
     readonly tags: readonly ('smoke' | 'full')[];
     readonly carriers: readonly AlmConformanceCarrier[];
     readonly toSenderCommands: (sender: AlmConformanceStepInput) => readonly RallarBlackBoxTestCommand[];
@@ -115,6 +121,10 @@ const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
 /** `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. */
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
+/** The only cell that connects both transports, so one envelope can reach the receiver over each. */
+const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
+const CROSS_CARRIER_ORDERS = ['rtc-then-ws', 'ws-then-rtc'] as const;
+const CROSS_CARRIER_TTL_MS = 30_000;
 
 const ENSURE_TIMEOUT_MS = 5_000;
 /** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets are harness budgets. */
@@ -162,6 +172,7 @@ const RESYNC_GAP_SEQ = 300;
 const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     {
         scenarioId: 'bounded-rejection',
+        scenarioKey: 'bounded-rejection',
         tags: SMOKE_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toBoundedRejectionSenderCommands,
@@ -169,6 +180,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'deadline-expiry',
+        scenarioKey: 'deadline-expiry',
         tags: SMOKE_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeadlineExpirySenderCommands,
@@ -176,6 +188,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'delivery-baseline',
+        scenarioKey: 'delivery-baseline',
         tags: SMOKE_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeliveryBaselineSenderCommands,
@@ -183,6 +196,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'delivery-lifecycle',
+        scenarioKey: 'delivery-lifecycle',
         tags: SMOKE_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeliveryLifecycleSenderCommands,
@@ -190,6 +204,7 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'delivery-reload',
+        scenarioKey: 'delivery-reload',
         tags: FULL_TAGS,
         carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toDeliveryReloadSenderCommands,
@@ -197,11 +212,20 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
     },
     {
         scenarioId: 'ordering-resync',
+        scenarioKey: 'ordering-resync',
         tags: FULL_TAGS,
         carriers: RTC_CARRIERS,
         toSenderCommands: toOrderingResyncSenderCommands,
-        toReceiverCommands: toOrderingResyncReceiverCommands
-    }
+        toReceiverCommands: toSingleArrivalReceiverCommands
+    },
+    ...CROSS_CARRIER_ORDERS.map((order) => ({
+        scenarioId: 'cross-carrier-duplicate' as const,
+        scenarioKey: `cross-carrier-duplicate-${order}`,
+        tags: FULL_TAGS,
+        carriers: FALLBACK_CARRIERS,
+        toSenderCommands: (sender: AlmConformanceStepInput) => toCrossCarrierDuplicateSenderCommands(sender, order),
+        toReceiverCommands: toSingleArrivalReceiverCommands
+    }))
 ];
 
 export function createAlmConformanceRecipes(
@@ -222,11 +246,12 @@ function toAlmConformanceScenario(
     input: CreateAlmConformanceRecipesInput,
     definition: AlmConformanceScenarioDefinition
 ): AlmConformanceScenario {
-    const scenarioId = definition.scenarioId;
-    const sender: AlmConformanceStepInput = { input, scenarioId, role: 'sender' };
-    const receiver: AlmConformanceStepInput = { input, scenarioId, role: 'receiver' };
+    const { scenarioId, scenarioKey } = definition;
+    const sender: AlmConformanceStepInput = { input, scenarioId, scenarioKey, role: 'sender' };
+    const receiver: AlmConformanceStepInput = { input, scenarioId, scenarioKey, role: 'receiver' };
     return {
         scenarioId,
+        scenarioKey,
         tags: definition.tags,
         sender: toAlmConformanceRecipe({
             ...sender,
@@ -739,7 +764,59 @@ function toOrderingResyncSenderCommands(
     ];
 }
 
-function toOrderingResyncReceiverCommands(
+/**
+ * One envelope over both carriers, which the product never does (it falls back only after an
+ * `unroutable` verdict): the replay reuses the first handle's captured envelope on the other carrier.
+ * The sender proves its first copy was submitted and the replay admitted, never the replayed handle's
+ * acknowledgement (D28); the receiver's own count proves the second copy was not delivered.
+ */
+function toCrossCarrierDuplicateSenderCommands(
+    sender: AlmConformanceStepInput,
+    order: (typeof CROSS_CARRIER_ORDERS)[number]
+): readonly RallarBlackBoxTestCommand[] {
+    const [first, replay] = order === 'rtc-then-ws' ? (['rtc', 'ws'] as const) : (['ws', 'rtc'] as const);
+    const firstSend = toSendCommand({
+        ...sender,
+        index: 1,
+        payload: { marker: sender.scenarioId, order },
+        delivery: { ack: 'receiver', ttlMs: CROSS_CARRIER_TTL_MS, commandTimeoutMs: NON_EXPIRING_SEND_TIMEOUT_MS }
+    });
+    return [
+        { ...firstSend, carrier: first },
+        toObserveCommand({ ...sender, index: 1, state: 'transport-accepted' }),
+        toResultAssertion({
+            step: sender,
+            name: 'assert-submitted-1',
+            resultName: 'observe-transport-accepted-1',
+            field: 'submitted',
+            operator: 'equals',
+            expected: true
+        }),
+        {
+            kind: 'messages.send',
+            commandId: toCommandId(sender, 'send-2'),
+            connection: sender.input.senderConnection,
+            carrier: replay,
+            typeId: firstSend.typeId,
+            topicId: firstSend.topicId,
+            payload: firstSend.payload,
+            replayOnCarrier: { handleId: toSendHandleId({ ...sender, index: 1 }), carrier: replay },
+            timeoutMs: toBudgetMs(MESSAGE_CONTROL_TIMEOUT_MS, sender.input.deadlineMs)
+        },
+        toResultAssertion({
+            step: sender,
+            name: 'assert-replay-admitted-2',
+            resultName: 'send-2',
+            field: 'verdict',
+            operator: 'equals',
+            expected: 'admitted'
+        }),
+        toReceiptsCommand({ ...sender, index: 1 })
+    ];
+}
+
+/** The typed receiver subscribes to both transports, so a second delivery of one message counts as two. */
+function toSingleArrivalReceiverCommands(
     receiver: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     return [
@@ -762,8 +839,8 @@ function toAlmConformanceRecipe(recipe: AlmConformanceRecipeInput): RallarBlackB
     const carrier = recipe.input.carrier;
     return {
         schemaVersion: 1,
-        recipeId: `alm-${carrier}-${recipe.scenarioId}-${recipe.role}`,
-        name: `ALM conformance ${recipe.scenarioId} ${recipe.role} over ${carrier}`,
+        recipeId: `alm-${carrier}-${recipe.scenarioKey}-${recipe.role}`,
+        name: `ALM conformance ${recipe.scenarioKey} ${recipe.role} over ${carrier}`,
         continueOnFailure: false,
         metadata: {
             profile: 'alm-conformance',
@@ -865,7 +942,7 @@ function toConnectCommand(step: AlmConformanceStepInput): RallarBlackBoxTestRtcC
     };
 }
 
-function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestCommand {
+function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestMessagesSendCommand {
     const input = send.input;
     const typeId = toScenarioTypeId(send);
     const { commandTimeoutMs, ...delivery } = send.delivery;
@@ -1037,22 +1114,22 @@ function toFaultCarriers(
 }
 
 function toScenarioTypeId(step: AlmConformanceStepInput): string {
-    return `${step.input.typeId}.${step.input.carrier}.${step.scenarioId}`;
+    return `${step.input.typeId}.${step.input.carrier}.${step.scenarioKey}`;
 }
 
 function toCommandId(step: AlmConformanceStepInput, name: string): string {
-    return `alm-${step.input.carrier}-${step.scenarioId}-${step.role}-${name}`;
+    return `alm-${step.input.carrier}-${step.scenarioKey}-${step.role}-${name}`;
 }
 
 function toSendHandleId(step: AlmConformanceMessageStepInput): string {
-    return `alm-${step.input.carrier}-${step.scenarioId}-send-${step.index}`;
+    return `alm-${step.input.carrier}-${step.scenarioKey}-send-${step.index}`;
 }
 
 function toEnsureRequestId(
     step: AlmConformanceStepInput,
     operation: 'group' | 'member'
 ): string {
-    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioId}` +
+    return `alm-conformance-{runtimeIdentity}-${step.input.carrier}-${step.scenarioKey}` +
         `-${step.role}-${operation}`;
 }
 

@@ -104,7 +104,8 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELDS = {
             'ttlMs',
             'orderingKey',
             'seq',
-            'handleId'
+            'handleId',
+            'replayOnCarrier'
         ]
     },
     'messages.observe': { required: ['handleId', 'state'], optional: ['connection'] },
@@ -240,7 +241,8 @@ export const RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS = {
     httpRequest: { required: [], optional: ['url', 'path', 'method', 'headers', 'body', 'credentials', 'mode'] },
     httpResponse: { required: [], optional: ['body', 'maxBodyChars', 'acceptedStatusCodes'] },
     faultMatch: { required: [], optional: ['controlType', 'typeId', 'msgId'] },
-    faultDelayAction: { required: ['delayMs'], optional: [] }
+    faultDelayAction: { required: ['delayMs'], optional: [] },
+    messagesReplay: { required: ['handleId', 'carrier'], optional: [] }
 } as const satisfies Readonly<Record<string, RallarBlackBoxCommandFieldSet>>;
 
 type RallarBlackBoxCommandObjectFields = typeof RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS;
@@ -276,6 +278,7 @@ export const RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES = {
     messagesScope: ['room', 'world', 'all'],
     messagesReliability: ['best-effort', 'at-least-once'],
     messagesAck: ['none', 'receiver', 'all-logical-recipients', 'group-leader'],
+    messagesReplayCarrier: ['ws', 'rtc'],
     faultCarrier: ['ws', 'rtc'],
     faultControlType: ['ack', 'nack', 'repair']
 } as const;

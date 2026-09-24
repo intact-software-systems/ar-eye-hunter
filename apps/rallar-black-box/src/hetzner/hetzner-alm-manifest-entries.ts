@@ -41,7 +41,8 @@ export function createAlmConformance2AgentEntry(): HetznerDistributedManifestEnt
         filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[17],
         title: 'ALM conformance 2-agent',
         description: 'ALM conformance family (bounded rejection, deadline expiry, delivery ' +
-            'baseline, lifecycle, durable reload, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers.',
+            'baseline, lifecycle, durable reload, ordering resync, and the cross-carrier duplicate) across ws, rtc, ' +
+            'and rtc-with-ws-fallback carriers.',
         distributedRunId: 'hetzner-alm-conformance-2-agent',
         recipes: [
             toAlmConformanceCombinedRecipe(scenarios, 'sender'),

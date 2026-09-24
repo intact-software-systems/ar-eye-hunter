@@ -2890,6 +2890,170 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-ordering-resync-sender-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "cross-carrier-duplicate",
+              "order": "rtc-then-ws"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver",
+            "ttlMs": 30000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-observe-transport-accepted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1",
+            "state": [
+              "transport-accepted"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-assert-submitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-observe-transport-accepted-1.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-send-2",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "cross-carrier-duplicate",
+              "order": "rtc-then-ws"
+            },
+            "replayOnCarrier": {
+              "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1",
+              "carrier": "ws"
+            },
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-assert-replay-admitted-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-send-2.value.verdict",
+            "operator": "equals",
+            "expected": "admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-sender-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "storage.counters",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-storage-counters-connected",
+            "reset": false,
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-send-1",
+            "connection": "almConformanceSender",
+            "carrier": "ws",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "cross-carrier-duplicate",
+              "order": "ws-then-rtc"
+            },
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-send-1",
+            "timeoutMs": 10000,
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "ack": "receiver",
+            "ttlMs": 30000
+          },
+          {
+            "kind": "messages.observe",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-observe-transport-accepted-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-send-1",
+            "state": [
+              "transport-accepted"
+            ],
+            "timeoutMs": 10000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-assert-submitted-1",
+            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-observe-transport-accepted-1.value.submitted",
+            "operator": "equals",
+            "expected": true,
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.send",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-send-2",
+            "connection": "almConformanceSender",
+            "carrier": "rtc",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc",
+            "topicId": "room.alm-conformance",
+            "payload": {
+              "marker": "cross-carrier-duplicate",
+              "order": "ws-then-rtc"
+            },
+            "replayOnCarrier": {
+              "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-send-1",
+              "carrier": "rtc"
+            },
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "assert",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-assert-replay-admitted-2",
+            "source": "resultCache.alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-send-2.value.verdict",
+            "operator": "equals",
+            "expected": "admitted",
+            "timeoutMs": 2000
+          },
+          {
+            "kind": "messages.receipts",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-receipts-1",
+            "connection": "almConformanceSender",
+            "handleId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-send-1",
+            "timeoutMs": 5000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-sender-stats",
+            "timeoutMs": 3000
           }
         ]
       },
@@ -3549,6 +3713,56 @@
             "kind": "stats",
             "commandId": "alm-rtc-with-ws-fallback-ordering-resync-receiver-stats",
             "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-rtc-then-ws",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-receiver-stats",
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-received-1",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc",
+            "count": 1,
+            "absent": false,
+            "windowMs": 27000,
+            "timeoutMs": 28000
+          },
+          {
+            "kind": "messages.received",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-received-2",
+            "connection": "almConformanceReceiver",
+            "typeId": "alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-ws-then-rtc",
+            "count": 2,
+            "absent": true,
+            "windowMs": 17000,
+            "timeoutMs": 18000
+          },
+          {
+            "kind": "stats",
+            "commandId": "alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-stats",
+            "timeoutMs": 3000
           }
         ]
       },
@@ -3610,8 +3824,9 @@
       "deadline-expiry",
       "delivery-baseline",
       "delivery-lifecycle",
-      "ordering-resync"
+      "ordering-resync",
+      "cross-carrier-duplicate"
     ]
   },
-  "description": "ALM conformance family (bounded rejection, deadline expiry, delivery baseline, lifecycle, durable reload, and ordering resync) across ws, rtc, and rtc-with-ws-fallback carriers."
+  "description": "ALM conformance family (bounded rejection, deadline expiry, delivery baseline, lifecycle, durable reload, ordering resync, and the cross-carrier duplicate) across ws, rtc, and rtc-with-ws-fallback carriers."
 }

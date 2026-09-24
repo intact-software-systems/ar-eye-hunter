@@ -1066,7 +1066,15 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(entry?.manifest.metadata).toMatchObject({
             family: 'alm-conformance',
             carriers: ['ws', 'rtc', 'rtc-with-ws-fallback'],
-            scenarios: ['delivery-reload', 'bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'ordering-resync']
+            scenarios: [
+                'delivery-reload',
+                'bounded-rejection',
+                'deadline-expiry',
+                'delivery-baseline',
+                'delivery-lifecycle',
+                'ordering-resync',
+                'cross-carrier-duplicate'
+            ]
         });
 
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)

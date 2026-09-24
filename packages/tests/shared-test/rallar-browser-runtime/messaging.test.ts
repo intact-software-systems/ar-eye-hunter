@@ -1,6 +1,5 @@
 import type {
     BlackBoxRallarConnectDiagnostics,
-    BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarWsSendDiagnostics
 } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-operation-contracts.ts';
 import type { BlackBoxRallarRuntime } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/black-box-rallar-runtime-contract.ts';
@@ -390,8 +389,8 @@ async function sendWebSocketMessage(runtime: BlackBoxRallarRuntime): Promise<Bla
     });
 }
 
-async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string): Promise<BlackBoxRallarMessageSendDiagnostics> {
-    return await runtime.sendMessage({
+async function sendTypedMessage(runtime: BlackBoxRallarRuntime, handleId: string): Promise<void> {
+    await runtime.sendMessage({
         connection: 'aliceRtc',
         carrier: 'rtc-with-ws-fallback',
         typeId: 'alm.conformance',

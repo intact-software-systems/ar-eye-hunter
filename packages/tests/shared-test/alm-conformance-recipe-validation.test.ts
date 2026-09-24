@@ -17,11 +17,20 @@ import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA } from '@shared-test/rallar-bb-test
 import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-test/rallar-bb-test/schema/json-schema-validation.ts';
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
-/** `ordering-resync` is withheld from `ws`: its first hop must be RTC. */
+/** `ordering-resync` is withheld from `ws`: its first hop must be RTC. `cross-carrier-duplicate` needs both transports, once per order. */
 const CARRIER_SCENARIO_IDS = {
     ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload'],
     rtc: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync'],
-    'rtc-with-ws-fallback': ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload', 'ordering-resync']
+    'rtc-with-ws-fallback': [
+        'bounded-rejection',
+        'deadline-expiry',
+        'delivery-baseline',
+        'delivery-lifecycle',
+        'delivery-reload',
+        'ordering-resync',
+        'cross-carrier-duplicate',
+        'cross-carrier-duplicate'
+    ]
 } as const;
 
 function toConformanceInput(

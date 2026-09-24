@@ -226,6 +226,31 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a messages.send replay onto one carrier and refuses an unknown replay carrier', () => {
+        const replay = (carrier: string) => ({
+            kind: 'messages.send',
+            commandId: `send-replay-${carrier}`,
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            replayOnCarrier: { handleId: 'h1', carrier }
+        });
+
+        const valid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-replay-ws', replay('ws')));
+        expect(valid.ok, valid.ok ? undefined : formatJsonSchemaValidationErrors(valid.errors)).toBe(true);
+        expect(validateRallarBlackBoxTestCommand(replay('ws')).ok).toBe(true);
+
+        const invalid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-replay-x', replay('x')));
+        expect(invalid.ok).toBe(false);
+        const refused = validateRallarBlackBoxTestCommand(replay('x'));
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(refused.error).toBe('messages.send.replayOnCarrier.carrier must be one of ws, rtc.');
+        }
+        const unnamed = validateRallarBlackBoxTestCommand({ ...replay('ws'), replayOnCarrier: { carrier: 'ws' } });
+        expect(unnamed.ok).toBe(false);
+    });
+
     it('rejects a control-protocol messages.send without a carrier', () => {
         const result = validateRallarBlackBoxTestCommand({
             kind: 'messages.send',
@@ -289,6 +314,47 @@ describe('ALM browser adapter execution', () => {
         expect(topicsOf(runtime.state())).toEqual(
             expect.arrayContaining(['rallar.bb.messages.sent', 'rallar.bb.messages.observed'])
         );
+    });
+
+    it('reads a replay send as the replayed handle and its carrier verdict, and refuses an unknown verdict', async () => {
+        const replayed = { handleId: 'handle-1', msgId: 'msg-1', carrier: 'ws', verdict: 'admitted' };
+        const captures = createAlmRuntimeCaptures();
+        const replayCommand = {
+            kind: 'messages.send',
+            commandId: 'alm-replay',
+            connection: 'aliceRtc',
+            carrier: 'ws',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' }
+        } as const;
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(captures),
+                sendMessage: async (input) => {
+                    captures.sendMessage.push(decodeCapturedInput(input));
+                    return replayed;
+                }
+            }
+        });
+
+        const result = await runtime.execute(replayCommand);
+
+        expect(result.ok, result.error?.message).toBe(true);
+        expect(result.value).toEqual(replayed);
+        expect(captures.sendMessage[0]).toMatchObject({ replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' } });
+
+        const refusing = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                ...createAlmBrowserRuntimeFake(createAlmRuntimeCaptures()),
+                sendMessage: async () => ({ ...replayed, verdict: 'delivered' })
+            }
+        });
+        const refused = await refusing.execute({ ...replayCommand, commandId: 'alm-replay-unknown-verdict' });
+        expect(refused.error).toMatchObject({
+            code: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
+            message: 'The page runtime returned no usable messages.send replay result.verdict.'
+        });
     });
 
     it('carries a rejected send through as a successful command value with its envelope msgId', async () => {

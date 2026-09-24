@@ -44,11 +44,11 @@ import {
     createBlackBoxRallarMessagingResourceController,
     type BlackBoxRallarMessagingResourceController
 } from '../messaging/create-black-box-rallar-messaging-resource-controller.ts';
+import { decodeBlackBoxRallarMessageSendInput } from '../messaging/decode-black-box-rallar-message-send-input.ts';
 import {
     decodeBlackBoxRallarDeliveryHandleInput,
     decodeBlackBoxRallarDeliveryObserveInput,
     decodeBlackBoxRallarFaultInput,
-    decodeBlackBoxRallarMessageSendInput,
     decodeBlackBoxRallarStorageCountersInput
 } from '../messaging/decode-black-box-rallar-messaging-input.ts';
 import {

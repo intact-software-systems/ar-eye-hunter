@@ -1,6 +1,10 @@
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
-import type { ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import type {
+    ALDeliveryAdmissionVerdict,
+    ALDeliveryCarrier,
+    ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ScriptedTransportFault } from '@shared/transport-faults/transport-fault-port.ts';
 export const RALLAR_BLACK_BOX_TEST_COMMAND_KINDS = [
     'configure',
@@ -306,6 +310,8 @@ export type RallarBlackBoxTestMessagesSendCommand =
         orderingKey?: string;
         seq?: number;
         handleId?: string;
+        /** A harness capability: re-admits the envelope the named handle captured on this carrier; absent, an ordinary send. */
+        replayOnCarrier?: Readonly<{ handleId: string; carrier: ALDeliveryCarrier; }>;
     }>;
 
 export type RallarBlackBoxTestMessagesObserveCommand =
@@ -935,6 +941,14 @@ export interface RallarBlackBoxTestMessagesSendResultValue {
     readonly carrier: RallarBlackBoxTestMessagesCarrier;
     readonly status: ALDeliveryState;
     readonly reason?: string;
+}
+
+/** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
+export interface RallarBlackBoxTestMessagesReplayResultValue {
+    readonly handleId: string;
+    readonly msgId: string;
+    readonly carrier: ALDeliveryCarrier;
+    readonly verdict: ALDeliveryAdmissionVerdict['kind'];
 }
 
 export interface RallarBlackBoxTestMessagesObserveResultValue {

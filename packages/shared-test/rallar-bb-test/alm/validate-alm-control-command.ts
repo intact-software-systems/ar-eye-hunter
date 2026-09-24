@@ -63,7 +63,31 @@ function validateMessagesSendCommand(command: RallarBlackBoxTestRecord): readonl
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
-        ...validateNumberField(command, 'seq', path)
+        ...validateNumberField(command, 'seq', path),
+        ...validateMessagesReplayField(command)
+    ];
+}
+
+function validateMessagesReplayField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const replay = command.replayOnCarrier;
+    const path = 'messages.send.replayOnCarrier';
+    if (replay === undefined) {
+        return [];
+    }
+    if (!isJsonRecordValue(replay)) {
+        return [toControlCommandIssue(`${path} must be an object.`)];
+    }
+    const fields = RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesReplay;
+    return [
+        ...validateAllowedFields(replay, fields, path),
+        ...validateRequiredFields({ record: replay, fields, path, ownMessageFields: [] }),
+        ...validateStringField(replay, 'handleId', path),
+        ...validateEnumField({
+            record: replay,
+            key: 'carrier',
+            path,
+            allowed: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier
+        })
     ];
 }
 

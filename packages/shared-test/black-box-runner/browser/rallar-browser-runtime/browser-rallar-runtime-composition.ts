@@ -50,6 +50,7 @@ import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 import type { RallarRoomFormation } from '@shared-web/browser/rooms/formation/rallar-room-formation-contracts.ts';
 import type { ALNackPayload } from '@shared/al-contracts/al-control.ts';
+import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createCountingIndexedDbOperationObserver,
@@ -64,6 +65,10 @@ import type {
     BlackBoxRallarEvent
 } from './black-box-rallar-operation-contracts.ts';
 import { computeAlmConformanceQosDefaults } from './messaging/compute-alm-conformance-qos-defaults.ts';
+import {
+    replayBlackBoxCapturedMessage,
+    type BlackBoxCapturedMessageReplay
+} from './messaging/replay-black-box-captured-message.ts';
 import {
     refreshBlackBoxBrowserRoomState,
     type BlackBoxRoomStateRefreshOptions
@@ -111,7 +116,9 @@ export interface BlackBoxBrowserRoomsDependency {
 export interface BlackBoxBrowserMessagesDependency extends Pick<RallarMessagesOperations, 'room' | 'rtc' | 'ws'> {}
 
 /** The session registry that the facade senders open handles in, so the ledger holds none of its own. */
-export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {}
+export interface BlackBoxBrowserDeliveriesDependency extends Pick<BrowserRallarDeliveryRegistry, 'getHandle'> {
+    replayCapturedMessage(replay: BlackBoxCapturedMessageReplay): Promise<ALDeliveryAdmissionVerdict>;
+}
 
 /** The scripted ports the runtime hands the browser facade and reads back for fault and storage commands. */
 export interface BlackBoxBrowserDiagnosticsDependency {
@@ -191,7 +198,15 @@ export function createBlackBoxBrowserRallarRuntimeDependency(): BlackBoxBrowserR
         crdt,
         director,
         diagnostics: { faults, storage },
-        deliveries: browserDeliveryComposition.deliveries
+        deliveries: {
+            getHandle: (msgId) => browserDeliveryComposition.deliveries.getHandle(msgId),
+            replayCapturedMessage: async (replay) =>
+                await replayBlackBoxCapturedMessage({
+                    ...replay,
+                    sessionId: session.connection.session()?.sessionId,
+                    context: session.session.readMiddleware()
+                })
+        }
     });
 }
 

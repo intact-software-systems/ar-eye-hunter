@@ -1,5 +1,10 @@
 import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-delivery-error-message-prefixes.ts';
-import { AL_DELIVERY_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
+import {
+    AL_DELIVERY_STATES,
+    type ALDeliveryAdmissionVerdict,
+    type ALDeliveryCarrier,
+    type ALDeliveryState
+} from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toError } from '@shared/resilience/to-error.ts';
 import type { BrowserCommandAbortScope } from '../browser/browser-command-cancellation.ts';
 import type { RallarBlackBoxBrowserRallarRuntime } from '../browser/browser-command-contracts.ts';
@@ -11,6 +16,7 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestMessagesCarrier,
     RallarBlackBoxTestMessagesObserveResultValue,
+    RallarBlackBoxTestMessagesReplayResultValue,
     RallarBlackBoxTestMessagesSendResultValue,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestSeverity,
@@ -123,6 +129,21 @@ const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'rtc-with-ws-fallback'
 ];
 
+const ALM_REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+
+const ALM_ADMISSION_VERDICT_KINDS: readonly ALDeliveryAdmissionVerdict['kind'][] = [
+    'admitted',
+    'duplicate',
+    'pending',
+    'deferred',
+    'refused',
+    'unroutable',
+    'superseded',
+    'expired',
+    'skipped',
+    'failed'
+];
+
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and
 // timed-out command must not be reported as a rejected recipe input.
 const ALM_ABORTED_ERROR_NAMES: readonly string[] = [
@@ -177,7 +198,10 @@ function sendAlmMessage(
         context: input.context,
         connection,
         topic: 'rallar.bb.messages.sent',
-        invoke: async (runtime) => decodeAlmMessagesSendResultValue(await runtime.sendMessage(send))
+        invoke: async (runtime) =>
+            input.command.replayOnCarrier === undefined
+                ? decodeAlmMessagesSendResultValue(await runtime.sendMessage(send))
+                : decodeAlmMessagesReplayResultValue(await runtime.sendMessage(send))
     });
 }
 
@@ -509,6 +533,22 @@ function decodeAlmMessagesSendResultValue(
         carrier: requireAlmCarrierField(record, path),
         status: requireAlmDeliveryState(record, path, 'status'),
         ...(reason === undefined ? {} : { reason })
+    };
+}
+
+function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackBoxTestMessagesReplayResultValue {
+    const record = decodeAlmRuntimeRecord(value);
+    const path = 'messages.send replay result';
+    const carrier = ALM_REPLAY_CARRIERS.find((candidate) => candidate === record.carrier);
+    const verdict = ALM_ADMISSION_VERDICT_KINDS.find((candidate) => candidate === record.verdict);
+    if (carrier === undefined || verdict === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.${carrier === undefined ? 'carrier' : 'verdict'}`);
+    }
+    return {
+        handleId: requireAlmStringField(record, path, 'handleId'),
+        msgId: requireAlmStringField(record, path, 'msgId'),
+        carrier,
+        verdict
     };
 }
 
