@@ -19,7 +19,9 @@ into a second implementation lifecycle.
 3. Publish the first coherent commit and open one draft pull request early for multi-slice work.
 4. Keep the PR body current using only Goal, Changes, Acceptance, Validation, Risk and rollback, and
    Follow-up. Link a durable design document when useful; do not add identifiers, computed path
-   lists, progress records, or machine metadata fences.
+   lists, progress records, or machine metadata fences. A written multi-slice spec, when one is
+   useful, lives at `plans/active/<topic>.md` as `plans/README.md` describes; it is not a status
+   catalog, and the pull request remains the delivery record.
 5. Publish coherent reviewed slices without empty commits or shared governance-file updates. Continue
    safe implementation without waiting for review.
 

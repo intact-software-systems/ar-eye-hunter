@@ -78,6 +78,29 @@ These are different authorities, not different transports for the same fact.
 RallarAI stays on the proposal side of the same line. Generated JSON is not
 applied until domain code accepts it.
 
+## Which plane carries the fact
+
+Authority and transport are separate choices. The section above says which
+owner may decide a fact. This section says which channel carries it. The
+recipes are in `docs/rallar-quickstart-and-recipes.md`.
+
+- Room membership, tickets, and durable commands use REST. Recording
+  membership on a WebRTC data channel was refused. A data channel is not
+  durable, and it is not authorized for every member at the moment of the
+  write.
+- Chat and other validated room events use a WebSocket topic, as in the "WS
+  Chat" recipe. Treating an RTC send as the durable event log was refused.
+- Cursors, poses, and other low-latency ephemeral updates use a WebRTC data
+  channel, as in the "Realtime Player Updates" recipe. Putting that stream on
+  the WebSocket was refused, because the server would fan out data it does not
+  need to store.
+- `rallar.data` keeps the latest local value. Server app data keeps durable
+  application records. CRDT keeps authored documents that merge. Match truth
+  is a server command followed by a published snapshot. Peer merge as match
+  truth, and Motion smoothing as the simulation, were refused.
+  `docs/rallar-motion-guide.md` and `docs/rallar-game-guide.md` say how to use
+  the last two.
+
 ## Group formation defaults to optimistic and cuts over once
 
 A group created without a `lifecyclePolicy` uses the `optimistic` preset: it is

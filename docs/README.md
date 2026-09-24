@@ -36,6 +36,8 @@ exist only on its branch.
 - [Examples](../examples/README.md)
 - [CRDT Guide](./rallar-crdt-guide.md)
 - [CRDT Production Hardening Runbook](./rallar-crdt-production-hardening-runbook.md)
+- [Motion Guide](./rallar-motion-guide.md)
+- [Game Guide](./rallar-game-guide.md)
 - [RallarAI Recipes](./rallar-ai-recipes.md)
 - [RallarAI Governance And Evaluation](./rallar-ai-governance-and-evaluation.md)
 - [RallarAI Skill Guide](./rallar-ai-skill.md) — operating notes for an agent

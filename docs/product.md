@@ -63,11 +63,17 @@ Shared packages are the reusable surface. Apps are consumers.
   distributed runs. See `apps/rallar-black-box/docs/README.md`.
 - `apps/rallar-black-box-control-server` and `apps/rallar-black-box-headless`
   run and host those distributed browser agents.
+- ALM is the message protocol still under design. Start at
+  `playground/alm/alm-improvement-plan.md`. The code maps are
+  `packages/shared/alm/inbound/README.md` and
+  `packages/shared/alm/outbound/README.md`.
 
 ## Where to go next
 
 - Build something small: `docs/rallar-quickstart-and-recipes.md` and
   `examples/README.md`.
+- Smooth presentation, or keep match truth on the server:
+  `docs/rallar-motion-guide.md` and `docs/rallar-game-guide.md`.
 - Operate a deployment: `docs/production-deployment.md`,
   `docs/environment-variables.md`, and
   `docs/rallar-troubleshooting-checklist.md`.

@@ -82,7 +82,9 @@ active slice.
 
 1. State the goal, observable acceptance criteria, important constraints, affected owners, and the
    next one or two slices in the agent's working plan. A durable design document may explain a large
-   architectural decision, but it is not a live status database.
+   architectural decision, but it is not a live status database. A written multi-slice spec, when one
+   is useful, lives at `plans/active/<topic>.md` as `plans/README.md` describes; it is not a status
+   catalog, and the pull request remains the delivery record.
 2. Before implementation, recover the current owner, entry, dataflow, failure boundary, and tests
    from the repository. Do not use a historical plan as the only navigation map.
 3. Implement one slice test-first and run its focused checks.
