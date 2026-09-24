@@ -1,5 +1,6 @@
 import { assert, assertEquals } from '@std/assert';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { toAlmReloadPair } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import type { ControlCommandEnvelope, ControlResultEnvelope } from '@shared-test/rallar-bb-test/control-protocol.ts';
@@ -99,7 +100,7 @@ for (const scheduled of [false, true]) {
             const reloadIndex = commands.findIndex((command) => command.commandId === checkpoint.senderReload);
             const suffixEnd = commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const prefix = commands.slice(prefixStart, prefixEnd + 1);
-            const originals = prefix.filter((command) => command.kind === 'messages.send');
+            const originals = prefix.filter(isRallarBlackBoxTestMessagesSendCommand);
             assertEquals(originals.map((command) => command.carrier), [carriers[index]], 'reload precedes ordinary scenario work');
             assertEquals(reloadIndex, prefixEnd + 1);
             assertEquals(commands[reloadIndex]?.kind, 'agent.reload');
@@ -280,7 +281,11 @@ function resultEnvelope(
             ? {
                 recipeId: recipe.recipeId,
                 results: recipe.commands.map((command) => {
-                    const payload = command.kind === 'messages.send' ? command.payload : command.kind === 'wait' ? command.match.equals : undefined;
+                    const payload = isRallarBlackBoxTestMessagesSendCommand(command)
+                        ? command.payload
+                        : command.kind === 'wait'
+                        ? command.match.equals
+                        : undefined;
                     const identity = isJsonRecordValue(payload) ? JSON.stringify(payload) : undefined;
                     return {
                         commandId: command.commandId,
@@ -324,8 +329,8 @@ function toReceiptsFabricatedValue(
     command: RallarBlackBoxTestMessagesReceiptsCommand,
     recipe: RallarBlackBoxTestRecipe
 ): RallarBlackBoxTestMessagesObserveResultValue {
-    const send = recipe.commands.find((candidate) => candidate.kind === 'messages.send' && candidate.handleId === command.handleId);
-    const confirmedOverNonWs = send?.kind === 'messages.send' && send.carrier !== 'ws';
+    const send = recipe.commands.filter(isRallarBlackBoxTestMessagesSendCommand).find((candidate) => candidate.handleId === command.handleId);
+    const confirmedOverNonWs = send !== undefined && send.carrier !== 'ws';
     return {
         handleId: command.handleId,
         state: 'transport-accepted',

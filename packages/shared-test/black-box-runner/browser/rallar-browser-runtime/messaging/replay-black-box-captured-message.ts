@@ -11,6 +11,8 @@ import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/
 import type { ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import type { ALOutboundTransportMessage } from '@shared/alm/outbound/al-outbound-transport-message.ts';
 
+import { BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES } from './black-box-rallar-delivery-error-message-prefixes.ts';
+
 export interface BlackBoxCapturedMessageReplay {
     readonly msgId: string;
     /** The carrier the envelope is re-admitted on; the other carrier's outbound captured it first. */
@@ -35,11 +37,14 @@ export async function replayBlackBoxCapturedMessage(
 ): Promise<ALDeliveryAdmissionVerdict> {
     const { sessionId, context, msgId, carrier } = input;
     if (sessionId === undefined || context === undefined) {
-        throw new Error('A message replay needs a connected session.');
+        throw new Error(`${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replayUnavailable}: no connected session.`);
     }
     const captured = await resolveCapturingOutboundStores(sessionId, carrier).admissionStore.readSentMessage(msgId);
     if (captured === undefined) {
-        throw new Error(`No captured envelope for ${msgId} is retained to replay on ${carrier}.`);
+        throw new Error(
+            `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replayUnavailable}: no captured envelope for ${msgId} ` +
+                `is retained to replay on ${carrier}.`
+        );
     }
     const result = await writeCarrierOutboxAdmission(context, carrier, captured.msg);
     wakeQueueBoxEngineIfQueued(context.middleware.qboxEngine, result);

@@ -2,6 +2,7 @@ import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecyc
 import { Either } from '@shared/resilience/Either.ts';
 
 import type {
+    BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendInput
 } from '../black-box-rallar-operation-contracts.ts';
@@ -29,13 +30,58 @@ const MESSAGE_RELIABILITIES: readonly NonNullable<BlackBoxRallarMessageSendInput
     'at-least-once'
 ];
 const REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
+/** Every field an ordinary send names and a replay does not: the replayed envelope already fixes them all. */
+const REPLAY_REFUSED_FIELDS = [
+    'carrier',
+    'typeId',
+    'topicId',
+    'payload',
+    'roomRef',
+    'scope',
+    'reliability',
+    'ack',
+    'ttlMs',
+    'orderingKey',
+    'seq',
+    'handleId'
+] as const;
+
+type MessageSendCommandInput = BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput;
 
 export function decodeBlackBoxRallarMessageSendInput(
     value: unknown
-): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
+): Either<BlackBoxRallarInputIssue, MessageSendCommandInput> {
     if (!isBlackBoxCommandRecord(value)) {
         return Either.ofLeft({ message: 'messages.send input must be an object.' });
     }
+    return value.replayOnCarrier === undefined ? decodeOrdinarySend(value) : decodeReplaySend(value);
+}
+
+function decodeReplaySend(
+    record: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageReplayInput> {
+    const named = REPLAY_REFUSED_FIELDS.filter((field) => record[field] !== undefined);
+    if (named.length > 0) {
+        return Either.ofLeft({
+            message: `messages.send names ${named.join(', ')} beside replayOnCarrier; a replay names only the handle ` +
+                'and its carrier.'
+        });
+    }
+    const timeoutMs = decodeBlackBoxCommandNumber(record.timeoutMs);
+    const connection = decodeBlackBoxCommandString(record.connection);
+    if (timeoutMs === undefined || connection === undefined) {
+        return Either.ofLeft({ message: 'messages.send replay requires timeoutMs and connection.' });
+    }
+    return decodeMessageReplayTarget(record.replayOnCarrier).mapRight((replayOnCarrier) => ({
+        timeoutMs,
+        connection,
+        replayOnCarrier
+    }));
+}
+
+function decodeOrdinarySend(
+    value: BlackBoxRallarCommandRecord
+): Either<BlackBoxRallarInputIssue, BlackBoxRallarMessageSendInput> {
     const payload = value.payload;
     if (!('payload' in value) || !isRallarMessagePayload(payload)) {
         return Either.ofLeft({ message: 'messages.send.payload is required.' });
@@ -43,26 +89,15 @@ export function decodeBlackBoxRallarMessageSendInput(
     return decodeMessageSendIdentity(value).flatMap(
         (issue) => Either.ofLeft(issue),
         (identity) =>
-            decodeMessageSendOptions(value).flatMap(
-                (issue) => Either.ofLeft(issue),
-                (options) => {
-                    const send = {
-                        ...identity,
-                        ...options,
-                        payload,
-                        topicId: decodeBlackBoxCommandString(value.topicId),
-                        ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
-                        orderingKey: decodeBlackBoxCommandString(value.orderingKey),
-                        seq: decodeBlackBoxCommandNumber(value.seq)
-                    };
-                    return value.replayOnCarrier === undefined
-                        ? Either.ofRight({ ...send, replayOnCarrier: undefined })
-                        : decodeMessageReplayTarget(value.replayOnCarrier).mapRight((replayOnCarrier) => ({
-                            ...send,
-                            replayOnCarrier
-                        }));
-                }
-            )
+            decodeMessageSendOptions(value).mapRight((options) => ({
+                ...identity,
+                ...options,
+                payload,
+                topicId: decodeBlackBoxCommandString(value.topicId),
+                ttlMs: decodeBlackBoxCommandNumber(value.ttlMs),
+                orderingKey: decodeBlackBoxCommandString(value.orderingKey),
+                seq: decodeBlackBoxCommandNumber(value.seq)
+            }))
     );
 }
 

@@ -287,13 +287,18 @@ export interface BlackBoxRallarMessageSendInput {
     readonly orderingKey: string | undefined;
     readonly seq: number | undefined;
     readonly handleId: string;
-    /** Absent for an ordinary send; present, the send re-admits the named handle's captured envelope. */
-    readonly replayOnCarrier: BlackBoxRallarMessageReplayTarget | undefined;
 }
 
 export interface BlackBoxRallarMessageReplayTarget {
     readonly handleId: string;
     readonly carrier: ALDeliveryCarrier;
+}
+
+/** A `messages.send` that names only the earlier handle and the carrier its captured envelope is re-admitted on. */
+export interface BlackBoxRallarMessageReplayInput {
+    readonly timeoutMs: number;
+    readonly connection: string;
+    readonly replayOnCarrier: BlackBoxRallarMessageReplayTarget;
 }
 
 /** A replay opens no handle of its own: it reports the replayed handle and the carrier admission's verdict. */
@@ -302,6 +307,8 @@ export interface BlackBoxRallarMessageReplayDiagnostics {
     readonly msgId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; undefined for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason: string | undefined;
 }
 
 export interface BlackBoxRallarMessageSendDiagnostics {

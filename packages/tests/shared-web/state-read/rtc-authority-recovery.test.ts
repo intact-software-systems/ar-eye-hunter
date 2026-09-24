@@ -9,6 +9,7 @@ import { BlackBoxRallarDeliveryLedger } from '@shared-test/black-box-runner/brow
 import { BlackBoxRallarTypedChannels } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/black-box-rallar-typed-channels.ts';
 import { createBlackBoxRallarMessagingResourceController } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/create-black-box-rallar-messaging-resource-controller.ts';
 import { decodeBlackBoxRallarMessageSendInput } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/decode-black-box-rallar-message-send-input.ts';
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { browserDeliveryComposition } from '@shared-web/browser/composition/browser-delivery-composition.ts';
 import {
@@ -481,7 +482,7 @@ it('delivers the canonical generated supersedence specimen through the page deco
         deadlineMs: 30_000
     })
         .find((scenario) => scenario.scenarioId === 'delivery-lifecycle')!;
-    const sends = scenario.sender.commands.filter((command) => command.kind === 'messages.send').filter((command) =>
+    const sends = scenario.sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand).filter((command) =>
         command.payload !== null && typeof command.payload === 'object' && !Array.isArray(command.payload) && 'specimen' in command.payload &&
         command.payload.specimen === 'supersedence'
     );

@@ -14,6 +14,7 @@ import type { RallarBlackBoxTestRecord } from '../rallar-black-box-test-contract
 import { isJsonRecordValue } from '../schema/json-schema-validation.ts';
 import {
     RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES,
+    RALLAR_BLACK_BOX_COMMAND_FIELDS,
     RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS
 } from '../schema/rallar-black-box-command-fields.ts';
 
@@ -50,10 +51,39 @@ export function validateAlmControlCommand(
     }
 }
 
+/** A replay names only the earlier handle and its carrier: the replayed envelope already fixes everything else. */
 function validateMessagesSendCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    return command.replayOnCarrier === undefined
+        ? validateOrdinaryMessagesSendCommand(command)
+        : validateMessagesReplayCommand(command);
+}
+
+function validateMessagesReplayCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
+    const fields = RALLAR_BLACK_BOX_COMMAND_FIELDS['messages.send'];
+    const refused = [...fields.required, ...fields.optional].filter((field) =>
+        field !== 'connection' && field !== 'replayOnCarrier' && command[field] !== undefined
+    );
+    return [
+        ...refused.map((field) =>
+            toControlCommandIssue(
+                `messages.send.${field} is not allowed on a replay; a replay names only connection and replayOnCarrier.`
+            )
+        ),
+        ...validateStringField(command, 'connection', 'messages.send'),
+        ...validateMessagesReplayField(command)
+    ];
+}
+
+function validateOrdinaryMessagesSendCommand(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const path = 'messages.send';
     const values = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES;
     return [
+        ...validateRequiredFields({
+            record: command,
+            fields: RALLAR_BLACK_BOX_COMMAND_FIELDS[path],
+            path,
+            ownMessageFields: []
+        }),
         ...validateStringField(command, 'connection', path),
         ...validateEnumField({ record: command, key: 'carrier', path, allowed: values.messagesCarrier }),
         ...validateStringField(command, 'typeId', path),
@@ -63,17 +93,13 @@ function validateMessagesSendCommand(command: RallarBlackBoxTestRecord): readonl
         ...validateEnumField({ record: command, key: 'reliability', path, allowed: values.messagesReliability }),
         ...validateEnumField({ record: command, key: 'ack', path, allowed: values.messagesAck }),
         ...validateIntegerField({ record: command, key: 'ttlMs', path, minimum: 0 }),
-        ...validateNumberField(command, 'seq', path),
-        ...validateMessagesReplayField(command)
+        ...validateNumberField(command, 'seq', path)
     ];
 }
 
 function validateMessagesReplayField(command: RallarBlackBoxTestRecord): readonly ControlCommandIssue[] {
     const replay = command.replayOnCarrier;
     const path = 'messages.send.replayOnCarrier';
-    if (replay === undefined) {
-        return [];
-    }
     if (!isJsonRecordValue(replay)) {
         return [toControlCommandIssue(`${path} must be an object.`)];
     }

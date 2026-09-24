@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
@@ -50,7 +51,7 @@ describe('ALM durable reload specimens', () => {
         expect(reloadIndex).toBe(prefixEnd + 1);
         expect(sender.commands[reloadIndex].kind).toBe('agent.reload');
         const prefix = sender.commands.slice(0, prefixEnd + 1);
-        const sends = sender.commands.filter((command) => command.kind === 'messages.send');
+        const sends = sender.commands.filter(isRallarBlackBoxTestMessagesSendCommand);
         expect(sends).toHaveLength(1);
         expect(sends[0]).toMatchObject({
             carrier,

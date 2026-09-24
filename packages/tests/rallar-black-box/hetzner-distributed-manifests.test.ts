@@ -1077,6 +1077,12 @@ describe('Hetzner distributed manifest catalog', () => {
             ]
         });
 
+        const commandIds = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+            .map((command) => command.commandId ?? '');
+        // Only ws-then-rtc runs on Hetzner: api-v1 does not route a WS-carried multicast room envelope (PR #588).
+        expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-ws-then-rtc'))).toBe(true);
+        expect(commandIds.some((commandId) => commandId.includes('cross-carrier-duplicate-rtc-then-ws'))).toBe(false);
+
         const rtcConnects = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'rtc.connect' && command.transport === 'messages.rtc');
         expect(rtcConnects).toHaveLength(5);

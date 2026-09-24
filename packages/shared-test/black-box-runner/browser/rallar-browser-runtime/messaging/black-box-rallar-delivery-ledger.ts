@@ -13,6 +13,7 @@ import type {
     BlackBoxRallarDeliveryObservation,
     BlackBoxRallarDeliveryObserveInput,
     BlackBoxRallarMessageReplayDiagnostics,
+    BlackBoxRallarMessageReplayInput,
     BlackBoxRallarMessageReplayTarget,
     BlackBoxRallarMessageSendDiagnostics,
     BlackBoxRallarMessageSendInput
@@ -66,11 +67,11 @@ export class BlackBoxRallarDeliveryLedger {
     }
 
     sendMessage = async (
-        send: BlackBoxRallarMessageSendInput
+        send: BlackBoxRallarMessageSendInput | BlackBoxRallarMessageReplayInput
     ): Promise<BlackBoxRallarMessageSendDiagnostics | BlackBoxRallarMessageReplayDiagnostics> =>
-        send.replayOnCarrier === undefined
-            ? await this.#sendNewMessage(send)
-            : await this.#replayMessage(send.replayOnCarrier);
+        'replayOnCarrier' in send
+            ? await this.#replayMessage(send.replayOnCarrier)
+            : await this.#sendNewMessage(send);
 
     async #sendNewMessage(send: BlackBoxRallarMessageSendInput): Promise<BlackBoxRallarMessageSendDiagnostics> {
         const config = this.#input.requireConfig();
@@ -111,7 +112,13 @@ export class BlackBoxRallarDeliveryLedger {
         }
         const verdict = await this.#input.deliveries.replayCapturedMessage({ msgId, carrier: replay.carrier });
         this.#input.resources.assertCurrent(lease, 'Rallar replay completed after the runtime closed.');
-        return { handleId: replay.handleId, msgId, carrier: replay.carrier, verdict: verdict.kind };
+        return {
+            handleId: replay.handleId,
+            msgId,
+            carrier: replay.carrier,
+            verdict: verdict.kind,
+            reason: 'detail' in verdict ? verdict.detail : undefined
+        };
     }
 
     readReceipts = async (

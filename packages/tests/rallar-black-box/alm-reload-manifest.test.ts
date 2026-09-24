@@ -4,6 +4,7 @@ import {
     it
 } from 'vitest';
 
+import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-test/alm/is-rallar-black-box-test-messages-send-command.ts';
 import { bindAlmReloadPair, toAlmReloadCheckpoints } from '@shared-test/rallar-bb-test/conformance/alm/alm-reload-pair.ts';
 
 import { createAlmConformance2AgentEntry } from '../../../apps/rallar-black-box/src/hetzner/hetzner-alm-manifest-entries.ts';
@@ -58,7 +59,7 @@ describe('hosted ALM reload composition', () => {
             const suffixEnd = sender.commands.findIndex((command) => command.commandId === checkpoint.senderSuffixEnd);
             const carrier = ['ws', 'rtc', 'rtc-with-ws-fallback'][index];
             const prefix = sender.commands.slice(senderStart, prefixEnd + 1);
-            expect(prefix.filter((command) => command.kind === 'messages.send').map((command) => command.payload))
+            expect(prefix.filter(isRallarBlackBoxTestMessagesSendCommand).map((command) => command.payload))
                 .toEqual([{ marker: 'delivery-reload', carrier }]);
             const sendIndex = prefix.findIndex((command) => command.kind === 'messages.send');
             const baselineIndex = prefix.findIndex((command) => command.commandId?.endsWith('storage-counters-connected'));

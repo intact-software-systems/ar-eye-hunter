@@ -230,9 +230,8 @@ describe('ALM recipe commands', () => {
         const replay = (carrier: string) => ({
             kind: 'messages.send',
             commandId: `send-replay-${carrier}`,
-            carrier: 'ws',
-            typeId: 'alm.conformance',
-            payload: { n: 1 },
+            connection: 'aliceRtc',
+            timeoutMs: 1_000,
             replayOnCarrier: { handleId: 'h1', carrier }
         });
 
@@ -249,6 +248,44 @@ describe('ALM recipe commands', () => {
         }
         const unnamed = validateRallarBlackBoxTestCommand({ ...replay('ws'), replayOnCarrier: { carrier: 'ws' } });
         expect(unnamed.ok).toBe(false);
+    });
+
+    it('refuses every ordinary send field beside a replay, naming each, and still requires them of an ordinary send', () => {
+        const replay = {
+            kind: 'messages.send',
+            commandId: 'send-replay-with-fields',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            ack: 'receiver',
+            handleId: 'h2',
+            replayOnCarrier: { handleId: 'h1', carrier: 'ws' }
+        };
+
+        const refused = validateRallarBlackBoxTestCommand(replay);
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(refused.messages).toEqual(
+                ['carrier', 'typeId', 'payload', 'ack', 'handleId'].map((field) =>
+                    `messages.send.${field} is not allowed on a replay; a replay names only connection and replayOnCarrier.`
+                )
+            );
+        }
+        const ordinary = validateRallarBlackBoxTestCommand({ kind: 'messages.send', commandId: 'send-bare', connection: 'c' });
+        expect(ordinary.ok).toBe(false);
+        if (!ordinary.ok) {
+            expect(ordinary.messages).toEqual(['carrier', 'typeId', 'payload'].map((field) => `messages.send.${field} is required.`));
+        }
+        const schemaResult = validateJsonSchema(
+            RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+            recipeWithCommand('send-bare', { kind: 'messages.send', connection: 'c' })
+        );
+        expect(schemaResult.ok).toBe(false);
+        if (!schemaResult.ok) {
+            expect(formatJsonSchemaValidationErrors(schemaResult.errors)).toContain(
+                'messages.send requires carrier, unless it is a replay naming replayOnCarrier.'
+            );
+        }
     });
 
     it('rejects a control-protocol messages.send without a carrier', () => {
@@ -323,9 +360,6 @@ describe('ALM browser adapter execution', () => {
             kind: 'messages.send',
             commandId: 'alm-replay',
             connection: 'aliceRtc',
-            carrier: 'ws',
-            typeId: 'alm.conformance',
-            payload: { n: 1 },
             replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' }
         } as const;
         const runtime = createRallarBlackBoxBrowserTestRuntime({
@@ -343,6 +377,7 @@ describe('ALM browser adapter execution', () => {
         expect(result.ok, result.error?.message).toBe(true);
         expect(result.value).toEqual(replayed);
         expect(captures.sendMessage[0]).toMatchObject({ replayOnCarrier: { handleId: 'handle-1', carrier: 'ws' } });
+        expect(captures.sendMessage[0]).not.toHaveProperty('handleId');
 
         const refusing = createRallarBlackBoxBrowserTestRuntime({
             rallarRuntime: {
@@ -675,6 +710,11 @@ describe('ALM browser adapter execution', () => {
                 message:
                     `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.scriptedPortsUnavailable}: storage.counters needs a connection that names an application.`,
                 code: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE'
+            },
+            {
+                commandId: 'alm-receipts-replay-unavailable',
+                message: `${BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES.replayUnavailable}: no connected session.`,
+                code: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE'
             },
             {
                 commandId: 'alm-receipts-bad-input',

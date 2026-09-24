@@ -22,6 +22,7 @@ import type {
     RallarBlackBoxTestSeverity,
     RallarBlackBoxTestStorageCountersResultValue
 } from '../rallar-black-box-test-contracts.ts';
+import { RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES } from '../schema/rallar-black-box-command-fields.ts';
 import { computeWaitDeadlineEpochMs } from '../wait/wait-for-event.ts';
 import type { RallarBlackBoxTestAlmCommandKind } from './validate-alm-control-command.ts';
 
@@ -118,10 +119,17 @@ const ALM_ERROR_CODES = {
     invalidRuntimeResult: 'RALLAR_BLACK_BOX_ALM_INVALID_RUNTIME_RESULT',
     deliveryStateTimeout: 'RALLAR_BLACK_BOX_ALM_DELIVERY_STATE_TIMEOUT',
     scriptedPortsUnavailable: 'RALLAR_BLACK_BOX_ALM_SCRIPTED_PORTS_UNAVAILABLE',
+    replayUnavailable: 'RALLAR_BLACK_BOX_ALM_REPLAY_UNAVAILABLE',
     commandAborted: 'RALLAR_BLACK_BOX_ALM_COMMAND_ABORTED',
     messagesNotReceived: 'RALLAR_BLACK_BOX_ALM_MESSAGES_NOT_RECEIVED',
     messagesReceivedWhileAbsent: 'RALLAR_BLACK_BOX_ALM_MESSAGES_RECEIVED_WHILE_ABSENT'
 } as const;
+
+const ALM_PAGE_RUNTIME_ERROR_CODE_KEYS: readonly (keyof typeof BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES)[] = [
+    'deliveryStateTimeout',
+    'scriptedPortsUnavailable',
+    'replayUnavailable'
+];
 
 const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'ws',
@@ -129,20 +137,19 @@ const ALM_MESSAGES_CARRIERS: readonly RallarBlackBoxTestMessagesCarrier[] = [
     'rtc-with-ws-fallback'
 ];
 
-const ALM_REPLAY_CARRIERS: readonly ALDeliveryCarrier[] = ['ws', 'rtc'];
-
-const ALM_ADMISSION_VERDICT_KINDS: readonly ALDeliveryAdmissionVerdict['kind'][] = [
-    'admitted',
-    'duplicate',
-    'pending',
-    'deferred',
-    'refused',
-    'unroutable',
-    'superseded',
-    'expired',
-    'skipped',
-    'failed'
-];
+/** Keyed by every verdict kind, so a new kind fails to compile here instead of decoding as an invalid result. */
+const ALM_ADMISSION_VERDICT_KINDS: Readonly<Record<ALDeliveryAdmissionVerdict['kind'], true>> = {
+    admitted: true,
+    duplicate: true,
+    pending: true,
+    deferred: true,
+    refused: true,
+    unroutable: true,
+    superseded: true,
+    expired: true,
+    skipped: true,
+    failed: true
+};
 
 // The adapter's own abort fires a hair before the page's observe deadline, so the cancelled and
 // timed-out command must not be reported as a rejected recipe input.
@@ -185,23 +192,25 @@ export async function dispatchAlmBrowserCommand(
 function sendAlmMessage(
     input: AlmBrowserCommandInput<'messages.send'>
 ): Promise<RallarBlackBoxTestCommandOutcome> {
-    const connection = input.port.resolveConnection(input.command, input.context);
+    const command = input.command;
+    const connection = input.port.resolveConnection(command, input.context);
     const send = {
-        ...input.port.resolveCommandFields(input.command, input.context),
+        ...input.port.resolveCommandFields(command, input.context),
         connection,
-        timeoutMs: readAlmWaitTimeoutMs(input.command, input.port.now),
-        handleId: input.command.handleId ?? input.command.commandId
+        timeoutMs: readAlmWaitTimeoutMs(command, input.port.now)
     };
     return runAlmRuntimeCommand({
         port: input.port,
-        command: input.command,
+        command,
         context: input.context,
         connection,
         topic: 'rallar.bb.messages.sent',
         invoke: async (runtime) =>
-            input.command.replayOnCarrier === undefined
-                ? decodeAlmMessagesSendResultValue(await runtime.sendMessage(send))
-                : decodeAlmMessagesReplayResultValue(await runtime.sendMessage(send))
+            'replayOnCarrier' in command
+                ? decodeAlmMessagesReplayResultValue(await runtime.sendMessage(send))
+                : decodeAlmMessagesSendResultValue(
+                    await runtime.sendMessage({ ...send, handleId: command.handleId ?? command.commandId })
+                )
     });
 }
 
@@ -510,14 +519,12 @@ function toAlmErrorCode(error: Error): string {
         : toAlmPageRuntimeErrorCode(error.message);
 }
 
+/** Any page runtime rejection without one of these prefixes is a rejected recipe input. */
 function toAlmPageRuntimeErrorCode(message: string): string {
-    const prefixes = BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES;
-    if (message.startsWith(prefixes.deliveryStateTimeout)) {
-        return ALM_ERROR_CODES.deliveryStateTimeout;
-    }
-    return message.startsWith(prefixes.scriptedPortsUnavailable)
-        ? ALM_ERROR_CODES.scriptedPortsUnavailable
-        : ALM_ERROR_CODES.invalidCommandInput;
+    const prefixed = ALM_PAGE_RUNTIME_ERROR_CODE_KEYS.find((key) =>
+        message.startsWith(BLACK_BOX_RALLAR_DELIVERY_ERROR_MESSAGE_PREFIXES[key])
+    );
+    return prefixed === undefined ? ALM_ERROR_CODES.invalidCommandInput : ALM_ERROR_CODES[prefixed];
 }
 
 function decodeAlmMessagesSendResultValue(
@@ -539,17 +546,23 @@ function decodeAlmMessagesSendResultValue(
 function decodeAlmMessagesReplayResultValue(value: unknown): RallarBlackBoxTestMessagesReplayResultValue {
     const record = decodeAlmRuntimeRecord(value);
     const path = 'messages.send replay result';
-    const carrier = ALM_REPLAY_CARRIERS.find((candidate) => candidate === record.carrier);
-    const verdict = ALM_ADMISSION_VERDICT_KINDS.find((candidate) => candidate === record.verdict);
-    if (carrier === undefined || verdict === undefined) {
-        throw toAlmInvalidRuntimeResultError(`${path}.${carrier === undefined ? 'carrier' : 'verdict'}`);
+    const carrier = requireAlmReplayCarrierField(record, path);
+    const verdict = record.verdict;
+    if (!isAlmAdmissionVerdictKind(verdict)) {
+        throw toAlmInvalidRuntimeResultError(`${path}.verdict`);
     }
+    const reason = readAlmOptionalStringField(record, path, 'reason');
     return {
         handleId: requireAlmStringField(record, path, 'handleId'),
         msgId: requireAlmStringField(record, path, 'msgId'),
         carrier,
-        verdict
+        verdict,
+        ...(reason === undefined ? {} : { reason })
     };
+}
+
+function isAlmAdmissionVerdictKind(value: unknown): value is ALDeliveryAdmissionVerdict['kind'] {
+    return typeof value === 'string' && Object.hasOwn(ALM_ADMISSION_VERDICT_KINDS, value);
 }
 
 function decodeAlmDeliveryResultValue(
@@ -605,6 +618,16 @@ function requireAlmCarrierField(
     path: string
 ): RallarBlackBoxTestMessagesCarrier {
     const carrier = ALM_MESSAGES_CARRIERS.find((candidate) => candidate === record.carrier);
+    if (carrier === undefined) {
+        throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
+    }
+    return carrier;
+}
+
+function requireAlmReplayCarrierField(record: RallarBlackBoxTestRecord, path: string): ALDeliveryCarrier {
+    const carrier = RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesReplayCarrier.find((candidate) =>
+        candidate === record.carrier
+    );
     if (carrier === undefined) {
         throw toAlmInvalidRuntimeResultError(`${path}.carrier`);
     }

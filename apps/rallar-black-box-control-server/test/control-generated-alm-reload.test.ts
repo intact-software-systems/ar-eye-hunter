@@ -7,6 +7,7 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandOutcome,
     RallarBlackBoxTestFaultInjectCommand,
+    RallarBlackBoxTestMessagesReplayCommand,
     RallarBlackBoxTestMessagesSendCommand,
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime
@@ -116,7 +117,7 @@ class GeneratedAlmPorts {
             case 'fault.inject':
                 return this.injectFault(command);
             case 'messages.send':
-                return this.send(command);
+                return 'replayOnCarrier' in command ? this.replay(command) : this.send(command);
             case 'messages.observe': {
                 const message = this.handles.get(command.handleId);
                 if (message && command.state.length === 1 && command.state[0] === 'expired') {
@@ -180,9 +181,6 @@ class GeneratedAlmPorts {
     }
 
     private send(command: RallarBlackBoxTestMessagesSendCommand): RallarBlackBoxTestCommandOutcome {
-        if (command.replayOnCarrier) {
-            return this.replay(command.replayOnCarrier);
-        }
         assert(isJsonRecordValue(command.payload));
         const rejected = command.payload.marker === 'bounded-rejection';
         const message: PortMessage = {
@@ -217,12 +215,25 @@ class GeneratedAlmPorts {
         };
     }
 
-    /** The receiver's one inbound identity answers the replayed copy as a duplicate, so nothing more arrives. */
-    private replay(
-        replay: NonNullable<RallarBlackBoxTestMessagesSendCommand['replayOnCarrier']>
-    ): RallarBlackBoxTestCommandOutcome {
+    /** The receiver's one inbound identity refuses the replayed copy as a duplicate, so nothing more is delivered. */
+    private replay({ replayOnCarrier: replay }: RallarBlackBoxTestMessagesReplayCommand): RallarBlackBoxTestCommandOutcome {
         const original = this.handles.get(replay.handleId);
         assert(original);
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: original.msgId,
+                    typeId: original.command.typeId,
+                    carrier: replay.carrier,
+                    outcome: 'not-handled',
+                    reason: 'duplicate'
+                }
+            }
+        });
         return {
             status: 'ok',
             value: { handleId: replay.handleId, msgId: original.msgId, carrier: replay.carrier, verdict: 'admitted' }

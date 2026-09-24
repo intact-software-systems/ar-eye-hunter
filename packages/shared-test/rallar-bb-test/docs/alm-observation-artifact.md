@@ -78,8 +78,10 @@ records what the runner was doing while the cell ran:
   when the cell carried no inbound event at all; otherwise every direction is reported, `no-events`
   for one that carried none of the three kinds. The decoded snapshot keeps each `admission-outcome`'s
   `msgId`, `carrier` and `reason` beside its `outcome`, so one message arriving over both carriers
-  reads as two outcomes for one `msgId` — in the `cross-carrier-duplicate` scenario, one
-  `committed`/`admitted` and one `not-handled`/`duplicate`. A measured direction carries:
+  reads as two outcomes for one `msgId`. In the `cross-carrier-duplicate` scenario, `ws-then-rtc`
+  shows one `committed`/`admitted` and one `not-handled`/`duplicate`; `rtc-then-ws` shows only the
+  RTC `committed`/`admitted` until the api-v1 WS server routes a WS-carried multicast room envelope,
+  and its receiver's duplicate-outcome wait reads red. A measured direction carries:
   - `pendingShare` — `{ outcome: 'measured', pendingSharePercent, outcomeCount }`, the share of
     `admission-outcome` events on that direction whose outcome was `pending`, out of `outcomeCount`;
     or `{ outcome: 'unmeasured' }` when the direction reported `effect-drain` events but no

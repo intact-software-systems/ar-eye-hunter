@@ -435,6 +435,21 @@ const faultActionSchema: JsonSchema = {
     ]
 };
 
+/**
+ * An ordinary send requires its carrier, type and payload; a replay names `replayOnCarrier` instead. The control
+ * validator and the page decoder refuse a replay that also names an ordinary send field.
+ */
+function toMessagesSendSchema(schema: JsonSchema): JsonSchema {
+    return {
+        ...schema,
+        required: ['kind'],
+        requiredAnyOf: RALLAR_BLACK_BOX_COMMAND_FIELDS['messages.send'].required.map((field) => ({
+            properties: [field, 'replayOnCarrier'],
+            message: `messages.send requires ${field}, unless it is a replay naming replayOnCarrier.`
+        }))
+    };
+}
+
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema>> = {
     configure: strictCommandSchema('configure', {
         config: configSchema
@@ -561,7 +576,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
             }
         ]
     },
-    'messages.send': strictCommandSchema('messages.send', {
+    'messages.send': toMessagesSendSchema(strictCommandSchema('messages.send', {
         connection: stringSchema,
         carrier: messagesCarrierSchema,
         typeId: stringSchema,
@@ -576,7 +591,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         seq: numberSchema,
         handleId: stringSchema,
         replayOnCarrier: messagesReplaySchema
-    }),
+    })),
     'messages.observe': strictCommandSchema('messages.observe', {
         connection: stringSchema,
         handleId: stringSchema,

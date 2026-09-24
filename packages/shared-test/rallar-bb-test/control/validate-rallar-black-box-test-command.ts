@@ -76,6 +76,7 @@ const REQUIRED_FIELDS_WITH_OWN_MESSAGE: {
     parallel: ['groups'],
     wait: ['match'],
     'http.request': ['request'],
+    'messages.send': ['carrier', 'typeId', 'payload'],
     'messages.observe': ['state'],
     'fault.inject': ['match'],
     'director.intent': ['intent']

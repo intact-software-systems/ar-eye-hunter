@@ -310,8 +310,17 @@ export type RallarBlackBoxTestMessagesSendCommand =
         orderingKey?: string;
         seq?: number;
         handleId?: string;
-        /** A harness capability: re-admits the envelope the named handle captured on this carrier; absent, an ordinary send. */
-        replayOnCarrier?: Readonly<{ handleId: string; carrier: ALDeliveryCarrier; }>;
+    }>;
+
+/**
+ * A harness capability, not a product path: re-admits the envelope an earlier handle's first carrier captured on
+ * the other carrier, and names nothing else a send would.
+ */
+export type RallarBlackBoxTestMessagesReplayCommand =
+    & RallarBlackBoxTestCommandBase<'messages.send'>
+    & Readonly<{
+        connection?: string;
+        replayOnCarrier: Readonly<{ handleId: string; carrier: ALDeliveryCarrier; }>;
     }>;
 
 export type RallarBlackBoxTestMessagesObserveCommand =
@@ -668,6 +677,7 @@ export type RallarBlackBoxTestCommand =
     | RallarBlackBoxTestRtcSendCommand
     | RallarBlackBoxTestRtcStreamCommand
     | RallarBlackBoxTestMessagesSendCommand
+    | RallarBlackBoxTestMessagesReplayCommand
     | RallarBlackBoxTestMessagesObserveCommand
     | RallarBlackBoxTestMessagesCancelCommand
     | RallarBlackBoxTestMessagesReceivedCommand
@@ -949,6 +959,8 @@ export interface RallarBlackBoxTestMessagesReplayResultValue {
     readonly msgId: string;
     readonly carrier: ALDeliveryCarrier;
     readonly verdict: ALDeliveryAdmissionVerdict['kind'];
+    /** The verdict's own detail; absent for `admitted`, `duplicate` and `pending`, which carry none. */
+    readonly reason?: string;
 }
 
 export interface RallarBlackBoxTestMessagesObserveResultValue {

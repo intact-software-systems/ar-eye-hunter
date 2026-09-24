@@ -59,13 +59,22 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'rtc.connect':
             return [String(command.rallar?.typeId)];
         case 'messages.send':
+            return 'replayOnCarrier' in command ? [] : [command.typeId];
         case 'messages.received':
             return [command.typeId];
+        case 'wait':
+            return toAdmissionOutcomeTypeIds(command.match.contains);
         case 'fault.inject':
             return command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
             return [];
     }
+}
+
+/** An admission-outcome wait routes on the typeId its `contains` names. */
+function toAdmissionOutcomeTypeIds(contains: string | undefined): readonly string[] {
+    const typeId = contains?.match(/^"typeId":"([^"]+)"/)?.[1];
+    return typeId === undefined ? [] : [typeId];
 }
 
 /** The WS topic every command routes over, which the product admits only under `app.` or `room.`. */
@@ -74,10 +83,27 @@ function toRoutedTopicIds(command: RallarBlackBoxTestCommand): readonly string[]
         case 'rtc.connect':
             return command.rallar?.topicId === undefined ? [] : [String(command.rallar.topicId)];
         case 'messages.send':
-            return command.topicId === undefined ? [] : [command.topicId];
+            return 'replayOnCarrier' in command || command.topicId === undefined ? [] : [command.topicId];
         default:
             return [];
     }
+}
+
+interface SendShape {
+    readonly carrier: string | undefined;
+    readonly replayOnCarrier: Readonly<{ handleId: string; carrier: string; }> | undefined;
+    readonly handleId: string | undefined;
+}
+
+function toSendShapes(commands: readonly RallarBlackBoxTestCommand[]): readonly SendShape[] {
+    return commands.flatMap((command): readonly SendShape[] => {
+        if (command.kind !== 'messages.send') {
+            return [];
+        }
+        return 'replayOnCarrier' in command
+            ? [{ carrier: undefined, replayOnCarrier: command.replayOnCarrier, handleId: undefined }]
+            : [{ carrier: command.carrier, replayOnCarrier: undefined, handleId: command.handleId }];
+    });
 }
 
 function toReceivedCommands(scenarios: readonly AlmConformanceScenario[]): readonly RallarBlackBoxTestMessagesReceivedCommand[] {
@@ -204,30 +230,53 @@ describe('alm-conformance recipe family', () => {
     it('replays each order\'s first send on the other carrier and never polls the replayed handle', () => {
         const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
             .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
-        const sendsOf = (scenario: AlmConformanceScenario | undefined) =>
-            (scenario?.sender.commands ?? []).flatMap((command) =>
-                command.kind === 'messages.send'
-                    ? [{ carrier: command.carrier, replayOnCarrier: command.replayOnCarrier, handleId: command.handleId }]
-                    : []
-            );
+        const sendsOf = (scenario: AlmConformanceScenario | undefined) => toSendShapes(scenario?.sender.commands ?? []);
 
         expect(sendsOf(rtcThenWs)).toEqual([
             { carrier: 'rtc', replayOnCarrier: undefined, handleId: 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1' },
             {
-                carrier: 'ws',
+                carrier: undefined,
                 replayOnCarrier: { handleId: 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-rtc-then-ws-send-1', carrier: 'ws' },
                 handleId: undefined
             }
         ]);
         expect(sendsOf(wsThenRtc).map((send) => [send.carrier, send.replayOnCarrier?.carrier])).toEqual([
             ['ws', undefined],
-            ['rtc', 'rtc']
+            [undefined, 'rtc']
         ]);
         for (const scenario of [rtcThenWs, wsThenRtc]) {
             const observed = (scenario?.sender.commands ?? []).flatMap((command) => command.kind === 'messages.observe' ? command.state : []);
             expect(observed).not.toContain('acknowledged');
             expect(scenario?.receiver.commands.filter((command) => command.kind === 'messages.received'))
                 .toMatchObject([{ count: 1, absent: false }, { count: 2, absent: true }]);
+        }
+    });
+
+    it('requires the receiver to refuse the second copy: over WS in rtc-then-ws, over either carrier in ws-then-rtc', () => {
+        const [rtcThenWs, wsThenRtc] = createAlmConformanceRecipes(toConformanceInput('rtc-with-ws-fallback'))
+            .filter((scenario) => scenario.scenarioId === 'cross-carrier-duplicate');
+        const outcomeWait = (order: string, contains: string) => ({
+            kind: 'wait',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.inbound_diagnostics',
+                payloadPath: 'data',
+                contains: `"typeId":"alm.conformance.rtc-with-ws-fallback.cross-carrier-duplicate-${order}",${contains}`
+            }
+        });
+        const tailOf = (scenario: AlmConformanceScenario | undefined, count: number) => (scenario?.receiver.commands ?? []).slice(-count - 1, -1);
+
+        expect(tailOf(rtcThenWs, 1)).toMatchObject([
+            outcomeWait('rtc-then-ws', '"carrier":"ws","outcome":"not-handled","reason":"duplicate"')
+        ]);
+        const latestId = 'alm-rtc-with-ws-fallback-cross-carrier-duplicate-ws-then-rtc-receiver-duplicate-outcome-latest';
+        expect(tailOf(wsThenRtc, 3)).toMatchObject([
+            { ...outcomeWait('ws-then-rtc', '"carrier":"'), commandId: latestId },
+            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.outcome`, operator: 'equals', expected: 'not-handled' },
+            { kind: 'assert', source: `resultCache.${latestId}.value.event.payload.data.reason`, operator: 'equals', expected: 'duplicate' }
+        ]);
+        for (const scenario of [rtcThenWs, wsThenRtc]) {
+            expect(scenario?.receiver.commands.some((command) => ['parallel', 'loop'].includes(command.kind))).toBe(false);
         }
     });
 

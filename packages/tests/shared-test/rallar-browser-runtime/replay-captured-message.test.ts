@@ -11,6 +11,7 @@ import {
 import { toRallarDiagnosticsPorts } from '@shared-web/browser/connection/rallar-diagnostics-ports.ts';
 import type { ApiMiddleware } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALOutboundSentMessageSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { ALOutboundMessageRuntime, ALOutboundRuntimeStores } from '@shared/alm/outbound/al-outbound-message-runtime.ts';
 import {
@@ -35,6 +36,9 @@ interface SessionOutbounds {
     readonly context: ApiMiddleware;
     readonly wake: ReturnType<typeof vi.fn>;
     readonly admit: (carrier: ALDeliveryCarrier, message: ALMessage) => ReturnType<ALOutboundMessageRuntime<ALOutboundTransportMessage>['enqueueIfAbsent']>;
+    readonly readSentMessage: (carrier: ALDeliveryCarrier, msgId: string) => Promise<ALOutboundSentMessageSnapshot | undefined>;
+    /** Every envelope a replay handed to a carrier's own admission call, in order. */
+    readonly replayed: ALMessage[];
 }
 
 const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
@@ -43,27 +47,44 @@ const diagnosticsPorts = toRallarDiagnosticsPorts(undefined);
 function createSessionOutbounds(): SessionOutbounds {
     const sessionId = `replay-${crypto.randomUUID()}`;
     configureBrowserALRuntimeStores(sessionId, { diagnosticsPorts });
-    const rtc = createUnsubmittingOutbound(resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId), 'rtc');
-    const ws = createUnsubmittingOutbound(resolveBrowserWsClientALOutboundRuntimeStores(sessionId), 'ws');
+    const stores = {
+        rtc: resolveBrowserRtcOverlayALOutboundRuntimeStores(sessionId),
+        ws: resolveBrowserWsClientALOutboundRuntimeStores(sessionId)
+    };
+    const rtc = createUnsubmittingOutbound(stores.rtc, 'rtc');
+    const ws = createUnsubmittingOutbound(stores.ws, 'ws');
     onTestFinished(async () => {
         rtc.dispose();
         ws.dispose();
         await deleteBrowserALRuntimeEntriesForSession(sessionId, { onStorageReset: diagnosticsPorts.onStorageReset });
     });
     const wake = vi.fn();
+    const replayed: ALMessage[] = [];
     const context = createDefaultApiMiddlewareTestDouble({
         session: { sessionId },
         middleware: {
             qboxEngine: { wake },
-            rtcRxStreamer: { enqueueOutboxIfAbsent: async (message) => await rtc.enqueueIfAbsent(message) },
-            webSocketQueueBox: { enqueueOutboxIfAbsent: async (message) => await ws.enqueueIfAbsent(message) }
+            rtcRxStreamer: {
+                enqueueOutboxIfAbsent: async (message) => {
+                    replayed.push(message);
+                    return await rtc.enqueueIfAbsent(message);
+                }
+            },
+            webSocketQueueBox: {
+                enqueueOutboxIfAbsent: async (message) => {
+                    replayed.push(message);
+                    return await ws.enqueueIfAbsent(message);
+                }
+            }
         }
     });
     return {
         sessionId,
         context,
         wake,
-        admit: async (carrier, message) => await (carrier === 'rtc' ? rtc : ws).enqueueIfAbsent(message)
+        replayed,
+        admit: async (carrier, message) => await (carrier === 'rtc' ? rtc : ws).enqueueIfAbsent(message),
+        readSentMessage: async (carrier, msgId) => await stores[carrier].admissionStore.readSentMessage(msgId)
     };
 }
 
@@ -113,6 +134,11 @@ describe('replaying a captured envelope on the other carrier', () => {
         expect(verdict).toMatchObject({ kind: 'admitted', durable: true });
         expect(again).toEqual({ kind: 'duplicate' });
         expect(session.wake).toHaveBeenCalledTimes(2);
+        expect(session.replayed.map((envelope) => JSON.stringify(envelope))).toEqual([
+            JSON.stringify(message),
+            JSON.stringify(message)
+        ]);
+        expect(JSON.stringify((await session.readSentMessage(replay, message.id.msgId))?.msg)).toBe(JSON.stringify(message));
     });
 
     it('refuses a msgId the other carrier never captured instead of admitting nothing', async () => {
@@ -125,7 +151,7 @@ describe('replaying a captured envelope on the other carrier', () => {
             context: session.context,
             msgId: message.id.msgId,
             carrier: 'ws'
-        })).rejects.toThrow(`No captured envelope for ${message.id.msgId} is retained to replay on ws.`);
+        })).rejects.toThrow(`Message replay unavailable: no captured envelope for ${message.id.msgId} is retained to replay on ws.`);
     });
 
     it('refuses a replay without a connected session', async () => {
@@ -134,6 +160,6 @@ describe('replaying a captured envelope on the other carrier', () => {
             context: undefined,
             msgId: 'any',
             carrier: 'rtc'
-        })).rejects.toThrow('A message replay needs a connected session.');
+        })).rejects.toThrow('Message replay unavailable: no connected session.');
     });
 });
