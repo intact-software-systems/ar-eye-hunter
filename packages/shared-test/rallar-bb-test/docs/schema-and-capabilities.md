@@ -192,9 +192,12 @@ The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `not-yet-in-sync`; that refusal writes no rows, sends the sender a NACK and
 refreshes the receiver's room once. `delivered-after-refresh` states
 `{ aboveCurrentBy: 1 }`, then re-issues the prologue's active-member PUT under
-its own request id to advance the group version; the receiver then receives the
-message once, and the sender proves only its own `transport-accepted`.
-`expires` states `{ absolute: 999999 }` with the 7.5 s expiry lifetime; the
+its own request id to advance the group version, and its receiver waits to
+receive the message once; the sender proves only its own `transport-accepted`.
+It reads red at the receiver's `received-1` because no plain-member write
+advances the snapshot version: the active-member PUT is a no-op for an active
+member, and a presence write moves only the presence revision. The Hetzner
+two-agent manifest withholds it for that reason. `expires` states `{ absolute: 999999 }` with the 7.5 s expiry lifetime; the
 receiver proves absence for the rest of that lifetime and past it, and the sender
 observes `expired`.
 

@@ -69,8 +69,9 @@ const skippedScenarioIds = (process.env.RALLAR_BLACK_BOX_ALM_SKIP ?? '')
 
 const CONFORMANCE_TYPE_ID = 'alm.conformance';
 const CONFORMANCE_DEADLINE_MS = 18_000;
-// Finite carrier ceiling covers the conformance recipes and connection readiness.
-const CARRIER_TEST_TIMEOUT_MS = 300_000;
+// Finite carrier ceiling covers the conformance recipes and connection readiness: the next whole minute above the
+// widest cell, rtc-with-ws-fallback in the full scope, measured at 4.8 and 5.0 minutes.
+const CARRIER_TEST_TIMEOUT_MS = 360_000;
 
 /**
  * Playwright clears the output root once at the start of a run and deletes each passing test's own

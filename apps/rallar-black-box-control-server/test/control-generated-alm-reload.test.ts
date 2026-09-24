@@ -44,8 +44,6 @@ class GeneratedAlmPorts {
     private absence: { duration: number; release: () => void; } | undefined;
     private entered = Promise.withResolvers<void>();
     private holdNextSleep = false;
-    /** A send one past the receiver's snapshot, admitted once the sender advances the group version. */
-    private awaitingAdvance: PortMessage | undefined;
     private readonly replacesDocument: boolean;
 
     constructor(replacesDocument: boolean) {
@@ -101,10 +99,6 @@ class GeneratedAlmPorts {
         const session = { clientId: role, sessionId: `${role}-stored-session` };
         switch (command.kind) {
             case 'http.request':
-                if (this.awaitingAdvance && command.commandId?.endsWith('-advance-group')) {
-                    this.deliver(this.awaitingAdvance);
-                    this.awaitingAdvance = undefined;
-                }
                 return { status: 'ok', value: { status: 200 } };
             case 'rtc.connect':
                 this.deliverRecoveredOriginals(role);
@@ -206,10 +200,8 @@ class GeneratedAlmPorts {
                 }
             }
         }
-        const floor = command.minSnapshotVersion;
-        if (floor !== undefined) {
+        if (command.minSnapshotVersion !== undefined) {
             this.refuseNotYetInSync(message);
-            this.awaitingAdvance = 'aboveCurrentBy' in floor ? message : undefined;
         }
         else if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
             this.deliver(message);

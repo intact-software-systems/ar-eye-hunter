@@ -904,8 +904,9 @@ function toAdmissionOutcomeWait(
 /**
  * A send above the receiver's room snapshot. The receiver refuses it at admission and writes nothing; its NACK
  * schedules the sender's retries (D35). `delivered-after-refresh` states a floor one past the sender's own version
- * and then advances the group, so a later copy is admitted; the sender proves only its own hop evidence (D28).
- * `expires` states a floor no group reaches, so every copy is refused until the message expires.
+ * and then advances the group, so a later copy is admitted; the sender proves only its own hop evidence (D28). It
+ * reads red at the receiver's `received-1`: no plain-member write advances the snapshot version, so the advance is a
+ * no-op. `expires` states a floor no group reaches, so every copy is refused until the message expires.
  */
 function toNotYetInSyncSenderCommands(
     sender: AlmConformanceStepInput,
