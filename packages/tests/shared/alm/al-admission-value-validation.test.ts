@@ -49,6 +49,8 @@ describe('admission scalar and version decoding', () => {
 describe('admission control decoding', () => {
     const ack = {
         ackedMsgId: 'msg',
+        originPeerId: 'b',
+        logicalRecipientPeerId: 'a',
         fromPeerId: 'a',
         toPeerId: 'b',
         status: 'delivered',

@@ -91,7 +91,14 @@ describe('outbound control admission identity', () => {
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
             const accepted = type === 'ack'
-                ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered', carrier: 'ws' })
+                ? newALAckControlMessage(id, {
+                    ...common,
+                    ackedMsgId: msgId,
+                    originPeerId: 'sender',
+                    logicalRecipientPeerId: 'receiver',
+                    status: 'delivered',
+                    carrier: 'ws'
+                })
                 : type === 'nack'
                 ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
@@ -183,6 +190,8 @@ describe('outbound control admission identity', () => {
             { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() },
             {
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: 'receiver',
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
                 status: 'delivered',
@@ -216,7 +225,16 @@ describe('outbound control admission identity', () => {
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
             { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
-            { fromPeerId: 'receiver', toPeerId: 'other-sender', ackedMsgId: 'message', status: 'delivered', observedAtEpochMs: 1, carrier: 'ws' }
+            {
+                fromPeerId: 'receiver',
+                toPeerId: 'other-sender',
+                ackedMsgId: 'message',
+                originPeerId: 'other-sender',
+                logicalRecipientPeerId: 'receiver',
+                status: 'delivered',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            }
         );
 
         expect((await control.admit(ack)).kind).toBe('rejected');
@@ -305,6 +323,8 @@ describe('outbound control admission identity', () => {
         const values = [
             ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: fromPeerId,
                 fromPeerId,
                 toPeerId: 'sender',
                 status: 'delivered' as const,
@@ -313,6 +333,8 @@ describe('outbound control admission identity', () => {
             })),
             {
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: 'peer-0',
                 fromPeerId: 'peer-0',
                 toPeerId: 'sender',
                 status: 'accepted' as const,
@@ -656,7 +678,14 @@ function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'recei
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':
-            return newALAckControlMessage(id, { ...common, ackedMsgId: 'message', status: 'delivered', carrier: 'ws' });
+            return newALAckControlMessage(id, {
+                ...common,
+                ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: peerId,
+                status: 'delivered',
+                carrier: 'ws'
+            });
         case 'nack':
             return newALNackControlMessage(id, { ...common, msgId: 'message', reason: 'gap' });
         case 'repair':

@@ -12,7 +12,7 @@ import {
 
 const STORE_NAME = 'entries';
 /** The schema identity S2b replaced: a store written at it keys inbound rows per carrier. */
-const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-f2c';
+const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-s2b';
 /** The deleted per-carrier RTC inbound namespace, spelled out because its identity is gone. */
 const REMOVED_RTC_RX_INBOUND_NAMESPACE = 'browser:browser-rtc-rx:session-1:inbound:admission';
 

@@ -12,7 +12,8 @@ import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-me
 import { initialiseRtcOverlayMulticastManager, initialiseRtcRxStreamer } from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_ACK_TYPE_ID, newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -420,6 +421,8 @@ export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 's
         { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: 'receiver', ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
+            originPeerId: sender.selfPeerId,
+            logicalRecipientPeerId: 'receiver',
             fromPeerId: 'receiver',
             toPeerId: sender.selfPeerId,
             status: 'accepted',

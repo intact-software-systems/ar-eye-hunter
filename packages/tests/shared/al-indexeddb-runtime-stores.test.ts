@@ -381,6 +381,8 @@ describe('IndexedDB AL runtime stores', () => {
                 { v: 2, msgId: 'control-ack-peer-2', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: msg.id.senderId,
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'accepted',
@@ -409,6 +411,8 @@ describe('IndexedDB AL runtime stores', () => {
                 { v: 2, msgId: 'control-ack-peer-3', ts: 2, senderId: 'peer-3' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: msg.id.senderId,
+                    logicalRecipientPeerId: 'peer-3',
                     fromPeerId: 'peer-3',
                     toPeerId: 'self',
                     status: 'accepted',
@@ -683,6 +687,8 @@ describe('IndexedDB AL runtime stores', () => {
                         { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
                         {
                             ackedMsgId: msg.id.msgId,
+                            originPeerId: 'self',
+                            logicalRecipientPeerId: 'peer-1',
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',

@@ -236,6 +236,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
@@ -258,6 +260,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
@@ -1239,6 +1243,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',

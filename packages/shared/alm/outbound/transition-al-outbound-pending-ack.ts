@@ -2,11 +2,6 @@ import type { ALAckPayload } from '../../al-contracts/al-control.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALOutboundAckTrackingPlan } from './al-outbound-message-runtime.ts';
 
-export interface AppendUniqueALAckInput {
-    readonly current: readonly ALAckPayload[];
-    readonly next: ALAckPayload;
-}
-
 export interface TrackALOutboundPendingAckSnapshotInput {
     readonly msgId: string;
     readonly current: ALOutboundPendingAckSnapshot | undefined;
@@ -19,14 +14,6 @@ export interface AcceptALOutboundPendingAckSnapshotInput {
     readonly current: ALOutboundPendingAckSnapshot | undefined;
     readonly acks: readonly ALAckPayload[];
     readonly ack: ALAckPayload;
-}
-
-export function appendUniqueALAck(
-    input: AppendUniqueALAckInput
-): readonly ALAckPayload[] {
-    return input.current.some((ack) => ack.fromPeerId === input.next.fromPeerId && ack.status === input.next.status)
-        ? input.current
-        : [...input.current, input.next];
 }
 
 export function trackALOutboundPendingAckSnapshot(

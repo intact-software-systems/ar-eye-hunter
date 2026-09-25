@@ -1,7 +1,7 @@
 import type { ALMessage } from '../../../al-contracts/al-contract.ts';
 import {
-    decodeALControlMessage,
-    type ALParsedControlMessage
+    decodeALPeerControlMessage,
+    type ALPeerControlMessage
 } from '../../../al-contracts/al-control.ts';
 import { ALAdmissionCorruptionError } from '../../al-admission-decoder.ts';
 import { decodeALAdmissionString } from '../../al-admission-value-validation.ts';
@@ -109,7 +109,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     }
 
     async admit(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
-        const decoded = decodeALControlMessage(msg);
+        const decoded = decodeALPeerControlMessage(msg);
         if (decoded.left) {
             return { kind: 'not-handled' };
         }
@@ -282,7 +282,7 @@ export class ALOutboundControlAdmission<TPrepared> {
     }
 
     private async readControlAdmission(
-        parsed: ALParsedControlMessage,
+        parsed: ALPeerControlMessage,
         nowMs: number
     ): Promise<ALControlAdmissionRead> {
         const targetMsgId = controlTargetMsgId(parsed);
@@ -310,7 +310,7 @@ export class ALOutboundControlAdmission<TPrepared> {
 
     private async readControlHistory(
         session: ALAdmissionReadSession,
-        parsed: ALParsedControlMessage,
+        parsed: ALPeerControlMessage,
         msgId: string
     ) {
         switch (parsed.type) {

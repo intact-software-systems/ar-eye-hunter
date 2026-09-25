@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodeALControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -430,10 +431,10 @@ describe('inbound admission preparation boundary', () => {
         });
         try {
             await runtime.admitIncomingMessage(createMessage(1), { kind: 'ws-client', peerId: 'sender' });
-            await expect.poll(() => controls.some((message) => message.payload.typeId === 'al.control.ack.v1')).toBe(true);
-            const firstAck = controls.find((message) => message.payload.typeId === 'al.control.ack.v1');
+            await expect.poll(() => controls.some((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID)).toBe(true);
+            const firstAck = controls.find((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID);
             vi.setSystemTime(Date.now() + 10_000);
-            await expect.poll(() => controls.filter((message) => message.payload.typeId === 'al.control.ack.v1'))
+            await expect.poll(() => controls.filter((message) => message.payload.typeId === AL_CONTROL_ACK_TYPE_ID))
                 .toEqual([firstAck, firstAck]);
         }
         finally {

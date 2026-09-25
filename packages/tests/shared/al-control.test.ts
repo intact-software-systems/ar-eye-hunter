@@ -8,16 +8,22 @@ import { newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-con
 import {
     AL_CONTROL_ACK_TYPE_ID,
     AL_CONTROL_NACK_TYPE_ID,
+    AL_CONTROL_RECEIPT_TYPE_ID,
     AL_CONTROL_REPAIR_TYPE_ID,
+    isALControlTypeId
+} from '@shared/al-contracts/al-control-type-ids.ts';
+import {
     decodeALControlMessage,
     newALAckControlMessage,
     newALNackControlMessage,
+    newALReceiptControlMessage,
     newALRepairControlMessage,
     parseALControlMessage,
     prepareALNackControlMessage,
     type ALAckPayload,
     type ALControlPayload,
     type ALNackPayload,
+    type ALReceiptPayload,
     type ALRepairPayload
 } from '@shared/al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '@shared/al-contracts/al-message-resource-limits.ts';
@@ -26,6 +32,8 @@ const ack: ALAckPayload = {
     ackedMsgId: 'msg-1',
     fromPeerId: 'sender',
     toPeerId: 'receiver',
+    originPeerId: 'receiver',
+    logicalRecipientPeerId: 'sender',
     status: 'delivered',
     observedAtEpochMs: 12,
     carrier: 'ws'
@@ -50,6 +58,15 @@ const repair: ALRepairPayload = {
     expectedSeq: 2,
     missingSeqs: [2]
 };
+const receipt: ALReceiptPayload = {
+    msgId: 'msg-1',
+    originPeerId: 'origin',
+    expectedRecipientPeerIds: ['recipient-b', 'recipient-c'],
+    confirmedRecipientPeerIds: ['recipient-b'],
+    snapshotVersion: 7,
+    phase: 'complete',
+    observedAtEpochMs: 15
+};
 const controlId: ALMessage['id'] = {
     v: 2,
     msgId: 'control-1',
@@ -58,6 +75,61 @@ const controlId: ALMessage['id'] = {
 };
 
 describe('AL control message codec', () => {
+    it('names the v2 acknowledgement and the receipt control as the four supported control ids', () => {
+        expect(AL_CONTROL_ACK_TYPE_ID).toBe('al.control.ack.v2');
+        expect(AL_CONTROL_RECEIPT_TYPE_ID).toBe('al.control.receipt.v1');
+        expect(['al.control.ack.v2', 'al.control.nack.v1', 'al.control.repair.v1', 'al.control.receipt.v1']
+            .every(isALControlTypeId)).toBe(true);
+        expect(isALControlTypeId('al.control.ack.v1')).toBe(false);
+    });
+
+    it('refuses a v1 acknowledgement as unsupported', () => {
+        const v2 = newALAckControlMessage(controlId, ack);
+        const v1 = { ...v2, payload: { ...v2.payload, typeId: 'al.control.ack.v1' } };
+        expect(decodeALControlMessage(v1).left).toMatchObject({ code: 'unsupported' });
+    });
+
+    it.each(['originPeerId', 'logicalRecipientPeerId'] as const)('requires a v2 acknowledgement to name its %s', (field) => {
+        const { [field]: _omitted, ...partial } = ack;
+        expect(() => parseALControlMessage(controlMessageWithResource(AL_CONTROL_ACK_TYPE_ID, JSON.stringify(partial))))
+            .toThrow(TypeError);
+    });
+
+    it('round-trips a v2 acknowledgement with its origin and logical recipient', () => {
+        const message = newALAckControlMessage(controlId, ack);
+        expect(message.payload.typeId).toBe('al.control.ack.v2');
+        expect(decodeALControlMessage(message).right).toEqual({ type: 'ack', payload: ack });
+    });
+
+    it('round-trips a receipt addressed and routed to its origin', () => {
+        const message = newALReceiptControlMessage({ ...controlId, senderId: 'server' }, receipt);
+        expect(message.payload.typeId).toBe('al.control.receipt.v1');
+        expect(message.targets).toEqual({ mode: 'unicast', toPeerId: 'origin' });
+        expect(message.route).toMatchObject({ topicId: 'al-control', resourceId: 'msg-1', contextId: 'origin' });
+        expect(message.qos).toEqual({
+            delivery: { algo: 'best-effort' },
+            durability: { algo: 'volatile' },
+            ack: { algo: 'none', opts: { timeoutMs: 250 } }
+        });
+        expect(decodeALControlMessage(message).right).toEqual({ type: 'receipt', payload: receipt });
+    });
+
+    it.each([
+        ['missing field', JSON.stringify({ ...receipt, snapshotVersion: undefined })],
+        ['extra field', JSON.stringify({ ...receipt, extra: true })],
+        ['unknown phase', JSON.stringify({ ...receipt, phase: 'pending' })],
+        ['non-identifier recipient', JSON.stringify({ ...receipt, confirmedRecipientPeerIds: [''] })]
+    ])('rejects a receipt with %s', (_label, resource) => {
+        expect(() => parseALControlMessage(controlMessageWithResource(AL_CONTROL_RECEIPT_TYPE_ID, resource)))
+            .toThrow(TypeError);
+    });
+
+    it('refuses a receipt whose unicast target is not its origin', () => {
+        const valid = newALReceiptControlMessage(controlId, receipt);
+        expect(decodeALControlMessage({ ...valid, targets: { mode: 'unicast', toPeerId: 'other' } }).left)
+            .toMatchObject({ code: 'malformed' });
+    });
+
     it('round-trips bounded payloads through the shared decoder', () => {
         expect(parseALControlMessage(newALAckControlMessage(controlId, ack)))
             .toEqual({ type: 'ack', payload: ack });

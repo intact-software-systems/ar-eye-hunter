@@ -346,6 +346,8 @@ function toDeliveredAck(message: ALMessage): ALMessage {
         fromPeerId: 'peer-1',
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,
+        originPeerId: message.id.senderId,
+        logicalRecipientPeerId: 'peer-1',
         status: 'delivered',
         observedAtEpochMs: Date.now(),
         carrier: 'ws'

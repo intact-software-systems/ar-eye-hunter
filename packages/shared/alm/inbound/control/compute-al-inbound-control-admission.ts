@@ -35,7 +35,7 @@ export interface ALInboundControlAdmissionCandidate {
     readonly read: ALInboundControlAdmissionRead;
     readonly acks: AcksControlValue;
     readonly pending: PendingControlValue | undefined;
-    readonly completedEffect: ALInboundDurableEffectWrite | undefined;
+    readonly completedEffects: readonly ALInboundDurableEffectWrite[];
     readonly acceptance: ALControlAcceptance;
     readonly controlExpireAtTimestamp: number;
     readonly pendingExpireAtTimestamp: number;
@@ -57,7 +57,9 @@ export function computeALInboundControlAdmission(
         read,
         acks: { kind: 'acks', values: acks },
         pending: transition.pending === undefined ? undefined : { kind: 'pending', value: transition.pending },
-        completedEffect: completed ? computeCompletedAcknowledgementWork(read, completed, retention) : undefined,
+        completedEffects: completed
+            ? computeCompletedAcknowledgementWork(read, { completed, acks: transition.completedAcks }, retention)
+            : [],
         acceptance: {
             handled: true,
             completedPendingAcks: completed ? [completed] : []
@@ -98,7 +100,7 @@ export function toALInboundControlCommitBundle(
                     expireAtTimestamp: candidate.pendingExpireAtTimestamp
                 }
         ],
-        durableEffects: candidate.completedEffect === undefined ? [] : [candidate.completedEffect]
+        durableEffects: candidate.completedEffects
     };
 }
 
@@ -120,37 +122,51 @@ function toALInboundControlObservations(
     };
 }
 
+interface ALInboundCompletedReceipt {
+    readonly completed: ALCompletedPendingAck;
+    /** One admitted ACK per logical recipient; never empty, since the ACK that completed it is among them. */
+    readonly acks: readonly ALAckPayload[];
+}
+
+/** The relay re-originates one ACK per logical recipient its subtree confirmed (D40), copying who each speaks for. */
 function computeCompletedAcknowledgementWork(
     read: ALInboundControlAdmissionRead,
-    completed: ALCompletedPendingAck,
+    receipt: ALInboundCompletedReceipt,
     retention: NormalizedALRuntimeStoreRetentionConfig
-): ALInboundDurableEffectWrite {
+): readonly ALInboundDurableEffectWrite[] {
+    const { completed } = receipt;
     // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
     const carrier = toALDeliveryCarrier(read.owner.source);
-    return computeALInboundWorkEntry({
-        namespace: read.namespace,
-        observedAtMs: read.nowMs,
-        effectId: toInboundEffectId('ack', completed.msgId, completed.toPeerId, completed.status, read.controlMsgId),
-        expireAtTimestamp: resolveExpireAtTimestampWithFallback(
-            completed.expireAtTimestamp,
-            retention.durableEffectTtlMs,
-            read.nowMs
-        ),
-        carrier,
-        payload: {
-            kind: 'send-control',
-            msg: newALAckControlMessage(
-                { v: 2, msgId: read.controlMsgId, senderId: read.ack.toPeerId, ts: read.nowMs },
-                {
-                    fromPeerId: read.ack.toPeerId,
-                    toPeerId: completed.toPeerId,
-                    ackedMsgId: completed.msgId,
-                    status: completed.status,
-                    observedAtEpochMs: read.nowMs,
-                    carrier
-                }
-            )
-        }
+    const relayPeerId = read.ack.toPeerId;
+    return receipt.acks.map((recipient, index) => {
+        const controlMsgId = `${read.controlMsgId}:${index}`;
+        return computeALInboundWorkEntry({
+            namespace: read.namespace,
+            observedAtMs: read.nowMs,
+            effectId: toInboundEffectId('ack', completed.msgId, completed.toPeerId, completed.status, controlMsgId),
+            expireAtTimestamp: resolveExpireAtTimestampWithFallback(
+                completed.expireAtTimestamp,
+                retention.durableEffectTtlMs,
+                read.nowMs
+            ),
+            carrier,
+            payload: {
+                kind: 'send-control',
+                msg: newALAckControlMessage(
+                    { v: 2, msgId: controlMsgId, senderId: relayPeerId, ts: read.nowMs },
+                    {
+                        fromPeerId: relayPeerId,
+                        toPeerId: completed.toPeerId,
+                        ackedMsgId: completed.msgId,
+                        originPeerId: recipient.originPeerId,
+                        logicalRecipientPeerId: recipient.logicalRecipientPeerId,
+                        carrier,
+                        status: completed.status,
+                        observedAtEpochMs: read.nowMs
+                    }
+                )
+            }
+        });
     });
 }
 

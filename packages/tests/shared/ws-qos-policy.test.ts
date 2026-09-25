@@ -190,6 +190,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                     { v: 2, msgId: 'control-ack', ts: 0, senderId: 'peer-1' },
                     {
                         ackedMsgId: msg.id.msgId,
+                        originPeerId: 'self',
+                        logicalRecipientPeerId: 'peer-1',
                         fromPeerId: 'peer-1',
                         toPeerId: 'self',
                         status: 'delivered',

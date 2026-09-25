@@ -353,6 +353,8 @@ describe('AL outbound durable effect lifecycle', () => {
                         { v: 2, msgId: 'control-timeout-ack', ts: 1, senderId: 'peer-1' },
                         {
                             ackedMsgId: msg.id.msgId,
+                            originPeerId: 'self',
+                            logicalRecipientPeerId: 'peer-1',
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',
@@ -441,6 +443,8 @@ describe('AL outbound durable effect lifecycle', () => {
                         { v: 2, msgId: 'control-conflict-ack', ts: 1, senderId: 'peer-1' },
                         {
                             ackedMsgId: msg.id.msgId,
+                            originPeerId: 'self',
+                            logicalRecipientPeerId: 'peer-1',
                             fromPeerId: 'peer-1',
                             toPeerId: 'self',
                             status: 'accepted',

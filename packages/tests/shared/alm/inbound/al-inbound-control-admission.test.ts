@@ -1,6 +1,6 @@
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, parseALControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,
@@ -140,6 +140,8 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
         { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
             status: 'accepted',
@@ -305,6 +307,60 @@ describe('inbound control admission', () => {
         expect((await readAcknowledgements(backend, admissionStore)).acks.map((ack) => ack.carrier)).toEqual(['rtc']);
     });
 
+    it('re-originates one ACK per logical recipient its completed subtree confirmed, copying who each speaks for', () => {
+        const nowMs = 1_800_000_000_000;
+        const toAck = (fromPeerId: string, logicalRecipientPeerId: string): ALAckPayload => ({
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId,
+            fromPeerId,
+            toPeerId: 'self',
+            status: 'subtree-complete',
+            observedAtEpochMs: nowMs,
+            carrier: 'rtc'
+        });
+        // A lower relay already spoke for its own recipient; the direct leaf completes the subtree.
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: toAck('leaf', 'leaf'),
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                expectedFromPeerIds: ['lower-relay', 'leaf'],
+                ackedFromPeerIds: ['lower-relay'],
+                carrier: 'rtc'
+            },
+            acks: [toAck('lower-relay', 'deep-recipient')],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        expect(upstream.map((control) => control?.type === 'ack' ? control.payload : undefined)).toEqual(
+            ['deep-recipient', 'leaf'].map((logicalRecipientPeerId) => ({
+                ackedMsgId: message.id.msgId,
+                fromPeerId: 'self',
+                toPeerId: message.id.senderId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId,
+                carrier: 'rtc',
+                status: 'subtree-complete',
+                observedAtEpochMs: nowMs
+            }))
+        );
+        expect(new Set(candidate.completedEffects.map((effect) => effect.effectId)).size).toBe(2);
+    });
+
     // The global constraint requires validateXxx to report every issue, not only the first one.
     it('reports every reason one acknowledgement candidate is inadmissible', () => {
         const nowMs = 1_800_000_000_000;
@@ -312,6 +368,8 @@ describe('inbound control admission', () => {
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'stranger',
                 fromPeerId: 'stranger',
                 toPeerId: message.id.senderId,
                 status: 'delivered',

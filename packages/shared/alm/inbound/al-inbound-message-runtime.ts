@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
+import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';

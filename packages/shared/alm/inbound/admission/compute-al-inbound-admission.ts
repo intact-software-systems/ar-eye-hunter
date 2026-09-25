@@ -242,6 +242,8 @@ function computeIncomingAcknowledgements(
             immediateEffects: [toALInboundAckEffect({
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.msg.id.msgId,
+                originPeerId: read.msg.id.senderId,
+                logicalRecipient: { kind: 'self' },
                 status: shouldForward ? 'forwarded' : 'delivered',
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
@@ -318,6 +320,8 @@ function computeBufferedAcknowledgements(
             immediateEffects: [toALInboundAckEffect({
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.snapshot.msg.id.msgId,
+                originPeerId: read.snapshot.msg.id.senderId,
+                logicalRecipient: { kind: 'self' },
                 status: 'delivered',
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
@@ -359,16 +363,34 @@ function toAckTransitionChanges(
         : input.hadPending
         ? [{ kind: 'delete-control-pending', msgId: input.msgId, senderId: input.senderId }]
         : [];
-    const completedEffects = transition.completed
-        ? [toALInboundAckEffect({
-            toPeerId: transition.completed.toPeerId,
-            ackedMsgId: transition.completed.msgId,
-            status: transition.completed.status,
-            expireAtTimestamp: transition.completed.expireAtTimestamp ?? input.expireAtTimestamp,
+    return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, input) };
+}
+
+/** The relay re-originates one ACK per logical recipient its subtree confirmed, or speaks for itself alone. */
+function toCompletedAckEffects(
+    transition: ALPendingAckTransition,
+    input: InboundPendingAckInput
+): readonly ALInboundEffectIntent[] {
+    const completed = transition.completed;
+    if (!completed) {
+        return [];
+    }
+    const recipients = transition.completedAcks.length === 0
+        ? [{ originPeerId: input.senderId, logicalRecipient: { kind: 'self' } as const }]
+        : transition.completedAcks.map((ack) => ({
+            originPeerId: ack.originPeerId,
+            logicalRecipient: { kind: 'relayed', peerId: ack.logicalRecipientPeerId } as const
+        }));
+    return recipients.map((recipient) =>
+        toALInboundAckEffect({
+            toPeerId: completed.toPeerId,
+            ackedMsgId: completed.msgId,
+            ...recipient,
+            status: completed.status,
+            expireAtTimestamp: completed.expireAtTimestamp ?? input.expireAtTimestamp,
             carrier: input.carrier
-        })]
-        : [];
-    return { mutations, immediateEffects: [], completedEffects };
+        })
+    );
 }
 
 function computeInboundControlOwnerIndex(

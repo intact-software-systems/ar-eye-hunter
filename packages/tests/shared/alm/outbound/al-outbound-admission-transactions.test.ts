@@ -243,6 +243,8 @@ it('reads a control decision surface from one readonly transaction before its wr
             fromPeerId: 'peer-1',
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: 'peer-1',
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'
@@ -410,6 +412,8 @@ function createAcknowledgement(msgId: string): ALMessage {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
             ackedMsgId: `${msgId}-target`,
+            originPeerId: 'sender',
+            logicalRecipientPeerId: 'receiver',
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'

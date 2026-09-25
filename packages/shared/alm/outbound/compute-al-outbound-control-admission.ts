@@ -2,6 +2,7 @@ import type {
     ALAckPayload,
     ALNackPayload,
     ALParsedControlMessage,
+    ALPeerControlMessage,
     ALRepairPayload
 } from '../../al-contracts/al-control.ts';
 import { AL_MESSAGE_RESOURCE_LIMITS } from '../../al-contracts/al-message-resource-limits.ts';
@@ -28,7 +29,7 @@ export type ALControlHistory =
     | Readonly<{ kind: 'repairs'; values: readonly ALRepairPayload[]; }>;
 
 export interface ALControlAdmissionRead {
-    readonly parsed: ALParsedControlMessage;
+    readonly parsed: ALPeerControlMessage;
     /** The carrier the control reached this owner on: an acknowledgement is recorded under it, whatever its sender named. */
     readonly carrier: ALDeliveryCarrier;
     readonly targetMsgId: string;

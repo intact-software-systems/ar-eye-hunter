@@ -4,7 +4,7 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import { isALControlTypeId } from '@shared/al-contracts/al-control.ts';
+import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import {
     AppTopics,
     type AuthSession,

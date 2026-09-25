@@ -56,10 +56,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
 
         // The control-command validator reads its field tables from the canonical command-field
         // definition, so neither the JSON schema nor the capability catalog ships to the agent.
-        // The harness's cross-carrier replay (`messages.send` `replayOnCarrier`) measures
-        // 273.1806640625 KiB with this exact harness. The preauthorized next whole-KiB ceiling is 274;
+        // The v2 acknowledgement, the receipt control and one relayed ACK per logical recipient
+        // measure 274.1162109375 KiB with this exact harness. The next whole-KiB ceiling is 275;
         // all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(274);
+        expect(result.brotliKiB).toBeLessThan(275);
     });
 });
 

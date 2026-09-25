@@ -185,6 +185,8 @@ function newAcknowledgement(message: ALMessage): ALMessage {
             fromPeerId: ACKNOWLEDGING_PEER_ID,
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: ACKNOWLEDGING_PEER_ID,
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'

@@ -9,7 +9,7 @@ import {
 } from 'vitest';
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -344,6 +344,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
                 fromPeerId: 'peer-2',
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
+                originPeerId: 'peer-1',
+                logicalRecipientPeerId: 'peer-2',
                 status: 'delivered',
                 observedAtEpochMs: Date.now(),
                 carrier: 'rtc'
@@ -357,6 +359,8 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
                 fromPeerId: 'peer-3',
                 toPeerId: 'self',
                 ackedMsgId: message.id.msgId,
+                originPeerId: 'peer-1',
+                logicalRecipientPeerId: 'peer-3',
                 status: 'delivered',
                 observedAtEpochMs: Date.now(),
                 carrier: 'rtc'
@@ -365,10 +369,21 @@ describe('WebRtcRxStreamerService channel receive pipeline', () => {
         );
 
         expect(delivered).toEqual([message.id.msgId]);
-        expect((await fixture.outbound()).map(shared.parseALControlMessage)).toContainEqual({
-            type: 'ack',
-            payload: expect.objectContaining({ status: 'subtree-complete', toPeerId: 'peer-1', ackedMsgId: message.id.msgId })
-        });
+        const upstream = (await fixture.outbound()).map(shared.parseALControlMessage)
+            .filter((control) => control?.type === 'ack');
+        // The relay re-originates one ACK per logical recipient its subtree confirmed (D40).
+        expect(upstream).toHaveLength(2);
+        // Each is its own durable work row, so the two leave in either order.
+        expect(upstream.map((control) => control?.payload)).toEqual(expect.arrayContaining(['peer-2', 'peer-3'].map((recipient) =>
+            expect.objectContaining({
+                status: 'subtree-complete',
+                fromPeerId: 'self',
+                toPeerId: 'peer-1',
+                ackedMsgId: message.id.msgId,
+                originPeerId: 'peer-1',
+                logicalRecipientPeerId: recipient
+            })
+        )));
     });
 });
 
@@ -570,6 +585,8 @@ describe('RTC receiver consumer dispatch', () => {
             fromPeerId: 'receiver',
             toPeerId: 'sender',
             ackedMsgId: message.id.msgId,
+            originPeerId: 'sender',
+            logicalRecipientPeerId: 'receiver',
             status: 'delivered'
         });
     });

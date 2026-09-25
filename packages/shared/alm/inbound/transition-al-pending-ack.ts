@@ -31,6 +31,8 @@ export interface AcceptALPendingAckPayloadInput {
 export interface ALPendingAckTransition {
     readonly pending?: ALPendingAckSnapshot;
     readonly completed?: ALCompletedPendingAck;
+    /** One admitted ACK per logical recipient the completed receipt speaks for (D40); empty while pending. */
+    readonly completedAcks: readonly ALAckPayload[];
 }
 
 export function trackALPendingAckSnapshot(
@@ -43,13 +45,14 @@ export function trackALPendingAckSnapshot(
     }
 
     const ackedFromPeerIds = new Set(input.current?.ackedFromPeerIds ?? []);
-    for (const ack of input.acks) {
-        if (expectedFromPeerIds.size === 0 || expectedFromPeerIds.has(ack.fromPeerId)) {
-            ackedFromPeerIds.add(ack.fromPeerId);
-        }
+    const countedAcks = input.acks.filter((ack) =>
+        expectedFromPeerIds.size === 0 || expectedFromPeerIds.has(ack.fromPeerId)
+    );
+    for (const ack of countedAcks) {
+        ackedFromPeerIds.add(ack.fromPeerId);
     }
 
-    return finalizeALPendingAckTransition(input.msgId, {
+    return finalizeALPendingAckTransition(input.msgId, countedAcks, {
         toPeerId: input.toPeerId,
         status: 'subtree-complete',
         localReady: (input.current?.localReady ?? false) || input.localReady,
@@ -64,7 +67,7 @@ export function markALPendingAckLocalReadySnapshot(
     input: MarkALPendingAckLocalReadySnapshotInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return {};
+        return { completedAcks: [] };
     }
 
     return trackALPendingAckSnapshot({
@@ -83,7 +86,7 @@ export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return {};
+        return { completedAcks: [] };
     }
 
     const ackedFromPeerIds = new Set(input.current.ackedFromPeerIds);
@@ -108,10 +111,11 @@ export function acceptALPendingAckPayload(
 
 function finalizeALPendingAckTransition(
     msgId: string,
+    countedAcks: readonly ALAckPayload[],
     pending: ALPendingAckSnapshot
 ): ALPendingAckTransition {
     if (!pending.localReady) {
-        return { pending };
+        return { pending, completedAcks: [] };
     }
 
     const ackedFromPeerIds = new Set(pending.ackedFromPeerIds);
@@ -124,7 +128,18 @@ function finalizeALPendingAckTransition(
                 toPeerId: pending.toPeerId,
                 status: pending.status,
                 ...(pending.expireAtTimestamp === undefined ? {} : { expireAtTimestamp: pending.expireAtTimestamp })
-            }
+            },
+            completedAcks: resolveALAckPerLogicalRecipient(countedAcks)
         }
-        : { pending };
+        : { pending, completedAcks: [] };
+}
+
+function resolveALAckPerLogicalRecipient(acks: readonly ALAckPayload[]): readonly ALAckPayload[] {
+    const byRecipient = new Map<string, ALAckPayload>();
+    for (const ack of acks) {
+        if (!byRecipient.has(ack.logicalRecipientPeerId)) {
+            byRecipient.set(ack.logicalRecipientPeerId, ack);
+        }
+    }
+    return [...byRecipient.values()];
 }

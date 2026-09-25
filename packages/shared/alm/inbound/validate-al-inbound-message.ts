@@ -1,5 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { decodeALControlMessage } from '../../al-contracts/al-control.ts';
+import { decodeALControlMessage, toALControlRecipientPeerId } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { Either } from '../../resilience/Either.ts';
 import type { ALInboundMessageRuntime } from './al-inbound-message-runtime.ts';
@@ -30,7 +30,7 @@ export function validateALInboundMessage(
         if (control.left) {
             return Either.ofLeft(control.left);
         }
-        if (control.right!.payload.toPeerId !== selfPeerId) {
+        if (toALControlRecipientPeerId(control.right!) !== selfPeerId) {
             return Either.ofLeft({ code: 'unauthorized', message: 'Control is addressed to another local receiver' });
         }
     }

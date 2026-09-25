@@ -1,5 +1,11 @@
 import { createTestALOutboundControlAdmission } from '@shared-test/shared/create-test-al-outbound-work-port.ts';
-import { newALAckControlMessage, newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALAckControlMessage,
+    newALNackControlMessage,
+    parseALControlMessage,
+    type ALPeerControlMessage
+} from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { createALOutboundAdmissionStore } from '@shared/alm/outbound/admission/al-outbound-admission-store.ts';
@@ -44,7 +50,7 @@ describe('outbound control version candidate', () => {
             observedAtEpochMs: 1_000
         });
         const read = freezeValues<ALControlAdmissionRead>({
-            parsed: parseALControlMessage(control)!,
+            parsed: parsePeerControl(control),
             carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs: 1_000,
@@ -82,6 +88,8 @@ describe('outbound control version candidate', () => {
         }
         const ack = newALAckControlMessage({ v: 2, msgId: 'ack', senderId: 'peer-1', ts: 1_000 }, {
             ackedMsgId: message.id.msgId,
+            originPeerId: 'self',
+            logicalRecipientPeerId: 'peer-1',
             fromPeerId: 'peer-1',
             toPeerId: 'self',
             status: 'accepted',
@@ -89,7 +97,7 @@ describe('outbound control version candidate', () => {
             carrier: 'ws'
         });
         const readAt = (nowMs: number): ALControlAdmissionRead => ({
-            parsed: parseALControlMessage(ack)!,
+            parsed: parsePeerControl(ack),
             carrier: 'ws',
             targetMsgId: message.id.msgId,
             nowMs,
@@ -169,4 +177,12 @@ function freezeValues<T>(value: T): T {
         Object.freeze(value);
     }
     return value;
+}
+
+function parsePeerControl(control: ALMessage): ALPeerControlMessage {
+    const parsed = parseALControlMessage(control);
+    if (parsed === undefined || parsed.type === 'receipt') {
+        throw new Error('Expected a peer control message');
+    }
+    return parsed;
 }

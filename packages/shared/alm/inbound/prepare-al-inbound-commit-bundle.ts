@@ -164,6 +164,10 @@ function prepareALInboundDurableEffect(input: PrepareALInboundDurableEffectInput
                     fromPeerId: facts.selfPeerId,
                     toPeerId: payload.toPeerId,
                     ackedMsgId: payload.ackedMsgId,
+                    originPeerId: payload.originPeerId,
+                    logicalRecipientPeerId: payload.logicalRecipient.kind === 'self'
+                        ? facts.selfPeerId
+                        : payload.logicalRecipient.peerId,
                     status: payload.status,
                     observedAtEpochMs: facts.observedAtEpochMs,
                     carrier: input.carrier

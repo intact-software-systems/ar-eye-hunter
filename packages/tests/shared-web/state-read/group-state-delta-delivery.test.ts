@@ -72,7 +72,7 @@ describe('produced group delta delivery through durable AL admission', () => {
             const control = decodeALControlMessage(message).fold((rejection) => {
                 throw new Error(rejection.message);
             }, (parsed) => parsed);
-            if (control.type !== 'ack') {
+            if (control.type === 'nack' || control.type === 'repair') {
                 expect(control.payload.reason).not.toBe('gap');
                 expect(control.payload.reason).not.toBe('missing-seq');
             }

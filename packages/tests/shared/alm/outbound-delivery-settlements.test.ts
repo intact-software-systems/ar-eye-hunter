@@ -230,6 +230,8 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
             {
                 ackedMsgId: message.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: fromPeerId,
                 fromPeerId,
                 toPeerId: 'self',
                 status: 'accepted',

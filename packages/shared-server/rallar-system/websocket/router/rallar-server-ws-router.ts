@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { isALControlTypeId } from '@shared/al-contracts/al-control-type-ids.ts';
 import type { ALNackReason } from '@shared/al-contracts/al-control.ts';
-import { isALControlTypeId, newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALNackControlMessage } from '@shared/al-contracts/al-control.ts';
 import type { ALMessageRejection } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
 import { AppTopics } from '@shared/api/api-config.ts';

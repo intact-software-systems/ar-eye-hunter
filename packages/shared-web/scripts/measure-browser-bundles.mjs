@@ -28,12 +28,12 @@ const esbuildBin = path.join(
 
 const entries = [
     {
-        // Committing the control sends of one inbound batch as one outbound admission measures
-        // 214.2705078125 KiB. The maintainer-approved next whole-KiB ceiling is 215.
+        // The v2 acknowledgement's origin and logical recipient, the receipt control and one relayed
+        // ACK per logical recipient measure 215.255859375 KiB. The next whole-KiB ceiling is 216.
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 215
+        brotliBudgetKiB: 216
     },
     {
         label: 'browser/rallar-core.ts',

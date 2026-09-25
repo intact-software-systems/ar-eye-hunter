@@ -15,6 +15,8 @@ const ackFrame = JSON.stringify(newALAckControlMessage(
     { v: 2, msgId: 'ctl-1', senderId: 'b', ts: 1 },
     {
         ackedMsgId: 'msg-1',
+        originPeerId: 'a',
+        logicalRecipientPeerId: 'b',
         fromPeerId: 'b',
         toPeerId: 'a',
         status: 'delivered',

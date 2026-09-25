@@ -188,6 +188,8 @@ describe('PostgreSQL inbound admission', () => {
                 { v: 2, msgId: 'ack-msg-1', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: 'msg-1',
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -333,6 +335,8 @@ describe('PostgreSQL outbound admission', () => {
                 { v: 2, msgId: 'ack-outbound-message', ts: 1, senderId: 'peer-1' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'peer-1',
                     fromPeerId: 'peer-1',
                     toPeerId: 'self',
                     status: 'delivered',

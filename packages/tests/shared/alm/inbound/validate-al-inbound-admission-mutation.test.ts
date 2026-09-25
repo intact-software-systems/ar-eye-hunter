@@ -42,6 +42,8 @@ interface StoredAckEntryFixture {
     readonly ackedMsgId: string;
     readonly fromPeerId: string;
     readonly toPeerId: string;
+    readonly originPeerId: string;
+    readonly logicalRecipientPeerId: string;
     readonly status: string;
     readonly observedAtEpochMs: number;
     readonly carrier?: string;
@@ -69,6 +71,8 @@ describe('validateALInboundAdmissionMutation invalid control value', () => {
             values: [
                 {
                     ackedMsgId: MSG_ID,
+                    originPeerId: SENDER_ID,
+                    logicalRecipientPeerId: 'peer-a',
                     fromPeerId: 'peer-a',
                     toPeerId: 'peer-b',
                     status: 'accepted',
@@ -88,6 +92,8 @@ describe('validateALInboundAdmissionMutation invalid control value', () => {
             values: [
                 {
                     ackedMsgId: MSG_ID,
+                    originPeerId: SENDER_ID,
+                    logicalRecipientPeerId: 'peer-a',
                     fromPeerId: 'peer-a',
                     toPeerId: 'peer-b',
                     status: 'accepted',

@@ -187,6 +187,8 @@ it('never retains malformed, forged, unknown-control or planner-rejected ingress
     const message = newALUnicastMessage('sender', { topicId: 'chat', resourceId: 'message', contextId: 'room' }, 'receiver', 'chat', {});
     const untrackedAck = newALAckControlMessage({ v: 2, senderId: 'sender', msgId: 'unknown-control', ts: Date.now() }, {
         ackedMsgId: 'unknown',
+        originPeerId: 'receiver',
+        logicalRecipientPeerId: 'sender',
         fromPeerId: 'sender',
         toPeerId: 'receiver',
         status: 'delivered',

@@ -74,7 +74,19 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2b'`. An
+An ACK is `al.control.ack.v2`
+([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
+sender and receiver it names the acknowledged message's origin
+(`originPeerId`, the message's `senderId`) and the recipient it speaks for
+(`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
+whose pending receipt completes re-originates one ACK per logical recipient
+its subtree confirmed, copying both fields from each admitted ACK, and
+speaks for itself only when that subtree confirmed none. An
+`al.control.ack.v1` envelope is refused `unsupported` like any unknown
+control id. The same file defines `al.control.receipt.v1`, the WS server's
+word to an origin, addressed and routed to `originPeerId`.
+
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -101,11 +113,11 @@ minutes" for two of the four row kinds:
 - Old-format `AL_INBOUND:<fnv1a64(namespace)>` work rows with no carrier
   segment are simply unclaimed by either runtime until they expire.
 
-An ACK sent by a page still running the old build is refused as malformed
-until that page reloads — this is not bounded by the row TTL, since the
-page itself, not a stored row, is what is out of date. The refusal is
-symmetric: an old-build page also refuses a new-build ACK carrying the new
-field, until it reloads.
+An ACK sent by a page still running the old build is refused as
+`unsupported` (its type id is `al.control.ack.v1`) until that page reloads —
+this is not bounded by the row TTL, since the page itself, not a stored row,
+is what is out of date. The refusal is symmetric: an old-build page also
+refuses a new-build `al.control.ack.v2`, until it reloads.
 
 ## Admission and invocation paths
 

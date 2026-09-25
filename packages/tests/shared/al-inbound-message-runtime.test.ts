@@ -128,6 +128,8 @@ describe('ALInboundMessageRuntime', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'self',
             status: 'delivered'
         });
     });
@@ -313,6 +315,8 @@ describe('ALInboundMessageRuntime', () => {
             { v: 2, msgId: 'control-missing-ack', ts: 1, senderId: 'peer-2' },
             {
                 ackedMsgId: 'missing-msg',
+                originPeerId: 'peer-1',
+                logicalRecipientPeerId: 'peer-2',
                 fromPeerId: 'peer-2',
                 toPeerId: 'self',
                 status: 'delivered',
@@ -381,6 +385,8 @@ describe('ALInboundMessageRuntime', () => {
                 { v: 2, msgId: 'control-release-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: seq2.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -404,6 +410,8 @@ describe('ALInboundMessageRuntime', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: seq2.id.msgId,
             toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-2',
             status: 'subtree-complete'
         });
         expect(forwardedIds).toEqual([seq2.id.msgId, seq1.id.msgId]);
@@ -447,6 +455,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                 { v: 2, msgId: 'control-subtree-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -465,6 +475,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
         expect(parsed?.payload).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-2',
             status: 'subtree-complete'
         });
     });
@@ -487,6 +499,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                 { v: 2, msgId: 'control-drain-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -547,6 +561,8 @@ describe('ALInboundMessageRuntime logical acknowledgements', () => {
                 { v: 2, msgId: 'control-expired-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -788,6 +804,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
                 { v: 2, msgId: 'control-restart-ack', ts: 1, senderId: 'peer-2' },
                 {
                     ackedMsgId: msg.id.msgId,
+                    originPeerId: 'peer-1',
+                    logicalRecipientPeerId: 'peer-2',
                     fromPeerId: 'peer-2',
                     toPeerId: 'self',
                     status: 'delivered',
@@ -812,6 +830,8 @@ describe('ALInboundMessageRuntime durable effects', () => {
         expect(ackPayloads[0]).toMatchObject({
             ackedMsgId: msg.id.msgId,
             toPeerId: 'peer-1',
+            originPeerId: 'peer-1',
+            logicalRecipientPeerId: 'peer-2',
             status: 'subtree-complete'
         });
     });
