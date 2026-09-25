@@ -14,6 +14,7 @@ import type {
     ALInboundControlOwnerIndex,
     ALInboundMessageOwner
 } from '../al-inbound-admission-store.ts';
+import { toALInboundCompletedAckRecipients } from '../al-inbound-effect-intent.ts';
 import { toALDeliveryCarrier } from '../al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, type ALInboundDurableEffectWrite } from '../al-inbound-work-entry.ts';
 import { acceptALPendingAckPayload } from '../transition-al-pending-ack.ts';
@@ -58,7 +59,11 @@ export function computeALInboundControlAdmission(
         acks: { kind: 'acks', values: acks },
         pending: transition.pending === undefined ? undefined : { kind: 'pending', value: transition.pending },
         completedEffects: completed
-            ? computeCompletedAcknowledgementWork(read, { completed, acks: transition.completedAcks }, retention)
+            ? computeCompletedAcknowledgementWork(
+                read,
+                { completed, recipientPeerIds: transition.completedRecipientPeerIds },
+                retention
+            )
             : [],
         acceptance: {
             handled: true,
@@ -73,7 +78,7 @@ export function computeALInboundControlAdmission(
     };
 }
 
-/** One conditional commit: the acknowledgement history, its pending receipt, and the forwarded ACK. */
+/** One conditional commit: the acknowledgement history, its pending row, and the ACKs relayed upstream. */
 export function toALInboundControlCommitBundle(
     candidate: ALInboundControlAdmissionCandidate
 ): ALInboundCommitBundle {
@@ -122,23 +127,26 @@ function toALInboundControlObservations(
     };
 }
 
-interface ALInboundCompletedReceipt {
+interface ALInboundCompletedAcknowledgement {
     readonly completed: ALCompletedPendingAck;
-    /** One admitted ACK per logical recipient; never empty, since the ACK that completed it is among them. */
-    readonly acks: readonly ALAckPayload[];
+    readonly recipientPeerIds: readonly string[];
 }
 
-/** The relay re-originates one ACK per logical recipient its subtree confirmed (D40), copying who each speaks for. */
+/**
+ * The relay re-originates one ACK per logical recipient its subtree confirmed (D40). The origin is its
+ * own message-owner row's sender, never what a child's ACK claimed.
+ */
 function computeCompletedAcknowledgementWork(
     read: ALInboundControlAdmissionRead,
-    receipt: ALInboundCompletedReceipt,
+    acknowledgement: ALInboundCompletedAcknowledgement,
     retention: NormalizedALRuntimeStoreRetentionConfig
 ): readonly ALInboundDurableEffectWrite[] {
-    const { completed } = receipt;
+    const { completed } = acknowledgement;
     // The completed ACK travels back toward the message's sender, over the carrier that message arrived on.
     const carrier = toALDeliveryCarrier(read.owner.source);
     const relayPeerId = read.ack.toPeerId;
-    return receipt.acks.map((recipient, index) => {
+    const recipients = toALInboundCompletedAckRecipients(acknowledgement.recipientPeerIds);
+    return recipients.map((recipient, index) => {
         const controlMsgId = `${read.controlMsgId}:${index}`;
         return computeALInboundWorkEntry({
             namespace: read.namespace,
@@ -158,8 +166,8 @@ function computeCompletedAcknowledgementWork(
                         fromPeerId: relayPeerId,
                         toPeerId: completed.toPeerId,
                         ackedMsgId: completed.msgId,
-                        originPeerId: recipient.originPeerId,
-                        logicalRecipientPeerId: recipient.logicalRecipientPeerId,
+                        originPeerId: read.owner.senderId,
+                        logicalRecipientPeerId: recipient.kind === 'self' ? relayPeerId : recipient.peerId,
                         carrier,
                         status: completed.status,
                         observedAtEpochMs: read.nowMs

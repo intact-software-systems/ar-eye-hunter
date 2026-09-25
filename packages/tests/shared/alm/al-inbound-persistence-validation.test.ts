@@ -509,17 +509,23 @@ describe('inbound admission persisted values', () => {
                 kind: 'acks',
                 values: [{
                     ackedMsgId: 'different',
-                    originPeerId: 'receiver',
-                    logicalRecipientPeerId: 'sender',
-                    fromPeerId: 'sender',
+                    originPeerId: message.id.senderId,
+                    logicalRecipientPeerId: 'downstream',
+                    fromPeerId: 'downstream',
                     toPeerId: 'receiver',
                     status: 'delivered',
-                    observedAtEpochMs: 1
+                    observedAtEpochMs: 1,
+                    carrier: 'rtc'
                 }]
             });
         });
 
-        await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        // A complete entry, so the refusal is the message-ID guard and not a missing field.
+        const read = readIncoming(store, message);
+        await expect(read).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(read).rejects.toMatchObject({
+            cause: new TypeError('Stored admission control belongs to another message')
+        });
     });
 
     it.each([

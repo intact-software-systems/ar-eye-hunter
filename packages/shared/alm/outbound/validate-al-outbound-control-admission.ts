@@ -31,6 +31,12 @@ export function validateALOutboundControlAdmission(
     }
     if (read.parsed.type === 'ack') {
         const payload = read.parsed.payload;
+        if (payload.originPeerId !== read.owner) {
+            issues.push({
+                code: 'unauthorized',
+                message: 'AL acknowledgement names another origin than this outbound message owner'
+            });
+        }
         if (read.sent.reference.expiresAtMs <= read.nowMs) {
             issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
         }

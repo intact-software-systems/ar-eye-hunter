@@ -6,13 +6,18 @@ import type { ALInboundControlAdmissionCandidate } from './compute-al-inbound-co
 export function validateALInboundControlAdmission(
     candidate: ALInboundControlAdmissionCandidate
 ): readonly ALMessageRejection[] {
-    const { ack, pending, acks } = candidate.read;
+    const { ack, pending, acks, owner } = candidate.read;
     if (!pending) {
         return [rejectInboundControl('Inbound acknowledgement sender has no pending obligation')];
     }
     const issues: ALMessageRejection[] = [];
     if (!pending.expectedFromPeerIds.includes(ack.fromPeerId)) {
         issues.push(rejectInboundControl('Inbound acknowledgement sender has no pending obligation'));
+    }
+    if (ack.originPeerId !== owner.senderId) {
+        issues.push(
+            rejectInboundControl('Inbound acknowledgement names another origin than the message it acknowledges')
+        );
     }
     if (
         pending.ackedFromPeerIds.includes(ack.fromPeerId) ||

@@ -17,6 +17,7 @@ import type {
 import {
     toALInboundAckEffect,
     toALInboundBufferedReleaseEffects,
+    toALInboundCompletedAckRecipients,
     toALInboundForwardingEffects,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
@@ -366,7 +367,7 @@ function toAckTransitionChanges(
     return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, input) };
 }
 
-/** The relay re-originates one ACK per logical recipient its subtree confirmed, or speaks for itself alone. */
+/** The origin is the tracked message's own sender, never what a child's ACK claimed. */
 function toCompletedAckEffects(
     transition: ALPendingAckTransition,
     input: InboundPendingAckInput
@@ -375,17 +376,12 @@ function toCompletedAckEffects(
     if (!completed) {
         return [];
     }
-    const recipients = transition.completedAcks.length === 0
-        ? [{ originPeerId: input.senderId, logicalRecipient: { kind: 'self' } as const }]
-        : transition.completedAcks.map((ack) => ({
-            originPeerId: ack.originPeerId,
-            logicalRecipient: { kind: 'relayed', peerId: ack.logicalRecipientPeerId } as const
-        }));
-    return recipients.map((recipient) =>
+    return toALInboundCompletedAckRecipients(transition.completedRecipientPeerIds).map((logicalRecipient) =>
         toALInboundAckEffect({
             toPeerId: completed.toPeerId,
             ackedMsgId: completed.msgId,
-            ...recipient,
+            originPeerId: input.senderId,
+            logicalRecipient,
             status: completed.status,
             expireAtTimestamp: completed.expireAtTimestamp ?? input.expireAtTimestamp,
             carrier: input.carrier

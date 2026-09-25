@@ -31,8 +31,8 @@ export interface AcceptALPendingAckPayloadInput {
 export interface ALPendingAckTransition {
     readonly pending?: ALPendingAckSnapshot;
     readonly completed?: ALCompletedPendingAck;
-    /** One admitted ACK per logical recipient the completed receipt speaks for (D40); empty while pending. */
-    readonly completedAcks: readonly ALAckPayload[];
+    /** The logical recipients the counted ACKs confirmed, each once (D40); empty while pending. */
+    readonly completedRecipientPeerIds: readonly string[];
 }
 
 export function trackALPendingAckSnapshot(
@@ -67,7 +67,7 @@ export function markALPendingAckLocalReadySnapshot(
     input: MarkALPendingAckLocalReadySnapshotInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return { completedAcks: [] };
+        return { completedRecipientPeerIds: [] };
     }
 
     return trackALPendingAckSnapshot({
@@ -86,7 +86,7 @@ export function acceptALPendingAckPayload(
     input: AcceptALPendingAckPayloadInput
 ): ALPendingAckTransition {
     if (!input.current) {
-        return { completedAcks: [] };
+        return { completedRecipientPeerIds: [] };
     }
 
     const ackedFromPeerIds = new Set(input.current.ackedFromPeerIds);
@@ -115,7 +115,7 @@ function finalizeALPendingAckTransition(
     pending: ALPendingAckSnapshot
 ): ALPendingAckTransition {
     if (!pending.localReady) {
-        return { pending, completedAcks: [] };
+        return { pending, completedRecipientPeerIds: [] };
     }
 
     const ackedFromPeerIds = new Set(pending.ackedFromPeerIds);
@@ -129,17 +129,7 @@ function finalizeALPendingAckTransition(
                 status: pending.status,
                 ...(pending.expireAtTimestamp === undefined ? {} : { expireAtTimestamp: pending.expireAtTimestamp })
             },
-            completedAcks: resolveALAckPerLogicalRecipient(countedAcks)
+            completedRecipientPeerIds: [...new Set(countedAcks.map((ack) => ack.logicalRecipientPeerId))]
         }
-        : { pending, completedAcks: [] };
-}
-
-function resolveALAckPerLogicalRecipient(acks: readonly ALAckPayload[]): readonly ALAckPayload[] {
-    const byRecipient = new Map<string, ALAckPayload>();
-    for (const ack of acks) {
-        if (!byRecipient.has(ack.logicalRecipientPeerId)) {
-            byRecipient.set(ack.logicalRecipientPeerId, ack);
-        }
-    }
-    return [...byRecipient.values()];
+        : { pending, completedRecipientPeerIds: [] };
 }

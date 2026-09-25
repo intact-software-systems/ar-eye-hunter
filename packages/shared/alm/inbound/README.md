@@ -80,8 +80,11 @@ sender and receiver it names the acknowledged message's origin
 (`originPeerId`, the message's `senderId`) and the recipient it speaks for
 (`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
 whose pending receipt completes re-originates one ACK per logical recipient
-its subtree confirmed, copying both fields from each admitted ACK, and
-speaks for itself only when that subtree confirmed none. An
+its subtree confirmed, and speaks for itself only when no confirming ACK is
+retained. The origin is never copied from a child: the relay names its own
+message-owner row's sender, and both the relay's inbound control admission
+and the origin's outbound control admission refuse an ACK whose
+`originPeerId` names another origin. An
 `al.control.ack.v1` envelope is refused `unsupported` like any unknown
 control id. The same file defines `al.control.receipt.v1`, the WS server's
 word to an origin, addressed and routed to `originPeerId`.

@@ -219,6 +219,32 @@ describe('outbound control admission identity', () => {
         expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
 
+    it('refuses an acknowledgement that names another origin than this owner', async () => {
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const baseline = [...state.data];
+        const forged = newALAckControlMessage(
+            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            {
+                fromPeerId: 'receiver',
+                toPeerId: 'sender',
+                ackedMsgId: 'message',
+                originPeerId: 'B',
+                logicalRecipientPeerId: 'receiver',
+                status: 'delivered',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            }
+        );
+
+        expect(await control.admit(forged)).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement names another origin than this outbound message owner'
+        });
+        expect([...state.data]).toEqual(baseline);
+        expect(await control.admit(controlMessage('ack'))).toEqual({ kind: 'committed' });
+    });
+
     it('rejects a control addressed to another local message owner', async () => {
         const { admissionStore, control, state } = createFixture();
         await seedDirectObligation(admissionStore);

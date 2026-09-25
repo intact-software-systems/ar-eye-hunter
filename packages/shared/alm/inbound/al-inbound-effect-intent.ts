@@ -180,6 +180,18 @@ function toRepairEffects(
     }];
 }
 
+/**
+ * A relay speaks for each logical recipient its completed subtree confirmed (D40). When the ACKs that
+ * confirmed them are no longer retained, or none were expected, it can name only itself.
+ */
+export function toALInboundCompletedAckRecipients(
+    completedRecipientPeerIds: readonly string[]
+): readonly ALInboundAckRecipient[] {
+    return completedRecipientPeerIds.length === 0
+        ? [{ kind: 'self' }]
+        : completedRecipientPeerIds.map((peerId) => ({ kind: 'relayed', peerId }));
+}
+
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {
     return {
         effectId: toEffectId([

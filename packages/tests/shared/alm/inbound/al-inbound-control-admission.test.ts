@@ -135,12 +135,12 @@ async function seedPendingAcknowledgement(
     ).toBe('committed');
 }
 
-function createAcknowledgement(fromPeerId: string): ALMessage {
+function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
         { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
-            originPeerId: message.id.senderId,
+            originPeerId,
             logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
@@ -226,6 +226,21 @@ describe('inbound control admission', () => {
         const state = await readAcknowledgements(backend, admissionStore);
         expect(state.acks.map((ack) => ack.fromPeerId)).toEqual(['receiver']);
         expect(state.pendingAck).toBeUndefined();
+    });
+
+    it('refuses a child acknowledgement that names another origin than the message it tracks', async () => {
+        const { backend, admissionStore, control } = createFixture();
+        await seedPendingAcknowledgement(admissionStore);
+
+        const result = await control.admit(createAcknowledgement('receiver', 'B'), WS_ARRIVAL);
+
+        expect(result).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound acknowledgement names another origin than the message it acknowledges'
+        });
+        const state = await readAcknowledgements(backend, admissionStore);
+        expect(state.acks).toEqual([]);
+        expect(state.pendingAck?.ackedFromPeerIds).toEqual([]);
     });
 
     it('writes the ACK it relays upstream under the carrier the acknowledged message arrived on', async () => {
@@ -359,6 +374,49 @@ describe('inbound control admission', () => {
             }))
         );
         expect(new Set(candidate.completedEffects.map((effect) => effect.effectId)).size).toBe(2);
+    });
+
+    it('re-originates the origin from its own message-owner row, never from what a child claimed', () => {
+        const nowMs = 1_800_000_000_000;
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: {
+                ackedMsgId: message.id.msgId,
+                originPeerId: 'B',
+                logicalRecipientPeerId: 'receiver',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'ws'
+            },
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                expectedFromPeerIds: ['receiver'],
+                ackedFromPeerIds: [],
+                carrier: 'ws'
+            },
+            acks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        expect(upstream.map((control) => control?.type === 'ack' ? control.payload.originPeerId : undefined))
+            .toEqual([message.id.senderId]);
+        expect(validateALInboundControlAdmission(candidate).map((issue) => issue.message))
+            .toContain('Inbound acknowledgement names another origin than the message it acknowledges');
     });
 
     // The global constraint requires validateXxx to report every issue, not only the first one.
