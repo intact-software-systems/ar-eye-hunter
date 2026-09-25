@@ -71,6 +71,16 @@ it says so: capture a stamp before the step that should produce the event, and p
 Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
 same hazard `absent: true` carries in the other direction.
 
+## Wait Result References
+
+A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number
+an earlier command of the same runtime returned at that path, for example
+`{resultCache.<send commandId>.value.msgId}`. The wait resolves every token once, when it starts, and
+reports the resolved match in its result. A token naming no string or number value fails the wait
+with `RALLAR_BLACK_BOX_WAIT_INVALID` and the unresolved reference in its details. This is how a
+recipe pins a wait on an identity it cannot know when it is authored, such as the msgId a send was
+given.
+
 ## Formation Commands
 
 `formation.command` and `formation.readiness` drive the shipped browser room
@@ -198,6 +208,17 @@ refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
 envelope, which the api-v1 WS server routes to the room's other members, so the
 receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
 orders.
+
+The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
+seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
+first send once and never the second. The verdict on the gapped send is asserted where it is made.
+Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its own RTC
+`admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
+is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
+the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
+`control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
+result reference. The send holds no retained obligation, so the sender refuses the NACK; the
+refusal is still the relay's verdict arriving.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own

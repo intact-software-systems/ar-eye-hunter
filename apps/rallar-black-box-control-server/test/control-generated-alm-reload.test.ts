@@ -203,7 +203,10 @@ class GeneratedAlmPorts {
         if (command.minSnapshotVersion !== undefined) {
             this.refuseNotYetInSync(message);
         }
-        else if (!rejected && !this.isHeld(command.typeId) && command.payload.seq !== 300) {
+        else if (command.payload.seq === 300) {
+            this.refuseGappedSend(message);
+        }
+        else if (!rejected && !this.isHeld(command.typeId)) {
             this.deliver(message);
         }
         return {
@@ -232,6 +235,42 @@ class GeneratedAlmPorts {
                     carrier: 'rtc',
                     outcome: 'rejected',
                     reason: 'not-yet-in-sync: Awaiting the required room snapshot version'
+                }
+            }
+        });
+    }
+
+    /** The first hop refuses a send past the repair window: over WS the relay NACKs the sender, over RTC the receiver refuses it. */
+    private refuseGappedSend(message: PortMessage): void {
+        if (message.command.carrier === 'ws') {
+            this.sender.recordEvent({
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payload: {
+                    data: {
+                        kind: 'control-admission',
+                        msgId: `${message.msgId}-nack`,
+                        typeId: 'al.control.nack.v1',
+                        targetMsgId: message.msgId,
+                        outcome: 'rejected',
+                        reason: 'AL repair sender has no retained outbound obligation'
+                    }
+                }
+            });
+            return;
+        }
+        this.receiver.recordEvent({
+            kind: 'diagnostic',
+            topic: 'rallar.browser.alm.inbound_diagnostics',
+            payload: {
+                data: {
+                    kind: 'admission-outcome',
+                    workerId: 'receiver-inbound',
+                    msgId: message.msgId,
+                    typeId: message.command.typeId,
+                    carrier: 'rtc',
+                    outcome: 'not-handled',
+                    reason: 'resync-required'
                 }
             }
         });

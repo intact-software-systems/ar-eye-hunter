@@ -18,11 +18,18 @@ import { formatJsonSchemaValidationErrors, validateJsonSchema } from '@shared-te
 import { assertApiMutationRequestId } from '@shared/api/mutation/api-mutation-request.ts';
 
 /**
- * `ordering-resync` and `not-yet-in-sync` (once per variant) are withheld from `ws`: their first hop must be RTC.
+ * `not-yet-in-sync` (once per variant) is withheld from `ws`: its first hop must be RTC.
  * `cross-carrier-duplicate` needs both transports, once per order.
  */
 const CARRIER_SCENARIO_IDS = {
-    ws: ['bounded-rejection', 'deadline-expiry', 'delivery-baseline', 'delivery-lifecycle', 'delivery-reload'],
+    ws: [
+        'bounded-rejection',
+        'deadline-expiry',
+        'delivery-baseline',
+        'delivery-lifecycle',
+        'delivery-reload',
+        'ordering-resync'
+    ],
     rtc: [
         'bounded-rejection',
         'deadline-expiry',

@@ -113,6 +113,33 @@ export class BrowserMessageInputValidator {
         return issues;
     }
 
+    /** A broadcast has no group track to default its ordering key from, so a WS send states both halves or neither. */
+    public validateWsOrdering<T>(input: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
+        const issues: RallarValidationIssue[] = [];
+        this.pushOptionalRouteId({
+            value: input.orderingKey,
+            path: '$.orderingKey',
+            label: 'Ordering key',
+            issues
+        });
+        this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
+        if (input.seq !== undefined && input.orderingKey === undefined) {
+            issues.push({
+                path: '$.orderingKey',
+                code: 'missing-ordering-key',
+                message: 'An ordered WS send states its orderingKey beside its seq.'
+            });
+        }
+        if (input.orderingKey !== undefined && input.seq === undefined) {
+            issues.push({
+                path: '$.seq',
+                code: 'missing-seq',
+                message: 'An ordered WS send states its seq beside its orderingKey.'
+            });
+        }
+        return issues;
+    }
+
     public validateResolvedRoomRef(roomRef: GroupRef, path: string): readonly RallarValidationIssue[] {
         return validateRallarGroupRef(roomRef, path).issues;
     }

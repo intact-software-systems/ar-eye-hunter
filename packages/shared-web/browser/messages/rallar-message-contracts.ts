@@ -69,6 +69,9 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
     readonly exceptPeerIds?: readonly string[];
+    /** Stated together with `orderingKey` or not at all; absent, the broadcast is unordered. */
+    readonly seq?: number;
+    readonly orderingKey?: string;
 }
 
 export type RallarMessageDeliveryListener = (

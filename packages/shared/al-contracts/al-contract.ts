@@ -388,6 +388,7 @@ export function newALBroadcastMessage<T>(
         ack?: ALAckMode;
         ownership?: 'shared' | 'exclusive';
         qos?: ALQosPolicyRequest;
+        ordering?: Readonly<{ orderingKey: string; seq: number; }>;
     }>
 ): ALMessage {
     const expiresAtMs = options?.ttlMs !== undefined
@@ -411,6 +412,9 @@ export function newALBroadcastMessage<T>(
                 ttlHops: options?.ttlHops,
                 expiresAtMs
             }
+            : undefined,
+        ordering: options?.ordering !== undefined
+            ? { orderingKey: options.ordering.orderingKey, seq: options.ordering.seq }
             : undefined,
         delivery: {
             ownership: options?.ownership,

@@ -1,3 +1,4 @@
+import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
@@ -122,10 +123,7 @@ interface AlmConformanceScenarioDefinition {
 const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
-/**
- * `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. So does
- * `not-yet-in-sync`: the receiver checks a room send's snapshot floor at RTC ingress.
- */
+/** `not-yet-in-sync` needs a carrier whose first hop is RTC: the receiver checks a room send's snapshot floor at RTC ingress. */
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 /** The only cell that connects both transports, so one envelope can reach the receiver over each. */
 const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
@@ -136,6 +134,7 @@ const NON_EXPIRING_TTL_MS = 30_000;
 /** A floor no group reaches within a run, so the receiver refuses every copy until the message expires. */
 const UNREACHABLE_SNAPSHOT_VERSION = 999_999;
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
+const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 /** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets are harness budgets. */
@@ -225,9 +224,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
         scenarioId: 'ordering-resync',
         scenarioKey: 'ordering-resync',
         tags: FULL_TAGS,
-        carriers: RTC_CARRIERS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toOrderingResyncSenderCommands,
-        toReceiverCommands: toSingleArrivalReceiverCommands
+        toReceiverCommands: toOrderingResyncReceiverCommands
     },
     ...CROSS_CARRIER_ORDERS.map((order) => ({
         scenarioId: 'cross-carrier-duplicate' as const,
@@ -762,11 +761,12 @@ function toResultAssertion(
     };
 }
 
+/** Over ws the WS server is the relay that refuses the gapped send, so its NACK is the verdict, witnessed at the sender. */
 function toOrderingResyncSenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     const orderingKey = `alm-${sender.input.carrier}-${sender.scenarioId}`;
-    return [
+    const commands = [
         toSendCommand({
             ...sender,
             index: 1,
@@ -781,6 +781,42 @@ function toOrderingResyncSenderCommands(
             delivery: { reliability: 'at-least-once', orderingKey, seq: RESYNC_GAP_SEQ }
         }),
         ...toAdmissionCommands({ ...sender, index: 2 })
+    ];
+    return sender.input.carrier === 'ws' ? [...commands, toRelayResyncNackWait(sender)] : commands;
+}
+
+/** The send holds no obligation, so the sender refuses the NACK; the refusal still names the gapped msgId. */
+function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const gappedMsgId = `{resultCache.${toCommandId(sender, 'send-2')}.value.msgId}`;
+    return {
+        kind: 'wait',
+        commandId: toCommandId(sender, 'relay-resync-nack'),
+        match: {
+            kind: 'diagnostic',
+            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+            payloadPath: 'data',
+            contains: `"typeId":"${AL_CONTROL_NACK_TYPE_ID}","targetMsgId":"${gappedMsgId}"`
+        },
+        timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+    };
+}
+
+/** Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44). */
+function toOrderingResyncReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    const [delivered, absentSecond] = toSingleArrivalReceiverCommands(receiver);
+    if (receiver.input.carrier === 'ws') {
+        return [delivered, absentSecond];
+    }
+    return [
+        delivered,
+        toAdmissionOutcomeWait(receiver, {
+            name: 'resync-outcome',
+            contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
+            timeoutMs: receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+        }),
+        absentSecond
     ];
 }
 

@@ -1,4 +1,7 @@
-import type { BrowserMessageInputValidator } from '@shared-web/browser/messages/browser-message-input-validator.ts';
+import type {
+    BrowserMessageInputValidator,
+    ResolvedWsMessageInput
+} from '@shared-web/browser/messages/browser-message-input-validator.ts';
 import type {
     RallarMessageHandle,
     RallarRtcSendInput,
@@ -30,6 +33,13 @@ interface ResolvedRtcMessageTarget {
 interface CapturedMessagePayload {
     readonly serialized: string;
     readonly issues: readonly RallarValidationIssue[];
+}
+
+interface CreateWsMessageInput<T> {
+    readonly resolved: ResolvedWsMessageInput<T>;
+    readonly room: string | GroupRef | undefined;
+    readonly payloadValidation: CapturedMessagePayload;
+    readonly session: AuthSession;
 }
 
 interface CreateRtcMessageInput<T> {
@@ -145,37 +155,19 @@ export class BrowserRallarMessageSender {
         const scope = input.scope ?? (roomId ? 'room' : 'all');
         const roomRef = scope === 'room' ? this.input.resolveRoomRef(room) : undefined;
 
-        throwIfMessageIssues(this.input.inputValidator.validateWs({ input, scope, roomId, roomRef }));
+        throwIfMessageIssues([
+            ...this.input.inputValidator.validateWs({ input, scope, roomId, roomRef }),
+            ...this.input.inputValidator.validateWsOrdering(input)
+        ]);
 
         const payloadValidation = this.capturePayload(input.payload);
         const context = await this.input.connect();
-        const session = this.input.requireSession();
-        const contextId = input.contextId ?? roomId ?? input.scope ?? 'all';
-        const minSnapshotVersion = room
-            ? this.input.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
-            : input.minSnapshotVersion;
-        const message = this.input.creation.createBroadcast(
-            session.sessionId,
-            newALRoute(
-                input.topicId ?? input.typeId,
-                contextId,
-                input.resourceId ?? this.input.creation.newResourceId()
-            ),
-            scope,
-            input.typeId,
-            parseCapturedPayload(payloadValidation),
-            {
-                groupRef: roomRef,
-                exceptPeerIds: input.exceptPeerIds,
-                minSnapshotVersion,
-                ttlHops: input.ttlHops,
-                ttlMs: input.ttlMs ?? BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
-                reliability: input.reliability ?? 'at-least-once',
-                ack: input.ack ?? 'none',
-                ownership: input.ownership ?? 'shared',
-                qos: input.qos
-            }
-        );
+        const message = this.createWsMessage({
+            resolved: { input, scope, roomId, roomRef },
+            room,
+            payloadValidation,
+            session: this.input.requireSession()
+        });
 
         return this.startDelivery({
             context,
@@ -282,6 +274,37 @@ export class BrowserRallarMessageSender {
             throwRallarValidation(issues);
         }
         return { room, roomId, roomRef };
+    }
+
+    private createWsMessage<T>({ resolved, room, payloadValidation, session }: CreateWsMessageInput<T>): ALMessage {
+        const { input, scope, roomId, roomRef } = resolved;
+        return this.input.creation.createBroadcast(
+            session.sessionId,
+            newALRoute(
+                input.topicId ?? input.typeId,
+                input.contextId ?? roomId ?? input.scope ?? 'all',
+                input.resourceId ?? this.input.creation.newResourceId()
+            ),
+            scope,
+            input.typeId,
+            parseCapturedPayload(payloadValidation),
+            {
+                groupRef: roomRef,
+                exceptPeerIds: input.exceptPeerIds,
+                minSnapshotVersion: room
+                    ? this.input.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
+                    : input.minSnapshotVersion,
+                ttlHops: input.ttlHops,
+                ttlMs: input.ttlMs ?? BrowserRallarMessageSender.DEFAULT_MESSAGE_TTL_MS,
+                reliability: input.reliability ?? 'at-least-once',
+                ack: input.ack ?? 'none',
+                ownership: input.ownership ?? 'shared',
+                qos: input.qos,
+                ordering: input.orderingKey !== undefined && input.seq !== undefined
+                    ? { orderingKey: input.orderingKey, seq: input.seq }
+                    : undefined
+            }
+        );
     }
 
     private createRtcMessage<T>({ input, payloadValidation, target, session }: CreateRtcMessageInput<T>): ALMessage {

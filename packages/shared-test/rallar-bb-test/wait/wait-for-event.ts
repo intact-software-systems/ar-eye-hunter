@@ -5,10 +5,12 @@ import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestRecord,
     RallarBlackBoxTestRuntimeStatus,
+    RallarBlackBoxTestState,
     RallarBlackBoxTestWaitCommand,
     RallarBlackBoxTestWaitResultValue
 } from '../rallar-black-box-test-contracts.ts';
 
+import { resolveWaitMatchResultReferences } from './resolve-wait-match-result-references.ts';
 import { resolveLatestWaitEvent } from './wait-event-match.ts';
 
 export const RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED = 'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED';
@@ -35,6 +37,7 @@ export interface WaitForEventInput {
     readonly cancelRequested: () => boolean;
     readonly currentStatus: () => RallarBlackBoxTestRuntimeStatus;
     readonly currentEvents: () => readonly RallarBlackBoxTestEvent[];
+    readonly resultCache: RallarBlackBoxTestState['resultCache'];
     readonly subscribe: (listener: () => void) => () => void;
 }
 
@@ -51,6 +54,17 @@ export async function waitForEvent(
     if (input.cancelRequested()) {
         return toWaitCancelledOutcome(command);
     }
+    return await resolveWaitMatchResultReferences(command.match, input.resultCache).fold(
+        async ({ reference }) =>
+            toWaitInvalidOutcome(command, 'Wait match references a result value no earlier command returned.', {
+                reference
+            }),
+        async (match) => await waitForResolvedEvent({ ...input, command: { ...command, match } })
+    );
+}
+
+async function waitForResolvedEvent(input: WaitForEventInput): Promise<RallarBlackBoxTestCommandOutcome> {
+    const command = input.command;
     if (command.absent === true) {
         return await waitForEventAbsence(input);
     }

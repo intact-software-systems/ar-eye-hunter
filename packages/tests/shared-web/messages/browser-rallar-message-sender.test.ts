@@ -393,6 +393,32 @@ describe('Rallar message send', () => {
         });
     });
 
+    it('carries a WS send\'s client-assigned ordering on its broadcast envelope, and none without it', async () => {
+        const facade = createFacade();
+        const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1' } as const;
+
+        await facade.messages.ws.send({ ...send, payload: { text: 'ordered' }, orderingKey: 'k', seq: 7 });
+        await facade.messages.ws.send({ ...send, payload: { text: 'unordered' } });
+
+        const [ordered, unordered] = webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls.map(([message]) => message);
+        expect(ordered.ordering).toEqual({ orderingKey: 'k', seq: 7 });
+        expect(unordered.ordering).toBeUndefined();
+    });
+
+    it('rejects a WS send that states only one half of its ordering with a typed issue for the missing half', async () => {
+        const facade = createFacade();
+        const send = { scope: 'all', topicId: 'app.chat', typeId: 'chat.message.v1', payload: { text: 'half' } } as const;
+
+        await expect(facade.messages.ws.send({ ...send, seq: 7 })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [expect.objectContaining({ path: '$.orderingKey', code: 'missing-ordering-key' })]
+        });
+        await expect(facade.messages.ws.send({ ...send, orderingKey: 'k' })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [expect.objectContaining({ path: '$.seq', code: 'missing-seq' })]
+        });
+    });
+
     it('wakes the queue-box engine when WS send queues durable outbox work', async () => {
         webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementationOnce(
             async (message) => ({
