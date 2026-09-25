@@ -513,6 +513,42 @@ describe('WebRtcConnectionService peer and lane lifecycle', () => {
         expect(fixture.service.peerIdsWithNoReconnectableLanes()).toEqual(['z-peer']);
     });
 
+    it('dials a fresh native peer on reconnect after the remote side closed its peer', async () => {
+        const fixture = createFixture();
+        const stale = fixture.service.ensurePeerConnectionStarted('z-peer', true).right?.peer;
+        const staleNative = fixture.nativePeer('z-peer');
+        staleNative.setConnected();
+        await staleNative.channels[0].open();
+        await staleNative.channels[0].close();
+        staleNative.endSctpAssociation();
+
+        const replacement = fixture.service.ensurePeerConnectionStarted('z-peer', true).right;
+
+        expect(replacement?.peer).not.toBe(stale);
+        expect(replacement?.outcome).toBe('setup-started');
+        expect(runtime.createdConnections).toHaveLength(2);
+        expect(staleNative.connectionState).toBe('closed');
+        expect(fixture.nativePeer('z-peer').channels).toHaveLength(1);
+    });
+
+    it('replaces a peer whose lanes were reconnected before its association ended', async () => {
+        const fixture = createFixture();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        const staleNative = fixture.nativePeer('z-peer');
+        staleNative.setConnected();
+        await staleNative.channels[0].open();
+        await staleNative.channels[0].close();
+        fixture.service.ensurePeerConnectionStarted('z-peer', true);
+        staleNative.endSctpAssociation();
+
+        expect(fixture.service.activePeerIds()).toEqual([]);
+        expect(await fixture.service.ensurePeerLaneOpen('z-peer', 'reliable', { isInitiator: true, timeoutMs: 0 }))
+            .toMatchObject({ status: 'timeout' });
+        expect(runtime.createdConnections).toHaveLength(2);
+        expect(staleNative.connectionState).toBe('closed');
+        expect(staleNative.channels).toHaveLength(2);
+    });
+
     it('separates known, active, reconciled and ready lanes with reliable and realtime configuration', () => {
         const fixture = createFixture({
             ...createInput(),

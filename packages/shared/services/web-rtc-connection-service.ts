@@ -23,6 +23,11 @@ import {
     QRtcSignalingTransportCallbacks,
     QRtcSignalingType
 } from '../webrtc/QRtcSignalingContracts.ts';
+import {
+    isClosedRtcChannelHealth,
+    isOpenRtcChannelHealth,
+    waitForRtcChannelOpenOrAbort
+} from '../webrtc/rtc-data-channel-open-state.ts';
 import { RtcPeerConnectionAttemptBudget } from './rtc-peer-connection-attempt-budget.ts';
 
 export const DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY: WebRtcConnectionService.PeerEstablishmentTimeoutPolicy =
@@ -833,9 +838,13 @@ export class WebRtcConnectionService {
     }
 
     private isPeerConnectedOrInProgress(existingPeerDto: QRtcPeerDto): boolean {
-        return existingPeerDto.connection.status.pc?.connectionState === 'connected' ||
-            existingPeerDto.connection.status.pc?.connectionState === 'connecting' ||
-            existingPeerDto.connection.status.pc?.connectionState === 'new';
+        const pc = existingPeerDto.connection.status.pc;
+        if (pc?.connectionState === 'connected') {
+            // A remote close ends the SCTP association at once, while the native connection
+            // keeps reporting connected until its consent checks fail seconds later.
+            return pc.sctp?.state !== 'closed';
+        }
+        return pc?.connectionState === 'connecting' || pc?.connectionState === 'new';
     }
 
     private hasReconnectableDataChannels(existingPeerDto: QRtcPeerDto): boolean {
@@ -1209,56 +1218,4 @@ function toPeerCreationFailure(peerId: PeerId, error: Error): WebRtcConnectionSe
         return { kind: 'connect-exhausted', peerId, event: error.event, error };
     }
     return { kind: 'connect-failed', peerId, error, startedSetup: false };
-}
-
-function isOpenRtcChannelHealth(
-    health: RtcDataChannelHealth
-): boolean {
-    return health.readyState === 'open' || health.state === 'Open';
-}
-
-function isClosedRtcChannelHealth(
-    health: RtcDataChannelHealth
-): boolean {
-    return health.readyState === 'closing' ||
-        health.readyState === 'closed' ||
-        health.state === 'Closed' ||
-        health.state === 'Failed';
-}
-
-async function waitForRtcChannelOpenOrAbort(
-    channel: QRtcDataChannel,
-    timeoutMs: number | undefined,
-    signal: AbortSignal | undefined
-): Promise<boolean> {
-    const waitUntilOpen = timeoutMs === undefined
-        ? channel.waitUntilOpen()
-        : channel.waitUntilOpen(timeoutMs);
-
-    if (!signal) {
-        return await waitUntilOpen;
-    }
-
-    if (signal.aborted) {
-        throw toError(signal.reason);
-    }
-
-    return await new Promise<boolean>((resolve, reject) => {
-        const onAbort = () => {
-            signal.removeEventListener('abort', onAbort);
-            reject(toError(signal.reason));
-        };
-
-        signal.addEventListener('abort', onAbort, { once: true });
-        waitUntilOpen
-            .then((opened) => {
-                signal.removeEventListener('abort', onAbort);
-                resolve(opened);
-            })
-            .catch((caught) => {
-                const error = toError(caught);
-                signal.removeEventListener('abort', onAbort);
-                reject(error);
-            });
-    });
 }
