@@ -1,8 +1,8 @@
 import { isRoomScopedALMessage, type ALMessage } from '../../al-contracts/al-contract.ts';
 import {
-    decodeALControlMessage,
+    decodeALPeerControlMessage,
     parseALControlMessage,
-    type ALParsedControlMessage
+    type ALPeerControlMessage
 } from '../../al-contracts/al-control.ts';
 import { resolveALMessageExpireAtMs } from '../../al-contracts/al-policy.ts';
 import { RetryableConflictError } from '../../resilience/TryWith.ts';
@@ -67,7 +67,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
     }
 
     async acceptControlMessage(msg: ALMessage): Promise<ALOutboundControlAdmissionResult> {
-        const decoded = decodeALControlMessage(msg);
+        const decoded = decodeALPeerControlMessage(msg);
         if (decoded.left) {
             return { kind: 'not-handled' };
         }
@@ -85,7 +85,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
     /** Every carrier discards this verdict, so the diagnostics sink is the only place it is kept. */
     private emitControlAdmission(
         msg: ALMessage,
-        control: ALParsedControlMessage,
+        control: ALPeerControlMessage,
         admitted: ALOutboundControlAdmissionResult
     ): void {
         try {
@@ -112,7 +112,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return replayed.outcome;
     }
 
-    private async hasCurrentRepairAuthority(control: ALParsedControlMessage): Promise<boolean> {
+    private async hasCurrentRepairAuthority(control: ALPeerControlMessage): Promise<boolean> {
         if (
             control.type === 'ack' ||
             (control.type === 'nack' && control.payload.reason !== 'gap' &&
@@ -236,7 +236,10 @@ export class ALOutboundRepairAdmission<TPrepared> {
         const status = await this.admissionStore.commitBundle({
             senderId: clientRecord.senderId,
             expectedVersion: clientRecord.version,
-            mutations: [{ kind: 'delete-pending-ack', msgId }, { kind: 'delete-repair-attempt', msgId }],
+            mutations: [
+                { kind: 'delete-pending-ack', originPeerId: clientRecord.senderId, msgId },
+                { kind: 'delete-repair-attempt', msgId }
+            ],
             durableEffects: []
         });
         if (status === 'conflict') {
@@ -253,7 +256,12 @@ export class ALOutboundRepairAdmission<TPrepared> {
         return {
             senderId: msg.id.senderId,
             expectedVersion,
-            mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+            mutations: [{
+                kind: 'set-pending-ack',
+                originPeerId: msg.id.senderId,
+                snapshot: pending,
+                expireAtTimestamp: messageExpiresAtMs
+            }],
             durableEffects: [
                 this.toAckTimeoutEffect(pending, messageExpiresAtMs),
                 {
@@ -305,6 +313,7 @@ export class ALOutboundRepairAdmission<TPrepared> {
             mutations: [
                 {
                     kind: 'delete-pending-ack',
+                    originPeerId: msg.id.senderId,
                     msgId: pending.msgId
                 },
                 {

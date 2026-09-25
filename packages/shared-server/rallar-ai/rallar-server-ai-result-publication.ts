@@ -139,7 +139,8 @@ export function toRallarServerAiResultMessage<TValue extends RallarAiJsonValue>(
         {
             groupRef: input.target.scope === 'room' ? input.target.groupRef : undefined,
             reliability: 'at-least-once',
-            ack: 'receiver'
+            // A world or all broadcast names no logical recipients, so the receiver ack would be refused.
+            ack: input.target.scope === 'room' ? 'receiver' : 'none'
         }
     );
 }

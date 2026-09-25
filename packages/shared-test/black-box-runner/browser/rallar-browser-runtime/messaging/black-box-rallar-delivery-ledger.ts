@@ -202,6 +202,7 @@ function toTypedSendOptions(send: BlackBoxRallarMessageSendInput): RallarTypedMe
         ...(send.ttlMs === undefined ? {} : { ttlMs: send.ttlMs }),
         ...(send.orderingKey === undefined ? {} : { orderingKey: send.orderingKey }),
         ...(send.seq === undefined ? {} : { seq: send.seq }),
-        ...(send.scope === undefined ? {} : { scope: send.scope })
+        ...(send.scope === undefined ? {} : { scope: send.scope }),
+        ...(send.qos === undefined ? {} : { qos: send.qos })
     };
 }

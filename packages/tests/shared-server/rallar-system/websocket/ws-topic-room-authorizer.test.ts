@@ -23,6 +23,7 @@ import {
     newALMulticastMessage,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import { GROUP_LIFECYCLE_STATES } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
     AuditStamp,
@@ -900,7 +901,8 @@ function authorizedDecision(
         authorized: true,
         audience: {
             targets: message.targets,
-            sessions: snapshot.activeSessions
+            sessions: snapshot.activeSessions,
+            snapshotVersion: readGroupVersion(snapshot)
         }
     };
 }

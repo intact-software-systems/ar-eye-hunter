@@ -122,7 +122,7 @@ describe('ALOutboundMessageRuntime', () => {
             .toEqual([EntityStatus.COMPLETED]);
         expect(release.mock.calls[0]![0][0]!.entry.audit.expiryTs.epochMilliseconds).toBe(31_000);
         expect(send).toHaveBeenCalledTimes(1);
-        expect(await admissionStore.readReceiptState(message.id.msgId)).toBeUndefined();
+        expect(await admissionStore.readReceiptState({ originPeerId: message.id.senderId, msgId: message.id.msgId })).toBeUndefined();
         expect(await peekOutboundWorkReadyAt(stores.workQueue, admissionStore.namespace)).toBeUndefined();
     });
 
@@ -221,7 +221,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 }
             })
         });
@@ -236,6 +237,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-owner-ack', ts: 1, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
@@ -258,6 +261,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-late-ack', ts: 2, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',
@@ -673,7 +678,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,
@@ -717,6 +723,50 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('retries a `receiver` receipt toward the logical recipients it has not counted', async () => {
+        vi.useFakeTimers();
+
+        const retried: (readonly string[])[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], mode: 'receiver' },
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
+            }),
+            planRepairMessage: async (msg, request) => {
+                retried.push(request.failedPeerIds);
+                return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] };
+            }
+        });
+        const msg = createOutboundMessage('msg-receiver-retry');
+        await enqueueOutboundOrThrow(runtime, msg);
+
+        // One relay confirms `r1`; the receipt's retry targets are the logical recipients left.
+        expect(
+            await runtime.acceptControlMessage(newALAckControlMessage(
+                { v: 2, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'relay',
+                    toPeerId: 'self',
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'r1',
+                    carrier: 'ws',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now()
+                }
+            ))
+        ).toEqual({ kind: 'committed' });
+        await vi.advanceTimersByTimeAsync(102);
+
+        expect(retried).toEqual([['r2']]);
+        runtime.dispose();
+    });
+
     it('stops pending acknowledgement timers when disposed', async () => {
         vi.useFakeTimers();
 
@@ -736,7 +786,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 }
             }),
             planRepairMessage: async (msg) => ({
@@ -1211,7 +1262,8 @@ describe('ALOutboundMessageRuntime', () => {
                     enabled: true,
                     timeoutMs: 100,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1']
+                    expectedPeerIds: ['peer-1'],
+                    mode: 'hop'
                 },
                 repairTracking: {
                     enabled: true,
@@ -1239,6 +1291,8 @@ describe('ALOutboundMessageRuntime', () => {
             { v: 2, msgId: 'control-inflight-ack', ts: 1, senderId: 'peer-1' },
             {
                 ackedMsgId: msg.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: 'peer-1',
                 fromPeerId: 'peer-1',
                 toPeerId: 'self',
                 status: 'accepted',

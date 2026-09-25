@@ -16,6 +16,7 @@ import {
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
+import { toALReceiverAckNormalizationInput } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -24,6 +25,7 @@ import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-r
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
@@ -31,7 +33,6 @@ import type {
 } from '../alm/outbound/al-outbound-message-runtime.ts';
 import {
     ALOutboundMessageRuntime,
-    type ALOutboundAckTrackingPlan,
     type ALOutboundDispatchPlan,
     type ALOutboundEnqueueResult,
     type ALOutboundRetryTrackingPlan,
@@ -67,6 +68,10 @@ import type {
     OnInboxMessageCallback,
     OnOutboxWebSocketMessageCallback
 } from './queue-message-callbacks.ts';
+import {
+    acceptWsQueueBoxClientControlMessage,
+    toWsQueueBoxClientAckTrackingPlan
+} from './ws-queue-box-client/ws-queue-box-client-receipt-tracking.ts';
 
 export const DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS: WsQueueBoxClientService.ReconnectOptions = {
     maxAttempts: 12,
@@ -238,7 +243,7 @@ export class WsQueueBoxClientService {
                     await this.enqueueOutboxAllIfAbsent(msgs);
                 },
                 onControlMessage: async (msg) => {
-                    await this.outboundRuntime.acceptControlMessage(msg);
+                    await acceptWsQueueBoxClientControlMessage(this.outboundRuntime, msg);
                 },
                 diagnostics: this.dependencies.inboundDiagnostics
             }
@@ -247,7 +252,7 @@ export class WsQueueBoxClientService {
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const socketOpen = this.isSocketOpen();
-        const normalizationInput = resolveALQosNormalizationInput(
+        const normalizationInput = toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
             msg,
             {
                 direction: 'outbound',
@@ -255,15 +260,20 @@ export class WsQueueBoxClientService {
                 connectedPeerIds: socketOpen ? [this.sessionId] : []
             },
             this.dependencies.qosProvider
-        );
+        ));
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const message = toALOutboundMessage(msg, normalized.effective);
-        return {
+        const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
+            msg: message,
+            carrier: 'ws',
+            policy: normalized
+        });
+        return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>((refused) => refused, () => ({
             msg: message,
             dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
             preparedMessages: [toALOutboundTransportMessage(message)],
-            ackTracking: this.toAckTrackingPlan(normalized.effective, msg),
+            ackTracking: toWsQueueBoxClientAckTrackingPlan(normalized.effective, msg),
             retryTracking: this.toRetryTrackingPlan(normalized.effective),
             repairTracking: {
                 enabled: normalized.effective.repair.algo !== 'none',
@@ -271,7 +281,7 @@ export class WsQueueBoxClientService {
                 maxAttempts: normalized.effective.repair.opts.maxRepairs
             },
             supersedenceTracking: this.toSupersedenceTrackingPlan(normalized.effective, msg)
-        };
+        }));
     }
 
     private planIncomingMessage(
@@ -591,25 +601,6 @@ export class WsQueueBoxClientService {
 
     private isSocketOpen(): boolean {
         return this.socket.ws?.readyState === 1;
-    }
-
-    private toAckTrackingPlan(
-        effective: ALQosEffectivePolicy,
-        msg: ALMessage
-    ): ALOutboundAckTrackingPlan | undefined {
-        const targets = msg.targets;
-        if (effective.ack.algo === 'none' || targets?.mode !== 'unicast') {
-            return undefined;
-        }
-
-        return {
-            enabled: true,
-            timeoutMs: effective.ack.opts.timeoutMs,
-            maxAttempts: effective.retry.algo === 'none'
-                ? 0
-                : effective.retry.opts.maxAttempts,
-            expectedPeerIds: [targets.toPeerId]
-        };
     }
 
     private toRetryTrackingPlan(

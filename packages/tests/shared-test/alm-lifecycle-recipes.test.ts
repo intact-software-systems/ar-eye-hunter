@@ -2,7 +2,10 @@ import { isRallarBlackBoxTestMessagesSendCommand } from '@shared-test/rallar-bb-
 import { describe, expect, it } from 'vitest';
 
 import { createAlmConformanceRecipes } from '@shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts';
-import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
+import type {
+    RallarBlackBoxTestCommand,
+    RallarBlackBoxTestMessagesObserveResultValue
+} from '@shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts';
 import { createRallarBlackBoxTestRuntime } from '@shared-test/rallar-bb-test/runtime/create-rallar-black-box-test-runtime.ts';
 
 type LifecycleCarrier = 'ws' | 'rtc' | 'rtc-with-ws-fallback';
@@ -45,6 +48,32 @@ describe('ALM lifecycle recipe evidence', () => {
         }
     );
 
+    it('reads the ws submission specimen acknowledged, with the receiver its one confirmed recipient', async () => {
+        const sender = createAlmConformanceRecipes({
+            group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
+            carrier: 'ws',
+            typeId: 'probe',
+            senderConnection: 'sender',
+            receiverConnection: 'receiver',
+            deadlineMs: 18_000
+        }).find((candidate) => candidate.scenarioId === 'delivery-lifecycle')!.sender.commands;
+        const acknowledged: RallarBlackBoxTestMessagesObserveResultValue = {
+            handleId: 'send-1',
+            state: 'acknowledged',
+            submitted: true,
+            enqueued: true,
+            confirmedHopPeerIds: ['receiver'],
+            unconfirmedHopPeerIds: [],
+            attempts: 1,
+            reason: undefined
+        };
+        const confirmsOne = await runSubmissionReceipts(sender, acknowledged);
+        expect(confirmsOne.filter((result) => !result.ok).map((result) => result.commandId)).toEqual([]);
+        const confirmsNobody = await runSubmissionReceipts(sender, { ...acknowledged, confirmedHopPeerIds: [] });
+        expect(confirmsNobody.filter((result) => !result.ok).map((result) => result.commandId))
+            .toEqual(['alm-ws-delivery-lifecycle-sender-assert-confirmed-1']);
+    });
+
     it('rejects a terminal failure instead of calling it expiry', async () => {
         const scenario = createAlmConformanceRecipes({
             group: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' },
@@ -68,6 +97,28 @@ describe('ALM lifecycle recipe evidence', () => {
         expect((await runtime.execute(assertion!)).ok).toBe(false);
     });
 });
+
+/** Every submission-specimen observation, receipt read and cancellation reads back the same handle evidence. */
+async function runSubmissionReceipts(
+    commands: readonly RallarBlackBoxTestCommand[],
+    evidence: RallarBlackBoxTestMessagesObserveResultValue
+) {
+    const submission = commands.filter((command) =>
+        command.kind === 'assert'
+            ? /-(assert-submitted-state|assert-submitted|assert-confirmed|assert-unconfirmed|assert-submitted-after-cancel|assert-state-after-cancel)-1$/
+                .test(command.commandId!)
+            : /-(observe-transport-accepted|receipts|cancel)-1$/.test(command.commandId!)
+    );
+    expect(submission).toHaveLength(9);
+    const runtime = createRallarBlackBoxTestRuntime({
+        commandExecutor: async (command) => command.kind === 'assert' ? undefined : { status: 'ok', value: evidence }
+    });
+    const results = [];
+    for (const command of submission) {
+        results.push(await runtime.execute(command));
+    }
+    return results;
+}
 
 function expectReplacementSubmittedAfterRelease(
     commands: readonly RallarBlackBoxTestCommand[]

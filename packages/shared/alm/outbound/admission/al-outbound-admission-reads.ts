@@ -38,7 +38,8 @@ import {
     toALOutboundSentMessageKey,
     toALOutboundSupersedenceLatestKey,
     toALOutboundSupersedenceReplacementKey,
-    toALOutboundVersionKey
+    toALOutboundVersionKey,
+    type ALOutboundPendingAckRef
 } from './al-outbound-admission-keys.ts';
 import type {
     ALOutboundMessageReadDto,
@@ -111,7 +112,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
         const [clientRecord, stored, control, repairs] = await Promise.all([
             this.readClientRecord(session, msg.id.senderId),
             this.readStoredMessage(session, msg.id.msgId),
-            this.readControlTracking(session, msg.id.msgId),
+            this.readControlTracking(session, msg.id.msgId, msg.id.senderId),
             this.readRepairs(session, msg.id.msgId)
         ]);
         const { entry: canonicalEntry, message: canonical, creationExpiry } = await readALOutboundCanonicalMessage({
@@ -189,7 +190,7 @@ export class ALOutboundAdmissionReads<TPrepared> {
             clientRecord,
             storedMessage: stored,
             sentSnapshot,
-            ...await this.readControlTracking(session, msgId),
+            ...await this.readControlTracking(session, msgId, senderId),
             plan
         };
     }
@@ -249,20 +250,20 @@ export class ALOutboundAdmissionReads<TPrepared> {
 
     async readPendingAck(
         session: ALAdmissionReadSession,
-        msgId: string
+        receipt: ALOutboundPendingAckRef
     ): Promise<ALOutboundPendingAckSnapshot | undefined> {
-        const receipts = await this.readReceiptState(session, msgId);
+        const receipts = await this.readReceiptState(session, receipt);
         return receipts && !isALOutboundReceiptComplete(receipts) ? receipts : undefined;
     }
 
     async readReceiptState(
         session: ALAdmissionReadSession,
-        msgId: string
+        receipt: ALOutboundPendingAckRef
     ): Promise<ALOutboundPendingAckSnapshot | undefined> {
         return await this.readValue(
             session,
-            toALOutboundPendingAckKey(this.namespace, msgId),
-            (value) => decodeALOutboundPendingAck(value, msgId)
+            toALOutboundPendingAckKey({ namespace: this.namespace, ...receipt }),
+            (value) => decodeALOutboundPendingAck(value, receipt.msgId)
         );
     }
 
@@ -357,12 +358,14 @@ export class ALOutboundAdmissionReads<TPrepared> {
         return plan;
     }
 
+    /** Without a known origin there is no receipt row to address; the rest is keyed by the message alone. */
     private async readControlTracking(
         session: ALAdmissionReadSession,
-        msgId: string
+        msgId: string,
+        originPeerId: string | undefined
     ): Promise<Pick<ALOutboundRepairReadDto<never>, 'pendingAck' | 'repairAttempt' | 'acks' | 'nacks'>> {
         const [pendingAck, repairAttempt, acks, nacks] = await Promise.all([
-            this.readPendingAck(session, msgId),
+            originPeerId === undefined ? undefined : this.readPendingAck(session, { originPeerId, msgId }),
             this.readValue(
                 session,
                 toALOutboundRepairAttemptKey(this.namespace, msgId),

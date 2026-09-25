@@ -162,7 +162,7 @@ describe('WS server bounded and authorized admission', () => {
                     await Promise.resolve();
                     nowMs = expiresAtMs + offsetMs;
                 }
-                return { authorized: true, groupRecipientPeerIds: effect === 'forward' ? ['recipient'] : [] };
+                return { authorized: true, roomAudience: { recipientPeerIds: effect === 'forward' ? ['recipient'] : [], snapshotVersion: 1 } };
             }
         });
         const message = { ...roomMessage(), constraints: { expiresAtMs } };
@@ -209,7 +209,7 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () =>
                 pending
                     ? { authorized: false, reason, logMessage: 'Current room authority changed', sendNack: false }
-                    : { authorized: true, groupRecipientPeerIds: [] }
+                    : { authorized: true, roomAudience: { recipientPeerIds: [], snapshotVersion: 1 } }
         });
         const commit = fixture.admissionStore.commitBundle.bind(fixture.admissionStore);
         vi.spyOn(fixture.admissionStore, 'commitBundle').mockImplementationOnce(async (bundle) => {
@@ -367,7 +367,7 @@ describe('WS server bounded and authorized admission', () => {
             authorize: async () => {
                 authorityReads += 1;
                 await Promise.resolve();
-                return { authorized: true, groupRecipientPeerIds: authorityReads === 1 ? ['recipient'] : [] };
+                return { authorized: true, roomAudience: { recipientPeerIds: authorityReads === 1 ? ['recipient'] : [], snapshotVersion: 1 } };
             }
         });
 

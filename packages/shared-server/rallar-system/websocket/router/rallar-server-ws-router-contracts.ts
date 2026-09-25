@@ -94,6 +94,8 @@ export interface RallarServerWsRoomAuthorizationInput {
 export interface RallarServerWsRoomAudience {
     readonly targets: ALTargets;
     readonly sessions: readonly GroupPresenceSession[];
+    /** The snapshot version the sessions were read at. */
+    readonly snapshotVersion: number;
 }
 
 export interface RallarServerWsRoomAuthorizationDenied {

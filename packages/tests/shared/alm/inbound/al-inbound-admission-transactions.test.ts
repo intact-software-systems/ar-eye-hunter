@@ -156,6 +156,7 @@ async function seedAcknowledgeableMessage(admissionStore: ALInboundAdmissionStor
                         toPeerId: message.id.senderId,
                         status: 'subtree-complete',
                         localReady: true,
+                        localRecipient: false,
                         expectedFromPeerIds: [ACKNOWLEDGING_PEER_ID],
                         ackedFromPeerIds: [],
                         expireAtTimestamp,
@@ -185,6 +186,8 @@ function newAcknowledgement(message: ALMessage): ALMessage {
             fromPeerId: ACKNOWLEDGING_PEER_ID,
             toPeerId: message.id.senderId,
             ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: ACKNOWLEDGING_PEER_ID,
             status: 'delivered',
             observedAtEpochMs: Date.now(),
             carrier: 'ws'

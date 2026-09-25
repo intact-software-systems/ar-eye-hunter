@@ -41,7 +41,7 @@ export function isOptionalString(input: JsonWireValue | undefined): boolean {
     return input === undefined || isString(input);
 }
 
-export function isStringArray(input: JsonWireValue | undefined): input is readonly string[] {
+function isStringArray(input: JsonWireValue | undefined): input is readonly string[] {
     return Array.isArray(input) && input.every(isString);
 }
 

@@ -112,6 +112,7 @@ describe('browser runtime construction', () => {
             msgId: secondHandle.msgId,
             carrier: 'ws',
             atMs: Date.now(),
+            mode: 'hop',
             confirmedHopPeerIds: ['second-hop'],
             unconfirmedHopPeerIds: [],
             complete: true
@@ -122,6 +123,7 @@ describe('browser runtime construction', () => {
             msgId: firstHandle.msgId,
             carrier: 'ws',
             atMs: Date.now(),
+            mode: 'hop',
             confirmedHopPeerIds: ['first-hop'],
             unconfirmedHopPeerIds: [],
             complete: true
@@ -150,6 +152,7 @@ describe('browser runtime construction', () => {
                 msgId: handle.msgId,
                 carrier: 'ws',
                 atMs: Date.now(),
+                mode: 'hop',
                 confirmedHopPeerIds: ['sibling-hop'],
                 unconfirmedHopPeerIds: [],
                 complete: true
@@ -211,6 +214,7 @@ describe('browser runtime construction', () => {
             msgId: handle.msgId,
             carrier: 'ws',
             atMs: Date.now(),
+            mode: 'hop',
             confirmedHopPeerIds: ['stale'],
             unconfirmedHopPeerIds: [],
             complete: true
@@ -222,6 +226,7 @@ describe('browser runtime construction', () => {
                 msgId: handle.msgId,
                 carrier: 'ws',
                 atMs: Date.now(),
+                mode: 'hop',
                 confirmedHopPeerIds: ['current'],
                 unconfirmedHopPeerIds: [],
                 complete: true
@@ -262,6 +267,7 @@ describe('browser runtime construction', () => {
                 msgId: handle.msgId,
                 carrier: 'ws',
                 atMs: Date.now(),
+                mode: 'hop',
                 confirmedHopPeerIds: ['current'],
                 unconfirmedHopPeerIds: [],
                 complete: true
@@ -291,6 +297,7 @@ describe('browser runtime construction', () => {
             msgId: handle.msgId,
             carrier: 'ws',
             atMs: Date.now(),
+            mode: 'hop',
             confirmedHopPeerIds: ['failed'],
             unconfirmedHopPeerIds: [],
             complete: true
@@ -302,6 +309,7 @@ describe('browser runtime construction', () => {
                 msgId: handle.msgId,
                 carrier: 'ws',
                 atMs: Date.now(),
+                mode: 'hop',
                 confirmedHopPeerIds: ['retry'],
                 unconfirmedHopPeerIds: [],
                 complete: true

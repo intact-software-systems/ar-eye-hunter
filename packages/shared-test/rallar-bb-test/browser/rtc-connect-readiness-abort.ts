@@ -23,6 +23,11 @@ export function decodeRtcConnectReadinessAbortReason(reason: unknown): Error {
     return error;
 }
 
+/** A parent abort takes precedence over any timeout or operation failure racing it. */
+export function toParentAbortError(parentSignal: AbortSignal | undefined): Error | undefined {
+    return parentSignal?.aborted ? decodeRtcConnectReadinessAbortReason(parentSignal.reason) : undefined;
+}
+
 function createReadinessTimeoutError(): Error {
     const error = new Error('RTC connect readiness timeout reached.');
     error.name = READINESS_TIMEOUT_ERROR_NAME;

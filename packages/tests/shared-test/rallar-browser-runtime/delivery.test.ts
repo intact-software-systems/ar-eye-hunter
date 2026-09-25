@@ -163,6 +163,7 @@ it('projects queued, submitted and acknowledged evidence without bridging settle
         msgId: delivery.msgId,
         carrier: 'ws',
         atMs: Date.now(),
+        mode: 'hop',
         confirmedHopPeerIds: ['peer-1'],
         unconfirmedHopPeerIds: ['peer-2'],
         complete: true
@@ -387,6 +388,25 @@ it('stamps an absolute floor as given and resolves aboveCurrentBy against the se
     const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-above', carrier: 'ws' } };
     await expect(runtime.sendMessage({ ...replay, minSnapshotVersion: { absolute: 1 } }))
         .rejects.toThrow('messages.send names minSnapshotVersion beside replayOnCarrier; a replay names only the handle and its carrier.');
+});
+
+it('passes a stated QoS request to the typed send as given, and none without one', async () => {
+    const runtime = await loadRuntime();
+    await runtime.connect(connection);
+    const rtcSend = { ...send, carrier: 'rtc', ack: 'receiver' };
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-hop', qos: { ack: { algo: 'hop' } } });
+    await runtime.sendMessage({ ...rtcSend, handleId: 'h-default' });
+
+    expect(facade.records.typedSends.map(([, options]) => [options?.ack, options?.qos])).toEqual([
+        ['receiver', { ack: { algo: 'hop' } }],
+        ['receiver', undefined]
+    ]);
+    await expect(runtime.sendMessage({ ...rtcSend, handleId: 'h-bad', qos: { ack: { algo: 'everyone' } } }))
+        .rejects.toThrow('messages.send.qos must name exactly ack, with an algo of none, hop, subtree or receiver.');
+    expect(facade.records.typedSends).toHaveLength(2);
+    const replay = { connection: 'aliceAlm', timeoutMs: 100, replayOnCarrier: { handleId: 'h-hop', carrier: 'ws' } };
+    await expect(runtime.sendMessage({ ...replay, qos: { ack: { algo: 'hop' } } }))
+        .rejects.toThrow('messages.send names qos beside replayOnCarrier; a replay names only the handle and its carrier.');
 });
 
 it('projects a non-durable admission as accepted without calling it enqueued', async () => {

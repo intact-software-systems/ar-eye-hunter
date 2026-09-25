@@ -1,3 +1,4 @@
+import { AL_CONTROL_NACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { AL_DELIVERY_ADMITTED_STATES, type ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 import type { RallarBlackBoxDistributedGroupRef } from '../../distributed-run.ts';
@@ -122,10 +123,7 @@ interface AlmConformanceScenarioDefinition {
 const SMOKE_TAGS: readonly ('smoke' | 'full')[] = ['smoke', 'full'];
 const FULL_TAGS: readonly ('smoke' | 'full')[] = ['full'];
 
-/**
- * `ordering-resync` needs a carrier whose first hop is RTC: `RallarWsSendInput` carries no ordering block. So does
- * `not-yet-in-sync`: the receiver checks a room send's snapshot floor at RTC ingress.
- */
+/** `not-yet-in-sync` needs a carrier whose first hop is RTC: the receiver checks a room send's snapshot floor at RTC ingress. */
 const RTC_CARRIERS: readonly AlmConformanceCarrier[] = ALM_CONFORMANCE_CARRIERS.filter((carrier) => carrier !== 'ws');
 /** The only cell that connects both transports, so one envelope can reach the receiver over each. */
 const FALLBACK_CARRIERS: readonly AlmConformanceCarrier[] = ['rtc-with-ws-fallback'];
@@ -136,6 +134,7 @@ const NON_EXPIRING_TTL_MS = 30_000;
 /** A floor no group reaches within a run, so the receiver refuses every copy until the message expires. */
 const UNREACHABLE_SNAPSHOT_VERSION = 999_999;
 const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
+const OUTBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.outbound_diagnostics';
 
 const ENSURE_TIMEOUT_MS = 5_000;
 /** A cold RTC handshake on a fresh server exceeds the message deadline; connect budgets are harness budgets. */
@@ -225,9 +224,9 @@ const ALM_CONFORMANCE_SCENARIOS: readonly AlmConformanceScenarioDefinition[] = [
         scenarioId: 'ordering-resync',
         scenarioKey: 'ordering-resync',
         tags: FULL_TAGS,
-        carriers: RTC_CARRIERS,
+        carriers: ALM_CONFORMANCE_CARRIERS,
         toSenderCommands: toOrderingResyncSenderCommands,
-        toReceiverCommands: toSingleArrivalReceiverCommands
+        toReceiverCommands: toOrderingResyncReceiverCommands
     },
     ...CROSS_CARRIER_ORDERS.map((order) => ({
         scenarioId: 'cross-carrier-duplicate' as const,
@@ -501,7 +500,6 @@ function toReloadCheckpoint(step: AlmConformanceStepInput): AlmReloadCheckpoint 
 function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
     const state = 'transport-accepted';
     const observation = `observe-${state}-1`;
-    const isWs = sender.input.carrier === 'ws';
     return [
         toSendCommand({
             ...sender,
@@ -515,8 +513,8 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
             name: 'assert-submitted-state-1',
             resultName: observation,
             field: 'state',
-            operator: isWs ? 'equals' : 'matches',
-            expected: isWs ? state : '^(transport-accepted|acknowledged)$'
+            operator: 'matches',
+            expected: '^(transport-accepted|acknowledged)$'
         }),
         toResultAssertion({
             step: sender,
@@ -529,8 +527,9 @@ function toSubmissionSpecimenCommands(sender: AlmConformanceStepInput): readonly
     ];
 }
 
-/** Receipts and the handle's release are read after the whole scenario, per D28. */
+/** Which peer the ws receipt confirms is joined to the receiver's own session by `assessAlmAcknowledgedIdentity`. */
 function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly RallarBlackBoxTestCommand[] {
+    const isWs = sender.input.carrier === 'ws';
     return [
         toReceiptsCommand({ ...sender, index: 1 }),
         toResultAssertion({
@@ -538,8 +537,8 @@ function toSubmissionReceiptCommands(sender: AlmConformanceStepInput): readonly 
             name: 'assert-confirmed-1',
             resultName: 'receipts-1',
             field: 'confirmedHopPeerIds.length',
-            operator: sender.input.carrier === 'ws' ? 'equals' : 'gt',
-            expected: 0
+            operator: isWs ? 'equals' : 'gt',
+            expected: isWs ? 1 : 0
         }),
         toResultAssertion({
             step: sender,
@@ -570,7 +569,7 @@ function toSubmittedCancellationCommands(sender: AlmConformanceStepInput): reado
             resultName: 'cancel-1',
             field: 'state',
             operator: 'matches',
-            expected: sender.input.carrier === 'ws' ? '^(cancelled|transport-accepted)$' : '^acknowledged$'
+            expected: '^acknowledged$'
         })
     ];
 }
@@ -762,11 +761,12 @@ function toResultAssertion(
     };
 }
 
+/** Over ws the WS server is the relay that refuses the gapped send, so its NACK is the verdict, witnessed at the sender. */
 function toOrderingResyncSenderCommands(
     sender: AlmConformanceStepInput
 ): readonly RallarBlackBoxTestCommand[] {
     const orderingKey = `alm-${sender.input.carrier}-${sender.scenarioId}`;
-    return [
+    const commands = [
         toSendCommand({
             ...sender,
             index: 1,
@@ -781,6 +781,45 @@ function toOrderingResyncSenderCommands(
             delivery: { reliability: 'at-least-once', orderingKey, seq: RESYNC_GAP_SEQ }
         }),
         ...toAdmissionCommands({ ...sender, index: 2 })
+    ];
+    return sender.input.carrier === 'ws' ? [...commands, toRelayResyncNackWait(sender)] : commands;
+}
+
+/**
+ * The sender retains the send, but the send requested no ACK, so nothing it waits on expects the relay and it refuses
+ * the NACK; the refusal still names the gapped msgId.
+ */
+function toRelayResyncNackWait(sender: AlmConformanceStepInput): RallarBlackBoxTestCommand {
+    const gappedMsgId = `{resultCache.${toCommandId(sender, 'send-2')}.value.msgId}`;
+    return {
+        kind: 'wait',
+        commandId: toCommandId(sender, 'relay-resync-nack'),
+        match: {
+            kind: 'diagnostic',
+            topic: OUTBOUND_DIAGNOSTICS_TOPIC,
+            payloadPath: 'data',
+            contains: `"typeId":"${AL_CONTROL_NACK_TYPE_ID}","targetMsgId":"${gappedMsgId}"`
+        },
+        timeoutMs: sender.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+    };
+}
+
+/** Over the RTC carriers the receiver is the hop that refuses the gapped send, so it proves its own verdict (D44). */
+function toOrderingResyncReceiverCommands(
+    receiver: AlmConformanceStepInput
+): readonly RallarBlackBoxTestCommand[] {
+    const [delivered, absentSecond] = toSingleArrivalReceiverCommands(receiver);
+    if (receiver.input.carrier === 'ws') {
+        return [delivered, absentSecond];
+    }
+    return [
+        delivered,
+        toAdmissionOutcomeWait(receiver, {
+            name: 'resync-outcome',
+            contains: '"carrier":"rtc","outcome":"not-handled","reason":"resync-required"',
+            timeoutMs: receiver.input.deadlineMs + NON_EXPIRING_SEND_TIMEOUT_MS - RESPONSE_MARGIN_MS
+        }),
+        absentSecond
     ];
 }
 
@@ -1115,8 +1154,21 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestMessage
             input.deadlineMs
         ),
         ...(input.carrier === 'ws' ? {} : { roomRef: toRoomRef(input.group) }),
-        ...delivery
+        ...delivery,
+        ...toCarrierAckQos(input.carrier, delivery.ack)
     };
+}
+
+/**
+ * The RTC overlay refuses `receiver` until it tracks logical receipts (S2c-ii), so every rtc or rtc-with-ws-fallback
+ * recipe send that asks for receiver asks for hop by name, whichever carrier it starts on, and keeps reading hop
+ * receipts. A ws recipe send keeps the logical receiver.
+ */
+function toCarrierAckQos(
+    carrier: AlmConformanceCarrier,
+    ack: AlmConformanceSendDelivery['ack']
+): Pick<RallarBlackBoxTestMessagesSendCommand, 'qos'> {
+    return ack === 'receiver' && carrier !== 'ws' ? { qos: { ack: { algo: 'hop' } } } : {};
 }
 
 /** The absence window plus the time a reloaded owner needs before it can submit. */

@@ -1,4 +1,4 @@
-import type { ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
@@ -6,6 +6,7 @@ import type {
     ALControlAdmissionCandidate,
     ALControlAdmissionRead
 } from './compute-al-outbound-control-admission.ts';
+import { toALOutboundAckedPeerId } from './transition-al-outbound-pending-ack.ts';
 
 /** Every reason this control may not be admitted; an absent obligation makes the rest moot. */
 export function validateALOutboundControlAdmission(
@@ -31,19 +32,16 @@ export function validateALOutboundControlAdmission(
     }
     if (read.parsed.type === 'ack') {
         const payload = read.parsed.payload;
+        if (payload.originPeerId !== read.owner) {
+            issues.push({
+                code: 'unauthorized',
+                message: 'AL acknowledgement names another origin than this outbound message owner'
+            });
+        }
         if (read.sent.reference.expiresAtMs <= read.nowMs) {
             issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
         }
-        if (
-            !read.pending || !read.pending.expectedPeerIds.includes(payload.fromPeerId) ||
-            read.pending.ackedPeerIds.includes(payload.fromPeerId)
-        ) {
-            issues.push({
-                code: 'unauthorized',
-                message: 'AL acknowledgement sender has no pending outbound obligation'
-            });
-        }
-        return issues;
+        return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
     }
     const payload = read.parsed.payload;
     if (!isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
@@ -58,13 +56,34 @@ export function validateALOutboundControlAdmission(
     return issues;
 }
 
+/**
+ * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
+ * would move nothing is refused rather than committed, so it costs no write and no version bump.
+ */
+function validateAcknowledgedReceipt(
+    pending: ALOutboundPendingAckSnapshot | undefined,
+    ack: ALAckPayload
+): readonly ALMessageRejection[] {
+    const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
+    if (!pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId)) {
+        return [{
+            code: 'unauthorized',
+            message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        }];
+    }
+    return pending.ackedPeerIds.includes(countedPeerId)
+        ? [{ code: 'unauthorized', message: 'AL acknowledgement confirms a peer the receipt already counted' }]
+        : [];
+}
+
 function isDuplicateControl(read: ALControlAdmissionRead): boolean {
     switch (read.parsed.type) {
         case 'ack': {
             const payload = read.parsed.payload;
             return read.history.kind === 'acks' &&
                 read.history.values.some((prior) =>
-                    prior.fromPeerId === payload.fromPeerId && prior.status === payload.status
+                    prior.fromPeerId === payload.fromPeerId &&
+                    prior.logicalRecipientPeerId === payload.logicalRecipientPeerId && prior.status === payload.status
                 );
         }
         case 'nack': {

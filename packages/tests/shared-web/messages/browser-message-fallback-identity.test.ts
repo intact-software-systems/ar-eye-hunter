@@ -73,6 +73,38 @@ describe('typed message fallback identity', () => {
         expect(handle.lifecycle().state).toBe('queued');
     });
 
+    it.each(
+        [
+            ['rtc-with-ws-fallback', ['rtc', 'ws'], 'queued'],
+            ['rtc', ['rtc'], 'rejected']
+        ] as const
+    )('moves an ack the first carrier refuses as unsupported to the fallback carrier on %s', async (strategy, carriers, state) => {
+        const detail = 'ack receiver is unsupported for rtc multicast targets';
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: detail, dropReasonCode: 'unsupported' })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { strategy, ack: 'receiver' });
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe(state);
+        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(carriers);
+        // The fallback carries the same envelope, algorithm included: only the carrier changes.
+        expect(fixture.attempts.map((attempt) => attempt.message)).toEqual(carriers.map(() => fixture.attempts[0].message));
+        expect(fixture.attempts[0].message.delivery?.ack).toBe('receiver');
+    });
+
+    it('expires a send whose unsupported first carrier hands over after the deadline', async () => {
+        const fixture = createChannel({
+            firstVerdict: ADMITTED_VERDICT,
+            firstDurationMs: 101,
+            firstPlanner: (msg) => ({ msg, persist: false, preparedMessages: [], dropReason: 'unsupported', dropReasonCode: 'unsupported' })
+        });
+        const handle = await fixture.channel.send({ action: 'ready' }, { ttlMs: 100, ack: 'receiver' });
+
+        expect((await handle.wait({ until: AL_DELIVERY_ADMITTED_STATES })).lifecycle.state).toBe('expired');
+        expect(fixture.attempts.map((attempt) => attempt.carrier)).toEqual(['rtc']);
+    });
+
     it('fails a direct RTC no-route send without starting fallback', async () => {
         const fixture = createChannel({ firstVerdict: NO_ROUTE_VERDICT });
         const handle = await fixture.channel.send({ action: 'ready' }, { strategy: 'rtc' });
@@ -87,6 +119,8 @@ describe('typed message fallback identity', () => {
             ['skipped', 'failed', { kind: 'skipped', reason: 'planner-drop', detail: 'skipped' }],
             ['failed', 'failed', { kind: 'failed', detail: 'failed' }],
             ['rate-limited', 'failed', { kind: 'unroutable', reason: 'rate-limited', detail: 'rate-limited' }],
+            ['unauthorized', 'rejected', { kind: 'refused', reason: 'unauthorized', detail: 'unauthorized' }],
+            ['malformed', 'rejected', { kind: 'refused', reason: 'malformed', detail: 'malformed' }],
             ['accepted', 'queued', { kind: 'admitted', durable: false, queuedAttempts: 1 }],
             ['enqueued', 'queued', { kind: 'admitted', durable: true, queuedAttempts: 1 }],
             ['duplicate', 'accepted', { kind: 'duplicate' }]

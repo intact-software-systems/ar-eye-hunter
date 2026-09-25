@@ -325,8 +325,10 @@ async function seedControlObligation(store: ALOutboundAdmissionStore<OutboundTes
         ...admission,
         mutations: [...admission.mutations, {
             kind: 'set-pending-ack',
+            originPeerId: message.id.senderId,
             snapshot: {
                 msgId: message.id.msgId,
+                mode: 'hop',
                 expectedPeerIds: ['peer-1'],
                 ackedPeerIds: [],
                 timeoutMs: 2_000,
@@ -346,6 +348,8 @@ function toDeliveredAck(message: ALMessage): ALMessage {
         fromPeerId: 'peer-1',
         toPeerId: message.id.senderId,
         ackedMsgId: message.id.msgId,
+        originPeerId: message.id.senderId,
+        logicalRecipientPeerId: 'peer-1',
         status: 'delivered',
         observedAtEpochMs: Date.now(),
         carrier: 'ws'

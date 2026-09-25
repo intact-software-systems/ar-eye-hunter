@@ -11,6 +11,11 @@ import type { ALInboundDurableEffect, ALInboundMessageReadDto } from './al-inbou
 import { toALInboundMessageReference } from './al-inbound-canonical-message.ts';
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 
+/** Whom an ACK speaks for: this runtime's own delivery, or a recipient a completed subtree confirmed (D40). */
+export type ALInboundAckRecipient =
+    | Readonly<{ kind: 'self'; }>
+    | Readonly<{ kind: 'relayed'; peerId: string; }>;
+
 export interface ALInboundEffectIntent {
     readonly effectId: string;
     readonly expireAtTimestamp: number | undefined;
@@ -21,6 +26,8 @@ export interface ALInboundEffectIntent {
             readonly kind: 'send-ack';
             readonly toPeerId: string;
             readonly ackedMsgId: string;
+            readonly originPeerId: string;
+            readonly logicalRecipient: ALInboundAckRecipient;
             readonly status: ALAckStatus;
         }
         | {
@@ -56,6 +63,8 @@ export interface ALInboundControlEffectInput extends ALInboundLocalDeliveryInput
 interface ALInboundAckEffectInput {
     readonly toPeerId: string;
     readonly ackedMsgId: string;
+    readonly originPeerId: string;
+    readonly logicalRecipient: ALInboundAckRecipient;
     readonly status: ALAckStatus;
     readonly expireAtTimestamp: number | undefined;
     readonly carrier: ALDeliveryCarrier;
@@ -171,15 +180,36 @@ function toRepairEffects(
     }];
 }
 
+/**
+ * A relay speaks for each logical recipient its completed subtree confirmed (D40), and for itself when
+ * it is a logical recipient that delivered locally. When the ACKs that confirmed its children are no
+ * longer retained, or none were expected, it can name only itself.
+ */
+export function toALInboundCompletedAckRecipients(
+    completedRecipientPeerIds: readonly string[],
+    completedLocalRecipient: boolean
+): readonly ALInboundAckRecipient[] {
+    const relayed = completedRecipientPeerIds.map((peerId): ALInboundAckRecipient => ({ kind: 'relayed', peerId }));
+    return completedLocalRecipient || relayed.length === 0 ? [{ kind: 'self' }, ...relayed] : relayed;
+}
+
 export function toALInboundAckEffect(input: ALInboundAckEffectInput): ALInboundEffectIntent {
     return {
-        effectId: toEffectId(['ack', input.ackedMsgId, input.toPeerId, input.status]),
+        effectId: toEffectId([
+            'ack',
+            input.ackedMsgId,
+            input.toPeerId,
+            input.status,
+            ...(input.logicalRecipient.kind === 'relayed' ? [input.logicalRecipient.peerId] : [])
+        ]),
         expireAtTimestamp: input.expireAtTimestamp,
         carrier: input.carrier,
         payload: {
             kind: 'send-ack',
             toPeerId: input.toPeerId,
             ackedMsgId: input.ackedMsgId,
+            originPeerId: input.originPeerId,
+            logicalRecipient: input.logicalRecipient,
             status: input.status
         }
     };

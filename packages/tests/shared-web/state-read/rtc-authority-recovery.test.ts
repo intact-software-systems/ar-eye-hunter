@@ -336,7 +336,13 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 room,
                 'lifecycle.message',
                 { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 1 }
+                {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'receiver',
+                    seq: scenario === 'unsequenced-latest' ? undefined : 1,
+                    qos: { ack: { algo: 'hop' } }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(old)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);
@@ -347,7 +353,13 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 room,
                 'lifecycle.message',
                 { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 2 }
+                {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'receiver',
+                    seq: scenario === 'unsequenced-latest' ? undefined : 2,
+                    qos: { ack: { algo: 'hop' } }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(replacement)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);

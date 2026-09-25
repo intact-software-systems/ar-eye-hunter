@@ -5,6 +5,7 @@ import type {
     ALNackPayload,
     ALNackReason,
     ALPendingAckSnapshot,
+    ALReceiptPayload,
     ALRepairPayload,
     ALRepairReason
 } from './al-control.ts';
@@ -15,9 +16,11 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         'ackedMsgId',
         'fromPeerId',
         'toPeerId',
+        'originPeerId',
+        'logicalRecipientPeerId',
+        'carrier',
         'status',
-        'observedAtEpochMs',
-        'carrier'
+        'observedAtEpochMs'
     ]);
     return {
         ackedMsgId: decodeControlIdentifier(
@@ -27,9 +30,41 @@ export function decodeALAckPayload(value: unknown): ALAckPayload {
         ),
         fromPeerId: decodeControlIdentifier(record.fromPeerId, 'ACK sender identity'),
         toPeerId: decodeControlIdentifier(record.toPeerId, 'ACK receiver identity'),
+        originPeerId: decodeControlIdentifier(record.originPeerId, 'ACK origin identity'),
+        logicalRecipientPeerId: decodeControlIdentifier(
+            record.logicalRecipientPeerId,
+            'ACK logical recipient identity'
+        ),
+        carrier: decodeALDeliveryCarrier(record.carrier, 'ACK carrier'),
         status: decodeAckStatus(record.status),
-        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time'),
-        carrier: decodeALDeliveryCarrier(record.carrier, 'ACK carrier')
+        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'ACK observation time')
+    };
+}
+
+export function decodeALReceiptPayload(value: unknown): ALReceiptPayload {
+    const record = decodeControlRecord(value, [
+        'msgId',
+        'originPeerId',
+        'expectedRecipientPeerIds',
+        'confirmedRecipientPeerIds',
+        'snapshotVersion',
+        'phase',
+        'observedAtEpochMs'
+    ]);
+    return {
+        msgId: decodeControlIdentifier(record.msgId, 'receipt message ID', AL_MESSAGE_RESOURCE_LIMITS.payloadBytes),
+        originPeerId: decodeControlIdentifier(record.originPeerId, 'receipt origin identity'),
+        expectedRecipientPeerIds: decodeControlIdentifierArray(
+            record.expectedRecipientPeerIds,
+            'receipt expected recipient identity'
+        ),
+        confirmedRecipientPeerIds: decodeControlIdentifierArray(
+            record.confirmedRecipientPeerIds,
+            'receipt confirmed recipient identity'
+        ),
+        snapshotVersion: decodeControlNumber(record.snapshotVersion, 'receipt snapshot version'),
+        phase: decodeReceiptPhase(record.phase),
+        observedAtEpochMs: decodeControlNumber(record.observedAtEpochMs, 'receipt observation time')
     };
 }
 
@@ -67,16 +102,20 @@ export function decodeALRepairPayload(value: unknown): ALRepairPayload {
 export function decodeALPendingAckSnapshot(value: unknown): ALPendingAckSnapshot {
     const record = decodeControlRecord(
         value,
-        ['toPeerId', 'status', 'localReady', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
+        ['toPeerId', 'status', 'localReady', 'localRecipient', 'expectedFromPeerIds', 'ackedFromPeerIds', 'carrier'],
         ['expireAtTimestamp']
     );
     if (typeof record.localReady !== 'boolean') {
         throw new TypeError('Pending ACK readiness is invalid');
     }
+    if (typeof record.localRecipient !== 'boolean') {
+        throw new TypeError('Pending ACK local recipient flag is invalid');
+    }
     return {
         toPeerId: decodeControlIdentifier(record.toPeerId, 'pending ACK receiver identity'),
         status: decodeAckStatus(record.status),
         localReady: record.localReady,
+        localRecipient: record.localRecipient,
         expectedFromPeerIds: decodeControlIdentifierArray(
             record.expectedFromPeerIds,
             'pending ACK expected peer identity'
@@ -241,6 +280,13 @@ function decodeNackReason(value: unknown): ALNackReason {
         value !== 'not-yet-in-sync'
     ) {
         throw new TypeError('Control NACK reason is invalid');
+    }
+    return value;
+}
+
+function decodeReceiptPhase(value: unknown): ALReceiptPayload['phase'] {
+    if (value !== 'admitted' && value !== 'complete' && value !== 'timed-out') {
+        throw new TypeError('Control receipt phase is invalid');
     }
     return value;
 }

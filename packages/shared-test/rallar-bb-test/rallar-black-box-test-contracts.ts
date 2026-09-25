@@ -1,3 +1,4 @@
+import type { ALAckAlgo } from '@shared/al-contracts/al-policy.ts';
 import type { ApiJsonValue } from '@shared/api/api-json-value.ts';
 
 import type {
@@ -312,6 +313,7 @@ export type RallarBlackBoxTestMessagesSendCommand =
         handleId?: string;
         /** A harness floor, resolved to an absolute one at send time; absent, the product stamps the sender's version. */
         minSnapshotVersion?: Readonly<{ absolute: number; }> | Readonly<{ aboveCurrentBy: number; }>;
+        qos?: Readonly<{ ack: Readonly<{ algo: ALAckAlgo; }>; }>;
     }>;
 
 /**

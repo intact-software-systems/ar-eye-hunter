@@ -392,6 +392,7 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                     cancelRequested: () => this.cancellationController.signal.aborted,
                     currentStatus: () => this.currentState.status,
                     currentEvents: () => this.currentState.events,
+                    resultCache: this.currentState.resultCache,
                     subscribe: (listener) => this.subscribe(() => listener())
                 });
             case 'assert':

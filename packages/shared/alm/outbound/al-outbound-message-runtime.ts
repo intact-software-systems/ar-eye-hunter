@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import type { ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
+import type { ALReceiptPayload } from '../../al-contracts/al-control.ts';
+import type { ALReceiptMode, ALRepairAlgo, ALSupersedenceAlgo } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { NonRetryableException } from '../../queuebox/resource-inbox/create-default-resource-inbox-dequeuer.ts';
 import { isNotReadyException } from '../../queuebox/resource-inbox/not-ready-exception.ts';
@@ -45,6 +46,7 @@ import {
 } from './al-outbound-work-entry.ts';
 import type { ALOutboundComputedDto } from './compute-al-outbound-dispatch.ts';
 import type { ALOutboundControlAdmissionResult } from './control/al-outbound-control-admission.ts';
+import { ALOutboundReceiptAdmission } from './control/al-outbound-receipt-admission.ts';
 
 export type {
     ALOutboundControlAdmission,
@@ -74,7 +76,10 @@ export interface ALOutboundAckTrackingPlan {
     readonly timeoutMs: number;
     readonly maxAttempts: number;
     readonly expectedPeerIds: readonly string[];
-    readonly mode?: 'merge' | 'replace';
+    /** How a re-plan updates a retained receipt's expected set; absent merges. */
+    readonly expectedPeerIdsUpdate?: 'merge' | 'replace';
+    /** The send's resolved ack algorithm: what the receipt it tracks counts. */
+    readonly mode: ALReceiptMode;
 }
 
 export interface ALOutboundRepairTrackingPlan {
@@ -110,6 +115,7 @@ export interface ALOutboundRepairRequest {
 /** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
 export type ALOutboundDropReasonCode =
     | 'unauthorized'
+    | 'unsupported'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'
@@ -325,6 +331,7 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private readonly readyPromise: Promise<void>;
     private readonly dispatchAdmission: ALOutboundDispatchAdmission<TPrepared>;
     private readonly repairAdmission: ALOutboundRepairAdmission<TPrepared>;
+    private readonly receiptAdmission: ALOutboundReceiptAdmission<TPrepared>;
     private readonly repairRetransmission: ALOutboundRepairRetransmission<TPrepared>;
     private readonly work: ALWorkHandler;
     private readonly effects: ALOutboundMessageEffects<TPrepared>;
@@ -368,6 +375,11 @@ export class ALOutboundMessageRuntime<TPrepared> {
             planOutgoingMessage: dependencies.planOutgoingMessage,
             planRepairMessage: dependencies.planRepairMessage,
             diagnostics: dependencies.diagnostics
+        });
+        this.receiptAdmission = new ALOutboundReceiptAdmission({
+            admissionStore: dependencies.admissionStore,
+            clock: dependencies.clock,
+            settlements
         });
         this.repairRetransmission = new ALOutboundRepairRetransmission({
             admissionStore: dependencies.admissionStore,
@@ -508,6 +520,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
             this.work.committed();
         }
         return admitted;
+    }
+
+    /** A server receipt about a message this owner originated; it writes the receipt row, never work. */
+    async acceptReceipt(receipt: ALReceiptPayload): Promise<ALOutboundControlAdmissionResult> {
+        await this.ready();
+        return this.disposed ? { kind: 'not-handled' } : await this.receiptAdmission.admit(receipt);
     }
 
     private async commitDispatchPlan(

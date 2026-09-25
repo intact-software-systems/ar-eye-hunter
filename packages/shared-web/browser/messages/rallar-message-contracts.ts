@@ -1,6 +1,7 @@
 import type { RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { ALAckMode, ALMessage } from '@shared/al-contracts/al-contract.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { ALDeliveryLifecycle, ALDeliveryState } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -43,6 +44,11 @@ export interface RallarMessageSendBase<T> {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
+    /**
+     * Each stated aspect overrides the request the delivery options imply for it (`qos.ack` over `ack`, for
+     * example); absent, the product normalizes the QoS the delivery options imply.
+     */
+    readonly qos?: ALQosPolicyRequest;
 }
 
 export interface RallarRtcSendInput<T> extends RallarMessageSendBase<T> {
@@ -63,6 +69,9 @@ export interface RallarWsSendInput<T> extends RallarMessageSendBase<T> {
     readonly roomRef?: GroupRef;
     readonly minSnapshotVersion?: number;
     readonly exceptPeerIds?: readonly string[];
+    /** Stated together with `orderingKey` or not at all; absent, the broadcast is unordered. */
+    readonly seq?: number;
+    readonly orderingKey?: string;
 }
 
 export type RallarMessageDeliveryListener = (

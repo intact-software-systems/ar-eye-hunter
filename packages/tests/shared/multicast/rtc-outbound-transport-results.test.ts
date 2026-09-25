@@ -300,6 +300,33 @@ describe('RTC outbound transport results', () => {
         });
     });
 
+    it.each(['unicast', 'multicast'] as const)(
+        'refuses a receiver ack on %s targets as unsupported until the overlay tracks logical receipts',
+        async (mode) => {
+            const channel = createChannel();
+            const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+            const manager = createManager([channel], resources);
+            onTestFinished(() => manager.dispose());
+            const message = createMessage('receiver');
+            const targets = mode === 'unicast'
+                ? message.targets
+                : { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } } as const;
+
+            const result = await enqueueRtcAndDrain(manager, {
+                ...message,
+                targets,
+                delivery: { reliability: 'at-least-once', ack: 'receiver' }
+            });
+
+            expect(result.verdict).toEqual({
+                kind: 'refused',
+                reason: 'unsupported',
+                detail: `ack receiver is unsupported for rtc ${mode} targets`
+            });
+            expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
+        }
+    );
+
     it('reports admission without claiming a transport send while the channel is closed', async () => {
         const channel = createChannel();
         const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });

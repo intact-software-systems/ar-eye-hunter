@@ -432,6 +432,11 @@ const messagesSnapshotFloorSchema: JsonSchema = {
         additionalProperties: false
     }))
 };
+const messagesQosSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesQos, {
+    ack: strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.messagesQosAck, {
+        algo: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.messagesQosAckAlgo }
+    })
+});
 const faultMatchSchema = strictObjectSchema(RALLAR_BLACK_BOX_COMMAND_OBJECT_FIELDS.faultMatch, {
     controlType: { type: 'string', enum: RALLAR_BLACK_BOX_COMMAND_FIELD_VALUES.faultControlType },
     typeId: stringSchema,
@@ -600,6 +605,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxTestCommandKind, JsonSchema
         seq: numberSchema,
         handleId: stringSchema,
         minSnapshotVersion: messagesSnapshotFloorSchema,
+        qos: messagesQosSchema,
         replayOnCarrier: messagesReplaySchema
     })),
     'messages.observe': strictCommandSchema('messages.observe', {

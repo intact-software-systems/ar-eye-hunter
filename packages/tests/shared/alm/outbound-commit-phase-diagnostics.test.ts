@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { AL_CONTROL_ACK_TYPE_ID, newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { createInMemoryALAdmissionState, InMemoryAdmissionBackend } from '@shared/alm/al-admission-backend.ts';
 import { normalizeALRuntimeStoreRetention } from '@shared/alm/ALStoreRetention.ts';
 import { IndexedDbAdmissionBackend } from '@shared/alm/indexed-db-admission-backend.ts';
@@ -196,7 +197,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 dropReasonCode: undefined,
                 persist: true,
                 preparedMessages: [{ kind: 'send' }],
-                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'] }
+                ackTracking: { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds: ['peer-1'], mode: 'hop' }
             }),
             sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true })
         });
@@ -206,7 +207,16 @@ it.each(['memory', 'indexeddb'] as const)(
         for (const fromPeerId of ['peer-1', 'peer-2']) {
             await runtime.acceptControlMessage(newALAckControlMessage(
                 { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
-                { ackedMsgId: message.id.msgId, fromPeerId, toPeerId: 'self', status: 'accepted', observedAtEpochMs: 1, carrier: 'ws' }
+                {
+                    ackedMsgId: message.id.msgId,
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: fromPeerId,
+                    fromPeerId,
+                    toPeerId: 'self',
+                    status: 'accepted',
+                    observedAtEpochMs: 1,
+                    carrier: 'ws'
+                }
             ));
         }
 
@@ -217,7 +227,7 @@ it.each(['memory', 'indexeddb'] as const)(
                 ...verdict,
                 msgId: 'control-peer-2',
                 outcome: 'rejected',
-                reason: 'AL acknowledgement sender has no pending outbound obligation'
+                reason: 'AL acknowledgement confirms no peer of the pending outbound receipt'
             }
         ]);
         runtime.dispose();

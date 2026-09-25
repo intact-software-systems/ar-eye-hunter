@@ -1,5 +1,6 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
-import { isALControlTypeId, type ALControlAcceptance } from '../../al-contracts/al-control.ts';
+import { isALControlTypeId } from '../../al-contracts/al-control-type-ids.ts';
+import { type ALControlAcceptance } from '../../al-contracts/al-control.ts';
 import { decodeALMessageValue, type ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import { type ALMessageHandlingPlan } from '../../al-contracts/al-policy.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
@@ -44,7 +45,11 @@ import {
     type ALInboundClaimedControlSend,
     type ALInboundWorkSelector
 } from './read-al-inbound-work-selection.ts';
-import { validateALInboundMessage } from './validate-al-inbound-message.ts';
+import {
+    toALInboundReceiver,
+    validateALInboundMessage,
+    type ALInboundReceiver
+} from './validate-al-inbound-message.ts';
 
 export interface ALInboundRuntimeStores {
     readonly admissionStore: ALInboundAdmissionStore;
@@ -105,6 +110,8 @@ export namespace ALInboundMessageRuntime {
         ) => Promise<void | 'completed' | 'retry'>;
         /** Absence means the configured transport can forward every message. */
         readonly canForwardMessage?: (msg: ALMessage) => boolean;
+        /** Absence means this runtime relays origin-addressed controls for no peer. */
+        readonly readRelayedAckRejection?: ALInboundReceiver['readRelayedAckRejection'];
         readonly diagnostics: ALInboundRuntimeDiagnosticsSink | undefined;
     }
 }
@@ -320,7 +327,14 @@ export class ALInboundMessageRuntime {
         source: ALInboundMessageRuntime.Source,
         planIncomingMessage: ALInboundPlanner
     ): Promise<Either<ALMessageRejection, ALInboundMessageRuntime.Acceptance>> {
-        const validated = validateALInboundMessage(msg, source, this.dependencies.effectPreparation.selfPeerId);
+        const validated = validateALInboundMessage(
+            msg,
+            source,
+            toALInboundReceiver(
+                this.dependencies.effectPreparation.selfPeerId,
+                this.dependencies.readRelayedAckRejection
+            )
+        );
         if (validated.left) {
             return Either.ofLeft(validated.left);
         }

@@ -122,8 +122,9 @@ describe('outbound admission persisted-record validation', () => {
         const admission = createAdmission();
         const { backend, store } = admission;
         await backend.write(async (tx) => {
-            await tx.set('outbound:pending-ack:msg', {
+            await tx.set('outbound:pending-ack:["sender","msg"]', {
                 msgId: 'msg',
+                mode: 'hop',
                 expectedPeerIds: ['peer'],
                 ackedPeerIds: [],
                 timeoutMs: 50,
@@ -132,7 +133,7 @@ describe('outbound admission persisted-record validation', () => {
                 deadlineAtMs: Date.now() + 100
             });
         });
-        await expect(store.readPendingAck('msg')).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(store.readPendingAck({ originPeerId: 'sender', msgId: 'msg' })).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
 
         const msg = createMessage();
         await backend.write(async (tx) => {
@@ -185,6 +186,25 @@ describe('outbound admission persisted-record validation', () => {
         expect(state.data).toEqual(before);
         expect((await backend.workQueue.getItem(toALOutboundWorkKey('outbound', effect.effectId)))?.status)
             .toBe(EntityStatus.NEW);
+    });
+
+    it.each([undefined, 'none'])('rejects a pending receipt whose mode is %s', async (mode) => {
+        const { backend, store } = createAdmission();
+        await backend.write(async (tx) => {
+            await tx.set('outbound:pending-ack:["sender","msg"]', {
+                msgId: 'msg',
+                ...(mode === undefined ? {} : { mode }),
+                expectedPeerIds: ['peer'],
+                ackedPeerIds: [],
+                timeoutMs: 50,
+                maxAttempts: 3,
+                attempts: 0,
+                deadlineAtMs: Date.now() + 100
+            });
+        });
+
+        await expect(store.readPendingAck({ originPeerId: 'sender', msgId: 'msg' }))
+            .rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
     it('decodes a saved prepared message without planning or dropping its persisted content', async () => {

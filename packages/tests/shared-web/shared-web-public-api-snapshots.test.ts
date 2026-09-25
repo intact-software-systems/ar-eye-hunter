@@ -29,10 +29,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'toRoomFormationDenial'
             ],
             types: [
+                'ALAckMode',
                 'ALDeliveryAttempt',
                 'ALDeliveryEvidence',
                 'ALDeliveryLifecycle',
                 'ALDeliveryState',
+                'ALQosPolicyRequest',
                 'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
@@ -271,10 +273,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'toRoomFormationDenial'
             ],
             types: [
+                'ALAckMode',
                 'ALDeliveryAttempt',
                 'ALDeliveryEvidence',
                 'ALDeliveryLifecycle',
                 'ALDeliveryState',
+                'ALQosPolicyRequest',
                 'ApiMiddleware',
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
@@ -523,10 +527,12 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         expected: {
             values: [],
             types: [
+                'ALAckMode',
                 'ALDeliveryAttempt',
                 'ALDeliveryEvidence',
                 'ALDeliveryLifecycle',
                 'ALDeliveryState',
+                'ALQosPolicyRequest',
                 'RallarMessage',
                 'RallarMessageDeliveryListener',
                 'RallarMessageDeliveryOutcome',

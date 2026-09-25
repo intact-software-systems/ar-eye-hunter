@@ -12,7 +12,8 @@ import type { RallarMessageHandle } from '@shared-web/browser/messages/rallar-me
 import { initialiseRtcOverlayMulticastManager, initialiseRtcRxStreamer } from '@shared-web/browser/rtc/initialise-browser-rtc-runtime.ts';
 import { createBrowserWebSocketQueueBox } from '@shared-web/browser/websocket/create-browser-web-socket-queue-box.ts';
 import { newALMulticastMessage, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AL_CONTROL_ACK_TYPE_ID, newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
 import { decodeALMessageValue } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '@shared/alm/al-runtime-state-stores.ts';
 import { ALInboundMessageRuntime } from '@shared/alm/inbound/al-inbound-message-runtime.ts';
@@ -76,7 +77,7 @@ export interface HoldSender {
     deliver(frame: ALMessage): void;
     /** The typeId of every frame the fault port was asked about. */
     readFaultedTypeIds(): readonly string[];
-    /** The receipt the carrier's outbound admission store retains for a sent message. */
+    /** The receipt the carrier's outbound admission store retains for a message this sender originated. */
     readPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
 }
 
@@ -204,18 +205,22 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
         advance: async (ms) => void vi.setSystemTime(Date.now() + ms),
         deliver: (frame) => void channel.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => decideSend.mock.calls.map(([, serialized]) => toSerializedTypeId(serialized)),
-        readPendingAck: (msgId) => resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck(msgId)
+        readPendingAck: (msgId) =>
+            resolveBrowserRtcOverlayALOutboundRuntimeStores('self').admissionStore.readPendingAck({
+                originPeerId: 'self',
+                msgId
+            })
     };
 }
 
-/** The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in sequence. */
+/** The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence. */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs });
+        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs, qos: { ack: { algo: 'hop' } } });
     };
 }
 
@@ -293,7 +298,11 @@ export async function openWsHoldSender(): Promise<HoldSender> {
         advance: (ms) => vi.advanceTimersByTimeAsync(ms).then(() => undefined),
         deliver: (frame) => native.receive(JSON.stringify(frame)),
         readFaultedTypeIds: () => readiness.mock.calls.map(([serialized]) => toSerializedTypeId(serialized)),
-        readPendingAck: (msgId) => resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck(msgId)
+        readPendingAck: (msgId) =>
+            resolveBrowserWsClientALOutboundRuntimeStores(sessionId).admissionStore.readPendingAck({
+                originPeerId: sessionId,
+                msgId
+            })
     };
 }
 
@@ -304,7 +313,9 @@ function toWsHeldMessage(input: Readonly<{ sessionId: string; resourceId: string
         ...newALUnicastMessage(sessionId, { topicId: 'held', contextId: 'room', resourceId }, 'receiver', 'held.message', { resourceId }, {
             ttlMs
         }),
-        delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        delivery: { reliability: 'at-least-once', ack: 'receiver' },
+        // A WS unicast refuses `receiver` (D42): the addressee's ACK counts as the hop's.
+        qos: { ack: { algo: 'hop' } }
     };
 }
 
@@ -420,6 +431,8 @@ export function toReceiverAck(submission: ALMessage, sender: Pick<HoldSender, 's
         { v: 2, msgId: `ack-${submission.id.msgId}`, senderId: 'receiver', ts: Date.now() },
         {
             ackedMsgId: submission.id.msgId,
+            originPeerId: sender.selfPeerId,
+            logicalRecipientPeerId: 'receiver',
             fromPeerId: 'receiver',
             toPeerId: sender.selfPeerId,
             status: 'accepted',

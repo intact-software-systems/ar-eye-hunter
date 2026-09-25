@@ -55,12 +55,14 @@ export type ALOutboundAdmissionMutation =
     }>
     | Readonly<{
         kind: 'set-pending-ack';
+        originPeerId: string;
         snapshot: ALOutboundPendingAckSnapshot;
         /** The message deadline: the receipt is the obligation an acknowledgement completes against until then. */
         expireAtTimestamp: number;
     }>
     | Readonly<{
         kind: 'delete-pending-ack';
+        originPeerId: string;
         msgId: string;
     }>
     | Readonly<{
@@ -257,7 +259,11 @@ export class ALOutboundAdmissionMutations {
                 supersedenceGuard: undefined
             }
             : {
-                key: toALOutboundPendingAckKey(this.namespace, mutation.snapshot.msgId),
+                key: toALOutboundPendingAckKey({
+                    namespace: this.namespace,
+                    originPeerId: mutation.originPeerId,
+                    msgId: mutation.snapshot.msgId
+                }),
                 value: mutation.snapshot,
                 expireAtTimestamp: mutation.expireAtTimestamp,
                 supersedenceGuard: undefined
@@ -274,7 +280,11 @@ export class ALOutboundAdmissionMutations {
             case 'delete-sent-message':
                 return toALOutboundSentMessageKey(this.namespace, mutation.msgId);
             case 'delete-pending-ack':
-                return toALOutboundPendingAckKey(this.namespace, mutation.msgId);
+                return toALOutboundPendingAckKey({
+                    namespace: this.namespace,
+                    originPeerId: mutation.originPeerId,
+                    msgId: mutation.msgId
+                });
             case 'delete-repair-attempt':
                 return toALOutboundRepairAttemptKey(this.namespace, mutation.msgId);
         }

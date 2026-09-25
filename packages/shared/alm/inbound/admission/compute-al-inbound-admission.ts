@@ -17,6 +17,7 @@ import type {
 import {
     toALInboundAckEffect,
     toALInboundBufferedReleaseEffects,
+    toALInboundCompletedAckRecipients,
     toALInboundForwardingEffects,
     toALInboundLocalDeliveryEffects,
     toALInboundNegativeControlEffects,
@@ -242,6 +243,8 @@ function computeIncomingAcknowledgements(
             immediateEffects: [toALInboundAckEffect({
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.msg.id.msgId,
+                originPeerId: read.msg.id.senderId,
+                logicalRecipient: { kind: 'self' },
                 status: shouldForward ? 'forwarded' : 'delivered',
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
@@ -255,6 +258,7 @@ function computeIncomingAcknowledgements(
         toPeerId: plan.ack.toPeerId,
         expectedFromPeerIds: plan.forwarding.nextHopPeerIds,
         localReady: !plan.localDelivery.deferred,
+        localRecipient: plan.localDelivery.enabled || plan.localDelivery.deferred,
         expireAtTimestamp,
         carrier: toALDeliveryCarrier(read.source)
     });
@@ -318,6 +322,8 @@ function computeBufferedAcknowledgements(
             immediateEffects: [toALInboundAckEffect({
                 toPeerId: plan.ack.toPeerId,
                 ackedMsgId: read.snapshot.msg.id.msgId,
+                originPeerId: read.snapshot.msg.id.senderId,
+                logicalRecipient: { kind: 'self' },
                 status: 'delivered',
                 expireAtTimestamp,
                 carrier: toALDeliveryCarrier(read.source)
@@ -359,16 +365,32 @@ function toAckTransitionChanges(
         : input.hadPending
         ? [{ kind: 'delete-control-pending', msgId: input.msgId, senderId: input.senderId }]
         : [];
-    const completedEffects = transition.completed
-        ? [toALInboundAckEffect({
-            toPeerId: transition.completed.toPeerId,
-            ackedMsgId: transition.completed.msgId,
-            status: transition.completed.status,
-            expireAtTimestamp: transition.completed.expireAtTimestamp ?? input.expireAtTimestamp,
+    return { mutations, immediateEffects: [], completedEffects: toCompletedAckEffects(transition, input) };
+}
+
+/** The origin is the tracked message's own sender, never what a child's ACK claimed. */
+function toCompletedAckEffects(
+    transition: ALPendingAckTransition,
+    input: InboundPendingAckInput
+): readonly ALInboundEffectIntent[] {
+    const completed = transition.completed;
+    if (!completed) {
+        return [];
+    }
+    return toALInboundCompletedAckRecipients(
+        transition.completedRecipientPeerIds,
+        transition.completedLocalRecipient
+    ).map((logicalRecipient) =>
+        toALInboundAckEffect({
+            toPeerId: completed.toPeerId,
+            ackedMsgId: completed.msgId,
+            originPeerId: input.senderId,
+            logicalRecipient,
+            status: completed.status,
+            expireAtTimestamp: completed.expireAtTimestamp ?? input.expireAtTimestamp,
             carrier: input.carrier
-        })]
-        : [];
-    return { mutations, immediateEffects: [], completedEffects };
+        })
+    );
 }
 
 function computeInboundControlOwnerIndex(

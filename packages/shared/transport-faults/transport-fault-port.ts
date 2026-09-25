@@ -3,7 +3,7 @@ import {
     AL_CONTROL_NACK_TYPE_ID,
     AL_CONTROL_REPAIR_TYPE_ID,
     isALControlTypeId
-} from '../al-contracts/al-control.ts';
+} from '../al-contracts/al-control-type-ids.ts';
 import type { ApiJsonObject } from '../api/api-json-value.ts';
 
 export type TransportFaultCarrier = 'ws' | 'rtc';

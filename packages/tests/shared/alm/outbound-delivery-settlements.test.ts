@@ -118,7 +118,7 @@ function toQueuedLifecycle(message: ALMessage): ALDeliveryLifecycle {
 }
 
 function trackAcks(expectedPeerIds: readonly string[]): ALOutboundAckTrackingPlan {
-    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds };
+    return { enabled: true, timeoutMs: 60_000, maxAttempts: 3, expectedPeerIds, mode: 'hop' };
 }
 
 it.each(BACKEND_KINDS)(
@@ -230,6 +230,8 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             { v: 2, msgId: `control-${fromPeerId}`, ts: 1, senderId: fromPeerId },
             {
                 ackedMsgId: message.id.msgId,
+                originPeerId: 'self',
+                logicalRecipientPeerId: fromPeerId,
                 fromPeerId,
                 toPeerId: 'self',
                 status: 'accepted',
@@ -246,6 +248,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             msgId: message.id.msgId,
             carrier: 'ws',
             atMs: expect.any(Number),
+            mode: 'hop',
             confirmedHopPeerIds: ['peer-1'],
             unconfirmedHopPeerIds: ['peer-2'],
             complete: false
@@ -255,6 +258,7 @@ it.each(BACKEND_KINDS)('states the peers an accepted acknowledgement confirms ov
             msgId: message.id.msgId,
             carrier: 'ws',
             atMs: expect.any(Number),
+            mode: 'hop',
             confirmedHopPeerIds: ['peer-1', 'peer-2'],
             unconfirmedHopPeerIds: [],
             complete: true
@@ -524,7 +528,8 @@ it('states no expiry when a row that expires on its own budget reaches it', asyn
             enabled: true,
             timeoutMs: ACK_TIMEOUT_WINDOW_MS,
             maxAttempts: 100,
-            expectedPeerIds: ['peer-1']
+            expectedPeerIds: ['peer-1'],
+            mode: 'hop'
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });
@@ -660,9 +665,9 @@ it.each(BACKEND_KINDS)(
         const message = createOutboundMessage('msg-cancelled-pre-transport');
         // The abort lands mid-await, inside `writeAttemptedSend`'s own reads -- before its carrier runs.
         const readReceiptState = stores.admissionStore.readReceiptState.bind(stores.admissionStore);
-        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementationOnce(async (msgId) => {
-            runtime.cancel(msgId);
-            return await readReceiptState(msgId);
+        vi.spyOn(stores.admissionStore, 'readReceiptState').mockImplementationOnce(async (receipt) => {
+            runtime.cancel(receipt.msgId);
+            return await readReceiptState(receipt);
         });
 
         await enqueueOutboundOrThrow(runtime, message);
@@ -747,7 +752,8 @@ it('completes an ack-timeout effect for a cancelled message without retrying it'
             enabled: true,
             timeoutMs: ACK_TIMEOUT_WINDOW_MS,
             maxAttempts: 100,
-            expectedPeerIds: ['peer-1']
+            expectedPeerIds: ['peer-1'],
+            mode: 'hop'
         }),
         sendPreparedMessage: async () => ({ status: 'sent', submissionAttempted: true })
     });

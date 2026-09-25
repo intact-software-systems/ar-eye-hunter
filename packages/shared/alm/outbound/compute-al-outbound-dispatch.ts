@@ -233,7 +233,8 @@ function toALOutboundAdmissionVerdict(
     const detail = plan.dropReason ?? '';
     switch (plan.dropReasonCode) {
         case 'unauthorized':
-            return { kind: 'refused', reason: 'unauthorized', detail };
+        case 'unsupported':
+            return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'not-yet-in-sync':
             return { kind: 'deferred', reason: 'not-yet-in-sync', detail };
         case 'no-route':
@@ -332,7 +333,7 @@ function computeAckTrackingWrites<TPrepared>(
         return {
             mutations: read.pendingAck
                 ? [
-                    { kind: 'delete-pending-ack', msgId: read.msg.id.msgId },
+                    { kind: 'delete-pending-ack', originPeerId: read.msg.id.senderId, msgId: read.msg.id.msgId },
                     { kind: 'delete-repair-attempt', msgId: read.msg.id.msgId }
                 ]
                 : [],
@@ -341,7 +342,12 @@ function computeAckTrackingWrites<TPrepared>(
     }
 
     return {
-        mutations: [{ kind: 'set-pending-ack', snapshot: pending, expireAtTimestamp: messageExpiresAtMs }],
+        mutations: [{
+            kind: 'set-pending-ack',
+            originPeerId: read.msg.id.senderId,
+            snapshot: pending,
+            expireAtTimestamp: messageExpiresAtMs
+        }],
         durableEffects: [{
             effectId: toALOutboundEffectId([
                 'ack-timeout',

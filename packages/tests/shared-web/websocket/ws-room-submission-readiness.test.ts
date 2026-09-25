@@ -14,7 +14,7 @@ import {
     AL_CONTROL_ACK_TYPE_ID,
     AL_CONTROL_NACK_TYPE_ID,
     AL_CONTROL_REPAIR_TYPE_ID
-} from '@shared/al-contracts/al-control.ts';
+} from '@shared/al-contracts/al-control-type-ids.ts';
 import { AppTopics, type AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RALLAR_AL_CONTROL_TOPIC_ID } from '@shared/api/rallar-validation.ts';

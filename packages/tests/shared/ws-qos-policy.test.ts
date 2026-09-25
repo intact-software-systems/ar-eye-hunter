@@ -125,6 +125,47 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect((await outbox.getAllKeys()).filter((key) => key.topicId === 'AL_OUTBOUND_MESSAGE')).toHaveLength(1);
     });
 
+    it('refuses a receiver ack on world targets as unsupported and keeps it on a room send', async () => {
+        const socket = createFakeWsSocket();
+        const outbox = new shared.InMemoryQueueBox(new Map());
+        const service = shared.createDefaultWsQueueBoxClientService({
+            outbox: outbox,
+            socket: socket.client,
+            sessionId: 'self'
+        }).enableDefaultCallbacks();
+        onTestFinished(() => service.close());
+        const route = { topicId: 'chat', resourceId: 'msg-world', contextId: 'world' };
+        const delivery = { reliability: 'at-least-once', ack: 'receiver' } as const;
+
+        const world = await enqueueOutboxAndDrain(
+            service,
+            shared.newALBroadcastMessage('self', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery)
+        );
+
+        expect(world.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'ack receiver is unsupported for ws world targets'
+        });
+        expect(socket.sentJsonStrings).toEqual([]);
+        expect(await outbox.getAllKeys()).toEqual([]);
+
+        const roomSend = await enqueueOutboxAndDrain(
+            service,
+            shared.newALBroadcastMessage(
+                'self',
+                { ...route, resourceId: 'msg-room', contextId: 'room-1' },
+                'room',
+                'chat.message.v1',
+                { text: 'room' },
+                { ...delivery, groupRef: groupRef('room-1') }
+            )
+        );
+
+        expect(roomSend.verdict).toMatchObject({ kind: 'admitted' });
+        expect(socket.sentJsonStrings).toHaveLength(1);
+    });
+
     it('retries outbound messages when receiver acknowledgements time out', async () => {
         vi.useFakeTimers();
 
@@ -190,6 +231,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                     { v: 2, msgId: 'control-ack', ts: 0, senderId: 'peer-1' },
                     {
                         ackedMsgId: msg.id.msgId,
+                        originPeerId: 'self',
+                        logicalRecipientPeerId: 'peer-1',
                         fromPeerId: 'peer-1',
                         toPeerId: 'self',
                         status: 'delivered',

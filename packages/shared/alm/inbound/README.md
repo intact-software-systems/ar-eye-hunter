@@ -74,7 +74,46 @@ pending admission retained concurrently over both carriers is a value
 outcome, not a thrown corruption: the retained row keeps the first arrival's
 source and carrier.
 
-The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2b'`. An
+An ACK is `al.control.ack.v2`
+([`al-control.ts`](../../al-contracts/al-control.ts)): beside its hop
+sender and receiver it names the acknowledged message's origin
+(`originPeerId`, the message's `senderId`) and the recipient it speaks for
+(`logicalRecipientPeerId`). A receiver's own ACK speaks for itself; a relay
+whose pending receipt completes re-originates one ACK per logical recipient
+its subtree confirmed, beside its own when it is a logical recipient that
+delivered locally (the pending row's `localRecipient`), and speaks for itself
+alone when no confirming ACK is retained. The relay refuses a child's ACK as a
+duplicate only when both its sender and its logical recipient repeat, so a child
+relay's ACKs for different recipients are each admitted. The origin is never copied from a child: the relay names its own
+message-owner row's sender, and both the relay's inbound control admission
+and the origin's outbound control admission refuse an ACK whose
+`originPeerId` names another origin. An
+`al.control.ack.v1` envelope is refused `unsupported` like any unknown
+control id. The same file defines `al.control.receipt.v1`, the WS server's
+word to an origin, addressed and routed to `originPeerId`.
+
+On the WS server the same inbound admission runs for every client message,
+with two receipt rules. A `receiver` room message the server aggregates
+withholds the server's own ACK
+([`toWsQueueBoxServerInboundPlan`](../../services/ws-queue-box-server/ws-queue-box-server-receipt-aggregation.ts)):
+the receipt speaks for the audience, and a relay row would re-originate the
+receivers' ACKs under the origin's name. A `receiver` message whose logical
+recipient is the server keeps its ACK. A receiver's ACK for a room message
+is addressed to the origin, not to the server; the server admits it as the
+aggregating relay hop only while its aggregate for `(originPeerId, msgId)`
+lives, the ACK speaks for its own sender, and it confirms an uncounted
+member of the frozen audience. Every other such ACK is refused at ingress as
+a typed value.
+
+The receipt row the ACK completes against is the origin's outbound
+pending-ACK row, keyed `(namespace, originPeerId, msgId)`; the group is row
+content, not a key segment, because message ids are origin-unique and no
+group exists at every key site (R-S2c-i-2, amending D40; see the outbound
+README). A relay's inbound `pending` row carries a required
+`localRecipient`: a relay that delivered locally ACKs for itself as well as
+for its subtree.
+
+The schema identity is `AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c'`. An
 existing browser database at a different schema identity is deleted and
 recreated once, as described under
 ["Selection, failure, and cleanup"](#selection-failure-and-cleanup) below.
@@ -101,11 +140,11 @@ minutes" for two of the four row kinds:
 - Old-format `AL_INBOUND:<fnv1a64(namespace)>` work rows with no carrier
   segment are simply unclaimed by either runtime until they expire.
 
-An ACK sent by a page still running the old build is refused as malformed
-until that page reloads — this is not bounded by the row TTL, since the
-page itself, not a stored row, is what is out of date. The refusal is
-symmetric: an old-build page also refuses a new-build ACK carrying the new
-field, until it reloads.
+An ACK sent by a page still running the old build is refused as
+`unsupported` (its type id is `al.control.ack.v1`) until that page reloads —
+this is not bounded by the row TTL, since the page itself, not a stored row,
+is what is out of date. The refusal is symmetric: an old-build page also
+refuses a new-build `al.control.ack.v2`, until it reloads.
 
 ## Admission and invocation paths
 

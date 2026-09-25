@@ -75,8 +75,10 @@ describe('outbound control admission identity', () => {
                 ...admission,
                 mutations: [...admission.mutations, {
                     kind: 'set-pending-ack',
+                    originPeerId: 'sender',
                     snapshot: {
                         msgId,
+                        mode: 'hop',
                         expectedPeerIds: ['receiver'],
                         ackedPeerIds: [],
                         timeoutMs: 2_000,
@@ -91,7 +93,14 @@ describe('outbound control admission identity', () => {
             const common = { fromPeerId: 'receiver', toPeerId: 'sender', observedAtEpochMs: Date.now() };
             const ordering = { orderingKey: toALOrderingTrackKey(message), missingSeqs: [2], expectedSeq: 2 };
             const accepted = type === 'ack'
-                ? newALAckControlMessage(id, { ...common, ackedMsgId: msgId, status: 'delivered', carrier: 'ws' })
+                ? newALAckControlMessage(id, {
+                    ...common,
+                    ackedMsgId: msgId,
+                    originPeerId: 'sender',
+                    logicalRecipientPeerId: 'receiver',
+                    status: 'delivered',
+                    carrier: 'ws'
+                })
                 : type === 'nack'
                 ? newALNackControlMessage(id, { ...common, ...ordering, msgId, reason: 'gap' })
                 : newALRepairControlMessage(id, { ...common, ...ordering, msgId, reason: 'missing-seq' });
@@ -146,7 +155,7 @@ describe('outbound control admission identity', () => {
 
             expect(await control.admit(accepted)).toEqual({ kind: 'committed' });
             if (type === 'ack') {
-                expect(await admissionStore.readPendingAck(msgId)).toBeUndefined();
+                expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId })).toBeUndefined();
             }
             else {
                 const retained = await readRetainedWork(admissionStore, workQueue);
@@ -169,7 +178,7 @@ describe('outbound control admission identity', () => {
         const candidate = JSON.stringify(ack);
 
         expect(await control.admit(ack)).toEqual({ kind: 'committed' });
-        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
+        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(JSON.stringify(ack)).toBe(candidate);
         const acceptedState = [...state.data];
         expect((await control.admit(ack)).kind).toBe('rejected');
@@ -183,6 +192,8 @@ describe('outbound control admission identity', () => {
             { v: 2, msgId: 'control', senderId: 'receiver', ts: Date.now() },
             {
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: 'receiver',
                 fromPeerId: 'receiver',
                 toPeerId: 'sender',
                 status: 'delivered',
@@ -210,13 +221,48 @@ describe('outbound control admission identity', () => {
         expect(await readRetainedWork(admissionStore, workQueue)).toEqual([]);
     });
 
+    it('refuses an acknowledgement that names another origin than this owner', async () => {
+        const { admissionStore, control, state } = createFixture();
+        await seedDirectObligation(admissionStore);
+        const baseline = [...state.data];
+        const forged = newALAckControlMessage(
+            { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
+            {
+                fromPeerId: 'receiver',
+                toPeerId: 'sender',
+                ackedMsgId: 'message',
+                originPeerId: 'B',
+                logicalRecipientPeerId: 'receiver',
+                status: 'delivered',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            }
+        );
+
+        expect(await control.admit(forged)).toEqual({
+            kind: 'rejected',
+            reason: 'AL acknowledgement names another origin than this outbound message owner'
+        });
+        expect([...state.data]).toEqual(baseline);
+        expect(await control.admit(controlMessage('ack'))).toEqual({ kind: 'committed' });
+    });
+
     it('rejects a control addressed to another local message owner', async () => {
         const { admissionStore, control, state } = createFixture();
         await seedDirectObligation(admissionStore);
         const baseline = [...state.data];
         const ack = newALAckControlMessage(
             { v: 2, msgId: 'control', senderId: 'receiver', ts: 1 },
-            { fromPeerId: 'receiver', toPeerId: 'other-sender', ackedMsgId: 'message', status: 'delivered', observedAtEpochMs: 1, carrier: 'ws' }
+            {
+                fromPeerId: 'receiver',
+                toPeerId: 'other-sender',
+                ackedMsgId: 'message',
+                originPeerId: 'other-sender',
+                logicalRecipientPeerId: 'receiver',
+                status: 'delivered',
+                observedAtEpochMs: 1,
+                carrier: 'ws'
+            }
         );
 
         expect((await control.admit(ack)).kind).toBe('rejected');
@@ -305,6 +351,8 @@ describe('outbound control admission identity', () => {
         const values = [
             ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: fromPeerId,
                 fromPeerId,
                 toPeerId: 'sender',
                 status: 'delivered' as const,
@@ -313,6 +361,8 @@ describe('outbound control admission identity', () => {
             })),
             {
                 ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: 'peer-0',
                 fromPeerId: 'peer-0',
                 toPeerId: 'sender',
                 status: 'accepted' as const,
@@ -328,7 +378,7 @@ describe('outbound control admission identity', () => {
         });
 
         expect(await control.admit(controlMessage('ack', 'peer-255'))).toEqual({ kind: 'committed' });
-        expect(await admissionStore.readPendingAck('message')).toBeUndefined();
+        expect(await admissionStore.readPendingAck({ originPeerId: 'sender', msgId: 'message' })).toBeUndefined();
         expect(decodeALAdmissionControlValue(state.data.get(key)?.value, 'message', 'acks').values).toHaveLength(256);
     });
 
@@ -592,8 +642,10 @@ async function seedObligation(
             ...admission.mutations,
             {
                 kind: 'set-pending-ack',
+                originPeerId: 'sender',
                 snapshot: {
                     msgId: 'message',
+                    mode: 'hop',
                     expectedPeerIds: input.expectedPeerIds,
                     ackedPeerIds: input.ackedPeerIds,
                     timeoutMs: 2000,
@@ -656,7 +708,14 @@ function controlMessage(type: 'ack' | 'nack' | 'repair', peerId: string = 'recei
     const common = { fromPeerId: peerId, toPeerId: 'sender', observedAtEpochMs: 1 };
     switch (type) {
         case 'ack':
-            return newALAckControlMessage(id, { ...common, ackedMsgId: 'message', status: 'delivered', carrier: 'ws' });
+            return newALAckControlMessage(id, {
+                ...common,
+                ackedMsgId: 'message',
+                originPeerId: 'sender',
+                logicalRecipientPeerId: peerId,
+                status: 'delivered',
+                carrier: 'ws'
+            });
         case 'nack':
             return newALNackControlMessage(id, { ...common, msgId: 'message', reason: 'gap' });
         case 'repair':

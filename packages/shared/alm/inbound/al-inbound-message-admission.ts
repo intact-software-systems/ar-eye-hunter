@@ -16,7 +16,7 @@ import { computeALInboundPlanningObservations } from './al-inbound-planner-snaps
 import { toALDeliveryCarrier } from './al-inbound-source-validation.ts';
 import { computeALInboundWorkEntry, decodeALInboundWorkEntry } from './al-inbound-work-entry.ts';
 import { readALInboundEffectFacts } from './prepare-al-inbound-commit-bundle.ts';
-import { validateALInboundMessage } from './validate-al-inbound-message.ts';
+import { toALInboundReceiver, validateALInboundMessage } from './validate-al-inbound-message.ts';
 
 export namespace ALInboundMessageAdmission {
     export interface Dependencies extends
@@ -29,6 +29,7 @@ export namespace ALInboundMessageAdmission {
             | 'forwardMessage'
             | 'canForwardMessage'
             | 'readPendingAdmissionAuthority'
+            | 'readRelayedAckRejection'
         > {
         readonly workPort: ALWorkQueuePort;
     }
@@ -185,7 +186,10 @@ export class ALInboundMessageAdmission {
         const validation = validateALInboundMessage(
             pending.msg,
             authority.source,
-            this.dependencies.effectPreparation.selfPeerId
+            toALInboundReceiver(
+                this.dependencies.effectPreparation.selfPeerId,
+                this.dependencies.readRelayedAckRejection
+            )
         );
         if (validation.left) {
             return { outcome: { kind: 'non-retryable', reason: validation.left.message }, wroteWork: false };

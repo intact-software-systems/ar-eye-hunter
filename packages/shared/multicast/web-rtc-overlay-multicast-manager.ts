@@ -17,6 +17,7 @@ import type {
     ALDeliverySettlementSink
 } from '../alm/delivery/al-delivery-lifecycle.ts';
 import type { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
+import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type {
     ALOutboundCancelOutcome,
     ALOutboundEnqueueResult,
@@ -505,8 +506,16 @@ export class WebRtcOverlayMulticastManager {
 
     private planOutgoingMessage(original: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const context = this.readOverlayContext(original);
-        const msg = toALOutboundMessage(original, this.readOutgoingQosPolicy(original, context).effective);
+        const policy = this.readOutgoingQosPolicy(original, context);
+        const msg = toALOutboundMessage(original, policy.effective);
+        return computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
+            .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, context));
+    }
 
+    private planOriginatingDispatch(
+        msg: ALMessage,
+        context: OverlayMulticasterContext | undefined
+    ): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         if (!msg.targets) {
             return this.toUnaddressedDispatchPlan(msg, this.readOutgoingQosPolicy(msg, context).effective);
         }
@@ -731,7 +740,7 @@ export class WebRtcOverlayMulticastManager {
     private toAckTrackingPlan(
         effective: ALQosEffectivePolicy,
         expectedPeerIds: readonly string[],
-        mode?: 'merge' | 'replace'
+        expectedPeerIdsUpdate?: 'merge' | 'replace'
     ): ALOutboundAckTrackingPlan | undefined {
         if (effective.ack.algo === 'none') {
             return undefined;
@@ -744,7 +753,8 @@ export class WebRtcOverlayMulticastManager {
                 ? 0
                 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [...new Set(expectedPeerIds)],
-            mode
+            expectedPeerIdsUpdate,
+            mode: effective.ack.algo
         };
     }
 
@@ -897,7 +907,7 @@ export class WebRtcOverlayMulticastManager {
             ackTracking: dispatchPlan.ackTracking
                 ? {
                     ...dispatchPlan.ackTracking,
-                    mode: 'replace'
+                    expectedPeerIdsUpdate: 'replace'
                 }
                 : undefined,
             repairTracking: request.repair

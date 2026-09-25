@@ -11,6 +11,7 @@ import {
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -305,7 +306,7 @@ describe('RallarServerWsRouter', () => {
             { title: 'Durable fanout', done: false },
             {
                 reliability: 'at-least-once',
-                ack: 'receiver'
+                ack: 'none'
             }
         );
 
@@ -316,7 +317,7 @@ describe('RallarServerWsRouter', () => {
             route: message.route,
             targets: { mode: 'broadcast', scope: 'all' },
             payload: message.payload,
-            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            delivery: { reliability: 'at-least-once', ack: 'none' },
             constraints: { expiresAtMs: message.id.ts + 30_000 }
         });
         expect(message.constraints).toBeUndefined();
@@ -555,7 +556,8 @@ describe('RallarServerWsRouter', () => {
                     authorized: true,
                     audience: {
                         targets: message.targets,
-                        sessions: Array.from({ length: authorizationCount }, (_, index) => createGroupPresenceRecord('room-1', `session-${index + 1}`, 1))
+                        sessions: Array.from({ length: authorizationCount }, (_, index) => createGroupPresenceRecord('room-1', `session-${index + 1}`, 1)),
+                        snapshotVersion: 1
                     }
                 };
             }
@@ -601,6 +603,39 @@ describe('RallarServerWsRouter', () => {
         finally {
             warn.mockRestore();
         }
+    });
+
+    it('stamps the admission-time audience with the snapshot version it was read at', async () => {
+        const group = createGroupSnapshot('room-1', ['peer-1'], 1).group;
+        const { router, socket } = createIngressRouter({
+            nowEpochMs: () => 1,
+            authorizeRoomMessage: ({ message }) =>
+                message.targets === undefined ? false : {
+                    authorized: true,
+                    audience: {
+                        targets: message.targets,
+                        sessions: [createGroupPresenceRecord('room-1', 'peer-2', 1)],
+                        snapshotVersion: 9
+                    }
+                }
+        });
+        router.install();
+        const message: ALMessage = {
+            ...newALBroadcastMessage('peer-1', newALRoute('room.chat', 'room-1', 'stamp-1'), 'room', 'chat.message.v1', {}, {
+                groupRef: group
+            }),
+            delivery: { reliability: 'at-least-once', ack: 'receiver' }
+        };
+
+        await socket.receive(message);
+
+        await expect.poll(() =>
+            socket.sent
+                .filter((sent) => sent.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
+                .map((sent) => JSON.parse(sent.payload.resource))
+        ).toEqual([
+            expect.objectContaining({ phase: 'admitted', expectedRecipientPeerIds: ['peer-2'], snapshotVersion: 9 })
+        ]);
     });
 
     it('intersects a retained audience with current resolver recipients when authorization delegates audience resolution', async () => {

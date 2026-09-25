@@ -107,7 +107,8 @@ describe('outbound IndexedDB durable queue replay', () => {
                     enabled: true,
                     timeoutMs: msg.route.resourceId === 'complete' ? 100 : 60_000,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1', 'peer-2']
+                    expectedPeerIds: ['peer-1', 'peer-2'],
+                    mode: 'hop'
                 }
             }),
             sendPreparedMessage: async () => ({ status: 'queued', settled: new Promise(() => {}) })
@@ -120,7 +121,16 @@ describe('outbound IndexedDB durable queue replay', () => {
             for (const fromPeerId of respondents) {
                 await runtime1.acceptControlMessage(newALAckControlMessage(
                     { v: 2, msgId: crypto.randomUUID(), ts: Date.now(), senderId: fromPeerId },
-                    { ackedMsgId: msg.id.msgId, fromPeerId, toPeerId: 'self', status: 'accepted', observedAtEpochMs: Date.now(), carrier: 'ws' }
+                    {
+                        ackedMsgId: msg.id.msgId,
+                        originPeerId: 'self',
+                        logicalRecipientPeerId: fromPeerId,
+                        fromPeerId,
+                        toPeerId: 'self',
+                        status: 'accepted',
+                        observedAtEpochMs: Date.now(),
+                        carrier: 'ws'
+                    }
                 ));
                 await runOutboundWorkTask(runtime1);
             }
@@ -142,12 +152,12 @@ describe('outbound IndexedDB durable queue replay', () => {
         });
         await runtime2.ready();
         expect(sent).toEqual(['partial']);
-        expect(await admissionStore.readPendingAck(messages[0].id.msgId)).toBeUndefined();
-        expect(await admissionStore.readReceiptState(messages[0].id.msgId)).toMatchObject({
+        expect(await admissionStore.readPendingAck({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toBeUndefined();
+        expect(await admissionStore.readReceiptState({ originPeerId: messages[0].id.senderId, msgId: messages[0].id.msgId })).toMatchObject({
             expectedPeerIds: ['peer-1', 'peer-2'],
             ackedPeerIds: ['peer-1', 'peer-2']
         });
-        expect(await admissionStore.readPendingAck(messages[1].id.msgId)).toMatchObject({
+        expect(await admissionStore.readPendingAck({ originPeerId: messages[1].id.senderId, msgId: messages[1].id.msgId })).toMatchObject({
             expectedPeerIds: ['peer-1', 'peer-2'],
             ackedPeerIds: ['peer-1']
         });

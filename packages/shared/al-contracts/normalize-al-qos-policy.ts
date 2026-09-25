@@ -20,6 +20,7 @@ import type {
     ALQosPolicyRequest,
     ALRequestedAlgorithm
 } from './al-policy.ts';
+import { toALNormalizableAckAlgos } from './validate-al-ack-support.ts';
 
 interface ALDefaultDeliveryPolicy
     extends Pick<ALQosEffectivePolicy, 'delivery' | 'repair' | 'ack' | 'retry' | 'congestion'> {}
@@ -128,6 +129,7 @@ export function normalizeALQosPolicy(msg: ALMessage, input: ALQosNormalizationIn
     return {
         requested,
         effective: consistent.effective,
+        capabilities,
         notes: [
             ...normalized.notes,
             ...aligned.notes,
@@ -412,7 +414,7 @@ function pickFallbackAlgorithm<TAlgo extends string>(
         delivery: ['best-effort', 'at-least-once'],
         forwarding: ['target'],
         repair: ['retransmit', 'none'],
-        ack: ['hop', 'subtree', 'none'],
+        ack: ['receiver', 'hop', 'subtree', 'none'],
         expiry: ['expires-at', 'ttl-only', 'fresh-until'],
         retry: ['exp-backoff', 'none'],
         dedup: ['msg-id', 'msg-id+sender', 'semantic-key'],
@@ -455,8 +457,8 @@ function toAckAlgo(ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-
         case 'none':
             return 'none';
         case 'receiver':
-            return 'hop';
         case 'all-logical-recipients':
+            return 'receiver';
         case 'group-leader':
             return 'subtree';
     }
@@ -526,7 +528,7 @@ function normalizeTransportAspects(policy: ALQosNormalizationPolicy): ALNormaliz
             aspect: 'ack',
             requested: requested.ack,
             fallback: defaults.ack,
-            supported: capabilities.supportedAck
+            supported: toALNormalizableAckAlgos(capabilities.supportedAck, requested.ack, defaults.ack)
         }),
         retry: normalizeAspect({
             aspect: 'retry',

@@ -1,6 +1,6 @@
 import { createTestALInboundControlAdmission } from '@shared-test/shared/create-test-al-inbound-work-port.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { newALAckControlMessage } from '@shared/al-contracts/al-control.ts';
+import { newALAckControlMessage, parseALControlMessage, type ALAckPayload } from '@shared/al-contracts/al-control.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import {
     createInMemoryALAdmissionState,
@@ -117,6 +117,7 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
+                        localRecipient: false,
                         expectedFromPeerIds: ['receiver'],
                         ackedFromPeerIds: [],
                         expireAtTimestamp,
@@ -135,11 +136,13 @@ async function seedPendingAcknowledgement(
     ).toBe('committed');
 }
 
-function createAcknowledgement(fromPeerId: string): ALMessage {
+function createAcknowledgement(fromPeerId: string, originPeerId: string = message.id.senderId): ALMessage {
     return newALAckControlMessage(
         { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
+            originPeerId,
+            logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
             status: 'accepted',
@@ -226,6 +229,21 @@ describe('inbound control admission', () => {
         expect(state.pendingAck).toBeUndefined();
     });
 
+    it('refuses a child acknowledgement that names another origin than the message it tracks', async () => {
+        const { backend, admissionStore, control } = createFixture();
+        await seedPendingAcknowledgement(admissionStore);
+
+        const result = await control.admit(createAcknowledgement('receiver', 'B'), WS_ARRIVAL);
+
+        expect(result).toEqual({
+            kind: 'rejected',
+            reason: 'Inbound acknowledgement names another origin than the message it acknowledges'
+        });
+        const state = await readAcknowledgements(backend, admissionStore);
+        expect(state.acks).toEqual([]);
+        expect(state.pendingAck?.ackedFromPeerIds).toEqual([]);
+    });
+
     it('writes the ACK it relays upstream under the carrier the acknowledged message arrived on', async () => {
         const { admissionStore, workQueue, control } = createFixture();
         await seedPendingAcknowledgement(admissionStore, TRACKED_CONTROL_OWNERS, {
@@ -305,6 +323,191 @@ describe('inbound control admission', () => {
         expect((await readAcknowledgements(backend, admissionStore)).acks.map((ack) => ack.carrier)).toEqual(['rtc']);
     });
 
+    it('re-originates one ACK per logical recipient its completed subtree confirmed, copying who each speaks for', () => {
+        const nowMs = 1_800_000_000_000;
+        const toAck = (fromPeerId: string, logicalRecipientPeerId: string): ALAckPayload => ({
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId,
+            fromPeerId,
+            toPeerId: 'self',
+            status: 'subtree-complete',
+            observedAtEpochMs: nowMs,
+            carrier: 'rtc'
+        });
+        // A lower relay already spoke for its own recipient; the direct leaf completes the subtree.
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: toAck('leaf', 'leaf'),
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                localRecipient: false,
+                expectedFromPeerIds: ['lower-relay', 'leaf'],
+                ackedFromPeerIds: ['lower-relay'],
+                carrier: 'rtc'
+            },
+            acks: [toAck('lower-relay', 'deep-recipient')],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        expect(upstream.map((control) => control?.type === 'ack' ? control.payload : undefined)).toEqual(
+            ['deep-recipient', 'leaf'].map((logicalRecipientPeerId) => ({
+                ackedMsgId: message.id.msgId,
+                fromPeerId: 'self',
+                toPeerId: message.id.senderId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId,
+                carrier: 'rtc',
+                status: 'subtree-complete',
+                observedAtEpochMs: nowMs
+            }))
+        );
+        expect(new Set(candidate.completedEffects.map((effect) => effect.effectId)).size).toBe(2);
+    });
+
+    it('keys a child\'s acknowledgements by the recipient each speaks for, refusing only a repeat (D40)', () => {
+        const nowMs = 1_800_000_000_000;
+        const toAck = (logicalRecipientPeerId: string): ALAckPayload => ({
+            ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId,
+            fromPeerId: 'child-relay',
+            toPeerId: 'self',
+            status: 'subtree-complete',
+            observedAtEpochMs: nowMs,
+            carrier: 'rtc'
+        });
+        const readWith = (ack: ALAckPayload) =>
+            computeALInboundControlAdmission({
+                namespace: 'inbound',
+                ack,
+                controlOwners: TRACKED_CONTROL_OWNERS,
+                owner: {
+                    msgId: message.id.msgId,
+                    senderId: message.id.senderId,
+                    source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                    supersedenceKey: null
+                },
+                pending: {
+                    toPeerId: message.id.senderId,
+                    status: 'subtree-complete',
+                    localReady: true,
+                    localRecipient: false,
+                    expectedFromPeerIds: ['child-relay', 'leaf'],
+                    ackedFromPeerIds: ['child-relay'],
+                    carrier: 'rtc'
+                },
+                acks: [toAck('grandchild-1')],
+                nowMs,
+                controlMsgId: 'control'
+            }, normalizeALRuntimeStoreRetention());
+
+        expect(validateALInboundControlAdmission(readWith(toAck('grandchild-2')))).toEqual([]);
+        expect(validateALInboundControlAdmission(readWith(toAck('grandchild-1'))).map((issue) => issue.message))
+            .toEqual(['Inbound acknowledgement was already admitted']);
+    });
+
+    it('names itself beside the recipients it relays for when it delivered the message locally', () => {
+        const nowMs = 1_800_000_000_000;
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: {
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'leaf',
+                fromPeerId: 'leaf',
+                toPeerId: 'self',
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'rtc'
+            },
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                localRecipient: true,
+                expectedFromPeerIds: ['leaf'],
+                ackedFromPeerIds: [],
+                carrier: 'rtc'
+            },
+            acks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        // The relay is a logical recipient too: the origin's receiver-mode receipt must be able to name it.
+        expect(
+            upstream.map((control) => control?.type === 'ack' ? control.payload.logicalRecipientPeerId : undefined)
+        ).toEqual(['self', 'leaf']);
+    });
+
+    it('re-originates the origin from its own message-owner row, never from what a child claimed', () => {
+        const nowMs = 1_800_000_000_000;
+        const candidate = computeALInboundControlAdmission({
+            namespace: 'inbound',
+            ack: {
+                ackedMsgId: message.id.msgId,
+                originPeerId: 'B',
+                logicalRecipientPeerId: 'receiver',
+                fromPeerId: 'receiver',
+                toPeerId: 'self',
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'ws'
+            },
+            controlOwners: TRACKED_CONTROL_OWNERS,
+            owner: {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'ws-client', peerId: message.id.senderId },
+                supersedenceKey: null
+            },
+            pending: {
+                toPeerId: message.id.senderId,
+                status: 'subtree-complete',
+                localReady: true,
+                localRecipient: false,
+                expectedFromPeerIds: ['receiver'],
+                ackedFromPeerIds: [],
+                carrier: 'ws'
+            },
+            acks: [],
+            nowMs,
+            controlMsgId: 'control'
+        }, normalizeALRuntimeStoreRetention());
+
+        const upstream = candidate.completedEffects.map((effect) =>
+            effect.payload.kind === 'send-control' ? parseALControlMessage(effect.payload.msg) : undefined
+        );
+        expect(upstream.map((control) => control?.type === 'ack' ? control.payload.originPeerId : undefined))
+            .toEqual([message.id.senderId]);
+        expect(validateALInboundControlAdmission(candidate).map((issue) => issue.message))
+            .toContain('Inbound acknowledgement names another origin than the message it acknowledges');
+    });
+
     // The global constraint requires validateXxx to report every issue, not only the first one.
     it('reports every reason one acknowledgement candidate is inadmissible', () => {
         const nowMs = 1_800_000_000_000;
@@ -312,6 +515,8 @@ describe('inbound control admission', () => {
             namespace: 'inbound',
             ack: {
                 ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'stranger',
                 fromPeerId: 'stranger',
                 toPeerId: message.id.senderId,
                 status: 'delivered',
@@ -329,11 +534,21 @@ describe('inbound control admission', () => {
                 toPeerId: message.id.senderId,
                 status: 'delivered',
                 localReady: true,
+                localRecipient: false,
                 expectedFromPeerIds: ['receiver'],
                 ackedFromPeerIds: ['stranger'],
                 carrier: 'ws'
             },
-            acks: [],
+            acks: [{
+                ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: 'stranger',
+                fromPeerId: 'stranger',
+                toPeerId: message.id.senderId,
+                status: 'delivered',
+                observedAtEpochMs: nowMs,
+                carrier: 'ws'
+            }],
             nowMs,
             controlMsgId: 'control'
         }, normalizeALRuntimeStoreRetention());

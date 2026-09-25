@@ -191,6 +191,7 @@ function createPendingAdmissionBundle(input: PendingAdmissionBundleInput): ALInb
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: true,
+                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: [],
                     expireAtTimestamp: input.expireAtTimestamp,
@@ -432,7 +433,7 @@ describe('inbound admission persisted values', () => {
         { kind: 'forward-message', message: { senderId: 'sender:with:delimiter', msgId: 'message' }, fromPeerId: 'sender', plan: {} },
         { kind: 'send-control', msg: message },
         { kind: 'unknown' },
-        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v1', resource: '{}' } } }
+        { kind: 'send-control', msg: { ...message, payload: { typeId: 'al.control.ack.v2', resource: '{}' } } }
     ])('terminalizes corrupt work payloads at observed reservation', async (payload) => {
         const { store, workQueue, port } = createFixture();
         const entry = {
@@ -507,11 +508,25 @@ describe('inbound admission persisted values', () => {
         await backend.write(async (transaction) => {
             await transaction.set('inbound:control:acks:message:sender%3Awith%3Adelimiter', {
                 kind: 'acks',
-                values: [{ ackedMsgId: 'different', fromPeerId: 'sender', toPeerId: 'receiver', status: 'delivered', observedAtEpochMs: 1 }]
+                values: [{
+                    ackedMsgId: 'different',
+                    originPeerId: message.id.senderId,
+                    logicalRecipientPeerId: 'downstream',
+                    fromPeerId: 'downstream',
+                    toPeerId: 'receiver',
+                    status: 'delivered',
+                    observedAtEpochMs: 1,
+                    carrier: 'rtc'
+                }]
             });
         });
 
-        await expect(readIncoming(store, message)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        // A complete entry, so the refusal is the message-ID guard and not a missing field.
+        const read = readIncoming(store, message);
+        await expect(read).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+        await expect(read).rejects.toMatchObject({
+            cause: new TypeError('Stored admission control belongs to another message')
+        });
     });
 
     it.each([
@@ -734,6 +749,7 @@ describe('inbound admission persisted values', () => {
                             toPeerId: 'upstream',
                             status: 'subtree-complete',
                             localReady: false,
+                            localRecipient: false,
                             expectedFromPeerIds: ['receiver'],
                             ackedFromPeerIds: [],
                             expireAtTimestamp: Date.now() + 60_000,
@@ -785,6 +801,7 @@ describe('inbound admission persisted values', () => {
                     toPeerId: 'upstream',
                     status: 'subtree-complete',
                     localReady: false,
+                    localRecipient: false,
                     expectedFromPeerIds: ['receiver'],
                     ackedFromPeerIds: []
                 }
@@ -802,6 +819,8 @@ describe('inbound admission persisted values', () => {
         const values = [
             ...expectedPeerIds.slice(0, -1).map((fromPeerId, observedAtEpochMs) => ({
                 ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: fromPeerId,
                 fromPeerId,
                 toPeerId: 'self',
                 status: 'accepted' as const,
@@ -810,6 +829,8 @@ describe('inbound admission persisted values', () => {
             })),
             {
                 ackedMsgId: message.id.msgId,
+                originPeerId: message.id.senderId,
+                logicalRecipientPeerId: expectedPeerIds[0]!,
                 fromPeerId: expectedPeerIds[0]!,
                 toPeerId: 'self',
                 status: 'delivered' as const,
@@ -893,6 +914,7 @@ async function seedPendingAcknowledgement(
                         toPeerId: 'upstream',
                         status: 'subtree-complete',
                         localReady: true,
+                        localRecipient: false,
                         expectedFromPeerIds,
                         ackedFromPeerIds,
                         expireAtTimestamp,
@@ -919,6 +941,8 @@ function createAcknowledgement(fromPeerId: string): ALMessage {
         { v: 2, msgId: `ack-${fromPeerId}`, ts: 1, senderId: fromPeerId },
         {
             ackedMsgId: message.id.msgId,
+            originPeerId: message.id.senderId,
+            logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: 'self',
             status: 'accepted',

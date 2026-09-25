@@ -41,6 +41,8 @@ interface ManifestCommand {
         intervalMs?: number;
     }>;
     readonly count?: number;
+    readonly ack?: string;
+    readonly qos?: Readonly<{ ack?: Readonly<{ algo?: string; }>; }>;
     readonly durationMs?: number;
     readonly intervalMs?: number;
     readonly maxInFlight?: number;
@@ -1094,6 +1096,24 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(rtcConnects).toHaveLength(5);
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
+
+        // Until the RTC overlay tracks logical receipts, the rtc and fallback recipes' receiver sends ask for hop by
+        // name (the fallback recipe's cross-carrier envelope included, whichever carrier it starts on); the WS recipes
+        // keep receiver.
+        const receiverSends = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
+            .filter((command) => command.kind === 'messages.send' && command.ack === 'receiver');
+        const algoByCarrier = (carrier: string) => [
+            ...new Set(
+                receiverSends
+                    .filter((command) =>
+                        ['rtc-with-ws-fallback', 'rtc', 'ws'].find((candidate) => command.commandId?.startsWith(`alm-${candidate}-`)) === carrier
+                    )
+                    .map((command) => command.qos?.ack?.algo)
+            )
+        ];
+        expect(algoByCarrier('ws')).toEqual([undefined]);
+        expect(algoByCarrier('rtc')).toEqual(['hop']);
+        expect(algoByCarrier('rtc-with-ws-fallback')).toEqual(['hop']);
     });
 
     it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {

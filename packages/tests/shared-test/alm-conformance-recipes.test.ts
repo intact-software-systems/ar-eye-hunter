@@ -22,6 +22,7 @@ import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-li
 import { validateRallarWsUserTopicId } from '@shared/api/rallar-validation.ts';
 
 const CONFORMANCE_TOPIC_ID = 'room.alm-conformance';
+const INBOUND_DIAGNOSTICS_TOPIC = 'rallar.browser.alm.inbound_diagnostics';
 
 const group = { applicationId: 'app', workspaceId: 'ws', groupId: 'room-alm' };
 
@@ -64,7 +65,7 @@ function toRoutedTypeIds(command: RallarBlackBoxTestCommand): readonly string[] 
         case 'messages.received':
             return [command.typeId];
         case 'wait':
-            return toAdmissionOutcomeTypeIds(command.match.contains);
+            return command.match.topic === INBOUND_DIAGNOSTICS_TOPIC ? toAdmissionOutcomeTypeIds(command.match.contains) : [];
         case 'fault.inject':
             return command.match.typeId === undefined ? [] : [command.match.typeId];
         default:
@@ -190,6 +191,24 @@ describe('alm-conformance recipe family', () => {
         expect(admitted).toMatchObject({ timeoutMs: 3_000 });
     });
 
+    it('asks for hop by name on every rtc and fallback recipe receiver send, and leaves ws sends on the logical receiver', () => {
+        const sendsOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).flatMap((recipe) =>
+                recipe.commands.flatMap((command) => command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command] : [])
+            );
+        const submission = sendsOf('rtc').find((command) => command.commandId === 'alm-rtc-delivery-lifecycle-sender-send-1');
+
+        expect(submission).toMatchObject({ ack: 'receiver', qos: { ack: { algo: 'hop' } } });
+        for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+            const receiverSends = sendsOf(carrier).filter((command) => command.ack === 'receiver');
+            expect(receiverSends.length, carrier).toBeGreaterThan(0);
+            expect(receiverSends.every((command) => command.qos?.ack.algo === 'hop'), carrier).toBe(true);
+        }
+        const wsSends = sendsOf('ws');
+        expect(wsSends.some((command) => command.ack === 'receiver')).toBe(true);
+        expect(wsSends.every((command) => command.qos === undefined)).toBe(true);
+    });
+
     it('keeps reload and ordering-resync full-only while preserving the smoke scenarios', () => {
         expect(
             createAlmConformanceRecipes(toConformanceInput('ws'))
@@ -290,6 +309,64 @@ describe('alm-conformance recipe family', () => {
         ]);
         for (const scenario of [rtcThenWs, wsThenRtc]) {
             expect(scenario?.receiver.commands.some((command) => ['parallel', 'loop'].includes(command.kind))).toBe(false);
+        }
+    });
+
+    it('runs ordering-resync over every carrier in the full scope, with its identities distinct per carrier', () => {
+        const orderingOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            createAlmConformanceRecipes(toConformanceInput(carrier)).filter((scenario) => scenario.scenarioId === 'ordering-resync');
+        const idsOf = (scenario: AlmConformanceScenario) =>
+            toRecipes([scenario]).flatMap((recipe) => [recipe.recipeId, ...recipe.commands.flatMap((command) => command.commandId ?? [])]);
+
+        const scenarios = ALM_CONFORMANCE_CARRIERS.flatMap(orderingOf);
+        expect(scenarios.map((scenario) => scenario.tags)).toEqual(ALM_CONFORMANCE_CARRIERS.map(() => ['full']));
+        const ids = scenarios.flatMap(idsOf);
+        expect(new Set(ids).size).toBe(ids.length);
+        expect(orderingOf('ws')[0]?.sender.commands.filter((command) => command.kind === 'messages.send')).toMatchObject([
+            { carrier: 'ws', reliability: 'at-least-once', orderingKey: 'alm-ws-ordering-resync', seq: 1 },
+            { carrier: 'ws', reliability: 'at-least-once', orderingKey: 'alm-ws-ordering-resync', seq: 300 }
+        ]);
+    });
+
+    it('waits for the resync verdict where it is made: the relay\'s NACK at the ws sender, the receiver\'s own over RTC', () => {
+        const orderingOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            createAlmConformanceRecipes(toConformanceInput(carrier)).find((scenario) => scenario.scenarioId === 'ordering-resync');
+        const receiverTail = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
+            (orderingOf(carrier)?.receiver.commands ?? []).slice(0, -1).filter((command) => ['messages.received', 'wait'].includes(command.kind));
+
+        expect((orderingOf('ws')?.sender.commands ?? []).slice(-2, -1)).toEqual([{
+            kind: 'wait',
+            commandId: 'alm-ws-ordering-resync-sender-relay-resync-nack',
+            match: {
+                kind: 'diagnostic',
+                topic: 'rallar.browser.alm.outbound_diagnostics',
+                payloadPath: 'data',
+                contains: '"typeId":"al.control.nack.v1","targetMsgId":"{resultCache.alm-ws-ordering-resync-sender-send-2.value.msgId}"'
+            },
+            timeoutMs: 27_000
+        }]);
+        expect(receiverTail('ws')).toMatchObject([
+            { kind: 'messages.received', count: 1, absent: false },
+            { kind: 'messages.received', count: 2, absent: true }
+        ]);
+        for (const carrier of ['rtc', 'rtc-with-ws-fallback'] as const) {
+            expect(orderingOf(carrier)?.sender.commands.some((command) => command.kind === 'wait'), carrier).toBe(false);
+            expect(receiverTail(carrier), carrier).toMatchObject([
+                { kind: 'messages.received', count: 1, absent: false },
+                {
+                    kind: 'wait',
+                    commandId: `alm-${carrier}-ordering-resync-receiver-resync-outcome`,
+                    match: {
+                        kind: 'diagnostic',
+                        topic: INBOUND_DIAGNOSTICS_TOPIC,
+                        payloadPath: 'data',
+                        contains: `"typeId":"alm.conformance.${carrier}.ordering-resync","carrier":"rtc","outcome":"not-handled",` +
+                            '"reason":"resync-required"'
+                    },
+                    timeoutMs: 27_000
+                },
+                { kind: 'messages.received', count: 2, absent: true }
+            ]);
         }
     });
 

@@ -33,6 +33,7 @@ describe('Rallar server AI result publication', () => {
             resourceId: 'generation-1'
         });
         expect(publication.fanout).toBe('outbox');
+        expect(publication.message?.delivery).toEqual({ reliability: 'at-least-once', ack: 'receiver' });
     });
 
     it('keeps world publication intentionally unscoped', async () => {
@@ -53,6 +54,21 @@ describe('Rallar server AI result publication', () => {
         });
         expect(publication.message?.route.contextId).toBe('world');
     });
+
+    it.each(['world', 'all'] as const)(
+        'requests no acknowledgement for a %s result, which names no logical recipients',
+        async (scope) => {
+            const publication = createPublicationCapture();
+            const publish = createRallarServerAiResultPublisher({
+                publication: publication.port,
+                serverSenderId: 'ai-server'
+            });
+
+            await publish({ result: createRallarServerAiTestResult(), scope });
+
+            expect(publication.message?.delivery).toEqual({ reliability: 'at-least-once', ack: 'none' });
+        }
+    );
 
     it('requires canonical workspace identity for room publication', () => {
         expect(() => toRallarServerAiPublicationTarget('room', undefined))

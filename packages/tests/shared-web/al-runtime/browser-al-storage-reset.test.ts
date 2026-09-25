@@ -11,13 +11,13 @@ import {
 } from '@shared/alm/open-indexed-db-admission-database.ts';
 
 const STORE_NAME = 'entries';
-/** The schema identity S2b replaced: a store written at it keys inbound rows per carrier. */
-const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-f2c';
-/** The deleted per-carrier RTC inbound namespace, spelled out because its identity is gone. */
-const REMOVED_RTC_RX_INBOUND_NAMESPACE = 'browser:browser-rtc-rx:session-1:inbound:admission';
+/** The schema identity S2c replaced: a store written at it holds v1 ACK history without origin or recipient. */
+const PREVIOUS_SCHEMA_ID = 'rallar-alm-2026-09-s2b';
+/** The S2b session inbound namespace, spelled out so the test pins the stored key, not today's helper. */
+const S2B_SESSION_INBOUND_NAMESPACE = 'browser:browser-session-inbound:session-1:inbound:admission';
 
 describe('browser ALM storage schema identity reset', () => {
-    it('resets the F2c database once and recreates it at the S2b schema identity', async () => {
+    it('resets the S2b database once and recreates it at the S2c schema identity', async () => {
         const dbName = `al-storage-reset-schema-id-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
@@ -66,8 +66,8 @@ describe('browser ALM storage schema identity reset', () => {
         }
     });
 
-    it('drops an F2c per-carrier inbound dedup row instead of migrating it', async () => {
-        const dbName = `al-storage-reset-carrier-inbound-${crypto.randomUUID()}`;
+    it('drops an S2b ACK history row without origin or logical recipient instead of decoding it', async () => {
+        const dbName = `al-storage-reset-ack-history-${crypto.randomUUID()}`;
         const oldDb = await openIndexedDbAdmissionDatabase({
             dbName,
             storeName: STORE_NAME,
@@ -75,10 +75,20 @@ describe('browser ALM storage schema identity reset', () => {
             onStorageReset: assertNoStorageReset
         });
         await putRow(oldDb, {
-            key: `${REMOVED_RTC_RX_INBOUND_NAMESPACE}:dedup:sender:msg-1`,
-            value: Number.MAX_SAFE_INTEGER,
+            key: `${S2B_SESSION_INBOUND_NAMESPACE}:control:acks:msg-1:sender`,
+            value: {
+                kind: 'acks',
+                values: [{
+                    ackedMsgId: 'msg-1',
+                    fromPeerId: 'child',
+                    toPeerId: 'session-1',
+                    status: 'delivered',
+                    observedAtEpochMs: 1,
+                    carrier: 'rtc'
+                }]
+            },
             expireAtTimestamp: Number.MAX_SAFE_INTEGER,
-            writeToken: 'f2c-writer',
+            writeToken: 's2b-writer',
             revision: 1
         });
         oldDb.close();

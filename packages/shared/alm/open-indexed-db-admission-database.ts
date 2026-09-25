@@ -13,7 +13,7 @@ export const AL_ADMISSION_WORK_STORE_NAME = 'alm-work';
 
 export const AL_ADMISSION_SCHEMA_KEY = '__rallar_al_schema__';
 /** Bump on any persisted row-shape or index change: the store-schema check only counts indexes. */
-export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2b';
+export const AL_ADMISSION_SCHEMA_ID = 'rallar-alm-2026-09-s2c';
 export const AL_ADMISSION_EXPIRY_INDEX_NAME = 'expireAtTimestamp';
 
 const INDEXED_DB_DELETE_BLOCKED_TIMEOUT_MS = 5_000;

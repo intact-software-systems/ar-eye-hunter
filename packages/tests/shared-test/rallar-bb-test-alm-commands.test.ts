@@ -339,6 +339,56 @@ describe('ALM recipe commands', () => {
         }
     });
 
+    it('accepts a QoS ack algorithm request and refuses one naming anything else', () => {
+        const send = (qos: RallarBlackBoxTestJsonValue) => ({
+            kind: 'messages.send',
+            commandId: 'send-qos',
+            carrier: 'rtc',
+            typeId: 'alm.conformance',
+            payload: { n: 1 },
+            ack: 'receiver',
+            qos
+        });
+        for (const algo of ['none', 'hop', 'subtree', 'receiver']) {
+            const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-qos', send({ ack: { algo } })));
+            expect(schemaResult.ok, schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)).toBe(true);
+            expect(validateRallarBlackBoxTestCommand(send({ ack: { algo } })).ok).toBe(true);
+        }
+        const path = 'messages.send.qos';
+        for (
+            const [qos, message] of [
+                [{ ack: { algo: 'everyone' } }, `${path}.ack.algo must be one of none, hop, subtree, receiver.`],
+                [{ ack: {} }, `${path}.ack.algo is required.`],
+                [{}, `${path}.ack is required.`],
+                [{ ack: { algo: 'hop' }, retry: { algo: 'none' } }, `${path} has unsupported field: retry.`],
+                ['hop', `${path} must be an object.`]
+            ] as const
+        ) {
+            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, recipeWithCommand('send-qos', send(qos))).ok, JSON.stringify(qos))
+                .toBe(false);
+            const refused = validateRallarBlackBoxTestCommand(send(qos));
+            expect(refused.ok, JSON.stringify(qos)).toBe(false);
+            if (!refused.ok) {
+                expect(refused.messages).toContain(message);
+            }
+        }
+    });
+
+    it('refuses a QoS request on a replay', () => {
+        const refused = validateRallarBlackBoxTestCommand({
+            kind: 'messages.send',
+            commandId: 'send-replay-with-qos',
+            qos: { ack: { algo: 'hop' } },
+            replayOnCarrier: { handleId: 'h1', carrier: 'ws' }
+        });
+        expect(refused.ok).toBe(false);
+        if (!refused.ok) {
+            expect(refused.messages).toEqual([
+                'messages.send.qos is not allowed on a replay; a replay names only connection and replayOnCarrier.'
+            ]);
+        }
+    });
+
     it('rejects a control-protocol messages.send without a carrier', () => {
         const result = validateRallarBlackBoxTestCommand({
             kind: 'messages.send',

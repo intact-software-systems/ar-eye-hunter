@@ -74,6 +74,8 @@ function createDownstreamAcknowledgement(msg: ALMessage, fromPeerId: string): AL
         { v: 2, msgId: `ack-${fromPeerId}`, senderId: fromPeerId, ts: Date.now() },
         {
             ackedMsgId: msg.id.msgId,
+            originPeerId: msg.id.senderId,
+            logicalRecipientPeerId: fromPeerId,
             fromPeerId,
             toPeerId: INBOUND_TEST_EFFECT_PREPARATION.selfPeerId,
             status: 'delivered',

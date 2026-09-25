@@ -4,6 +4,9 @@ import type {
     RallarRtcSendInput,
     RallarWsSendInput
 } from '@shared-web/browser/messages/rallar-message-contracts.ts';
+import { assertPersistedALQos } from '@shared/al-contracts/al-message-persistence/assert-persisted-al-qos.ts';
+import { decodePersistedALRecord } from '@shared/al-contracts/al-message-persistence/persisted-al-value-validation.ts';
+import type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     validateRallarGroupRef,
@@ -14,6 +17,7 @@ import {
     type RallarJsonPayloadValidationResult,
     type RallarValidationIssue
 } from '@shared/api/rallar-validation.ts';
+import { toError } from '@shared/resilience/to-error.ts';
 
 export interface ResolvedWsMessageInput<T> {
     readonly input: RallarWsSendInput<T>;
@@ -109,6 +113,33 @@ export class BrowserMessageInputValidator {
         return issues;
     }
 
+    /** A broadcast has no group track to default its ordering key from, so a WS send states both halves or neither. */
+    public validateWsOrdering<T>(input: RallarWsSendInput<T>): readonly RallarValidationIssue[] {
+        const issues: RallarValidationIssue[] = [];
+        this.pushOptionalRouteId({
+            value: input.orderingKey,
+            path: '$.orderingKey',
+            label: 'Ordering key',
+            issues
+        });
+        this.pushOptionalNonNegativeInteger(input.seq, '$.seq', issues);
+        if (input.seq !== undefined && input.orderingKey === undefined) {
+            issues.push({
+                path: '$.orderingKey',
+                code: 'missing-ordering-key',
+                message: 'An ordered WS send states its orderingKey beside its seq.'
+            });
+        }
+        if (input.orderingKey !== undefined && input.seq === undefined) {
+            issues.push({
+                path: '$.seq',
+                code: 'missing-seq',
+                message: 'An ordered WS send states its seq beside its orderingKey.'
+            });
+        }
+        return issues;
+    }
+
     public validateResolvedRoomRef(roomRef: GroupRef, path: string): readonly RallarValidationIssue[] {
         return validateRallarGroupRef(roomRef, path).issues;
     }
@@ -195,6 +226,7 @@ export class BrowserMessageInputValidator {
         });
         this.pushOptionalNonNegativeInteger(input.ttlHops, '$.ttlHops', issues);
         this.pushOptionalNonNegativeInteger(input.ttlMs, '$.ttlMs', issues);
+        issues.push(...validateQosRequest(input.qos));
     }
 
     private pushWsScopeIssues<T>(
@@ -287,4 +319,18 @@ function validateTopic<T>(
             '$.topicId',
             'Topic ID'
         ).issues;
+}
+
+/** The request travels inside the envelope, so it passes the check every persisted envelope's QoS passes. */
+function validateQosRequest(qos: ALQosPolicyRequest | undefined): readonly RallarValidationIssue[] {
+    if (qos === undefined) {
+        return [];
+    }
+    try {
+        assertPersistedALQos(decodePersistedALRecord(JSON.stringify(qos), 'qos'));
+        return [];
+    }
+    catch (error) {
+        return [{ path: '$.qos', code: 'invalid-qos', message: toError(error).message }];
+    }
 }

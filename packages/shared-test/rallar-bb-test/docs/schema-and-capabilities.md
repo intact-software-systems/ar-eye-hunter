@@ -71,6 +71,16 @@ it says so: capture a stamp before the step that should produce the event, and p
 Without it a pin can be satisfied by history rather than by the behaviour under test, which is the
 same hazard `absent: true` carries in the other direction.
 
+## Wait Result References
+
+A `{resultCache.<commandId>.<path>}` token in `wait.match.contains` stands for the string or number
+an earlier command of the same runtime returned at that path, for example
+`{resultCache.<send commandId>.value.msgId}`. The wait resolves every token once, when it starts, and
+reports the resolved match in its result. A token naming no string or number value fails the wait
+with `RALLAR_BLACK_BOX_WAIT_INVALID` and the unresolved reference in its details. This is how a
+recipe pins a wait on an identity it cannot know when it is authored, such as the msgId a send was
+given.
+
 ## Formation Commands
 
 `formation.command` and `formation.readiness` drive the shipped browser room
@@ -142,8 +152,8 @@ that refusal fails the step.
 
 `messages.send` takes `carrier` (`ws`, `rtc`, `rtc-with-ws-fallback`), `typeId`
 and `payload`, and optionally `connection`, `topicId`, `roomRef`, `scope`,
-`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
-`minSnapshotVersion`. It returns `{ handleId, msgId, carrier, status, reason? }`.
+`reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`minSnapshotVersion` and `qos`. It returns `{ handleId, msgId, carrier, status, reason? }`.
 `handleId` defaults to the command's own `commandId`, and every later delivery
 command addresses the send through that handle. Supersedence (`key`) and unicast
 targeting (`toPeerId`) are not part of this release; naming either one fails
@@ -160,14 +170,26 @@ that floor and the sender's own version. Absent, the send states no floor and th
 product stamps the sender's version. `aboveCurrentBy` fails the send when the
 sender has no cached snapshot for the room.
 
+`qos` is `{ ack: { algo } }`, where `algo` is `none`, `hop`, `subtree` or
+`receiver`, and nothing else is named. The page passes it unchanged to the
+product's typed send option `qos`, the caller's QoS request, which the envelope
+carries and which overrides the ack algorithm `ack` implies. Absent, the product
+normalizes the QoS the delivery options imply. The conformance recipes use it on
+every `rtc` or `rtc-with-ws-fallback` recipe send that asks for
+`ack: 'receiver'`, whichever carrier the send starts on: until the RTC overlay
+tracks logical receipts it refuses `receiver`, so those sends ask for `hop` by
+name and keep reading hop receipts. `ws` recipe sends keep `receiver`, the
+logical algorithm.
+
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and
 nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
-`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId` and
-`minSnapshotVersion` are each refused beside it, by the control validator and by
+`scope`, `reliability`, `ack`, `ttlMs`, `orderingKey`, `seq`, `handleId`,
+`minSnapshotVersion` and `qos` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
-after an `unroutable` verdict, so one logical message never reaches both. The page
+after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
+first carrier cannot track), so one logical message never reaches both. The page
 reads the envelope the earlier handle's first carrier captured and admits that
 same envelope through the named carrier's own admission call, the one a fallback
 makes. It returns `{ handleId, msgId, carrier, verdict, reason? }`: the named
@@ -186,6 +208,18 @@ refusal: in `rtc-then-ws` the second copy is the WS-carried multicast room
 envelope, which the api-v1 WS server routes to the room's other members, so the
 receiver refuses it on carrier `ws`. The Hetzner two-agent manifest runs both
 orders.
+
+The `ordering-resync` conformance scenario runs over every carrier. The sender sends seq 1, then
+seq 300 on the same ordering key, a gap wider than the repair window, and the receiver receives the
+first send once and never the second. The verdict on the gapped send is asserted where it is made.
+Over `rtc` and `rtc-with-ws-fallback` the receiver is that hop: it waits for its own RTC
+`admission-outcome` refusing the send as `not-handled`/`resync-required`. Over `ws` the WS server
+is that hop: it keeps its own ordering track, refuses the gapped send without relaying it, and NACKs
+the sender, so the sender waits for its `rallar.browser.alm.outbound_diagnostics`
+`control-admission` of that `al.control.nack.v1`, pinned on the gapped send's msgId through a wait
+result reference. The sender retains the send, but the send requested no ACK, so nothing it waits
+on expects the relay and the sender refuses the NACK; the refusal is still the relay's verdict
+arriving.
 
 The `not-yet-in-sync` conformance scenario runs over `rtc` and
 `rtc-with-ws-fallback`, in two variants. Its receiver first waits for its own

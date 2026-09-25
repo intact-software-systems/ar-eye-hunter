@@ -11,11 +11,12 @@ import type {
 } from './browser-command-contracts.ts';
 import {
     createRtcConnectReadinessAbortScope,
-    decodeRtcConnectReadinessAbortReason,
     raceWithRtcConnectReadinessAbort,
+    toParentAbortError,
     waitForRtcConnectReadinessPoll,
     type RtcConnectReadinessAbortScope
 } from './rtc-connect-readiness-abort.ts';
+import { waitForRtcRoomConnectReadiness } from './rtc-room-connect-readiness/wait-for-rtc-room-connect-readiness.ts';
 
 type RtcConnectReadinessError = Readonly<{
     name: string;
@@ -43,7 +44,10 @@ export type RtcConnectReadinessResult = Readonly<{
     lastRefreshError?: RtcConnectReadinessError;
 }>;
 
-type RtcConnectReadinessRuntime = Pick<RallarBlackBoxBrowserRallarRuntime, 'health' | 'refreshRoom' | 'waitForRoom'>;
+export type RtcConnectReadinessRuntime = Pick<
+    RallarBlackBoxBrowserRallarRuntime,
+    'health' | 'refreshRoom' | 'waitForRoom'
+>;
 
 export interface WaitForRtcConnectReadinessInput {
     readonly runtime: RtcConnectReadinessRuntime;
@@ -127,10 +131,6 @@ function toReadinessResult(input: ReadinessLoopInput): RtcConnectReadinessResult
             ? { lastRefreshError: input.state.lastRefreshError }
             : {})
     };
-}
-
-function toParentAbortError(parentSignal: AbortSignal | undefined): Error | undefined {
-    return parentSignal?.aborted ? decodeRtcConnectReadinessAbortReason(parentSignal.reason) : undefined;
 }
 
 async function readRtcConnectHealth(
@@ -260,89 +260,4 @@ export async function waitForRtcConnectReadiness(
     finally {
         abortScope.cleanup();
     }
-}
-
-async function waitForRtcRoomConnectReadiness(
-    input: WaitForRtcConnectReadinessInput
-): Promise<RtcConnectReadinessResult> {
-    const { runtime, options, parentSignal } = input;
-    const startedAtEpochMs = Date.now();
-    const deadlineEpochMs = startedAtEpochMs + options.timeoutMs;
-    const abortScope = createRtcConnectReadinessAbortScope(options.timeoutMs, parentSignal);
-    const step = { abortScope, parentSignal };
-    try {
-        const refreshed = await raceRtcRoomReadinessStep(step, () =>
-            runtime.refreshRoom({
-                signal: abortScope.signal,
-                timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
-            }));
-        if (refreshed === undefined) {
-            return toRtcRoomReadinessResult({ options, startedAtEpochMs, roomRefreshSuccesses: 0 });
-        }
-        const waited = await raceRtcRoomReadinessStep(step, () =>
-            runtime.waitForRoom({
-                connect: true,
-                minReadyPeers: options.minReadyPeers,
-                signal: abortScope.signal,
-                timeoutMs: Math.max(0, deadlineEpochMs - Date.now())
-            }));
-        return toRtcRoomReadinessResult({
-            options,
-            startedAtEpochMs,
-            roomRefreshSuccesses: 1,
-            ...(waited === undefined ? {} : { room: waited.value })
-        });
-    }
-    finally {
-        abortScope.cleanup();
-    }
-}
-
-interface RtcRoomReadinessStep {
-    readonly abortScope: RtcConnectReadinessAbortScope;
-    readonly parentSignal: AbortSignal | undefined;
-}
-
-/** Resolves undefined when the readiness budget ran out; a parent abort or a real failure rejects. */
-async function raceRtcRoomReadinessStep<T>(
-    step: RtcRoomReadinessStep,
-    operation: () => Promise<T>
-): Promise<{ readonly value: T; } | undefined> {
-    try {
-        return { value: await raceWithRtcConnectReadinessAbort(operation(), step.abortScope.signal) };
-    }
-    catch (error) {
-        if (step.abortScope.timedOut()) {
-            return undefined;
-        }
-        throw toParentAbortError(step.parentSignal) ?? error;
-    }
-}
-
-interface RtcRoomReadinessResultInput {
-    readonly options: RtcConnectReadinessOptions;
-    readonly startedAtEpochMs: number;
-    readonly roomRefreshSuccesses: number;
-    readonly room?: RallarRoomTransportStatus;
-}
-
-function toRtcRoomReadinessResult(
-    input: RtcRoomReadinessResultInput
-): RtcConnectReadinessResult {
-    const readyPeerIds = input.room?.rtc.readyPeerIds ?? [];
-    return {
-        ready: input.room !== undefined &&
-            input.room.rtc.acceptedLayoutIdentity !== undefined &&
-            (input.room.rtc.state === 'open' || input.room.rtc.state === 'partial') &&
-            readyPeerIds.length >= input.options.minReadyPeers,
-        minReadyPeers: input.options.minReadyPeers,
-        timeoutMs: input.options.timeoutMs,
-        intervalMs: input.options.intervalMs,
-        waitedMs: Math.max(0, Date.now() - input.startedAtEpochMs),
-        readyPeerIds,
-        roomRefreshAttempts: 1,
-        roomRefreshSuccesses: input.roomRefreshSuccesses,
-        roomRefreshRetryableFailures: 0,
-        ...(input.room === undefined ? {} : { room: input.room })
-    };
 }

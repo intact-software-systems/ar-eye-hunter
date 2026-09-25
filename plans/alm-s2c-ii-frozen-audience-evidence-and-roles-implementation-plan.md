@@ -47,6 +47,55 @@ list, maintainer-reviewed landing), plus:
 - The three-agent run and manifest exist only for scenarios that declare three roles; two-agent
   scenarios keep the exactly-one-sender-one-receiver identity rule (D45).
 
+### Carried from S2c-i
+
+Recorded by S2c-i's execution (its plan's "Rulings during execution", R-S2c-i-1..4); each is S2c-ii's
+to settle or to route to the maintainer:
+
+- **A multi-level relay loses its deeper recipients.** A relay's pending row completes on its last
+  child's first ACK, so recipients below a child relay are lost. The S2c-ii RED must include a relay
+  that is itself a recipient (M7 emits the relay itself at index 0).
+- **The overlay manager's receipt mode.** `mode: effective.ack.algo` over next-hop `expectedPeerIds` is
+  correct only while RTC refuses `receiver`; Task 1's frozen audience must change the pair together.
+- **The outbox-planner audience change and the D38 durable-row receipt** (R-S2c-i-3): S2c-i aggregates
+  in memory per instance only; the durable receipt row moves here, where the frozen audience rides the
+  targets (D24).
+- **Ordering on relayed broadcasts** (maintainer design question): whether the WS server should gate
+  ordering on broadcasts it only relays. Today it keeps its own ordering track and NACKs the sender
+  (R-S2c-i-4).
+- **An admitted `resync-required` NACK does nothing at the sender.** No outbound code acts on it, so a
+  handle stays admitted for a message the relay dropped — a receipt-contract gap.
+- **The refused-then-retried rtc leg leaves no evidence row.** It needs a non-terminal evidence
+  settlement.
+- **The RTC breaker counts `refused/unsupported` as failure.**
+- **The receipt admission is invisible in diagnostics.** The origin's receipt admission emits no
+  `control-admission` event, so a refused receipt leaves no trace. Emit it from
+  `ALOutboundReceiptAdmission`: give it the `diagnostics` sink, and have `acceptReceipt` take the
+  control message so the event carries the control's own `msgId`, with `targetMsgId` = the receipt's
+  `msgId`. Then update `runtime-diagnostic-contract.md`.
+- **Whether a slice aggregates WS unicasts** (a scope question), so that `receiver` on a WS unicast can
+  stop being refused `unsupported` (D42, S2c-i Task 4).
+- **Outbox-fanned `receiver` messages keep retransmitting after `complete`** (final review m2; pre-existing on
+  8d98a7d6f). In the production outbox fan-out mode (`forwardsRoomScopedMessages: false`) the server's own
+  outbound runtime writes a `receiver`-mode pending row and `ack-timeout` work for the room message, but
+  the receivers' ACKs feed the aggregator, never that row, so `b` and `c` keep receiving retransmissions
+  after the origin's receipt reads `complete`. Suppress the dequeue-time pending row for aggregated room
+  messages or let the aggregator feed it, and extend the Task 4 pin ("answers an outbox-fanned receiver
+  message with one complete row") to advance past the ack timeout.
+- **Receipt redelivery to a reconnecting origin in a cluster** (final review m3). The receipt row's
+  deadline + grace expiry keeps it deliverable on a single instance (a no-route dequeue retries); with a
+  cluster publisher the dequeue publishes once as `cluster-local-complete`, so an origin disconnected at
+  that moment never gets the receipt. Belongs with the D38 durable receipt.
+- **The aggregate map's next-deadline scan** (final review m1, remainder): the server now caps an
+  aggregate at `WS_QUEUE_BOX_SERVER_RECEIPT_WINDOW_MS`, but `deleteAggregate` still rescans the map for
+  the next deadline whenever an aggregate leaves (O(n) per completing ACK); a sorted deadline index removes it.
+- **Task 2c readiness notes** (informational): the harness's room-wait retry leaves
+  `roomRefreshAttempts`/`roomRefreshSuccesses` at 1 however many retries ran, and the split readiness
+  files import each other's types (a type-only cycle). The product defect behind the retry stays with the
+  maintainer (next item).
+- **The product's dead-RTC-peer reuse on reconnect** (`packages/shared/services/web-rtc-connection-service.ts`
+  ~835 and 878–918; a maintainer task chip).
+
 ---
 
 ## File structure
@@ -173,8 +222,8 @@ handle tests, `packages/tests/shared-test/` observe-result decoder tests, the pu
 
 **Interfaces:**
 
-- Produces on the `acknowledgement` settlement (`al-delivery-lifecycle.ts:114-122`):
-  `readonly mode: 'hop' | 'subtree' | 'receiver'`, `readonly expectedRecipientPeerIds`,
+- Consumes the `acknowledgement` settlement's `readonly mode: 'hop' | 'subtree' | 'receiver'` (added by
+  S2c-i Task 3) and produces on it (`al-delivery-lifecycle.ts:114-122`) `readonly expectedRecipientPeerIds`,
   `readonly confirmedRecipientPeerIds`, `readonly unconfirmedRecipientPeerIds` (all required; under
   `hop`/`subtree` the recipient lists equal the hop lists) beside `confirmedHopPeerIds`/`unconfirmedHopPeerIds`;
   `ALDeliveryEvidence` carries them; `toAcknowledgementLifecycle` reads `acknowledged` from logical
