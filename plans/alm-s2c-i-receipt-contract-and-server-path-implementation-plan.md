@@ -265,6 +265,42 @@ git commit -m "feat(alm): receiver is a logical ack algorithm; an unsupported ac
 
 ---
 
+### Task 2b: The recipes and the server publication ask for the algorithm they mean (rulings, 2026-09-25)
+
+**Why.** Task 2 made `receiver` a real algorithm and refuses it on the rtc carrier until S2c-ii, so the
+rtc and fallback conformance recipes that request `ack: 'receiver'` now stop at the refusal, and the
+server AI publication's `receiver` on `world`/`all` results is refused too. No request name maps to
+hop (`ALAckMode` has none; hop is the product's `qos.ack.algo` override, which `messages.send` lacks).
+Pulled forward from Task 6 so the lane stays honest through Tasks 3–5.
+
+**Files:**
+
+- Modify: `packages/shared-test/rallar-bb-test/rallar-black-box-test-contracts.ts` (`messages.send`
+  gains `qos?: { ack: { algo: 'hop' | 'subtree' | 'receiver' | 'none' } }` — optional because absence
+  means the product's own normalization), the schema, the control validator, the page decoder
+  (`decode-black-box-rallar-message-send-input.ts`), `BlackBoxRallarMessageSendInput`, the ledger's
+  `toTypedSendOptions`, the capability text and the schema doc; refused on a replay (S2b's rule)
+- Modify: `packages/shared-test/rallar-bb-test/conformance/alm/create-alm-conformance-recipes.ts`
+  (every rtc / rtc-with-ws-fallback send that asserts hop receipts requests `ack: 'receiver'` plus
+  `qos.ack.algo: 'hop'`; ws sends keep `receiver`), the regenerated Hetzner manifests,
+  `packages/tests/rallar-black-box/rtc-authority-recovery.test.ts` (the `ack: 'none'` specimen
+  rewrite Task 2 added goes)
+- Modify: `packages/shared-server/rallar-ai/rallar-server-ai-result-publication.ts` (`ack: 'receiver'`
+  for room-scoped results, `ack: 'none'` for `world`/`all` — the decision at the call site) and its
+  tests; the router outbox test Task 2 moved to `none` stays as it is
+- Test: `packages/tests/shared-test/alm-conformance-recipes.test.ts`, the validator/decoder tests,
+  `packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts`,
+  `packages/tests/shared-server/rallar-ai/*publication*.test.ts`
+
+- [ ] **Step 1: RED** — the generator test expects the rtc lifecycle sender's submission send to
+      carry `qos.ack.algo: 'hop'`; the validator accepts `qos.ack.algo: 'hop'` and refuses it on a
+      replay; the AI publication test expects `none` for a `world` result and `receiver` for a room
+      result.
+- [ ] **Step 2: Implement; Step 3: GREEN** — the generator, validator, decoder and publication
+      tests; the smoke ALM lane 3/3 with every cell green (rtc/fallback hop receipts as before Task 2);
+      `npm run test:deno` (the server publication); `npm run -s test:repo-governance`.
+- [ ] **Step 4: Commit and push.** `test(alm): recipes and the server publication request the ack algorithm they mean`.
+
 ### Task 3: Receipt keys name the logical recipient; the pending snapshot and the settlement follow
 
 **Files:**
@@ -486,6 +522,15 @@ git commit -m "feat(alm): client-assigned seq and orderingKey on WS sends; order
 ---
 
 ## Rulings during execution
+
+- **R-S2c-i-1 (Task 2b added, 2026-09-25).** Task 2's refusal of `receiver` on the rtc carrier left
+  the rtc/fallback recipes red and the server AI publication refused on `world`/`all`; no request
+  name maps to hop. Controller ruling: the harness exposes the product's `qos.ack` override as
+  `messages.send.qos`, the recipes request the algorithm they mean, the publication decides its
+  algorithm by scope at the call site (no downgrade inside ALM, D42). Task 6 keeps only the ws
+  receipt pins.
+  - **Changed in the plan:** Task 2b inserted after Task 2; Task 6 Step 3's rtc/fallback recipe move is
+    done here.
 
 (Empty at planning time; the executor records R-S2c-i-n here.)
 
