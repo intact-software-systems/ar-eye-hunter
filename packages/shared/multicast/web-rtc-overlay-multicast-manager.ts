@@ -71,13 +71,13 @@ import type {
     RtcDataChannelSendOptions,
     RtcDataChannelSendResult
 } from '../webrtc/qrtc-data-channel.ts';
+import { isRtcEnqueueBreakerSuccess } from './is-rtc-enqueue-breaker-success.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
     WebRtcOverlayMulticaster,
     WebRtcOverlayMulticasterFactory
 } from './overlay-multicast-contracts.ts';
-import { isRtcEnqueueBreakerSuccess } from './rtc-enqueue-breaker-outcome.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
 import {
