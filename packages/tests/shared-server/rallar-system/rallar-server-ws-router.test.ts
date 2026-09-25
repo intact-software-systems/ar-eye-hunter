@@ -12,6 +12,7 @@ import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-s
 import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { AL_CONTROL_RECEIPT_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import type { ALReceiptPayload } from '@shared/al-contracts/al-control.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { createDefaultInMemoryALOutboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
 import type { ALDeliveryAdmissionVerdict } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
@@ -648,9 +649,7 @@ describe('RallarServerWsRouter', () => {
     });
 
     it('sends only to the connected part of the admitted audience and keeps the disconnected one expected', async () => {
-        const fixture = createAudienceRouter(['peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2', 'peer-3'], () => {
-            fixture.sockets['peer-3']!.readyState = WebSocket.CLOSED;
-        });
+        const fixture = createAudienceRouter(['peer-1', 'peer-2', 'peer-3'], ['peer-1', 'peer-2', 'peer-3'], ['peer-3']);
         const message = createReceiverRoomBroadcast('disconnected-after-admission');
 
         await fixture.sockets['peer-1']!.receive(message);
@@ -1068,12 +1067,13 @@ interface AudienceRouterFixture {
 
 /**
  * One connection per session, named by its session id. Admission authorizes `admittedSessionIds`; every
- * later authorization, which the route makes at dispatch, sees `currentSessionIds` after `onDispatch` ran.
+ * later authorization, which the route makes at dispatch, sees `currentSessionIds`, and by then the
+ * sockets of `disconnectedSessionIds` have closed.
  */
 function createAudienceRouter(
     admittedSessionIds: readonly string[],
     currentSessionIds: readonly string[],
-    onDispatch: () => void = () => undefined
+    disconnectedSessionIds: readonly string[] = []
 ): AudienceRouterFixture {
     const server = new JsonWebSocketServer();
     const sockets = Object.fromEntries(['peer-1', 'peer-2', 'peer-3'].map((sessionId) => [sessionId, new RouterIngressWebSocket()]));
@@ -1097,7 +1097,9 @@ function createAudienceRouter(
         authorizeRoomMessage: ({ message }) => {
             authorizations += 1;
             if (authorizations === 2) {
-                onDispatch();
+                for (const sessionId of disconnectedSessionIds) {
+                    sockets[sessionId]!.readyState = WebSocket.CLOSED;
+                }
             }
             const sessionIds = authorizations === 1 ? admittedSessionIds : currentSessionIds;
             return message.targets === undefined ? false : {
@@ -1129,10 +1131,11 @@ function readChatRecipients(fixture: AudienceRouterFixture): readonly string[] {
         .map(([sessionId]) => sessionId);
 }
 
-function readReceipts(socket: RouterIngressWebSocket): readonly unknown[] {
-    return socket.sent
-        .filter((sent) => sent.payload.typeId === AL_CONTROL_RECEIPT_TYPE_ID)
-        .map((sent) => JSON.parse(sent.payload.resource));
+function readReceipts(socket: RouterIngressWebSocket): readonly ALReceiptPayload[] {
+    return socket.sent.flatMap((sent) => {
+        const control = parseALControlMessage(sent);
+        return control?.type === 'receipt' ? [control.payload] : [];
+    });
 }
 
 class RouterIngressWebSocket extends EventTarget implements WebSocket {

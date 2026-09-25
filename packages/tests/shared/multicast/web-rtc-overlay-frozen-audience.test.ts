@@ -131,8 +131,8 @@ function frozenTargets(recipientPeerIds: readonly string[], snapshotVersion: num
     return { mode: 'multicast', groupRef: ROOM, recipientPeerIds, snapshotVersion };
 }
 
-function sentTargets(captured: CapturedChannel): readonly unknown[] {
-    return captured.sent.map((message) => JSON.parse(JSON.stringify(message.targets)));
+function sentTargets(captured: CapturedChannel): readonly (ALTargets | undefined)[] {
+    return captured.sent.map((message) => message.targets);
 }
 
 function createFixture(): FrozenAudienceFixture {

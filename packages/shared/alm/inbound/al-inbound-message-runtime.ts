@@ -61,7 +61,7 @@ export namespace ALInboundMessageRuntime {
         | {
             readonly kind: 'rtc-peer';
             readonly peerId: string;
-            /** A room multicast copy's frozen audience and its snapshot version, both or neither. */
+            /** The frozen audience of a room multicast copy and its snapshot version, both or neither. */
             readonly groupRecipientPeerIds?: readonly string[];
             readonly snapshotVersion?: number;
         }
