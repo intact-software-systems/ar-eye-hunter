@@ -16,6 +16,7 @@ import {
     type ALQosEffectivePolicy,
     type ALQosInputProvider
 } from '../al-contracts/al-policy.ts';
+import { toALReceiverAckNormalizationInput } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -24,6 +25,7 @@ import type { ALInboundRuntimeStores } from '../alm/inbound/al-inbound-message-r
 import { ALInboundMessageRuntime } from '../alm/inbound/al-inbound-message-runtime.ts';
 import type { ALInboundRuntimeDiagnosticsSink } from '../alm/inbound/al-inbound-runtime-diagnostics.ts';
 import { createDefaultALInboundRuntimeResources } from '../alm/inbound/create-default-al-inbound-message-runtime.ts';
+import { computeALOutboundAckRefusal } from '../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import type { ALOutboundCancelOutcome } from '../alm/outbound/al-outbound-message-runtime.ts';
 import type {
     ALOutboundRuntimeDiagnosticsSink,
@@ -247,7 +249,7 @@ export class WsQueueBoxClientService {
 
     private planOutgoingMessage(msg: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
         const socketOpen = this.isSocketOpen();
-        const normalizationInput = resolveALQosNormalizationInput(
+        const normalizationInput = toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
             msg,
             {
                 direction: 'outbound',
@@ -255,10 +257,10 @@ export class WsQueueBoxClientService {
                 connectedPeerIds: socketOpen ? [this.sessionId] : []
             },
             this.dependencies.qosProvider
-        );
+        ));
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const message = toALOutboundMessage(msg, normalized.effective);
-        return {
+        const planned: ALOutboundDispatchPlan<ALOutboundTransportMessage> = {
             msg: message,
             dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
@@ -272,6 +274,12 @@ export class WsQueueBoxClientService {
             },
             supersedenceTracking: this.toSupersedenceTrackingPlan(normalized.effective, msg)
         };
+        return computeALOutboundAckRefusal<ALOutboundTransportMessage>({
+            msg: message,
+            carrier: 'ws',
+            policy: normalized
+        })
+            .fold((refusal) => refusal, () => planned);
     }
 
     private planIncomingMessage(

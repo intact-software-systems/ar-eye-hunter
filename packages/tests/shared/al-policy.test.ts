@@ -228,7 +228,7 @@ describe('AL QoS policy', () => {
         expect(result.unmetRequirements).toEqual([]);
     });
 
-    it('plans multicast delivery, forwarding and deferred subtree ack', () => {
+    it('plans multicast delivery, forwarding and a deferred logical receiver ack', () => {
         const msg = {
             ...newALMulticastMessage(
                 'sender-2',
@@ -289,10 +289,20 @@ describe('AL QoS policy', () => {
         expect(plan.forwarding.nextHopPeerIds).toEqual(['peer-2']);
         expect(plan.forwarding.persist).toBe(true);
         expect(plan.ack.enabled).toBe(true);
-        expect(plan.ack.algo).toBe('subtree');
+        expect(plan.ack.algo).toBe('receiver');
         expect(plan.ack.toPeerId).toBe('peer-1');
         expect(plan.ack.deferred).toBe(true);
         expect(plan.repair.enabled).toBe(false);
+
+        // A leaf has no downstream recipient to wait for, so its receiver ack is immediate.
+        const leaf = planALMessageHandling(msg, {
+            nowMs: 0,
+            selfPeerId: 'self',
+            fromPeerId: 'peer-1',
+            groupMemberPeerIds: ['self', 'peer-1']
+        });
+        expect(leaf.forwarding.enabled).toBe(false);
+        expect(leaf.ack).toMatchObject({ enabled: true, algo: 'receiver', deferred: false });
     });
 
     it('drops duplicate messages before delivery or forwarding', () => {

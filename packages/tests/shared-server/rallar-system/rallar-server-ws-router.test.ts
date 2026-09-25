@@ -305,7 +305,7 @@ describe('RallarServerWsRouter', () => {
             { title: 'Durable fanout', done: false },
             {
                 reliability: 'at-least-once',
-                ack: 'receiver'
+                ack: 'none'
             }
         );
 
@@ -316,7 +316,7 @@ describe('RallarServerWsRouter', () => {
             route: message.route,
             targets: { mode: 'broadcast', scope: 'all' },
             payload: message.payload,
-            delivery: { reliability: 'at-least-once', ack: 'receiver' },
+            delivery: { reliability: 'at-least-once', ack: 'none' },
             constraints: { expiresAtMs: message.id.ts + 30_000 }
         });
         expect(message.constraints).toBeUndefined();

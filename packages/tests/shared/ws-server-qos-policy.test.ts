@@ -173,6 +173,46 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(providerEvaluationCount).toBe(1);
     });
 
+    it('refuses a server receiver ack on world targets as unsupported and keeps it on a room broadcast', async () => {
+        const socket = createRecordingWsServer();
+        const outbox = new shared.InMemoryQueueBox(new Map());
+        const outboundStores = createObservedOutboundStores(outbox);
+        const service = shared.createDefaultWsQueueBoxServerService({
+            outbox,
+            outboundStores,
+            socket: socket,
+            name: 'server-1',
+            targetResolver: createTargetResolver()
+        });
+        onTestFinished(() => service.dispose());
+        const route = { topicId: 'chat', resourceId: 'msg-world-receiver', contextId: 'world' };
+        const delivery = { reliability: 'at-least-once', ack: 'receiver' } as const;
+
+        const world = await service.enqueueOutboxIfAbsent(
+            shared.newALBroadcastMessage('server-1', route, 'world', 'chat.message.v1', { text: 'everyone' }, delivery)
+        );
+
+        expect(world.verdict).toEqual({
+            kind: 'refused',
+            reason: 'unsupported',
+            detail: 'ack receiver is unsupported for ws world targets'
+        });
+        expect(socket.sent).toEqual([]);
+        expect(await outbox.getAllKeys()).toEqual([]);
+
+        const roomBroadcast = shared.newALBroadcastMessage(
+            'server-1',
+            { ...route, resourceId: 'msg-room-receiver', contextId: 'room-1' },
+            'room',
+            'chat.message.v1',
+            { text: 'room' },
+            { ...delivery, groupRef: groupRef('room-1') }
+        );
+        const room = await service.enqueueOutboxIfAbsent(roomBroadcast);
+
+        expect(room.verdict).toMatchObject({ kind: 'admitted' });
+    });
+
     it('reports partial live-send failures with recipient and failure counts', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {

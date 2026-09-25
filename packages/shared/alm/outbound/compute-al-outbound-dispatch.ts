@@ -233,7 +233,8 @@ function toALOutboundAdmissionVerdict(
     const detail = plan.dropReason ?? '';
     switch (plan.dropReasonCode) {
         case 'unauthorized':
-            return { kind: 'refused', reason: 'unauthorized', detail };
+        case 'unsupported':
+            return { kind: 'refused', reason: plan.dropReasonCode, detail };
         case 'not-yet-in-sync':
             return { kind: 'deferred', reason: 'not-yet-in-sync', detail };
         case 'no-route':

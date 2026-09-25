@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/browser/rallar-browser-runtime/messaging/compute-alm-conformance-qos-defaults.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
+import {
+    toALReceiverAckNormalizationInput,
+    validateALAckSupport
+} from '@shared/al-contracts/validate-al-ack-support.ts';
+import type { ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 
 const room = { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' };
 const specimen = newALMulticastMessage('sender', { topicId: 'room.lifecycle', contextId: 'room', resourceId: 'old' }, room, 'alm.lifecycle', {
@@ -44,4 +49,39 @@ describe('black-box conformance QoS policy', () => {
             expect(selected.effective.supersedence.algo).toBe('none');
         }
     });
+    // S2c-ii flips the rtc rows once the overlay declares receiver. Until then the rtc legs are refused, and a
+    // refusal is not unroutable, so the fallback send stops at its rtc leg without reaching ws.
+    it.each(
+        [
+            { carrier: 'ws', legs: [{ carrier: 'ws', refusal: undefined }] },
+            { carrier: 'rtc', legs: [{ carrier: 'rtc', refusal: 'ack receiver is unsupported for rtc multicast targets' }] },
+            {
+                carrier: 'rtc-with-ws-fallback',
+                legs: [
+                    { carrier: 'rtc', refusal: 'ack receiver is unsupported for rtc multicast targets' },
+                    { carrier: 'ws', refusal: undefined }
+                ]
+            }
+        ] as const
+    )('keeps receiver on the $carrier room send and refuses only the legs that cannot track it', ({ legs }) => {
+        const message = { ...specimen, delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
+        for (const leg of legs) {
+            const normalized = normalizeALQosPolicy(message, toCarrierNormalizationInput(message, leg.carrier));
+            expect(normalized.effective.ack.algo).toBe('receiver');
+            expect(
+                validateALAckSupport({
+                    algo: normalized.effective.ack.algo,
+                    carrier: leg.carrier,
+                    targets: message.targets,
+                    capabilities: normalized.capabilities
+                }).map((issue) => issue.detail)
+            ).toEqual(leg.refusal === undefined ? [] : [leg.refusal]);
+        }
+    });
 });
+
+/** The ws carrier's own receipt tracking declares receiver; the rtc overlay does not until S2c-ii. */
+function toCarrierNormalizationInput(message: ALMessage, carrier: ALDeliveryCarrier) {
+    const input = resolveALQosNormalizationInput(message, { direction: 'outbound' }, provider);
+    return carrier === 'ws' ? toALReceiverAckNormalizationInput(input) : input;
+}

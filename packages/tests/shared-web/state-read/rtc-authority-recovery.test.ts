@@ -336,7 +336,13 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 room,
                 'lifecycle.message',
                 { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'old' },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 1 }
+                {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'receiver',
+                    seq: scenario === 'unsequenced-latest' ? undefined : 1,
+                    qos: { ack: { algo: 'hop' } }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(old)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);
@@ -347,7 +353,13 @@ describe('latest-wins receiver delivery and independent ordering', () => {
                 room,
                 'lifecycle.message',
                 { marker: 'delivery-lifecycle', specimen: 'supersedence', revision: 'replacement' },
-                { ttlMs: 30_000, reliability: 'at-least-once', ack: 'receiver', seq: scenario === 'unsequenced-latest' ? undefined : 2 }
+                {
+                    ttlMs: 30_000,
+                    reliability: 'at-least-once',
+                    ack: 'receiver',
+                    seq: scenario === 'unsequenced-latest' ? undefined : 2,
+                    qos: { ack: { algo: 'hop' } }
+                }
             );
             expect(await sender.multicast.enqueueIfAbsent(replacement)).toMatchObject({ verdict: { kind: 'admitted' } });
             await vi.advanceTimersByTimeAsync(100);
@@ -487,12 +499,17 @@ it('delivers the canonical generated supersedence specimen through the page deco
         command.payload.specimen === 'supersedence'
     );
     expect(sends).toHaveLength(2);
-    // The generated type is part of the selected fault; no sequence or delivery option is rewritten.
+    // The generated type is part of the selected fault; no sequence option is rewritten. The generated rtc sends
+    // request `receiver`, which rtc refuses until the overlay tracks logical receipts, and supersedence does not
+    // depend on the ack, so these specimens go out unacknowledged.
     expect(sends.map((command) => command.typeId)).toEqual(['generated.rtc.delivery-lifecycle', 'generated.rtc.delivery-lifecycle']);
-    const old = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[0])));
+    expect(sends.map((command) => command.ack)).toEqual(['receiver', 'receiver']);
+    const old = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput({ ...sends[0], ack: 'none' })));
     await vi.advanceTimersByTimeAsync(100);
     expect(sender.messages()).toEqual([]);
-    const replacement = await ledger.sendMessage(requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput(sends[1])));
+    const replacement = await ledger.sendMessage(
+        requireBlackBoxRallarInput(decodeBlackBoxRallarMessageSendInput({ ...sends[1], ack: 'none' }))
+    );
     await vi.advanceTimersByTimeAsync(100);
     expect(await ledger.readReceipts({ connection: 'sender', handleId: old.handleId })).toMatchObject({ state: 'superseded', submitted: false });
     expect(sender.messages()).toEqual([]);

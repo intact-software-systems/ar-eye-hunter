@@ -186,14 +186,14 @@ describe('browser RTC runtime composition', () => {
         const oldMessage = newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId: 'old', contextId: 'group-1' }, group.group, 'alm.lifecycle', {
             marker: 'delivery-lifecycle',
             specimen: 'supersedence'
-        }, { ack: 'receiver', reliability: 'at-least-once', seq: 1 });
+        }, { ack: 'receiver', reliability: 'at-least-once', seq: 1, qos: { ack: { algo: 'hop' } } });
         const replacement = newALMulticastMessage(
             'self',
             { topicId: 'room.lifecycle', resourceId: 'new', contextId: 'group-1' },
             group.group,
             'alm.lifecycle',
             { marker: 'delivery-lifecycle', specimen: 'supersedence' },
-            { ack: 'receiver', reliability: 'at-least-once', seq: 2 }
+            { ack: 'receiver', reliability: 'at-least-once', seq: 2, qos: { ack: { algo: 'hop' } } }
         );
         const handle = registry.open(oldMessage, 'rtc');
         await manager.enqueueIfAbsent(oldMessage);

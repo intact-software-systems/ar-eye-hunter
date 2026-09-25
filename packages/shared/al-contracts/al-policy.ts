@@ -25,7 +25,7 @@ export type ALForwardingAlgo = 'target';
 
 export type ALRepairAlgo = 'none' | 'retransmit';
 
-export type ALAckAlgo = 'none' | 'hop' | 'subtree';
+export type ALAckAlgo = 'none' | 'hop' | 'subtree' | 'receiver';
 
 export type ALExpiryAlgo = 'ttl-only' | 'expires-at' | 'fresh-until';
 
@@ -193,6 +193,8 @@ export interface ALQosInputProvider {
 export interface ALQosNormalizationResult {
     readonly requested: ALQosPolicyRequest;
     readonly effective: ALQosEffectivePolicy;
+    /** The capability set the policy was normalized against; admission judges ack support by it. */
+    readonly capabilities: ALQosCapabilities;
     readonly notes: readonly ALQosNormalizationNote[];
     readonly unmetRequirements: readonly string[];
 }
@@ -530,7 +532,7 @@ function planAck(
         return {
             enabled: false,
             algo: effective.ack.algo,
-            deferred: effective.ack.algo === 'subtree' && delivery.forwarding.enabled
+            deferred: effective.ack.algo !== 'hop' && delivery.forwarding.enabled
         };
     }
 
@@ -538,7 +540,7 @@ function planAck(
         enabled: delivery.localDelivery.enabled || delivery.forwarding.enabled,
         algo: effective.ack.algo,
         toPeerId: context.fromPeerId,
-        deferred: effective.ack.algo === 'subtree' && delivery.forwarding.enabled
+        deferred: effective.ack.algo !== 'hop' && delivery.forwarding.enabled
     };
 }
 

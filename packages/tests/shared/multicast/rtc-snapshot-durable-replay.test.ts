@@ -382,7 +382,11 @@ function createMessage(input: ReplayMessageInput): ALMessage {
             minSnapshotVersion: input.versioned ? 5 : undefined,
             ack: input.acknowledge ? 'receiver' : 'none',
             reliability: 'at-least-once',
-            qos: { durability: { algo: input.persist ? 'local-inbox' : 'volatile' }, congestion: { algo: 'reject' } }
+            qos: {
+                ack: { algo: 'hop' },
+                durability: { algo: input.persist ? 'local-inbox' : 'volatile' },
+                congestion: { algo: 'reject' }
+            }
         }
     );
 }

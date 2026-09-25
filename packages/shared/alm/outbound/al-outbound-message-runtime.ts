@@ -107,9 +107,10 @@ export interface ALOutboundRepairRequest {
     readonly missingSeqs: readonly number[];
 }
 
-/** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'planner-drop'` covers a drop that fits no other code. */
+/** Why a planner dropped the message. `rtc-room-snapshot-admission.ts` sets its two shared values from `ALMessageDropReasonCode`; `'unsupported'` is an ack/carrier/target pair the carrier cannot track (D42); `'planner-drop'` covers a drop that fits no other code. */
 export type ALOutboundDropReasonCode =
     | 'unauthorized'
+    | 'unsupported'
     | 'not-yet-in-sync'
     | 'no-route'
     | 'superseded'

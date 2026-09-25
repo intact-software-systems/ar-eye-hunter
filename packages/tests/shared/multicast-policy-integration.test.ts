@@ -349,7 +349,7 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'all-logical-recipients'
+                ack: 'group-leader'
             }
         );
 
@@ -406,7 +406,7 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'all-logical-recipients'
+                ack: 'group-leader'
             }
         );
 
@@ -553,7 +553,7 @@ describe('multicast QoS integration', () => {
             },
             {
                 reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
+                ack: 'group-leader',
                 qos: {
                     durability: {
                         algo: 'volatile'

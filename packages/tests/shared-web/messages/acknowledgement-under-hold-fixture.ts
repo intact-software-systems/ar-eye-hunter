@@ -209,14 +209,14 @@ export async function openRtcHoldSender(): Promise<HoldSender> {
     };
 }
 
-/** The lane's scenario message: a room multicast of the held typeId, acknowledged by `receiver`, in sequence. */
+/** The lane's scenario message: a room multicast of the held typeId, hop-acknowledged by `receiver`, in sequence. */
 function createRtcLifecycleMessages(groupRef: GroupSnapshot['group']): (resourceId: string, ttlMs: number) => ALMessage {
     let seq = 0;
     return (resourceId, ttlMs) => {
         seq += 1;
         return newALMulticastMessage('self', { topicId: 'room.lifecycle', resourceId, contextId: 'group-1' }, groupRef, 'alm.lifecycle', {
             specimen: resourceId
-        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs });
+        }, { ack: 'receiver', reliability: 'at-least-once', seq, ttlMs, qos: { ack: { algo: 'hop' } } });
     };
 }
 

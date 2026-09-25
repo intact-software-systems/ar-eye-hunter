@@ -1,4 +1,5 @@
 import { Either } from '@shared/resilience/Either.ts';
+import { computeALOutboundAckRefusal } from '../../alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 import {
     toALOutboundTransportMessage,
     type ALOutboundTransportMessage
@@ -13,6 +14,7 @@ import {
     shouldPersistOutbox,
     type ALQosInputProvider
 } from '../../al-contracts/al-policy.ts';
+import { toALReceiverAckNormalizationInput } from '../../al-contracts/validate-al-ack-support.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPlan,
@@ -74,6 +76,14 @@ export class WsQueueBoxServerOutboundPlanning {
         const normalized = this.normalizePolicy(original);
         const message = toALOutboundMessage(original, normalized.effective);
         const persist = shouldPersistOutbox(normalized.effective);
+        const refusal = computeALOutboundAckRefusal<WsQueueBoxServerPreparedMessage>({
+            msg: message,
+            carrier: 'ws',
+            policy: normalized
+        });
+        if (refusal.left) {
+            return refusal.left;
+        }
 
         return this.validateMessage(message, {
             resolveRecipients: phase === 'dequeue' || !persist,
@@ -175,11 +185,11 @@ export class WsQueueBoxServerOutboundPlanning {
     private normalizePolicy(message: ALMessage): ReturnType<typeof normalizeALQosPolicy> {
         return normalizeALQosPolicy(
             message,
-            resolveALQosNormalizationInput(
+            toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(
                 message,
                 { direction: 'outbound', selfPeerId: this.#serverPeerId },
                 this.#qosProvider
-            )
+            ))
         );
     }
 }
