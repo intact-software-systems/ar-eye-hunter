@@ -195,9 +195,38 @@ class NativeSessionDescription implements RTCSessionDescription {
     }
 }
 
+class NativeIceTransport extends EventTarget implements RTCIceTransport {
+    readonly gatheringState: RTCIceGathererState = 'complete';
+    ongatheringstatechange: RTCIceTransport['ongatheringstatechange'] = null;
+    onselectedcandidatepairchange: RTCIceTransport['onselectedcandidatepairchange'] = null;
+    onstatechange: RTCIceTransport['onstatechange'] = null;
+    readonly state: RTCIceTransportState = 'connected';
+    getSelectedCandidatePair(): RTCIceCandidatePair | null {
+        return null;
+    }
+}
+
+class NativeDtlsTransport extends EventTarget implements RTCDtlsTransport {
+    readonly iceTransport = new NativeIceTransport();
+    onerror: RTCDtlsTransport['onerror'] = null;
+    onstatechange: RTCDtlsTransport['onstatechange'] = null;
+    state: RTCDtlsTransportState = 'connected';
+    getRemoteCertificates(): ArrayBuffer[] {
+        return [];
+    }
+}
+
+class NativeSctpTransport extends EventTarget implements RTCSctpTransport {
+    readonly maxChannels = null;
+    readonly maxMessageSize = 262_144;
+    onstatechange: RTCSctpTransport['onstatechange'] = null;
+    state: RTCSctpTransportState = 'connected';
+    readonly transport = new NativeDtlsTransport();
+}
+
 export class SimulatedNativeRtcPeerConnection extends EventTarget implements RTCPeerConnection {
     readonly canTrickleIceCandidates = true;
-    readonly sctp = null;
+    sctp: NativeSctpTransport | null = null;
     readonly pendingLocalDescription = null;
     readonly pendingRemoteDescription = null;
     connectionState: RTCPeerConnectionState = 'new';
@@ -234,7 +263,17 @@ export class SimulatedNativeRtcPeerConnection extends EventTarget implements RTC
 
     setConnected(): void {
         this.connectionState = 'connected';
+        this.sctp = new NativeSctpTransport();
         this.onconnectionstatechange?.call(this, new Event('connectionstatechange'));
+    }
+
+    /** What the remote side closing its peer leaves behind: a connection that still reports connected. */
+    endSctpAssociation(): void {
+        if (!this.sctp) {
+            throw new Error('The SCTP association starts when the connection connects');
+        }
+        this.sctp.transport.state = 'closed';
+        this.sctp.state = 'closed';
     }
 
     createDataChannel(label: string, init?: RTCDataChannelInit): SimulatedNativeRtcDataChannel {
