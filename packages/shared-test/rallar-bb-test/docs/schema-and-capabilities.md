@@ -165,9 +165,11 @@ sender has no cached snapshot for the room.
 product's typed send option `qos`, the caller's QoS request, which the envelope
 carries and which overrides the ack algorithm `ack` implies. Absent, the product
 normalizes the QoS the delivery options imply. The conformance recipes use it on
-every RTC-first send that asks for `ack: 'receiver'`: until the RTC overlay tracks
-logical receipts it refuses `receiver`, so those sends ask for `hop` by name and
-keep reading hop receipts. WS sends keep `receiver`, the logical algorithm.
+every `rtc` or `rtc-with-ws-fallback` recipe send that asks for
+`ack: 'receiver'`, whichever carrier the send starts on: until the RTC overlay
+tracks logical receipts it refuses `receiver`, so those sends ask for `hop` by
+name and keep reading hop receipts. `ws` recipe sends keep `receiver`, the
+logical algorithm.
 
 A replay is the other shape of `messages.send`: it names `replayOnCarrier:
 { handleId, carrier }` (`carrier` is `ws` or `rtc`), optionally `connection`, and

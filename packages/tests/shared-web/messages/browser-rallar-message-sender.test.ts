@@ -1,4 +1,5 @@
 import type * as MiddlewareModule from '@shared-web/browser/connection/initialise-browser-middleware.ts';
+import type { ALQosPolicyRequest } from '@shared-web/browser/rallar-messages.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { AL_DELIVERY_ADMITTED_STATES } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
@@ -278,7 +279,7 @@ describe('Rallar message send', () => {
             typeId: 'chat.message.v1',
             roomRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' }
         });
-        const qos = { ack: { algo: 'hop' } } as const;
+        const qos: ALQosPolicyRequest = { ack: { algo: 'hop' } };
 
         await channel.send({ text: 'rtc hop' }, { strategy: 'rtc', ack: 'receiver', qos });
         await channel.send({ text: 'ws hop' }, { strategy: 'ws', ack: 'receiver', qos });
@@ -290,7 +291,7 @@ describe('Rallar message send', () => {
         expect(rtcDefault.qos).toBeUndefined();
     });
 
-    it('rejects a QoS request the envelope cannot carry before queueing', async () => {
+    it('rejects a QoS request the envelope cannot carry', async () => {
         await expect(
             createFacade().messages.ws.send({
                 scope: 'all',

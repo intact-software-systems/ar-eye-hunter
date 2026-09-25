@@ -190,7 +190,7 @@ describe('alm-conformance recipe family', () => {
         expect(admitted).toMatchObject({ timeoutMs: 3_000 });
     });
 
-    it('asks for hop by name on every RTC-first receiver send, and leaves ws sends on the logical receiver', () => {
+    it('asks for hop by name on every rtc and fallback recipe receiver send, and leaves ws sends on the logical receiver', () => {
         const sendsOf = (carrier: CreateAlmConformanceRecipesInput['carrier']) =>
             toRecipes(createAlmConformanceRecipes(toConformanceInput(carrier))).flatMap((recipe) =>
                 recipe.commands.flatMap((command) => command.kind === 'messages.send' && !('replayOnCarrier' in command) ? [command] : [])

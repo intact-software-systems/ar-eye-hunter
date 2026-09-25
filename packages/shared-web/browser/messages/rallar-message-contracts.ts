@@ -44,7 +44,10 @@ export interface RallarMessageSendBase<T> {
     readonly reliability?: 'best-effort' | 'at-least-once';
     readonly ack?: ALAckMode;
     readonly ownership?: 'shared' | 'exclusive';
-    /** Absent, the product normalizes the QoS the delivery options imply. */
+    /**
+     * Each stated aspect overrides the request the delivery options imply for it (`qos.ack` over `ack`, for
+     * example); absent, the product normalizes the QoS the delivery options imply.
+     */
     readonly qos?: ALQosPolicyRequest;
 }
 

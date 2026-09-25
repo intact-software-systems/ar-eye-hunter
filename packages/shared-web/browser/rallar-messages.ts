@@ -29,6 +29,8 @@ export type {
     RallarWsMessageLane
 } from '@shared-web/browser/messages/rallar-message-operations.ts';
 
+export type { ALAckMode } from '@shared/al-contracts/al-contract.ts';
+export type { ALQosPolicyRequest } from '@shared/al-contracts/al-policy.ts';
 export type {
     ALDeliveryAttempt,
     ALDeliveryEvidence,

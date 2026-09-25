@@ -1121,8 +1121,9 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestMessage
 }
 
 /**
- * The RTC overlay refuses `receiver` until it tracks logical receipts (S2c-ii), so an RTC-first receiver send asks for
- * hop by name and keeps reading hop receipts. A WS send keeps the logical receiver.
+ * The RTC overlay refuses `receiver` until it tracks logical receipts (S2c-ii), so every rtc or rtc-with-ws-fallback
+ * recipe send that asks for receiver asks for hop by name, whichever carrier it starts on, and keeps reading hop
+ * receipts. A ws recipe send keeps the logical receiver.
  */
 function toCarrierAckQos(
     carrier: AlmConformanceCarrier,
