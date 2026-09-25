@@ -1727,6 +1727,36 @@ moved or changed test.
       }
     },
     {
+      "id": "rtc-room-readiness-retries-past-peer-replacement",
+      "domain": "Black-box RTC room connect readiness retry",
+      "owner": "Rallar shared-test maintainers",
+      "summary": "The room-transport connect readiness wait retries the runtime's waitForRoom call when an attempt reports a not-ready room, instead of taking that single result as final while the readiness budget remains.",
+      "semanticCoverage": "packages/tests/shared-test/rtc-connect-readiness.test.ts#retries a room wait that ends on a peer being replaced until a later attempt is ready",
+      "coverageRelation": "The fake runtime resolves the first waitForRoom call with a not-ready room (a peer being replaced) and the second with a ready room; the count is the only witness that a second call was made rather than the first not-ready result being returned as final.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcConnectReadinessRuntime.waitForRoom called by waitForRtcRoomConnectReadiness",
+        "observableEffect": "A not-ready room result that arrives before the readiness deadline produces exactly one further waitForRoom call.",
+        "requiredConstraint": "The room wait must not treat a single not-ready waitForRoom result as final while readiness budget remains; it must call waitForRoom again.",
+        "failureRationale": "The returned result's ready and room fields cannot distinguish 'asked once and got not-ready' from 'asked twice and the second answer was ready'; only the call count witnesses the retry the fix requires, and this is exactly the regression the proven diagnosis reported: the first terminal room result was returned with most of the budget unused."
+      }
+    },
+    {
+      "id": "rtc-room-readiness-stops-retrying-past-deadline",
+      "domain": "Black-box RTC room connect readiness retry budget",
+      "owner": "Rallar shared-test maintainers",
+      "summary": "The room-transport connect readiness wait stops issuing further waitForRoom calls once the readiness deadline has passed between attempts, returning the last not-ready result instead of retrying indefinitely.",
+      "semanticCoverage": "packages/tests/shared-test/rtc-connect-readiness.test.ts#stops retrying once the deadline passes between attempts and returns the last not-ready result",
+      "coverageRelation": "The test advances a mocked clock past the deadline immediately after the second waitForRoom call resolves not-ready; the exact call count of two proves no third call is attempted, and the settledEarly flag proves the wait did not also stop short after only the first call.",
+      "interactionRequirement": {
+        "interactionKind": "count",
+        "ownedPort": "RtcConnectReadinessRuntime.waitForRoom called by waitForRtcRoomConnectReadiness",
+        "observableEffect": "No further waitForRoom call is made once the deadline has passed between attempts.",
+        "requiredConstraint": "The retry loop must check the deadline after each waitForRoom result and return immediately once it has passed, never issuing another call.",
+        "failureRationale": "A not-ready result alone is also produced by a loop that retries forever and is merely cut off by the test's own await; only an exact, bounded call count proves the implementation itself terminates on the deadline rather than being externally interrupted."
+      }
+    },
+    {
       "id": "rtc-signaling-failure-report-not-a-log",
       "domain": "RTC peer signaling failure reporting",
       "owner": "Rallar realtime maintainers",
@@ -7043,6 +7073,28 @@ moved or changed test.
       "owner": "Rallar shared maintainers",
       "rationale": "The single transaction is required independently of the released statuses: a per-entry loop reaches the same end state while giving up the batch's atomicity and its one round trip.",
       "semanticCoverage": "packages/tests/shared-server/al-runtime/postgres/p-sql-admission-work-transactions.test.ts#commits one mixed release batch in one transaction, each entry on its own disposition"
+    },
+    {
+      "id": "test-structure-coupling-0d559bd6949b1fb2",
+      "path": "packages/tests/shared-test/rtc-connect-readiness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-room-readiness-retries-past-peer-replacement",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared-test maintainers",
+      "rationale": "The count is the only witness that a not-ready room result led to a second waitForRoom call instead of being returned as the final result.",
+      "semanticCoverage": "packages/tests/shared-test/rtc-connect-readiness.test.ts#retries a room wait that ends on a peer being replaced until a later attempt is ready"
+    },
+    {
+      "id": "test-structure-coupling-71106ece5511d912",
+      "path": "packages/tests/shared-test/rtc-connect-readiness.test.ts",
+      "kind": "mock-invocation-count-or-order",
+      "contract": "rtc-room-readiness-stops-retrying-past-deadline",
+      "disposition": "durable-boundary",
+      "boundary": "interaction",
+      "owner": "Rallar shared-test maintainers",
+      "rationale": "The exact, bounded count is the only witness that the retry loop itself terminates once the deadline passes between attempts, rather than retrying until the test's own await cuts it off.",
+      "semanticCoverage": "packages/tests/shared-test/rtc-connect-readiness.test.ts#stops retrying once the deadline passes between attempts and returns the last not-ready result"
     }
   ]
 }
