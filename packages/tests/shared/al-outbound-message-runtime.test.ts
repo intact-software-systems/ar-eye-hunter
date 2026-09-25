@@ -723,6 +723,50 @@ describe('ALOutboundMessageRuntime', () => {
         runtime.dispose();
     });
 
+    it('retries a `receiver` receipt toward the logical recipients it has not counted', async () => {
+        vi.useFakeTimers();
+
+        const retried: (readonly string[])[] = [];
+        const runtime = createDefaultOutboundTestRuntime({
+            sendPreparedMessage: async () => ({ status: 'sent' as const, submissionAttempted: true }),
+            planOutgoingMessage: (msg) => ({
+                msg,
+                dropReasonCode: undefined,
+                persist: false,
+                preparedMessages: [{ kind: 'send', msgId: msg.id.msgId }],
+                ackTracking: { enabled: true, timeoutMs: 100, maxAttempts: 1, expectedPeerIds: ['r1', 'r2'], mode: 'receiver' },
+                repairTracking: { enabled: true, algo: 'retransmit', maxAttempts: 1 }
+            }),
+            planRepairMessage: async (msg, request) => {
+                retried.push(request.failedPeerIds);
+                return { msg, dropReasonCode: undefined, persist: false, preparedMessages: [] };
+            }
+        });
+        const msg = createOutboundMessage('msg-receiver-retry');
+        await enqueueOutboundOrThrow(runtime, msg);
+
+        // One relay confirms `r1`; the receipt's retry targets are the logical recipients left.
+        expect(
+            await runtime.acceptControlMessage(newALAckControlMessage(
+                { v: 2, msgId: 'ack-relay-r1', ts: Date.now(), senderId: 'relay' },
+                {
+                    ackedMsgId: msg.id.msgId,
+                    fromPeerId: 'relay',
+                    toPeerId: 'self',
+                    originPeerId: 'self',
+                    logicalRecipientPeerId: 'r1',
+                    carrier: 'ws',
+                    status: 'delivered',
+                    observedAtEpochMs: Date.now()
+                }
+            ))
+        ).toEqual({ kind: 'committed' });
+        await vi.advanceTimersByTimeAsync(102);
+
+        expect(retried).toEqual([['r2']]);
+        runtime.dispose();
+    });
+
     it('stops pending acknowledgement timers when disposed', async () => {
         vi.useFakeTimers();
 

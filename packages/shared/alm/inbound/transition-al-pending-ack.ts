@@ -64,7 +64,7 @@ export function trackALPendingAckSnapshot(
         toPeerId: input.toPeerId,
         status: 'subtree-complete',
         localReady: (input.current?.localReady ?? false) || input.localReady,
-        localRecipient: input.localRecipient,
+        localRecipient: (input.current?.localRecipient ?? false) || input.localRecipient,
         expectedFromPeerIds: [...expectedFromPeerIds],
         ackedFromPeerIds: [...ackedFromPeerIds],
         ...(expireAtTimestamp === undefined ? {} : { expireAtTimestamp }),

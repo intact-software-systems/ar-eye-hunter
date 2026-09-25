@@ -173,8 +173,8 @@ handle tests, `packages/tests/shared-test/` observe-result decoder tests, the pu
 
 **Interfaces:**
 
-- Produces on the `acknowledgement` settlement (`al-delivery-lifecycle.ts:114-122`):
-  `readonly mode: 'hop' | 'subtree' | 'receiver'`, `readonly expectedRecipientPeerIds`,
+- Consumes the `acknowledgement` settlement's `readonly mode: 'hop' | 'subtree' | 'receiver'` (added by
+  S2c-i Task 3) and produces on it (`al-delivery-lifecycle.ts:114-122`) `readonly expectedRecipientPeerIds`,
   `readonly confirmedRecipientPeerIds`, `readonly unconfirmedRecipientPeerIds` (all required; under
   `hop`/`subtree` the recipient lists equal the hop lists) beside `confirmedHopPeerIds`/`unconfirmedHopPeerIds`;
   `ALDeliveryEvidence` carries them; `toAcknowledgementLifecycle` reads `acknowledged` from logical

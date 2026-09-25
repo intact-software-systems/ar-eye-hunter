@@ -171,13 +171,7 @@ function computePendingAckWrite(
             acks: [],
             ack: read.parsed.payload
         });
-        if (!next) {
-            return { kind: 'remove' };
-        }
-        // A peer the receipt already counted: the ACK joins the history and moves no receipt.
-        return next.ackedPeerIds.length === read.pending?.ackedPeerIds.length
-            ? { kind: 'unchanged' }
-            : { kind: 'set', value: next };
+        return next ? { kind: 'set', value: next } : { kind: 'remove' };
     }
     return read.parsed.type === 'nack' && isTerminalNack(read.parsed.payload) && read.pending
         ? { kind: 'remove' }

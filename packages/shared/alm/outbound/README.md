@@ -142,7 +142,8 @@ and types its peer lists: next hops under `hop` and `subtree`, logical recipient
 `receiver`. An ACK confirms the peer that mode names -- its `logicalRecipientPeerId` under
 `receiver`, its sender otherwise, so a hop ACK never stands in for a logical recipient. A control
 is a duplicate only when its sender, logical recipient and status all repeat; an ACK for a peer
-the receipt already counted joins the history and states no settlement. The `acknowledgement`
+the receipt already counted is refused with its own reason, so an ACK that moves no receipt costs
+no write and no version bump. The `acknowledgement`
 settlement carries the `mode`, so `complete` under `receiver` is logical completion.
 
 An RTT heartbeat is not one of these entries.

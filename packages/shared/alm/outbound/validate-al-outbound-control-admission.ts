@@ -1,4 +1,4 @@
-import type { ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../../al-contracts/al-control.ts';
 import type { ALMessageRejection } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { ALOutboundPendingAckSnapshot } from '../al-runtime-state-stores.ts';
 import type { ALStoredOutboundMessage } from './admission/al-outbound-admission-validation.ts';
@@ -41,15 +41,7 @@ export function validateALOutboundControlAdmission(
         if (read.sent.reference.expiresAtMs <= read.nowMs) {
             issues.push({ code: 'unauthorized', message: 'AL acknowledgement arrived after its message deadline' });
         }
-        if (
-            !read.pending || !read.pending.expectedPeerIds.includes(toALOutboundAckedPeerId(read.pending.mode, payload))
-        ) {
-            issues.push({
-                code: 'unauthorized',
-                message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
-            });
-        }
-        return issues;
+        return [...issues, ...validateAcknowledgedReceipt(read.pending, payload)];
     }
     const payload = read.parsed.payload;
     if (!isExpectedRepairPeer(read.sent, read.pending, payload.fromPeerId)) {
@@ -62,6 +54,26 @@ export function validateALOutboundControlAdmission(
         });
     }
     return issues;
+}
+
+/**
+ * An ACK must move its receipt: confirm a peer the receipt expects and has not counted yet. One that
+ * would move nothing is refused rather than committed, so it costs no write and no version bump.
+ */
+function validateAcknowledgedReceipt(
+    pending: ALOutboundPendingAckSnapshot | undefined,
+    ack: ALAckPayload
+): readonly ALMessageRejection[] {
+    const countedPeerId = pending && toALOutboundAckedPeerId(pending.mode, ack);
+    if (!pending || !countedPeerId || !pending.expectedPeerIds.includes(countedPeerId)) {
+        return [{
+            code: 'unauthorized',
+            message: 'AL acknowledgement confirms no peer of the pending outbound receipt'
+        }];
+    }
+    return pending.ackedPeerIds.includes(countedPeerId)
+        ? [{ code: 'unauthorized', message: 'AL acknowledgement confirms a peer the receipt already counted' }]
+        : [];
 }
 
 function isDuplicateControl(read: ALControlAdmissionRead): boolean {

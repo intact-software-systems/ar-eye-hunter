@@ -27,6 +27,7 @@ type ReceiptTestStores = ALOutboundRuntimeStores<ALOutboundTransportMessage>;
 const ORIGIN = 'origin';
 const RELAY = 'relay';
 const MSG_ID = 'message';
+const ALREADY_COUNTED = 'confirms a peer the receipt already counted';
 
 let indexedDbCount = 0;
 
@@ -85,7 +86,10 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         // A hop ACK names the hop itself; under `receiver` it is never a logical confirmation.
         const hop = await control.admit(relayAck(RELAY, 'ack-hop'));
 
-        expect(hop.kind).toBe('rejected');
+        expect(hop).toEqual({
+            kind: 'rejected',
+            reason: expect.stringContaining('confirms no peer of the pending outbound receipt')
+        });
         expect(await stores.admissionStore.readReceiptState({ originPeerId: ORIGIN, msgId: MSG_ID }))
             .toMatchObject({ ackedPeerIds: [] });
     });
@@ -102,14 +106,31 @@ describe.each(BACKENDS)('outbound receipt keys over %s', (_name, createStores) =
         });
 
         expect(await control.admit(relayAck('r1', 'ack-r1'))).toEqual({ kind: 'committed' });
-        // Not a duplicate (another recipient), but the hop is already counted: history only, no settlement.
-        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({ kind: 'committed' });
+        // Not a duplicate (another recipient), but the hop is already counted: refused without a write.
+        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({
+            kind: 'rejected',
+            reason: expect.stringContaining(ALREADY_COUNTED)
+        });
 
         expect(settlements).toEqual([
             expect.objectContaining({ mode: 'hop', confirmedHopPeerIds: [RELAY], complete: true })
         ]);
         expect(await stores.admissionStore.readReceiptState({ originPeerId: ORIGIN, msgId: MSG_ID }))
             .toMatchObject({ mode: 'hop', ackedPeerIds: [RELAY] });
+    });
+
+    it('refuses an ACK for an already-confirmed logical recipient under `receiver`, however it travelled', async () => {
+        const stores = createStores();
+        await seedObligation(stores.admissionStore, { mode: 'receiver', expectedPeerIds: ['r1', 'r2'] });
+        const control = createTestALOutboundControlAdmission({ ...stores, nowMs: Date.now, carrier: 'ws' });
+
+        expect(await control.admit(relayAck('r1', 'ack-r1'))).toEqual({ kind: 'committed' });
+        // Another relay's ACK for `r1` is not a duplicate by key, but `r1` is already counted.
+        expect(await control.admit(relayAck('r1', 'ack-r1-other-relay', 'other-relay'))).toEqual({
+            kind: 'rejected',
+            reason: expect.stringContaining(ALREADY_COUNTED)
+        });
+        expect(await control.admit(relayAck('r2', 'ack-r2'))).toEqual({ kind: 'committed' });
     });
 
     it('keeps two origins\' pending rows for one msgId apart in one namespace', async () => {
@@ -185,12 +206,12 @@ function toPendingSnapshot(obligation: ReceiptTestObligation): ALOutboundPending
 }
 
 /** The relay re-originates one ACK per logical recipient it confirmed, each from itself. */
-function relayAck(logicalRecipientPeerId: string, controlMsgId: string): ALMessage {
+function relayAck(logicalRecipientPeerId: string, controlMsgId: string, relayPeerId: string = RELAY): ALMessage {
     return newALAckControlMessage(
-        { v: 2, msgId: controlMsgId, senderId: RELAY, ts: Date.now() },
+        { v: 2, msgId: controlMsgId, senderId: relayPeerId, ts: Date.now() },
         {
             ackedMsgId: MSG_ID,
-            fromPeerId: RELAY,
+            fromPeerId: relayPeerId,
             toPeerId: ORIGIN,
             originPeerId: ORIGIN,
             logicalRecipientPeerId,
