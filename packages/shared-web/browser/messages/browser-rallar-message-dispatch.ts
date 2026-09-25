@@ -71,17 +71,20 @@ export class BrowserRallarMessageDispatch {
         }
         this.input.deliveries.updateDeadline(result.message);
         const sink = lifetime.settlements[delivery.carrier];
-        sink({
-            kind: 'admission',
-            msgId: delivery.message.id.msgId,
-            carrier: delivery.carrier,
-            atMs: this.input.nowMs(),
-            verdict: result.verdict
-        });
-        wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         const fallback = delivery.canFallback
             ? computeFallbackDisposition(result.verdict, result.message.constraints?.expiresAtMs, this.input.nowMs())
             : 'stop';
+        // A refusal the fallback carrier takes over is not the message's verdict: `rejected` would be terminal.
+        if (fallback === 'stop' || result.verdict.kind !== 'refused') {
+            sink({
+                kind: 'admission',
+                msgId: delivery.message.id.msgId,
+                carrier: delivery.carrier,
+                atMs: this.input.nowMs(),
+                verdict: result.verdict
+            });
+        }
+        wakeQueueBoxEngineIfQueued(delivery.context.middleware.qboxEngine, result);
         if (fallback === 'retry') {
             await this.writeCapturedMessage({
                 ...delivery,
@@ -152,15 +155,27 @@ export async function writeCarrierOutboxAdmission(
         : await context.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
 }
 
-function computeFallbackDisposition(
+/** A carrier that cannot route, or cannot honour the ack algorithm (D42 keeps the algorithm, not the carrier), hands over. */
+export function computeFallbackDisposition(
     verdict: ALDeliveryAdmissionVerdict,
     expiresAtMs: number | undefined,
     nowMs: number
 ): 'retry' | 'stop' | 'expired' {
-    if (verdict.kind !== 'unroutable' || (verdict.reason !== 'no-route' && verdict.reason !== 'circuit-open')) {
+    if (!isFallbackVerdict(verdict)) {
         return 'stop';
     }
     return expiresAtMs !== undefined && expiresAtMs <= nowMs ? 'expired' : 'retry';
+}
+
+function isFallbackVerdict(verdict: ALDeliveryAdmissionVerdict): boolean {
+    switch (verdict.kind) {
+        case 'unroutable':
+            return verdict.reason === 'no-route' || verdict.reason === 'circuit-open';
+        case 'refused':
+            return verdict.reason === 'unsupported';
+        default:
+            return false;
+    }
 }
 
 export function wakeQueueBoxEngineIfQueued(

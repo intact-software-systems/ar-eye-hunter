@@ -528,7 +528,7 @@ function normalizeTransportAspects(policy: ALQosNormalizationPolicy): ALNormaliz
             aspect: 'ack',
             requested: requested.ack,
             fallback: defaults.ack,
-            supported: toALNormalizableAckAlgos(capabilities.supportedAck, requested.ack)
+            supported: toALNormalizableAckAlgos(capabilities.supportedAck, requested.ack, defaults.ack)
         }),
         retry: normalizeAspect({
             aspect: 'retry',

@@ -74,6 +74,14 @@ describe('validateALAckSupport', () => {
         })).toEqual([{ aspect: 'ack', detail: 'ack receiver is unsupported for ws world targets' }]);
     });
 
+    it('keeps a provider-defaulted receiver instead of downgrading it', () => {
+        const message = { ...newALBroadcastMessage('sender', route, 'world', 'chat.v1', {}), delivery: undefined };
+        const normalized = normalizeALQosPolicy(message, { defaults: { ack: { algo: 'receiver', opts: { timeoutMs: 250 } } } });
+
+        expect(normalized.requested.ack).toBeUndefined();
+        expect(normalized.effective.ack.algo).toBe('receiver');
+    });
+
     it('declares receiver for a carrier that tracks it, while a provider that names its own ack set keeps it', () => {
         const message = {
             ...newALUnicastMessage('sender', route, 'peer', 'chat.v1', {}),

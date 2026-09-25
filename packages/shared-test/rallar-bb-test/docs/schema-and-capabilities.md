@@ -167,7 +167,8 @@ nothing else a send would. `carrier`, `typeId`, `topicId`, `payload`, `roomRef`,
 `minSnapshotVersion` are each refused beside it, by the control validator and by
 the page, because the replayed envelope already fixes them. It is a harness
 capability, not a product path: the product falls back to its second carrier only
-after an `unroutable` verdict, so one logical message never reaches both. The page
+after an `unroutable` verdict or a `refused` `unsupported` one (an ack algorithm the
+first carrier cannot track), so one logical message never reaches both. The page
 reads the envelope the earlier handle's first carrier captured and admits that
 same envelope through the named carrier's own admission call, the one a fallback
 makes. It returns `{ handleId, msgId, carrier, verdict, reason? }`: the named

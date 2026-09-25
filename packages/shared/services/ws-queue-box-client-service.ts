@@ -260,7 +260,12 @@ export class WsQueueBoxClientService {
         ));
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const message = toALOutboundMessage(msg, normalized.effective);
-        const planned: ALOutboundDispatchPlan<ALOutboundTransportMessage> = {
+        const refusal = computeALOutboundAckRefusal<ALOutboundTransportMessage>({
+            msg: message,
+            carrier: 'ws',
+            policy: normalized
+        });
+        return refusal.fold<ALOutboundDispatchPlan<ALOutboundTransportMessage>>((refused) => refused, () => ({
             msg: message,
             dropReasonCode: undefined,
             persist: shouldPersistOutbox(normalized.effective) || !socketOpen,
@@ -273,13 +278,7 @@ export class WsQueueBoxClientService {
                 maxAttempts: normalized.effective.repair.opts.maxRepairs
             },
             supersedenceTracking: this.toSupersedenceTrackingPlan(normalized.effective, msg)
-        };
-        return computeALOutboundAckRefusal<ALOutboundTransportMessage>({
-            msg: message,
-            carrier: 'ws',
-            policy: normalized
-        })
-            .fold((refusal) => refusal, () => planned);
+        }));
     }
 
     private planIncomingMessage(
