@@ -60,8 +60,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
         // the send-time QoS request check with the messages.send qos passthrough measure
         // 275.1064453125 KiB with this exact harness; the WS client's receipt admission from the
         // server's aggregate brings it to 276.16796875 KiB, and the rest of S2c-i to 276.7197265625 KiB.
-        // The next whole-KiB ceiling is 277; all operator dependency exclusions above remain enforced.
-        expect(result.brotliKiB).toBeLessThan(277);
+        // S2c-ii's frozen audience at RTC admission (the freeze, its ingress check and provenance) measures
+        // 277.2451171875 KiB. The next whole-KiB ceiling is 278; all operator dependency exclusions above
+        // remain enforced.
+        expect(result.brotliKiB).toBeLessThan(278);
     });
 });
 

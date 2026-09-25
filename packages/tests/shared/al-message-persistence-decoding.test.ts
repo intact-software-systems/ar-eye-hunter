@@ -136,6 +136,29 @@ describe('persisted AL message decoding', () => {
         ).not.toThrow();
     });
 
+    it.each([
+        { label: 'an unfrozen multicast', audience: {}, accepted: true },
+        { label: 'a frozen multicast', audience: { recipientPeerIds: ['session-a'], snapshotVersion: 1 }, accepted: true },
+        { label: 'a frozen multicast with an empty audience', audience: { recipientPeerIds: [], snapshotVersion: 4 }, accepted: true },
+        { label: 'recipients without their snapshot version', audience: { recipientPeerIds: ['session-a'] }, accepted: false },
+        { label: 'a snapshot version without its recipients', audience: { snapshotVersion: 4 }, accepted: false },
+        { label: 'a snapshot version below one', audience: { recipientPeerIds: ['session-a'], snapshotVersion: 0 }, accepted: false },
+        { label: 'a repeated recipient', audience: { recipientPeerIds: ['session-a', 'session-a'], snapshotVersion: 4 }, accepted: false }
+    ])('decodes $label only when the frozen audience pair is whole', ({ audience, accepted }) => {
+        const decoded = decodeALMessageValue({
+            id: { v: 2, msgId: 'message-1', ts: 1, senderId: 'session-origin' },
+            route: { topicId: 'topic-1', resourceId: 'resource-1', contextId: 'room-1' },
+            targets: {
+                mode: 'multicast',
+                groupRef: { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'room-1' },
+                ...audience
+            },
+            payload: { typeId: 'type-1', resource: '{}' }
+        });
+
+        expect(decoded.left === undefined).toBe(accepted);
+    });
+
     it('accepts the current principal broadcast target shape', () => {
         expect(() =>
             decodePersistedALMessageValue({

@@ -300,32 +300,23 @@ describe('RTC outbound transport results', () => {
         });
     });
 
-    it.each(['unicast', 'multicast'] as const)(
-        'refuses a receiver ack on %s targets as unsupported until the overlay tracks logical receipts',
-        async (mode) => {
-            const channel = createChannel();
-            const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
-            const manager = createManager([channel], resources);
-            onTestFinished(() => manager.dispose());
-            const message = createMessage('receiver');
-            const targets = mode === 'unicast'
-                ? message.targets
-                : { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } } as const;
+    it('admits a receiver ack on an RTC unicast and routes a room multicast by its overlay, refusing neither', async () => {
+        const channel = createChannel();
+        const resources = createDefaultALOutboundRuntimeResources({ decodePrepared: decodeALOutboundTransportMessage });
+        const manager = createManager([channel], resources);
+        onTestFinished(() => manager.dispose());
+        const message = { ...createMessage('receiver'), delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
 
-            const result = await enqueueRtcAndDrain(manager, {
-                ...message,
-                targets,
-                delivery: { reliability: 'at-least-once', ack: 'receiver' }
-            });
+        const unicast = await enqueueRtcAndDrain(manager, message);
+        const multicast = await enqueueRtcAndDrain(manager, {
+            ...message,
+            id: { ...message.id, msgId: 'receiver-multicast' },
+            targets: { mode: 'multicast', groupRef: { applicationId: 'app', workspaceId: 'workspace', groupId: 'room' } }
+        });
 
-            expect(result.verdict).toEqual({
-                kind: 'refused',
-                reason: 'unsupported',
-                detail: `ack receiver is unsupported for rtc ${mode} targets`
-            });
-            expect(nativeRuntime.createdConnections[0].channels[0].sent).toEqual([]);
-        }
-    );
+        expect(unicast.verdict).toMatchObject({ kind: 'admitted' });
+        expect(multicast.verdict).toMatchObject({ kind: 'unroutable', reason: 'no-route' });
+    });
 
     it('reports admission without claiming a transport send while the channel is closed', async () => {
         const channel = createChannel();

@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '../../al-contracts/al-message-persistence-validation.ts';
 import type { QueueBoxResourceEntryRepository } from '../../queuebox/queue-box-types.ts';
 import { hasSameResourceEntryValue } from '../../queuebox/resource-entry-observations.ts';
@@ -97,7 +98,7 @@ function validateCanonicalReuse(
             constraints: { ...original.constraints, expiresAtMs: canonical.constraints?.expiresAtMs }
         }
         : original;
-    return jsonEquals(observed, canonical)
+    return jsonEquals(observed, toALFreezeComparableMessage(observed, canonical))
         ? Either.ofRight(canonical)
         : Either.ofLeft(new TypeError('Canonical identity has conflicting content'));
 }

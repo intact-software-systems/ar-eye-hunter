@@ -10,6 +10,7 @@ import {
 
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { AL_CONTROL_ACK_TYPE_ID } from '@shared/al-contracts/al-control-type-ids.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toALInboundWorkType } from '@shared/alm/inbound/al-inbound-work-entry.ts';
 import {
@@ -499,7 +500,7 @@ function createMulticast(input: {
     readonly acknowledgeSubtree: boolean;
     readonly minSnapshotVersion?: number;
 }): shared.ALMessage {
-    return shared.newALMulticastMessage(
+    const message = shared.newALMulticastMessage(
         'peer-1',
         {
             topicId: 'chat',
@@ -516,6 +517,7 @@ function createMulticast(input: {
             minSnapshotVersion: input.minSnapshotVersion
         }
     );
+    return toALFrozenMulticastMessage(message, { recipientPeerIds: ['self', 'peer-2', 'peer-3'], snapshotVersion: 1 });
 }
 
 const endpoints: RtcEndpointFixture[] = [];

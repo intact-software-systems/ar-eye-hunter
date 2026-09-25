@@ -4,7 +4,7 @@ import { computeAlmConformanceQosDefaults } from '@shared-test/black-box-runner/
 import { computeFallbackDisposition } from '@shared-web/browser/messages/browser-rallar-message-dispatch.ts';
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { normalizeALQosPolicy, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
-import { toALReceiverAckNormalizationInput } from '@shared/al-contracts/validate-al-ack-support.ts';
+import { toALReceiverAckNormalizationInput, toALReceiverAckQosInputProvider } from '@shared/al-contracts/validate-al-ack-support.ts';
 import type { ALDeliveryAdmissionVerdict, ALDeliveryCarrier } from '@shared/alm/delivery/al-delivery-lifecycle.ts';
 import { computeALOutboundAckRefusal } from '@shared/alm/outbound/admission/compute-al-outbound-ack-refusal.ts';
 
@@ -48,13 +48,13 @@ describe('black-box conformance QoS policy', () => {
             expect(selected.effective.supersedence.algo).toBe('none');
         }
     });
-    // S2c-ii flips the rtc row once the overlay declares receiver. Until then rtc refuses it, and the fallback strategy
-    // hands the same receiver envelope to ws: the carrier changes, never the algorithm.
+
+    // The rtc overlay declares receiver (S2c-ii), so every strategy settles the receiver send on its first carrier.
     it.each(
         [
             { strategy: 'ws', legs: ['ws'], outcome: { carrier: 'ws', verdict: ADMITTED } },
-            { strategy: 'rtc', legs: ['rtc'], outcome: { carrier: 'rtc', verdict: RTC_REFUSAL } },
-            { strategy: 'rtc-with-ws-fallback', legs: ['rtc', 'ws'], outcome: { carrier: 'ws', verdict: ADMITTED } }
+            { strategy: 'rtc', legs: ['rtc'], outcome: { carrier: 'rtc', verdict: ADMITTED } },
+            { strategy: 'rtc-with-ws-fallback', legs: ['rtc', 'ws'], outcome: { carrier: 'rtc', verdict: ADMITTED } }
         ] as const
     )('keeps receiver on the $strategy room send and settles it on the carrier that supports it', ({ legs, outcome }) => {
         const message = { ...specimen, delivery: { reliability: 'at-least-once', ack: 'receiver' } } as const;
@@ -69,11 +69,6 @@ describe('black-box conformance QoS policy', () => {
 });
 
 const ADMITTED = { kind: 'admitted', durable: false, queuedAttempts: 1 } as const;
-const RTC_REFUSAL = {
-    kind: 'refused',
-    reason: 'unsupported',
-    detail: 'ack receiver is unsupported for rtc multicast targets'
-} as const;
 
 /** One carrier leg's admission of the send: its normalized ack algorithm and the verdict its ack support gives. */
 function toLegAdmission(message: ALMessage, carrier: ALDeliveryCarrier) {
@@ -85,8 +80,9 @@ function toLegAdmission(message: ALMessage, carrier: ALDeliveryCarrier) {
     return { carrier, algo: policy.effective.ack.algo, verdict };
 }
 
-/** The ws carrier declares receiver; the rtc overlay does not until S2c-ii. */
+/** Both carriers declare receiver: the ws runtimes on their input, the rtc overlay on its provider. */
 function toCarrierNormalizationInput(message: ALMessage, carrier: ALDeliveryCarrier) {
-    const input = resolveALQosNormalizationInput(message, { direction: 'outbound' }, provider);
-    return carrier === 'ws' ? toALReceiverAckNormalizationInput(input) : input;
+    return carrier === 'ws'
+        ? toALReceiverAckNormalizationInput(resolveALQosNormalizationInput(message, { direction: 'outbound' }, provider))
+        : resolveALQosNormalizationInput(message, { direction: 'outbound' }, toALReceiverAckQosInputProvider(provider));
 }

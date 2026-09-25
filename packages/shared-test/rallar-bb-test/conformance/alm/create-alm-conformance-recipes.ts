@@ -1154,21 +1154,8 @@ function toSendCommand(send: AlmConformanceSendInput): RallarBlackBoxTestMessage
             input.deadlineMs
         ),
         ...(input.carrier === 'ws' ? {} : { roomRef: toRoomRef(input.group) }),
-        ...delivery,
-        ...toCarrierAckQos(input.carrier, delivery.ack)
+        ...delivery
     };
-}
-
-/**
- * The RTC overlay refuses `receiver` until it tracks logical receipts (S2c-ii), so every rtc or rtc-with-ws-fallback
- * recipe send that asks for receiver asks for hop by name, whichever carrier it starts on, and keeps reading hop
- * receipts. A ws recipe send keeps the logical receiver.
- */
-function toCarrierAckQos(
-    carrier: AlmConformanceCarrier,
-    ack: AlmConformanceSendDelivery['ack']
-): Pick<RallarBlackBoxTestMessagesSendCommand, 'qos'> {
-    return ack === 'receiver' && carrier !== 'ws' ? { qos: { ack: { algo: 'hop' } } } : {};
 }
 
 /** The absence window plus the time a reloaded owner needs before it can submit. */

@@ -1097,9 +1097,7 @@ describe('Hetzner distributed manifest catalog', () => {
         expect(rtcConnects.every((command) => command.rallar?.messageSelector !== undefined)).toBe(true);
         expect(rtcConnects.every((command) => command.rallar?.topicId === 'room.alm-conformance')).toBe(true);
 
-        // Until the RTC overlay tracks logical receipts, the rtc and fallback recipes' receiver sends ask for hop by
-        // name (the fallback recipe's cross-carrier envelope included, whichever carrier it starts on); the WS recipes
-        // keep receiver.
+        // The RTC overlay tracks logical receipts, so every carrier's receiver send asks for receiver by its own name.
         const receiverSends = toManifestCommands(entry?.manifest as RallarBlackBoxDistributedRunManifest)
             .filter((command) => command.kind === 'messages.send' && command.ack === 'receiver');
         const algoByCarrier = (carrier: string) => [
@@ -1111,9 +1109,9 @@ describe('Hetzner distributed manifest catalog', () => {
                     .map((command) => command.qos?.ack?.algo)
             )
         ];
-        expect(algoByCarrier('ws')).toEqual([undefined]);
-        expect(algoByCarrier('rtc')).toEqual(['hop']);
-        expect(algoByCarrier('rtc-with-ws-fallback')).toEqual(['hop']);
+        for (const carrier of ['ws', 'rtc', 'rtc-with-ws-fallback']) {
+            expect(algoByCarrier(carrier), carrier).toEqual([undefined]);
+        }
     });
 
     it('adds ALM conformance storage-counters manifests at 15, 30, and 50 agents', () => {

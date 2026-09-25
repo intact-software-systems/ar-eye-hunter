@@ -12,6 +12,7 @@ import {
     type ALMessageDropReasonCode,
     type ALMessagePlanningObservations
 } from '../al-contracts/al-policy.ts';
+import { toALReceiverAckQosInputProvider } from '../al-contracts/validate-al-ack-support.ts';
 import type {
     ALDeliveryAdmissionVerdict,
     ALDeliverySettlementSink
@@ -77,6 +78,7 @@ import {
 } from './overlay-multicast-contracts.ts';
 import { RtcOutboundSubmission } from './rtc-outbound-submission.ts';
 import { computeRtcRoomSnapshotAdmission, toRtcRoomSnapshotHandlingPlan } from './rtc-room-snapshot-admission.ts';
+import { toRtcFrozenAudienceDispatchPlan, toRtcOriginFrozenMessage } from './web-rtc-overlay-frozen-audience.ts';
 
 export namespace WebRtcOverlayMulticastManager {
     export interface Channel {
@@ -138,7 +140,7 @@ export class WebRtcOverlayMulticastManager {
         this.multicasterFactory = dependencies.multicasterFactory;
         this.circuitBreaker = dependencies.circuitBreaker;
         this.rateLimiter = dependencies.rateLimiter;
-        this.qosProvider = dependencies.qosProvider;
+        this.qosProvider = toALReceiverAckQosInputProvider(dependencies.qosProvider);
         this.clock = dependencies.outboundRuntime.clock;
         this.submission = new RtcOutboundSubmission(dependencies.connectionService, this.clock);
         this.outboundRuntime = new ALOutboundMessageRuntime<ALOutboundTransportMessage>(
@@ -505,11 +507,14 @@ export class WebRtcOverlayMulticastManager {
     }
 
     private planOutgoingMessage(original: ALMessage): ALOutboundDispatchPlan<ALOutboundTransportMessage> {
+        const selfPeerId = this.connectionService.input.sessionId;
         const context = this.readOverlayContext(original);
-        const policy = this.readOutgoingQosPolicy(original, context);
-        const msg = toALOutboundMessage(original, policy.effective);
-        return computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
+        const frozen = toRtcOriginFrozenMessage(original, context?.room, selfPeerId);
+        const policy = this.readOutgoingQosPolicy(frozen, context);
+        const msg = toALOutboundMessage(frozen, policy.effective);
+        const plan = computeALOutboundAckRefusal<ALOutboundTransportMessage>({ msg, carrier: 'rtc', policy })
             .fold((refusal) => refusal, () => this.planOriginatingDispatch(msg, context));
+        return toRtcFrozenAudienceDispatchPlan(plan, selfPeerId);
     }
 
     private planOriginatingDispatch(
@@ -806,11 +811,8 @@ export class WebRtcOverlayMulticastManager {
         request: ALOutboundRepairRequest
     ): ALOutboundDispatchPlan<ALOutboundTransportMessage> | undefined {
         if (request.requestedByPeerId) {
-            return this.planTargetedRepairDispatch(
-                msg,
-                request.requestedByPeerId,
-                request.repair
-            );
+            const targeted = this.planTargetedRepairDispatch(msg, request.requestedByPeerId, request.repair);
+            return targeted && toRtcFrozenAudienceDispatchPlan(targeted, this.connectionService.input.sessionId);
         }
 
         if (request.failedPeerIds.length > 0) {

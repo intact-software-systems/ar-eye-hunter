@@ -3,6 +3,7 @@ import {
     readALTargetGroupRef,
     type ALMessage
 } from '../al-contracts/al-contract.ts';
+import { resolveALAdmittedRoomAudience } from '../al-contracts/al-frozen-multicast-audience.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
 import type { OverlayInfo } from '../api/api-config.ts';
 import { isSameGroupRef } from '../api/api-type-utils.ts';
@@ -27,8 +28,11 @@ export type RtcRoomSnapshotAdmission =
     | { readonly kind: 'not-room'; }
     | {
         readonly kind: 'authorized';
+        /** The authorized sessions, narrowed to a multicast's frozen recipients when it carries them. */
         readonly memberPeerIds: readonly string[];
         readonly forwardingPeerIds: readonly string[];
+        /** The room snapshot version this authority was read at. */
+        readonly snapshotVersion: number;
     }
     | RtcRoomAuthorityDenial;
 
@@ -90,15 +94,16 @@ export function computeRtcRoomSnapshotAdmission(input: RtcRoomSnapshotAdmissionI
     if (input.fromPeerId !== undefined && floor !== undefined && snapshot.group.snapshotVersion < floor) {
         return { kind: 'pending', reason: 'Awaiting the required room snapshot version' };
     }
-    const memberPeerIds = snapshot.activeSessions.filter((session) =>
+    const authorizedPeerIds = snapshot.activeSessions.filter((session) =>
         resolveRoomSessionDenial(authority, session.sessionId) === undefined
     ).map((session) => session.sessionId);
+    const memberPeerIds = resolveALAdmittedRoomAudience(targets, authorizedPeerIds);
     const memberPeerIdSet = new Set(memberPeerIds);
     const forwardingPeerIds = input.overlay?.provenance === 'server' && input.overlay.state === 'active' &&
             isSameGroupRef(input.overlay.groupRef, roomRef)
         ? input.overlay.nextHopSessionIds.filter((peerId) => memberPeerIdSet.has(peerId))
         : [];
-    return { kind: 'authorized', memberPeerIds, forwardingPeerIds };
+    return { kind: 'authorized', memberPeerIds, forwardingPeerIds, snapshotVersion: snapshot.group.snapshotVersion };
 }
 
 export function planRtcRoomSnapshotAdmission(input: RtcRoomSnapshotHandlingInput): ALMessageHandlingPlan {

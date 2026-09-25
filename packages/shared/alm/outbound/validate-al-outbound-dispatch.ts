@@ -1,4 +1,5 @@
 import type { ALMessage } from '../../al-contracts/al-contract.ts';
+import { toALFreezeComparableMessage } from '../../al-contracts/al-frozen-multicast-audience.ts';
 import {
     decodeALMessage,
     decodeALMessageValue,
@@ -59,7 +60,7 @@ export function validateALOutboundPlannedMessage(
     if (
         !Number.isSafeInteger(deadline) ||
         (original.constraints?.expiresAtMs !== undefined && deadline! > original.constraints.expiresAtMs) ||
-        !jsonEquals(toMessageAuthority(original), toMessageAuthority(msg)) ||
+        !jsonEquals(toMessageAuthority(original), toMessageAuthority(toALFreezeComparableMessage(original, msg))) ||
         !(original.diagnostics?.visitedPeerIds ?? []).every((peerId, index) =>
             msg.diagnostics?.visitedPeerIds?.[index] === peerId
         )

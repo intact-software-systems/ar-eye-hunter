@@ -244,6 +244,57 @@ describe('inbound admission persisted values', () => {
         await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
     });
 
+    it.each([
+        { kind: 'rtc-peer', peerId: message.id.senderId, snapshotVersion: 4 },
+        { kind: 'rtc-peer', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 0 },
+        { kind: 'ws-client', peerId: message.id.senderId, groupRecipientPeerIds: ['receiver'], snapshotVersion: 4 }
+    ])('rejects a snapshot version without a valid RTC frozen audience beside it on $kind provenance', async (source) => {
+        const { backend, store } = createFixture();
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source,
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toBeInstanceOf(ALAdmissionCorruptionError);
+    });
+
+    it('retains the frozen audience and its snapshot version on RTC provenance', async () => {
+        const { backend, store } = createFixture();
+        const source = { kind: 'rtc-peer', peerId: 'relay', groupRecipientPeerIds: ['receiver', 'other'], snapshotVersion: 4 };
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source,
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).resolves.toMatchObject({ source });
+    });
+
+    it('refuses an RTC frozen audience over the provenance byte limit', async () => {
+        const { backend, store } = createFixture();
+        const groupRecipientPeerIds = Array.from({ length: 80_000 }, (_, index) => `room-peer-${index}`);
+        await backend.write(async (transaction) => {
+            await transaction.set('inbound:msg-owner:message:sender%3Awith%3Adelimiter', {
+                msgId: message.id.msgId,
+                senderId: message.id.senderId,
+                source: { kind: 'rtc-peer', peerId: 'relay', groupRecipientPeerIds, snapshotVersion: 4 },
+                supersedenceKey: null
+            });
+        });
+
+        await expect(readOwner(backend, store.namespace)).rejects.toMatchObject({
+            name: 'ALAdmissionCorruptionError',
+            cause: expect.objectContaining({ message: 'Stored frozen group audience exceeds the provenance byte limit' })
+        });
+    });
+
     it('retains a frozen group audience larger than the wire collection limit', async () => {
         const { backend, store } = createFixture();
         const groupRecipientPeerIds = Array.from({ length: 1_500 }, (_, index) => `room-peer-${index}`);

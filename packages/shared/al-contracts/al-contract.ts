@@ -39,6 +39,12 @@ export type ALTargets =
         groupRef: GroupRef;
         membershipEpoch?: number;
         minSnapshotVersion?: number;
+        /**
+         * The logical audience the origin froze at admission, with the room snapshot version it was read
+         * at; both or neither. Absent means not yet frozen: the carrier that admits the message freezes it.
+         */
+        recipientPeerIds?: readonly string[];
+        snapshotVersion?: number;
     }>
     | Readonly<{
         mode: 'broadcast';

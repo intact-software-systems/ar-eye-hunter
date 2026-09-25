@@ -58,7 +58,13 @@ export interface ALInboundRuntimeStores {
 
 export namespace ALInboundMessageRuntime {
     export type Source =
-        | { readonly kind: 'rtc-peer'; readonly peerId: string; }
+        | {
+            readonly kind: 'rtc-peer';
+            readonly peerId: string;
+            /** A room multicast copy's frozen audience and its snapshot version, both or neither. */
+            readonly groupRecipientPeerIds?: readonly string[];
+            readonly snapshotVersion?: number;
+        }
         | { readonly kind: 'ws-client'; readonly peerId: string; readonly groupRecipientPeerIds?: readonly string[]; }
         | { readonly kind: 'trusted-server'; };
 

@@ -1,5 +1,6 @@
 import { newALMulticastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { newALNackControlMessage, parseALControlMessage } from '@shared/al-contracts/al-control.ts';
+import { toALFrozenMulticastMessage } from '@shared/al-contracts/al-frozen-multicast-audience.ts';
 import { decodePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { planALMessageHandling } from '@shared/al-contracts/al-policy.ts';
 import { createDefaultInMemoryALInboundRuntimeStores } from '@shared/alm/al-runtime-stores.ts';
@@ -104,15 +105,18 @@ function createSnapshotAdmissionFixture(seq: number, persist: boolean): Snapshot
     const delivered: string[] = [];
     const controls: ALMessage[] = [];
     const stores = createDefaultInMemoryALInboundRuntimeStores();
-    const message = newALMulticastMessage('sender', { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' }, roomRef, 'snapshot.probe.v1', {
-        probe: true
-    }, {
-        minSnapshotVersion: 5,
-        seq,
-        ack: 'none',
-        reliability: 'at-least-once',
-        qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
-    });
+    const message = toALFrozenMulticastMessage(
+        newALMulticastMessage('sender', { topicId: 'room.messages', contextId: 'room', resourceId: 'probe' }, roomRef, 'snapshot.probe.v1', {
+            probe: true
+        }, {
+            minSnapshotVersion: 5,
+            seq,
+            ack: 'none',
+            reliability: 'at-least-once',
+            qos: { supersedence: { algo: 'latest-wins' }, durability: { algo: persist ? 'local-inbox' : 'volatile' } }
+        }),
+        { recipientPeerIds: ['receiver'], snapshotVersion: 5 }
+    );
     const runtime = createDefaultALInboundMessageRuntime({
         carrier: 'rtc',
         selfPeerId: 'receiver',
